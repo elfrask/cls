@@ -1,6 +1,5 @@
-
-from typing import Dict
-
+from copy import copy as c
+import typing
 
 uid:int = 0
 
@@ -14,9 +13,22 @@ APOSTROFE="\'"
 
 tokens = {
     "ope":["+", "-", "/", "*", "!", "|", "@", "&", "%", "=", "?", "<", ">", "^"],
-    "sim":["{", "}", "(", ")", "[", "]"],
-    "cond":["==", "<", ">", "!=", "<=", ">="]
+    "sim":["{", "}", "(", ")", "[", "]", ","],
+    "cond":["==", "<", ">", "!=", "<=", ">=", "!"]
 }
+
+nombre_reservados = {
+    "visible":["export", "static", "private", "public"],
+    "nombre":[
+        "func", "function", "class", "module", "with", "for", "if", "while", "define",
+        "from", "import", "global", "try"
+        ]
+}
+class errores:
+    ErrorSyntax:str="ErrorSyntax"
+    ErrorSemant:str="ErrorSemant"
+    ErrorAritmetic:str="ErrorAritmetic"
+    pass
 
 def tipo_valor(v:str) -> list[str, str]:
     tipo = "name"
@@ -42,6 +54,115 @@ def assign_valor(v:str, t:str, i:int) -> dict:
     else:
         salida = gen_char.names(v, i-len(v))
     
+    return salida
+
+def list_to_dict(lista:list=[])->dict:
+    salida = {}
+    iterador = -1
+    for i in lista: 
+        iterador+=1
+        salida[iterador] = i
+    return salida
+def repeat(char:str=" ", veces:int=1) -> str:
+    salida=""
+
+    for i in range(0,veces):
+        salida=salida+char
+
+    return salida
+def get(obj:any, index:any, default:any=0)->list:
+    salida =0
+    try:
+        salida=obj[index]
+    except:
+        salida = default
+    
+    return salida
+def compara(data:any, obj:any)->bool:
+    yei = True
+    
+    for i in range(len(data)):
+        if data[i] is str:
+            if not data[i]==obj[i]["tipo"]: 
+                yei = False
+                pass
+            pass
+        elif data[i] is dict:
+            if data[i]["tipo"]==obj[i]["tipo"]:
+                for x in i:
+                    if not data[i][x]==obj[i][x]: 
+                        yei = False
+                        pass
+                    pass
+                pass
+            else:
+                yei = False
+            
+            pass
+        pass
+
+    return yei
+def argparse(data:list) -> list:
+    salida = []
+    modo = "name"
+
+    def structure(nombre:str, defe:list=[], ty:list=[])->dict["name":str, "def":list, "ty":list]:
+
+        return ({
+            "name":nombre,
+            "def":defe,
+            "type":ty
+        })
+    def reset():
+        nombre = ""
+        defa=[]
+        typado = []
+        modo = "name"
+        pass
+
+    nombre = "";
+    defa = []
+    typado = []
+    reset()
+
+    for i in data:
+        if modo=="name":
+            if i["tipo"]=="name":
+                nombre = i["name"]
+                modo="post-name"
+                pass
+            pass
+        elif modo=="post":
+            if compara([{"tipo":"sim", "char":","}], [i]):
+                
+                salida.append(structure(nombre, defa, typado))
+                reset()
+
+                pass
+            elif compara([{"tipo":"ope", "char":"="}], [i]) and (defa==[]):
+                modo="def"
+                pass
+            elif compara([{"tipo":"ope", "char":":"}], [i]) and (typado==[]):
+                modo="typer"
+                pass
+            
+            pass
+        elif modo=="typer":
+            if i["tipo"]=="name":
+                typado = [i["name"]]
+                modo="post"
+                pass
+            pass
+        elif modo=="def":
+            defa.append(i)
+            pass
+        
+        pass
+    if nombre!="":
+        salida.append(structure(nombre, defa, typado))
+        reset()
+        pass
+
     return salida
 
 class gen_char:
@@ -83,6 +204,41 @@ class gen_char:
             "i":i,
             "tipo":"sim"
         }
+
+class gen_value:
+    def lista(data:list=[], i:int=0)->(
+        dict["tipo":str, "i":int, "data":list, "complet":list]
+        ):
+        out=[]
+        if len(data)>0: out = data[0]
+        return {
+            "tipo":"[]",
+            "data":out,
+            "i":i,
+            "complet":data
+        }
+    def argu(data:list=[], i:int=0)->(
+        dict["tipo":str, "i":int, "data":list, "complet":list]
+        ):
+        out=[]
+        if len(data)>0: out = data[0]
+        return {
+            "tipo":"()",
+            "data":out,
+            "i":i,
+            "complet":data
+        }
+    def code(data:list=[], i:int=0)->(
+        dict["tipo":str, "i":int, "data":list, "one":list]
+        ):
+        out=[]
+        if len(data)>0: out = data[0]
+        return {
+            "tipo":"()",
+            "data":data,
+            "i":i,
+            "one":out
+        }
     
 
 class appcls():
@@ -96,6 +252,7 @@ class appcls():
         self.app:dict = {}
         self.archivo:list = []
         self.submode:list = []
+        self.funca:bool=True
 
         pass
     def set_api(self, api:object) -> None:
@@ -105,6 +262,7 @@ class appcls():
         salida:list = []
         linea:list = []
         self.codigo = code
+        self.origin = name
         code = code.replace(T, " ")
         #code = code.replace(N, " ")
         code = code.replace(R, " ")
@@ -141,9 +299,9 @@ class appcls():
                                 if not (xx["char"] in ["=", ":", "<", ">"]):
                                     linea.pop()
                                     linea.append(
-                                        gen_char.ope(c+xx["char"], 
+                                        gen_char.ope(xx["char"]+c, 
                                         iterador-1, 
-                                        (c+xx["char"]) in tokens["cond"])
+                                        (xx["char"]+c) in tokens["cond"])
                                     )
                                     if linea[len(linea)-1]["char"] == "//":
                                         modo="coment"
@@ -170,6 +328,7 @@ class appcls():
                         byte=cadena
                         term=c
                         modo="str"
+                        cadena = term
                         pass
                     elif c==N:
                         if cadena!="":
@@ -241,38 +400,327 @@ class appcls():
     def parselex(self, code:list) -> list:
         modo = "normal"
         salida:list = []
+        lol:list = []
+        sub=0
+        iterador:int=0
+        linea:list = []
+        cadena:list = []
         for i in code:
-            linea:list = []
+
             for x in i:
                 
                 if modo == "normal":
                     if x["tipo"]=="sim":
                         if x["char"]=="(":
+                            modo="()"
+                            lol=[]
+                            cadena=[]
+                            sub=0
+                            iterador=x["i"]
+                            pass
+                        elif x["char"]=="[":
+                            modo="[]"
+                            lol=[]
+                            cadena=[]
+                            sub=0
+                            iterador=x["i"]
+                            pass
+                        elif x["char"]=="{":
+                            modo="code"
+                            lol=[]
+                            cadena=[]
+                            sub=0
+                            iterador=x["i"]
                             pass
                         else:
                             char = x["char"]
-                            self.error(f"error syntax: '{char}'", x["i"])
+
+                            if char in ["}", ")", "]"]:  
+                                self.error(f"error syntax: '{char}'", "ErrorSyntax", x["i"])
                         pass
                     else:
                         linea.append(x)
+                    pass
+                elif modo == "()":
+                    if x["tipo"]=="sim":
+                        #x:gen_char.sim
+                        if x["char"]==")":
+                            sub-=1
+                            if sub==-1:
+                                if cadena!=[]:
+                                    lol.append(cadena)
+                                    cadena=[]
+                                    pass
+                                lel = self.parselex(lol)
+                                #print(lel)
+                                linea.append(gen_value.argu(lel, iterador))
+                                modo="normal"
+                                pass
+                            else:
+                                cadena.append(x)
+
+                            pass
+                        elif x["char"]=="(":
+                            sub+=1
+                            cadena.append(x)
+
+                            pass
+                        else:
+                            cadena.append(x)
+                        pass
+                    else:
+                        cadena.append(x)
+                    pass
+                elif modo == "[]":
+                    if x["tipo"]=="sim":
+                        #x:gen_char.sim
+                        if x["char"]=="]":
+                            sub-=1
+                            if sub==-1:
+                                if cadena!=[]:
+                                    lol.append(cadena)
+                                    cadena=[]
+                                    pass
+                                lel = self.parselex(lol)
+                                #print(lel)
+                                linea.append(gen_value.lista(lel, iterador))
+                                modo="normal"
+                                pass
+                            else:
+                                cadena.append(x)
+
+                            pass
+                        elif x["char"]=="[":
+                            sub+=1
+                            cadena.append(x)
+
+                            pass
+                        else:
+                            cadena.append(x)
+                        pass
+                    else:
+                        cadena.append(x)
+                    pass
+                elif modo == "code":
+                    if x["tipo"]=="sim":
+                        #x:gen_char.sim
+                        if x["char"]=="}":
+                            sub-=1
+                            if sub==-1:
+                                if cadena!=[]:
+                                    lol.append(cadena)
+                                    cadena=[]
+                                    pass
+                                lel = self.parselex(lol)
+                                #print(lel)
+                                linea.append(gen_value.code(lel, iterador))
+                                modo="normal"
+                                pass
+                            else:
+                                cadena.append(x)
+
+                            pass
+                        elif x["char"]=="{":
+                            sub+=1
+                            cadena.append(x)
+
+                            pass
+                        else:
+                            cadena.append(x)
+                        pass
+                    else:
+                        cadena.append(x)
+                    pass
+                pass
+            if modo =="normal":
+                if linea!=[]:
+                    salida.append(linea)
+                    linea=[]
+                    pass
+                pass
+            else:
+                if cadena!=[]:
+                    lol.append(cadena)
+                    cadena=[]
+                    pass
+            
+
+            pass
+        
+        if modo!= "normal":
+            self.error(f"Error syntax ", errores.ErrorSyntax, iterador)
+        if linea!=[]:
+            salida.append(linea)
+            linea=[]
+            pass
+        
+
+        return salida
+    def estructuration(self, code:list) -> list:
+
+        modo:str = "normal"
+        salida:list = []
+        for i in code:
+            visible="public"
+            asyncrono= False
+            
+            if len(i)>1:
+                if i[0]["tipo"]=="name":
+
+                    if i[0]["tipo"] == "name":
+                        if i[0]["name"] in nombre_reservados["visible"]:
+                            visible = i[0]["name"]
+                            i=i[1:]
+                            pass
+                    
+                    if i[0]["tipo"] == "name":
+                        if i[0]["name"] ==["async", "sync"]:
+                            asyncrono = i[0]["name"]=="async"
+                            i=i[1:]
+                            pass
+                    
+                    if i[0]["tipo"] == "name":
+                        if not (i[0]["name"] in nombre_reservados["nombre"]):
+                            if len(i)>=4:
+                                if compara(["name", "name", "()", "code"], i):
+                                    i = [
+                                        gen_char.names("function", i[0]["i"]),
+                                        gen_char.names(i[1]["name"], i[0]["i"]),
+                                        i[2],
+                                        gen_char.ope("->", i[3]["i"]),
+                                        gen_char.names(i[0]["name"], i[3]["i"]),
+                                        i[3]
+                                    ]
+                                    pass
+                                pass
+                            pass
+                        pass
+
+                    if i[0]["name"] in ["func", "function"]:
+                        rt = "Any"
+                        arg = []
+                        name = ""
+                        coddigo = []
+                        #o = self
+                        def fallo():
+                            self.error("error at declare a function", errores.ErrorSyntax, i[0]["i"])
+                            pass
+
+                        if (len(i)==4): 
+                            if compara(["name", "name", "()", "code"], i):
+                                
+                                pass
+                            else:
+                                fallo()
+                                pass
+                            pass
+                        elif (len(i)==6):
+                            if compara(["name", "name", "()", {"tipo":"ope","char":"->"}, "name", "code"], i):
+                                pass
+                            else:
+                                fallo()
+                                pass
+                            pass
+                        else:
+                            fallo()
+                            pass
+
+                        pass
+                    
+
+                    nombre = i[0]["name"]
+
+                    pass
+                else:
+                    salida.append(i)
+                pass
+            else:
+                salida.append(i)
+            pass
+
+        return
+    def estructuration_one(self, code:list, val:list=[]) -> list:
+        salida =[]
+        e = -1
+        while(len(code)>e):
+            e+=1; i = code[e]
+
+            if i["tipo"] == "()":
+                is_func:bool = False
+                asyncrono:bool = False
+                arg:list = []
+                codigo:list = []
+                devolver:str ="Any"
+                if len(code[e:e+3])>= 3:
+                    if compara(["()", {"tipo":"ope", "char":"->"}, "code"], code[e:]):
+                        arg=code[e]
+                        codigo = code[e+2]
+                        e+=2
+                        is_func=True
+                        pass
+                    else:
+                        salida.append(i)
+                        continue
+                    pass
+                if len(code[e:e+4])>= 4:
+                    if compara(["()", {"tipo":"ope", "char":"->"}, "name", "code"], code[e:]):
+                        arg=code[e]
+                        codigo = code[e+3]
+                        devolver = code[e+2]
+                        e+=3
+                        is_func=True
+
+                        pass
+                    else:
+                        salida.append(i)
+                        continue
+                    pass
+                
+                if is_func:
+                    if len(salida)>0:
+                        if salida[0]["tipo"]=="name":
+                            if salida[0]["name"] in ["sync", "async"]:
+                                asyncrono = salida[0]["name"] == "async"
+                                salida.pop()
+                                pass
+                            pass
+                        pass
+
+                    f_A = {
+                        "tipo":"func-a",
+                        "arg":argparse(arg["data"]),
+                        "code":codigo,
+                        "return":devolver,
+                        "async":asyncrono
+                    }
+                    salida.append()
+                    #salida["func"]+=1
+                    pass
+                else:
+
                     pass
 
                 pass
             pass
 
-        return salida
-    def error(self, msg:str, type:str, i:int) -> None:
+        pass
+    def error(self, msg:(list[str]), type:str, i:int, before:str="") -> None:
         lin0 = self.codigo[0:i].count(N)
         lin1 = self.codigo.split(N, lin0+1)
         lin3 = self.codigo.split(N, lin0)
         lin3.pop()
         columna = i-len((" ").join(lin3))
-        lin1.pop()
+        #print(f"{lin0} - {len(lin1)}")
+        lin2 =lin1.pop()
 
-        lin2 = lin1.pop()
-        salida = f"-script: {self.origin}" + N + f"-code: {lin0}:{columna} {lin2}" + N
+        try:
+            lin2 =lin1.pop()
+        except:
+            pass
 
-        raise (f"{type}:{msg}"+N+ salida)
+        salida = f"   script: '{self.origin}' line {lin0+1} column {columna}" + N + f"      {lin2}" + N
+        
+        raise ValueError(before+N+f" error: {type}:{msg}"+N+ salida)
     pass
 
-#no estaria mal probar el sistema de errores, despues te toca hacer los parselex
+#se usara un grupo de funciones al final para remplazar a las funciones anonimas
