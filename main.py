@@ -14,9 +14,11 @@ def main():
     aplicacion = open(sys.argv[1], "r").read()
     crude:list =app.desline(aplicacion, sys.argv[1])
     parseado:list = app.parselex(crude)
+    f:list = []
+    estructurado:list = app.estructuration(parseado, f)
 
     open("./cache/log.json", "w").write(
-        json.dumps(parseado)
+        json.dumps(estructurado)
     )
     
 
