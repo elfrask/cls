@@ -1,5 +1,1 @@
-try {
-    print(()->{
-        (async ()->{})
-    })
-}
+hola = "Hola mundo"

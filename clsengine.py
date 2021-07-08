@@ -57,6 +57,23 @@ def assign_valor(v:str, t:str, i:int) -> dict:
         salida = gen_char.names(v, i-len(v))
     
     return salida
+def find(token:dict, lista:dict) -> list[bool, int]:
+    #salida = False
+    iterador = 0
+    for i in lista:
+        if token["tipo"] == i["tipo"]:
+            l = []
+            for k in token:
+                o = (token[k] == i[k])
+                l.append(o)
+                pass
+
+            if not False in l:
+                return [True, iterador]
+            pass
+        iterador+=1
+        pass
+    return [False, 0]
 
 def list_to_dict(lista:list=[])->dict:
     salida = {}
@@ -271,7 +288,7 @@ class appcls():
                         if len(linea)>0:
                             xx = linea[len(linea)-1]
                             if xx["tipo"]=="ope":
-                                if not (xx["char"] in ["=", ":", "<", ">"]):
+                                if (not (xx["char"] in ["=", ":", "<", ">"])) or (c in ["<", ">"]):
                                     linea.pop()
                                     linea.append(
                                         gen_char.ope(xx["char"]+c, 
@@ -683,6 +700,10 @@ class appcls():
                         pass
 
                     #print(i)
+                    dim = find({"tipo":"ope", "char":"="}, i)
+                    is_dim = dim[0]
+                    t_dim = dim[1]
+                    #print("dim exacto", i[t_dim])
 
                     if i[0]["name"] in ["func", "function", "def", "fub", "method"]:
                         rt = self.tydef
@@ -1061,11 +1082,12 @@ class appcls():
                             generar_error("error of syntax in return", i[0]["i"])
                             pass
                         pass
-                    elif i[0]["name"] == "if":
+                    elif i[0]["name"] == "var":
                         pass
                     elif i[0]["name"] == "if":
                         pass
-                    elif i[0]["name"] == "if":
+                    elif is_dim:
+                        #print("es un dim")
                         pass
                     else:
                         salida.append(self.estructuration_one(i, func))
@@ -1207,4 +1229,4 @@ class appcls():
         raise ValueError(before+N+f" error: {type}:{msg}"+N+ salida + cursor)
     pass
 
-#te falta los generadores y la importacion de elementos :0!
+#crea el dim despues de hacer la pagina de tu padre
