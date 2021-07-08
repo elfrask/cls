@@ -1207,4 +1207,4 @@ class appcls():
         raise ValueError(before+N+f" error: {type}:{msg}"+N+ salida + cursor)
     pass
 
-#se usara un grupo de funciones al final para remplazar a las funciones anonimas
+#te falta los generadores y la importacion de elementos :0!
