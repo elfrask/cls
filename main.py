@@ -18,9 +18,14 @@ def main():
     estructurado:list = app.estructuration(parseado, f)
 
     open("./cache/log.json", "w").write(
-        json.dumps(estructurado)
+        json.dumps(
+            {
+                "data":estructurado,
+                "func":f
+            }
+        )
     )
-    
+    input("test run...")
 
     pass
 

@@ -18,10 +18,10 @@ tokens = {
 }
 
 nombre_reservados = {
-    "visible":["export", "static", "private", "public"],
+    "visible":["export", "static", "private", "public", "global"],
     "nombre":[
         "func", "function", "class", "module", "with", "for", "if", "while", "define",
-        "from", "import", "global", "try"
+        "from", "import", "global", "try", "def", "fub", "method",
         ]
 }
 class errores:
@@ -162,41 +162,57 @@ class gen_char:
             "tipo":"sim"
         }
 
+derivados = True
+key_true = True
+
 class gen_value:
     def lista(data:list=[], i:int=0)->(
         dict["tipo":str, "i":int, "data":list, "complet":list]
         ):
         out=[]
         if len(data)>0: out = data[0]
-        return {
+        salida = {
             "tipo":"[]",
             "data":out,
             "i":i,
-            "complet":data
+            #"complet":data
         }
+        if derivados: 
+            salida["complet"]=data
+        return salida
     def argu(data:list=[], i:int=0)->(
         dict["tipo":str, "i":int, "data":list, "complet":list]
         ):
         out=[]
         if len(data)>0: out = data[0]
-        return {
+        salida = {
             "tipo":"()",
             "data":out,
             "i":i,
-            "complet":data
+            #"complet":data
         }
+        if derivados:
+            salida["complet"] = data
+        return salida
     def code(data:list=[], i:int=0)->(
         dict["tipo":str, "i":int, "data":list, "one":list]
         ):
         out=[]
         if len(data)>0: out = data[0]
-        return {
+        salida = {
             "tipo":"code",
             "data":data,
             "i":i,
-            "one":out
+            #"one":out
         }
+        if key_true:
+            salida["one"] = out
+        return salida
     
+class lista(list):
+    def __dict__(): pass
+    pass
+
 
 class appcls():
     def __init__(self, id:int = uid) -> None:
@@ -586,21 +602,54 @@ class appcls():
                 pass
             
             pass
+        
         if nombre!="":
             salida.append(structure(nombre, defa, typado))
             
             pass
+        
 
         return salida
     def estructuration(self, code:list, func:list=[]) -> list:
 
         modo:str = "normal"
         salida:list = []
+        def sub_group(data:list) -> list:
+            salida_out=  []
+            out = []
+            #print(data)
+
+            for i in data["complet"]:
+                salida_out.append(
+                    self.estructuration_one(i, func)
+                )
+                pass
+
+            if len(salida_out)>0:
+                out=salida_out[0]
+            
+            return {
+                "tipo":data["tipo"],
+                "complet":salida_out,
+                "data":out,
+                "i":data["i"]
+            }
+        #funcional:bool = func == [] 
+
+        def generar_error(msg, i):
+            def fallo(addi:str = "", index=i):
+                if addi !="":
+                    addi=" "+ str(addi)
+                self.error(msg + addi, errores.ErrorSyntax, index)
+                pass
+            return fallo
+
         for i in code:
             visible="public"
             asyncrono= False
             
             if len(i)>1:
+                #print("salida - ", i)
                 if i[0]["tipo"]=="name":
 
                     if i[0]["tipo"] == "name":
@@ -635,18 +684,14 @@ class appcls():
 
                     #print(i)
 
-                    if i[0]["name"] in ["func", "function"]:
+                    if i[0]["name"] in ["func", "function", "def", "fub", "method"]:
                         rt = self.tydef
                         arg = []
                         name = ""
                         codigo = []
                         funciones = []
                         #o = self
-                        def fallo(addi:str = ""):
-                            if addi !="":
-                                addi=" "+ str(addi)
-                            self.error("error at declare a function" + addi, errores.ErrorSyntax, i[0]["i"])
-                            pass
+                        fallo = generar_error("error at try create a function", i[0]["i"])
 
                         if (len(i)==4): 
                             if compara(["name", "name", "()", "code"], i):
@@ -684,24 +729,358 @@ class appcls():
                             "func-a":funciones,
                             "tipo":"func-def",
                             "visible":visible,
-                            "async":asyncrono
+                            "async":asyncrono,
+                            "i":i[0]["i"]
                         }
                         salida.append([f_a])
 
                         pass
+                    elif i[0]["name"] == "if":
+                        fallo = generar_error("error at try create a if, elif or else", i[0]["i"])
+
+                        est:list = []
+                        o=0
+                        while (len(i[o:o+3])>1):
+                            t=i[o:o+3]
+                            if len(t)==3:
+                                if compara([{"tipo":"name", "name":"if"}, "()", "code"], t):
+                                    ll = sub_group(t[1])["data"]
+                                    if len(ll)==0:
+                                        fallo(index=t[1]["i"])
+                                        pass
+                                    est.append(
+                                        {
+                                            "tipo":"if",
+                                            "cond":ll,
+                                            "code":self.estructuration(t[2]["data"], func)
+                                        }
+                                    )
+                                    if not o==0:
+                                        fallo("if?", t[1]["i"])
+                                        pass
+                                    pass
+                                elif compara([{"tipo":"name", "name":"elif"}, "()", "code"], t):
+                                    ll = sub_group(t[1])["data"]
+                                    if len(ll)==0:
+                                        fallo(index=t[1]["i"])
+                                        pass
+                                    est.append(
+                                        {
+                                            "tipo":"elif",
+                                            "cond":ll,
+                                            "code":self.estructuration(t[2]["data"], func)
+                                        }
+                                    )
+                                    pass
+                                elif compara([{"tipo":"name", "name":"elseif"}, "()", "code"], t):
+                                    ll = sub_group(t[1])["data"]
+                                    if len(ll)==0:
+                                        fallo(index=t[1]["i"])
+                                        pass
+                                    est.append(
+                                        {
+                                            "tipo":"elif",
+                                            "cond":ll,
+                                            "code":self.estructuration(t[2]["data"], func)
+                                        }
+                                    )
+                                    pass
+                                elif compara([{"tipo":"name", "name":"else"}, {"tipo":"name", "name":"if"}, "()"], t):
+                                    o+=1
+                                    ll = sub_group(t[2])["data"]
+                                    if len(ll)==0:
+                                        fallo(index=t[2]["i"])
+                                        pass
+                                    if len(i[o+3:])==0:
+                                        fallo(index=t[2]["i"])
+                                        pass
+                                    ccode = i[o+2]
+                                    if ccode["tipo"]!="code":
+                                        #print(ccode)
+                                        fallo(index=ccode["i"])
+                                    est.append(
+                                        {
+                                            "tipo":"elif",
+                                            "cond":ll,
+                                            "code":self.estructuration(ccode["data"], func)
+                                        }
+                                    )
+                                    pass
+                                else:
+                                    fallo(index=t[0]["i"])
+                                    pass
+                                
+                                pass
+                            elif len(t)==2:
+                                if compara([{"tipo":"name", "name":"else"}, "code"], t):
+                                    est.append(
+                                        {
+                                            "tipo":"else",
+                                            "code":self.estructuration(t[1]["data"], func)
+                                        }
+                                    )
+                                    break
+                                else:
+                                    fallo(index=t[0]["i"])
+                                    pass
+                                pass
+                            else:
+                                fallo()
+
+
+                            o+=3
+                            pass
+                        
+                        salida.append([{
+                            "tipo":"if-def",
+                            "lista":est,
+                            "i":i[0]["i"]
+                        }])
+
+                        pass
+                    elif i[0]["name"] == "while":
+                        fallo = generar_error("error to build at while", i[0]["i"])
+                        if len(i)==3:
+                            if compara(["name", "()", "code"], i):
+                                ll = sub_group(i[1])["data"]
+                                if len(ll)==0:
+                                    fallo(index=i[1]["i"])
+                                while_a = {
+                                    "tipo":"while-def",
+                                    "code":self.estructuration(i[2]["data"], func),
+                                    "cond":ll,
+                                    "i":i[0]["i"]
+                                }
+                                salida.append([while_a])
+                                pass
+                            else:
+                                fallo()
+                                pass
+                            pass
+                        else:
+                            fallo()
+                            pass
+                        pass
+                    elif i[0]["name"] == "for":
+                        fallo = generar_error("error to build at for", i[0]["i"])
+                        if len(i)==4:
+                            if compara(["name", {"tipo":"name", "name":"each"}, "()", "code"], i):
+                                for_a = {
+                                    "tipo":"for-each-def",
+                                    "code":self.estructuration(i[3]["data"], func),
+                                    "cond":sub_group(i[2])
+                                }
+                                salida.append([for_a])
+                                pass
+                            else:
+                                fallo()
+                                pass
+                            pass
+                        elif len(i)==3:
+                            if compara(["name", "()", "code"], i):
+                                if not len(i[1]["complet"])>2:
+                                    fallo(
+                                        "(the structure invalid) for (i = 0; i < len(Array()); i+=1) { ... }",
+                                        i[1]["i"]    
+                                    )
+                                    pass
+                                for_a = {
+                                    "tipo":"for-def",
+                                    "code":self.estructuration(i[2]["data"], func),
+                                    "cond":sub_group(i[1]),
+                                    "i":i[0]["i"]
+                                }
+                                salida.append([for_a])
+                                pass
+                            else:
+                                fallo()
+                                pass
+                            pass
+                        else:
+                            fallo()
+                            pass
+                        pass
+                    elif i[0]["name"] == "class":
+                        fallo = generar_error("error at try create a class", i[0]["i"])
+                        if len(i)==4:
+                            if compara(["name", "name", "()", "code"], i):
+                                funciones_clases = []
+                                codigo = self.estructuration(i[3]["data"], funciones_clases)
+                                class_a = {
+                                    "tipo":"class-def",
+                                    "name":i[1]["name"],
+                                    "extend":i[2]["data"],
+                                    "code":codigo,
+                                    "func-a":funciones_clases,
+                                    "i":i[0]["i"]
+                                }
+                                salida.append([class_a])
+                                pass
+                            else:
+                                fallo()
+                            pass
+                        else:
+                            fallo()
+                            pass
+                        pass
+                    elif i[0]["name"] == "module":
+                        fallo = generar_error("error at try create a module", i[0]["i"])
+                        if len(i)==4:
+                            if compara(["name", "name", "code"], i):
+                                funciones_clases = []
+                                codigo = self.estructuration(i[2]["data"], funciones_clases)
+                                class_a = {
+                                    "tipo":"module-def",
+                                    "name":i[1]["name"],
+                                    "code":codigo,
+                                    "func-a":funciones_clases,
+                                    "i":i[0]["i"]
+                                }
+                                salida.append([class_a])
+                                pass
+                            else:
+                                fallo()
+                            pass
+                        else:
+                            fallo()
+                            pass
+                        pass
+                    elif i[0]["name"] == "with":
+                        fallo = generar_error("error at try structurated with sub values", i[0]["i"])
+                        if len(i)==4:
+                            if compara(["name", "name", "()", "code"], i):
+                                funciones_clases = []
+                                codigo = self.estructuration(i[3]["data"], funciones_clases)
+                                ll = sub_group(i[2])
+                                if ll["data"]==[]:
+                                    fallo()
+                                with_a = {
+                                    "tipo":"with-def",
+                                    "name":i[1]["name"],
+                                    "value":ll["data"],
+                                    "code":codigo,
+                                    "func-a":funciones_clases,
+                                    "i":i[0]["i"]
+                                }
+                                salida.append([with_a])
+                                pass
+                            else:
+                                fallo()
+                            pass
+                        else:
+                            fallo()
+                            pass
+                        pass
+                    elif i[0]["name"] == "from":
+                        fallo = generar_error("error of syntax in from - import", i[0]["i"])
+                        if len(i)==6:
+                            if compara(["name", "value", {"tipo":"name", "name":"import"}, "name", {"tipo":"name", "name":"as"}, "name"], i):
+                                from_a = {
+                                    "tipo":"from-def",
+                                    "from":eval(i[1]["value"]),
+                                    "import":i[3]["name"],
+                                    "as":i[5]["name"],
+                                    "i":i[0]["i"]
+                                }
+                                salida.append([from_a])
+                                pass
+                            else:
+                                fallo()
+                            pass
+                        else:
+                            fallo()
+                            pass
+                        pass
+                    elif i[0]["name"] == "import":
+                        fallo = generar_error("error of syntax in import", i[0]["i"])
+                        if len(i)==6:
+                            if compara(["name", "value", {"tipo":"name", "name":"as"}, "name"], i):
+                                from_a = {
+                                    "tipo":"import-def",
+                                    "import":eval(i[1]["value"]),
+                                    "as":i[3]["name"],
+                                    "i":i[0]["i"]
+                                }
+                                salida.append([from_a])
+                                pass
+                            else:
+                                fallo()
+                            pass
+                        else:
+                            fallo()
+                            pass
+                        pass
+                    elif i[0]["name"] == "define":
+                        generar_error("include is not sopport in this version of cls", i[0]["i"])()
+                        pass
+                    elif i[0]["name"] == "try":
+                        if len(i)==2:
+                            agregar = [
+                                gen_char.names("error", i[0]["i"]),
+                                gen_char.names("e", i[0]["i"]),
+                                gen_value.code([], i[0]["i"])
+                            ]
+                            i = i + agregar
+                            pass
+                        if len(i)==5:
+                            
+                            fallo = generar_error("error at try structurated a try", i[0]["i"])
+
+                            if compara(["name", "code", "name", "name", "code"], i):
+                                if i[2]["name"] in ["error", "catch", "except", "failed", "fail"]:
+                                    try_a = {
+                                        "tipo":"try-def",
+                                        "try":self.estructuration(i[1]["data"], func),
+                                        "error":self.estructuration(i[4]["data"], func),
+                                        "e":i[3]["name"],
+                                        "i":i[0]["i"]
+                                    }
+
+                                    salida.append([try_a])
+                                    pass
+                                else:
+                                    fallo()
+                                pass
+                            else:
+                                fallo()
+                                pass                                
+
+
+                            pass
+                        pass
+                    elif i[0]["name"] == "return":
+                        if len(i)>1:
+                            return_a = {
+                                "tipo":"rt-def",
+                                "eval":self.estructuration_one(i[1:], func),
+                                "i":i[0]["i"]
+                            }
+                            salida.append([return_a])
+                            pass
+                        else:
+                            generar_error("error of syntax in return", i[0]["i"])
+                            pass
+                        pass
+                    elif i[0]["name"] == "if":
+                        pass
+                    elif i[0]["name"] == "if":
+                        pass
+                    elif i[0]["name"] == "if":
+                        pass
                     else:
-                        salida.append([self.estructuration_one(i, func)])
+                        salida.append(self.estructuration_one(i, func))
 
                     #nombre = i[0]["name"]
 
                     pass
                 else:
-                    salida.append([self.estructuration_one(i, func)])
+                    salida.append(self.estructuration_one(i, func))
                 pass
             else:
-                salida.append([self.estructuration_one(i, func)])
+                salida.append(self.estructuration_one(i, func))
             pass
 
+        
         return salida
     def estructuration_one(self, code:list, func:list=[]) -> list:
         salida =[]
@@ -710,6 +1089,7 @@ class appcls():
         def sub_group(data:list) -> list:
             salida_out=  []
             out = []
+            #print("llego")
 
             for i in data["complet"]:
                 salida_out.append(

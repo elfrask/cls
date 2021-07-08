@@ -1,1 +1,96 @@
-[[{"name": "main", "arg": [], "return": "int", "code": [[[{"tipo": "name", "name": "print", "i": 17, "notmod": false}, {"tipo": "()", "complet": [[{"value": "\"hello world\"", "tipo": "value", "i": 23, "l": "\"", "type": "str", "byte": ""}]], "data": [{"value": "\"hello world\"", "tipo": "value", "i": 23, "l": "\"", "type": "str", "byte": ""}], "i": 22}]]], "func-a": [], "tipo": "func-def", "visible": "public", "async": false}]]
+{
+    "data": [
+        [
+            {
+                "tipo": "try-def",
+                "try": [
+                    [
+                        {
+                            "tipo": "name",
+                            "name": "print",
+                            "i": 10,
+                            "notmod": false
+                        },
+                        {
+                            "tipo": "()",
+                            "complet": [
+                                [
+                                    {
+                                        "tipo": "name",
+                                        "name": "t_tmp0",
+                                        "i": 16,
+                                        "notmod": true
+                                    }
+                                ]
+                            ],
+                            "data": [
+                                {
+                                    "tipo": "name",
+                                    "name": "t_tmp0",
+                                    "i": 16,
+                                    "notmod": true
+                                }
+                            ],
+                            "i": 15
+                        }
+                    ]
+                ],
+                "error": [],
+                "e": "e",
+                "i": 0
+            }
+        ]
+    ],
+    "func": [
+        [
+            "t_tmp0",
+            {
+                "tipo": "func-a",
+                "arg": [],
+                "code": [
+                    [
+                        {
+                            "tipo": "()",
+                            "complet": [
+                                [
+                                    {
+                                        "tipo": "name",
+                                        "name": "t_tmp0",
+                                        "i": 37,
+                                        "notmod": true
+                                    }
+                                ]
+                            ],
+                            "data": [
+                                {
+                                    "tipo": "name",
+                                    "name": "t_tmp0",
+                                    "i": 37,
+                                    "notmod": true
+                                }
+                            ],
+                            "i": 30
+                        }
+                    ]
+                ],
+                "return": "Any",
+                "func-a": [
+                    [
+                        "t_tmp0",
+                        {
+                            "tipo": "func-a",
+                            "arg": [],
+                            "code": [],
+                            "return": "Any",
+                            "func-a": [],
+                            "async": true,
+                            "name": "t_tmp0"
+                        }
+                    ]
+                ],
+                "async": false,
+                "name": "t_tmp0"
+            }
+        ]
+    ]
+}
