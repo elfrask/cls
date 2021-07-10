@@ -1,1 +1,1 @@
-{"data": [], "func": []}
+{"data": [{"name": "main", "arg": [{"name": "a", "def": [], "type": ["Any"]}, {"name": "b", "def": [], "type": ["Any"]}, {"name": "c", "def": [], "type": ["Any"]}], "return": "Any", "code": {"data": [], "func": []}, "tipo": "func-def", "visible": "public", "async": false, "i": 0}], "func": []}

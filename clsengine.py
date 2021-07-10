@@ -10,6 +10,10 @@ B="\b"
 COMILLAS="\""
 APOSTROFE="\'"
 
+class Any():
+    def __init__(self) -> None:
+        pass
+    pass
 
 tokens = {
     "ope":["+", "-", "/", "*", "!", "|", "@", "&", "%", "=", "?", "<", ">", "^", ":"],
@@ -21,7 +25,7 @@ nombre_reservados = {
     "visible":["export", "static", "private", "public", "global"],
     "nombre":[
         "func", "function", "class", "module", "with", "for", "if", "while", "define",
-        "from", "import", "global", "try", "def", "fub", "method",
+        "from", "import", "global", "try", "def", "fub", "method", "include"
         ]
 }
 class errores:
@@ -244,7 +248,7 @@ class appcls():
         self.submode:list = []
         self.funca:bool=True
         self.tydef = "Any"
-        self.namespace = "std"
+        self.namespace = "v"
 
         pass
     def set_api(self, api:object) -> None:
@@ -628,7 +632,7 @@ class appcls():
 
         return salida
     def estructuration(self, code:list, func:list=[]) -> list:
-
+        
         modo:str = "normal"
         salida:list = []
         def sub_group(data:list) -> list:
@@ -661,6 +665,12 @@ class appcls():
                 pass
             return fallo
 
+        def gen_exe(c):
+            return {
+                "tipo":"exe",
+                "exe":c,
+                "i":c[0]["i"]
+            }
         for i in code:
             visible="public"
             asyncrono= False
@@ -702,10 +712,10 @@ class appcls():
                     #print(i)
                     dim = find({"tipo":"ope", "char":"="}, i)
                     is_dim = dim[0]
-                    t_dim = dim[1]
+                    i_dim = dim[1]
                     #print("dim exacto", i[t_dim])
 
-                    if i[0]["name"] in ["func", "function", "def", "fub", "method"]:
+                    if i[0]["name"] in ["func", "function", "def", "fub", "method"]:#func-def
                         rt = self.tydef
                         arg = []
                         name = ""
@@ -746,8 +756,10 @@ class appcls():
                             "name":name,
                             "arg":arg,
                             "return":rt,
-                            "code":codigo,
-                            "func-a":funciones,
+                            "code":{
+                                "data":codigo,
+                                "func":funciones
+                            },
                             "tipo":"func-def",
                             "visible":visible,
                             "async":asyncrono,
@@ -756,7 +768,7 @@ class appcls():
                         salida.append([f_a])
 
                         pass
-                    elif i[0]["name"] == "if":
+                    elif i[0]["name"] == "if":#if-def
                         fallo = generar_error("error at try create a if, elif or else", i[0]["i"])
 
                         est:list = []
@@ -859,7 +871,7 @@ class appcls():
                         }])
 
                         pass
-                    elif i[0]["name"] == "while":
+                    elif i[0]["name"] == "while":#while-def
                         fallo = generar_error("error to build at while", i[0]["i"])
                         if len(i)==3:
                             if compara(["name", "()", "code"], i):
@@ -882,7 +894,7 @@ class appcls():
                             fallo()
                             pass
                         pass
-                    elif i[0]["name"] == "for":
+                    elif i[0]["name"] == "for":#for-def, for-each-def
                         fallo = generar_error("error to build at for", i[0]["i"])
                         if len(i)==4:
                             if compara(["name", {"tipo":"name", "name":"each"}, "()", "code"], i):
@@ -921,7 +933,7 @@ class appcls():
                             fallo()
                             pass
                         pass
-                    elif i[0]["name"] == "class":
+                    elif i[0]["name"] == "class":#class-def
                         fallo = generar_error("error at try create a class", i[0]["i"])
                         if len(i)==4:
                             if compara(["name", "name", "()", "code"], i):
@@ -933,7 +945,8 @@ class appcls():
                                     "extend":i[2]["data"],
                                     "code":codigo,
                                     "func-a":funciones_clases,
-                                    "i":i[0]["i"]
+                                    "i":i[0]["i"],
+                                    "visible":visible
                                 }
                                 salida.append([class_a])
                                 pass
@@ -944,7 +957,7 @@ class appcls():
                             fallo()
                             pass
                         pass
-                    elif i[0]["name"] == "module":
+                    elif i[0]["name"] == "module":#module-def
                         fallo = generar_error("error at try create a module", i[0]["i"])
                         if len(i)==4:
                             if compara(["name", "name", "code"], i):
@@ -955,7 +968,8 @@ class appcls():
                                     "name":i[1]["name"],
                                     "code":codigo,
                                     "func-a":funciones_clases,
-                                    "i":i[0]["i"]
+                                    "i":i[0]["i"],
+                                    "visible":visible
                                 }
                                 salida.append([class_a])
                                 pass
@@ -966,7 +980,7 @@ class appcls():
                             fallo()
                             pass
                         pass
-                    elif i[0]["name"] == "with":
+                    elif i[0]["name"] == "with":#with-def
                         fallo = generar_error("error at try structurated with sub values", i[0]["i"])
                         if len(i)==4:
                             if compara(["name", "name", "()", "code"], i):
@@ -981,7 +995,8 @@ class appcls():
                                     "value":ll["data"],
                                     "code":codigo,
                                     "func-a":funciones_clases,
-                                    "i":i[0]["i"]
+                                    "i":i[0]["i"],
+                                    "async":asyncrono
                                 }
                                 salida.append([with_a])
                                 pass
@@ -992,7 +1007,7 @@ class appcls():
                             fallo()
                             pass
                         pass
-                    elif i[0]["name"] == "from":
+                    elif i[0]["name"] == "from":#from-def
                         fallo = generar_error("error of syntax in from - import", i[0]["i"])
                         if len(i)==6:
                             if compara(["name", "value", {"tipo":"name", "name":"import"}, "name", {"tipo":"name", "name":"as"}, "name"], i):
@@ -1012,7 +1027,7 @@ class appcls():
                             fallo()
                             pass
                         pass
-                    elif i[0]["name"] == "import":
+                    elif i[0]["name"] == "import":#import-def
                         fallo = generar_error("error of syntax in import", i[0]["i"])
                         if len(i)==6:
                             if compara(["name", "value", {"tipo":"name", "name":"as"}, "name"], i):
@@ -1031,10 +1046,19 @@ class appcls():
                             fallo()
                             pass
                         pass
-                    elif i[0]["name"] == "define":
-                        generar_error("include is not sopport in this version of cls", i[0]["i"])()
+                    elif i[0]["name"] == "include":#inculde-def
+                        #generar_error("include is not sopport in this version of cls", i[0]["i"])()
+                        if i[1]["tipo"] != "value":
+                            generar_error("you must write the name of package in a String (include '[lib/pkg].scls')", i[0]["i"])()
+                        
+                        include_A = {
+                            "tipo":"include-def",
+                            "i":i[0]["i"],
+                            "include":eval(i[1]["value"])
+                        }
+                        salida.append([include_A])
                         pass
-                    elif i[0]["name"] == "try":
+                    elif i[0]["name"] == "try":#try-def
                         if len(i)==2:
                             agregar = [
                                 gen_char.names("error", i[0]["i"]),
@@ -1069,7 +1093,7 @@ class appcls():
 
                             pass
                         pass
-                    elif i[0]["name"] == "return":
+                    elif i[0]["name"] == "return":#rt-def
                         if len(i)>1:
                             return_a = {
                                 "tipo":"rt-def",
@@ -1082,82 +1106,120 @@ class appcls():
                             generar_error("error of syntax in return", i[0]["i"])
                             pass
                         pass
-                    elif i[0]["name"] == "var":
-                        pass
-                    elif i[0]["name"] == "if":
-                        pass
-                    elif is_dim:
+                    elif is_dim:#var-eval
                         #print("es un dim")
+                        if not len(i[i_dim+1:])>0:
+                            generar_error("Error Syntax",i[i_dim]["i"])()
+                        define_var = {
+                            "tipo":"var-eval",
+                            "var":self.estructuration_one(i[0:i_dim], func),
+                            "eval":self.estructuration_one(i[i_dim+1:], func),
+                            "visible":visible
+                        }
+
+                        salida.append([define_var])
                         pass
-                    else:
-                        salida.append(self.estructuration_one(i, func))
-
-                    #nombre = i[0]["name"]
-
+                    elif i[0]["name"] == "#modulo":
+                        pass
+                    else:#exe
+                        salida.append(gen_exe(self.estructuration_one(i, func)))
+                    if isinstance(salida[-1], list):
+                        a=salida.pop()
+                        salida.append(a[0])
                     pass
-                else:
-                    salida.append(self.estructuration_one(i, func))
+                else:#exe
+                    salida.append(gen_exe(self.estructuration_one(i, func)))
                 pass
-            else:
-                salida.append(self.estructuration_one(i, func))
+            else:#exe
+                salida.append(gen_exe(self.estructuration_one(i, func)))
             pass
 
         
         return salida
     def estructuration_one(self, code:list, func:list=[]) -> list:
         salida =[]
-        e = 0
 
+        #print("llego")
         def sub_group(data:list) -> list:
             salida_out=  []
             out = []
-            #print("llego")
+            if data["tipo"] in ["()", "[]"]:
+                for i in data["complet"]:
+                    salida_out.append(
+                        self.estructuration_one(i, func)
+                    )
+                    pass
 
-            for i in data["complet"]:
-                salida_out.append(
-                    self.estructuration_one(i, func)
-                )
+                if len(salida_out)>0:
+                    out=salida_out[0]
+                
+                return {
+                    "tipo":data["tipo"],
+                    "complet":salida_out,
+                    "data":out,
+                    "i":data["i"]
+                }
+            elif data["tipo"] in ["code"]:
+                
+                for i in data["data"]:
+                    salida_out.append(
+                        self.estructuration_one(i, func)
+                    )
+                    pass
+
+                if len(salida_out)>0:
+                    out=salida_out[0]
+                
+                return {
+                    "tipo":data["tipo"],
+                    "data":salida_out,
+                    "one":out,
+                    "i":data["i"]
+                }
+
                 pass
-
-            if len(salida_out)>0:
-                out=salida_out[0]
+        
+        #e = 0
+        #print("llamada")
+        for i in code:#while(len(code)>e):
+            #print("code", i)
             
-            return {
-                "tipo":data["tipo"],
-                "complet":salida_out,
-                "data":out,
-                "i":data["i"]
-            }
-        
-        
 
-        while(len(code)>e):
-            #print(e)
-            i = code[e]
-
-            if i["tipo"] == "()":
+            if i["tipo"] == "code":
                 is_func:bool = False
                 asyncrono:bool = False
                 arg:list = []
                 codigo:list = []
                 devolver:str =self.tydef
-                if len(code[e:e+3])>= 3:
-                    if compara(["()", {"tipo":"ope", "char":"->"}, "code"], code[e:]):
-                        arg=code[e]
-                        codigo = code[e+2]
-                        e+=2
+                #print(salida[-2:])
+                m=salida[-3:]
+                n=salida[-2:]
+
+                if len(n)==2:
+                    #print("funcion")
+                    #print(n)
+                    
+                    if compara(["()", {"tipo":"ope", "char":"->"}], n):
+                        codigo = i
+                        salida.pop()
+                        arg= salida.pop()
+                        #e+=2
                         is_func=True
+                        #print("funcion")
                         pass
                     else:
                         salida.append(i)
                         continue
                     pass
-                if len(code[e:e+4])>= 4:
-                    if compara(["()", {"tipo":"ope", "char":"->"}, "name", "code"], code[e:]):
-                        arg=code[e]
-                        codigo = code[e+3]
-                        devolver = code[e+2]
-                        e+=3
+                if len(m)==3:
+                    m=salida[-3:]
+                    
+                    if compara(["()", {"tipo":"ope", "char":"->"}, "name"], m):
+                        devolver = salida.pop()["name"]
+                        salida.pop()
+                        arg=salida.pop()
+                        codigo = i
+                        #e+=3
                         is_func=True
 
                         pass
@@ -1168,20 +1230,24 @@ class appcls():
                 
                 if is_func:
                     if len(salida)>0:
-                        if salida[0]["tipo"]=="name":
-                            if salida[0]["name"] in ["sync", "async"]:
-                                asyncrono = salida[0]["name"] == "async"
+                        if salida[-1]["tipo"]=="name":
+                            if salida[-1]["name"] in ["sync", "async"]:
+                                asyncrono = salida[-1]["name"] == "async"
                                 salida.pop()
                                 pass
                             pass
                         pass
                     funciones = []
+                    #print("salida")
                     f_A = {
                         "tipo":"func-a",
                         "arg":self.argparse(arg["data"]),
-                        "code":self.estructuration(codigo["data"], funciones),
+                        "code":{
+                            "data":self.estructuration(codigo["data"], funciones),
+                            "func":funciones
+                        },
                         "return":devolver,
-                        "func-a":funciones,
+                        #"func-a":funciones,
                         "async":asyncrono,
                         "name":"t_tmp" + str(len(func))
                     }
@@ -1196,7 +1262,7 @@ class appcls():
                     )
                     pass
                 pass
-            elif i["tipo"]=="[]":
+            elif i["tipo"] in ["[]", "()"]:
                 salida.append(
                     sub_group(i)
                 )
@@ -1205,10 +1271,142 @@ class appcls():
                 salida.append(i)
                 pass
 
-            e+=1; 
+            #e=1+e; 
+            #print("llego")
             
             pass
 
+        return salida
+    def generator(self, c, modo="normal") -> list:
+        
+        salida = []
+        code = []
+        func = []
+        modo = "normal"
+
+        def p_error(code, i) -> list:
+            
+            return [
+                "try:",
+                code,
+                "except e:",
+                [f"app.error(e, 'ErrorExecute', {i})"]
+            ]
+        def print_arg(args) ->list:
+            s_out = []
+            it = -1
+            for i in args:
+                it+=1
+                #print(i)
+                arg=i["name"]
+                sta=i["type"][0]
+                col = self.generator_one(i["def"], "func")
+                if col == "": col = "None"
+                defa=(col)
+
+                s_out+=[
+                    f"try:",
+                    f"    {self.namespace}_{arg} = arg[{it}]",
+                    f"except:",
+                    f"    {self.namespace}_{arg} = ({defa})",
+                    f"app.dim({self.namespace}_{arg}, {self.namespace}_{sta})"
+                ]
+                pass
+            
+            return s_out
+
+        if isinstance(c, dict):
+            code = c["data"]
+            func = c["func"]
+            pass
+        elif isinstance(c, list):
+            code = c
+            func = []
+            pass
+        else:
+            print("nada...")
+            return []
+
+        for i in func:
+            nombre = i[0]
+            fun = i[1]
+
+            asy=""
+            if fun["async"]: asy = "async "
+            preparo = [
+                f"{asy}def {nombre}(*arg):",
+                f"    f_rt = ({self.namespace}_{fun['return']})",
+                print_arg(fun["arg"]) +
+                self.generator(fun["code"], "func")
+            ]
+            salida+=preparo
+            pass
+        
+        for i in code:
+            if (i["tipo"] == "func-def") and (modo in ["normal", "func-imp", "func"]):
+                asy=""
+                fun = i
+                if fun["async"]: asy = "async "
+                preparo = [
+                    f"{asy}def {self.namespace}_{fun['name']}(*arg):",
+                    f"    f_rt = ({self.namespace}_{fun['return']})",
+                    print_arg(fun["arg"]) +
+                    self.generator(fun["code"], "func")
+                ]
+                salida+=preparo
+                pass
+            elif (i["tipo"] == "exe") and (modo in ["normal", "func-imp", "func"]):
+                salida += p_error(
+                    self.generator_one(i["exe"], modo),
+                    i["i"]
+                )
+                pass
+            pass
+
+        return salida
+    def jump(self, code:list=[], i=0) -> str:
+        salida = ""
+        #print(code)
+        for x in code:
+            if isinstance(x, str):
+                salida+= ("    "*i)+x+N
+                pass
+            elif isinstance(x, list):
+                salida+= self.jump(x, i+1)+N
+                pass
+            
+            pass
+        
+        return salida
+    def generator_one(self, line:list, modo="normal") -> str:
+        salida = ""
+        for i in line:
+
+            if modo in ["func", "func-imp", "class", "module", "normal"]:
+
+                if i["tipo"]=="name":
+                    if i["mod"]:
+                        salida+= f" {i['name']} "
+                        pass
+                    elif i["name"] in ["or", "in", "and", "is"]:
+                        salida+= f" {i['name']} "
+                        pass
+                    else:
+                        salida+= f" {self.namespace}_{i['name']} "
+                        pass
+                    pass
+                elif i["tipo"] == "sim":
+                    salida += f" {i['char']} "
+                    pass
+                elif i["tipo"] == "ope":
+                    if i["char"] in ["+", "-", "*", "/"]:
+                        salida += f" {i['char']} "
+                    pass
+                
+
+                pass
+            
+            pass
         return salida
     def error(self, msg:(list[str]), type:str, i:int, before:str="") -> None:
         lin0 = self.codigo[0:i].count(N)
@@ -1229,4 +1427,4 @@ class appcls():
         raise ValueError(before+N+f" error: {type}:{msg}"+N+ salida + cursor)
     pass
 
-#crea el dim despues de hacer la pagina de tu padre
+#debes de continuar con las clases y arreglas unas cosas

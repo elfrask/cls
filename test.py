@@ -42,15 +42,40 @@
             "print":printf
         }
     )"""
+"""class classcls:
+        def __dict__():
+            pass
+        def __init__(self, obj:any) -> None:
+            self.obj:any = obj
+            pass
+        def __call__(self, *args: any) -> any:
+            class instance(self.obj):
+                def __dic__(self):
+                    pass
+                def __getitem__(self, z):
+                    salida = None
+                    try:
+                        salida = eval("self."+str(z))
+                        pass
+                    except:
+                        pass
 
-class classcls:
-    def __dict__():
+                    return salida
+                def __setitem__(self, z, x):
+                    try:
+                        exec(f"self.{z} = tmp_i_m", {"tmp_i_m":x})
+                        pass
+                    except:
+                        pass
+                    pass
+                pass
+
+            return instance(*args)
         pass
-    def __init__(self, obj:any) -> None:
-        self.obj:any = obj
-        pass
-    def __call__(self, *args: any) -> any:
-        class instance(self.obj):
+    def toclass(obj:any) -> any:
+
+        class instance(obj):
+            real:any = obj
             def __dic__(self):
                 pass
             def __getitem__(self, z):
@@ -59,53 +84,34 @@ class classcls:
                     salida = eval("self."+str(z))
                     pass
                 except:
+                    try:
+                        salida = self.real(self)[z]
+                    except:
+                        pass
                     pass
 
                 return salida
             def __setitem__(self, z, x):
                 try:
-                    exec(f"self.{z} = tmp_i_m", {"tmp_i_m":x})
+                    exec(f"tmp_self.{z} = tmp_i_m", {"tmp_i_m":x, "tmp_self":self})
                     pass
                 except:
                     pass
                 pass
             pass
+        
+        return instance
 
-        return instance(*args)
-    pass
-def toclass(obj:any) -> any:
+    obj = toclass(str)
+    obje = obj("Holas")
+    obje["hola"] = "Hola mundo! :3" 
+    print(obje["hola"])
+    print(obje.hola)
+    print(obje[0])"""
 
-    class instance(obj):
-        real:any = obj
-        def __dic__(self):
-            pass
-        def __getitem__(self, z):
-            salida = None
-            try:
-                salida = eval("self."+str(z))
-                pass
-            except:
-                try:
-                    salida = self.real(self)[z]
-                except:
-                    pass
-                pass
-
-            return salida
-        def __setitem__(self, z, x):
-            try:
-                exec(f"tmp_self.{z} = tmp_i_m", {"tmp_i_m":x, "tmp_self":self})
-                pass
-            except:
-                pass
-            pass
-        pass
+def main():
+    d=2
     
-    return instance
-
-obj = toclass(str)
-obje = obj("Holas")
-obje["hola"] = "Hola mundo! :3" 
-print(obje["hola"])
-print(obje.hola)
-print(obje[0])
+    pass
+main()
+print(main.__code__.co_code)

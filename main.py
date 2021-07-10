@@ -16,6 +16,9 @@ def main():
     parseado:list = app.parselex(crude)
     f:list = []
     estructurado:list = app.estructuration(parseado, f)
+    generado:dict = app.generator(estructurado)
+    listo:str = app.jump(generado, 0)
+    
 
     open("./cache/log.json", "w").write(
         json.dumps(
@@ -24,6 +27,9 @@ def main():
                 "func":f
             }
         )
+    )
+    open("./cache/final.py", "w").write(
+        listo
     )
     input("test run...")
 

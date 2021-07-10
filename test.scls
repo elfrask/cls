@@ -1,1 +1,3 @@
-hola = "Hola mundo"
+function main(a,b,c) {
+    
+};
