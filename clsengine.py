@@ -1355,17 +1355,16 @@ class appcls():
         return None
     def dim(self, v, tipo) -> any:
         #print(v, tipo)
-        if tipo == AnyObject:
+        if tipo == ObjectCls.AnyObject:
             return v
-        elif tipo == void:
+        elif tipo == ObjectCls.void:
             return v
         if isinstance(v, tipo):
             return v
-        else:
-            
+        else:   
             self.catch(f"error the object '{que_tipo(v)}' can't set in a var of type '{tipo.__name__}'", errores.ErrorTyping)
         
-        return salida
+        return v
     def generator(self, c, modo="normal") -> list:
         
         salida = []
