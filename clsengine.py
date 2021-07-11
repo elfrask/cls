@@ -1,4 +1,4 @@
-from copy import copy as c
+from copy import Error, copy as c
 import typing
 
 uid:int = 0
@@ -18,7 +18,12 @@ class Any():
 tokens = {
     "ope":["+", "-", "/", "*", "!", "|", "@", "&", "%", "=", "?", "<", ">", "^", ":"],
     "sim":["{", "}", "(", ")", "[", "]", ","],
-    "cond":["==", "<", ">", "!=", "<=", ">=", "!"]
+    "cond":["==", "<", ">", "!=", "<=", ">=", "!"],
+    "convert":{
+        "condi":{"&":"and", "|":"or", "!":"not"},
+        "expre-eval":{"++":"+1", "--":"-1"},
+        "expre-exec":{"++":"+=1", "--":"-=1"},
+    }
 }
 
 nombre_reservados = {
@@ -26,12 +31,15 @@ nombre_reservados = {
     "nombre":[
         "func", "function", "class", "module", "with", "for", "if", "while", "define",
         "from", "import", "global", "try", "def", "fub", "method", "include"
-        ]
+        ],
+    "codi":["or", "in", "and", "is"],
+    "bucle":["break", "continue"]
 }
 class errores:
     ErrorSyntax:str="ErrorSyntax"
     ErrorSemant:str="ErrorSemant"
     ErrorAritmetic:str="ErrorAritmetic"
+    ErrorTyping:str="ErrorTyping"
     pass
 
 def que_tipo(obj:any)->str:
@@ -39,13 +47,13 @@ def que_tipo(obj:any)->str:
 def tipo_valor(v:str) -> list[str, str]:
     tipo = "name"
     try:
-        float(v)
-        tipo="float"
+        int(v)
+        tipo="int"
         pass
     except:
         try:
-            int(v)
-            tipo="int"
+            float(v)
+            tipo="float"
             pass
         except:
             tipo = "name"
@@ -143,7 +151,9 @@ def tablines(data:str, i:int) -> str:
     return salida
 
 class gen_char:
-    def names(name:str, i:int, mod:bool=False) -> dict["name":str, "i":int, "tipo":str, "notmod":bool]:
+    def names(name:str, i:int, mod:bool=False) -> (#name
+        dict["name":str, "i":int, "tipo":str, "notmod":bool]
+        ):
 
         return {
             "tipo":"name",
@@ -151,7 +161,7 @@ class gen_char:
             "i": i,
             "notmod":mod
         }
-    def val(value:str, type:str, i:int, lim:str="'", byte:str="") -> (
+    def val(value:str, type:str, i:int, lim:str="'", byte:str="") -> (#value
         dict["value":str, "tipo":str, "i":int, "l":str, "type":str, "byte":str]
         ):
 
@@ -163,7 +173,7 @@ class gen_char:
             "type":type,
             "byte":byte
         }
-    def ope(char:str, i:int, ope:bool =False) -> (
+    def ope(char:str, i:int, ope:bool =False) -> (#ope
         dict["char":str, "i":int, "ope":bool, "tipo":str]
         ):
 
@@ -173,7 +183,7 @@ class gen_char:
             "ope":ope,
             "tipo":"ope"
         }
-    def sim(char:str, i:int) -> (
+    def sim(char:str, i:int) -> (#sim
         dict["char":str, "i":int, "tipo":str]
         ):
 
@@ -185,6 +195,7 @@ class gen_char:
 
 derivados = True
 key_true = True
+
 
 class gen_value:
     def lista(data:list=[], i:int=0)->(
@@ -233,7 +244,20 @@ class gen_value:
 class lista(list):
     def __dict__(): pass
     pass
+class ObjectCls:
+    class AnyObject:pass
+    class void:pass
+    class Array(list):pass
+    class Module():
+        def __dict__():
+            pass
+        pass
 
+
+class clsapi:
+    def input(msg:str=""):
+        return
+    pass
 
 class appcls():
     def __init__(self, id:int = uid) -> None:
@@ -249,8 +273,42 @@ class appcls():
         self.funca:bool=True
         self.tydef = "Any"
         self.namespace = "v"
+        self.index=0
+        self.values={
+            "str":str,
+            "int":int,
+            "float":float
+        }
+        self.api = {
+            "print":print,
+            "str":str,
+            "String":str,
+            "Any":ObjectCls.AnyObject,
+            "any":ObjectCls.AnyObject,
+            "int":int,
+            "float":float,
+            "void":ObjectCls.void,
+            "Array":ObjectCls.Array,
+            "array":ObjectCls.Array,
+            "module":ObjectCls.Module,
+            "Module":ObjectCls.Module,
+            "function":que_tipo.__class__,
+            "Function":que_tipo.__class__,
 
+
+            "true":True,
+            "false":False,            
+            "True":True,
+            "False":False,
+            "on":True,
+            "off":False,
+        }
+        
         pass
+    def exception(self, msg:str=""): # in exec
+        raise Exception(msg)
+    def catch(self, msg:str="", e:str="ErrorCatch"): # in exec
+        self.error(msg, e, self.index)
     def set_api(self, api:object) -> None:
 
         pass
@@ -292,7 +350,7 @@ class appcls():
                         if len(linea)>0:
                             xx = linea[len(linea)-1]
                             if xx["tipo"]=="ope":
-                                if (not (xx["char"] in ["=", ":", "<", ">"])) or (c in ["<", ">"]):
+                                if (not (xx["char"] in ["=", ":", "<", ">"])) or (c in ["<", ">", "="]):
                                     linea.pop()
                                     linea.append(
                                         gen_char.ope(xx["char"]+c, 
@@ -896,12 +954,14 @@ class appcls():
                         pass
                     elif i[0]["name"] == "for":#for-def, for-each-def
                         fallo = generar_error("error to build at for", i[0]["i"])
-                        if len(i)==4:
-                            if compara(["name", {"tipo":"name", "name":"each"}, "()", "code"], i):
+                        if len(i)==5:
+                            if compara(["name", {"tipo":"name", "name":"each"}, "name", "()", "code"], i):
                                 for_a = {
                                     "tipo":"for-each-def",
-                                    "code":self.estructuration(i[3]["data"], func),
-                                    "cond":sub_group(i[2])
+                                    "code":self.estructuration(i[4]["data"], func),
+                                    "cond":sub_group(i[3])["data"],
+                                    "i":i[0]["i"],
+                                    "var":i[2]["name"]
                                 }
                                 salida.append([for_a])
                                 pass
@@ -938,13 +998,13 @@ class appcls():
                         if len(i)==4:
                             if compara(["name", "name", "()", "code"], i):
                                 funciones_clases = []
-                                codigo = self.estructuration(i[3]["data"], funciones_clases)
+                                codigo = self.estructuration(i[3]["data"], func)
                                 class_a = {
                                     "tipo":"class-def",
                                     "name":i[1]["name"],
-                                    "extend":i[2]["data"],
+                                    "extend":self.argparse(i[2]["data"]),
                                     "code":codigo,
-                                    "func-a":funciones_clases,
+                                    #"func-a":funciones_clases,
                                     "i":i[0]["i"],
                                     "visible":visible
                                 }
@@ -966,8 +1026,10 @@ class appcls():
                                 class_a = {
                                     "tipo":"module-def",
                                     "name":i[1]["name"],
-                                    "code":codigo,
-                                    "func-a":funciones_clases,
+                                    "code":{
+                                        "data":codigo,
+                                        "func":funciones_clases
+                                    },
                                     "i":i[0]["i"],
                                     "visible":visible
                                 }
@@ -985,7 +1047,7 @@ class appcls():
                         if len(i)==4:
                             if compara(["name", "name", "()", "code"], i):
                                 funciones_clases = []
-                                codigo = self.estructuration(i[3]["data"], funciones_clases)
+                                codigo = self.estructuration(i[3]["data"], func)
                                 ll = sub_group(i[2])
                                 if ll["data"]==[]:
                                     fallo()
@@ -994,7 +1056,7 @@ class appcls():
                                     "name":i[1]["name"],
                                     "value":ll["data"],
                                     "code":codigo,
-                                    "func-a":funciones_clases,
+                                    #"func-a":funciones_clases,
                                     "i":i[0]["i"],
                                     "async":asyncrono
                                 }
@@ -1277,6 +1339,33 @@ class appcls():
             pass
 
         return salida
+    def exec(self, code:str="") -> any:
+
+        values = {
+            "app":self,
+            "MD":ObjectCls.Module
+        }
+
+        for i in self.api:
+            values[self.namespace + "_" + i] = self.api[i]
+            pass
+        
+        exec(code, values)
+
+        return None
+    def dim(self, v, tipo) -> any:
+        #print(v, tipo)
+        if tipo == AnyObject:
+            return v
+        elif tipo == void:
+            return v
+        if isinstance(v, tipo):
+            return v
+        else:
+            
+            self.catch(f"error the object '{que_tipo(v)}' can't set in a var of type '{tipo.__name__}'", errores.ErrorTyping)
+        
+        return salida
     def generator(self, c, modo="normal") -> list:
         
         salida = []
@@ -1287,9 +1376,10 @@ class appcls():
         def p_error(code, i) -> list:
             
             return [
+                "app.index = " + str(i),
                 "try:",
                 code,
-                "except e:",
+                "except Exception as e:",
                 [f"app.error(e, 'ErrorExecute', {i})"]
             ]
         def print_arg(args) ->list:
@@ -1324,9 +1414,9 @@ class appcls():
             func = []
             pass
         else:
-            print("nada...")
+            #print("nada...")
             return []
-
+        #print(isinstance(c, list))
         for i in func:
             nombre = i[0]
             fun = i[1]
@@ -1337,7 +1427,8 @@ class appcls():
                 f"{asy}def {nombre}(*arg):",
                 f"    f_rt = ({self.namespace}_{fun['return']})",
                 print_arg(fun["arg"]) +
-                self.generator(fun["code"], "func")
+                self.generator(fun["code"], "func"),
+                "    pass"
             ]
             salida+=preparo
             pass
@@ -1351,16 +1442,102 @@ class appcls():
                     f"{asy}def {self.namespace}_{fun['name']}(*arg):",
                     f"    f_rt = ({self.namespace}_{fun['return']})",
                     print_arg(fun["arg"]) +
-                    self.generator(fun["code"], "func")
+                    self.generator(fun["code"], "func"),
+                    "    pass"
                 ]
                 salida+=preparo
                 pass
             elif (i["tipo"] == "exe") and (modo in ["normal", "func-imp", "func"]):
+                le = self.generator_one(i["exe"], modo, "exec")
                 salida += p_error(
-                    self.generator_one(i["exe"], modo),
+                    [le],
                     i["i"]
                 )
                 pass
+            elif (i["tipo"] == "if-def") and (modo in ["normal", "func-imp", "func"]):
+                if_out=[]
+                #tipo, cond, code
+                for x in i["lista"]: 
+                    if x["tipo"] in ["if", "elif"]:
+                        cond = self.generator_one(x["cond"], modo)
+                        codigo = self.generator(x["code"], modo)
+                        if_out += [
+                            f"{x['tipo']} ({cond}):",
+                            codigo,
+                            "    pass"
+                        ]
+                    else:
+                        codigo = self.generator(x["code"], modo)
+                        if_out += [
+                            f"else:",
+                            codigo,
+                            "    pass"
+                        ]
+                        break
+                    pass
+
+                salida += p_error(if_out, i["i"])
+
+                pass
+            elif (i["tipo"] == "while-def") and (modo in ["normal", "func-imp", "func"]):
+                if_out=[]
+                #tipo, cond, code
+                x=i
+                cond = self.generator_one(x["cond"], modo)
+                codigo = self.generator(x["code"], modo)
+                if_out += [
+                    f"while ({cond}):",
+                    codigo,
+                    "    pass"
+                ]
+                
+
+                salida += p_error(if_out, i["i"])
+
+                pass
+            elif (i["tipo"] == "for-each-def") and (modo in ["normal", "func-imp", "func"]):
+                if_out=[]
+                #tipo, cond, code
+                x=i
+                cond = self.generator_one(x["cond"], modo)
+                codigo = self.generator(x["code"], modo)
+                if_out += [
+                    f"for {self.namespace}_{x['var']} in ({cond}):",
+                        codigo,
+                    "    pass"
+                ]
+                
+
+                salida += p_error(if_out, i["i"])
+
+                pass
+            elif (i["tipo"] == "class-def") and (modo in ["normal", "func-imp", "func", "class"]):
+                fun = i
+                arg= []
+                for x in fun["extend"]:
+                    arg.append(self.namespace+"_"+x["arg"]) 
+                preparo = [
+                    f"class {self.namespace}_{fun['name']}({','.join(arg)}):",
+                        self.generator(fun["code"], "class"),
+                     "    pass"
+                ]
+                salida+=preparo
+                pass
+            elif (i["tipo"] == "module-def") and (modo in ["normal", "func-imp", "func", "class"]):
+                fun = i
+                arg= []
+                for x in fun["arg"]:
+                    arg.append(self.namespace+"_"+x["arg"]) 
+                preparo = [
+                    f"def {self.namespace}_{fun['name']}(me):",
+                        self.generator(fun["code"], "class"),
+                     "    return me",
+                    f"{self.namespace}_{fun['name']} = ({self.namespace}_{fun['name']})(MD())"
+                ]
+                salida+=preparo
+                pass
+            
+            
             pass
 
         return salida
@@ -1378,17 +1555,117 @@ class appcls():
             pass
         
         return salida
-    def generator_one(self, line:list, modo="normal") -> str:
+    def print_value(self, v):
+        salida = f"app.values['{v['type']}']({v['value']})"
+        return salida
+    def generator_one(self, line:list, modo:str="normal", modi:str ="eval", key:bool=False) -> str:
         salida = ""
-        for i in line:
+        last = {"tipo":"none"}
+        iskey= False
+        
 
+        for i in line:
+            #print(i)
+            def fallo(msg:str="", x:int=False):
+                if x == False:
+                    x = i["i"]
+                if msg=="": msg = "Error Syntax"
+                #print("Fallo", x)
+                self.error(msg, errores.ErrorSyntax, x)
+            if True:
+                if i["tipo"] == last["tipo"]:
+                    if i["tipo"] == "name":
+                        if (i["name"] in nombre_reservados["codi"]) or (last["name"] in nombre_reservados["codi"]):
+                            last = i
+                            pass
+                        else:
+                            fallo()
+                            pass
+                        pass
+                    elif i["tipo"] in ["[]", "()"]:
+                        if last["tipo"] in ["name", "()", "[]"]:
+                            last = i
+                            pass
+                        elif last["tipo"] == "value":
+                            if last["type"] == "str":
+                                last=i
+                                pass
+                            else:
+                                fallo()
+                                pass
+                            pass
+                        else:
+                            fallo()
+                            pass
+                        pass
+                    elif i["tipo"] in ["ope"]:
+                        if (last["char"] in [":"]) and (not i["tipo"] in [":"]):
+                            pass
+                        else:
+                            fallo()
+                        pass
+                    else:
+                        fallo()
+
+                    pass
+                else:
+                    if i["tipo"] in ["name", "value"]:
+                        if last["tipo"] in ["[]", "()", "code", "name", "value"]:
+                            if i["tipo"] == "name":
+                                if i["name"][0]==".":
+                                    pass
+                                else:
+                                    fallo()
+                                pass
+                            else:
+                                fallo()
+                            pass
+                        else:
+                            pass
+                        pass
+                    elif i["tipo"] in ["code"]:
+                        if last["tipo"] in ["name", "[]", "value", "()"]:
+                            fallo()
+                            pass
+                        else:
+                            pass
+                        pass
+                    else:
+                        pass
+                    pass
+                if key:
+                    if last["tipo"] in ["sim", "none"]:
+                        if last.get("char", ",") == ",":
+                            iskey = True
+                            pass
+                        pass
+                last = i
+                pass
+            
             if modo in ["func", "func-imp", "class", "module", "normal"]:
 
                 if i["tipo"]=="name":
-                    if i["mod"]:
+                    if iskey:
+                        t = {"tipo":"value", "value":f"'{i['name']}'", "type":"str", "i":i["i"]}
+                        salida+= f" {self.print_value(t)} "
+                        pass
+                    elif i["notmod"]:
                         salida+= f" {i['name']} "
                         pass
-                    elif i["name"] in ["or", "in", "and", "is"]:
+                    elif i["name"] in nombre_reservados["codi"]:
+                        salida+= f" {i['name']} "
+                        pass                  
+                    elif (i["name"] in nombre_reservados["bucle"]):
+                        if modi == "exec":
+                            if salida == "":
+                                salida+= f" {i['name']} "
+                            else:
+                                fallo(f"Error Syntax with the token '{i['name']}'")
+                            pass
+                        else:
+                            fallo(f"the token '{i['name']}' is invalid in this case")
+                        pass
+                    elif i["name"][0]==".":
                         salida+= f" {i['name']} "
                         pass
                     else:
@@ -1399,14 +1676,42 @@ class appcls():
                     salida += f" {i['char']} "
                     pass
                 elif i["tipo"] == "ope":
-                    if i["char"] in ["+", "-", "*", "/"]:
+                    if i["char"] in ["+", "-", "*", "/", "**", "%"]:
                         salida += f" {i['char']} "
+                    elif i["char"] in tokens["convert"]["condi"]:
+                        salida += f" {tokens['convert']['condi'][i['char']]} "
+                        pass
+                    elif i["char"] in tokens["convert"]["expre-"+str(modi)]:
+                        salida += f" {tokens['convert']['expre-'+str(modi)][i['char']]} "
+                        pass
+                    elif i["char"] in tokens["cond"]:
+                        salida += f" {i['char']} "
+                    
+                    pass
+                elif i["tipo"] == "()":
+                    salida+= f" ({self.generator_one(i['data'], modo)}) "
+                    pass
+                elif i["tipo"] == "[]":
+                    salida+= f" [{self.generator_one(i['data'], modo)}] "
+                    pass
+                elif i["tipo"] == "code":
+                    salida+= f" {'{'+self.generator_one(i['one'], modo, 'eval', True)+'}'}] "
+                    pass
+                elif i["tipo"] == "value":
+                    salida+= f" {self.print_value(i)} "
                     pass
                 
-
                 pass
             
             pass
+        while salida[:1]==" ":
+            salida = salida[1:]
+            pass
+        while salida[-1:]==" ":
+            salida = salida[:-1]
+            pass
+        
+            
         return salida
     def error(self, msg:(list[str]), type:str, i:int, before:str="") -> None:
         lin0 = self.codigo[0:i].count(N)
@@ -1424,7 +1729,7 @@ class appcls():
 
         salida = f"   script: '{self.origin}' line {lin0+1} column {columna}" + N + f"      {lin2}" + N
         cursor = "      " + repeat(" ", columna) + "^"
-        raise ValueError(before+N+f" error: {type}:{msg}"+N+ salida + cursor)
+        raise Exception(before+N+f" error: {type}:{msg}"+N+ salida + cursor)
     pass
 
-#debes de continuar con las clases y arreglas unas cosas
+#debes de crear los modulos y construir el resto de funcionalidades, PyCLS casi terminado

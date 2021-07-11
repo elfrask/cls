@@ -1,0 +1,186 @@
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vinestar</title>
+    <script src="/js/jquery.js"></script>
+    <script src="/js/html2canvas.js"></script>
+    <script src="/js/base.js"></script>
+    <link rel="shortcut icon" href="/img/icon.png" type="image/x-icon">
+    <link rel="stylesheet" href="/css/base.css">
+    <link rel="stylesheet" id="__theme__" href="/css/theme/dark.css">
+    <script>
+        
+    </script>
+</head>
+<body>
+    <div id="__notify__">
+        <div style="
+        width: 90%;
+        height: 100%; 
+        border-radius: 10px; 
+        margin: auto;
+        box-shadow: 0px 0px 10px white;
+        " class="color-1">
+            <div id="__not_title__">
+                <span class="text-color-red" style="font-weight: bold;" id="__not_close__">X</span>
+                <span id="__not_tit__" class="text-color-blue">Titulo</span>
+            </div>
+            <hr>
+            <div id="__not_text__"  class="text-color-green">
+                Texto al Mostrar
+            </div>
+        </div>
+    </div>
+    <div id="__promt__">
+        <div id="__promt_box__" class="shadown-panel-0 color-1">
+            <h2 class="text-color-red" style="font-variant: bold; cursor: pointer;" 
+            onclick="document.getElementById('__promt__').style.top='-100%'">X</h2>
+            <br><br>
+            <hr>
+            <div id="__promt_question__">
+
+            </div>
+            <hr>
+            <br>
+            <div>
+                <center>
+                    <div class="button-2 text-C text-color-green" style="width: 80%;" 
+                style="font-size: 20px; " onclick="Api.input.event.then()">
+                        Aceptar
+                    </div>
+                </center>
+                <center>
+                    <div class="button-2 text-C text-color-red" style="width: 80%;" 
+                style="font-size: 20px; " onclick="Api.input.event.catch()">
+                        Cancelar
+                    </div>
+                </center>
+            </div>
+
+        </div>
+    </div>
+    <div id="__app__">
+        <div id="__up_d__"></div>
+        <div id="__up__" class="bg-head" >
+            <center>
+    <div id="__u_start">
+        <a href="/">
+            <div style="float: left; background-image: url(/img/icon.png); height: 50px; width: 50px;
+            background-size: cover; background-repeat: round;" id="__ico__">
+            </div>
+            <h1 style="color: dodgerblue; float: left;">Vinestar</h1>
+        </a>
+        
+    </div>
+    <div id="__u_socio"></div>
+    <div id="__u_user">
+        <div class="blog-page">
+            <div class="up-button" onclick="Api.control.feed()"><div mode="img" data="50x50:/img/icons/news.png"></div></div>
+            <div class="up-button" onclick="Api.control.groups()"><div mode="img" data="50x50:/img/icons/group.png"></div></div>
+            <div class="up-button" onclick="Api.control.events()"><div mode="img" data="50x50:/img/icons/events.png"></div></div>
+            <div class="up-button" onclick="Api.control.functions()"><div mode="img" data="50x50:/img/icons/func.png"></div></div>
+            <div class="up-button" onclick="Api.control.profile()"><div mode="img" data="50x50:/img/icons/profile.png"></div></div>
+        </div>
+    </div>
+    <script>
+        (() => {
+            function it(path, url) {
+                let ur=(url+"");
+                let pat=(path+"");
+                return(pat.substr(0, ur.length) === ur);
+            };
+            let socios="/work"
+            let urs = ["/", "/register", "/register-socio", "/register-socio/", "/login", "/register/", "/login/"];
+            let path = document.location.pathname;
+            if (!urs.includes(path)) document.getElementById("__u_start").remove()
+            if (!(it(path, socios))) document.getElementById("__u_socio").remove()
+            if ( ( (it(path, socios)) | (path=="/") ) ) document.getElementById("__u_user").remove()
+            if ( urs.includes(path) ) try{document.getElementById("__u_user").remove()}catch(e){};
+
+        })();
+    </script>
+</center>
+        </div>
+        <center>
+            <div id="__body__">
+                <div class="start"></div>
+<div class="sub-page" style="padding-top: 5%; padding-bottom: 10%;">
+    <div class="card-tag-1 color-1" style="width: 100%; height: 200px;">
+        <div class="icon-200">
+
+        </div>
+    </div>
+    <div style="color: gold; font-size: 40px; width: 100%;" class="card-tag-1 color-2">
+        Bienvenido!
+    </div>
+    <div style="color: dodgerblue; font-size: 15px; width: 100%;" class="card-tag-1 color-2">
+        Vinestar es un pequeño equipo el cual se dedica a crear juegos para su publico
+        aqui podras ver todo lo que crean cada proyecto, contenido, cosas hechos por fans
+        <span style="color: greenyellow;">tambien somos amigables con nuestros fans y escuchamos a la comunidad</span>
+        <br><span class="text-color-orange">Vuelvete parte de la comunidad y mantente al tanto de todo</span>
+
+    </div>
+    <div class="card-tag-1 color-2" style="width: 100%">
+        <center>
+            <div style="margin: auto; width: 100%;" class="cont-flex">
+                <div class="button-0 text-color-yellow" mode="link" href="/login">
+                    iniciar Sesion
+                </div>
+                <div class="button-0 text-color-green" mode="link" href="/register">
+                    Crear cuenta
+                </div>
+            </div>
+           
+        </center>
+    </div>
+    <div class="card-tag-1 color-2" style="width: 100%">
+        <center>
+            <div style="margin: auto; width: 100%;" class="cont-flex">
+                <br>
+                
+                <div class="button-0 text-color-blue" style="margin: auto" mode="link" href="/panel">
+                    Explorar
+                </div>
+            </div>
+            
+        </center>
+    </div>
+</div>
+<div class="color-1 sub-page" style="padding-top: 20%;"><br><br>
+    <div class="parrafo text-center" style="width: 100%; max-width: 300px;">
+        <center>
+            <div class="img-200" 
+                style="background-image: url(/img/icon.png); width: 400px; height: 400px;">
+            </div>
+        </center>
+        <center><h1>Vinestar</h1></center>
+        Vinestar es la plataforma oficial del equipo Vinestar equipo encargador de los <a href="/proj">Proyectos</a>
+        que estos desarrollan
+    </div>
+    
+</div>
+<div class="color-1 sub-page">
+    <br><br><br>
+    <div style="width: 100%;">
+        <center>
+            <h1>Proyectos</h1>
+        </center>
+        <div class="parrafo text-center" style="width: 100%;">
+            He aqui se mostrara la lista de proyectos actuales del equipo
+        </div>
+        <br>
+        <hr>
+        <div id="lista" class="list box center">
+
+        </div>
+
+    </div>
+</div>
+            </div>
+        </center>
+            
+    </div>
+</body>
+</html>

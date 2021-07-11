@@ -1,3 +1,4 @@
-function main(a,b,c) {
-    
-};
+for each i (1,2,3,4) {
+    print(i)
+}
+

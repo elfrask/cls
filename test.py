@@ -109,9 +109,17 @@
     print(obje.hola)
     print(obje[0])"""
 
-def main():
-    d=2
-    
+"""
+    import requests as r
+
+    open("./cache/page.html", "w").write(
+        r.request("get", "https://vinestar.repl.co").text
+    )"""
+import asyncio
+import asyncore as asy
+async def main():
+    asyncio.create_subprocess_exec("echo hola mundo")
     pass
+
+#async 
 main()
-print(main.__code__.co_code)

@@ -16,9 +16,11 @@ def main():
     parseado:list = app.parselex(crude)
     f:list = []
     estructurado:list = app.estructuration(parseado, f)
-    generado:dict = app.generator(estructurado)
+    generado:dict = app.generator({
+                "data":estructurado,
+                "func":f
+    })
     listo:str = app.jump(generado, 0)
-    
 
     open("./cache/log.json", "w").write(
         json.dumps(
@@ -31,11 +33,16 @@ def main():
     open("./cache/final.py", "w").write(
         listo
     )
-    input("test run...")
+
+    app.exec(listo)
+    #input("test run...")
 
     pass
 
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(e)
