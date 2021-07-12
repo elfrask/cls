@@ -1,4 +1,10 @@
-for each i (1,2,3,4) {
-    print(i)
-}
+class main() {
+    function main(n) {
+        me.nombre = n
+    };
+    function saludo() {
+        print("Saludos,", me.nombre)
+    }
+};
 
+main("Carlos").saludo()

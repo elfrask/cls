@@ -15,6 +15,17 @@ class Any():
         pass
     pass
 
+after_code="""
+
+mem_out = c(locals())
+ti = {}
+for i in mem_out:
+    if i[0:${l}] == "${n}":
+        ti[i] = mem_out[i]
+    pass
+ex["mem"] = ti
+"""
+
 tokens = {
     "ope":["+", "-", "/", "*", "!", "|", "@", "&", "%", "=", "?", "<", ">", "^", ":"],
     "sim":["{", "}", "(", ")", "[", "]", ","],
@@ -23,7 +34,12 @@ tokens = {
         "condi":{"&":"and", "|":"or", "!":"not"},
         "expre-eval":{"++":"+1", "--":"-1"},
         "expre-exec":{"++":"+=1", "--":"-=1"},
-    }
+    },
+    "metodos":{"main":"__init__", "_call":"__call__", "_getitem":"__getitem__", "_setitem":"__setitem__",
+        "_add":"__add__", "_sub":"__sub__", "_div":"__div__", "_delitem":"__delitem__", "_mul":"__mul__",
+        "_mod":"__mod__", "_or":"__or__", "_and":"__and__", "_xor":"__xor__", "_or":"__or__", "_len":"__len__"
+    },
+    "to_c":{"String":"str", "Array":"list", "Int":"int", "Float":"float", "Dict":"dict"}
 }
 
 nombre_reservados = {
@@ -86,7 +102,15 @@ def find(token:dict, lista:dict) -> list[bool, int]:
         iterador+=1
         pass
     return [False, 0]
-
+def trim_string(v:str = "") -> str:
+    salida = v
+    while salida[:1]==" ":
+        salida = salida[1:]
+        pass
+    while salida[-1:]==" ":
+        salida = salida[:-1]
+        pass
+    return salida
 def list_to_dict(lista:list=[])->dict:
     salida = {}
     iterador = -1
@@ -244,6 +268,14 @@ class gen_value:
 class lista(list):
     def __dict__(): pass
     pass
+def get_at(obj:any, cadena:str, defa=None):
+    salida = None
+    try:
+        salida =eval("tmp_o." + cadena, {"tmp_o":obj})
+        pass
+    except:
+        salida = defa
+    return salida
 class ObjectCls:
     class AnyObject:pass
     class void:pass
@@ -252,7 +284,13 @@ class ObjectCls:
         def __dict__():
             pass
         pass
-
+    class clase():
+        def __init__(self, obj) -> None:
+            self.obj = obj
+            pass
+        def __call__(self, *args: Any, **kwds: Any) -> Any:
+            return self.obj(*args, **kwds)
+        pass
 
 class clsapi:
     def input(msg:str=""):
@@ -274,6 +312,7 @@ class appcls():
         self.tydef = "Any"
         self.namespace = "v"
         self.index=0
+        self.memory = {}
         self.values={
             "str":str,
             "int":int,
@@ -1019,7 +1058,7 @@ class appcls():
                         pass
                     elif i[0]["name"] == "module":#module-def
                         fallo = generar_error("error at try create a module", i[0]["i"])
-                        if len(i)==4:
+                        if len(i)==3:
                             if compara(["name", "name", "code"], i):
                                 funciones_clases = []
                                 codigo = self.estructuration(i[2]["data"], funciones_clases)
@@ -1039,6 +1078,7 @@ class appcls():
                                 fallo()
                             pass
                         else:
+                            #print("ehh")
                             fallo()
                             pass
                         pass
@@ -1176,7 +1216,9 @@ class appcls():
                             "tipo":"var-eval",
                             "var":self.estructuration_one(i[0:i_dim], func),
                             "eval":self.estructuration_one(i[i_dim+1:], func),
-                            "visible":visible
+                            "visible":visible,
+                            "onename":is_dim==1,
+                            "i":i[0]["i"]
                         }
 
                         salida.append([define_var])
@@ -1343,14 +1385,22 @@ class appcls():
 
         values = {
             "app":self,
-            "MD":ObjectCls.Module
+            "MD":ObjectCls.Module,
+            "ex":{"mem":{}},
+            "c":c,
+            str(self.namespace+"_"):"main"
         }
-
+        len_name = len(self.namespace+"_")
+        before = ""
+        after = after_code.replace("${l}", str(len_name)).replace("${n}", (self.namespace+"_"))
+        #print(after)
         for i in self.api:
             values[self.namespace + "_" + i] = self.api[i]
             pass
         
-        exec(code, values)
+        exec(before + code +after, values, self.memory)
+
+        self.memory = values["ex"]["mem"]
 
         return None
     def dim(self, v, tipo) -> any:
@@ -1365,12 +1415,12 @@ class appcls():
             self.catch(f"error the object '{que_tipo(v)}' can't set in a var of type '{tipo.__name__}'", errores.ErrorTyping)
         
         return v
-    def generator(self, c, modo="normal") -> list:
+    def generator(self, c, modo:str="normal") -> list:
         
         salida = []
         code = []
         func = []
-        modo = "normal"
+        #modo = "normal"
 
         def p_error(code, i) -> list:
             
@@ -1431,7 +1481,7 @@ class appcls():
             ]
             salida+=preparo
             pass
-        
+        #print(modo)
         for i in code:
             if (i["tipo"] == "func-def") and (modo in ["normal", "func-imp", "func"]):
                 asy=""
@@ -1443,6 +1493,53 @@ class appcls():
                     print_arg(fun["arg"]) +
                     self.generator(fun["code"], "func"),
                     "    pass"
+                ]
+                salida+=preparo
+                pass
+            if (i["tipo"] == "func-def") and (modo in ["module"]):
+                asy=""
+                fun = i
+                if fun["async"]: asy = "async "
+                preparo = [
+                    f"{asy}def {self.namespace}_{fun['name']}(*arg):",
+                    f"    f_rt = ({self.namespace}_{fun['return']})",
+                    print_arg(fun["arg"]) +
+                    self.generator(fun["code"], "func"),
+                    "    pass",
+                    f"me.{fun['name']} = {self.namespace}_{fun['name']}"
+                ]
+                salida+=preparo
+                pass
+            if (i["tipo"] == "func-def") and (modo in ["class"]):
+
+                asy=""
+                qqq=""
+                fun = i
+                if fun["name"][0:2] == "__": 
+                    if fun["name"][-2:] == "__": 
+                        continue
+                if fun["async"]: asy = "async "
+                rename= False
+                #nombre = self.namespace+"_"+fun['name']
+                nombre = fun["name"]
+                if fun["name"] in tokens["metodos"]:
+                    nombre = tokens["metodos"][fun["name"]]
+                    pass
+                if (fun["name"][0:2] == "to") and (fun["name"][2:] in tokens["metodos"]):
+                    nombre = "__"+tokens["metodos"][fun["name"][2:]] + "__"
+                    pass
+                
+                
+                if rename: 
+                    qqq= self.namespace+"_"+fun['name'] + " = " + nombre
+                preparo = [
+                    f"{asy}def {nombre}(self, *arg):",
+                    f"    f_rt = ({self.namespace}_{fun['return']})",
+                    f"    {self.namespace}_me = self",
+                    print_arg(fun["arg"]) +
+                    self.generator(fun["code"], "func"),
+                    "    pass",
+                    qqq
                 ]
                 salida+=preparo
                 pass
@@ -1524,15 +1621,53 @@ class appcls():
                 pass
             elif (i["tipo"] == "module-def") and (modo in ["normal", "func-imp", "func", "class"]):
                 fun = i
-                arg= []
-                for x in fun["arg"]:
-                    arg.append(self.namespace+"_"+x["arg"]) 
+                
                 preparo = [
                     f"def {self.namespace}_{fun['name']}(me):",
-                        self.generator(fun["code"], "class"),
+                        self.generator(fun["code"], "module"),
                      "    return me",
                     f"{self.namespace}_{fun['name']} = ({self.namespace}_{fun['name']})(MD())"
                 ]
+                salida+=preparo
+                pass
+            elif (i["tipo"] == "var-eval") and (modo in ["normal", "func-imp", "func", "class"]):
+                
+                if i["onename"]:
+                    if modo in ["func", "func-imp", "normal"]:
+                        g_1 = self.generator_one(i["var"], modo)
+                        g_2 = self.generator_one(i["eval"], modo)
+                        preparo = p_error([
+                            f"{g_1} = ({g_2})"
+                        ], i["i"])
+                        pass
+                    elif modo in ["class"]:
+
+                        g_1 = i["var"][0]["name"]
+                        g_2 = self.generator_one(i["eval"], modo)
+                        preparo = p_error([
+                            f"{g_1} = ({g_2})"
+                        ], i["i"])
+                        pass
+                    elif modo in ["module"]:
+
+                        g_1 = i["var"][0]["name"]
+                        g_2 = self.generator_one(i["eval"], modo)
+                        preparo = p_error([
+                            f"me.{g_1} = ({g_2})",
+                            f"{self.namespace}_{g_1} = (me.{g_1})",
+                        ], i["i"])
+                        pass
+                    
+                    
+                    pass
+                else:
+                    g_1 = self.generator_one(i["var"], modo)
+                    g_2 = self.generator_one(i["eval"], modo)
+                    preparo = p_error([
+                        f"{g_1} = ({g_2})"
+                    ], i["i"])
+                    pass
+
                 salida+=preparo
                 pass
             
@@ -1575,7 +1710,9 @@ class appcls():
                 if i["tipo"] == last["tipo"]:
                     if i["tipo"] == "name":
                         if (i["name"] in nombre_reservados["codi"]) or (last["name"] in nombre_reservados["codi"]):
-                            last = i
+                            #last = i
+                            pass
+                        elif i["name"][0]==".":
                             pass
                         else:
                             fallo()
@@ -1665,7 +1802,7 @@ class appcls():
                             fallo(f"the token '{i['name']}' is invalid in this case")
                         pass
                     elif i["name"][0]==".":
-                        salida+= f" {i['name']} "
+                        salida+= f"{i['name']} "
                         pass
                     else:
                         salida+= f" {self.namespace}_{i['name']} "
@@ -1727,8 +1864,8 @@ class appcls():
             pass
 
         salida = f"   script: '{self.origin}' line {lin0+1} column {columna}" + N + f"      {lin2}" + N
-        cursor = "      " + repeat(" ", columna) + "^"
-        raise Exception(before+N+f" error: {type}:{msg}"+N+ salida + cursor)
+        cursor = "     " + repeat(" ", columna) + "^"
+        raise Exception(before+N+f" error: {type}: {msg}"+N+ salida + cursor)
     pass
 
 #debes de crear los modulos y construir el resto de funcionalidades, PyCLS casi terminado
