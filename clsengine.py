@@ -136,7 +136,8 @@ def get(obj:any, index:any, default:any=0)->list:
 def compara(data:any, obj:any)->bool:
     yei = True
     
-    if len(data)<len(obj):
+    if len(data)>len(obj):
+        #print("ehh")
         return False
     
 
@@ -333,7 +334,9 @@ class appcls():
             "Module":ObjectCls.Module,
             "function":que_tipo.__class__,
             "Function":que_tipo.__class__,
-
+            "Boolean":bool,
+            "bool":bool,
+            "len":len,
 
             "true":True,
             "false":False,            
@@ -775,20 +778,17 @@ class appcls():
             if len(i)>1:
                 #print("salida - ", i)
                 if i[0]["tipo"]=="name":
-
                     if i[0]["tipo"] == "name":
                         if i[0]["name"] in nombre_reservados["visible"]:
                             visible = i[0]["name"]
                             i=i[1:]
                             
                             pass
-                    
                     if i[0]["tipo"] == "name":
                         if i[0]["name"] in ["async", "sync"]:
                             asyncrono = i[0]["name"]=="async"
                             i=i[1:]
                             pass
-                    
                     if i[0]["tipo"] == "name":
                         if not (i[0]["name"] in nombre_reservados["nombre"]):
                             if len(i)==4:
@@ -805,12 +805,28 @@ class appcls():
                                 pass
                             pass
                         pass
+                    if i[0]["tipo"] == "name":
+                        if i[0]["name"] == "loop":
+                            if len(i) == 2:
+                                if compara(["name", "code"]):
+                                    i = [gen_char.names("while", i[0]["i"]),
+                                        gen_value.argu([
+                                                [
+                                                    gen_char("True", i[0]["i"])
+                                                ]
+                                            ], 
+                                                i[0]["i"]
+                                            ),
+                                        i[1]
+                                    ]
+                                    pass
+                                pass
+                            pass
+                        pass
 
-                    #print(i)
                     dim = find({"tipo":"ope", "char":"="}, i)
                     is_dim = dim[0]
                     i_dim = dim[1]
-                    #print("dim exacto", i[t_dim])
 
                     if i[0]["name"] in ["func", "function", "def", "fub", "method"]:#func-def
                         rt = self.tydef
@@ -1012,14 +1028,26 @@ class appcls():
                             if compara(["name", "()", "code"], i):
                                 if not len(i[1]["complet"])>2:
                                     fallo(
-                                        "(the structure invalid) for (i = 0; i < len(Array()); i+=1) { ... }",
+                                        "(the structure invalid) for (i = 0; i < len(Array()); i++) { ... }",
+                                        i[1]["i"]    
+                                    )
+                                    pass
+                                ttt = i[1]["complet"]
+                                ttc = ["name", {"tipo":"ope", "char":"="}]
+                                #print(ttt[0])
+                                #print(ttc)
+                                ttq = compara(ttc, ttt[0])
+                                #print(ttq)
+                                if not ttq:
+                                    fallo(
+                                        "(the structure invalid) for (i = 0; i < len(Array()); i++) { ... }",
                                         i[1]["i"]    
                                     )
                                     pass
                                 for_a = {
                                     "tipo":"for-def",
                                     "code":self.estructuration(i[2]["data"], func),
-                                    "cond":sub_group(i[1]),
+                                    "for":sub_group(i[1])["complet"],
                                     "i":i[0]["i"]
                                 }
                                 salida.append([for_a])
@@ -1217,7 +1245,7 @@ class appcls():
                             "var":self.estructuration_one(i[0:i_dim], func),
                             "eval":self.estructuration_one(i[i_dim+1:], func),
                             "visible":visible,
-                            "onename":is_dim==1,
+                            "onename":(is_dim==1) and ("." in i[0]["name"]), 
                             "i":i[0]["i"]
                         }
 
@@ -1483,7 +1511,7 @@ class appcls():
             pass
         #print(modo)
         for i in code:
-            if (i["tipo"] == "func-def") and (modo in ["normal", "func-imp", "func"]):
+            if   (i["tipo"] == "func-def")     and (modo in ["normal", "func-imp", "func"]):
                 asy=""
                 fun = i
                 if fun["async"]: asy = "async "
@@ -1496,7 +1524,7 @@ class appcls():
                 ]
                 salida+=preparo
                 pass
-            if (i["tipo"] == "func-def") and (modo in ["module"]):
+            elif (i["tipo"] == "func-def")     and (modo in ["module"]):
                 asy=""
                 fun = i
                 if fun["async"]: asy = "async "
@@ -1510,7 +1538,7 @@ class appcls():
                 ]
                 salida+=preparo
                 pass
-            if (i["tipo"] == "func-def") and (modo in ["class"]):
+            elif (i["tipo"] == "func-def")     and (modo in ["class"]):
 
                 asy=""
                 qqq=""
@@ -1543,14 +1571,14 @@ class appcls():
                 ]
                 salida+=preparo
                 pass
-            elif (i["tipo"] == "exe") and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "exe")          and (modo in ["normal", "func-imp", "func"]):
                 le = self.generator_one(i["exe"], modo, "exec")
                 salida += p_error(
                     [le],
                     i["i"]
                 )
                 pass
-            elif (i["tipo"] == "if-def") and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "if-def")       and (modo in ["normal", "func-imp", "func"]):
                 if_out=[]
                 #tipo, cond, code
                 for x in i["lista"]: 
@@ -1575,7 +1603,7 @@ class appcls():
                 salida += p_error(if_out, i["i"])
 
                 pass
-            elif (i["tipo"] == "while-def") and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "while-def")    and (modo in ["normal", "func-imp", "func"]):
                 if_out=[]
                 #tipo, cond, code
                 x=i
@@ -1585,6 +1613,27 @@ class appcls():
                     f"while ({cond}):",
                     codigo,
                     "    pass"
+                ]
+                
+
+                salida += p_error(if_out, i["i"])
+
+                pass
+            elif (i["tipo"] == "for-def")    and (modo in ["normal", "func-imp", "func"]):
+                if_out=[]
+                #tipo, cond, code
+                x=i
+                d_for =x["for"] #self.generator_one(x["for"], modo)
+                cond = self.generator_one(d_for[1], modo)
+                codigo = self.generator(x["code"], modo)
+                post_code = self.generator_one(d_for[2], modo, "exec")
+                if_out += [
+                    f"{self.namespace}_{d_for[0][0]['name']} = ({self.generator_one(d_for[0][2:], modo)})",
+                    f"while (True):",
+                    f"    if not ({cond}): break",
+                    codigo,
+                    f"    {post_code}",
+                     "    pass"
                 ]
                 
 
@@ -1607,7 +1656,7 @@ class appcls():
                 salida += p_error(if_out, i["i"])
 
                 pass
-            elif (i["tipo"] == "class-def") and (modo in ["normal", "func-imp", "func", "class"]):
+            elif (i["tipo"] == "class-def")    and (modo in ["normal", "func-imp", "func", "class"]):
                 fun = i
                 arg= []
                 for x in fun["extend"]:
@@ -1619,7 +1668,7 @@ class appcls():
                 ]
                 salida+=preparo
                 pass
-            elif (i["tipo"] == "module-def") and (modo in ["normal", "func-imp", "func", "class"]):
+            elif (i["tipo"] == "module-def")   and (modo in ["normal", "func-imp", "func", "class"]):
                 fun = i
                 
                 preparo = [
@@ -1630,7 +1679,7 @@ class appcls():
                 ]
                 salida+=preparo
                 pass
-            elif (i["tipo"] == "var-eval") and (modo in ["normal", "func-imp", "func", "class"]):
+            elif (i["tipo"] == "var-eval")     and (modo in ["normal", "func-imp", "func", "class", "module"]):
                 
                 if i["onename"]:
                     if modo in ["func", "func-imp", "normal"]:
@@ -1822,6 +1871,9 @@ class appcls():
                         pass
                     elif i["char"] in tokens["cond"]:
                         salida += f" {i['char']} "
+                    elif (i["char"] in ["="]) and (modi=="exec"):
+                        salida += f" = "
+                    
                     
                     pass
                 elif i["tipo"] == "()":
