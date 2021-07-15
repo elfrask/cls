@@ -1,0 +1,15 @@
+class main() {
+    function main() {
+        me.v=120
+    };
+    function get() {
+        return (
+            me.v
+        )
+    }
+};
+function lol(i:main) {
+    print(i.get())
+};
+
+lol(main())

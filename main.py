@@ -2,7 +2,7 @@ import clsengine as cls
 import sys
 import os
 import json
-import pickle
+import dill
 import shutil
 import platform
 
@@ -20,7 +20,7 @@ def main():
     generado:dict = app.generator({
                 "data":estructurado,
                 "func":f
-    })
+    }, "normal")
     listo:str = app.jump(generado, 0)
 
     open("./cache/log.json", "w").write(
@@ -50,7 +50,7 @@ def execute(code, app):
     generado:dict = app.generator({
                 "data":estructurado,
                 "func":f
-    })
+    }, "normal", "console")
     listo:str = app.jump(generado, 0)
 
 
@@ -78,15 +78,21 @@ if __name__ == "__main__":
         print(f"Cls 1.0.0 - Build for {o_s} platforms, CLS 2016-2021")
         print("Vinestar Studio 2021 (C) Todos los derechos recervados")
         while True:
-            if cont==0: cmd = input("> ")
-            else: cmd = input("· " + ("  "*cont))
+            try:
+                if cont==0: cmd = input("> ")
+                else: cmd = input("· " + ("  "*cont))
+            except:
+                print()
+                exit(0)
+                pass
             addcode+=cmd+cls.N
 
             cont += cmd.count("{") + cmd.count("(") + cmd.count("[")
             cont += -cmd.count("}") - cmd.count("]") - cmd.count(")")
             #print(cont)
-            cmd = ""
-            cont = 0
+            if cmd == "":
+                cmd = ""
+                cont = 0
             if cont==0:
                 try:
                     execute(addcode, la_app)
