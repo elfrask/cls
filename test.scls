@@ -1,15 +1,16 @@
-class main() {
-    function main() {
-        me.v=120
+class test() {
+    void main(o:int=10) {
+        me.v=o
     };
-    function get() {
-        return (
-            me.v
+    test _add(obj) {
+        return(
+            test(obj.v+me.v)
         )
     }
 };
-function lol(i:main) {
-    print(i.get())
+
+void lol(i:test) {
+    print((i+i+i+i+i+i+i+i).v)
 };
 
-lol(main())
+lol(test(20))

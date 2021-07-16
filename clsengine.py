@@ -14,10 +14,10 @@ class Any():
     def __init__(self) -> None:
         pass
     pass
+after_code=""
+after_code_old="""
 
-after_code="""
-
-mem_out = c(locals())
+mem_out = c(globals())
 ti = {}
 for i in mem_out:
     if i[0:${l}] == "${n}":
@@ -25,6 +25,8 @@ for i in mem_out:
     pass
 ex["mem"] = ti
 """
+
+before_code = "ex['mem'] = locals()"
 
 tokens = {
     "ope":["+", "-", "/", "*", "!", "|", "@", "&", "%", "=", "?", "<", ">", "^", ":"],
@@ -349,6 +351,10 @@ class appcls():
             "str":str,
             "int":int,
             "float":float
+        }
+        self.str = {
+            "":str,
+            "b":bytes
         }
         self.api = c(Api_cls)
         self.cracheos = []
@@ -1440,15 +1446,17 @@ class appcls():
             str("var_"):"main"
         }
         len_name = len("var_")
-        before = ""
+        before = before_code
         after = after_code.replace("${l}", str(len_name)).replace("${n}", ("var_"))
-        #print(after)
         for i in self.api:
-            #values["var_"+self.namespace + "_" + i] = self.api[i]
             values["var_std_" + i] = self.api[i]
             pass
+        for i in self.memory:
+            values[i] = self.memory[i]
+            pass
+        #print(code)
         try:
-            exec(before + code +after, values, self.memory)
+            exec(before +N+ code +after, values)
             pass
         except Exception as e:
             salida = ""
@@ -1469,7 +1477,17 @@ class appcls():
             print(" Detailed: " + str(mensage))
             pass
 
-        self.memory = values["ex"]["mem"]
+        k = c(values["ex"]["mem"])
+        
+        t_out = {}
+
+        for i in k:
+            if i[0:4]=="var_":
+                t_out[i] = k[i]
+            pass
+        #print(t_out)
+
+        self.memory = t_out
         return None
     def dim(self, v, tipo) -> any:
         #print(v, tipo)
@@ -1525,6 +1543,9 @@ class appcls():
                     f"    var_{self.namespace}_{arg} = arg[{it}]",
                     f"except:",
                     f"    var_{self.namespace}_{arg} = ({defa})",
+                    #f"print('var',var_{self.namespace}_{arg})",
+                    #f"print('sta',var_{self.namespace}_{sta})",
+                     #"print(globals().get('var_std_main', 'no'))",
                     f"app.dim(var_{self.namespace}_{arg}, var_{self.namespace}_{sta})"
                 ]
                 pass
@@ -1906,8 +1927,12 @@ class appcls():
             pass
         
         return salida
-    def print_value(self, v):
+    def print_value(self, v) -> str:
         salida = f"app.values['{v['type']}']({v['value']})"
+
+        if v["type"] == "str":
+            salida = f"app.str['{v['byte']}']({v['value']})"
+
         return salida
     def generator_one(self, line:list, modo:str="normal", modi:str ="eval", key:bool=False) -> str:
         salida = ""
