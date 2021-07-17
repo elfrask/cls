@@ -2,7 +2,7 @@ import clsengine as cls
 import sys
 import os
 import json
-import dill
+#import dill
 import shutil
 import platform
 

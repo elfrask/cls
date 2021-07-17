@@ -1,16 +1,20 @@
-class test() {
-    void main(o:int=10) {
-        me.v=o
-    };
-    test _add(obj) {
-        return(
-            test(obj.v+me.v)
-        )
-    }
+using namespace char;
+
+void getsh(v:char, msg:str="") {
+    v.set(input(msg))
 };
 
-void lol(i:test) {
-    print((i+i+i+i+i+i+i+i).v)
+using namespace std;
+
+int main() {
+    value = char[20]("Hola mundo");
+
+    char::getsh(value, "cual es tu nombre? ");
+    print("tu nombre es:", value);
+    return 0;
 };
 
-lol(test(20))
+
+
+
+main();

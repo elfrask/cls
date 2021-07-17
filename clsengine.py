@@ -1,5 +1,4 @@
-from copy import Error, copy as c
-import typing
+from copy import copy as c
 
 uid:int = 0
 
@@ -9,6 +8,7 @@ R="\r"
 B="\b"
 COMILLAS="\""
 APOSTROFE="\'"
+invertido ="\\"
 
 class Any():
     def __init__(self) -> None:
@@ -296,6 +296,38 @@ class ObjectCls:
         def __call__(self, *args: Any, **kwds: Any) -> Any:
             return self.obj(*args, **kwds)
         pass
+    class char():
+        def __init__(self, value, limit = -1) -> None:
+            self.limit= limit
+            self.set(value)
+            pass
+        def __repr__(self) -> str:
+            return f"c'{self.__str__()}'"
+        def __str__(self) -> str:
+            return f"{self.value}"
+        def __list__(self, v) -> list[str]:
+            return list(self.value)
+        def __len__(self) -> int:
+            return len(self.value)
+        def set(self, value):
+            self.value = value
+            if self.limit != -1:
+                self.value = value[0:self.limit]
+            pass
+        pass
+class form():
+    __clase__ = ObjectCls.char
+    def __init__(self, o):
+        self.o = o
+        pass
+    def __dict__(self):
+        pass
+    def __getitem__(self, e:int=-1):
+        def gen(a:str=""):
+            return self.o(a, e)
+        return gen
+    def __call__(self, a, e):
+        return self.o(a, e)
 
 class clsapi:
     
@@ -318,6 +350,7 @@ Api_cls = {
     "Function":que_tipo.__class__,
     "Boolean":bool,
     "bool":bool,
+    "char":form(ObjectCls.char),
     "len":len,
     "input":input,
     "__name__":"main",
@@ -352,14 +385,68 @@ class appcls():
             "int":int,
             "float":float
         }
+        self.variables = []
         self.str = {
             "":str,
-            "b":bytes
+            "b":lambda x:(bytes(x, "utf8")),
+            "f":self.str_format
         }
         self.api = c(Api_cls)
         self.cracheos = []
         
         pass
+    def str_format(self, cadena):
+        
+        lis = self.variables[-1]
+        
+        salida = ""
+
+        formatear = cadena.split("{")
+
+        tue =False
+        sal = []
+        for i in formatear:
+            if tue:
+                sal += i.split("}", 1)
+                pass
+            else:
+                sal += [i]
+                pass
+            tue = not tue
+            pass
+        #print(sal)
+        for i in lis:
+            locals()[i] = lis[i] 
+            pass
+
+        salida = []
+        tae = False
+        for i in sal:
+            if tae:
+                if trim_string(i) == "":
+                    continue
+                salida.append(
+                    str(
+                        eval(
+                            self.generator_one(
+                                self.desline(i, "none", False)[0],
+                                "normal",
+                                "eval"
+                            )
+                        )
+                    )
+                )
+
+                pass
+            else:
+                salida.append(i)
+                pass
+            tae = not tae
+            pass
+
+        
+
+        return "".join(salida)
     def exception(self, msg:str=""): # in exec
         raise Exception(msg)
     def catch(self, msg:str="", e:str="ErrorCatch"): # in exec
@@ -367,11 +454,12 @@ class appcls():
     def set_api(self, api:object) -> None:
 
         pass
-    def desline(self, code:str, name:str="file0") -> list:
+    def desline(self, code:str, name:str="file0", enter =True) -> list:
         salida:list = []
         linea:list = []
-        self.codigo = code
-        self.origin = name
+        if enter:    
+            self.codigo = code
+            self.origin = name
         code = code.replace(T, " ")
         #code = code.replace(N, " ")
         code = code.replace(R, " ")
@@ -480,7 +568,7 @@ class appcls():
                 if c == term:
                     linea.append(
                         gen_char.val(
-                            cadena+c,
+                            (cadena+c).replace(N, invertido+"n"),
                             "str",
                             iterador-len(cadena),
                             term,
@@ -850,6 +938,7 @@ class appcls():
                         #o = self
                         fallo = generar_error("error at try create a function", i[0]["i"])
 
+                        #print(i)
                         if (len(i)==4): 
                             if compara(["name", "name", "()", "code"], i):
                                 name = i[1]["name"]
@@ -1553,6 +1642,7 @@ class appcls():
             return s_out
 
         if isinstance(c, dict):
+            salida +=["app.variables.append(locals())"]
             code = c["data"]
             func = c["func"]
             pass
@@ -1910,6 +2000,11 @@ class appcls():
         if (using_namespace) and (usingmode == "compiled"):
             #print("que?")
             self.namespace = "std"
+        if isinstance(c, dict):
+            salida +=["app.variables.pop()"]
+            code = c["data"]
+            func = c["func"]
+            pass
 
 
         return salida
