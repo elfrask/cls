@@ -60,6 +60,7 @@ class errores:
     ErrorSemant:str="ErrorSemant"
     ErrorAritmetic:str="ErrorAritmetic"
     ErrorTyping:str="ErrorTyping"
+    ErrorName = "ErrorName"
     pass
 
 def que_tipo(obj:any)->str:
@@ -1584,7 +1585,8 @@ class appcls():
         if tipo == ObjectCls.AnyObject:
             return v
         elif tipo == ObjectCls.void:
-            return v
+
+            self.catch(f"error the object '{que_tipo(v)}' can't set in this value", errores.ErrorTyping) 
         elif hasattr(tipo, "__clase__"):
             if isinstance(v, tipo.__clase__):
                 return v
@@ -1593,7 +1595,7 @@ class appcls():
             pass
         elif isinstance(v, tipo):
             return v
-        else:   
+        else:
             self.catch(f"error the object '{que_tipo(v)}' can't set in a var of type '{tipo.__name__}'", errores.ErrorTyping)
         
         return v
@@ -1629,13 +1631,20 @@ class appcls():
 
                 s_out+=[
                     f"try:",
+                    f"    sta_var = var_{self.namespace}_{sta}",
+                    f"except:",
+                    f"    try:"
+                    f"        sta_var = var_std_{sta}",
+                    f"    except:",
+                    f"        app.error('the {sta} class not found', errores.ErrorName)",
+                    f"try:",
                     f"    var_{self.namespace}_{arg} = arg[{it}]",
                     f"except:",
                     f"    var_{self.namespace}_{arg} = ({defa})",
                     #f"print('var',var_{self.namespace}_{arg})",
                     #f"print('sta',var_{self.namespace}_{sta})",
                      #"print(globals().get('var_std_main', 'no'))",
-                    f"app.dim(var_{self.namespace}_{arg}, var_{self.namespace}_{sta})"
+                    f"app.dim(var_{self.namespace}_{arg}, sta_var)"
                 ]
                 pass
             

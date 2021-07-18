@@ -1,20 +1,23 @@
 using namespace char;
 
 void getsh(v:char, msg:str="") {
-    v.set(input(msg))
+
+    v.set(std::input(msg))
+
 };
 
 using namespace std;
 
-int main() {
-    value = char[20]("Hola mundo");
+#este es una aplicacion de cls usando nombres de espacios
+#y la clase por defecto char para crear String's con ahorro
+#de memoria
+
+
+void main() {
+    value = char[10]("Hola mundo");
 
     char::getsh(value, "cual es tu nombre? ");
     print("tu nombre es:", value);
-    return 0;
 };
-
-
-
 
 main();
