@@ -1,5 +1,6 @@
 from copy import copy as c
 
+
 uid:int = 0
 
 N="\n"
@@ -48,7 +49,7 @@ nombre_reservados = {
     "visible":["export", "static", "private", "public", "global"],
     "nombre":[
         "func", "function", "class", "module", "with", "for", "if", "while", "define",
-        "from", "import", "global", "try", "def", "fub", "method", "include", "using"
+        "from", "import", "global", "try", "def", "fub", "method", "include", "using", "var"
         ],
     "codi":["or", "in", "and", "is"],
     "bucle":["break", "continue"]
@@ -298,7 +299,7 @@ class ObjectCls:
             return self.obj(*args, **kwds)
         pass
     class char():
-        def __init__(self, value, limit = -1) -> None:
+        def __init__(self, value="", limit = -1) -> None:
             self.limit= limit
             self.set(value)
             pass
@@ -327,7 +328,7 @@ class form():
         def gen(a:str=""):
             return self.o(a, e)
         return gen
-    def __call__(self, a, e):
+    def __call__(self, a:str="", e:int=-1):
         return self.o(a, e)
 
 class clsapi:
@@ -364,6 +365,7 @@ Api_cls = {
     "off":False,
 }
 
+#procesador = 1/int(sys.argv[2])
 
 class appcls():
     def __init__(self, id:int = uid) -> None:
@@ -390,10 +392,18 @@ class appcls():
         self.str = {
             "":str,
             "b":lambda x:(bytes(x, "utf8")),
-            "f":self.str_format
+            "f":self.str_format,
+            "c":lambda x: Api_cls["char"](x, len(x))
         }
         self.api = c(Api_cls)
         self.cracheos = []
+
+        def print_debug(*arg):
+            lin0 = self.codigo[0:self.index].count(N)
+            print(f"{self.origin} - {lin0+1} :", *arg)
+            pass
+
+        self.api["print_debug"] = print_debug
         
         pass
     def str_format(self, cadena):
@@ -796,7 +806,7 @@ class appcls():
                     if (defa==[]):
                         modo="def"
                     pass
-                elif compara([{"tipo":"ope", "char":":"}], [i]): 
+                elif compara([{"tipo":"ope", "char":":"}], [i]) or compara([{"tipo":"ope", "char":"->"}], [i]): 
                     #print("llego")
 
                     if (typado==[]):
@@ -833,6 +843,9 @@ class appcls():
         
 
         return salida
+    def foins(self):
+       
+        pass
     def estructuration(self, code:list, func:list=[]) -> list:
         
         modo:str = "normal"
@@ -876,6 +889,7 @@ class appcls():
         for i in code:
             visible="public"
             asyncrono= False
+            
             
             if len(i)>1:
                 #print("salida - ", i)
@@ -943,7 +957,7 @@ class appcls():
                         if (len(i)==4): 
                             if compara(["name", "name", "()", "code"], i):
                                 name = i[1]["name"]
-                                arg = self.argparse(i[2]["data"])
+                                arg = self.argparse(i[2]["data"], func)
                                 codigo = self.estructuration(i[3]["data"], funciones)
                                 pass
                             else:
@@ -953,7 +967,7 @@ class appcls():
                         elif (len(i)==6):
                             if compara(["name", "name", "()", {"tipo":"ope","char":"->"}, "name", "code"], i):
                                 name = i[1]["name"]
-                                arg = self.argparse(i[2]["data"])
+                                arg = self.argparse(i[2]["data"], func)
                                 codigo = self.estructuration(i[5]["data"], funciones)
                                 rt = i[4]["name"]
                                 pass
@@ -1339,7 +1353,20 @@ class appcls():
                             generar_error("error of syntax in return", i[0]["i"])
                             pass
                         pass
-                    elif i[0]["name"] == "using":#rt-def
+                    elif i[0]["name"] == "var":#var-def
+                        if len(i)>0:
+                            return_a = {
+                                "tipo":"var-def",
+                                "eval":self.argparse(i[1:]["data"], func),
+                                "i":i[0]["i"]
+                            }
+                            salida.append([return_a])
+                            pass
+                        else:
+                            generar_error("error of syntax in return", i[0]["i"])
+                            pass
+                        pass
+                    elif i[0]["name"] == "using":#using-comp
                         if len(i)>1:
                             #print("using")
                             return_a = {
@@ -1682,6 +1709,7 @@ class appcls():
             pass
         
         for i in code:
+            salida += ["app.foins()"]
             if   (i["tipo"] == "func-def")     and (modo in ["normal", "func-imp", "func"]):
                 asy=""
                 fun = i

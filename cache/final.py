@@ -1,4 +1,6 @@
 app.variables.append(locals())
+app.foins()
+app.foins()
 def var_char_getsh(*arg):
     try:
         f_rt = (var_char_void)
@@ -27,6 +29,7 @@ def var_char_getsh(*arg):
         var_char_msg = (app.str[''](""))
     app.dim(var_char_msg, sta_var)
     app.variables.append(locals())
+    app.foins()
     app.index = 61
     try:
         var_char_v.set  (var_std_input (var_char_msg))
@@ -37,41 +40,91 @@ def var_char_getsh(*arg):
     app.variables.pop()
 
     pass
+app.foins()
+app.foins()
 def var_std_main(*arg):
     try:
         f_rt = (var_std_void)
     except:
         f_rt = (var_std_void)
     app.variables.append(locals())
-    app.index = 261
+    app.foins()
+    app.index = 328
     try:
-        var_std_value = (var_std_char  [app.values['int'](10)]  (app.str['']("Hola mundo")))
+        var_std_value = (var_std_char  [app.values['int'](20)]  ())
 
     except Exception as e:
-        app.error(e, 'ErrorExecute', 261)
+        app.error(e, 'ErrorExecute', 328)
 
-    app.index = 298
+    app.foins()
+    app.index = 386
     try:
-        var_char_getsh (var_std_value  ,  app.str['']("cual es tu nombre? "))
+        while (var_std_true):
+            app.foins()
+            app.index = 408
+            try:
+                var_char_getsh (var_std_value  ,  app.str['']("pon una nota de 20 caracteres: "))
+
+            except Exception as e:
+                app.error(e, 'ErrorExecute', 408)
+
+            app.foins()
+            app.index = 471
+            try:
+                if (var_std_input  (app.str['']("esto es correcto (Y/N)? "))  in  [app.str['']("y")  ,  app.str['']("Y")]):
+                    app.foins()
+                    app.index = 532
+                    try:
+                        break
+
+                    except Exception as e:
+                        app.error(e, 'ErrorExecute', 532)
+
+
+                    pass
+
+            except Exception as e:
+                app.error(e, 'ErrorExecute', 471)
+
+
+            pass
 
     except Exception as e:
-        app.error(e, 'ErrorExecute', 298)
+        app.error(e, 'ErrorExecute', 386)
 
-    app.index = 345
+    app.foins()
+    app.index = 551
     try:
-        var_std_print  (app.str['']("tu nombre es:")  ,  var_std_value)
+        var_std_print  (app.str['']("nota:")  ,  [var_std_value  ,  app.str['c']('test')])
 
     except Exception as e:
-        app.error(e, 'ErrorExecute', 345)
+        app.error(e, 'ErrorExecute', 551)
+
+    app.foins()
+    app.index = 589
+    try:
+        var_std_print  ()
+
+    except Exception as e:
+        app.error(e, 'ErrorExecute', 589)
+
+    app.foins()
+    app.index = 602
+    try:
+        var_std_print_debug  (app.str['']("saludos"))
+
+    except Exception as e:
+        app.error(e, 'ErrorExecute', 602)
 
     app.variables.pop()
 
     pass
-app.index = 380
+app.foins()
+app.index = 630
 try:
     var_std_main  ()
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 380)
+    app.error(e, 'ErrorExecute', 630)
 
 app.variables.pop()

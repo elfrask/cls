@@ -80,11 +80,12 @@ if __name__ == "__main__":
                 print("Vinestar Studio 2021 (C) Todos los derechos recervados")
                 print("")
                 print("has entrado al modo debug")
-                print("")
                 while True:
                     try:
-                        if cont==0: cmd = input("debug > ")
-                        else: cmd = input("debug · " + ("  "*cont))
+                        if cont==0: 
+                            cmd = input("debug > ")
+                        else: 
+                            cmd = input("debug · " + ("  "*cont))
                     except:
                         print()
                         exit(0)
@@ -99,13 +100,16 @@ if __name__ == "__main__":
                         cont = 0
                     if cont==0:
                         try:
+                            print()
                             execute(addcode, la_app, "<CLS:Stdin-Debug>")
+                            print()
                         except Exception as e:
                             print(e)
                             pass
                         addcode = ""
                     pass
-            
+            else:
+                main(sys.argv[1])
         else:
             main(sys.argv[1])
             
@@ -118,13 +122,15 @@ if __name__ == "__main__":
         print(f"Cls 1.0.0 - Build for {o_s} platforms, CLS 2016-2021")
         print("Vinestar Studio 2021 (C) Todos los derechos recervados")
         while True:
+            
             try:
-                if cont==0: cmd = input("> ")
-                else: cmd = input("· " + ("  "*cont))
+                if cont==0: 
+                    cmd = input("> ")
+                else: 
+                    cmd = input("· " + ("  "*cont))
             except:
                 print()
                 exit(0)
-                pass
             addcode+=cmd+cls.N
 
             cont += cmd.count("{") + cmd.count("(") + cmd.count("[")
@@ -134,7 +140,9 @@ if __name__ == "__main__":
                 cmd = ""
                 cont = 0
             if cont==0:
+                print()
                 execute(addcode, la_app)
+                print()
                 try:
                     pass
                 except Exception as e:

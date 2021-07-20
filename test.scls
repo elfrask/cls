@@ -14,10 +14,18 @@ using namespace std;
 
 
 void main() {
-    value = char[10]("Hola mundo");
+    #var value:char = char[20]();    #valor que se va a establecer
+    value = char[20]();    #valor que se va a establecer
 
-    char::getsh(value, "cual es tu nombre? ");
-    print("tu nombre es:", value);
+    while(true) {
+        char::getsh(value, "pon una nota de 20 caracteres: ");
+        if
+        (input("esto es correcto (Y/N)? ") ? ["y", "Y"]) {break}
+    };
+
+    print("nota:", [value, c'test']);
+    print();
+    print_debug("saludos");
 };
 
 main();
