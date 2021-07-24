@@ -5,6 +5,9 @@ import json
 #import dill
 import shutil
 import platform
+cls.lib_path.append(
+     os.path.dirname(cls.lib_path[-1]) + "/std/std"
+)
 
 if not os.path.isdir("cache"):
     os.makedirs("cache")

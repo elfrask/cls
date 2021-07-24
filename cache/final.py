@@ -3,25 +3,25 @@ sta_values = {}
 app.foins()
 app.index = 0
 try:
-    var_std_test = app.getlib('lib/prueba.scls')
+    var_std_fs = app.getlib('fs')
 
 except Exception as e:
     app.error(e, 'ErrorExecute', 0)
 
 app.foins()
-app.index = 34
+app.index = 20
 try:
-    var_std_p = app.getlib('prueba.scls').play
+    var_std_file = app.dim((var_std_fs.open  (app.str['']("test.scls"))), sta_values.get('var_std_file', var_std_Any))
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 34)
+    app.error(e, 'ErrorExecute', 20)
 
 app.foins()
-app.index = 73
+app.index = 50
 try:
-    var_std_test.play  ()
+    var_std_print  (var_std_file.read  ())
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 73)
+    app.error(e, 'ErrorExecute', 50)
 
 app.variables.pop()

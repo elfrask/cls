@@ -386,14 +386,22 @@ class PyImports:
         dato = lib.load(file)
         export = ObjectCls.Module()
 
-        exec(dato, {"export":export})
+        exec(dato, {
+            "export":export, 
+            "module":ObjectCls.Module,
+            "Module":ObjectCls.Module,
+        })
 
         return export
     def load(dato):
         
         export = ObjectCls.Module()
 
-        exec(dato, {"export":export})
+        exec(dato, {
+            "export":export, 
+            "module":ObjectCls.Module,
+            "Module":ObjectCls.Module,
+        })
 
         return export
     
@@ -463,7 +471,9 @@ class appcls():
         }
         self.api = c(Api_cls)
         self.cracheos = []
-        self.libs = {}
+        self.libs = {
+            "pypkg":PyImports
+        }
 
         def print_debug(*arg):
             lin0 = self.codigo[0:self.index].count(N)
@@ -481,6 +491,9 @@ class appcls():
             r_file = file
 
             file = lib.find(file)
+
+            if file == "None":
+                raise Exception(f'the module "{r_file}" not found')
 
             aplicacion = open(file, "r").read()
             crude:list =app.desline(aplicacion, file)
@@ -505,6 +518,8 @@ class appcls():
                 listo
             )
             app.api["export"] = ObjectCls.Module()
+            #app.api["Module"] = ObjectCls.Module
+            #app.api["module"] = ObjectCls.Module
 
             app.exec(listo)
 

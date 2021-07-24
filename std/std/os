@@ -1,0 +1,6 @@
+import "pypkg" as py;
+
+
+os = py.require("os.py");
+
+export.name = os.osname;

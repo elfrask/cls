@@ -1,38 +1,27 @@
 app.variables.append(locals())
 sta_values = {}
 app.foins()
-def var_std_play(*arg):
-    try:
-        f_rt = (var_std_void)
-    except:
-        f_rt = (var_std_void)
-    app.variables.append(locals())
-    sta_values = {}
-    app.foins()
-    app.index = 19
-    try:
-        var_std_print  (app.str['']("Testeando..."))
-
-    except Exception as e:
-        app.error(e, 'ErrorExecute', 19)
-
-    app.foins()
-    app.index = 46
-    try:
-        var_std_print  (app.str['']("Testeo completo!"))
-
-    except Exception as e:
-        app.error(e, 'ErrorExecute', 46)
-
-    app.variables.pop()
-
-    pass
-app.foins()
-app.index = 77
+app.index = 0
 try:
-    var_std_export.play = (var_std_play)
+    var_std_py = app.getlib('pypkg')
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 77)
+    app.error(e, 'ErrorExecute', 0)
+
+app.foins()
+app.index = 23
+try:
+    var_std_fs = app.dim((var_std_py.require  (app.str['']("fs.py"))), sta_values.get('var_std_fs', var_std_Any))
+
+except Exception as e:
+    app.error(e, 'ErrorExecute', 23)
+
+app.foins()
+app.index = 50
+try:
+    var_std_export.open = (var_std_fs.open)
+
+except Exception as e:
+    app.error(e, 'ErrorExecute', 50)
 
 app.variables.pop()
