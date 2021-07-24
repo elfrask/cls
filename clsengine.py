@@ -1,4 +1,6 @@
 from copy import copy as c
+import os
+import sys
 
 
 uid:int = 0
@@ -227,6 +229,13 @@ class gen_char:
 derivados = True
 key_true = True
 
+lib_path = [
+    ".",
+    os.path.dirname(__file__) + "/lib",
+    os.path.dirname(__file__) + "/libpy",
+    os.path.dirname(__file__) + "/dlls",
+]
+
 
 class gen_value:
     def lista(data:list=[], i:int=0)->(
@@ -317,6 +326,19 @@ class ObjectCls:
                 self.value = value[0:self.limit]
             pass
         pass
+    class String(str):
+        def default(clase):
+            return clase("")
+        pass
+    class Integer(int):
+        def default(clase):
+            return clase(0)
+        pass
+    class Float(float):
+        def default(sclase):
+            return clase(0.0)
+        pass
+    
 class form():
     __clase__ = ObjectCls.char
     def __init__(self, o):
@@ -331,18 +353,61 @@ class form():
     def __call__(self, a:str="", e:int=-1):
         return self.o(a, e)
 
-class clsapi:
+class lib:
+    def load(fs):
+        
+        for i in lib_path:
+            if os.path.isfile(i+"/"+fs):
+                return open(i+"/"+fs,"r").read()
+            pass
+
+        return None
+    def find(fs):
+        
+        for i in lib_path:
+            if os.path.isfile(i+"/"+fs):
+                return i+"/"+fs
+            pass
+
+        return "None"
+    def exist(fs):
+        
+        for i in lib_path:
+            if os.path.isfile(i+"/"+fs):
+                return True
+            pass
+
+        return False
     
     pass
 
+class PyImports:
+    def require(file):
+        dato = lib.load(file)
+        export = ObjectCls.Module()
+
+        exec(dato, {"export":export})
+
+        return export
+    def load(dato):
+        
+        export = ObjectCls.Module()
+
+        exec(dato, {"export":export})
+
+        return export
+    
+    pass
+
+
 Api_cls = {
     "print":print,
-    "str":str,
-    "String":str,
+    "str":ObjectCls.String,
+    "String":ObjectCls.String,
     "Any":ObjectCls.AnyObject,
     "any":ObjectCls.AnyObject,
-    "int":int,
-    "float":float,
+    "int":ObjectCls.Integer,
+    "float":ObjectCls.Float,
     "void":ObjectCls.void,
     "Array":ObjectCls.Array,
     "array":ObjectCls.Array,
@@ -356,6 +421,7 @@ Api_cls = {
     "len":len,
     "input":input,
     "__name__":"main",
+    "PyApi":PyImports,
 
     "true":True,
     "false":False,            
@@ -384,19 +450,20 @@ class appcls():
         self.index=0
         self.memory = {}
         self.values={
-            "str":str,
-            "int":int,
-            "float":float
+            "str":ObjectCls.String,
+            "int":ObjectCls.Integer,
+            "float":ObjectCls.Float
         }
         self.variables = []
         self.str = {
-            "":str,
+            "":ObjectCls.String,
             "b":lambda x:(bytes(x, "utf8")),
             "f":self.str_format,
             "c":lambda x: Api_cls["char"](x, len(x))
         }
         self.api = c(Api_cls)
         self.cracheos = []
+        self.libs = {}
 
         def print_debug(*arg):
             lin0 = self.codigo[0:self.index].count(N)
@@ -406,6 +473,49 @@ class appcls():
         self.api["print_debug"] = print_debug
         
         pass
+    def getlib(self, file):
+        
+        def load_lib(file):
+            app = appcls()
+
+            r_file = file
+
+            file = lib.find(file)
+
+            aplicacion = open(file, "r").read()
+            crude:list =app.desline(aplicacion, file)
+            parseado:list = app.parselex(crude)
+            f:list = []
+            estructurado:list = app.estructuration(parseado, f)
+            generado:dict = app.generator({
+                        "data":estructurado,
+                        "func":f
+            }, "normal")
+            listo:str = app.jump(generado, 0)
+
+            open("./cache/lib.json", "w").write(
+                str(
+                    {
+                        "data":estructurado,
+                        "func":f
+                    }
+                )
+            )
+            open("./cache/lib.py", "w").write(
+                listo
+            )
+            app.api["export"] = ObjectCls.Module()
+
+            app.exec(listo)
+
+            self.libs[r_file] = app.memory["var_std_export"]
+
+            return app.memory["var_std_export"]
+        salida = self.libs.get(file, False)
+
+        if False == salida:
+            salida = load_lib(file)
+        return salida
     def str_format(self, cadena):
         
         lis = self.variables[-1]
@@ -769,7 +879,7 @@ class appcls():
     def argparse(self, data:list, func:list=[]) -> list:
         salida = []
         modo = "name"
-
+        
         def structure(nombre:str, defe:list=[], ty:list=[])->dict["name":str, "def":list, "ty":list]:
             if ty==[]:ty=[self.tydef]
             return ({
@@ -787,6 +897,8 @@ class appcls():
             if modo=="name":
                 if i["tipo"]=="name":
                     nombre = i["name"]
+                    if (str(nombre).count(".")!=0):
+                        self.error("Error Syntax, token '.' is invalid", errores.ErrorSyntax, i["i"])#generar_error("error of syntax in var", i["i"])
                     modo="post"
                     pass
                 pass
@@ -980,7 +1092,7 @@ class appcls():
                             pass
 
                         if name.count(".")>0:
-                            fallo("(no se amite '.')")
+                            fallo("(error token in name function '.')")
                         
                         f_a = {
                             "name":name,
@@ -1181,6 +1293,10 @@ class appcls():
                         fallo = generar_error("error at try create a class", i[0]["i"])
                         if len(i)==4:
                             if compara(["name", "name", "()", "code"], i):
+                                if i[1]["name"].count("."): 
+                                    fallo("(error token in name class '.')")
+                                
+
                                 funciones_clases = []
                                 codigo = self.estructuration(i[3]["data"], func)
                                 class_a = {
@@ -1205,6 +1321,9 @@ class appcls():
                         fallo = generar_error("error at try create a module", i[0]["i"])
                         if len(i)==3:
                             if compara(["name", "name", "code"], i):
+                                if i[1]["name"].count("."): 
+                                    fallo("(error token in name module '.')")
+
                                 funciones_clases = []
                                 codigo = self.estructuration(i[2]["data"], funciones_clases)
                                 class_a = {
@@ -1234,6 +1353,11 @@ class appcls():
                                 funciones_clases = []
                                 codigo = self.estructuration(i[3]["data"], func)
                                 ll = sub_group(i[2])
+
+                                if i[1]["name"].count("."): 
+                                    fallo("(error token in name of var for with '.')")
+
+
                                 if ll["data"]==[]:
                                     fallo()
                                 with_a = {
@@ -1258,6 +1382,10 @@ class appcls():
                         fallo = generar_error("error of syntax in from - import", i[0]["i"])
                         if len(i)==6:
                             if compara(["name", "value", {"tipo":"name", "name":"import"}, "name", {"tipo":"name", "name":"as"}, "name"], i):
+                                
+                                if i[5]["name"].count("."): 
+                                    fallo("(error token in name of var for module to import '.')")
+                                
                                 from_a = {
                                     "tipo":"from-def",
                                     "from":eval(i[1]["value"]),
@@ -1276,8 +1404,11 @@ class appcls():
                         pass
                     elif i[0]["name"] == "import":#import-def
                         fallo = generar_error("error of syntax in import", i[0]["i"])
-                        if len(i)==6:
+                        if len(i)==4:
                             if compara(["name", "value", {"tipo":"name", "name":"as"}, "name"], i):
+                                if i[3]["name"].count("."): 
+                                    fallo("(error token in name of var for module to import '.')")
+
                                 from_a = {
                                     "tipo":"import-def",
                                     "import":eval(i[1]["value"]),
@@ -1320,6 +1451,10 @@ class appcls():
 
                             if compara(["name", "code", "name", "name", "code"], i):
                                 if i[2]["name"] in ["error", "catch", "except", "failed", "fail"]:
+
+                                    if i[3]["name"].count("."): 
+                                        fallo("(error token in name of var for insert error '.')")
+
                                     try_a = {
                                         "tipo":"try-def",
                                         "try":self.estructuration(i[1]["data"], func),
@@ -1354,16 +1489,19 @@ class appcls():
                             pass
                         pass
                     elif i[0]["name"] == "var":#var-def
-                        if len(i)>0:
+                        if len(i)>1:
+                            capture = i[1:]
+                            if i[1]["tipo"] in ["code"]: 
+                                capture = i[1]["one"]
                             return_a = {
                                 "tipo":"var-def",
-                                "eval":self.argparse(i[1:]["data"], func),
+                                "dim":self.argparse(capture, func),
                                 "i":i[0]["i"]
                             }
                             salida.append([return_a])
                             pass
                         else:
-                            generar_error("error of syntax in return", i[0]["i"])
+                            generar_error("error of syntax in var", i[0]["i"])
                             pass
                         pass
                     elif i[0]["name"] == "using":#using-comp
@@ -1389,7 +1527,7 @@ class appcls():
                             "var":self.estructuration_one(i[0:i_dim], func),
                             "eval":self.estructuration_one(i[i_dim+1:], func),
                             "visible":visible,
-                            "onename":(is_dim==1) and ("." in i[0]["name"]), 
+                            "onename":(is_dim==1) and not ("." in i[0]["name"]), 
                             "i":i[0]["i"]
                         }
 
@@ -1553,7 +1691,7 @@ class appcls():
             pass
 
         return salida
-    def exec(self, code:str="") -> any:
+    def exec(self, code:str="", root=True) -> any:
 
         values = {
             "app":self,
@@ -1576,22 +1714,25 @@ class appcls():
             exec(before +N+ code +after, values)
             pass
         except Exception as e:
-            salida = ""
-            tipo = ""
-            mensage = ""
-            for e in self.cracheos:
-                salida += f"  file '{e['file']}' line {e['line']}, column {e['column']}" +N
-                salida += f"    {e['code']}" +N
-                salida +=  "    " + (" "*e['column']) + "^" +N
-                tipo = e["type"]
-                mensage = e["msg"]
-                pass
-            self.cracheos = []
-            print("--CLS Virtual Machine to stop" + N)
-            print(salida)
-            #print(mensage)
-            print(" TypeError: " + tipo)
-            print(" Detailed: " + str(mensage))
+            if root:
+                salida = ""
+                tipo = ""
+                mensage = ""
+                for e in self.cracheos:
+                    salida += f"  file '{e['file']}' line {e['line']}, column {e['column']}" +N
+                    salida += f"    {e['code']}" +N
+                    salida +=  "    " + (" "*e['column']) + "^" +N
+                    tipo = e["type"]
+                    mensage = e["msg"]
+                    pass
+                self.cracheos = []
+                print("--CLS Virtual Machine to stop" + N)
+                print(salida)
+                #print(mensage)
+                print(" TypeError: " + tipo)
+                print(" Detailed: " + str(mensage))
+            else:
+                raise Exception(e)
             pass
 
         k = c(values["ex"]["mem"])
@@ -1622,6 +1763,12 @@ class appcls():
             pass
         elif isinstance(v, tipo):
             return v
+        elif v == None:
+            #print("out")
+            if hasattr(tipo, "default"):
+                return tipo.default(tipo)
+            else:
+                return None
         else:
             self.catch(f"error the object '{que_tipo(v)}' can't set in a var of type '{tipo.__name__}'", errores.ErrorTyping)
         
@@ -1678,7 +1825,10 @@ class appcls():
             return s_out
 
         if isinstance(c, dict):
-            salida +=["app.variables.append(locals())"]
+            salida +=[
+                "app.variables.append(locals())",
+                "sta_values = {}"
+                ]
             code = c["data"]
             func = c["func"]
             pass
@@ -1967,7 +2117,7 @@ class appcls():
                         g_1 = self.generator_one(i["var"], modo)
                         g_2 = self.generator_one(i["eval"], modo)
                         preparo = p_error([
-                            f"{g_1} = ({g_2})"
+                            f"{g_1} = app.dim(({g_2}), sta_values.get('{g_1}', var_std_{self.tydef}))"
                         ], i["i"])
                         pass
                     elif modo in ["class"]:
@@ -2021,7 +2171,7 @@ class appcls():
 
                 #salida+=preparo
                 pass
-            elif (i["tipo"] == "rt-def")   and (modo in ["func"]):
+            elif (i["tipo"] == "rt-def")       and (modo in ["func"]):
                 
                 
                 out = self.generator_one(i["eval"], modo)
@@ -2031,7 +2181,48 @@ class appcls():
 
                 salida+=p_error(preparo, i["i"])
                 pass
-            
+            elif (i["tipo"] == "var-def")      and (modo in ["normal", "func-imp", "func"]):
+                ordenar = []                
+                for x in i["dim"]:
+                    
+                    #print(i)
+                    arg=x["name"]
+                    sta=x["type"][0]
+                    col = self.generator_one(x["def"], "func")
+                    if col == "": col = "None"
+                    defa=(col)
+
+                    ordenar+=p_error([
+                        f"try:",
+                        f"    sta_var = var_{self.namespace}_{sta}",
+                        f"except:",
+                        f"    try:",
+                        f"        sta_var = var_std_{sta}",
+                        f"    except:",
+                        f"        app.error('the {sta} class not found', errores.ErrorName)",
+                        f"try:",
+                        f"    var_{self.namespace}_{arg} = ({defa})",
+                        f"except:",
+                        f"    var_{self.namespace}_{arg} = None",
+                        f"sta_values['var_{self.namespace}_{arg}'] = sta_var",
+                        f"var_{self.namespace}_{arg} = app.dim(var_{self.namespace}_{arg}, sta_var)"
+                    ], i["i"])
+                    pass
+
+                salida += ordenar
+                pass
+            elif (i["tipo"] == "import-def")   and (modo in ["normal", "func-imp", "func"]):
+                
+                salida += p_error([
+                    f"var_{self.namespace}_{i['as']} = app.getlib('{i['import']}')"
+                ], i["i"])
+                pass
+            elif (i["tipo"] == "from-def")   and (modo in ["normal", "func-imp", "func"]):
+                
+                salida += p_error([
+                    f"var_{self.namespace}_{i['as']} = app.getlib('{i['from']}').{i['import']}"
+                ], i["i"])
+                pass
             
             pass
         if (using_namespace) and (usingmode == "compiled"):
@@ -2157,7 +2348,7 @@ class appcls():
 
                 if i["tipo"]=="name":
                     if iskey:
-                        t = {"tipo":"value", "value":f"'{i['name']}'", "type":"str", "i":i["i"]}
+                        t = {"tipo":"value", "value":f"'{i['name']}'", "type":"str", "i":i["i"], "byte":""}
                         salida+= f" {self.print_value(t)} "
                         pass
                     elif i["notmod"]:
@@ -2193,7 +2384,7 @@ class appcls():
                     salida += f" {i['char']} "
                     pass
                 elif i["tipo"] == "ope":
-                    if i["char"] in ["+", "-", "*", "/", "**", "%"]:
+                    if i["char"] in ["+", "-", "*", "/", "**", "%", ":"]:
                         salida += f" {i['char']} "
                     elif i["char"] in tokens["convert"]["condi"]:
                         salida += f" {tokens['convert']['condi'][i['char']]} "
@@ -2215,7 +2406,7 @@ class appcls():
                     salida+= f" [{self.generator_one(i['data'], modo)}] "
                     pass
                 elif i["tipo"] == "code":
-                    salida+= f" {'{'+self.generator_one(i['one'], modo, 'eval', True)+'}'}] "
+                    salida+= f" {'{'+self.generator_one(i['one'], modo, 'eval', True)+'}'} "
                     pass
                 elif i["tipo"] == "value":
                     salida+= f" {self.print_value(i)} "

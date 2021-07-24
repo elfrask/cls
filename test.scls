@@ -1,31 +1,5 @@
-using namespace char;
-
-void getsh(v:char, msg:str="") {
-
-    v.set(std::input(msg))
-
-};
-
-using namespace std;
-
-#este es una aplicacion de cls usando nombres de espacios
-#y la clase por defecto char para crear String's con ahorro
-#de memoria
+import "lib/prueba.scls" as test;
+from "prueba.scls" import play as p;
 
 
-void main() {
-    #var value:char = char[20]();    #valor que se va a establecer
-    value = char[20]();    #valor que se va a establecer
-
-    while(true) {
-        char::getsh(value, "pon una nota de 20 caracteres: ");
-        if
-        (input("esto es correcto (Y/N)? ") ? ["y", "Y"]) {break}
-    };
-
-    print("nota:", [value, c'test']);
-    print();
-    print_debug("saludos");
-};
-
-main();
+test.play()

@@ -100,9 +100,9 @@ if __name__ == "__main__":
                         cont = 0
                     if cont==0:
                         try:
-                            print()
+                            #print()
                             execute(addcode, la_app, "<CLS:Stdin-Debug>")
-                            print()
+                            #print()
                         except Exception as e:
                             print(e)
                             pass
@@ -140,9 +140,9 @@ if __name__ == "__main__":
                 cmd = ""
                 cont = 0
             if cont==0:
-                print()
+                #print()
                 execute(addcode, la_app)
-                print()
+                #print()
                 try:
                     pass
                 except Exception as e:
