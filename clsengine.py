@@ -182,6 +182,11 @@ def tablines(data:str, i:int) -> str:
     salida = repeat(T, i)+salida
 
     return salida
+def confirm(self, v, tipo):
+    if v.__class__ in derivadas.get(tipo, []):
+        return True
+    return False
+
 
 class gen_char:
     def names(name:str, i:int, mod:bool=False) -> (#name
@@ -229,17 +234,12 @@ class gen_char:
 derivados = True
 key_true = True
 
-lib_path = [
-    ".",
-    os.path.dirname(__file__) + "/lib",
-    os.path.dirname(__file__) + "/libpy",
-    os.path.dirname(__file__) + "/dlls",
-]
+lib_path = []
 
 
 class gen_value:
     def lista(data:list=[], i:int=0)->(
-        dict["tipo":str, "i":int, "data":list, "complet":list]
+        dict["tipo":str, "i":int, "data":list, "complet":list, "fist":bool]
         ):
         out=[]
         if len(data)>0: out = data[0]
@@ -247,13 +247,14 @@ class gen_value:
             "tipo":"[]",
             "data":out,
             "i":i,
+            "fist":False
             #"complet":data
         }
         if derivados: 
             salida["complet"]=data
         return salida
     def argu(data:list=[], i:int=0)->(
-        dict["tipo":str, "i":int, "data":list, "complet":list]
+        dict["tipo":str, "i":int, "data":list, "complet":list, "fist":bool]
         ):
         out=[]
         if len(data)>0: out = data[0]
@@ -261,13 +262,14 @@ class gen_value:
             "tipo":"()",
             "data":out,
             "i":i,
+            "fist":False
             #"complet":data
         }
         if derivados:
             salida["complet"] = data
         return salida
     def code(data:list=[], i:int=0)->(
-        dict["tipo":str, "i":int, "data":list, "one":list]
+        dict["tipo":str, "i":int, "data":list, "one":list, "fist":bool]
         ):
         out=[]
         if len(data)>0: out = data[0]
@@ -275,6 +277,7 @@ class gen_value:
             "tipo":"code",
             "data":data,
             "i":i,
+            "fist":False
             #"one":out
         }
         if key_true:
@@ -295,7 +298,13 @@ def get_at(obj:any, cadena:str, defa=None):
 class ObjectCls:
     class AnyObject:pass
     class void:pass
-    class Array(list):pass
+    class Array(list):
+        def forEach(self, callback):
+            for i in self:
+                callback(i)
+                pass
+            pass
+        pass
     class Module():
         def __dict__():
             pass
@@ -407,6 +416,21 @@ class PyImports:
     
     pass
 
+derivadas = {
+    ObjectCls.String:[
+        str, ObjectCls.String
+    ],
+    ObjectCls.Integer:[
+        int, ObjectCls.Integer
+    ],
+    ObjectCls.Float:[
+        float, ObjectCls.Float
+    ],
+    ObjectCls.Array:[
+        list, ObjectCls.Array
+    ],
+    
+}
 
 Api_cls = {
     "print":print,
@@ -1640,7 +1664,7 @@ class appcls():
                         salida.append(i)
                         continue
                     pass
-                if len(m)==3:
+                elif len(m)==3:
                     m=salida[-3:]
                     
                     if compara(["()", {"tipo":"ope", "char":"->"}, "name"], m):
@@ -1765,7 +1789,10 @@ class appcls():
     def dim(self, v, tipo) -> any:
         #print(v, tipo)
 
-        if tipo == ObjectCls.AnyObject:
+
+        if confirm(self, v, tipo):
+            return v
+        elif tipo == ObjectCls.AnyObject:
             return v
         elif tipo == ObjectCls.void:
 
@@ -2272,6 +2299,12 @@ class appcls():
             salida = f"app.str['{v['byte']}']({v['value']})"
 
         return salida
+    def fist(self, v):
+        if isinstance(v, list):
+            v = ObjectCls.Array(v)
+        elif True in [isinstance(v, tuple), isinstance(v, set)]:
+            raise Exception('the tokens "," is invalids')
+        return v
     def generator_one(self, line:list, modo:str="normal", modi:str ="eval", key:bool=False) -> str:
         salida = ""
         last = {"tipo":"none"}
@@ -2288,6 +2321,16 @@ class appcls():
                 #print("Fallo", x)
                 self.error(msg, errores.ErrorSyntax, x)
             if True:
+
+                if i["tipo"] in ["()", "[]", "code"]:
+                    i["fist"] = False
+                    if last["tipo"] in ["none", "ope", "sim"]:
+                        i["fist"] = True
+                        #print("llego:", salida)
+                        pass
+                    pass
+
+
                 if i["tipo"] == last["tipo"]:
                     if i["tipo"] == "name":
                         if (i["name"] in nombre_reservados["codi"]) or (last["name"] in nombre_reservados["codi"]):
@@ -2415,13 +2458,22 @@ class appcls():
                     
                     pass
                 elif i["tipo"] == "()":
-                    salida+= f" ({self.generator_one(i['data'], modo)}) "
+                    be = f" ({self.generator_one(i['data'], modo)}) "
+                    if i["fist"]:
+                        be = " app.fist("+be+") "
+                    salida+= be
                     pass
                 elif i["tipo"] == "[]":
-                    salida+= f" [{self.generator_one(i['data'], modo)}] "
+                    be = f" [{self.generator_one(i['data'], modo)}] "
+                    if i["fist"]:
+                        be = " app.fist("+be+") "
+                    salida+= be
                     pass
                 elif i["tipo"] == "code":
-                    salida+= f" {'{'+self.generator_one(i['one'], modo, 'eval', True)+'}'} "
+                    be = f" {'{'+self.generator_one(i['one'], modo, 'eval', True)+'}'} "
+                    if i["fist"]:
+                        be = " app.fist("+be+") "
+                    salida+= be
                     pass
                 elif i["tipo"] == "value":
                     salida+= f" {self.print_value(i)} "

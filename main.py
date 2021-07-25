@@ -5,9 +5,15 @@ import json
 #import dill
 import shutil
 import platform
-cls.lib_path.append(
-     os.path.dirname(cls.lib_path[-1]) + "/std/std"
-)
+cls.lib_path += [
+    ".",
+    "",
+    os.path.dirname(__file__) + "/std/std",
+    os.path.dirname(__file__) + "/lib",
+    os.path.dirname(__file__) + "/libpy",
+    os.path.dirname(__file__) + "/dlls",
+    os.getcwd(),
+]
 
 if not os.path.isdir("cache"):
     os.makedirs("cache")
