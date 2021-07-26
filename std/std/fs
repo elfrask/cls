@@ -3,3 +3,4 @@ import "pypkg" as py;
 fs = py.require("fs.py");
 
 export.open = fs.open;
+export.exist = fs.exist;

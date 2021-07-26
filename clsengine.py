@@ -296,14 +296,34 @@ def get_at(obj:any, cadena:str, defa=None):
         salida = defa
     return salida
 class ObjectCls:
+    def val(v=None):
+
+        
+        if v.__class__ in co_co: return co_co[v.__class__](v)
+        
+
+        return v
     class AnyObject:pass
     class void:pass
     class Array(list):
         def forEach(self, callback):
+            iterador = 0
             for i in self:
-                callback(i)
+                callback(i, iterador)
+                iterador+=1
                 pass
             pass
+        def map(self, callback):
+            salida = []
+            iterador=0
+
+            for i in self:
+                salida+=[callback(i, iterador)]
+                iterador+=1
+
+                pass
+            return ObjectCls.val(salida)
+        
         pass
     class Module():
         def __dict__():
@@ -348,6 +368,14 @@ class ObjectCls:
             return clase(0.0)
         pass
     
+co_co = {
+    str:ObjectCls.String,
+    int:ObjectCls.Integer,
+    float:ObjectCls.Float,
+    list:ObjectCls.Array,
+}
+
+
 class form():
     __clase__ = ObjectCls.char
     def __init__(self, o):
@@ -448,6 +476,9 @@ Api_cls = {
     "function":que_tipo.__class__,
     "Function":que_tipo.__class__,
     "Boolean":bool,
+    "Object":dict,
+    "object":dict,
+    "obj":dict,
     "bool":bool,
     "char":form(ObjectCls.char),
     "len":len,
@@ -505,6 +536,7 @@ class appcls():
             pass
 
         self.api["print_debug"] = print_debug
+        self.api["_file"] = "<File>"
         
         pass
     def getlib(self, file):
@@ -1731,6 +1763,7 @@ class appcls():
 
         return salida
     def exec(self, code:str="", root=True) -> any:
+        self.api["_file"] = ObjectCls.String(self.origin)
 
         values = {
             "app":self,

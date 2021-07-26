@@ -24,4 +24,12 @@ try:
 except Exception as e:
     app.error(e, 'ErrorExecute', 50)
 
+app.foins()
+app.index = 73
+try:
+    var_std_export.exist = (var_std_fs.exist)
+
+except Exception as e:
+    app.error(e, 'ErrorExecute', 73)
+
 app.variables.pop()
