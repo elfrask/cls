@@ -42,7 +42,9 @@ tokens = {
     },
     "metodos":{"main":"__init__", "_call":"__call__", "_getitem":"__getitem__", "_setitem":"__setitem__",
         "_add":"__add__", "_sub":"__sub__", "_div":"__div__", "_delitem":"__delitem__", "_mul":"__mul__",
-        "_mod":"__mod__", "_or":"__or__", "_and":"__and__", "_xor":"__xor__", "_or":"__or__", "_len":"__len__"
+        "_mod":"__mod__", "_or":"__or__", "_and":"__and__", "_xor":"__xor__", "_or":"__or__", "_len":"__len__",
+        "_repr":"__repr__", "_str":"__str__", "_int":"__int__", "_float":"__float__", "_array":"__list__", 
+        "_dict":"__dict__"
     },
     "to_c":{"String":"str", "Array":"list", "Int":"int", "Float":"float", "Dict":"dict"}
 }
@@ -329,6 +331,10 @@ class ObjectCls:
         def __dict__():
             pass
         pass
+    class NotModule():
+        def __getattr__(self, v):
+            return None
+        pass
     class clase():
         def __init__(self, obj) -> None:
             self.obj = obj
@@ -367,7 +373,104 @@ class ObjectCls:
         def default(sclase):
             return clase(0.0)
         pass
+    class hex():
+        def __init__(self, v):
+            if (isinstance(v, int) or isinstance(v, ObjectCls.Integer)):
+                v = hex(int(v))
+            if isinstance(v, self.__class__):
+                self = v
+            self.value = str(v)
+            self.lin = 16
+
+            try: int(v, self.lin)
+            except: raise Exception(f'Error at convert this value "{v}" to hex')
+            pass
+        def __int__(self):
+            return obj.Integer(int(self.value, self.lin))
+        def __float__(self):
+            return obj.Float(int(self.value, self.lin))
+        def __repr__(self):
+            return f'hex({self.value})'
+        def __str__(self):
+            return self.value
     
+    
+        
+        
+        pass
+    class bin():
+        def __init__(self, v):
+            if (isinstance(v, int) or isinstance(v, ObjectCls.Integer)):
+                v = bin(int(v))
+            if isinstance(v, self.__class__):
+                self = v
+            self.value = str(v)
+            self.lin = 2
+            
+            try: int(v, self.lin)
+            except: raise Exception(f'Error at convert this value "{v}" to bin')
+            pass
+        def __int__(self):
+            return obj.Integer(int(self.value, self.lin))
+        def __float__(self):
+            return obj.Float(int(self.value, self.lin))
+        def __repr__(self):
+            return f'hex({self.value})'
+        def __str__(self):
+            return self.value
+    class oct():
+        def __init__(self, v):
+            if (isinstance(v, int) or isinstance(v, ObjectCls.Integer)):
+                v = oct(int(v))
+            if isinstance(v, self.__class__):
+                self = v
+            self.value = str(v)
+            self.lin = 8
+            
+            try: int(v, self.lin)
+            except: raise Exception(f'Error at convert this value "{v}" to oct')
+            pass
+        def __int__(self):
+            return obj.Integer(int(self.value, self.lin))
+        def __float__(self):
+            return obj.Float(int(self.value, self.lin))
+        def __repr__(self):
+            return f'hex({self.value})'
+        def __str__(self):
+            return self.value
+    class Bytes(bytes):
+        def __getitem__(self, a):
+            b = list(self)
+
+            return obj.Integer(b[a])
+    
+        pass
+    class Boolean():
+        def __init__(self, v):
+            if (isinstance(v, str) or isinstance(v, ObjectCls.String)):
+                if str(v) in ["on", "off", "true", "false", "True", "False"]:
+                    pass
+                else:
+                    self.str = str(bool(v))
+            else:
+                self.str = str(bool(v))
+            pass
+        def __str__(self):
+            return self.str
+        def __repr__(self):
+            return self.str
+        def __bool__(self):
+            return self.str in ["on", "true", "True"]
+        def __int__(self):
+            return obj.Integer(self.str in ["on", "true", "True"])
+        def __float__(self):
+            return obj.Float(self.str in ["on", "true", "True"])
+        
+        
+
+        pass
+obj = ObjectCls
+
 co_co = {
     str:ObjectCls.String,
     int:ObjectCls.Integer,
@@ -427,6 +530,7 @@ class PyImports:
             "export":export, 
             "module":ObjectCls.Module,
             "Module":ObjectCls.Module,
+            "Api":obj
         })
 
         return export
@@ -438,10 +542,21 @@ class PyImports:
             "export":export, 
             "module":ObjectCls.Module,
             "Module":ObjectCls.Module,
+            "Api":obj
+
         })
 
         return export
     
+    pass
+
+class process:
+    argv = sys.argv
+    PyImports = PyImports
+    class io:
+        stdin = sys.stdin
+        stdout = sys.stdout
+        pass
     pass
 
 derivadas = {
@@ -461,9 +576,13 @@ derivadas = {
 }
 
 Api_cls = {
-    "print":print,
+    "__name__":"main",
+    "__cwd__":os.getcwd(),
+    "process":process,
     "str":ObjectCls.String,
     "String":ObjectCls.String,
+    "bytes":ObjectCls.Bytes,
+    "Bytes":ObjectCls.Bytes,
     "Any":ObjectCls.AnyObject,
     "any":ObjectCls.AnyObject,
     "int":ObjectCls.Integer,
@@ -476,15 +595,24 @@ Api_cls = {
     "function":que_tipo.__class__,
     "Function":que_tipo.__class__,
     "Boolean":bool,
+    "bool":bool,
     "Object":dict,
     "object":dict,
     "obj":dict,
-    "bool":bool,
     "char":form(ObjectCls.char),
+
+    "print":print,
     "len":len,
     "input":input,
-    "__name__":"main",
     "PyApi":PyImports,
+
+    "hex":obj.hex,
+    "bin":obj.bin,
+    "oct":obj.oct,
+    "Hex":obj.hex,
+    "Bin":obj.bin,
+    "Oct":obj.oct,
+    "ord":lambda x: (obj.Integer(ord(x))),
 
     "true":True,
     "false":False,            
@@ -500,35 +628,40 @@ class appcls():
     def __init__(self, id:int = uid) -> None:
         global uid
         uid += 1
-        self.codigo:str = ""
-        self.origin:str = f"<Script:{id}>"
-        self.var:dict = {}
-        self.mode:str = "cls"
-        self.app:dict = {}
-        self.archivo:list = []
-        self.submode:list = []
-        self.funca:bool=True
-        self.tydef = "Any"
-        self.namespace = "std"
-        self.index=0
-        self.memory = {}
+        self.codigo:str = "" 
+        self.origin:str = f"<Script:{id}>" 
+        self.var:dict = {} 
+        self.mode:str = "cls" 
+        self.app:dict = {} 
+        self.archivo:list = [] 
+        self.submode:list = [] 
+        self.funca:bool=True 
+        self.tydef:str = "Any" 
+        self.namespace:str = "std" 
+        self.index:int = 0
+        self.memory = {} 
         self.values={
             "str":ObjectCls.String,
             "int":ObjectCls.Integer,
             "float":ObjectCls.Float
-        }
-        self.variables = []
+        } 
+        self.variables = [] 
         self.str = {
             "":ObjectCls.String,
-            "b":lambda x:(bytes(x, "utf8")),
+            "b":lambda x:(ObjectCls.Bytes(x, "utf8")),
             "f":self.str_format,
             "c":lambda x: Api_cls["char"](x, len(x))
-        }
-        self.api = c(Api_cls)
-        self.cracheos = []
+        } 
+        self.api = c(Api_cls) 
+        self.cracheos = [] 
         self.libs = {
             "pypkg":PyImports
-        }
+        } 
+        self.formato_int = {
+            "x":obj.hex,
+            "b":obj.bin,
+            "o":obj.oct,
+        } 
 
         def print_debug(*arg):
             lin0 = self.codigo[0:self.index].count(N)
@@ -1567,7 +1700,8 @@ class appcls():
                             return_a = {
                                 "tipo":"var-def",
                                 "dim":self.argparse(capture, func),
-                                "i":i[0]["i"]
+                                "i":i[0]["i"],
+                                "visible":visible
                             }
                             salida.append([return_a])
                             pass
@@ -1768,9 +1902,14 @@ class appcls():
         values = {
             "app":self,
             "MD":ObjectCls.Module,
+            "NOMD":ObjectCls.NotModule,
             "ex":{"mem":{}},
             "c":c,
-            str("var_"):"main"
+            "stasta":{
+                "tae":self.memory.get("stasta", {}).get("tae", {})
+            },
+            str("var_"):"main",
+            "errores":errores
         }
         len_name = len("var_")
         before = before_code
@@ -1818,6 +1957,8 @@ class appcls():
         #print(t_out)
 
         self.memory = t_out
+        self.memory["stasta"] = {}
+        self.memory["stasta"]["tae"] = k.get("sta_values", {})
         return None
     def dim(self, v, tipo) -> any:
         #print(v, tipo)
@@ -1866,7 +2007,7 @@ class appcls():
                 "except Exception as e:",
                 [f"app.error(e, 'ErrorExecute', {i})"]
             ]
-        def print_arg(args) ->list:
+        def print_arg(args) -> list:
             s_out = []
             it = -1
             for i in args:
@@ -1900,10 +2041,18 @@ class appcls():
             return s_out
 
         if isinstance(c, dict):
+            modo_a = ["sta_values = {}"]
+            if modo == "normal":
+                modo_a = [
+                    "sta_values = stasta.get('tae', {})",
+                    "stasta = {}"
+                ]
+
+                pass
             salida +=[
                 "app.variables.append(locals())",
-                "sta_values = {}"
-                ]
+                ] + modo_a
+            
             code = c["data"]
             func = c["func"]
             pass
@@ -1969,7 +2118,7 @@ class appcls():
                 #qqq2 = f"var_{self.namespace}_{nombre} = p_call(var_{self.namespace}_{nombre})"
                 
                 if visible == "private":
-                    qqq=f""
+                    qqq=f"private.{nombre} = var_{self.namespace}_{nombre}"
                     #qqq2=""
                     pass
                 
@@ -2015,12 +2164,11 @@ class appcls():
                 elif visible == "private":
                     privado="private_"
                     qqq=f"var_{self.namespace}_{nombre} = p_call({privado}var_{self.namespace}_{nombre})"
-                    qqq2=""
+                    qqq2=f"private.{nombre} = var_{self.namespace}_{nombre}"
                     pass
                 elif visible == "export":
                     privado="private_"
-                    #qqq=f"var_{self.namespace}_{nombre} = p_call({privado}var_{self.namespace}_{nombre})"
-                    
+                    #qqq=f"private.{nombre} = p_call({privado}var_{self.namespace}_{nombre})"
                     pass
                 
                 
@@ -2143,18 +2291,40 @@ class appcls():
                 salida += p_error(if_out, i["i"])
 
                 pass
-            elif (i["tipo"] == "class-def")    and (modo in ["normal", "func-imp", "func", "class"]):
+            elif (i["tipo"] == "class-def")    and (modo in ["normal", "func-imp", "func"]):
                 fun = i
                 arg= []
                 for x in fun["extend"]:
                     #print(x)
-                    arg.append("var_"+self.namespace+"_"+x["name"]) 
+                    arg.append("var_"+self.namespace+"_"+x["name"])
+                    pass
+                
+                preparo2 = [
+                    "def t_get_atr(self, v): ",
+                    "    return None",
+                    
+                    "me.__getattr__ = t_get_atr",
+                    "private.__getattr__ = t_get_atr",
+                    #"exportar.__getattr__ = t_get_atr",
+                    
+                    "def t_set_atr(self, a, v): ",
+                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_{self.namespace}_'+a, var_std_{self.tydef}))",
+                    
+                    "me.__setattr__ = t_set_atr",
+                    "private.__setattr__ = t_set_atr",
+                    #"exportar.__setattr__ = t_set_atr",
+                    
+                ]
+                
                 preparo = [
                     f"class tmp_class_{self.namespace}_{fun['name']}({','.join(arg)}):",
-                     "    def __dict__():pass",
+                     "    pass",#"    def __dict__():pass",
                     f"def tmp_var_{self.namespace}_{fun['name']}(obj):",
                      "    exportar = {}",
+                    f"    var_{self.namespace}_private = (MD)()",
+                    f"    private = var_{self.namespace}_private",
                     f"    me = obj",
+                        preparo2,
                      "    def out(*arg): return me(*arg)",
                      "    def p_call(o):",
                      "        def eo(*arg):",
@@ -2174,11 +2344,32 @@ class appcls():
                 ]
                 salida+=preparo
                 pass
-            elif (i["tipo"] == "module-def")   and (modo in ["normal", "func-imp", "func", "class"]):
+            elif (i["tipo"] == "module-def")   and (modo in ["normal", "func-imp", "func"]):
                 fun = i
+
+                preparo2 = [
+                    "def t_get_atr(self, v): ",
+                    "    return None",
+                    
+                    "me.__getattr__ = t_get_atr",
+                    "private.__getattr__ = t_get_atr",
+                    #"exportar.__getattr__ = t_get_atr",
+                    
+                    "def t_set_atr(self, a, v): ",
+                     "    print('atr:', a)",
+                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_{self.namespace}_'+a, var_std_{self.tydef}))",
+                    
+                    "me.__setattr__ = t_set_atr",
+                    "private.__setattr__ = t_set_atr",
+                    #"exportar.__setattr__ = t_set_atr",
+                    
+                ]
                 
                 preparo = [
                     f"def var_{self.namespace}_{fun['name']}(me):",
+                     "    private = (MD())",
+                    f"    var_{self.namespace}_private = private",
+                          preparo2,
                         self.generator(fun["code"], "module"),
                      "    return me",
                     f"var_{self.namespace}_{fun['name']} = (var_{self.namespace}_{fun['name']})(MD())"
@@ -2274,7 +2465,7 @@ class appcls():
                         f"    try:",
                         f"        sta_var = var_std_{sta}",
                         f"    except:",
-                        f"        app.error('the {sta} class not found', errores.ErrorName)",
+                        f"        app.error('the {sta} class not found', '{errores.ErrorName}', app.index)",
                         f"try:",
                         f"    var_{self.namespace}_{arg} = ({defa})",
                         f"except:",
@@ -2286,13 +2477,59 @@ class appcls():
 
                 salida += ordenar
                 pass
+            elif (i["tipo"] == "var-def")      and (modo in ["class", "module"]):
+                ordenar = []                
+                for x in i["dim"]:
+                    
+                    #print(i)
+                    arg=x["name"]
+                    sta=x["type"][0]
+                    col = self.generator_one(x["def"], "func")
+                    if col == "": col = "None"
+                    defa=(col)
+
+                    na = "me"
+                    qqq = ""
+
+                    if i["visible"] == "private":
+                        na = "private"
+                        pass
+                    elif i["visible"] == "static" and modo == "class":
+                        na = "out"
+                        pass
+                    elif i["visible"] == "export" and modo == "class":
+                        qqq = f"exportar['{arg}'] = app.dim(var_{self.namespace}_{arg}, sta_var)"
+                        pass
+                    
+                    
+
+                    ordenar+=p_error([
+                        f"try:",
+                        f"    sta_var = var_{self.namespace}_{sta}",
+                        f"except:",
+                        f"    try:",
+                        f"        sta_var = var_std_{sta}",
+                        f"    except:",
+                        f"        app.error('the {sta} class not found', '{errores.ErrorName}', app.index)",
+                        f"try:",
+                        f"    var_{self.namespace}_{arg} = ({defa})",
+                        f"except:",
+                        f"    var_{self.namespace}_{arg} = None",
+                        f"sta_values['var_{self.namespace}_{arg}'] = sta_var",
+                        f"{na}.{arg} = app.dim(var_{self.namespace}_{arg}, sta_var)",
+                        qqq
+                    ], i["i"])
+                    pass
+
+                salida += ordenar
+                pass
             elif (i["tipo"] == "import-def")   and (modo in ["normal", "func-imp", "func"]):
                 
                 salida += p_error([
                     f"var_{self.namespace}_{i['as']} = app.getlib('{i['import']}')"
                 ], i["i"])
                 pass
-            elif (i["tipo"] == "from-def")   and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "from-def")     and (modo in ["normal", "func-imp", "func"]):
                 
                 salida += p_error([
                     f"var_{self.namespace}_{i['as']} = app.getlib('{i['from']}').{i['import']}"
@@ -2338,6 +2575,12 @@ class appcls():
         elif True in [isinstance(v, tuple), isinstance(v, set)]:
             raise Exception('the tokens "," is invalids')
         return v
+    def fint(self, v, x):
+        salida = 0
+        
+        salida = self.formato_int.get(x, lambda i:0)(v)
+
+        return salida
     def generator_one(self, line:list, modo:str="normal", modi:str ="eval", key:bool=False) -> str:
         salida = ""
         last = {"tipo":"none"}
@@ -2460,6 +2703,10 @@ class appcls():
                         pass
                     elif i["name"][0]==".":
                         salida+= f"{i['name']} "
+                        pass
+                    elif i["name"][0]=="0":
+                        
+                        salida+= f" app.fint('{i['name']}', '{i['name'][1]}') "
                         pass
                     elif compara([{"tipo":"ope", "char":"::"}], line[ite+1:ite+2]):
                         salida+= f" var_{i['name']}"
