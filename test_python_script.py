@@ -3,7 +3,7 @@ class m:
         self.v = v
         pass
     def __setattr__(self, a, v):
-        print("atributo:", v)
+        #print("atributo:", v)
         self.__dict__[a] = v
     def __getattr__(self, a):
         #print("atributo:", a)
@@ -11,7 +11,9 @@ class m:
     def melo(self):
 
         return "Hola Mundo"
+    def __type__():
+        return "ty"
     pass
 
 k = m(12)
-print(k.va)
+print(type("k") == str)

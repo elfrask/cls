@@ -31,24 +31,33 @@ class OpenFile:
 class OpenDir:
     def __init__(self, p) -> None:
         self.path = p
-        if not os.path.isfile(p):
-            open(p, "w").close()
+        if not os.path.isdir(p):
+            os.mkdir(p)
             pass
         pass
     def read(self):
-        file = open(self.path, "r")
-        i = file.read()
-        file.close()
-        return i
-    def write(self):
+        out = os.listdir(self.path)
+        
+        return Api.Array(out)
+    def __len__(self):
+        out = os.listdir(self.path)
+        
+        return Api.Integer(len(out))
+    count = __len__
+    def write(self, d:list=[]):
+        
+        for x in d:
+            open(self.path + "/" + x, "w").close()
+            pass
         pass
+    
     pass
 
 
 
 
-export.file = OpenFile
-export.file = OpenDir
+export.open = OpenFile
+export.dir = OpenDir
 export.exist = Module()
 export.exist.path = (lambda p: os.path.exists(p))
 export.exist.file = (lambda p: os.path.isfile(p))

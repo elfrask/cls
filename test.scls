@@ -1,6 +1,3 @@
-module main {
-    var i:int = 10;
-};
+import "os" as os;
 
-print(main.i);
-main.i = "1.2"
+print(os.name())
