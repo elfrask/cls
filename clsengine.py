@@ -449,6 +449,8 @@ class ObjectCls:
         def __init__(self, v):
             if (isinstance(v, str) or isinstance(v, ObjectCls.String)):
                 if str(v) in ["on", "off", "true", "false", "True", "False"]:
+                    self.str = str(v)
+                    
                     pass
                 else:
                     self.str = str(bool(v))
@@ -469,6 +471,20 @@ class ObjectCls:
         
 
         pass
+    class intbit():
+        def __init__(self, v, l=8):
+            self.l = l
+            #print("llego")
+            self.set(v)
+            pass
+        def set(self, v):
+            self.value = int(v)%(int('1'*self.l, 2)+1)
+            pass
+        def __int__(self):
+            return obj.Integer(self, self.value)
+        def __str__(self):
+            return obj.String(f"intbit[{self.l}]({self.value})")
+        pass
 obj = ObjectCls
 
 co_co = {
@@ -479,19 +495,34 @@ co_co = {
 }
 
 
-class form():
-    __clase__ = ObjectCls.char
-    def __init__(self, o):
-        self.o = o
-        pass
-    def __dict__(self):
-        pass
-    def __getitem__(self, e:int=-1):
-        def gen(a:str=""):
+class form:
+    class char:
+        __clase__ = ObjectCls.char
+        def __init__(self, o):
+            self.o = o
+            pass
+        def __dict__(self):
+            pass
+        def __getitem__(self, e:int=-1):
+            def gen(a:str=""):
+                return self.o(a, e)
+            return gen
+        def __call__(self, a:str="", e:int=-1):
             return self.o(a, e)
-        return gen
-    def __call__(self, a:str="", e:int=-1):
-        return self.o(a, e)
+    class intbit:
+        __clase__ = ObjectCls.intbit
+        def __init__(self, o):
+            self.o = o
+            pass
+        def __dict__(self):
+            pass
+        def __getitem__(self, e:int=8):
+            def gen(a:int=0):
+                return self.o(a, e)
+            return gen
+        def __call__(self, a:int=0, e:int=8):
+            return self.o(a, e)
+    
 
 class lib:
     def load(fs):
@@ -594,12 +625,13 @@ Api_cls = {
     "Module":ObjectCls.Module,
     "function":que_tipo.__class__,
     "Function":que_tipo.__class__,
-    "Boolean":bool,
-    "bool":bool,
+    "Boolean":ObjectCls.Boolean,
+    "bool":ObjectCls.Boolean,
     "Object":dict,
     "object":dict,
     "obj":dict,
-    "char":form(ObjectCls.char),
+    "char":form.char(ObjectCls.char),
+    "intbit":form.intbit(ObjectCls.intbit),
 
     "print":print,
     "len":len,
@@ -614,12 +646,12 @@ Api_cls = {
     "Oct":obj.oct,
     "ord":lambda x: (obj.Integer(ord(x))),
 
-    "true":True,
-    "false":False,            
-    "True":True,
-    "False":False,
-    "on":True,
-    "off":False,
+    "true":ObjectCls.Boolean("true"),
+    "false":ObjectCls.Boolean("false"),            
+    "True":ObjectCls.Boolean("True"),
+    "False":ObjectCls.Boolean("Frue"),
+    "on":ObjectCls.Boolean("on"),
+    "off":ObjectCls.Boolean("off"),
 }
 
 #procesador = 1/int(sys.argv[2])

@@ -53,6 +53,18 @@ class OpenDir:
     
     pass
 
+def isbyte(p):
+    salida = False
+    if not os.path.isfile(p):
+        raise Exception('Of path not is file')
+
+    try: open(p, "r").read()
+    except: salida = True
+    return Api.Boolean(salida)
+
+def getcwd():
+    return 
+
 
 
 

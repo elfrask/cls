@@ -1,3 +1,4 @@
-import "os" as os;
 
-print(os.name())
+var valor:intbit = intbit[8](256);
+
+print("valor:", valor)
