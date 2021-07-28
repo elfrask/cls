@@ -1,4 +1,2 @@
 
-var valor:intbit = intbit[8](256);
-
-print("valor:", valor)
+print(12 ^ 23)

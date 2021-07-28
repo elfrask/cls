@@ -325,7 +325,8 @@ class ObjectCls:
 
                 pass
             return ObjectCls.val(salida)
-        
+        def default(clase):
+            return clase([])
         pass
     class Module():
         def __dict__():
@@ -385,6 +386,8 @@ class ObjectCls:
             try: int(v, self.lin)
             except: raise Exception(f'Error at convert this value "{v}" to hex')
             pass
+        def default(clase):
+            return clase("0x0")
         def __int__(self):
             return obj.Integer(int(self.value, self.lin))
         def __float__(self):
@@ -410,6 +413,8 @@ class ObjectCls:
             try: int(v, self.lin)
             except: raise Exception(f'Error at convert this value "{v}" to bin')
             pass
+        def default(clase):
+            return clase("0b0")
         def __int__(self):
             return obj.Integer(int(self.value, self.lin))
         def __float__(self):
@@ -430,6 +435,8 @@ class ObjectCls:
             try: int(v, self.lin)
             except: raise Exception(f'Error at convert this value "{v}" to oct')
             pass
+        def default(clase):
+            return clase("0c0")
         def __int__(self):
             return obj.Integer(int(self.value, self.lin))
         def __float__(self):
@@ -443,6 +450,8 @@ class ObjectCls:
             b = list(self)
 
             return obj.Integer(b[a])
+        def default(clase):
+            return clase(b'')
     
         pass
     class Boolean():
@@ -457,6 +466,8 @@ class ObjectCls:
             else:
                 self.str = str(bool(v))
             pass
+        def default(clase):
+            return clase("True")
         def __str__(self):
             return self.str
         def __repr__(self):
@@ -477,6 +488,9 @@ class ObjectCls:
             #print("llego")
             self.set(v)
             pass
+        def default(clase):
+            
+            return clase()
         def set(self, v):
             self.value = int(v)%(int('1'*self.l, 2)+1)
             pass
@@ -503,6 +517,8 @@ class form:
             pass
         def __dict__(self):
             pass
+        def default(self, clase):
+            return clase("", -1)
         def __getitem__(self, e:int=-1):
             def gen(a:str=""):
                 return self.o(a, e)
@@ -516,6 +532,8 @@ class form:
             pass
         def __dict__(self):
             pass
+        def default(self, clase): 
+            return clase(0, 8)
         def __getitem__(self, e:int=8):
             def gen(a:int=0):
                 return self.o(a, e)
@@ -1843,8 +1861,24 @@ class appcls():
                 #print(salida[-2:])
                 m=salida[-3:]
                 n=salida[-2:]
+                #print(len(m))
+                if len(m)==3:
+                    m=salida[-3:]
+                    if compara(["()", {"tipo":"ope", "char":"->"}, "name"], m):
+                        #print("llego")
+                        devolver = salida.pop()["name"]
+                        salida.pop()
+                        arg=salida.pop()
+                        codigo = i
+                        #e+=3
+                        is_func=True
 
-                if len(n)==2:
+                        pass
+                    else:
+                        pass
+                    pass
+                
+                if len(n)==2 and (not is_func):
                     #print("funcion")
                     #print(n)
                     
@@ -1860,22 +1894,7 @@ class appcls():
                         salida.append(i)
                         continue
                     pass
-                elif len(m)==3:
-                    m=salida[-3:]
-                    
-                    if compara(["()", {"tipo":"ope", "char":"->"}, "name"], m):
-                        devolver = salida.pop()["name"]
-                        salida.pop()
-                        arg=salida.pop()
-                        codigo = i
-                        #e+=3
-                        is_func=True
-
-                        pass
-                    else:
-                        salida.append(i)
-                        continue
-                    pass
+                #print(is_func)
                 
                 if is_func:
                     if len(salida)>0:
@@ -2001,6 +2020,14 @@ class appcls():
         elif tipo == ObjectCls.void:
 
             self.catch(f"error the object '{que_tipo(v)}' can't set in this value", errores.ErrorTyping) 
+        elif v == None:
+            #print("out")
+            if hasattr(tipo, "default"):
+                #print("si")
+                return tipo.default(tipo)
+            else:
+                #print("no")
+                return None
         elif hasattr(tipo, "__clase__"):
             if isinstance(v, tipo.__clase__):
                 return v
@@ -2009,13 +2036,8 @@ class appcls():
             pass
         elif isinstance(v, tipo):
             return v
-        elif v == None:
-            #print("out")
-            if hasattr(tipo, "default"):
-                return tipo.default(tipo)
-            else:
-                return None
         else:
+            print(v)
             self.catch(f"error the object '{que_tipo(v)}' can't set in a var of type '{tipo.__name__}'", errores.ErrorTyping)
         
         return v
@@ -2080,7 +2102,7 @@ class appcls():
 
                 pass
             salida +=[
-                "app.variables.append(locals())",
+                "app.variables.append([locals(), globals()])",
                 ] + modo_a
             
             code = c["data"]
