@@ -3,19 +3,11 @@ sta_values = stasta.get('tae', {})
 constant   = stasta.get('const', [])
 stasta = {}
 app.foins()
-app.index = 0
+app.index = 1
 try:
-    var_std_fs = app.getlib('fs')
+    var_std_catch  (app.str['']("me dio la gana de fallar")  ,  app.str['']("FALLO PVT0"))
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 0)
-
-app.foins()
-app.index = 20
-try:
-    var_std_print  (var_std_fs.open)
-
-except Exception as e:
-    app.error(e, 'ErrorExecute', 20)
+    app.error(e, 'ErrorExecute', 1)
 
 app.variables.pop()

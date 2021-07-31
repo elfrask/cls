@@ -599,6 +599,7 @@ class PyImports:
     
     pass
 
+
 class process:
     argv = sys.argv
     PyImports = PyImports
@@ -650,6 +651,7 @@ Api_cls = {
     "obj":dict,
     "char":form.char(ObjectCls.char),
     "intbit":form.intbit(ObjectCls.intbit),
+    "ErrorNames":errores,
 
     "print":print,
     "len":len,
@@ -712,6 +714,7 @@ class appcls():
             "b":obj.bin,
             "o":obj.oct,
         } 
+        self.api["catch"] = self.catch
 
         def print_debug(*arg):
             lin0 = self.codigo[0:self.index].count(N)
@@ -2126,8 +2129,7 @@ class appcls():
             code = c
             func = []
             pass
-        else:
-            return []
+        else: return []
         
         for i in func:
             nombre = i[0]
@@ -2759,11 +2761,11 @@ class appcls():
                 
                 salida += p_error([
                     f"incluir = app.getlib('{i['include']}')",
-                     "print(type(incluir))",
+                     #"print(type(incluir))",
                      "for x in dir(incluir):",
                      #"    print(getattr(incluir, x))",
-                     "    globals()[x] = getattr(incluir, x)",
-                     "    locals()[x] = getattr(incluir, x)",
+                    f"    globals()['var_{self.namespace}_' + x] = getattr(incluir, x)",
+                    f"    locals()['var_{self.namespace}_' + x] = getattr(incluir, x)",
 
                 ], i["i"])
                 pass
@@ -2906,6 +2908,8 @@ class appcls():
                     if last["tipo"] in ["sim", "none"]:
                         if last.get("char", ",") == ",":
                             iskey = True
+                            #print("error 1", i)
+
                             pass
                         pass
                 last = i
@@ -2915,6 +2919,8 @@ class appcls():
 
                 if i["tipo"]=="name":
                     if iskey:
+                        #print("error 2", i)
+
                         t = {"tipo":"value", "value":f"'{i['name']}'", "type":"str", "i":i["i"], "byte":""}
                         salida+= f" {self.print_value(t)} "
                         pass
@@ -2985,6 +2991,8 @@ class appcls():
                 elif i["tipo"] == "code":
                     be = f" {'{'+self.generator_one(i['one'], modo, 'eval', True)+'}'} "
                     if i["fist"]:
+                        #print("code")
+
                         be = " app.fist("+be+") "
                     salida+= be
                     pass
@@ -2993,6 +3001,8 @@ class appcls():
                     pass
                 
                 pass
+            iskey = False
+
             
             pass
         while salida[:1]==" ":
