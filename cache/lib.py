@@ -1,5 +1,6 @@
-app.variables.append(locals())
+app.variables.append([locals(), globals()])
 sta_values = stasta.get('tae', {})
+constant   = stasta.get('const', [])
 stasta = {}
 app.foins()
 app.index = 0
@@ -10,19 +11,36 @@ except Exception as e:
     app.error(e, 'ErrorExecute', 0)
 
 app.foins()
-app.index = 24
+app.index = 23
 try:
-    var_std_os = app.dim((var_std_py.require  (app.str['']("os.py"))), sta_values.get('var_std_os', var_std_Any))
+    if 'var_std_fs' in constant: app.constE('var_std_fs')
+    var_std_fs = app.dim((var_std_py.require  (app.str['']("fs.py"))), sta_values.get('var_std_fs', var_std_Any))
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 24)
+    app.error(e, 'ErrorExecute', 23)
 
 app.foins()
-app.index = 51
+app.index = 50
 try:
-    var_std_export.name = (var_std_os.osname)
+    var_std_export.open = (var_std_fs.open)
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 51)
+    app.error(e, 'ErrorExecute', 50)
+
+app.foins()
+app.index = 73
+try:
+    var_std_export.dir = (var_std_fs.dir)
+
+except Exception as e:
+    app.error(e, 'ErrorExecute', 73)
+
+app.foins()
+app.index = 118
+try:
+    var_std_export.exist = (var_std_fs.exist)
+
+except Exception as e:
+    app.error(e, 'ErrorExecute', 118)
 
 app.variables.pop()

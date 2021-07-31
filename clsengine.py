@@ -756,7 +756,10 @@ class appcls():
             open("./cache/lib.py", "w").write(
                 listo
             )
-            app.api["export"] = ObjectCls.Module()
+            class library:
+                
+                pass
+            app.api["export"] = library()
             #app.api["Module"] = ObjectCls.Module
             #app.api["module"] = ObjectCls.Module
 
@@ -1740,7 +1743,7 @@ class appcls():
                             generar_error("error of syntax in return", i[0]["i"])
                             pass
                         pass
-                    elif i[0]["name"] == "var":#var-def
+                    elif i[0]["name"] in ["var", "const"]:#var-def
                         if len(i)>1:
                             capture = i[1:]
                             if i[1]["tipo"] in ["code"]: 
@@ -1749,7 +1752,8 @@ class appcls():
                                 "tipo":"var-def",
                                 "dim":self.argparse(capture, func),
                                 "i":i[0]["i"],
-                                "visible":visible
+                                "visible":visible,
+                                "const": i[0]["name"] == "const"
                             }
                             salida.append([return_a])
                             pass
@@ -1955,7 +1959,8 @@ class appcls():
             "ex":{"mem":{}},
             "c":c,
             "stasta":{
-                "tae":self.memory.get("stasta", {}).get("tae", {})
+                "tae":self.memory.get("stasta", {}).get("tae", {}),
+                "const":self.memory.get("stasta", {}).get("const", [])
             },
             str("var_"):"main",
             "errores":errores
@@ -2008,6 +2013,7 @@ class appcls():
         self.memory = t_out
         self.memory["stasta"] = {}
         self.memory["stasta"]["tae"] = k.get("sta_values", {})
+        self.memory["stasta"]["const"] = k.get("constant", [])
         return None
     def dim(self, v, tipo) -> any:
         #print(v, tipo)
@@ -2041,6 +2047,9 @@ class appcls():
             self.catch(f"error the object '{que_tipo(v)}' can't set in a var of type '{tipo.__name__}'", errores.ErrorTyping)
         
         return v
+    def constE(self, n):
+        #print("Error")
+        raise Exception(f"of value name '{n}' is a constant and can't re-define")
     def generator(self, c, modo:str="normal", usingmode = "compiled") -> list:
         
         salida = []
@@ -2093,11 +2102,16 @@ class appcls():
             return s_out
 
         if isinstance(c, dict):
-            modo_a = ["sta_values = {}"]
+            modo_a = [
+                "sta_values = {}",
+                "constant = {}"
+                ]
             if modo == "normal":
                 modo_a = [
                     "sta_values = stasta.get('tae', {})",
-                    "stasta = {}"
+                    "constant   = stasta.get('const', [])",
+                    "stasta = {}",
+                    #"print(constant)"
                 ]
 
                 pass
@@ -2357,6 +2371,28 @@ class appcls():
 
                 salida+=p_error(preparo, i["i"])
                 pass
+            elif (i["tipo"] == "try-def")          and (modo in ["normal", "func-imp", "func"]):
+                if_out=[]
+                #tipo, cond, code
+                x=i
+                #cond = self.generator_one(x["cond"], modo)
+                code_try = self.generator(x["try"], modo)
+                code_error = self.generator(x["error"], modo)
+                if_out += [
+                     "try:",
+                          code_try,
+                     "    pass",
+                     "except Exception as ero:",
+                    f"    var_{self.namespace}_{x['e']} = ero",
+                     "    app.cracheos = []",
+                          code_error,
+                     "    pass",
+                ]
+                
+
+                salida += p_error(if_out, i["i"])
+
+                pass
             
             #Declaracion de Clases y Modulos
             elif (i["tipo"] == "class-def")        and (modo in ["normal", "func-imp", "func"]):
@@ -2582,7 +2618,12 @@ class appcls():
                     if col == "": col = "None"
                     defa=(col)
 
+                    qqq = ""
+                    if i["const"]:qqq = f"constant.append('var_{self.namespace}_{arg}')"
+
                     ordenar+=p_error([
+                        
+                        f"if 'var_{self.namespace}_{arg}' in constant: app.constE('var_{self.namespace}_{arg}')",
                         f"try:",
                         f"    sta_var = var_{self.namespace}_{sta}",
                         f"except:",
@@ -2595,7 +2636,8 @@ class appcls():
                         f"except:",
                         f"    var_{self.namespace}_{arg} = None",
                         f"sta_values['var_{self.namespace}_{arg}'] = sta_var",
-                        f"var_{self.namespace}_{arg} = app.dim(var_{self.namespace}_{arg}, sta_var)"
+                        f"var_{self.namespace}_{arg} = app.dim(var_{self.namespace}_{arg}, sta_var)",
+                        qqq
                     ], i["i"])
                     pass
 
@@ -2614,6 +2656,9 @@ class appcls():
 
                     na = "me"
                     qqq = ""
+                    qqq2 = ""
+                    if i["const"]:qqq2 = f"constant.append('var_{self.namespace}_{arg}')"
+
 
                     if i["visible"] == "private":
                         na = "private"
@@ -2628,6 +2673,7 @@ class appcls():
                     
 
                     ordenar+=p_error([
+                        f"if 'var_{self.namespace}_{arg}' in constant: app.constE('var_{self.namespace}_{arg}')",
                         f"try:",
                         f"    sta_var = var_{self.namespace}_{sta}",
                         f"except:",
@@ -2641,7 +2687,8 @@ class appcls():
                         f"    var_{self.namespace}_{arg} = None",
                         f"sta_values['var_{self.namespace}_{arg}'] = sta_var",
                         f"{na}.{arg} = app.dim(var_{self.namespace}_{arg}, sta_var)",
-                        qqq
+                        qqq,
+                        qqq2
                     ], i["i"])
                     pass
 
@@ -2650,11 +2697,16 @@ class appcls():
             elif (i["tipo"] == "var-eval")         and (modo in ["normal", "func-imp", "func", "class", "module"]):
                 
                 if i["onename"]:
+                    t_name = i["var"][0]["name"]
+                    qqq = f"if 'var_{self.namespace}_{t_name}' in constant: app.constE('var_{self.namespace}_{t_name}')"
+                    #print("onename", t_name)
+                    #print(qqq)
                     if modo in ["func", "func-imp", "normal"]:
                         g_1 = self.generator_one(i["var"], modo)
                         g_2 = self.generator_one(i["eval"], modo)
                         preparo = p_error([
-                            f"{g_1} = app.dim(({g_2}), sta_values.get('{g_1}', var_std_{self.tydef}))"
+                            qqq,
+                            f"{g_1} = app.dim(({g_2}), sta_values.get('{g_1}', var_std_{self.tydef}))",
                         ], i["i"])
                         pass
                     elif modo in ["class"]:
@@ -2662,7 +2714,8 @@ class appcls():
                         g_1 = i["var"][0]["name"]
                         g_2 = self.generator_one(i["eval"], modo)
                         preparo = p_error([
-                            f"{g_1} = ({g_2})"
+                            qqq,
+                            f"{g_1} = ({g_2})",
                         ], i["i"])
                         pass
                     elif modo in ["module"]:
@@ -2670,6 +2723,7 @@ class appcls():
                         g_1 = i["var"][0]["name"]
                         g_2 = self.generator_one(i["eval"], modo)
                         preparo = p_error([
+                            qqq,
                             f"me.{g_1} = ({g_2})",
                             f"{self.namespace}_{g_1} = (me.{g_1})",
                         ], i["i"])
@@ -2704,7 +2758,13 @@ class appcls():
             elif (i["tipo"] == "include-def")      and (modo in ["normal", "func-imp", "func"]):
                 
                 salida += p_error([
-                    f"for x in app.getlib('{i['include']}')"
+                    f"incluir = app.getlib('{i['include']}')",
+                     "print(type(incluir))",
+                     "for x in dir(incluir):",
+                     #"    print(getattr(incluir, x))",
+                     "    globals()[x] = getattr(incluir, x)",
+                     "    locals()[x] = getattr(incluir, x)",
+
                 ], i["i"])
                 pass
             
@@ -2717,7 +2777,8 @@ class appcls():
             code = c["data"]
             func = c["func"]
             pass
-
+        
+        #del c, using_namespace, usingmode
 
         return salida
     def jump(self, code:list=[], i=0) -> str:

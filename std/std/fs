@@ -4,5 +4,5 @@ fs = py.require("fs.py");
 
 export.open = fs.open;
 export.dir = fs.dir;
-export.file = fs.file;
+#export.file = fs.file;
 export.exist = fs.exist;
