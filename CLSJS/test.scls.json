@@ -1,40 +1,28 @@
 [
     [
         {
-            "name": "print",
-            "i": 0,
+            "name": "func",
+            "i": 4,
+            "notmod": false,
+            "tipo": "name"
+        },
+        {
+            "name": "main",
+            "i": 5,
             "notmod": false,
             "tipo": "name"
         },
         {
             "tipo": "()",
-            "i": 5,
-            "data": [
-                {
-                    "value": "12",
-                    "type": "int",
-                    "i": 6,
-                    "byte": "",
-                    "tipo": "value"
-                }
-            ],
-            "complet": [
-                [
-                    {
-                        "value": "12",
-                        "type": "int",
-                        "i": 6,
-                        "byte": "",
-                        "tipo": "value"
-                    }
-                ]
-            ]
+            "i": 9,
+            "data": [],
+            "complet": []
         },
         {
-            "name": ".print",
-            "i": 9,
-            "notmod": false,
-            "tipo": "name"
+            "tipo": "code",
+            "i": 12,
+            "data": [],
+            "one": []
         }
     ]
 ]

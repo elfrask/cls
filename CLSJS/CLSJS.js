@@ -73,6 +73,20 @@ let tools = {
             }
         }
     },
+    nombres: {
+        reservados:[
+            "class", "function", "async", "def", "method", "func", "fub", "module", "namespace",
+            "sync", "with", "import", "private", "public", "export", "static", "from", "include",
+            "if", "while", "for"
+        ],
+        visible:[
+            "private", "public", "export", "static"
+        ],
+        async:[
+            "async", "sync"
+        ],
+        
+    },
     paren: {
         tupla:(c, i) => {
 
@@ -95,7 +109,7 @@ let tools = {
         code:(c, i) => {
 
             return {
-                tipo:"{}",
+                tipo:"code",
                 i:i,
                 data:c,
                 one:c[0]||[]
@@ -105,7 +119,39 @@ let tools = {
     errores:{
         ValueError:"ValueError",
         SyntaxError:"SyntaxError"
-    }
+    },
+    compare:(c = [], k = []) => {
+        if (c.length < k.length) return false
+
+        let salida = true;
+        for (let i = 0; i < c.length; i++) {
+            let e = c[i];
+            let ee = k[i];
+            
+            if (typeof(e) == "string") {
+                if (e !== ee.tipo) {
+                    salida = false
+                }
+            } else {
+                if (e.tipo === ee.tipo) {
+                    let c = Object.keys(e);
+                    for (let x = 0; x < c.length; x++) {
+                        const xx = c[x];
+
+                        if (e[xx] !== ee[xx]) {
+                            salida = false
+                        }
+                        
+                    }
+
+                } else{
+                    salida = false
+                }
+            }
+            
+        }
+        return salida
+    },
 }
 
 let APP = () => {
@@ -113,6 +159,7 @@ let APP = () => {
     let me = {
         origin: "",
         code: "",
+        stadef:"Any",
         errores: [],
         desline: (c, o) => {
             me.origin = o;
@@ -142,11 +189,11 @@ let APP = () => {
 
                                 if (e.length != 1) {
                                     linea.pop()
-                                    linea.push(tools.tipos.ope(e, i))
+                                    linea.push(tools.tipos.ope(w+e, i))
 
-                                } else if ((["<", ">", "=", ":"].includes(w))) {
+                                } else if ((["<", ">", "=", ":", "-"].includes(w))) {
                                     if ((["<", ">", "=", ":"].includes(e))) {
-
+                                        linea.pop()
                                         linea.push(tools.tipos.ope(w + e, i))
 
                                     } else {
@@ -416,8 +463,276 @@ let APP = () => {
             return salida
 
         },
-        estructuration:(c, func) => {
+        parsearg:(c) => {
 
+
+            let salida = []
+
+            let arg = "";
+            let sta = [me.stadef];
+            let def = [];
+
+            let modo = "normal";
+
+            for (let i = 0; i < c.length; i++) {
+                let e= c[i];
+
+                if (modo == "normal") {
+                    if (e.tipo == "name") {
+                        arg = e.name;
+                        modo = "coma";
+                    } else {
+                        me.error("Syntax error", tools.errores.SyntaxError, e.i)
+                    }
+                } else if (modo == "coma") {
+                    if (["sim", "ope"].includes(e.tipo)) {
+                        if ([":", "->"].includes(e.char) & sta.length == 0) {
+                            modo = "sta";
+                        } else if (e.char == "=" & def.length == 0) {
+                            modo = "def";
+                        } else if (e.char == ",") {
+                            
+                            salida.push({
+                                arg:arg,
+                                sta:sta,
+                                def:def
+                            })
+
+                            let arg = "";
+                            let sta = [me.stadef];
+                            let def = [];
+                            modo = "normal"
+                        }
+                        
+
+                    } else {
+                        me.error("Syntax error", tools.errores.SyntaxError, e.i)
+                    }
+                } else if (modo == "sta") {
+                    if (e.tipo == "name") {
+                        sta = [e.name];
+                        modo = "coma";
+                    } else {
+                        me.error("Syntax error", tools.errores.SyntaxError, e.i)
+                    }
+                } else if (modo == "def") {
+                    if (e.char == ",") {
+                            
+                        salida.push({
+                            arg:arg,
+                            sta:sta,
+                            def:def
+                        })
+
+                        let arg = "";
+                        let sta = [me.stadef];
+                        let def = [];
+                        modo = "normal"
+                    } else {
+                        def.push(e)
+                    }
+                } else {
+                    
+                }
+                
+            };
+
+            if (arg !== "") {
+                            
+                salida.push({
+                    arg:arg,
+                    sta:sta,
+                    def:def
+                })
+            }
+
+            return salida
+        },
+        estructuration_one:(c) => {
+            
+        },
+        estructuration:(c) => {
+
+            let salida = []
+
+            function gen_eval(c, i) {
+                return{
+                    tipo:"eval",
+                    i:i,
+                    code:c
+                }
+            }
+
+            for (let i = 0; i < c.length; i++) {
+                let e = c[i];
+                let visible = "public";
+                let asyncrono = false;
+
+                if (e.length > 0) {
+                    
+                    if (e[0].tipo == "name") {
+
+                        if (tools.nombres.visible.includes(e[0].name)) {
+                            visible = e[0].name;
+                            e = e.slice(1)
+                        };
+                        if (tools.nombres.async.includes(e[0].name)) {
+                            asyncrono = e[0].name == "async";
+                            e = e.slice(1)
+                        };
+                        if (!tools.nombres.reservados.includes(e[0].name)) {
+                            asyncrono = e[0].name == "async";
+                            if (tools.compare(["name", "name", "()", "code"], e)) {
+                                e = [
+                                    tools.tipos.name("function", e[0].i),
+                                    e[1],
+                                    e[2],
+                                    tools.tipos.ope("->", e[3].i, false),
+                                    e[0],
+                                    e[3],
+                                ]
+                            }
+                        };
+                        
+                        
+
+                        if (["func", "function", "method", "fub", "def"].includes(e[0].name)) {
+                            let nombre = "";
+                            let sta = me.stadef;
+                            let code = [];
+                            let arg = [];
+                            if (tools.compare(["name", "name", "()", "code"], e)) {
+                                if (e.length !== 4) {
+                                    me.error("Syntax Error", tools.errores.SyntaxError, e[4].i)
+                                };
+                                nombre = e[1].name;
+                                code = me.estructuration(e[3].data);
+                                arg = me.parsearg(e[2].data);
+                            } else if (tools.compare(["name", "name", "()", {char:"->", tipo:"ope"}, "name", "code"], e)) {
+                                if (e.length !== 6) {
+                                    me.error("Syntax Error", tools.errores.SyntaxError, e[6].i)
+                                };
+                                nombre = e[1].name;
+                                sta = e[4].name;
+                                code = me.estructuration(e[5].data);
+                                arg = me.parsearg(e[2].data);
+                            } else {
+                                me.error("Syntax Error", tools.errores.SyntaxError, e[0].i)
+                            }
+
+                            salida.push({
+                                name:nombre,
+                                sta:sta,
+                                code:code,
+                                arg:arg,
+                                visible:visible,
+                                tipo:"func-def",
+                                async:asyncrono
+                            })
+                        } else if (e[0] == "if") {
+
+                            let ceo = e.slice(3);
+                            if (e.slice(x).length < 2) {
+                                me.error("Syntax Error", tools.errores.SyntaxError, e[0].i)
+                            }
+                            let out = [{
+                                to:"if",
+                                cond:e[1].data,
+                                code:e[2].data,
+                            }];
+
+                            for (let x = 0; x < ceo.length; x=x+3) {
+                                let xx = ceo[x];
+                                
+                                if (["elif", "elseif"].includes(xx.name)) {
+                                    if (ceo.slice(x).length <3) {
+                                        me.error("Syntax Error", tools.errores.SyntaxError, e[0].i)
+                                    }
+
+                                    out.push({
+                                        to:"elif",
+                                        cond:e[1+x].data,
+                                        code:e[2+x].data,
+                                    })
+                                    
+                                } else if (["else"].includes(xx.name)) {
+                                    if (ceo.slice(x).length < 2) {
+                                        me.error("Syntax Error", tools.errores.SyntaxError, e[0].i)
+                                    }
+
+                                    if (ceo[x+1].tipo == "name") {
+                                        x++;
+
+                                        if (ceo.slice(x).length < 3) {
+                                            me.error("Syntax Error", tools.errores.SyntaxError, e[0].i)
+                                        }
+                                        
+                                        if (["if"].includes(xx.name)) {
+    
+                                            out.push({
+                                                to:"elif",
+                                                cond:e[1+x].data,
+                                                code:e[2+x].data,
+                                            })
+                                            
+                                        } else {
+                                            me.error("Syntax Error", tools.errores.SyntaxError, e[0].i)
+                                        }
+                                    } else if (ceo[x+1].tipo == "code") {
+                                        if (ceo.slice(x).length < 2) {
+                                            me.error("Syntax Error", tools.errores.SyntaxError, e[0].i)
+                                        }
+
+                                        out.push({
+                                            to:"else",
+                                            code:e[1+x].data,
+                                        })
+                                    } else {
+                                        me.error("Syntax Error", tools.errores.SyntaxError, e[0].i)
+                                    }
+                                } else {
+                                    me.error("Syntax Error", tools.errores.SyntaxError, e[0].i)
+                                }
+                            }
+
+                            salida.push({
+                                tipo:"if-def",
+                                list:out
+                            })
+
+                        } else if (e[0] == "while") {
+                            let ceo = e.slice(3);
+                            if (e.length < 3) {
+                                me.error("Syntax Error", tools.errores.SyntaxError, e[0].i)
+                            }
+                            salida.push({
+                                tipo:"while-def",
+                                cond:e[1].data,
+                                code:me.estructuration(e[2].data),
+                            });
+                        } else if (e[0] == "for") {
+                            let ceo = e.slice(3);
+                            if (e.length === 3) {
+                                //me.error("Syntax Error", tools.errores.SyntaxError, e[0].i)
+                                salida.push({
+                                    tipo:"for-def",
+                                    data:e[1].complet,
+                                    code:e[2].data,
+                                });
+                            };
+                        }
+                        
+                    } else {
+                        salida.push(gen_eval(e, e[0].i))
+                    }
+
+                } else {
+                    salida.push(gen_eval(e, e[0].i))
+                }
+                
+            }
+
+            return salida;
         }
     };
 
