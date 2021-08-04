@@ -1,0 +1,40 @@
+[
+    [
+        {
+            "name": "print",
+            "i": 0,
+            "notmod": false,
+            "tipo": "name"
+        },
+        {
+            "tipo": "()",
+            "i": 5,
+            "data": [
+                {
+                    "value": "12",
+                    "type": "int",
+                    "i": 6,
+                    "byte": "",
+                    "tipo": "value"
+                }
+            ],
+            "complet": [
+                [
+                    {
+                        "value": "12",
+                        "type": "int",
+                        "i": 6,
+                        "byte": "",
+                        "tipo": "value"
+                    }
+                ]
+            ]
+        },
+        {
+            "name": ".print",
+            "i": 9,
+            "notmod": false,
+            "tipo": "name"
+        }
+    ]
+]
