@@ -1,28 +1,65 @@
 [
-    [
-        {
-            "name": "func",
-            "i": 4,
-            "notmod": false,
-            "tipo": "name"
-        },
-        {
-            "name": "main",
-            "i": 5,
-            "notmod": false,
-            "tipo": "name"
-        },
-        {
-            "tipo": "()",
-            "i": 9,
-            "data": [],
-            "complet": []
-        },
-        {
-            "tipo": "code",
-            "i": 12,
-            "data": [],
-            "one": []
-        }
-    ]
+    {
+        "name": "main",
+        "sta": "Any",
+        "code": [],
+        "arg": [],
+        "visible": "public",
+        "tipo": "func-def",
+        "async": false,
+        "i": 8
+    },
+    {
+        "tipo": "if-def",
+        "list": [
+            {
+                "to": "if",
+                "cond": [
+                    []
+                ],
+                "code": [
+                    {
+                        "i": 44,
+                        "c": [
+                            {
+                                "name": "print",
+                                "i": 44,
+                                "notmod": false,
+                                "tipo": "name"
+                            },
+                            {
+                                "tipo": "()",
+                                "i": 49,
+                                "data": [
+                                    {
+                                        "value": "\"helou\"",
+                                        "type": "str",
+                                        "i": 50,
+                                        "byte": "",
+                                        "tipo": "value"
+                                    }
+                                ],
+                                "complet": [
+                                    [
+                                        {
+                                            "value": "\"helou\"",
+                                            "type": "str",
+                                            "i": 50,
+                                            "byte": "",
+                                            "tipo": "value"
+                                        }
+                                    ]
+                                ]
+                            }
+                        ],
+                        "tipo": "exec"
+                    }
+                ]
+            },
+            {
+                "to": "else",
+                "code": []
+            }
+        ]
+    }
 ]

@@ -9,9 +9,11 @@ function main(g) {
     let app = CLSAPP.clsapp();
     let d_crudo = app.desline(data, g)
     let parseado = app.parselex(d_crudo);
-    let estructurado = app.estructuration(parseado, [])
+    let estructurado = app.estructuration(parseado)
+    let salida = app.generator(estructurado, "normal")
 
-    fs.writeFileSync(g +".json", JSON.stringify(parseado, N, 4))
+    fs.writeFileSync(g +".json", JSON.stringify(estructurado, N, 4))
+    fs.writeFileSync(g +".js", salida)
 };
 
 
