@@ -1,9 +1,3 @@
-function main() {
-
-};
-
-if (true) {
-    print("helou")
-} else {
-
+function main(msg:String = "Saludos!") {
+    print(msg)
 }

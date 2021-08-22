@@ -13,6 +13,7 @@ cls.lib_path += [
     os.path.dirname(__file__) + "/libpy",
     os.path.dirname(__file__) + "/dlls",
     os.getcwd(),
+    
 ]
 
 if not os.path.isdir("cache"):

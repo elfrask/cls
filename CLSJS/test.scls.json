@@ -2,64 +2,62 @@
     {
         "name": "main",
         "sta": "Any",
-        "code": [],
-        "arg": [],
+        "code": [
+            {
+                "i": 46,
+                "c": [
+                    {
+                        "name": "print",
+                        "i": 46,
+                        "notmod": false,
+                        "tipo": "name"
+                    },
+                    {
+                        "tipo": "()",
+                        "i": 51,
+                        "data": [
+                            {
+                                "name": "msg",
+                                "i": 52,
+                                "notmod": false,
+                                "tipo": "name"
+                            }
+                        ],
+                        "complet": [
+                            [
+                                {
+                                    "name": "msg",
+                                    "i": 52,
+                                    "notmod": false,
+                                    "tipo": "name"
+                                }
+                            ]
+                        ]
+                    }
+                ],
+                "tipo": "exec"
+            }
+        ],
+        "arg": [
+            {
+                "arg": "msg",
+                "sta": [
+                    "String"
+                ],
+                "def": [
+                    {
+                        "value": "\"Saludos!\"",
+                        "type": "str",
+                        "i": 27,
+                        "byte": "",
+                        "tipo": "value"
+                    }
+                ]
+            }
+        ],
         "visible": "public",
         "tipo": "func-def",
         "async": false,
         "i": 8
-    },
-    {
-        "tipo": "if-def",
-        "list": [
-            {
-                "to": "if",
-                "cond": [
-                    []
-                ],
-                "code": [
-                    {
-                        "i": 44,
-                        "c": [
-                            {
-                                "name": "print",
-                                "i": 44,
-                                "notmod": false,
-                                "tipo": "name"
-                            },
-                            {
-                                "tipo": "()",
-                                "i": 49,
-                                "data": [
-                                    {
-                                        "value": "\"helou\"",
-                                        "type": "str",
-                                        "i": 50,
-                                        "byte": "",
-                                        "tipo": "value"
-                                    }
-                                ],
-                                "complet": [
-                                    [
-                                        {
-                                            "value": "\"helou\"",
-                                            "type": "str",
-                                            "i": 50,
-                                            "byte": "",
-                                            "tipo": "value"
-                                        }
-                                    ]
-                                ]
-                            }
-                        ],
-                        "tipo": "exec"
-                    }
-                ]
-            },
-            {
-                "to": "else",
-                "code": []
-            }
-        ]
     }
 ]
