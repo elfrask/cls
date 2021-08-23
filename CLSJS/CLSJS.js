@@ -165,6 +165,19 @@ let tools = {
 }
 
 let APP = () => {
+    let asi = (e, t) => Object.assign(e, t)
+    
+    let Api = {
+        Module:asi(() => {
+            return {
+                __class__:"Module",
+                __clase__:Api.Module
+            }
+        }, {
+            __class__:"Module",
+        })
+    }
+
 
     let me = {
         origin: "",
@@ -173,7 +186,7 @@ let APP = () => {
         errores: [],
         namespace:"std",
         desline: (c, o) => {
-            me.origin = o;
+            me.origin = o||"<CLS:Stdin>";
             me.code = c;
             let cadena = "";
             let linea = []
@@ -662,7 +675,7 @@ let APP = () => {
             function gen_eval(c, i) {
                 return {
                     i:i,
-                    c:c,
+                    eval:c,
                     tipo:"exec"
                 }
             }
@@ -1196,11 +1209,21 @@ let APP = () => {
                 })
             }
 
+            function error_p(c, i) {
+                return[
+                    "try {",
+                        c,
+                    "} catch (e) {",
+                    `    app.error(e, 'ErrorExec', ${i})`,
+                    "}"
+                ]
+            }
+
             for (let i = 0; i < code.length; i++) {
                 let e = code[i];
 
                 if ((e.tipo == "func-def") & ["normal", "func", "class", "module"].includes(mode)) {
-                    let iter = [];
+                    let iter = -1;
                     let asyncrono = "";
                     if (e.async) asyncrono = "async"
                     
@@ -1231,7 +1254,7 @@ let APP = () => {
                         `    let este = ${name_var}`,
                         `    let rt = var_${e.sta}`,
 
-                        e.arg.map((e)=>{
+                        ...e.arg.map((e)=>{
                             iter++;
                             let tto = me.generator_one(e.def)
                             if (tto === "") tto = undefined+""
@@ -1247,7 +1270,7 @@ let APP = () => {
                     )
                     
 
-                } else if ((e.tipo == "class-def") & ["normal", "func"].includes(mode)) {
+                } else if ((e.tipo == "class-def") & ["normal", "func", "module"].includes(mode)) {
                     let name_var = "var_" + e.name;
                     if ("module" === mode) {
                         name_var = `me.${e.name}`;
@@ -1264,21 +1287,53 @@ let APP = () => {
                         `    let var_me = {};`,
                         `    let var_private = {};`,
                         `    let exportar = [];`,
-                        `    let out = {};`,
+                        `    let out = {__clase__:"${name_var}"};`,
                         `    let me = var_me;`,
                         `    let private = var_private;`,
-                        `    app.clasi(me, out, private, exportar, [${e.arg.map(e=>"var_"+e+", ")}]);`,
+                        `    app.clasi(me, out, private, exportar, [${e.arg.map(e=>("var_"+e+", "))}]);`,
                         
                         me.generator(e.code, "class"),
 
                         "    me.__export__ = exportar;",
                         "    out.__export__ = exportar;",
                         "    out.default = (me.default||(()=>{}));",
+                        
+                        "    let n = undefined",
+                        "    me.default = undefined",
+                        "    if (este.__pre__==='done') (me.main||(()=>{}))(...arg_c);",
+                        "    else {este.__pre__='done'; Object.assign(este, me); {var_me, var_private} = {var_me:1, var_private:1} }",
+                        
+                        "    return me",
+                        `}`
+                    )
+                } else if ((e.tipo == "module-def") & ["normal", "func", "module"].includes(mode)) {
+                    let name_var = "var_" + e.name;
+                    if ("module" === mode) {
+                        name_var = `me.${e.name}`;
 
-                        "    (me.main||(()=>{}))(...arg_c);",
+                        if (e.visible=="private") {
+                            name_var = `private.${e.name}`;
+
+                        }
+                    }
+                    
+                    salida.push(
+                        `${name_var} = (...arg_c) => {`,
+                        `    let este = ${name_var};`,
+                        `    let var_me = {};`,
+                        `    let var_private = {};`,
+                        `    if (!este.__class__)Object.assing(este, {__class__:"Module", __clase__:Api.Module});`,
+                        `    let me = var_me;`,
+                        `    let private = var_private;`,
+                        
+                        me.generator(e.code, "module"),
 
                         "    return me",
                         `}`
+                    )
+                } else if ((e.tipo == "exec") & ["normal", "func"].includes(mode)) {
+                    salida.push(
+                        ...error_p(me.generator_one(e.eval, e.i, "exec"))
                     )
                 }
                 
@@ -1289,6 +1344,43 @@ let APP = () => {
         },
         generator_one:(code, mode, modei)=>{
             let salida = "";
+            mode= mode||"normal";
+            modei= modei||"eval";
+            let last = {tipo:"none", i:0}
+
+            for (let i = 0; i < code.length; i++) {
+                let e = code[i];
+
+                if (e.tipo === "name") {
+                    if (["or", "and"].includes(e.name)) {
+                        salida = salida + ` ${
+                            ({
+                                or:"|", 
+                                and:"&",
+                            })[e.name]
+                        } `;
+                        
+                    } else {
+                        salida = salida + ` var_${e.name} `;
+                        
+                    }
+                } else if (e.tipo === "value") {
+
+                    if (e.type === "str") {
+                        salida = salida + ` app.tstr['${e.byte}'](${e.value}) `;
+                    } else if (e.type === "int") {
+                        salida = salida + ` Api.int(${e.value}) `;
+                    } else if (e.type === "float") {
+                        salida = salida + ` Api.float(${e.value}) `;
+                    }
+                    
+                } else if (e.tipo === "()") {
+                    salida = salida + ` (${me.generator_one(e.data, mode)}) `;
+                }
+                
+            }
+
+            return salida
         },
         jump:(c=[], i) => {
             i = i||0
