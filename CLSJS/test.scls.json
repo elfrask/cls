@@ -1,63 +1,47 @@
 [
     {
-        "name": "main",
-        "sta": "Any",
-        "code": [
+        "i": 0,
+        "eval": [
             {
-                "i": 46,
-                "eval": [
+                "tipo": "func-a",
+                "arg": [
                     {
-                        "name": "print",
-                        "i": 46,
-                        "notmod": false,
-                        "tipo": "name"
-                    },
-                    {
-                        "tipo": "()",
-                        "i": 51,
-                        "data": [
-                            {
-                                "name": "msg",
-                                "i": 52,
-                                "notmod": false,
-                                "tipo": "name"
-                            }
-                        ],
-                        "complet": [
-                            [
-                                {
-                                    "name": "msg",
-                                    "i": 52,
-                                    "notmod": false,
-                                    "tipo": "name"
-                                }
-                            ]
-                        ]
+                        "arg": "e",
+                        "sta": [],
+                        "def": []
                     }
                 ],
-                "tipo": "exec"
-            }
-        ],
-        "arg": [
-            {
-                "arg": "msg",
-                "sta": [
-                    "String"
-                ],
-                "def": [
+                "i": 0,
+                "sta": "Any",
+                "code": [
                     {
-                        "value": "\"Saludos!\"",
-                        "type": "str",
-                        "i": 27,
-                        "byte": "",
-                        "tipo": "value"
+                        "i": 8,
+                        "eval": [
+                            {
+                                "name": "e",
+                                "i": 8,
+                                "notmod": false,
+                                "tipo": "name"
+                            },
+                            {
+                                "char": "*",
+                                "i": 9,
+                                "cond": false,
+                                "tipo": "ope"
+                            },
+                            {
+                                "value": "1",
+                                "type": "int",
+                                "i": 10,
+                                "byte": "",
+                                "tipo": "value"
+                            }
+                        ],
+                        "tipo": "exec"
                     }
                 ]
             }
         ],
-        "visible": "public",
-        "tipo": "func-def",
-        "async": false,
-        "i": 8
+        "tipo": "exec"
     }
 ]

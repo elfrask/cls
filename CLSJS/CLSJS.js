@@ -175,7 +175,102 @@ let APP = () => {
             }
         }, {
             __class__:"Module",
-        })
+        }),
+        String:asi((a) => {
+            
+            if (typeof(a) == "object") {
+                
+                if ( (a||{})._str ) {
+                    return a._str()
+                }
+                
+            }
+            
+            return e+""
+        }, 
+        {
+            add:(t, f) => {me.tstr[t+""] = f},
+            __class__:"String"
+        }),
+        Integer:asi((a) => {
+
+            if (typeof(a) == "object") {
+                
+                if ( (a||{})._int ) {
+                    return a._int()
+                }
+                
+            }
+
+            return parseInt(a)
+        }, {__class__:"Integer"}),
+        Float:asi((a) => {
+            
+            if (typeof(a) == "object") {
+                
+                if ( (a||{})._float ) {
+                    return a._float()
+                }
+                
+            }
+
+            return parseFloat(a)
+        }, {__class__:"Float"}),
+        Array:asi((a) => {
+            let salida = [];
+
+            if (typeof(a) == "string" | Array.isArray(a)) {
+                
+                for (let i = 0; i < a.length; i++) {
+                    let e = a[i];
+                    salida.push(e)
+                }
+
+            } else {
+                if ( (a||{})._array ) {
+                    salida = a._array()
+                } else {
+                    
+                    salida = [a];
+                }
+            }
+
+
+            return asi(salida, {__class__:"Array", __clase__:Api.Array})
+        }, {__class__:"Array"}),
+        Boolean:asi((e) => {
+            
+            if (typeof(e) == "string") {
+                return !(e==="")
+            } else if (typeof(e) == "number") {
+                return !(e===0)
+            } else if (typeof(e) == "boolean") {
+                return (e)
+            } else if (typeof(e) == "object") {
+                if ( (e||{})._bool ) {
+                    return e._bool()
+                } else {
+                    return Boolean(e)
+                }
+            }
+
+        }, {__class__:"Boolean"}),
+        Function:asi((e) => {
+
+        }, {__class__:"Function"})
+    }
+
+    asi(Api, {
+        str:Api.String,
+        int:Api.Integer,
+        float:Api.Float,
+        list:Api.Array,
+        bool:Api.Boolean,
+    });
+
+    function funca(e) {
+        asi(e, {__class__:"Function", __clase__:Api.Function})
+        me.func_list.push(e)
     }
 
 
@@ -185,6 +280,11 @@ let APP = () => {
         stadef:"Any",
         errores: [],
         namespace:"std",
+        tstr:{
+            "":Api.String
+        },
+        func_list:[],
+        func_count:0,
         desline: (c, o) => {
             me.origin = o||"<CLS:Stdin>";
             me.code = c;
@@ -212,18 +312,20 @@ let APP = () => {
                             if ((linea[linea.length - 1] || {}).tipo === "ope") {
                                 let w = linea[linea.length - 1].char;
 
-                                if (e.length != 1) {
-                                    linea.pop()
-                                    linea.push(tools.tipos.ope(w+e, i))
-
-                                } else if ((["<", ">", "=", ":", "-"].includes(w))) {
-                                    if ((["<", ">", "=", ":"].includes(e))) {
+                                
+                                
+                                if ( ["<", ">", "=", ":", "-"].includes(w) ) {
+                                    if ( ["<", ">", "=", ":"].includes(e) )  {
                                         linea.pop()
                                         linea.push(tools.tipos.ope(w + e, i))
 
                                     } else {
                                         linea.push(tools.tipos.ope(e, i))
                                     }
+                                } else if (e.length == 1) {
+                                    linea.pop()
+                                    linea.push(tools.tipos.ope(w+e, i))
+
                                 } else {
                                     linea.push(tools.tipos.ope(e, i))
 
@@ -580,14 +682,17 @@ let APP = () => {
             let salida = [];
             let cadena = [];
 
+            c = [c]
 
             for (let i = 0; i < c.length; i++) {
                 let e = c[i];
-
+                
                 cadena = [];
 
                 for (let x = 0; x < e.length; x++) {
                     let ele = e[x];
+
+                    //console.log(ele.tipo)
 
                     if (ele.tipo == "()") {
                         cadena.push(
@@ -641,6 +746,8 @@ let APP = () => {
                             
                         };
 
+                        
+
                         if (isfunc) {
                             cadena.push({
                                 tipo:"func-a",
@@ -664,7 +771,7 @@ let APP = () => {
 
             }
 
-            return salida
+            return salida[0]
         },
         estructuration:(c) => {
 
@@ -675,7 +782,7 @@ let APP = () => {
             function gen_eval(c, i) {
                 return {
                     i:i,
-                    eval:c,
+                    eval:me.estructuration_one(c),
                     tipo:"exec"
                 }
             }
@@ -1150,6 +1257,11 @@ let APP = () => {
                             } else {
                                 me.error("Syntax Error", tools.errores.SyntaxError, e[0].i)
                             }
+                        } else if (e[0].name == "return") {
+                            salida.push({
+                                tipo:"rt-def",
+                                eval:me.estructuration_one(e.slice(1))
+                            })
                         } else if (is_dim) {
 
                             if (dim_le!==0) {
@@ -1250,7 +1362,7 @@ let APP = () => {
 
 
                     salida.push(
-                        `${name_var} = ( ${asyncrono} (...arg) => {`,
+                        `${name_var} = Api.func( ${asyncrono} (...arg) => {`,
                         `    let este = ${name_var}`,
                         `    let rt = var_${e.sta}`,
 
@@ -1333,7 +1445,7 @@ let APP = () => {
                     )
                 } else if ((e.tipo == "exec") & ["normal", "func"].includes(mode)) {
                     salida.push(
-                        ...error_p(me.generator_one(e.eval, e.i, "exec"))
+                        ...error_p("    "+me.generator_one(e.eval, e.i, "exec"))
                     )
                 }
                 
@@ -1342,14 +1454,76 @@ let APP = () => {
 
             return salida;
         },
-        generator_one:(code, mode, modei)=>{
+        generator_one:(code, mode, modei, key)=>{
             let salida = "";
             mode= mode||"normal";
             modei= modei||"eval";
+            key= key||false;
             let last = {tipo:"none", i:0}
-
+            let error = (i) => {
+                me.error("Error of syntax", tools.errores.SyntaxError, i)
+            }
             for (let i = 0; i < code.length; i++) {
                 let e = code[i];
+                //console.log(e.tipo)
+                if (e.tipo === last.tipo) {
+                    if (e.tipo === "name") {
+                        if (e.name[0] !== ".") error(e.i)
+                    } else if ( ["value", "code", "ope", "sim", "func-a"].includes(e.tipo) ) {
+                        error(e.i)
+                    } else if (e.tipo === "[]") {
+                        e.fist = false
+                    } else if (e.tipo === "()") {
+                        e.fist = false
+                    }
+                } else {
+                    if ( ["[]", "()"].includes(e.tipo) ) {
+                        if (["[]", "()", "name", "value", "none"].includes(last.tipo)) {
+                            if (last.tipo === "value") {
+                                if (last.type === "str") e.fist = true
+                                else error(e.i)
+                            } else {
+                                e.fist = true
+                            }
+                        } else {
+                            error(e.i)
+                        }
+                    } else if ( e.tipo === "name" ) {
+                        if ( ["value", "code", "()", "[]", "func-a"].includes(last.tipo) ) {
+                            if (e.name[0] !== ".") error(e.i)
+                            
+                        } else if (["none", "ope", "sim"].includes(last.tipo)) {
+                            if (e.name[0] === ".") error(e.i)
+                            
+                        }
+                    } else if ( e.tipo === "value" ) {
+                        if ( !["ope", "sim", "none"].includes(last.tipo) ) {
+                            error(e.i)
+                        }
+                    } else if ( e.tipo === "code" ) {
+                        if ( !["ope", "none"].includes(last.tipo) ) {
+                            error(e.i)
+                        }
+                    } else if ( e.tipo === "ope" ) {
+                        if ( !["[]", "()", "name", "code", "value", "none"].includes(last.tipo) ) {
+                            error(e.i)
+                        }
+                    } else if ( e.tipo === "func-a" ) {
+                        if ( !(last.tipo === "none") ) error(e.i)
+                    }
+
+                    if (key & ( e.tipo === "name" )) {
+                        if (["sim", "none"].includes(e.tipo)) {
+                            e = tools.tipos.value(`'${e.name}'`, "str", e.i, "")
+                        }
+                    }
+                }
+
+                last = e
+
+
+
+
 
                 if (e.tipo === "name") {
                     if (["or", "and"].includes(e.name)) {
@@ -1375,12 +1549,56 @@ let APP = () => {
                     }
                     
                 } else if (e.tipo === "()") {
-                    salida = salida + ` (${me.generator_one(e.data, mode)}) `;
+                    salida = salida + ` (${me.generator_one(e.data, mode, "eval")}) `;
+                } else if (e.tipo === "[]") {
+                    salida = salida + ` [${me.generator_one(e.data, mode, "eval")}] `;
+                } else if (e.tipo === "code") {
+                    salida = salida + ` Api.obj({${me.generator_one(e.data, mode, "eval", true)}}) `;
+                } else if (e.tipo === "ope") {
+                    if (["+", "*", "-", "/", "%", "&", "!", "<", ">"].includes(e.char)) {
+                        salida = salida + ` ${e.char} `;
+                    } else if (["==", "!=", ">=", "<=", "++", "--", "**"].includes(e.char)) {
+                        salida = salida + ` ${e.char} `;
+                        
+                    } else if (e.char === "^") {
+                        salida = salida + ` ** `;
+
+                    }
+                } else if (e.tipo === "sim") {
+                    if (e.char === ",") {
+                        salida = salida + ", "
+                    }
+                } else if (e.tipo == "func-a") {
+                    let iter = -1;
+                    
+                    salida = salida + me.jump([
+                        `funca((...arg) => {`,
+                        `    let este = app.func_list[${me.func_count}];`,
+                        `    let rt = var_${e.sta};`,
+
+                        ...e.arg.map((e)=>{
+                            iter++;
+                            let tto = me.generator_one(e.def)
+                            if (tto === "") tto = undefined+""
+                            return([
+                                `let var_${e.arg} = (arg[${iter}]||(${tto}));`,
+                                `var_${e.arg} = app.dim(var_${e.arg}, var_${e.sta[0]});`
+                            ])
+                        }),
+
+                        me.generator(e.code, "func"),
+
+                        `});`
+                    ], 0);
+
+                    me.func_count++; 
+                    
+
                 }
                 
             }
 
-            return salida
+            return salida.trim()
         },
         jump:(c=[], i) => {
             i = i||0

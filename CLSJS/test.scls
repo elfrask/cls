@@ -1,3 +1,1 @@
-function main(msg:String = "Saludos!") {
-    print(msg)
-}
+(e) -> {e*1}
