@@ -1,1 +1,1 @@
-(e) -> {e*1}
+var hola = (e) -> String {print(e*1)}();

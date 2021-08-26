@@ -1,0 +1,100 @@
+[
+    {
+        "i": 3,
+        "tipo": "var-def",
+        "vals": [
+            {
+                "arg": "hola",
+                "sta": [
+                    "Any"
+                ],
+                "def": [
+                    {
+                        "tipo": "func-a",
+                        "arg": [
+                            {
+                                "arg": "e",
+                                "sta": [
+                                    "Any"
+                                ],
+                                "def": []
+                            }
+                        ],
+                        "i": 11,
+                        "sta": "String",
+                        "code": [
+                            {
+                                "i": 26,
+                                "eval": [
+                                    {
+                                        "name": "print",
+                                        "i": 26,
+                                        "notmod": false,
+                                        "tipo": "name"
+                                    },
+                                    {
+                                        "tipo": "()",
+                                        "i": 31,
+                                        "data": [
+                                            {
+                                                "name": "e",
+                                                "i": 32,
+                                                "notmod": false,
+                                                "tipo": "name"
+                                            },
+                                            {
+                                                "char": "*",
+                                                "i": 33,
+                                                "cond": false,
+                                                "tipo": "ope"
+                                            },
+                                            {
+                                                "value": "1",
+                                                "type": "int",
+                                                "i": 34,
+                                                "byte": "",
+                                                "tipo": "value"
+                                            }
+                                        ],
+                                        "complet": [
+                                            [
+                                                {
+                                                    "name": "e",
+                                                    "i": 32,
+                                                    "notmod": false,
+                                                    "tipo": "name"
+                                                },
+                                                {
+                                                    "char": "*",
+                                                    "i": 33,
+                                                    "cond": false,
+                                                    "tipo": "ope"
+                                                },
+                                                {
+                                                    "value": "1",
+                                                    "type": "int",
+                                                    "i": 34,
+                                                    "byte": "",
+                                                    "tipo": "value"
+                                                }
+                                            ]
+                                        ],
+                                        "fist": true
+                                    }
+                                ],
+                                "tipo": "exec"
+                            }
+                        ]
+                    },
+                    {
+                        "tipo": "()",
+                        "i": 37,
+                        "data": [],
+                        "complet": []
+                    }
+                ]
+            }
+        ],
+        "visible": "public"
+    }
+]
