@@ -8,7 +8,6 @@ namespace char {
 };
 
 char::main("Hola mundo");
-#alerta("saludos");
 
 export.meno = "qlei";
 

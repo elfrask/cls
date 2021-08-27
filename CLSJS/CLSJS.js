@@ -168,9 +168,10 @@ let tools = {
         return sal
     }
 }
-let App = (name, pass, ApiJS) => {
+let App = (name, pass, ApiJS, Consol) => {
     let asi = (e, t) => Object.assign(e, t);
     ApiJS = ApiJS||false;
+    Consol=Consol||false;
 
     let Api = {
         Module:asi(() => {
@@ -283,7 +284,13 @@ let App = (name, pass, ApiJS) => {
             toString:() => JSON.stringify(e)
             }, e), 
         {__class__:"Object"}),
-        print:(...e) => console.log(...e),
+        print:(...e) => {
+            console.log(...e);
+            /*console.log(Consol);
+            if (Consol) {
+                Consol.innerText = Consol.innerText + tools.chars.N + e.join(" ")
+            }*/
+        },
         iter:(e) => {
             if ((typeof(e)==="string")|(Array.isArray(e))) {
                 return e
@@ -2047,14 +2054,18 @@ let App = (name, pass, ApiJS) => {
     return myapp
 }
 
-
+let CLSWEBAPP
 
 try {
     module.exports.App = App
 } catch (e) {
-    let app = App("WebAplication", {
-        input:e => prompt(e)
-    }, true);
+    CLSWEBAPP = App(
+        "WebAplication", 
+        {
+            input:e => prompt(e)
+        }, 
+        true
+    );
     window.addEventListener("load", () => {
 
         let tags = document.getElementsByTagName("script");
@@ -2079,7 +2090,7 @@ try {
                 fetch(este.getAttribute("src"), {}).then(e=>{
                     e.text().then(x => {
                         
-                        let ap = app.Script(
+                        let ap = CLSWEBAPP.Script(
                             x||"",
                             este.getAttribute("module")||este.getAttribute("src")
                         );
@@ -2096,7 +2107,7 @@ try {
                     })
                 }).catch(x => {leer()})
             } else {
-                let ap = app.Script(
+                let ap = CLSWEBAPP.Script(
                     este.innerHTML||"",
                     este.getAttribute("module")||"Script" + (enume++)
                 );
@@ -2116,71 +2127,3 @@ try {
     })
 }
 
-
-/*if (tools.compare
-
-                    (
-                        [{tipo:"ope", char:"<"}, "name", {tipo:"ope", char:">"}],
-                        code
-                    ) | tools.compare
-                    (
-                        [{tipo:"ope", char:"<"}, "name", "name"],
-                        code
-                    )) 
-                {
-
-                    function cml(p) {
-                        
-                        let modo = "tag";
-                        let node = []
-                        let arg = {}
-                        let tagname = "";
-    
-    
-                        for (let i = 0; i < code.length; i++) {
-                            let e = code[i];
-    
-                            if (modo == "tag") {
-                                if (e.tipo === "") {
-                                    
-                                }
-                            } else if (modo == "cont") {
-    
-                            }
-                            
-                        }
-    
-                        salida = JSON.stringify({
-                            tag:code[1].name,
-                            arg:{},
-                            nodes:[]
-                        });
-    
-                        if ((tagname[0]+"").toUpperCase() === tagname[0]) {
-                            salida = `var_${code[1].name}(${salida})`;
-    
-                        }
-                    };
-
-                    cml(p)
-
-                } else if (tools.compare( //salida
-                    [{tipo:"ope", char:"<"}, "name", {tipo:"ope", char:"/"}, {tipo:"ope", char:">"}],
-                    code
-                )) {
-                    
-                    salida = JSON.stringify({
-                        tag:code[1].name,
-                        arg:{},
-                        nodes:[]
-                    });
-
-                    if ((code[1].name[0]+"").toUpperCase() === code[1].name[0]) {
-                        salida = `var_${code[1].name}(${salida})`;
-
-                    }
-
-                } else { 
-                    
-                    
-                }*/
