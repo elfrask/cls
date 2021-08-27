@@ -13,9 +13,11 @@ function main(g) {
     let estructurado = app.estructuration(parseado)
     let generado = app.generator(estructurado, "normal")
     let salida = app.jump(generado, 0)
-
+    
     fs.writeFileSync(g +".map", JSON.stringify(estructurado, N, 4))
     fs.writeFileSync(g +".js", salida)
+    
+    app.exec(salida)
 };
 
 

@@ -1,1 +1,17 @@
-var hola = (e) -> String {print(e*1)}();
+
+
+namespace main {
+    function saluda() -> float {
+        return(
+            12
+        )
+    }
+};
+
+print({hola:"saludos"}.hola);
+
+var lista:Array = [1,2,3,4].map((e)-> String {
+    return ("valor: " + e)
+});
+
+print(lista[2])

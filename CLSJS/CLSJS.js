@@ -42,7 +42,7 @@ let tools = {
         name: (n, i, s) => {
             return {
                 name: n,
-                i: i,
+                i: i - n.length,
                 notmod: s || false,
                 tipo: "name"
             }
@@ -165,8 +165,9 @@ let tools = {
         return sal
     }
 }
-let App = (name, pass) => {
+let App = (name, pass, ApiJS) => {
     let asi = (e, t) => Object.assign(e, t);
+    ApiJS = ApiJS||false;
 
     let Api = {
         Module:asi(() => {
@@ -187,7 +188,7 @@ let App = (name, pass) => {
                 
             }
             
-            return e+""
+            return a+""
         }, 
         {
             add:(t, f) => {me.tstr[t+""] = f},
@@ -237,7 +238,7 @@ let App = (name, pass) => {
             }
 
 
-            return asi(salida, {__class__:"Array", __clase__:Api.Array})
+            return asi(salida, {__class__:"Array", __clase__:Api.Array, toString:() => JSON.stringify(salida)})
         }, {__class__:"Array"}),
         Boolean:asi((e) => {
             
@@ -257,8 +258,36 @@ let App = (name, pass) => {
 
         }, {__class__:"Boolean"}),
         Function:asi((e) => {
+            return asi (e, {
+                __class__:"Function",
+                __clase__:Api.Function
+            })
         }, {__class__:"Function"}),
-        Any:asi(e => e, {__clase__:"Any"})
+        Any:asi(e => (
+            e
+        ), {__class__:"Any"}),
+        Namespace:asi((e)=> {
+            return {
+                __clase__:Apibase.Namespace,
+                __class__:"Namespace",
+                __names__:e
+            }
+        }, {__class__:"Namespace"}),
+        Object:asi(
+            (e) => asi(e, {
+            __class__:"Object",
+            __clase__:Api.Object,
+            toString:() => JSON.stringify(e)
+            }, e), 
+        {__class__:"Object"}),
+        print:(...e) => console.log(...e),
+        iter:(e) => {
+            if ((typeof(e)==="string")|(Array.isArray(e))) {
+                return e
+            } else {
+                return e._iter()
+            }
+        }
     }
     let Apibase = Api;
     asi(Api, {
@@ -272,17 +301,20 @@ let App = (name, pass) => {
         },
         void:{__class__:"Void"},
         Void:{__class__:"Void"},
+        obj:Api.Object
     });
 
     asi(Api, pass||{})
 
     function typer (v) {
         if (typeof(v) !== "object") {
-            return (({
+            if (typeof(v) === "number") {
+                let sal = "Integer";
+                if ((v+"").includes(".")) sal = "Float";
+                return sal
+            }else return (({
                 boolean:"Boolean",
                 string:"String",
-                string:"String",
-                number:"Float",
                 function:"Function",
                 undefined:"Void"
             })[typeof(v)])
@@ -302,6 +334,7 @@ let App = (name, pass) => {
         function funca(e) {
             asi(e, {__class__:"Function", __clase__:Api.Function})
             me.func_list.push(e)
+            return e
         }
     
     
@@ -317,6 +350,9 @@ let App = (name, pass) => {
             func_list:[],
             func_count:0,
             code_exit:0,
+            onexit:(e) => {
+                //console.log("code exit", e)
+            },
             getlib:(src) => {
 
                 if (myapp.libs[src]!==undefined) {
@@ -324,9 +360,6 @@ let App = (name, pass) => {
                 } else {
                     me.error(`lib '${src}' not found`, tools.errores.ModuleError, me.index)
                 }
-            },
-            onexit:(e) => {
-                console.log("code exit", e)
             },
             desline: (c) => {
                 
@@ -474,7 +507,7 @@ let App = (name, pass) => {
                     {msg:msg, type:type, i:i}
                 );
                 //throw {msg:msg, type:type, i:i}
-                throw msg
+                throw msg;
             },
             parselex:(c) => {
     
@@ -741,19 +774,19 @@ let App = (name, pass) => {
                         if (ele.tipo == "()") {
                             cadena.push(
                                 tools.paren.tupla(
-                                    me.estructuration_one(ele.complet), ele.i
+                                    ele.complet.map(e=>me.estructuration_one(e)), ele.i
                                 )
                             )
                         }  else if (ele.tipo == "[]") {
                             cadena.push(
                                 tools.paren.list(
-                                    me.estructuration_one(ele.complet), ele.i
+                                    ele.complet.map(e=>me.estructuration_one(e)), ele.i
                                 )
                             )
                         }  else if (ele.tipo == "code") {
                             cadena.push(
                                 tools.paren.code(
-                                    me.estructuration_one(ele.data), ele.i
+                                    (ele.data).map(e=>me.estructuration_one(e)), ele.i
                                 )
                             );
                             let func = cadena.slice(-4);
@@ -1039,8 +1072,8 @@ let App = (name, pass) => {
     
                                         out.push({
                                             to:"elif",
-                                            cond:me.estructuration_one(e[1+x].data),
-                                            code:ex_names(me.estructuration(e[2+x].data)),
+                                            cond:me.estructuration_one(ceo[1+x].data),
+                                            code:ex_names(me.estructuration(ceo[2+x].data)),
                                         })
                                         
                                     } else if (["else"].includes(xx.name)) {
@@ -1059,8 +1092,8 @@ let App = (name, pass) => {
         
                                                 out.push({
                                                     to:"elif",
-                                                    cond:me.estructuration_one(e[1+x].data),
-                                                    code:ex_names(me.estructuration(e[2+x].data)),
+                                                    cond:me.estructuration_one(ceo[1+x].data),
+                                                    code:ex_names(me.estructuration(ceo[2+x].data)),
                                                 })
                                                 
                                             } else {
@@ -1070,10 +1103,10 @@ let App = (name, pass) => {
                                             if (ceo.slice(x).length < 2) {
                                                 me.error("Syntax Error", tools.errores.SyntaxError, e[0].i)
                                             }
-    
+                                            //console.log(e[1+x])
                                             out.push({
                                                 to:"else",
-                                                code:ex_names(me.estructuration(e[1+x].data)),
+                                                code:ex_names(me.estructuration(ceo[1+x].data)),
                                             })
                                         } else {
                                             me.error("Syntax Error", tools.errores.SyntaxError, e[0].i)
@@ -1085,7 +1118,8 @@ let App = (name, pass) => {
     
                                 salida.push({
                                     tipo:"if-def",
-                                    list:out
+                                    list:out,
+                                    i:e[0].i
                                 })
     
                             } else if (e[0].name == "while") {
@@ -1269,12 +1303,13 @@ let App = (name, pass) => {
                                 } else {
                                     me.error("Syntax Error", tools.errores.SyntaxError, e[0].i)
                                 };
-                            } else if (e[0].name == "using") {
-                                if (tools.compare(["name", {tipo:"name", name:"namespace"}, "name"], e)) {
+                            } else if (e[0].name == "namespace") {
+                                if (tools.compare(["name", "name", "code"], e)) {
                                     salida.push({
                                         i:e[0].i,
-                                        tipo:"namespace-comp",
-                                        name:e[2].name
+                                        tipo:"namespace-def",
+                                        name:e[1].name,
+                                        code:me.estructuration(e[2].data)
                                     })
                                 } else {
                                     me.error("Syntax Error", tools.errores.SyntaxError, e[0].i)
@@ -1359,7 +1394,7 @@ let App = (name, pass) => {
                 let salida = [];
                 
                 
-                if (code.names !== undefined) {
+                if (code.names !== undefined & !["class", "module"].includes(mode)) {
                     code.names.forEach(e=>{
                         //console.log(e)
                         salida.push(
@@ -1369,18 +1404,27 @@ let App = (name, pass) => {
                 }
     
                 function error_p(c, i) {
+                    if ((i||dexi) === undefined) {
+                        console.log(c);
+                        console.log(i, dexi);
+                    }
                     return[
-                        "app.index = " + i,
+                        "app.index = " + (i||dexi),
                         "try {",
                             c,
                         "} catch (e) {",
-                        `    app.error(e, 'ErrorExec', ${i})`,
+                        `    app.error(e, 'ErrorExec', ${i||dexi})`,
                         "}"
                     ]
                 }
-    
+                
+                let dexi = 0;
+                //console.log(code)
+
                 for (let i = 0; i < code.length; i++) {
                     let e = code[i];
+
+                    dexi = e.i||dexi
     
                     if ((e.tipo == "func-def") & ["normal", "func", "class", "module"].includes(mode)) {
                         let iter = -1;
@@ -1410,7 +1454,7 @@ let App = (name, pass) => {
     
     
                         salida.push(
-                            `${name_var} = Api.func( ${asyncrono} (...arg) => {`,
+                            `${name_var} = Api.Function( ${asyncrono} (...arg) => {`,
                             `    let este = ${name_var}`,
                             `    let rt = var_${e.sta}`,
     
@@ -1478,7 +1522,7 @@ let App = (name, pass) => {
                         }
                         
                         salida.push(
-                            `${name_var} = (...arg_c) => {`,
+                            `${name_var} = () => {`,
                             `    let este = ${name_var};`,
                             `    let var_me = {};`,
                             `    let var_private = {};`,
@@ -1489,17 +1533,42 @@ let App = (name, pass) => {
                             me.generator(e.code, "module"),
     
                             "    return me",
-                            `}`
+                            `};${name_var} = (${name_var})();`
+                        )
+                    } else if ((e.tipo == "namespace-def") & ["normal", "func", "module"].includes(mode)) {
+                        let name_var = "var_" + e.name;
+                        if ("module" === mode) {
+                            name_var = `me.${e.name}`;
+    
+                            if (e.visible=="private") {
+                                name_var = `private.${e.name}`;
+    
+                            }
+                        }
+                        
+                        salida.push(
+                            `${name_var} = (() => {`,
+                            `    let este = ${name_var};`,
+                            `    let var_me = {};`,
+                            `    let var_private = {};`,
+                            `    if (!este.__class__)Object.assign(este, {__class__:"Namespace", __clase__:Api.Namespace});`,
+                            `    let me = var_me;`,
+                            `    let private = var_private;`,
+                            
+                            me.generator(e.code, "module"),
+    
+                            "    return Api.Namespace(me)",
+                            `});${name_var} = (${name_var})();`
                         )
                     } else if ((e.tipo == "exec") & ["normal", "func"].includes(mode)) {
                         salida.push(
-                            ...error_p("    "+me.generator_one(e.eval, e.i, "exec"))
+                            ...error_p("    "+me.generator_one(e.eval, mode, "exec"), e.i)
                         )
                     } else if ((e.tipo == "if-def") & ["normal", "func"].includes(mode)) {
                         let out = [];
     
-                        for (let x = 0; x < e.d.length; x++) {
-                            const element = array[x];
+                        for (let x = 0; x < e.list.length; x++) {
+                            let element = e.list[x];
                             if (element.to == "if") {
                                 out.push(...[
                                     `if (${me.generator_one(element.cond, mode, "eval")}) {`,
@@ -1521,13 +1590,13 @@ let App = (name, pass) => {
                             }
                         }
     
-                        salida.push(...error_p(out))
+                        salida.push(...error_p(out, e.i))
                     } else if ((e.tipo == "while-def") & ["normal", "func"].includes(mode)) {
                         salida.push(...error_p([
-                            `if (${me.generator_one(e.cond, mode, "eval")}) {`,
+                            `while (${me.generator_one(e.cond, mode, "eval")}) {`,
                                 me.generator(e.code, mode),
                             `}`
-                        ]))
+                        ], e.i))
                     } else if ((e.tipo == "for-def") & ["normal", "func"].includes(mode)) {
                         salida.push(...error_p([
                             `for (let ${
@@ -1539,25 +1608,25 @@ let App = (name, pass) => {
                             }) {`,
                                     me.generator(e.code, mode),
                             `}`
-                        ]))
+                        ], e.i))
                     } else if ((e.tipo == "for-each-def") & ["normal", "func"].includes(mode)) {
                         salida.push(...error_p([
-                            `let i_mii = (${me.generator_one(e.data, mode)});`,
+                            `let i_mii = Api.iter(${me.generator_one(e.data, mode)});`,
                             `for (let itera = 0; itera < i_mii.length; itera++) {`,
                             `    let var_${e.itera} = i_mii[itera];`,
                                  me.generator(e.code, mode),
                             `}; delete i_mii;`
-                        ]))
+                        ], e.i))
                     } else if ((e.tipo == "with-def") & ["normal", "func"].includes(mode)) {
                         salida.push(...error_p([
                             `;((var_${e.name}) => {`,
                                 me.generator(e.code, mode),
                             `})(${me.generator_one(e.value, mode)});`
-                        ]))
+                        ], e.i))
                     } else if ((e.tipo == "rt-def") & ["func"].includes(mode)) {
                         salida.push(...error_p([
                             `return app.dim((${me.generator_one(e.eval, mode)}), rt)`
-                        ]))
+                        ], e.i))
                     } else if ((e.tipo == "try-def") & ["normal", "func"].includes(mode)) {
                         salida.push(...error_p([
                             "try {",
@@ -1565,14 +1634,14 @@ let App = (name, pass) => {
                             `} catch (var_${e.e_name}) {`,
                                 me.generator(e.e_code, mode),
                             "}"
-                        ]))
+                        ], e.i))
                     } else if ((e.tipo == "import-def") & ["normal", "func"].includes(mode)) {
                         salida.push(...error_p(
-                            [`var_${e.as} = app.getlib("${e.lib}")`]
+                            [`var_${e.as} = app.getlib("${e.lib}")`], e.i
                         ))
                     } else if ((e.tipo == "from-def") & ["normal", "func"].includes(mode)) {
                         salida.push(...error_p(
-                            [`var_${e.as} = app.getlib("${e.lib}").${e.import}`]
+                            [`var_${e.as} = app.getlib("${e.lib}").${e.import}`], e.i
                         ))
                     } else if ((e.tipo == "include-def") & ["normal", "func"].includes(mode)) {
                         salida.push(...error_p([
@@ -1583,7 +1652,7 @@ let App = (name, pass) => {
                             `    eval("let var_" + index + " = lib_dex['" + index + "']")`,
                             `}`,
                             `delete lib_dex, lib_in`
-                        ]))
+                        ], e.i))
                     } else if ((e.tipo == "var") & ["normal", "func", "class", "module"].includes(mode)) {
                         if (e.one) {
                             let l_out = [];
@@ -1615,14 +1684,14 @@ let App = (name, pass) => {
     
                             }
     
-                            salida.push(...error_p(l_out))
+                            salida.push(...error_p(l_out, e.i))
     
                         } else {
                             salida.push(...error_p([
                                 `${me.generator_one(e.var, mode)} = ${me.generator_one(e.eval, mode)}`
-                            ]))
+                            ], e.i))
                         }
-                    } else if ((e.tipo == "var-def") & ["normal", "func"].includes(mode)) {
+                    } else if ((e.tipo == "var-def") & ["normal", "func", "module", "class"].includes(mode)) {
                         let visibilidad = e.visible
                         let out = (e.vals.map((e)=>{
                             
@@ -1630,26 +1699,25 @@ let App = (name, pass) => {
                             if (tto === "") tto = undefined+"";
     
     
-                            let l_out = [];
                             let qqq = "";
     
                             if (["normal", "func"].includes(mode)) {
-                                name_var = `var_${e.name}`;
+                                name_var = `var_${e.arg}`;
                             } else {
     
                                 if (["class", "module"].includes(mode)) {
-                                    name_var = `me.${e.name}`;
+                                    name_var = `me.${e.arg}`;
             
                                     if (visibilidad==="private") {
-                                        name_var = `private.${e.name}`;
+                                        name_var = `private.${e.arg}`;
             
                                     }
                                     
                                     if (mode == "class") if (visibilidad==="export") {
-                                        name_var = `me.${e.name}`;
-                                        qqq = `export.push('${e.name}')`
+                                        name_var = `me.${e.arg}`;
+                                        qqq = `export.push('${e.arg}')`
                                     } else if (visibilidad==="static") {
-                                        name_var = `out.${e.name}`;
+                                        name_var = `out.${e.arg}`;
             
                                     }
                                 };
@@ -1662,12 +1730,12 @@ let App = (name, pass) => {
     
     
                             return([
-                                `var_${e.arg} = (${tto});`,
-                                `var_${e.arg} = app.dim(var_${e.arg}, var_${e.sta[0]})`,
+                                `${name_var} = (${tto});`,
+                                `${name_var} = app.dim(${name_var}, var_${e.sta[0]})`,
                                 qqq
                             ])
                         }));
-                        salida.push(...out)
+                        salida.push(...error_p(out, e.i))
                     } else if ((e.tipo == "with-def") & ["normal", "func"].includes(mode)) {
                     }
                     
@@ -1683,7 +1751,7 @@ let App = (name, pass) => {
                 key= key||false;
                 let last = {tipo:"none", i:0}
                 let error = (i, msg) => {
-                    //console.log(i)
+                    //console.log(i, "'"+me.code.substr(i-5, i+5)+"'")
                     me.error("Error of syntax" + (msg||""), tools.errores.SyntaxError, i)
                 }
                 //console.log(code)
@@ -1704,14 +1772,22 @@ let App = (name, pass) => {
                         if ( ["[]", "()"].includes(e.tipo) ) {
                             if (["[]", "()", "name", "value", "none", "func-a"].includes(last.tipo)) {
                                 if (last.tipo === "value") {
-                                    if (last.type === "str") e.fist = true
+                                    if (last.type === "str") e.fist = false
                                     else error(e.i)
-                                } else if (last.tipo === "func-a") {
-                                    if (e.tipo !== "()") error(e.i)
+                                } else if (last.tipo === "none") {
+                                    e.fist = true
                                 } else {
                                     e.fist = true
+
+                                    if (["[]", "()", "name"].includes(last.tipo)) {
+                                        if (e.tipo === "[]") {
+                                            e.fist = false
+                                        }
+                                        
+                                    }
                                 }
                             } else {
+                                //console.log("llego")
                                 error(e.i)
                             }
                         } else if ( e.tipo === "name" ) {
@@ -1720,7 +1796,12 @@ let App = (name, pass) => {
                                 
                             } else if (["none", "ope", "sim"].includes(last.tipo)) {
                                 if (e.name[0] === ".") error(e.i)
-                                
+                                else if (last.tipo === "ope") {
+                                    if (last.char === "::") {
+                                        e.name = ".__names__."+e.name;
+                                        e.notmod = true;
+                                    }
+                                }
                             }
                         } else if ( e.tipo === "value" ) {
                             if ( !["ope", "sim", "none"].includes(last.tipo) ) {
@@ -1739,8 +1820,9 @@ let App = (name, pass) => {
                         }
     
                         if (key & ( e.tipo === "name" )) {
-                            if (["sim", "none"].includes(e.tipo)) {
+                            if (["sim", "none"].includes(last.tipo)) {
                                 e = tools.tipos.value(`'${e.name}'`, "str", e.i, "")
+                                e.key = true
                             }
                         }
                     }
@@ -1760,14 +1842,22 @@ let App = (name, pass) => {
                                 })[e.name]
                             } `;
                             
+                        } else if (["break", "continue"].includes(e.name)) {
+                            salida = salida + ` ${e.name} `;
                         } else {
-                            salida = salida + ` var_${e.name} `;
+                            if (!e.notmod) { 
+                                if (e.name[0]===".") salida = salida + ` ${e.name} `;
+                                else salida = salida + ` var_${e.name} `;
+                            } else {
+                                salida = salida + ` ${e.name} `;
+                            }
                             
                         }
                     } else if (e.tipo === "value") {
     
                         if (e.type === "str") {
-                            salida = salida + ` app.tstr['${e.byte}'](${e.value}) `;
+                            if (!e.key) salida = salida + ` app.tstr['${e.byte}'](${e.value}) `;
+                            else salida = salida + `${e.value}`
                         } else if (e.type === "int") {
                             salida = salida + ` Api.int(${e.value}) `;
                         } else if (e.type === "float") {
@@ -1780,9 +1870,9 @@ let App = (name, pass) => {
                         if (e.fist) salida = salida + ` Api.Array([${me.generator_one(e.data, mode, "eval")}]) `;
                         else salida = salida + ` [${me.generator_one(e.data, mode, "eval")}] `;
                     } else if (e.tipo === "code") {
-                        salida = salida + ` Api.obj({${me.generator_one(e.data, mode, "eval", true)}}) `;
+                        salida = salida + ` Api.obj({${me.generator_one(e.one, mode, "eval", true)}}) `;
                     } else if (e.tipo === "ope") {
-                        if (["+", "*", "-", "/", "%", "&", "!", "<", ">", "="].includes(e.char)) {
+                        if (["+", "*", "-", "/", "%", "&", "!", "<", ">", "=", ":"].includes(e.char)) {
                             salida = salida + ` ${e.char} `;
                         } else if (["==", "!=", ">=", "<=", "++", "--", "**"].includes(e.char)) {
                             salida = salida + ` ${e.char} `;
@@ -1848,13 +1938,17 @@ let App = (name, pass) => {
                 let var_export = {};
 
                 let a = Object.keys(Api)
+                let listar = []
 
                 for (let i = 0; i < a.length; i++) {
                     let e = a[i];
-                    eval(`let var_${e} = Api['${e}']`)
+                    listar.push(`let var_${e} = Api['${e}']`)
                 }
 
+
+
                 eval(
+                    listar.join(";") + ";" +
                     code_run
                 )
 
@@ -1864,10 +1958,14 @@ let App = (name, pass) => {
             },
             dim:(value, type) => {
                 
+                //console.log(value, type)
+
                 if (type.__class__ === "Any") {
                     return value
                 } else if (type.__class__ === "Void")  {
                     me.error("error of typing at write a value in a var of type void", tools.errores.TypingError, me.index)
+                } else if (Array.isArray(value) & ("Array" === type.__class__))  {
+                    return Api.Array(value)
                 } else if (typer(value) === type.__class__)  {
                     return value
                 } else {
@@ -1876,6 +1974,19 @@ let App = (name, pass) => {
                     }' in a var of type '${type.__class__}'`, tools.errores.TypingError, me.index)
 
                 }
+            }, 
+            compile:(c, modo) => {
+                modo = modo||"normal";
+
+                let k = me.desline(c);
+                let par = me.parselex(k);
+                let estr = me.estructuration(par);
+                let gen = me.generator(estr, modo);
+                let salida = me.jump(gen, 0)
+
+                delete k, par, estr, gen, modo
+
+                return salida
             }
         };
     
@@ -1885,11 +1996,19 @@ let App = (name, pass) => {
 
     let myapp = {
         libs:{
-            WebDom:this.document||{}
+            WebDom:this.document||{},
+            window:this.window||{}
         },
         Script:Script,
         Api:Api
     };
+
+    if (ApiJS) {
+        myapp.libs["ApiJS"] = {
+            getthis:x =>this[x],
+            eval:v => eval(v),
+        }
+    }
 
     return myapp
 }
@@ -1899,5 +2018,61 @@ let App = (name, pass) => {
 try {
     module.exports.App = App
 } catch (e) {
-    let app = APP();
+    let app = App("WebAplication", {
+        input:e => prompt(e)
+    }, true);
+    window.addEventListener("load", () => {
+
+        let tags = document.getElementsByTagName("script");
+        let scripts = []
+        let enume = 0;
+        
+        tags.forEach((e = new HTMLScriptElement()) => {
+            if (e.getAttribute("type") === "cls/script") scripts.push(e)
+        })
+    
+        scripts.reverse();
+    
+        function leer() {
+            if (scripts.length === 0) return;
+    
+            let este =scripts.pop()
+            
+            if (este.getAttribute("src") !== undefined) {
+                fetch(este.getAttribute("src"), {}).then(e=>{
+                    e.text().then(x => {
+                        
+                        let ap = app.Script(
+                            x||"",
+                            este.getAttribute("name")||este.getAttribute("src")
+                        );
+            
+                        let k = ap.compile(x||"")
+                        ap.onexit = leer;
+            
+                        ap.exec(k);
+                        
+                        delete k, ap
+                    
+                    })
+                }).catch(x => {leer()})
+            } else {
+                let ap = app.Script(
+                    este.innerHTML||"",
+                    este.getAttribute("name")||"Script" + (enume++)
+                );
+    
+                let k = ap.compile(este.innerHTML||"")
+                ap.onexit = leer;
+    
+                ap.exec(k);
+                
+                delete k, ap
+    
+            }
+    
+        };
+    
+        leer()
+    })
 }
