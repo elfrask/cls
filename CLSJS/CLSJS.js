@@ -114,6 +114,9 @@ let tools = {
                 data:c,
                 one:c[0]||[]
             }
+        },
+        cml:(c, i) => {
+            return
         }
     },
     errores: {
@@ -287,7 +290,15 @@ let App = (name, pass, ApiJS) => {
             } else {
                 return e._iter()
             }
-        }
+        },
+        len:(e) => {
+            if ((typeof(e) === "string")|(Array.isArray(e))) {
+                return e.length
+            } else {
+                return e._len()
+            };
+        },
+        
     }
     let Apibase = Api;
     asi(Api, {
@@ -301,7 +312,13 @@ let App = (name, pass, ApiJS) => {
         },
         void:{__class__:"Void"},
         Void:{__class__:"Void"},
-        obj:Api.Object
+        obj:Api.Object,
+        true:true,
+        True:true,
+        on:true,
+        false:false,
+        False:false,
+        off:false,
     });
 
     asi(Api, pass||{})
@@ -349,6 +366,7 @@ let App = (name, pass, ApiJS) => {
             },
             func_list:[],
             func_count:0,
+            conti:0,
             code_exit:0,
             onexit:(e) => {
                 //console.log("code exit", e)
@@ -398,8 +416,14 @@ let App = (name, pass, ApiJS) => {
                                             linea.push(tools.tipos.ope(e, i))
                                         }
                                     } else if (e.length == 1) {
-                                        linea.pop()
-                                        linea.push(tools.tipos.ope(w+e, i))
+                                        if (["<", ">", "=", ":"].includes(e)) {
+                                            linea.push(tools.tipos.ope(e, i))
+                                            
+                                        } else {
+                                            linea.pop()
+                                            linea.push(tools.tipos.ope(w+e, i))
+                                            
+                                        }
     
                                     } else {
                                         linea.push(tools.tipos.ope(e, i))
@@ -481,7 +505,7 @@ let App = (name, pass, ApiJS) => {
                             cadena = cadena + e
                         }
                     } else if (modo === "com") {
-                        if (e == N) {
+                        if (e == tools.chars.N) {
                             modo = "normal"
                         }
                     }
@@ -548,7 +572,9 @@ let App = (name, pass, ApiJS) => {
                                 //console.log(q)
                                 me.error(`the token '${q.char}' is invalid`, tools.errores.SyntaxError, q.i)
                             } else {
+                                
                                 linea.push(q)
+
                             }
     
                         } else if (modo == "()") {
@@ -1186,9 +1212,9 @@ let App = (name, pass, ApiJS) => {
                                     if (tools.compare(["name", "name", "()", "code"], e)) {
                                         salida.push({
                                             tipo:"with-def",
-                                            value:e[2].data,
+                                            value:me.estructuration_one(e[2].data),
                                             name:e[1].name,
-                                            code:ex_names(me.estructuration(e[2].data)),
+                                            code:ex_names(me.estructuration(e[3].data)),
                                             i:e[0].i
                                         });
                                     } else {
@@ -1455,7 +1481,7 @@ let App = (name, pass, ApiJS) => {
     
                         salida.push(
                             `${name_var} = Api.Function( ${asyncrono} (...arg) => {`,
-                            `    let este = ${name_var}`,
+                            //`    let este = ${name_var}`,
                             `    let rt = var_${e.sta}`,
     
                             ...e.arg.map((e)=>{
@@ -1493,6 +1519,10 @@ let App = (name, pass, ApiJS) => {
                             `    let exportar = [];`,
                             `    let out = {__clase__:"${name_var}"};`,
                             `    let me = var_me;`,
+                            `    let me.toString = h=>me._str(h)`,
+                            `    let me._str = k=>"<${name_var}-Instance:0x${
+                                (me.conti++).toString(16)
+                            }>"`,
                             `    let private = var_private;`,
                             `    app.clasi(me, out, private, exportar, [${e.arg.map(e=>("var_"+e+", "))}]);`,
                             
@@ -1644,15 +1674,18 @@ let App = (name, pass, ApiJS) => {
                             [`var_${e.as} = app.getlib("${e.lib}").${e.import}`], e.i
                         ))
                     } else if ((e.tipo == "include-def") & ["normal", "func"].includes(mode)) {
-                        salida.push(...error_p([
+                        salida.push(...[
                             `let lib_in = app.getlib("${e.lib}")`,
                             `let lib_dex = Object.keys(lib_in)`,
+                            `let var_li = ""`,
                             `for (let iom = 0; iom < lib_dex.length; iom++) {`,
                             `    let index = lib_dex[iom]`,
-                            `    eval("let var_" + index + " = lib_dex['" + index + "']")`,
-                            `}`,
-                            `delete lib_dex, lib_in`
-                        ], e.i))
+                            `    var_li = var_li + ("var_" + index + " = lib_dex['" + index + "']") + ";"`,
+                            `};`,
+                            //"console.log(var_li)",
+                            "eval(var_li);",
+                            `delete lib_dex, lib_in, var_li`
+                        ])
                     } else if ((e.tipo == "var") & ["normal", "func", "class", "module"].includes(mode)) {
                         if (e.one) {
                             let l_out = [];
@@ -1755,6 +1788,7 @@ let App = (name, pass, ApiJS) => {
                     me.error("Error of syntax" + (msg||""), tools.errores.SyntaxError, i)
                 }
                 //console.log(code)
+                
                 for (let i = 0; i < code.length; i++) {
                     let e = code[i];
                     //console.log(e.tipo)
@@ -1829,7 +1863,7 @@ let App = (name, pass, ApiJS) => {
     
                     last = e
     
-    
+                    
     
     
     
@@ -1915,7 +1949,7 @@ let App = (name, pass, ApiJS) => {
                     }
                     
                 }
-    
+
                 return salida.trim()
             },
             jump:(c=[], i) => {
@@ -1996,7 +2030,7 @@ let App = (name, pass, ApiJS) => {
 
     let myapp = {
         libs:{
-            WebDom:this.document||{},
+            document:this.document||{},
             window:this.window||{}
         },
         Script:Script,
@@ -2026,10 +2060,13 @@ try {
         let tags = document.getElementsByTagName("script");
         let scripts = []
         let enume = 0;
-        
-        tags.forEach((e = new HTMLScriptElement()) => {
+        for (let i = 0; i < tags.length; i++) {
+            const e = tags[i];
             if (e.getAttribute("type") === "cls/script") scripts.push(e)
-        })
+            
+        }
+        
+        //console.log(scripts);
     
         scripts.reverse();
     
@@ -2038,18 +2075,20 @@ try {
     
             let este =scripts.pop()
             
-            if (este.getAttribute("src") !== undefined) {
+            if (este.getAttribute("src")) {
                 fetch(este.getAttribute("src"), {}).then(e=>{
                     e.text().then(x => {
                         
                         let ap = app.Script(
                             x||"",
-                            este.getAttribute("name")||este.getAttribute("src")
+                            este.getAttribute("module")||este.getAttribute("src")
                         );
             
                         let k = ap.compile(x||"")
                         ap.onexit = leer;
-            
+
+                        if (este.getAttribute("debug")) console.log(k)
+                        
                         ap.exec(k);
                         
                         delete k, ap
@@ -2059,12 +2098,12 @@ try {
             } else {
                 let ap = app.Script(
                     este.innerHTML||"",
-                    este.getAttribute("name")||"Script" + (enume++)
+                    este.getAttribute("module")||"Script" + (enume++)
                 );
     
                 let k = ap.compile(este.innerHTML||"")
                 ap.onexit = leer;
-    
+                if (este.getAttribute("debug")) console.log(k)
                 ap.exec(k);
                 
                 delete k, ap
@@ -2076,3 +2115,72 @@ try {
         leer()
     })
 }
+
+
+/*if (tools.compare
+
+                    (
+                        [{tipo:"ope", char:"<"}, "name", {tipo:"ope", char:">"}],
+                        code
+                    ) | tools.compare
+                    (
+                        [{tipo:"ope", char:"<"}, "name", "name"],
+                        code
+                    )) 
+                {
+
+                    function cml(p) {
+                        
+                        let modo = "tag";
+                        let node = []
+                        let arg = {}
+                        let tagname = "";
+    
+    
+                        for (let i = 0; i < code.length; i++) {
+                            let e = code[i];
+    
+                            if (modo == "tag") {
+                                if (e.tipo === "") {
+                                    
+                                }
+                            } else if (modo == "cont") {
+    
+                            }
+                            
+                        }
+    
+                        salida = JSON.stringify({
+                            tag:code[1].name,
+                            arg:{},
+                            nodes:[]
+                        });
+    
+                        if ((tagname[0]+"").toUpperCase() === tagname[0]) {
+                            salida = `var_${code[1].name}(${salida})`;
+    
+                        }
+                    };
+
+                    cml(p)
+
+                } else if (tools.compare( //salida
+                    [{tipo:"ope", char:"<"}, "name", {tipo:"ope", char:"/"}, {tipo:"ope", char:">"}],
+                    code
+                )) {
+                    
+                    salida = JSON.stringify({
+                        tag:code[1].name,
+                        arg:{},
+                        nodes:[]
+                    });
+
+                    if ((code[1].name[0]+"").toUpperCase() === code[1].name[0]) {
+                        salida = `var_${code[1].name}(${salida})`;
+
+                    }
+
+                } else { 
+                    
+                    
+                }*/

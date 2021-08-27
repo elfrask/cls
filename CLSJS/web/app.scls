@@ -1,0 +1,15 @@
+import "document" as document;
+from "window" import alert as alerta;
+
+namespace char {
+    function main(msg:String="") {
+        print(msg)
+    }
+};
+
+char::main("Hola mundo");
+#alerta("saludos");
+
+export.meno = "qlei";
+
+document.title = "Esta es una app";

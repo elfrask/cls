@@ -1,442 +1,29 @@
 [
     {
-        "i": 4,
-        "tipo": "namespace-def",
-        "name": "main",
+        "name": "Hola",
+        "sta": "Any",
         "code": [
             {
-                "name": "saluda",
-                "sta": "float",
-                "code": [
-                    {
-                        "tipo": "rt-def",
-                        "eval": [
-                            {
-                                "tipo": "()",
-                                "i": 70,
-                                "data": [
-                                    {
-                                        "value": "12",
-                                        "type": "int",
-                                        "i": 85,
-                                        "byte": "",
-                                        "tipo": "value"
-                                    }
-                                ],
-                                "complet": [
-                                    [
-                                        {
-                                            "value": "12",
-                                            "type": "int",
-                                            "i": 85,
-                                            "byte": "",
-                                            "tipo": "value"
-                                        }
-                                    ]
-                                ],
-                                "fist": true
-                            }
-                        ]
-                    }
-                ],
-                "arg": [],
-                "visible": "public",
-                "tipo": "func-def",
-                "async": false,
-                "i": 26
-            }
-        ]
-    },
-    {
-        "i": 108,
-        "eval": [
-            {
-                "name": "print",
-                "i": 108,
-                "notmod": false,
-                "tipo": "name"
-            },
-            {
-                "tipo": "()",
-                "i": 118,
-                "data": [
-                    {
-                        "tipo": "code",
-                        "i": 119,
-                        "data": [
-                            [
-                                {
-                                    "name": "hola",
-                                    "i": 116,
-                                    "notmod": false,
-                                    "tipo": "name"
-                                },
-                                {
-                                    "char": ":",
-                                    "i": 124,
-                                    "cond": false,
-                                    "tipo": "ope"
-                                },
-                                {
-                                    "value": "\"saludos\"",
-                                    "type": "str",
-                                    "i": 125,
-                                    "byte": "",
-                                    "tipo": "value"
-                                }
-                            ]
-                        ],
-                        "one": [
-                            {
-                                "name": "hola",
-                                "i": 116,
-                                "notmod": false,
-                                "tipo": "name"
-                            },
-                            {
-                                "char": ":",
-                                "i": 124,
-                                "cond": false,
-                                "tipo": "ope"
-                            },
-                            {
-                                "value": "\"saludos\"",
-                                "type": "str",
-                                "i": 125,
-                                "byte": "",
-                                "tipo": "value"
-                            }
-                        ]
-                    },
-                    {
-                        "name": ".hola",
-                        "i": 130,
-                        "notmod": false,
-                        "tipo": "name"
-                    }
-                ],
-                "complet": [
-                    [
-                        {
-                            "tipo": "code",
-                            "i": 119,
-                            "data": [
-                                [
-                                    {
-                                        "name": "hola",
-                                        "i": 116,
-                                        "notmod": false,
-                                        "tipo": "name"
-                                    },
-                                    {
-                                        "char": ":",
-                                        "i": 124,
-                                        "cond": false,
-                                        "tipo": "ope"
-                                    },
-                                    {
-                                        "value": "\"saludos\"",
-                                        "type": "str",
-                                        "i": 125,
-                                        "byte": "",
-                                        "tipo": "value"
-                                    }
-                                ]
-                            ],
-                            "one": [
-                                {
-                                    "name": "hola",
-                                    "i": 116,
-                                    "notmod": false,
-                                    "tipo": "name"
-                                },
-                                {
-                                    "char": ":",
-                                    "i": 124,
-                                    "cond": false,
-                                    "tipo": "ope"
-                                },
-                                {
-                                    "value": "\"saludos\"",
-                                    "type": "str",
-                                    "i": 125,
-                                    "byte": "",
-                                    "tipo": "value"
-                                }
-                            ]
-                        },
-                        {
-                            "name": ".hola",
-                            "i": 130,
-                            "notmod": false,
-                            "tipo": "name"
-                        }
-                    ]
-                ],
-                "fist": true
-            }
-        ],
-        "tipo": "exec"
-    },
-    {
-        "i": 146,
-        "tipo": "var-def",
-        "vals": [
-            {
-                "arg": "lista",
-                "sta": [
-                    "Array"
-                ],
-                "def": [
-                    {
-                        "tipo": "[]",
-                        "i": 164,
-                        "data": [
-                            {
-                                "value": "1",
-                                "type": "int",
-                                "i": 165,
-                                "byte": "",
-                                "tipo": "value"
-                            },
-                            {
-                                "char": ",",
-                                "i": 166,
-                                "tipo": "sim"
-                            },
-                            {
-                                "value": "2",
-                                "type": "int",
-                                "i": 167,
-                                "byte": "",
-                                "tipo": "value"
-                            },
-                            {
-                                "char": ",",
-                                "i": 168,
-                                "tipo": "sim"
-                            },
-                            {
-                                "value": "3",
-                                "type": "int",
-                                "i": 169,
-                                "byte": "",
-                                "tipo": "value"
-                            },
-                            {
-                                "char": ",",
-                                "i": 170,
-                                "tipo": "sim"
-                            },
-                            {
-                                "value": "4",
-                                "type": "int",
-                                "i": 171,
-                                "byte": "",
-                                "tipo": "value"
-                            }
-                        ],
-                        "complet": [
-                            [
-                                {
-                                    "value": "1",
-                                    "type": "int",
-                                    "i": 165,
-                                    "byte": "",
-                                    "tipo": "value"
-                                },
-                                {
-                                    "char": ",",
-                                    "i": 166,
-                                    "tipo": "sim"
-                                },
-                                {
-                                    "value": "2",
-                                    "type": "int",
-                                    "i": 167,
-                                    "byte": "",
-                                    "tipo": "value"
-                                },
-                                {
-                                    "char": ",",
-                                    "i": 168,
-                                    "tipo": "sim"
-                                },
-                                {
-                                    "value": "3",
-                                    "type": "int",
-                                    "i": 169,
-                                    "byte": "",
-                                    "tipo": "value"
-                                },
-                                {
-                                    "char": ",",
-                                    "i": 170,
-                                    "tipo": "sim"
-                                },
-                                {
-                                    "value": "4",
-                                    "type": "int",
-                                    "i": 171,
-                                    "byte": "",
-                                    "tipo": "value"
-                                }
-                            ]
-                        ],
-                        "fist": true
-                    },
-                    {
-                        "name": ".map",
-                        "i": 169,
-                        "notmod": false,
-                        "tipo": "name"
-                    },
+                "tipo": "rt-def",
+                "eval": [
                     {
                         "tipo": "()",
-                        "i": 177,
+                        "i": 33,
                         "data": [
                             {
-                                "tipo": "func-a",
-                                "arg": [
-                                    {
-                                        "arg": "e",
-                                        "sta": [
-                                            "Any"
-                                        ],
-                                        "def": []
-                                    }
-                                ],
-                                "i": 178,
-                                "sta": "String",
-                                "code": [
-                                    {
-                                        "tipo": "rt-def",
-                                        "eval": [
-                                            {
-                                                "tipo": "()",
-                                                "i": 205,
-                                                "data": [
-                                                    {
-                                                        "value": "\"valor: \"",
-                                                        "type": "str",
-                                                        "i": 206,
-                                                        "byte": "",
-                                                        "tipo": "value"
-                                                    },
-                                                    {
-                                                        "char": "+",
-                                                        "i": 216,
-                                                        "cond": false,
-                                                        "tipo": "ope"
-                                                    },
-                                                    {
-                                                        "name": "e",
-                                                        "i": 217,
-                                                        "notmod": false,
-                                                        "tipo": "name"
-                                                    }
-                                                ],
-                                                "complet": [
-                                                    [
-                                                        {
-                                                            "value": "\"valor: \"",
-                                                            "type": "str",
-                                                            "i": 206,
-                                                            "byte": "",
-                                                            "tipo": "value"
-                                                        },
-                                                        {
-                                                            "char": "+",
-                                                            "i": 216,
-                                                            "cond": false,
-                                                            "tipo": "ope"
-                                                        },
-                                                        {
-                                                            "name": "e",
-                                                            "i": 217,
-                                                            "notmod": false,
-                                                            "tipo": "name"
-                                                        }
-                                                    ]
-                                                ],
-                                                "fist": true
-                                            }
-                                        ]
-                                    }
-                                ]
+                                "name": "e",
+                                "i": 33,
+                                "notmod": false,
+                                "tipo": "name"
                             }
                         ],
                         "complet": [
                             [
                                 {
-                                    "tipo": "func-a",
-                                    "arg": [
-                                        {
-                                            "arg": "e",
-                                            "sta": [
-                                                "Any"
-                                            ],
-                                            "def": []
-                                        }
-                                    ],
-                                    "i": 178,
-                                    "sta": "String",
-                                    "code": [
-                                        {
-                                            "tipo": "rt-def",
-                                            "eval": [
-                                                {
-                                                    "tipo": "()",
-                                                    "i": 205,
-                                                    "data": [
-                                                        {
-                                                            "value": "\"valor: \"",
-                                                            "type": "str",
-                                                            "i": 206,
-                                                            "byte": "",
-                                                            "tipo": "value"
-                                                        },
-                                                        {
-                                                            "char": "+",
-                                                            "i": 216,
-                                                            "cond": false,
-                                                            "tipo": "ope"
-                                                        },
-                                                        {
-                                                            "name": "e",
-                                                            "i": 217,
-                                                            "notmod": false,
-                                                            "tipo": "name"
-                                                        }
-                                                    ],
-                                                    "complet": [
-                                                        [
-                                                            {
-                                                                "value": "\"valor: \"",
-                                                                "type": "str",
-                                                                "i": 206,
-                                                                "byte": "",
-                                                                "tipo": "value"
-                                                            },
-                                                            {
-                                                                "char": "+",
-                                                                "i": 216,
-                                                                "cond": false,
-                                                                "tipo": "ope"
-                                                            },
-                                                            {
-                                                                "name": "e",
-                                                                "i": 217,
-                                                                "notmod": false,
-                                                                "tipo": "name"
-                                                            }
-                                                        ]
-                                                    ],
-                                                    "fist": true
-                                                }
-                                            ]
-                                        }
-                                    ]
+                                    "name": "e",
+                                    "i": 33,
+                                    "notmod": false,
+                                    "tipo": "name"
                                 }
                             ]
                         ],
@@ -445,85 +32,83 @@
                 ]
             }
         ],
-        "visible": "public"
+        "arg": [
+            {
+                "arg": "e",
+                "sta": [
+                    "Any"
+                ],
+                "def": []
+            }
+        ],
+        "visible": "public",
+        "tipo": "func-def",
+        "async": false,
+        "i": 2
     },
     {
-        "i": 224,
+        "i": 39,
         "eval": [
             {
                 "name": "print",
-                "i": 224,
+                "i": 39,
                 "notmod": false,
                 "tipo": "name"
             },
             {
                 "tipo": "()",
-                "i": 234,
+                "i": 49,
                 "data": [
                     {
-                        "name": "lista",
-                        "i": 230,
+                        "char": "<",
+                        "i": 50,
+                        "cond": false,
+                        "tipo": "ope"
+                    },
+                    {
+                        "name": "Hola",
+                        "i": 47,
                         "notmod": false,
                         "tipo": "name"
                     },
                     {
-                        "tipo": "[]",
-                        "i": 240,
-                        "data": [
-                            {
-                                "value": "2",
-                                "type": "int",
-                                "i": 241,
-                                "byte": "",
-                                "tipo": "value"
-                            }
-                        ],
-                        "complet": [
-                            [
-                                {
-                                    "value": "2",
-                                    "type": "int",
-                                    "i": 241,
-                                    "byte": "",
-                                    "tipo": "value"
-                                }
-                            ]
-                        ],
-                        "fist": false
+                        "char": "/",
+                        "i": 55,
+                        "cond": false,
+                        "tipo": "ope"
+                    },
+                    {
+                        "char": ">",
+                        "i": 56,
+                        "cond": false,
+                        "tipo": "ope"
                     }
                 ],
                 "complet": [
                     [
                         {
-                            "name": "lista",
-                            "i": 230,
+                            "char": "<",
+                            "i": 50,
+                            "cond": false,
+                            "tipo": "ope"
+                        },
+                        {
+                            "name": "Hola",
+                            "i": 47,
                             "notmod": false,
                             "tipo": "name"
                         },
                         {
-                            "tipo": "[]",
-                            "i": 240,
-                            "data": [
-                                {
-                                    "value": "2",
-                                    "type": "int",
-                                    "i": 241,
-                                    "byte": "",
-                                    "tipo": "value"
-                                }
-                            ],
-                            "complet": [
-                                [
-                                    {
-                                        "value": "2",
-                                        "type": "int",
-                                        "i": 241,
-                                        "byte": "",
-                                        "tipo": "value"
-                                    }
-                                ]
-                            ],
-                            "fist": false
+                            "char": "/",
+                            "i": 55,
+                            "cond": false,
+                            "tipo": "ope"
+                        },
+                        {
+                            "char": ">",
+                            "i": 56,
+                            "cond": false,
+                            "tipo": "ope"
                         }
                     ]
                 ],
