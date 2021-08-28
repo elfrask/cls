@@ -116,7 +116,11 @@ let tools = {
             }
         },
         cml:(c, i) => {
-            return
+            return {
+                data:c,
+                i:i,
+                tipo:"cml"
+            }
         }
     },
     errores: {
@@ -126,7 +130,10 @@ let tools = {
         ModuleError:"ModuleError",
     },
     compare:(c = [], k = []) => {
-        if (c.length < k.length) return false
+        if (c.length < k.length) {
+            
+            return false
+        }
 
         let salida = true;
         for (let i = 0; i < c.length; i++) {
@@ -166,8 +173,394 @@ let tools = {
             
         };
         return sal
+    },
+    replace:(cadena, viejo, nuevo) => {
+        while (cadena.includes(viejo)) {
+            cadena.replace(viejo, nuevo)
+        };
+        return cadena
+    },
+    cml:{
+        cmlobj:(data) => {
+            function getobj(ikd, d) {
+                let salida = null;
+        
+                for (let i = 0; i < d.length; i++) {
+                    const e = d[i];
+                    if (typeof(e) == "object") {
+                        if (e.arg.id == ikd) {
+                            return e;
+                        } else {
+                            let k= getobj(ikd, e.nodes);
+                            if ((k+"") != "null") {
+                                return k;
+                            }
+                        }
+                    }
+                }
+        
+                return salida
+            };
+            function replace_data(d, viejo, nuevo) {
+                let salida = [];
+                
+                if (!Array.isArray(d)) {
+                    d= [d]
+                }
+        
+                for (let i = 0; i < d.length; i++) {
+                    let e = d[i];
+                    
+                    if (typeof(e) == "object") {
+                        let carg = Object.keys(e.arg);
+                        for (let x = 0; x < carg.length; x++) {
+                            const ele = e.arg[carg[x]];
+                            if (nuevo.__classname__ == "CML") {
+                                
+                                e.arg[carg[x]] = tools.replace(ele, viejo, nuevo.getString())
+                            } else {
+                                
+                                e.arg[carg[x]] = tools.replace(ele, viejo, nuevo.toString())
+                            }
+        
+                        };
+                        if (nuevo.__classname__ == "CML") {
+                            e.inner = tools.replace(e.inner, viejo, nuevo.getString());
+                        } else {
+                            e.inner = tools.replace(e.inner, viejo, nuevo.toString());                   
+                        }
+                        let ik = replace_data(JSON.parse(JSON.stringify(e.nodes)), viejo, nuevo);
+                        e.nodes = ik
+                        salida.push(e)
+                    } else if (typeof(e) == "string") {
+                        if (typeof(nuevo) == "string") {
+                            let m = tools.replace(e, viejo, nuevo);
+                            salida.push(m)
+                        } else if (typeof(nuevo) == "object") {
+                            
+                            if (nuevo.__classname__ == "CML") {
+                                let cadena = "";
+                                for (let y = 0; y < e.length; y++) {
+                                    let elemento = e[y];
+                                    
+                                    if (cadena.substr(cadena.length-viejo.length) == viejo) {
+                                        cadena =cadena.substr(0, cadena.length-viejo.length)
+                                        
+                                        if (cadena != "") {
+                                            salida.push(cadena);
+                                            cadena = "";    
+                                        };
+                                        
+                                        
+                                    
+                                        let datossi= nuevo.node();
+                                        
+                                        for (let k = 0; k < datossi.length; k++) {
+                                            const t = datossi[k];
+                                            salida.push(t)
+                                            
+                                        }
+                                    
+                                        cadena = "";
+                                    } else {
+                                        cadena = cadena + elemento
+                                        //console.log(cadena)
+                                    }
+                                };
+            
+                                //ultima verificacion
+                                if (cadena.substr(cadena.length-viejo.length) == viejo) {
+                                    cadena =cadena.substr(0, cadena.length-viejo.length)
+                                    
+                                    if (cadena != "") {
+                                        salida.push(cadena);
+                                        cadena = "";    
+                                    }
+                                    
+                                    
+                                    if (nuevo.__classname__ == "CML") {
+                                        let datossi= nuevo.node();
+                                        
+                                        for (let k = 0; k < datossi.length; k++) {
+                                            const t = datossi[k];
+                                            salida.push(t)
+                                            
+                                        }
+                                    }
+                                    cadena = "";
+                                };
+        
+                                if (cadena != "") {
+                                    salida.push(cadena);
+                                    cadena = "";    
+                                };
+                                
+                            } else {
+                                
+                                let m = tools.replace(e, viejo, nuevo.toString());
+                                
+                                salida.push(m);
+                                
+                            }
+                            
+                            
+                        } else {
+                            let m = tools.replace(e, viejo, nuevo);
+                            salida.push(m)
+                        }
+                    }
+        
+                };
+        
+        
+                return salida
+            };
+            function tostr_data(d) {
+                let salida = "";
+        
+                for (let i = 0; i < d.length; i++) {
+                    const e = d[i];
+                    
+                    if (typeof(e) == "string") {
+                        salida = salida + e
+                    } else if (typeof(e) == "object") {
+                        
+                        let arg = "";
+                        let carg = Object.entries(e.arg);
+                        for (let x = 0; x < carg.length; x++) {
+                            const y = carg[x];
+                            arg= arg + y[0] + '="' + y[1] + '" '
+                        }
+                        let io=""
+                        if (arg != "") {
+                            io=" "
+                        }
+        
+                        salida = salida + `<${e.tag}${io}${arg}>${tostr_data(e.nodes)}</${e.tag}>`
+                    }
+                }
+        
+                return salida;
+            }
+            
+            let xml = data;
+            let me = {
+                __classname__:"CML",
+                node:() => {return xml},
+                toString:() => {return("[CML: Object]")},
+                getobj:(id) => {
+                    return cmlobj(getobj(id, xml))
+                },
+                format:(datos) => {
+                    let ma = JSON.parse(JSON.stringify(xml))
+                    let arreglo = Object.entries(datos);
+        
+                    for (let i = 0; i < arreglo.length; i++) {
+                        const e = arreglo[i];
+                        if (e[0] == "__classname__") {
+                            continue;
+                        }
+                        ma = replace_data(ma, "${"+e[0]+"}", e[1])
+                        //console.log(ma)
+                        //console.log(e)
+                    };
+                    return cmlobj(ma)
+                },
+                getString:() =>{
+                    return tostr_data(xml)
+                },
+                
+            }
+        
+        
+        
+            return me;
+        },
+        recml:(data) => {
+            let salida = [];
+            //console.log(data)
+            
+            let modo = "normal";
+            let cadena = "";
+            let tag = "";
+            let etiqueta = {
+                tag:"tag",
+                arg:{},
+                inner:"",
+                nodes:[]
+            };
+            let contar = 0;
+            for (let i = 0; i < data.length; i++) {
+                let e = data[i];
+                if (modo == "normal") {
+                    if (e=="<") {
+                        if (cadena.trim() != "") {
+                            
+                            salida.push(cadena.trim());
+                            cadena= "";
+                        } else {cadena = ""};
+                        
+                        etiqueta = {
+                            tag:"tag",
+                            arg:{},
+                            inner:"",
+                            nodes:[]
+                        };
+                        modo = "tag"
+                        
+                    } else {
+                        cadena = cadena +e;
+                    }
+                } else if (modo == "tag") {
+                    if (e==" ") {
+                        if (cadena != "") {
+                            tag = cadena
+                        } else{
+                            tag="tag"
+                        };
+                        etiqueta.tag = tag;
+                        modo = "arg";
+                        cadena = "";
+                    }else if (e==">") {
+                        if (cadena.substr(cadena.length-1) == "/") {
+                            //console.log("error")
+                            cadena = cadena.substr(0, cadena.length-1)
+                            if (cadena != "") {
+                                tag = cadena
+                            } else{
+                                tag="tag"
+                            };
+                            etiqueta.tag = tag;
+                            modo = "normal";
+                            cadena = "";
+                            salida.push(etiqueta)
+                        } else {
+                            
+        
+                            if (cadena != "") {
+                                tag = cadena
+                            } else{
+                                tag="tag"
+                            };
+                            etiqueta.tag = tag;
+                            modo = "inner";
+                            cadena = "";
+                            contar = 0;
+                        }
+                        
+                    } else {
+                        cadena = cadena +e;
+                    }
+                } else if (modo == "arg") {
+                    if (e==">") {
+                        let = arg={};
+                        
+                        
+                        cadena = cadena.trim();
+                        let subcadena="";
+                        let submodo="normal";
+                        let subarg = "";
+                        for (let o = 0; o < cadena.length; o++) {
+                            const ael = cadena[o];
+                            if (submodo == "normal") {
+                                
+                                if (ael == "=") {
+                                    
+                                    if (cadena[o+1] == '"') {
+                                        
+                                        subarg = subcadena.trim();
+                                        submodo = "str";
+                                        subcadena = '"';
+                                        o++;
+                                    } else {
+                                        subarg = subcadena.trim();
+                                        submodo = "comi";
+                                        subcadena = '';
+                                        o++;
+                                    }
+                                                              
+                                } else {
+                                    subcadena = subcadena + ael;
+                                }
+                            } else if (submodo == "str") {
+                                if (ael == '"') {
+                                    arg[subarg] = subcadena.substr(1);
+                                    submodo = "normal"
+                                    subcadena ="";
+                                } else {
+                                    subcadena = subcadena + ael;
+                                }
+                            } else if (submodo == "comi") {
+                                if (ael == '"') {
+                                    //subarg = subcadena.trim();
+                                    submodo = "str";
+                                    subcadena = '"';
+                                   
+                                }
+                            }
+                            
+                        };
+        
+                        etiqueta.arg = arg;
+                        if (cadena[cadena.length-1] == "/") {
+                            cadena = "";
+                            salida.push(etiqueta);
+                            modo = "normal";
+                        } else {
+                            cadena = "";
+                            modo = "inner";
+                            contar = 0
+                        }
+                       
+                        
+                    } else {
+                        cadena = cadena +e;
+                    }
+                } else if (modo == "inner") {
+                    if (e == '>') {
+                        cadena = cadena + e;
+                        if (cadena.substr(cadena.length-`</${tag}>`.length) == `</${tag}>`) {
+                            contar = contar-1
+                        };
+                        
+                        if (contar == -1) {
+                            cadena = cadena.substr(0, cadena.length-`</${tag}>`.length).trim()
+                            //console.log(cadena)
+                            let lii = tools.cml.recml(cadena);
+                            etiqueta.inner = cadena;
+                            etiqueta.nodes = lii;
+                            cadena = "";
+                            modo = "normal";
+                            salida.push(etiqueta)
+                            etiqueta = {
+                                tag:"tag",
+                                arg:{},
+                                inner:"",
+                                nodes:[]
+                            };
+                            //console.log(lii)
+                        }
+                        
+                        
+                    } else {
+                        cadena=cadena+e
+                        if (cadena.substr(cadena.length-`<${tag}`.length) == `<${tag}`) {
+                            contar = contar+1
+                        };
+                        
+                    }
+                }
+            };
+            if (cadena.trim() != "") {
+                salida.push(cadena.trim())
+            }
+            //console.log(modo)
+            return(salida)
+        }
     }
 }
+
+
 let App = (name, pass, ApiJS, Consol) => {
     let asi = (e, t) => Object.assign(e, t);
     ApiJS = ApiJS||false;
@@ -394,6 +787,8 @@ let App = (name, pass, ApiJS, Consol) => {
                 let modo = "normal"
                 let byte = "";
                 let str_l = ""
+                let tag = ""
+                let t_count = 0;
                 
     
     
@@ -422,8 +817,9 @@ let App = (name, pass, ApiJS, Consol) => {
                                         } else {
                                             linea.push(tools.tipos.ope(e, i))
                                         }
-                                    } else if (e.length == 1) {
+                                    } else if (e.length === 1) {
                                         if (["<", ">", "=", ":"].includes(e)) {
+                                            
                                             linea.push(tools.tipos.ope(e, i))
                                             
                                         } else {
@@ -436,10 +832,34 @@ let App = (name, pass, ApiJS, Consol) => {
                                         linea.push(tools.tipos.ope(e, i))
     
                                     }
+
+                                    
     
                                 } else {
                                     linea.push(tools.tipos.ope(e, i))
     
+                                }
+                                let med = linea.slice(-3)
+                                let med2= [ 
+                                    (med[0]||{}).tipo === "ope",
+                                    (med[1]||{}).tipo === "name",
+                                    (med[2]||{}).tipo === "ope",
+                                    (med[0]||{}).char === "<",
+                                    (med[2]||{}).char === ">",
+                                ]
+                                
+                                if (!med2.includes(false)) {
+                                    
+                                    linea.pop()
+                                    let eti = linea.pop().name
+                                    linea.pop()
+
+                                    
+
+                                    cadena = `<${eti}>`;
+                                    tag = eti;
+                                    modo = "tag";
+                                    t_count = 0
                                 }
     
     
@@ -514,6 +934,33 @@ let App = (name, pass, ApiJS, Consol) => {
                     } else if (modo === "com") {
                         if (e == tools.chars.N) {
                             modo = "normal"
+                        }
+                    } else if (modo === "tag") {
+                        if (e == '>') {
+                            cadena = cadena + e;
+                            if (cadena.substr(cadena.length-`</${tag}>`.length) == `</${tag}>`) {
+                               t_count =t_count-1
+                            };
+                            
+                            if (t_count == -1) {
+                                linea.push(tools.paren.cml(cadena, i-cadena.length));
+                                cadena = "";
+                                mode = "normal";
+                            }
+                            
+                            
+                        } else if ([tools.chars.N,tools.chars.R,tools.chars.T].includes(e)) {
+            
+                        } else {
+                            cadena=cadena+e
+                            if (cadena.substr(cadena.length-`<${tag}`.length) == `<${tag}`) {
+                               t_count =t_count+1
+                            };
+
+                            if (cadena.substr(-2) == "  ") {
+                                cadena = cadena.substr(0, cadena.length-1) 
+                            }
+                            
                         }
                     }
     

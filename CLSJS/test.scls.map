@@ -1,118 +1,17 @@
 [
     {
-        "name": "Hola",
-        "sta": "Any",
-        "code": [
-            {
-                "tipo": "rt-def",
-                "eval": [
-                    {
-                        "tipo": "()",
-                        "i": 33,
-                        "data": [
-                            {
-                                "name": "e",
-                                "i": 33,
-                                "notmod": false,
-                                "tipo": "name"
-                            }
-                        ],
-                        "complet": [
-                            [
-                                {
-                                    "name": "e",
-                                    "i": 33,
-                                    "notmod": false,
-                                    "tipo": "name"
-                                }
-                            ]
-                        ],
-                        "fist": true
-                    }
-                ]
-            }
-        ],
-        "arg": [
-            {
-                "arg": "e",
-                "sta": [
-                    "Any"
-                ],
-                "def": []
-            }
-        ],
-        "visible": "public",
-        "tipo": "func-def",
-        "async": false,
-        "i": 2
-    },
-    {
-        "i": 39,
+        "i": 25,
         "eval": [
             {
-                "name": "print",
-                "i": 39,
-                "notmod": false,
-                "tipo": "name"
+                "data": "<div> Hola mundo! </div>",
+                "i": 25,
+                "tipo": "cml"
             },
             {
-                "tipo": "()",
-                "i": 49,
-                "data": [
-                    {
-                        "char": "<",
-                        "i": 50,
-                        "cond": false,
-                        "tipo": "ope"
-                    },
-                    {
-                        "name": "Hola",
-                        "i": 47,
-                        "notmod": false,
-                        "tipo": "name"
-                    },
-                    {
-                        "char": "/",
-                        "i": 55,
-                        "cond": false,
-                        "tipo": "ope"
-                    },
-                    {
-                        "char": ">",
-                        "i": 56,
-                        "cond": false,
-                        "tipo": "ope"
-                    }
-                ],
-                "complet": [
-                    [
-                        {
-                            "char": "<",
-                            "i": 50,
-                            "cond": false,
-                            "tipo": "ope"
-                        },
-                        {
-                            "name": "Hola",
-                            "i": 47,
-                            "notmod": false,
-                            "tipo": "name"
-                        },
-                        {
-                            "char": "/",
-                            "i": 55,
-                            "cond": false,
-                            "tipo": "ope"
-                        },
-                        {
-                            "char": ">",
-                            "i": 56,
-                            "cond": false,
-                            "tipo": "ope"
-                        }
-                    ]
-                ],
-                "fist": true
+                "name": " )",
+                "i": 50,
+                "notmod": false,
+                "tipo": "name"
             }
         ],
         "tipo": "exec"
