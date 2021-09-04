@@ -58,12 +58,13 @@ ayuda = {
         etiquetas.categoria(
             "Administrar tus paquetes publicos",
             [
-                etiquetas.cmd("cpkg is-domain [paquete]", "verifica si el dominio esta tomado"),
-                etiquetas.cmd("cpkg get-domain [nuevo paquete]", "reclamar el dominio libre"),
-                etiquetas.cmd("cpkg list-domain", "listar mis dominios"),
-                etiquetas.cmd("cpkg del-domain [paquete]", "liberar un dominio"),
-                etiquetas.cmd("cpkg set-domain [paquete] [repositorio]", "establecer repositorio en un dominio"),
-                etiquetas.cmd("cpkg set-domain-page [paquete] [url]", "establecer pagina del dominio"),
+                etiquetas.cmd("cpkg is-domain [paquete]", "verifica si el dominio esta tomado"),#
+                etiquetas.cmd("cpkg get-domain [nuevo paquete]", "reclamar el dominio libre"),#
+                etiquetas.cmd("cpkg list-domain", "listar mis dominios"),#
+                etiquetas.cmd("cpkg del-domain [paquete]", "liberar un dominio"),#
+                etiquetas.cmd("cpkg set-domain [paquete] [repositorio]", "establecer repositorio en un dominio"),#
+                etiquetas.cmd("cpkg set-domain-info [paquete] [info]", "establecer descripcion al dominio"),#
+                etiquetas.cmd("cpkg set-domain-page [paquete] [url]", "establecer pagina del dominio"),#
                 etiquetas.cmd("cpkg mark-update [paquete] [ver/1.0]", "marcar como actualizado y nombrar la version"),
                 etiquetas.cmd("cpkg info-domain [paquete]", "mostrar informacion del dominio"),
             ]
@@ -222,16 +223,89 @@ def main(argv = []):
                 if res.status_code == 200:
                     yei = res.json()
                     if yei.get("free", False):
-                        print(f"el dominio '{argv[2]}' esta libre")
+                        print(f"el dominio '{argv[2]}' esta tomado")
                         pass
                     else:
-                        print(f"el dominio '{argv[2]}' esta tomado")
+                        print(f"el dominio '{argv[2]}' esta libre")
                     pass
                 else:
                     show_error()
                     pass
                 pass
-            
+            elif argv[1] == "get-domain":
+
+                if not conf["login"]:
+                    print("debes iniciar session para poder tomar un dominio")
+                    sys.exit(1)
+
+                res = requests.post(server+"/getdom", {
+                    "name":argv[2],
+                    "user":conf["user"],
+                    "pass":conf["pass"],
+                })
+
+                if res.status_code == 200:
+                    yei = res.json()
+                    if yei.get("done", False):
+                        print(f"el dominio '{argv[2]}' a sido tomado exitosamente")
+                        pass
+                    else:
+                        print(f"el dominio '{argv[2]}' ya esta ocupado")
+                    pass
+                else:
+                    show_error()
+                    pass
+                pass
+            elif argv[1] == "del-domain":
+
+                if not conf["login"]:
+                    print("debes iniciar session para poder tomar un dominio")
+                    sys.exit(1)
+
+                res = requests.post(server+"/deldom", {
+                    "name":argv[2],
+                    "user":conf["user"],
+                    "pass":conf["pass"],
+                })
+
+                if res.status_code == 200:
+                    yei = res.json()
+                    if yei.get("done", False):
+                        print(f"el dominio '{argv[2]}' a sido eliminado")
+                        pass
+                    else:
+                        print(f"el dominio '{argv[2]}' no esta en tu lista de dominios")
+                    pass
+                else:
+                    show_error()
+                    pass
+                pass
+            elif argv[1] == "info-domain":
+                
+                res = requests.post(server + "/infodom", {"name":argv[2]})
+
+                if res.status_code == 200:
+                    yei = res.json()
+                    if yei.get("done", False):
+
+                        print(f"nombre: {yei['data']['name']}")
+                        print(f"pagina: {yei['data']['page']}")
+                        print(f"repositorio: {yei['data']['git']}")
+                        print(f"autor: {yei['data']['user']}")
+                        print()
+                        print(f"version: {yei['data']['ver']}")
+                        print(f"descripcion: {yei['data']['desc']}")
+                        
+
+
+                        pass
+                    else:
+                        print(f"el dominio '{argv[2]}' no existe")
+                        pass
+                    pass
+                else:
+                    show_error()
+                pass
 
             pass
         if len(argv) == 2:
@@ -400,10 +474,127 @@ def main(argv = []):
                 else:
                     print("no has iniciado session")
                 pass
-            elif argv[1] == "is-domain":
+            elif argv[1] == "list-domain":
+                if not conf["login"]:
+                    print("debes iniciar session para poder tomar un dominio")
+                    sys.exit(1)
+                
+                res = requests.post(server+ "/listdom", {"user":conf["user"]})
+
+                if res.status_code == 200:
+                    yei = res.json()
+                    for i in yei["list"]:
+                        print(i)
+                    if len(yei["list"]) == 0:
+                        print("no hay nada en tu lista de dominios")
+                    pass
+                else:
+                    show_error()
+
+                pass
+            
+
+            pass
+        if len(argv) == 4:
+            if argv[1] == "set-domain":
+                if not conf["login"]:
+                    print("debes iniciar session para poder tomar un dominio")
+                    sys.exit(1)
+                
+                res = requests.post(server + "/editdom", {
+                    "name":argv[2],
+                    "data":argv[3],
+                    "user":conf["user"],
+                    "pass":conf["pass"],
+                    "edit":"git"
+                })
+
+                if res.status_code==200:
+                    yei = res.json()
+                    if yei.get("done", False):
+                        print("se ha establecido el repositorio exitosamente")
+                    else:
+                        print("Hubo problemas para establecer el repositorio")
+                    pass
+                else:
+                    show_error()
+                
+                pass
+            elif argv[1] == "set-domain-info":
+                if not conf["login"]:
+                    print("debes iniciar session para poder tomar un dominio")
+                    sys.exit(1)
+                
+                res = requests.post(server + "/editdom", {
+                    "name":argv[2],
+                    "data":argv[3],
+                    "user":conf["user"],
+                    "pass":conf["pass"],
+                    "edit":"desc"
+                })
+
+                if res.status_code==200:
+                    yei = res.json()
+                    if yei.get("done", False):
+                        print("se ha establecido la descripcion exitosamente")
+                    else:
+                        print("Hubo problemas al escribir la descripcion")
+                    pass
+                else:
+                    show_error()
+                
+                pass
+            elif argv[1] == "set-domain-page":
+                if not conf["login"]:
+                    print("debes iniciar session para poder tomar un dominio")
+                    sys.exit(1)
+                
+                res = requests.post(server + "/editdom", {
+                    "name":argv[2],
+                    "data":argv[3],
+                    "user":conf["user"],
+                    "pass":conf["pass"],
+                    "edit":"page"
+                })
+
+                if res.status_code==200:
+                    yei = res.json()
+                    if yei.get("done", False):
+                        print("se ha establecido el link de la pagina")
+                    else:
+                        print("Hubo problemas establecer el link de la pagina")
+                    pass
+                else:
+                    show_error()
+                
+                pass
+            elif argv[1] == "mark-update":
+                if not conf["login"]:
+                    print("debes iniciar session para poder tomar un dominio")
+                    sys.exit(1)
+                
+                res = requests.post(server + "/editdom", {
+                    "name":argv[2],
+                    "data":argv[3],
+                    "user":conf["user"],
+                    "pass":conf["pass"],
+                    "edit":"ver"
+                })
+
+                if res.status_code==200:
+                    yei = res.json()
+                    if yei.get("done", False):
+                        print("se ha marcado la actualizacion!")
+                    else:
+                        print("Hubo problemas para marcar una actualizacion")
+                    pass
+                else:
+                    show_error()
                 
                 pass
             
+            
+            pass
 
         pass
     pass
