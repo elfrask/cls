@@ -6,7 +6,7 @@ import git
 import json
 import pickle
 
-pack = os.path.dirname(__file__)
+#pack = os.path.dirname(__file__)
 
 N="""
 """
@@ -18,6 +18,7 @@ class etiquetas:
         if isinstance(des, str): des= [des]
         return {"cmd":cmd, "des":des}
 
+na = "cpkg"
 
 ayuda = {
     "head":[
@@ -37,61 +38,57 @@ ayuda = {
         etiquetas.categoria(
             "Administrar paquetes",
             [
-                etiquetas.cmd("cpkg install [paquete]", "instalar un paquete"),
-                etiquetas.cmd("cpkg uninstall [paquete]", "desinstalar un paquete"),
-                etiquetas.cmd("cpkg list", "listar paquetes instalados"),#
-                etiquetas.cmd("cpkg update [paquete]", "actualizar un paquete"),
-                etiquetas.cmd("cpkg update", "actualizar todos los paquetes"),
+                etiquetas.cmd(f"{na} install [paquete]", "instalar un paquete"),
+                etiquetas.cmd(f"{na} uninstall [paquete]", "desinstalar un paquete"),
+                etiquetas.cmd(f"{na} list", "listar paquetes instalados"),#
+                etiquetas.cmd(f"{na} update [paquete]", "actualizar un paquete"),
+                etiquetas.cmd(f"{na} update", "actualizar todos los paquetes"),
             ]
         ),
         etiquetas.categoria(
             "Administrar cuenta de desarrollador",
             [
-                etiquetas.cmd("cpkg user-login", "iniciar session"),#
-                etiquetas.cmd("cpkg user", "ver nombre de usuario"),#
-                etiquetas.cmd("cpkg user-logout", "cerrar session"),#
-                etiquetas.cmd("cpkg user-register", "registrar"),#
-                etiquetas.cmd("cpkg user-save", "recuperar cuenta"),#
-                etiquetas.cmd("cpkg user-repass", "cambiar contraseña"),#
+                etiquetas.cmd(f"{na} user-login", "iniciar session"),#
+                etiquetas.cmd(f"{na} user", "ver nombre de usuario"),#
+                etiquetas.cmd(f"{na} user-logout", "cerrar session"),#
+                etiquetas.cmd(f"{na} user-register", "registrar"),#
+                etiquetas.cmd(f"{na} user-save", "recuperar cuenta"),#
+                etiquetas.cmd(f"{na} user-repass", "cambiar contraseña"),#
             ]
         ),
         etiquetas.categoria(
             "Administrar tus paquetes publicos",
             [
-                etiquetas.cmd("cpkg is-domain [paquete]", "verifica si el dominio esta tomado"),#
-                etiquetas.cmd("cpkg get-domain [nuevo paquete]", "reclamar el dominio libre"),#
-                etiquetas.cmd("cpkg list-domain", "listar mis dominios"),#
-                etiquetas.cmd("cpkg del-domain [paquete]", "liberar un dominio"),#
-                etiquetas.cmd("cpkg set-domain [paquete] [repositorio]", "establecer repositorio en un dominio"),#
-                etiquetas.cmd("cpkg set-domain-info [paquete] [info]", "establecer descripcion al dominio"),#
-                etiquetas.cmd("cpkg set-domain-page [paquete] [url]", "establecer pagina del dominio"),#
-                etiquetas.cmd("cpkg mark-update [paquete] [ver/1.0]", "marcar como actualizado y nombrar la version"),
-                etiquetas.cmd("cpkg info-domain [paquete]", "mostrar informacion del dominio"),
+                etiquetas.cmd(f"{na} is-domain [paquete]", "verifica si el dominio esta tomado"),#
+                etiquetas.cmd(f"{na} get-domain [nuevo paquete]", "reclamar el dominio libre"),#
+                etiquetas.cmd(f"{na} list-domain", "listar mis dominios"),#
+                etiquetas.cmd(f"{na} del-domain [paquete]", "liberar un dominio"),#
+                etiquetas.cmd(f"{na} set-domain [paquete] [repositorio]", "establecer repositorio en un dominio"),#
+                etiquetas.cmd(f"{na} set-domain-info [paquete] [info]", "establecer descripcion al dominio"),#
+                etiquetas.cmd(f"{na} set-domain-page [paquete] [url]", "establecer pagina del dominio"),#
+                etiquetas.cmd(f"{na} mark-update [paquete] [ver/1.0]", "marcar como actualizado y nombrar la version"),#
+                etiquetas.cmd(f"{na} info-domain [paquete]", "mostrar informacion del dominio"),#
             ]
         ),
         etiquetas.categoria(
             "Administrar tu proyecto",
             [
-                etiquetas.cmd("cpkg gen-app", [
+                etiquetas.cmd(f"{na} gen-app", [
                     "genera un archivo app.json fundamental para administrar o compilar tu proyecto"
-                ]),
-                etiquetas.cmd("cpkg init", [
-                    "crea un proyecto a partir de una plantilla estandar"
-                ]),
-                etiquetas.cmd("cpkg init [plantilla]", [
+                ]),#
+                etiquetas.cmd(f"{na} init [plantilla]", [
                     "crea un proyecto a partir de una plantilla seleccionada"
-                ]),
-                etiquetas.cmd("cpkg plix [archivo inicial] [modo]", "compila tu proyecto de CLS"),
-                etiquetas.cmd("cpkg mode [modo]", [
-                    "establecer el modo de interpretar CLS",
-                    "los modos que posee cls es:",
-                    "",
-                    "CLS: CLS comun y corriente",
-                    "CLSS: CLS de tipado estatico",
-                ]),
-                etiquetas.cmd("cpkg conf-datapack [nuevo/editar datapack]", "configurar el datapack de un modo"),
-                etiquetas.cmd("cpkg run [play]", "ejecucion de argumentos rapidos asignados por el nombre"),
-                etiquetas.cmd("cpkg info", "dar toda la informacion del proyecto"),
+                ]),#
+                etiquetas.cmd(f"{na} gen-template [nueva plantilla]", [
+                    "crea una plantilla a partir del directorio actual"
+                ]),#
+                etiquetas.cmd(f"{na} save-template [nueva plantilla]", [
+                    "crea una plantilla a partir del directorio actual",
+                    "y guardarlo en la lista de plantillas"
+                ]),#
+                etiquetas.cmd(f"{na} plix [databuild]", "compila tu proyecto de CLS"),
+                etiquetas.cmd(f"{na} conf-databuild [nuevo/editar databuild]", "configurar el databuild de un modo"),#
+                etiquetas.cmd(f"{na} run [databuild]", "ejecucion de argumentos rapidos asignados por databuild"),#
             ]
         ),
         
@@ -180,6 +177,41 @@ def show_error(code=0):
     
     print("hubo un error al recibir una respuesta del servidor")
     pass
+
+def gen_init(data={}, path="./"):
+
+    if not os.path.exists(path):
+        os.makedirs(path)
+        pass
+
+    for i in data:
+        if isinstance(data[i], dict):
+            gen_init(data[i], path + i + "/")
+            pass
+        else:
+            t = open(path + i, "w")
+            t.write(str(data[i]))
+            t.close()
+        pass
+
+    pass
+
+def pack_init(path="./"):
+    
+    salida = {}
+
+    li = os.listdir(path)
+
+    for i in li:
+        if os.path.isdir(path + i):
+            salida[i] = pack_init(path+i+"/")
+        else:
+            t = open(path+i, "r")
+            salida[i] = t.read()
+            t.close()
+    
+
+    return salida
 
 
 def main(argv = []):
@@ -306,7 +338,79 @@ def main(argv = []):
                 else:
                     show_error()
                 pass
+            elif argv[1] == "init":
+                if os.path.isfile(work+"/examples/"+argv[2]+".json"):
 
+                    gen_init(
+                        json.loads(
+                            open(work+"/examples/"+argv[2]+".json", "r").read()
+                        ),
+                        "./"
+                    )
+
+                    print("se ha generado el proyecto exitosamente")
+                    pass
+                else:
+                    print(f"la plantilla seleccionada {argv[2]} no existe")
+                pass
+            elif argv[1] == "gen-template":
+                w = open(argv[2]+".json", "w")
+
+                w.write(json.dumps(pack_init("./")))
+                print("se ha generado la plantilla exitosamente")
+                pass
+            elif argv[1] == "save-template":
+                w = open(work+"/"+argv[2]+".json", "w")
+
+                w.write(json.dumps(pack_init("./")))
+                print("se ha generado la plantilla exitosamente")
+                pass
+            elif argv[1] == "conf-databuild":
+                if not os.path.isfile("app.json"):
+                    print("debes de generar el archivo 'app.json'")
+                    print("usa el siguiente comando para generarlo:")
+                    print(f"    -{na} app-gen")
+                    sys.exit(1)
+                
+                app = open("app.json", "r")
+
+                data = json.loads(app.read())
+
+                data["run"][argv[2]] = {
+                    "x64":False,
+                    "main":"main.scls",
+                    "run":"ccls main.scls",
+                    "platform":[sys.platform],
+                    "output":"main.cle"
+                }
+
+                appout = open("app.json", "w")
+
+                appout.write(
+                    json.dumps(
+                        data,
+                        indent=4
+                    )
+                )
+
+                print(f"se ha generado la configuracion '{argv[2]}' en el proyecto")
+
+
+                pass
+            elif argv[1] == "run":
+                if not os.path.isfile("app.json"):
+                    print("debes de generar el archivo 'app.json'")
+                    print("usa el siguiente comando para generarlo:")
+                    print(f"    -{na} app-gen")
+                    sys.exit(1)
+                
+                app = open("app.json", "r").read()
+                data = json.loads(app)
+                
+                if data.get("run", {}).get(argv[2], {}).get("run", False):
+                    os.system(data["run"][argv[2]]["run"])
+                
+                pass
             pass
         if len(argv) == 2:
             if argv[1] == "list":
@@ -492,7 +596,25 @@ def main(argv = []):
                     show_error()
 
                 pass
-            
+            elif argv[1] == "gen-app":
+                if os.path.isfile("app.json"):
+                    print("el proyecto ya tiene un archivo de configuracion 'app.json'")
+                    sys.exit(1)
+                
+                
+                app = open("app.json", "w")
+                app.write(json.dumps({
+                    "name":os.path.basename(os.getcwd()),
+                    "ver":"1.0",
+                    "mode":"CLS",
+                    "depends":[],
+                    "run":{}
+                }, indent=4))
+                print("se ha generado el archivo 'app.js' para administrar tu proyecto")
+                print("ahora ejecuta el siguiente comando para configurar el databuild")
+                print(f"    -{na} conf-databuild [nuevo/editar databuild]")
+                
+                pass
 
             pass
         if len(argv) == 4:
