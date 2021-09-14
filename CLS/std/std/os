@@ -3,4 +3,11 @@ import "pypkg" as py;
 
 os = py.require("os.py");
 
-export.name = os.osname;
+export.osname = os.osname;
+export.username = os.username;
+export.kill = os.kill;
+export.run = os.run;
+export.cpu_count = os.cpu_count;
+export.getpid = os.getpid;
+export.name = "OperativeSystem (OS)";
+export.ver = [0, 3, 0];

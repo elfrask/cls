@@ -1,8 +1,8 @@
 import os
 import shutil
 from libpy.stdpyapi import *
-
 import threading
+
 class OpenFile:
     def __init__(self, p) -> None:
         self.path = p
@@ -151,8 +151,8 @@ export.Async = Module()
 
 export.Async.read = (lambda *x: readA(byte="r", *x))
 export.Async.readb = (lambda *x: readA(byte="rb", *x))
-export.Async.write = (lambda *x: readA(byte="w", *x))
-export.Async.writeb = (lambda *x: readA(byte="wb", *x))
+export.Async.write = (lambda *x: writeA(byte="w", *x))
+export.Async.writeb = (lambda *x: writeA(byte="wb", *x))
 
 export.exist.path = (lambda p: os.path.exists(p))
 export.exist.file = (lambda p: os.path.isfile(p))

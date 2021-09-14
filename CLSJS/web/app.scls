@@ -1,14 +1,10 @@
 import "document" as document;
 from "window" import alert as alerta;
 
-namespace char {
-    function main(msg:String="") {
-        print(msg)
-    }
+function main(argv:Array) -> void {
+    print("CLS Console - Frask - Vinestar (2021)");
+    print("(C) Todos los derechos reservados");
+    print("\n\nPC-Webview~Quest> ");
 };
 
-char::main("Hola mundo");
-
-export.meno = "qlei";
-
-document.title = "Esta es una app";
+main(process.argv)

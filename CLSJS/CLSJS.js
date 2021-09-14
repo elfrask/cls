@@ -566,6 +566,12 @@ let App = (name, pass, ApiJS, Consol) => {
     ApiJS = ApiJS||false;
     Consol=Consol||false;
 
+    if (typeof(Consol) === "string") {
+        window.addEventListener("load", () => {
+            Consol = document.getElementById(Consol)
+        })
+    }
+
     let Api = {
         Module:asi(() => {
             return {
@@ -679,10 +685,13 @@ let App = (name, pass, ApiJS, Consol) => {
         {__class__:"Object"}),
         print:(...e) => {
             console.log(...e);
-            /*console.log(Consol);
+            
+            //console.log(Consol);
             if (Consol) {
-                Consol.innerText = Consol.innerText + tools.chars.N + e.join(" ")
-            }*/
+                Consol.innerText = Consol.innerText + (
+                    Consol.innerText!==""?tools.chars.N:""
+                    ) + e.join(" ")
+            }
         },
         iter:(e) => {
             if ((typeof(e)==="string")|(Array.isArray(e))) {
@@ -698,8 +707,26 @@ let App = (name, pass, ApiJS, Consol) => {
                 return e._len()
             };
         },
+        process:{
+            argv:[]
+        }
         
     }
+
+    if (!this.require) {
+        let ar = document.location.search.substr(1);
+        let argv = [];
+        ar.split("&").forEach(x=>{
+            if(x==="") return"";
+            argv.push(decodeURI(x));
+            let xx = x.split("=");
+            argv[decodeURI(xx[0])] = decodeURI(xx.slice(1).join("="))
+        });
+        Api.process.argv = argv;
+    } else {
+        Api.process.argv = process.argv.slice(2);
+    }
+
     let Apibase = Api;
     asi(Api, {
         str:Api.String,
@@ -2485,10 +2512,34 @@ let App = (name, pass, ApiJS, Consol) => {
     let myapp = {
         libs:{
             document:this.document||{},
-            window:this.window||{}
+            window:this.window||{},
+            os:(()=>{
+                let osname = "";
+                let pid = 0x0000;
+                let me = {
+                    osname:() => osname,
+                    getpid:() => pid,
+                    kill:(p) => {if (this.require) os.kill()},
+                    run:(p) => {
+                        if (this.require) require("child_process").execSync(p);
+                        else open(p)
+                    }
+                };
+
+                if (!this.require) {
+                    osname = "web"
+                    pid = parseInt((Math.random()+"").substr(-4))
+                } else {
+                    pid = process.pid
+                    osname = process.platform;
+                }
+
+                return me
+            })(),
         },
         Script:Script,
-        Api:Api
+        Api:Api,
+        
     };
 
     if (ApiJS) {
@@ -2506,12 +2557,14 @@ let CLSWEBAPP
 try {
     module.exports.App = App
 } catch (e) {
+    
     CLSWEBAPP = App(
         "WebAplication", 
         {
             input:e => prompt(e)
         }, 
-        true
+        true,
+        "_ccls"
     );
     window.addEventListener("load", () => {
 
@@ -2532,40 +2585,52 @@ try {
             if (scripts.length === 0) return;
     
             let este =scripts.pop()
-            
-            if (este.getAttribute("src")) {
-                fetch(este.getAttribute("src"), {}).then(e=>{
-                    e.text().then(x => {
-                        
-                        let ap = CLSWEBAPP.Script(
-                            x||"",
-                            este.getAttribute("module")||este.getAttribute("src")
-                        );
-            
-                        let k = ap.compile(x||"")
-                        ap.onexit = leer;
 
-                        if (este.getAttribute("debug")) console.log(k)
-                        
-                        ap.exec(k);
-                        
-                        delete k, ap
-                    
-                    })
-                }).catch(x => {leer()})
-            } else {
-                let ap = CLSWEBAPP.Script(
-                    este.innerHTML||"",
-                    este.getAttribute("module")||"Script" + (enume++)
-                );
-    
-                let k = ap.compile(este.innerHTML||"")
-                ap.onexit = leer;
-                if (este.getAttribute("debug")) console.log(k)
-                ap.exec(k);
+            let is_a = typeof(este.getAttribute("async")) === "string";
+
+            function tr_mm() {
+                if (este.getAttribute("src")) {
+                    fetch(este.getAttribute("src"), {}).then(e=>{
+                        e.text().then(x => {
+                            
+                            let ap = CLSWEBAPP.Script(
+                                x||"",
+                                este.getAttribute("module")||este.getAttribute("src")
+                            );
                 
-                delete k, ap
+                            let k = ap.compile(x||"")
+                            if (!is_a) ap.onexit = leer;
     
+                            if (este.getAttribute("debug")) console.log(k)
+                            
+                            ap.exec(k);
+                            
+                            delete k, ap
+                        
+                        })
+                    }).catch(x => {if (!is_a) leer()})
+                } else {
+                    let ap = CLSWEBAPP.Script(
+                        este.innerHTML||"",
+                        este.getAttribute("module")||"Script" + (enume++)
+                    );
+        
+                    let k = ap.compile(este.innerHTML||"")
+                    if (!is_a) ap.onexit = leer;
+                    if (este.getAttribute("debug")) console.log(k)
+                    ap.exec(k);
+                    
+                    delete k, ap
+        
+                }
+                
+            };
+
+            if (is_a) {
+                (async () => {tr_mm()})();
+                leer();
+            } else {
+                tr_mm()
             }
     
         };
