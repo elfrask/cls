@@ -5,13 +5,26 @@ import json
 #import dill
 import shutil
 import platform
+
+def cwd():
+    app_path = ""
+
+    if getattr(sys, 'frozen', False):
+        app_path = os.path.dirname(sys.executable)
+    elif __file__:
+        app_path = os.path.dirname(__file__)
+
+    return app_path
+
+path = cwd()
+
 cls.lib_path += [
     ".",
     "",
-    os.path.dirname(__file__) + "/std/std",
-    os.path.dirname(__file__) + "/lib",
-    os.path.dirname(__file__) + "/libpy",
-    os.path.dirname(__file__) + "/dlls",
+    path + "/std/std",
+    path + "/lib",
+    path + "/libpy",
+    path + "/dlls",
     os.getcwd(),
     
 ]
@@ -19,6 +32,8 @@ cls.lib_path += [
 if not os.path.isdir("cache"):
     os.makedirs("cache")
     pass
+
+
 
 def main(file, app:cls.appcls = cls.appcls(0)):
     #app:cls.appcls = cls.appcls(0)
