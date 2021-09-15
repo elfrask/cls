@@ -1,6 +1,9 @@
 from copy import copy as c
 import os
 import sys
+import xml.dom.minidom as xml
+
+
 
 
 uid:int = 0
@@ -188,7 +191,40 @@ def confirm(self, v, tipo):
     if v.__class__ in derivadas.get(tipo, []):
         return True
     return False
+def tonode(nodo):
+    salida = {}
+    nodos = []
+    teo = dict(nodo.attributes)
+    print(nodo)
+    try:
+        for i in list(teo):
+            salida[i] = teo[i].value
+            pass
+        
+        k = list(nodo.childNodes)
+        
+        
+        for t in k:
+            print(t)
+            try: nodos.append(tonode(t))
+            except: nodos.append(None)
+            pass
 
+        return {
+            "Tag":str(nodo.nodeName),
+            "child":nodos,
+            "attributes":salida
+        }
+        
+
+    except:
+        
+        return {
+            "Tag":"Text",
+            "data": nodo.data
+        }
+    
+        
 
 class gen_char:
     def names(name:str, i:int, mod:bool=False) -> (#name
@@ -232,7 +268,12 @@ class gen_char:
             "i":i,
             "tipo":"sim"
         }
-
+    def cml(data, i) -> dict["tipo":str, "i":int, "data":str]:
+        return {
+            "tipo":"cml",
+            "i":i,
+            "data":data
+        }
 derivados = True
 key_true = True
 
@@ -513,6 +554,7 @@ class ObjectCls:
             return obj.String(f"intbit[{self.l}]({self.value})")
         pass
     class Namespace():
+
         def __init__(self, modulo) -> None:
             self.__names__ = modulo
             pass
@@ -521,6 +563,19 @@ class ObjectCls:
         def __repr__(self) -> str:
             return "[Namespace Module]"
         
+        pass
+    class cml():
+        def __init__(self, data):
+            data = (f"<xml> {data} </xml>")
+            self.__x = xml.parseString(str(data)).childNodes[0]
+            
+            pass
+        def getById(self, id):
+            return tonode(self.__x.getElementById(id))
+        def __str__(self):
+            return self.__x.toxml() 
+        def tojson(self):
+            return tonode(self.__x)
         pass
 obj = ObjectCls
 
@@ -875,6 +930,7 @@ class appcls():
         modo:str = "normal"
         term:str = ""
         byte:str =""
+        tagi =0
 
         for c in code:
             iterador+=1
@@ -926,6 +982,13 @@ class appcls():
                         linea.append(
                             gen_char.sim(c, iterador)
                         )
+                        
+                        if compara([{"tipo":"ope", "char":"<"}, {"tipo":"sim", "char":"("}], linea[-2:]):
+                            modo = "cml"
+                            linea.pop()
+                            tagi = linea.pop()["i"]
+                            cadena = ""
+                            pass
                         pass
                     elif c in ['"', "'"]:
                         byte=cadena
@@ -987,7 +1050,22 @@ class appcls():
                 else:
                     cadena = cadena+c
                 pass
-
+            elif modo == "cml":
+                
+                if (c == ">") & (cadena[-1:] == ")"):
+                    linea.append(
+                        gen_char.cml(
+                            cadena[0:-1],
+                            tagi,
+                        )
+                    )
+                    cadena=""
+                    modo="normal"
+                    pass
+                else:
+                    cadena = cadena+c
+                pass
+            
             pass
         if cadena!="":
             val = tipo_valor(cadena)
@@ -997,6 +1075,7 @@ class appcls():
             pass
         if linea!=[]:
             salida.append(linea)
+        #print(salida)
 
 
         return salida
@@ -2905,6 +2984,10 @@ class appcls():
         salida = self.formato_int.get(x, lambda i:0)(v)
 
         return salida
+    def cml(self, data):
+        
+
+        return ObjectCls.cml(data)
     def generator_one(self, line:list, modo:str="normal", modi:str ="eval", key:bool=False) -> str:
         salida = ""
         last = {"tipo":"none"}
@@ -3088,7 +3171,9 @@ class appcls():
                 elif i["tipo"] == "value":
                     salida+= f" {self.print_value(i)} "
                     pass
-                
+                elif i["tipo"] == "cml":
+                    salida+= f" app.cml({repr(i['data'])}) "
+                    pass
                 pass
             iskey = False
 
