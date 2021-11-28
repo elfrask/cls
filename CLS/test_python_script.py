@@ -1,9 +1,11 @@
+import threading
+import subprocess
+import time
+
 def main():
-    ma = "Hola mundo"
-    def meta():
-        print(ma)
-        print(globals().get("ma", locals()["ma"]))
-        pass
-    meta()
+    time.sleep(1)
+    print("hola 2")
     pass
-main()
+
+a = threading.Timer(0.0, main, [], {}).start()
+print("hola 1")

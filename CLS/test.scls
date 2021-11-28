@@ -1,1 +1,16 @@
-catch("me dio la gana de fallar", "FALLO PVT0")
+
+
+
+Promise((res, err) -> {
+        var funciona = input("funciona?: ");
+        
+        if (funciona == "si") {
+            res("si funciona!")
+        } else {
+            err("no funciona :(")
+        }
+    }).then((x) -> {
+        print("si,", x)
+    }).catch((x) -> {
+        print("no,", x)
+    })
