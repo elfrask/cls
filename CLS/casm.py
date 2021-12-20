@@ -5,10 +5,12 @@ import os
 import json
 
 
+
 def get_value(v):
     if callable(v): return v()
     
     return v
+
 
 def take_value(v, sets:dict) -> int:
     if callable(v): return v()
@@ -29,8 +31,10 @@ class vm_casm:
     def __init__(self, code, memorysize=1024, arg=[]) -> None:
         self.memory = [None] * memorysize
         self.code = code
+        self.todo = ""
         pass
     def cmd_set(self, arg, sets={}):
+
         sets[str(arg[0])] = take_value(arg[1], sets)
         pass
     def cmd_move(self, arg, sets={}):
@@ -47,6 +51,57 @@ class vm_casm:
 
         #print("add: ", arg)
         self.memory[index] += value
+        pass
+    def cmd_sub(self, arg, sets={}):
+        ara = a2dict(arg)
+
+
+        index = take_value(ara.get(1, 0), sets)
+        value = take_value(ara.get(0, 0), sets)
+
+        #print("add: ", arg)
+        self.memory[index] -= value
+        pass
+    def cmd_mul(self, arg, sets={}):
+        ara = a2dict(arg)
+
+
+        index = take_value(ara.get(1, 0), sets)
+        value = take_value(ara.get(0, 0), sets)
+
+        #print("add: ", arg)
+        self.memory[index] *= value
+        pass
+    def cmd_div(self, arg, sets={}):
+        ara = a2dict(arg)
+
+
+        index = take_value(ara.get(1, 0), sets)
+        value = take_value(ara.get(0, 0), sets)
+
+        #print("add: ", arg)
+        self.memory[index] /= value
+        pass
+    def cmd_goto(self, arg, sets={}):
+        ara = a2dict(arg)
+
+
+        name_go = ara.get(0, "")
+
+        if name_go == "": return 0
+
+        sets["IS_TODO"] = 1
+        self.todo = name_go
+
+        pass
+    def cmd_delete(self, arg, sets={}):
+        ara = a2dict(arg)
+
+
+        index = take_value(ara.get(0, 0), sets)
+
+        #print("add: ", arg)
+        self.memory[index] = None
         pass
     def cmd_print(self, arg, sets={}):
         out = []
@@ -68,9 +123,10 @@ class vm_casm:
         
         sets = {
             "FREE":self.libre,
+            "MAX":self.MaxMemory,
             "THREAD":0,
             "NOT_THREAD":0,
-            "int":int
+            "IS_TODO":0
         }
 
         fun = self.code.get(str(func[0]), [])
@@ -107,21 +163,59 @@ class vm_casm:
             return salida
         
         while(len(fun) > sets["THREAD"]):
-            sets["NOT_THREAD"] = True
+            sets["NOT_THREAD"] = 0
+            residuo = 0
 
             exe = fun[sets["THREAD"]]
             if (ins[exe[1]] in ["return", "ret"]):
                 break
-            residuo = eval(f"sel.cmd_{ins[exe[1]]}(args, setis)", {
-                "sel":self,
-                "args":to_arg(exe[2]),
-                "setis":sets
-            })
 
-            if sets["NOT_THREAD"] == True:
+            if sets["IS_TODO"]:
+                #print(self.todo, exe)
+                if (ins[exe[1]] in ["to"]):
+                    ara = a2dict(to_arg(exe[2]))
+                    block = str(ara.get(0, 1))
+                    #print(self.todo, block, str(self.todo) == str(block))
+                    if (str(block) == str(self.todo)):
+                        sets["IS_TODO"] = 0
+                        #print("roto")
+                    pass
+                pass
+            else:
+                residuo = eval(f"sel.cmd_{ins[exe[1]]}(args, setis)", {
+                    "sel":self,
+                    "args":to_arg(exe[2]),
+                    "setis":sets
+                })
+
+            if not sets["NOT_THREAD"]:
                 sets["THREAD"]+=1
+            else:
+                #print(ins[exe[1]], exe)
+                pass
             
             pass
+
+        pass
+    def cmd_if(self, arg, sets:dict={}):
+        
+        ara = a2dict(arg)        
+
+        line_if = take_value(ara.get(1, 0), sets)
+        line_else = take_value(ara.get(2, 1), sets)
+        cond = take_value(ara.get(0, 0), sets)
+        #print(line_if, line_else, cond)
+        if (cond):
+            #print("es if ._.", line_if)
+            sets["THREAD"] += line_if
+            pass
+        else:
+            #print("es else ._.", line_else)
+            sets["THREAD"] += line_else
+            pass
+        sets["THREAD"] += 1
+        sets["NOT_THREAD"] = 1
+        #print("THREAD", sets["THREAD"])
 
         pass
     def call(self, func):
@@ -135,6 +229,8 @@ class vm_casm:
         except IndexError as e:
             return 0
         return val+1
+    def MaxMemory(self):
+        return len(self.memory)
     def ref_var(self, arg, sets:dict={}):
         ara = a2dict(arg)
         return (    
@@ -156,6 +252,15 @@ class vm_casm:
         pass
     def ref_ord(self, arg, sets:dict):
         return ord(a2dict(arg).get(0, "\x00"))
+    def ref_eq(self, arg, sets:dict):
+        ara = a2dict(arg)
+
+        return int(
+            take_value(ara.get(0, 0), sets) 
+                == 
+            take_value(ara.get(1, 0), sets) 
+
+        )
     pass
 
 class errores:
@@ -173,7 +278,10 @@ class name:
         
     pass
 ins = [
-    "set", "move", "add", "return", "call", "print", "input"
+    "set", "move", "add", "return", 
+    "call", "print", "input", "if",
+    "goto", "to", "delete", "sub", "mul",
+    "div"
 ]
 
 def trim(s:str):
