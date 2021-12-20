@@ -268,7 +268,7 @@ class ObjectCls:
             def err(*response):
                 self.res_catch = response
                 if (callable(self.call_catch)):
-                    self.call_then(*response)
+                    self.call_catch(*response)
                 pass
             
             threading.Timer(0.0, call, [res, err]).start()
@@ -289,9 +289,9 @@ class ObjectCls:
             
             return self
         def __str__(self) -> str:
-            return "[Namespace Module]"
+            return "[Promise]"
         def __repr__(self) -> str:
-            return "[Namespace Module]"
+            return "[Promise]"
         pass
 
 obj = ObjectCls

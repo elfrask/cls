@@ -31,7 +31,7 @@ def t_tmp0(*arg):
     sta_values = {}
     constant = {}
     app.foins()
-    app.index = 31
+    app.index = 35
     try:
         if 'var_funciona' in constant: app.constE('var_funciona')
         try:
@@ -50,36 +50,36 @@ def t_tmp0(*arg):
         
 
     except Exception as e:
-        app.error(e, 'ErrorExecute', 31)
+        app.error(e, 'ErrorExecute', 35)
 
     app.foins()
-    app.index = 77
+    app.index = 89
     try:
         if (var_funciona  ==  app.str['']("si")):
             app.foins()
-            app.index = 109
+            app.index = 125
             try:
                 var_res  (app.str['']("si funciona!"))
 
             except Exception as e:
-                app.error(e, 'ErrorExecute', 109)
+                app.error(e, 'ErrorExecute', 125)
 
 
             pass
         else:
             app.foins()
-            app.index = 150
+            app.index = 174
             try:
                 var_err  (app.str['']("no funciona :("))
 
             except Exception as e:
-                app.error(e, 'ErrorExecute', 150)
+                app.error(e, 'ErrorExecute', 174)
 
 
             pass
 
     except Exception as e:
-        app.error(e, 'ErrorExecute', 77)
+        app.error(e, 'ErrorExecute', 89)
 
     app.variables.pop()
 
@@ -102,12 +102,12 @@ def t_tmp1(*arg):
     sta_values = {}
     constant = {}
     app.foins()
-    app.index = 201
+    app.index = 235
     try:
         var_print  (app.str['']("si,")  ,  var_x)
 
     except Exception as e:
-        app.error(e, 'ErrorExecute', 201)
+        app.error(e, 'ErrorExecute', 235)
 
     app.variables.pop()
 
@@ -130,12 +130,12 @@ def t_tmp2(*arg):
     sta_values = {}
     constant = {}
     app.foins()
-    app.index = 239
+    app.index = 281
     try:
         var_print  (app.str['']("no,")  ,  var_x)
 
     except Exception as e:
-        app.error(e, 'ErrorExecute', 239)
+        app.error(e, 'ErrorExecute', 281)
 
     app.variables.pop()
 

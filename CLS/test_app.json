@@ -1,0 +1,1 @@
+{"FACTORIAL": [[9, 3, []]], "MAIN": [[13, 0, ["name:main", "name:FREE"]], [15, 1, [0, {"name": "var", "exp": ["name:main", 1]}]], [17, 2, [10, {"name": "var", "exp": ["name:main", 1]}]], [20, 5, ["Hola mundo: ", {"name": "get", "exp": ["name:int", {"name": "var", "exp": ["name:main", 1]}]}]], [23, 3, []]]}

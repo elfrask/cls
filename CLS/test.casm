@@ -1,0 +1,27 @@
+
+//un aplicacion basica que hace una suma
+//y despues imprime la suma en pantalla
+
+
+FACTORIAL:
+	
+	print "Factorial", get(String, 0)
+
+	return
+
+MAIN:
+	move ord("\n"), 0x00
+
+	set main, FREE
+
+	move 0x00, var(main, 1)
+
+	add 0x0A, var(main, 1)
+
+	//"Hola mundo: 10"
+	print "Hola mundo: ", get(int, var(main, 1)), get(String, 0)
+	//input var(main, 2), var(main, 3)
+
+	call FACTORIAL
+
+	return
