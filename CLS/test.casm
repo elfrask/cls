@@ -9,19 +9,19 @@ FACTORIAL:
 
 	move var(fact, -1), var(fact, 1)
 
-	print "Factorial pros: ", get(int, var(fact, 1)), get(String, 0)
+	print "Factorial pros: ", get(int, var(fact, 1)), "\n"
 
 	if eq(get(int, var(fact, 1)), 5), 0, 1
 		goto IF   //0   true
 		goto ELSE //1   false
 
 		to IF
-			print "if"
+			print "if\n"
 			move var(fact, 1), var(fact, 0)
 			delete var(fact, 1)
 			goto EOF
 		to ELSE
-			print "else"
+			print "else\n"
 
 			goto EOF
 		to EOF
@@ -38,12 +38,14 @@ MAIN:
 	add 0x0A, var(main, 1)
 
 	//"Hola mundo: 10"
-	print "Hola mundo: ", get(int, var(main, 1)), get(String, 0)
+	print "Hola mundo: ", get(int, var(main, 1)), "\n"
 	//input var(main, 2), var(main, 3)
 
 	move 5, var(FREE, 0)
-	print FREE, "/", MAX
+	//print FREE, "/", MAX
 
 	call FACTORIAL
+
+	print "Resultado"
 
 	return
