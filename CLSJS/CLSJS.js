@@ -566,6 +566,16 @@ let App = (name, pass, ApiJS, Consol) => {
     ApiJS = ApiJS||false;
     Consol=Consol||false;
 
+    let osname = "";
+    let pid = 0x0000;
+    if (!this.require) {
+        osname = "web"
+        pid = parseInt((Math.random()+"").substr(-4))
+    } else {
+        pid = process.pid
+        osname = process.platform;
+    }
+
     if (typeof(Consol) === "string") {
         window.addEventListener("load", () => {
             Consol = document.getElementById(Consol)
@@ -2508,14 +2518,13 @@ let App = (name, pass, ApiJS, Consol) => {
         return me
     
     };
-
+    
     let myapp = {
         libs:{
             document:this.document||{},
             window:this.window||{},
             os:(()=>{
-                let osname = "";
-                let pid = 0x0000;
+                
                 let me = {
                     osname:() => osname,
                     getpid:() => pid,
@@ -2526,13 +2535,12 @@ let App = (name, pass, ApiJS, Consol) => {
                     }
                 };
 
-                if (!this.require) {
-                    osname = "web"
-                    pid = parseInt((Math.random()+"").substr(-4))
-                } else {
-                    pid = process.pid
-                    osname = process.platform;
-                }
+                
+
+                asi(me, {
+                    pid:pid,
+                    osname:osname
+                })
 
                 return me
             })(),

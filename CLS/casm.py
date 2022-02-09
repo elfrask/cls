@@ -278,10 +278,10 @@ class name:
         
     pass
 ins = [
-    "set", "move", "add", "return", 
-    "call", "print", "input", "if",
-    "goto", "to", "delete", "sub", "mul",
-    "div"
+    "set",   "move",   "add",     "return", 
+    "call",  "print",  "input",   "if",
+    "goto",  "to",     "delete",  "sub", 
+    "mul",   "div",
 ]
 
 def trim(s:str):

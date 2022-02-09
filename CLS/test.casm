@@ -46,6 +46,6 @@ MAIN:
 
 	call FACTORIAL
 
-	print "Resultado"
+	print "Resultado: ", var()
 
 	return

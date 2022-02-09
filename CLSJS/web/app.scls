@@ -1,10 +1,15 @@
 import "document" as document;
 from "window" import alert as alerta;
+import "os" as os; 
+
 
 function main(argv:Array) -> void {
+    print("[PID:"+ os.pid +"~platform:"+ os.osname +"]");
     print("CLS Console - Frask - Vinestar (2021)");
     print("(C) Todos los derechos reservados");
-    print("\n\nPC-Webview~Quest> ");
+    print("\n\nCLS-Webview~User> ");
+    
+    document
 };
 
 main(process.argv)
