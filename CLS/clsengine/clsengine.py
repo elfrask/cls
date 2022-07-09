@@ -2600,43 +2600,6 @@ class appcls():
         #del c, using_namespace, usingmode
 
         return salida
-    def jump(self, code:list=[], i=0) -> str:
-        salida = ""
-        #print(code)
-        for x in code:
-            if isinstance(x, str):
-                salida+= ("    "*i)+x+N
-                pass
-            elif isinstance(x, list):
-                salida+= self.jump(x, i+1)+N
-                pass
-            
-            pass
-        
-        return salida
-    def print_value(self, v) -> str:
-        salida = f"app.values['{v['type']}']({v['value']})"
-
-        if v["type"] == "str":
-            salida = f"app.str['{v['byte']}']({v['value']})"
-
-        return salida
-    def fist(self, v):
-        if isinstance(v, list):
-            v = ObjectCls.Array(v)
-        elif True in [isinstance(v, tuple), isinstance(v, set)]:
-            raise Exception('the tokens "," is invalids')
-        return v
-    def fint(self, v, x):
-        salida = 0
-        
-        salida = self.formato_int.get(x, lambda i:0)(v)
-
-        return salida
-    def cml(self, data):
-        
-
-        return ObjectCls.cml(data)
     def generator_one(self, line:list, modo:str="normal", modi:str ="eval", key:bool=False) -> str:
         salida = ""
         last = {"tipo":"none"}
@@ -2845,6 +2808,44 @@ class appcls():
         
             
         return salida
+    def jump(self, code:list=[], i=0) -> str:
+        salida = ""
+        #print(code)
+        for x in code:
+            if isinstance(x, str):
+                salida+= ("    "*i)+x+N
+                pass
+            elif isinstance(x, list):
+                salida+= self.jump(x, i+1)+N
+                pass
+            
+            pass
+        
+        return salida
+    def print_value(self, v) -> str:
+        salida = f"app.values['{v['type']}']({v['value']})"
+
+        if v["type"] == "str":
+            salida = f"app.str['{v['byte']}']({v['value']})"
+
+        return salida
+    def fist(self, v):
+        if isinstance(v, list):
+            v = ObjectCls.Array(v)
+        elif True in [isinstance(v, tuple), isinstance(v, set)]:
+            raise Exception('the tokens "," is invalids')
+        return v
+    def fint(self, v, x):
+        salida = 0
+        
+        salida = self.formato_int.get(x, lambda i:0)(v)
+
+        return salida
+    def cml(self, data):
+        
+
+        return ObjectCls.cml(data)
+    
     def error(self, msg:(list[str]), type:str, i:int, before:str="") -> None:
         lin0 = self.codigo[0:i].count(N)
         lin1 = self.codigo.split(N, lin0+1)

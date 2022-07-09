@@ -1,16 +1,13 @@
+import "request" as req;
 
+var valor:Array = [];
 
+for each i (range(0, 100)) {
+    valor.push({
+        value:String(i)
+    })
+};
 
-Promise((res, err) -> {
-    var funciona = input("funciona?: ");
-    
-    if (funciona == "si") {
-        res("si funciona!")
-    } else {
-        err("no funciona :(")
-    }
-}).then((x) -> {
-    print("si,", x)
-}).catch((x) -> {
-    print("no,", x)
-})
+# [1, 2, 3, ..., 99]
+
+print(valor.map((x) -> int { return int(x["value"]) } ))

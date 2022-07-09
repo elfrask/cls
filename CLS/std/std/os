@@ -9,5 +9,5 @@ export.kill = os.kill;
 export.run = os.run;
 export.cpu_count = os.cpu_count;
 export.getpid = os.getpid;
-export.name = "OperativeSystem (OS)";
+export.name = "[OperativeSystemLibrary (OS)]";
 export.ver = [0, 3, 0];

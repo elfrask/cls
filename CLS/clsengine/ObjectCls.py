@@ -50,10 +50,18 @@ class ObjectCls:
             return ObjectCls.val(salida)
         def default(clase):
             return clase([])
+        def push(self, *a):
+
+            for i in a:
+                self.append(i)
+
+            return len(self)
         pass
     class Module():
         def __dict__():
             pass
+        def default(clase):
+            return clase()
         pass
     class NotModule():
         def __getattr__(self, v):
@@ -302,6 +310,7 @@ co_co = {
     float:ObjectCls.Float,
     list:ObjectCls.Array,
 }
+
 
 
 derivadas = {

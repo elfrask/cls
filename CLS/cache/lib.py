@@ -5,106 +5,66 @@ stasta = {}
 app.foins()
 app.index = 0
 try:
-    var_std_py = app.getlib('pypkg')
+    var_py = app.getlib('pypkg')
 
 except Exception as e:
     app.error(e, 'ErrorExecute', 0)
 
 app.foins()
-app.index = 23
+app.index = 24
 try:
-    if 'var_std_fs' in constant: app.constE('var_std_fs')
-    var_std_fs = app.dim((var_std_py.require  (app.str['']("fs.py"))), sta_values.get('var_std_fs', var_std_Any))
+    if 'var_req' in constant: app.constE('var_req')
+    var_req = app.dim((var_py.require  (app.str['']("req.py"))), sta_values.get('var_req', var_Any))
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 23)
+    app.error(e, 'ErrorExecute', 24)
 
 app.foins()
-app.index = 50
+app.index = 54
 try:
-    var_std_export.open = (var_std_fs.open)
+    var_export.request = (var_req.request)
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 50)
+    app.error(e, 'ErrorExecute', 54)
 
 app.foins()
-app.index = 73
+app.index = 84
 try:
-    var_std_export.dir = (var_std_fs.dir)
+    var_export.arequest = (var_req.arequest)
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 73)
+    app.error(e, 'ErrorExecute', 84)
 
 app.foins()
-app.index = 94
+app.index = 116
 try:
-    var_std_export.Async = (var_std_fs.Async)
+    var_export.codes = (var_req.codes)
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 94)
+    app.error(e, 'ErrorExecute', 116)
 
 app.foins()
-app.index = 119
+app.index = 142
 try:
-    var_std_export.exist = (var_std_fs.exist)
+    var_export.session = (var_req.Session)
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 119)
+    app.error(e, 'ErrorExecute', 142)
 
 app.foins()
-app.index = 144
+app.index = 172
 try:
-    var_std_export.ver = (app.fist( [app.values['int'](1)  ,  app.values['int'](0)  ,  app.values['int'](0)] ))
+    var_export.ver = (app.fist( [app.values['int'](0)  ,  app.values['int'](1)  ,  app.values['int'](0)] ))
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 144)
+    app.error(e, 'ErrorExecute', 172)
 
 app.foins()
-app.index = 166
+app.index = 196
 try:
-    var_std_export.name = (app.str['']("FileSystem (fs)"))
+    var_export.name = (app.str['']("[RequestLibrary (request)]"))
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 166)
-
-app.foins()
-app.index = 199
-try:
-    var_std_export.unlink = (var_std_fs.delete)
-
-except Exception as e:
-    app.error(e, 'ErrorExecute', 199)
-
-app.foins()
-app.index = 226
-try:
-    var_std_export.mkdir = (var_std_fs.mkdir)
-
-except Exception as e:
-    app.error(e, 'ErrorExecute', 226)
-
-app.foins()
-app.index = 251
-try:
-    var_std_export.mkfile = (var_std_fs.mkfile)
-
-except Exception as e:
-    app.error(e, 'ErrorExecute', 251)
-
-app.foins()
-app.index = 278
-try:
-    var_std_export.copy = (var_std_fs.copy)
-
-except Exception as e:
-    app.error(e, 'ErrorExecute', 278)
-
-app.foins()
-app.index = 301
-try:
-    var_std_export.move = (var_std_fs.move)
-
-except Exception as e:
-    app.error(e, 'ErrorExecute', 301)
+    app.error(e, 'ErrorExecute', 196)
 
 app.variables.pop()

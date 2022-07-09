@@ -18,6 +18,8 @@ def cwd():
 
 path = cwd()
 
+
+
 cls.lib_path += [
     ".",
     "",
@@ -28,6 +30,12 @@ cls.lib_path += [
     os.getcwd(),
     
 ]
+
+pre_import = """
+import copy as _c
+__modcls['mod'] = _c.copy(globals())
+"""
+
 
 if not os.path.isdir("cache"):
     os.makedirs("cache")
@@ -84,10 +92,30 @@ def execute(code, app, name = "<CLS:Stdin>"):
 
     pass
 
+def ayuda():
 
+    print("""
+    ccls
+        -ejecuta la consola de CLS
+
+    ccls [file] [args*]
+        -ejecutar script [file].scls
+    
+    ccls //debug [file] [args*]
+        -ejecutar script [file].scls y depurar
+    
+    ccls //process [mode] [file] [args*]
+        -transpilar o procesar el script [file].scls
+    
+""")
+
+    pass
 
 if __name__ == "__main__":
     if len(sys.argv)>1:
+        if sys.argv[1] in ["-h", "/h", "-H", "/H", "help", "--help", "-help"]:
+            ayuda()
+            exit(0)
         if len(sys.argv)>2:
             if sys.argv[1] == "//debug":
 
@@ -133,6 +161,27 @@ if __name__ == "__main__":
                             pass
                         addcode = ""
                     pass
+            if sys.argv[1] == "//process":
+
+                modcls = {"mod":{}}
+                
+                file_mod_cls = open(f"{path}/transpiled/{sys.argv[2]}.py", "r")
+
+                data_mod = file_mod_cls.read()
+                exec(
+                    data_mod +
+                    pre_import + 
+                    "", 
+                    {"__modcls":modcls})
+
+                variables = modcls["mod"]
+
+                Mod:cls.appcls = variables.get("ModCLs", cls.appcls)
+
+                main(sys.argv[3], Mod(0))
+
+
+                pass
             else:
                 main(sys.argv[1])
         else:

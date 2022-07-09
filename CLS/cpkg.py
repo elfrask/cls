@@ -86,6 +86,13 @@ ayuda = {
                     "crea una plantilla a partir del directorio actual",
                     "y guardarlo en la lista de plantillas"
                 ]),#
+                etiquetas.cmd(f"{na} use-template [nombre de la plantilla]", [
+                    "hacer uso de una plantilla ya instalada"
+                ]),#
+                etiquetas.cmd(f"{na} install-template [path].json [nombre de la plantilla]", [
+                    "crea una plantilla a partir del directorio actual",
+                    "y guardarlo en la lista de plantillas"
+                ]),#
                 etiquetas.cmd(f"{na} plix [databuild]", "compila tu proyecto de CLS"),
                 etiquetas.cmd(f"{na} conf-databuild [nuevo/editar databuild]", "configurar el databuild de un modo"),#
                 etiquetas.cmd(f"{na} run [databuild]", "ejecucion de argumentos rapidos asignados por databuild"),#
@@ -213,8 +220,35 @@ def pack_init(path="./"):
 
     return salida
 
+def un_pack_init(datacode = {}, path="."):
+    
+    for i in datacode:
+        dd = datacode[i]
+        pati = f"{path}/{i}"
+
+        if isinstance(dd, dict):
+            if not os.path.exists(pati):
+                os.makedirs()
+            un_pack_init(dd, pati)
+        elif isinstance(dd, str):
+
+            open(pati, "w").write(dd)
+            
+    
+
+    return salida
+
+err_synx = f"""
+Error de sintaxis...
+
+para ver la interfaz de ayuda
+dar: {na} /h
+"""
+
+
 
 def main(argv = []):
+
     
     if (len(argv) == 1) or (tobj(argv).get(1, None) in ["-h", "/h", "-H", "/H", "help", "--help", "-help"]):
         
@@ -223,6 +257,8 @@ def main(argv = []):
         pass
     else:
         #arg = tobj(argv)
+        #print("llego")
+
 
         if len(argv) == 3:
             if argv[1] == "install":
@@ -351,7 +387,7 @@ def main(argv = []):
                     print("se ha generado el proyecto exitosamente")
                     pass
                 else:
-                    print(f"la plantilla seleccionada {argv[2]} no existe")
+                    print(f"la plantilla seleccionada '{argv[2]}' no existe")
                 pass
             elif argv[1] == "gen-template":
                 w = open(argv[2]+".json", "w")
@@ -360,10 +396,19 @@ def main(argv = []):
                 print("se ha generado la plantilla exitosamente")
                 pass
             elif argv[1] == "save-template":
-                w = open(work+"/"+argv[2]+".json", "w")
+                w = open(work+"/project_templates/"+argv[2]+".json", "w")
 
                 w.write(json.dumps(pack_init("./")))
                 print("se ha generado la plantilla exitosamente")
+                pass
+            elif argv[1] == "use-template":
+                w = open(work+"/project_templates/"+argv[2]+".json", "r").read()
+
+                k = (json.dumps(w))
+
+                un_pack_init(k, ".")
+
+                print("hecho")
                 pass
             elif argv[1] == "conf-databuild":
                 if not os.path.isfile("app.json"):
@@ -411,6 +456,8 @@ def main(argv = []):
                     os.system(data["run"][argv[2]]["run"])
                 
                 pass
+            else:
+                print(err_synx)
             pass
         if len(argv) == 2:
             if argv[1] == "list":
@@ -615,7 +662,9 @@ def main(argv = []):
                 print(f"    -{na} conf-databuild [nuevo/editar databuild]")
                 
                 pass
-
+            else:
+                print(err_synx)
+                pass
             pass
         if len(argv) == 4:
             if argv[1] == "set-domain":
@@ -714,8 +763,19 @@ def main(argv = []):
                     show_error()
                 
                 pass
+            elif argv[1] == "install-template":
+                w = open(work+"/project_templates/"+argv[3]+".json", "w")
+                d = open(argv[2]+".json", "r").read()
+
+                w.write(d)
+                print("se ha generado la plantilla exitosamente")
+                pass
+            else:
+                print(err_synx)
             
             
+            pass
+        if len(argv) > 3:
             pass
 
         pass
