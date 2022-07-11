@@ -2,88 +2,242 @@ app.variables.append([locals(), globals()])
 sta_values = stasta.get('tae', {})
 constant   = stasta.get('const', [])
 stasta = {}
-def t_tmp0(*arg):
-    try:        f_rt = (var_int)
-    except:        f_rt = (var_int)
+app.foins()
+app.index = 68
+try:
+    
+    
+    
+    def var_test():
+        print("Hola mundo")
+
+except Exception as e:
+    app.error(e, 'ErrorExecute', 68)
+
+app.foins()
+app.index = 111
+try:
+    var_test  ()
+
+except Exception as e:
+    app.error(e, 'ErrorExecute', 111)
+
+app.foins()
+def var_main(*arg):
     try:
-        sta_var = var_Any
+        f_rt = (var_void)
     except:
-        try:        sta_var = var_Any
-        except:
-            app.error('the Any class not found', errores.ErrorName)
-    try:
-        var_x = arg[0]
-    except:
-        var_x = (None)
-    app.dim(var_x, sta_var)
+        f_rt = (var_void)
     app.variables.append([locals(), globals()])
     sta_values = {}
     constant = {}
     app.foins()
-    app.index = 189
+    app.index = 163
     try:
-        return app.dim((var_int  (var_x  [app.str['']("value")])), f_rt)
+        if 'var_opcion' in constant: app.constE('var_opcion')
+        try:
+            sta_var = var_String
+        except:
+            try:
+                sta_var = var_String
+            except:
+                app.error('the String class not found', 'ErrorName', app.index)
+        try:
+            var_opcion = (var_input  (app.str['']("opcion 1, 2, 3: ")))
+        except:
+            var_opcion = None
+        sta_values['var_opcion'] = sta_var
+        var_opcion = app.dim(var_opcion, sta_var)
+        
 
     except Exception as e:
-        app.error(e, 'ErrorExecute', 189)
+        app.error(e, 'ErrorExecute', 163)
+
+    app.foins()
+    app.index = 212
+    try:
+        switch_val = (var_opcion)
+        if False:
+            pass
+        elif (app.str['']("1")) == (switch_val):
+            app.foins()
+            app.index = 338
+            try:
+                var_print  (app.str['']("Opcion 1"))
+
+            except Exception as e:
+                app.error(e, 'ErrorExecute', 338)
+
+
+            pass
+        elif (app.str['']("2")) == (switch_val):
+            app.foins()
+            app.index = 401
+            try:
+                var_print  (app.str['']("Opcion 2"))
+
+            except Exception as e:
+                app.error(e, 'ErrorExecute', 401)
+
+
+            pass
+        elif (app.str['']("3")) == (switch_val):
+            app.foins()
+            app.index = 464
+            try:
+                var_print  (app.str['']("Opcion 3"))
+
+            except Exception as e:
+                app.error(e, 'ErrorExecute', 464)
+
+
+            pass
+        else:
+            app.foins()
+            app.index = 265
+            try:
+                var_print  (app.str['']("Opcion por defecto"))
+
+            except Exception as e:
+                app.error(e, 'ErrorExecute', 265)
+
+
+            pass
+
+    except Exception as e:
+        app.error(e, 'ErrorExecute', 212)
 
     app.variables.pop()
 
     pass
 app.foins()
-app.index = 0
+app.index = 505
 try:
-    var_req = app.getlib('request')
+    var_main  ()
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 0)
+    app.error(e, 'ErrorExecute', 505)
 
 app.foins()
-app.index = 26
-try:
-    if 'var_valor' in constant: app.constE('var_valor')
+def var_Persona():
+    class private:pass
+    class me:pass
+    def t_get_atr(self, v): 
+        return None
+    me.__getattr__ = t_get_atr
+    private.__getattr__ = t_get_atr
+    def t_set_atr(self, a, v): 
+        self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_Any))
+    me.__setattr__ = t_set_atr
+    private.__setattr__ = t_set_atr
+    me.default = lambda x: me()
+    me.__str__ = lambda x: '<Struct Persona>'
+    me._str = me.__str__
+    me.__repl__ = me.__str__
+
+    var_private = private()
+    private = var_private
+    app.variables.append([locals(), globals()])
+    sta_values = {}
+    constant = {}
+    app.index = 645
     try:
-        sta_var = var_Array
+        if 'var_x' in constant: app.constE('var_x')
+        try:
+            sta_var = var_int
+        except:
+            try:
+                sta_var = var_int
+            except:
+                app.error('the int class not found', 'ErrorName', app.index)
+        try:
+            var_x = (app.values['int'](0))
+        except:
+            var_x = None
+        sta_values['var_x'] = sta_var
+        me.x = app.dim(var_x, sta_var)
+        
+        
+
+    except Exception as e:
+        app.error(e, 'ErrorExecute', 645)
+
+    app.index = 660
+    try:
+        if 'var_nombre' in constant: app.constE('var_nombre')
+        try:
+            sta_var = var_char
+        except:
+            try:
+                sta_var = var_char
+            except:
+                app.error('the char class not found', 'ErrorName', app.index)
+        try:
+            var_nombre = (var_char  [app.values['int'](100)]  (app.str['']("texto")))
+        except:
+            var_nombre = None
+        sta_values['var_nombre'] = sta_var
+        me.nombre = app.dim(var_nombre, sta_var)
+        
+        
+
+    except Exception as e:
+        app.error(e, 'ErrorExecute', 660)
+
+    app.index = 698
+    try:
+        if 'var_peso' in constant: app.constE('var_peso')
+        try:
+            sta_var = var_float
+        except:
+            try:
+                sta_var = var_float
+            except:
+                app.error('the float class not found', 'ErrorName', app.index)
+        try:
+            var_peso = (app.values['float'](1.0))
+        except:
+            var_peso = None
+        sta_values['var_peso'] = sta_var
+        me.peso = app.dim(var_peso, sta_var)
+        
+        
+
+    except Exception as e:
+        app.error(e, 'ErrorExecute', 698)
+
+    app.variables.pop()
+
+    return me
+var_Persona = (var_Persona)()
+app.foins()
+app.index = 720
+try:
+    if 'var_xx' in constant: app.constE('var_xx')
+    try:
+        sta_var = var_Persona
     except:
         try:
-            sta_var = var_Array
+            sta_var = var_Persona
         except:
-            app.error('the Array class not found', 'ErrorName', app.index)
+            app.error('the Persona class not found', 'ErrorName', app.index)
     try:
-        var_valor = (app.fist( [] ))
+        var_xx = (None)
     except:
-        var_valor = None
-    sta_values['var_valor'] = sta_var
-    var_valor = app.dim(var_valor, sta_var)
+        var_xx = None
+    sta_values['var_xx'] = sta_var
+    var_xx = app.dim(var_xx, sta_var)
     
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 26)
+    app.error(e, 'ErrorExecute', 720)
 
 app.foins()
-app.index = 49
+app.index = 733
 try:
-    for var_i in (var_range  (app.values['int'](0)  ,  app.values['int'](100))):
-        app.foins()
-        app.index = 82
-        try:
-            var_valor.push  (app.fist( {app.str['']('value')  :  var_String  (var_i)} ))
-
-        except Exception as e:
-            app.error(e, 'ErrorExecute', 82)
-
-
-        pass
+    var_print  (var_xx.peso)
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 49)
-
-app.foins()
-app.index = 160
-try:
-    var_print  (var_valor.map  (t_tmp0))
-
-except Exception as e:
-    app.error(e, 'ErrorExecute', 160)
+    app.error(e, 'ErrorExecute', 733)
 
 app.variables.pop()

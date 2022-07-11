@@ -51,7 +51,8 @@ nombre_reservados = {
     "visible":["export", "static", "private", "public", "global"],
     "nombre":[
         "func", "function", "class", "module", "with", "for", "if", "while", "define",
-        "from", "import", "global", "try", "def", "fub", "method", "include", "using", "var"
+        "from", "import", "global", "try", "def", "fub", "method", "include", "using", "var",
+        "template", "switch", "struct", "case",
         ],
     "codi":["or", "in", "and", "is"],
     "bucle":["break", "continue"]
@@ -294,7 +295,7 @@ Api_cls = {
 #procesador = 1/int(sys.argv[2])
 
 class appcls():
-    def __init__(self, id:int = uid) -> None:
+    def __init__(self, id:int = uid, mode="default") -> None:
         global uid
         uid += 1
         self.codigo:str = "" 
@@ -330,7 +331,10 @@ class appcls():
             "x":obj.hex,
             "b":obj.bin,
             "o":obj.oct,
-        } 
+        }
+        self.PRO = {
+            "mode":mode
+        }
         self.api["catch"] = self.catch
 
         def print_debug(*arg):
@@ -340,6 +344,7 @@ class appcls():
 
         self.api["print_debug"] = print_debug
         self.api["_file"] = "<File>"
+        self.api["MODE_ENGINE"] = mode
         
         pass
     def getlib(self, file):
@@ -789,7 +794,7 @@ class appcls():
                 "type":ty
             })
         
-        nombre = "";
+        nombre = ""
         defa = []
         typado = []
         #print(data)
@@ -904,42 +909,69 @@ class appcls():
             
             if len(i)>1:
                 #print("salida - ", i)
-                if i[0]["tipo"]=="name":
-                    if i[0]["tipo"] == "name":
+                if i[0]["tipo"] == "name":
+                    if i[0]["tipo"] == "name": # es una declaracion de visibilidad?
                         if i[0]["name"] in nombre_reservados["visible"]:
                             visible = i[0]["name"]
                             i=i[1:]
                             
                             pass
-                    if i[0]["tipo"] == "name":
+                    if i[0]["tipo"] == "name": # es una declaracion de hilos?
                         if i[0]["name"] in ["async", "sync"]:
                             asyncrono = i[0]["name"]=="async"
                             i=i[1:]
                             pass
-                    if i[0]["tipo"] == "name":
+                    if i[0]["tipo"] == "name": # es una declaracion tipo C
                         if not (i[0]["name"] in nombre_reservados["nombre"]):
-                            if len(i)==4:
-                                if compara(["name", "name", "()", "code"], i):
-                                    i = [
-                                        gen_char.names("function", i[0]["i"]),
-                                        gen_char.names(i[1]["name"], i[0]["i"]),
-                                        i[2],
-                                        gen_char.ope("->", i[3]["i"]),
-                                        gen_char.names(i[0]["name"], i[3]["i"]),
-                                        i[3]
-                                    ]
+                            
+                            if (len(i) == 4) and (compara(["name", "name", "()", "code"], i)):
+                                i = [
+                                    gen_char.names("function", i[0]["i"]),
+                                    gen_char.names(i[1]["name"], i[0]["i"]),
+                                    i[2],
+                                    gen_char.ope("->", i[3]["i"]),
+                                    gen_char.names(i[0]["name"], i[3]["i"]),
+                                    i[3]
+                                ]
+                                pass
+                            else:
+                                if len(i) == 2:
+                                    if compara(["name", "name"], i):
+                                        i = [
+                                            gen_char.names("var", i[0]["i"]),
+                                            i[1],
+                                            gen_char.ope(":", i[0]["i"], False),
+                                            i[0]
+                                            
+                                        ]
+                                        pass
+                                    pass
+                                elif len(i) > 3:
+                                    if compara(["name", "name", {"tipo":"ope"}], i):
+                                        i = [
+                                            gen_char.names("var", i[0]["i"]),
+                                            i[1],
+                                            gen_char.ope(":", i[0]["i"], False),
+                                            i[0],
+                                            gen_char.ope("=", i[0]["i"], False),
+                                            *i[3:]
+                                            
+                                        ]
+                                        pass
+                                    pass
+                                else:
                                     pass
                                 pass
                             pass
                         pass
-                    if i[0]["tipo"] == "name":
+                    if i[0]["tipo"] == "name": # es un loop
                         if i[0]["name"] == "loop":
                             if len(i) == 2:
-                                if compara(["name", "code"]):
+                                if compara(["name", "code"], i):
                                     i = [gen_char.names("while", i[0]["i"]),
                                         gen_value.argu([
                                                 [
-                                                    gen_char("True", i[0]["i"])
+                                                    gen_char.names("True", i[0]["i"])
                                                 ]
                                             ], 
                                                 i[0]["i"]
@@ -950,7 +982,7 @@ class appcls():
                                 pass
                             pass
                         pass
-
+                    
                     dim = find({"tipo":"ope", "char":"="}, i)
                     is_dim = dim[0]
                     i_dim = dim[1]
@@ -1188,6 +1220,50 @@ class appcls():
                             fallo()
                             pass
                         pass
+                    elif i[0]["name"] == "switch":#switch-def
+                        fallo = generar_error("error to build at switch", i[0]["i"])
+                        
+                        if compara(["name", "()", "code"], i):
+                            sw_a = {
+                                "tipo":"switch-def",
+                                "code":self.estructuration(i[2]["data"], func),
+                                "cond":sub_group(i[1])["data"],
+                                "i":i[0]["i"],
+                            }
+                            salida.append([sw_a])
+                            pass
+                        else:
+                            fallo()
+                            pass
+                        pass
+                        
+                        pass
+                    elif i[0]["name"] == "case":#case-def
+                        fallo = generar_error("error to build at case", i[0]["i"])
+                        
+                        if compara(["name", "()", "code"], i):
+                            case_a = {
+                                "tipo":"case-def",
+                                "code":self.estructuration(i[2]["data"], func),
+                                "cond":sub_group(i[1])["data"],
+                                "i":i[0]["i"],
+                            }
+                            salida.append([case_a])
+                            pass
+                        elif compara(["name", {"tipo":"name", "name":"default"}, "code"], i):
+                            sw_a = {
+                                "tipo":"case-d-def",
+                                "code":self.estructuration(i[2]["data"], func),
+                                "i":i[0]["i"],
+                            }
+                            salida.append([sw_a])
+                            pass
+                        else:
+                            fallo()
+                            pass
+                        pass
+                        
+                        pass
                     elif i[0]["name"] == "class":#class-def
                         fallo = generar_error("error at try create a class", i[0]["i"])
                         if len(i)==4:
@@ -1227,6 +1303,35 @@ class appcls():
                                 codigo = self.estructuration(i[2]["data"], funciones_clases)
                                 class_a = {
                                     "tipo":"module-def",
+                                    "name":i[1]["name"],
+                                    "code":{
+                                        "data":codigo,
+                                        "func":funciones_clases
+                                    },
+                                    "i":i[0]["i"],
+                                    "visible":visible
+                                }
+                                salida.append([class_a])
+                                pass
+                            else:
+                                fallo()
+                            pass
+                        else:
+                            #print("ehh")
+                            fallo()
+                            pass
+                        pass
+                    elif i[0]["name"] == "struct":#struct-def
+                        fallo = generar_error("error at try create a struct", i[0]["i"])
+                        if len(i)==3:
+                            if compara(["name", "name", "code"], i):
+                                if i[1]["name"].count("."): 
+                                    fallo("(error token in name struct '.')")
+
+                                funciones_clases = []
+                                codigo = self.estructuration(i[2]["data"], funciones_clases)
+                                class_a = {
+                                    "tipo":"struct-def",
                                     "name":i[1]["name"],
                                     "code":{
                                         "data":codigo,
@@ -1352,7 +1457,7 @@ class appcls():
                             fallo()
                             pass
                         pass
-                    elif i[0]["name"] == "include":#inculde-def
+                    elif i[0]["name"] == "include":#include-def
                         #generar_error("include is not sopport in this version of cls", i[0]["i"])()
                         if i[1]["tipo"] != "value":
                             generar_error("you must write the name of package in a String (include '[lib/pkg].scls')", i[0]["i"])()
@@ -1362,6 +1467,47 @@ class appcls():
                             "i":i[0]["i"],
                             "include":eval(i[1]["value"])
                         }
+                        salida.append([include_A])
+                        pass
+                    elif i[0]["name"] == "template":#template-def
+                        #generar_error("include is not sopport in this version of cls", i[0]["i"])()
+                        fallo = generar_error("error to build at template", i[0]["i"])
+
+                        if len(i) == 2:
+
+                            if compara(["name", "value"], i):
+
+                                include_A = {
+                                    "tipo":"template-def",
+                                    "i":i[0]["i"],
+                                    "template":eval(i[1]["value"])
+                                }
+                                pass
+                            else:
+                                fallo()
+
+                            pass
+                        elif len(i) == 5:
+
+                            if compara(["name", "value", {"tipo":"name", "name":"if"}, "name", "name"], i):
+
+                                include_A = {
+                                    "tipo":"template-if-def",
+                                    "i":i[0]["i"],
+                                    "template":eval(i[1]["value"]),
+                                    "var": i[3]["name"],
+                                    "value": i[4]["name"],
+                                }
+                                pass
+                            else:
+                                fallo()
+
+                            pass
+                        else:
+                            fallo("syntax error")
+                        
+
+                        
                         salida.append([include_A])
                         pass
                     elif i[0]["name"] == "try":#try-def
@@ -1417,15 +1563,16 @@ class appcls():
                             pass
                         pass
                     elif i[0]["name"] in ["var", "const"]:#var-def
+                        #print(i)
                         if len(i)>1:
                             capture = i[1:]
                             if i[1]["tipo"] in ["code"]: 
                                 capture = i[1]["one"]
                             return_a = {
-                                "tipo":"var-def",
-                                "dim":self.argparse(capture, func),
-                                "i":i[0]["i"],
-                                "visible":visible,
+                                "tipo": "var-def",
+                                "dim": self.argparse(capture, func),
+                                "i": i[0]["i"],
+                                "visible": visible,
                                 "const": i[0]["name"] == "const"
                             }
                             salida.append([return_a])
@@ -1836,11 +1983,12 @@ class appcls():
     def constE(self, n):
         #print("Error")
         raise Exception(f"of value name '{n}' is a constant and can't re-define")
-    def generator(self, c, modo:str="normal", usingmode = "compiled") -> list:
+    def generator(self, c, modo:str="normal", usingmode = "compiled", data = {}) -> list:
         
         salida = []
         code = []
         func = []
+        lastcode = []
         #print(usingmode)
         using_namespace = False
         #modo = "normal"
@@ -1934,7 +2082,8 @@ class appcls():
             pass
         
         for i in code:
-            salida += ["app.foins()"]
+            if modo in ["normal", "func", "func-imp", "module", "class"]:
+                salida += ["app.foins()"]
             
             #Declaracion de Funciones
             if   (i["tipo"] == "func-def")         and (modo in ["normal", "func-imp", "func"]):
@@ -2043,6 +2192,7 @@ class appcls():
             
             #Ejecucion, y operaciones basicas
             elif (i["tipo"] == "exe")              and (modo in ["normal", "func-imp", "func"]):
+
                 le = self.generator_one(i["exe"], modo, "exec")
                 salida += p_error(
                     [le],
@@ -2072,6 +2222,50 @@ class appcls():
                     pass
 
                 salida += p_error(if_out, i["i"])
+
+                pass
+            elif (i["tipo"] == "switch-def")       and (modo in ["normal", "func-imp", "func"]):
+                if_out=[]
+                #tipo, cond, code
+                cond = self.generator_one(i["cond"], modo)
+                codigo = self.generator(i["code"], "switch", data = {"modo": modo})
+                if_out += [
+                    f"switch_val = ({cond})",
+                     "if False:",
+                     "    pass",
+                     *codigo,
+                ]
+
+                salida += p_error(if_out, i["i"])
+
+                pass
+            elif (i["tipo"] == "case-def")         and (modo in ["switch"]):
+                if_out=[]
+                #tipo, cond, code
+
+                cond = self.generator_one(i["cond"], data.get("modo", "normal"))
+                codigo = self.generator(i["code"], data.get("modo", "normal"))
+                if_out += [
+                    f"elif ({cond}) == (switch_val):",
+                     codigo,
+                     "    pass",
+                ]
+
+                salida += if_out
+
+                pass
+            elif (i["tipo"] == "case-d-def")       and (modo in ["switch"]):
+                if_out=[]
+
+                #tipo, cond, code
+                codigo = self.generator(i["code"], data.get("modo", "normal"))
+                if_out += [
+                    f"else:",
+                     codigo,
+                     "    pass",
+                ]
+
+                lastcode = if_out
 
                 pass
             elif (i["tipo"] == "while-def")        and (modo in ["normal", "func-imp", "func"]):
@@ -2179,7 +2373,10 @@ class appcls():
 
                 pass
             
-            #Declaracion de Clases y Modulos
+            #Declaracion de Clases, Estructuras, Espacios de nombres y Modulos
+
+                # Clases
+
             elif (i["tipo"] == "class-def")        and (modo in ["normal", "func-imp", "func"]):
                 fun = i
                 arg= []
@@ -2212,7 +2409,7 @@ class appcls():
                      "    exportar = {}",
                     f"    me = obj",
                      "    class private:pass",
-                        preparo2,
+                          preparo2,
                     f"    var_private = private",
                     f"    private = var_private",
                      "    def out(*arg): return me(*arg)",
@@ -2231,75 +2428,6 @@ class appcls():
                     f"var_{fun['name']} = tmp_var_{fun['name']}(tmp_class_{fun['name']})",
                     f"var_{fun['name']}.__clase__ = tmp_class_{fun['name']}",
                         #self.generator(fun["code"], "class"),
-                ]
-                salida+=preparo
-                pass
-            elif (i["tipo"] == "module-def")       and (modo in ["normal", "func-imp", "func"]):
-                fun = i
-
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    #"    print('atr:', a)",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                    "me.__setattr__ = t_set_atr",
-                    "private.__setattr__ = t_set_atr",
-                    #"exportar.__setattr__ = t_set_atr",
-                    
-                ]
-                
-                preparo = [
-                    f"def var_{fun['name']}():",
-                     "    class private:pass",#"    private = (MD())",
-                     "    class me:pass",
-                          preparo2,
-                    f"    var_private = private()",
-                    f"    private = var_private",
-                        self.generator(fun["code"], "module"),
-                    #f"    var_private = private()",
-                     "    return me()",
-                    f"var_{fun['name']} = (var_{fun['name']})()"
-                ]
-                salida+=preparo
-                pass
-            elif (i["tipo"] == "namespace-def")       and (modo in ["normal", "func-imp", "func"]):
-                fun = i
-
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    #"    print('atr:', a)",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                    "me.__setattr__ = t_set_atr",
-                    "private.__setattr__ = t_set_atr",
-                    #"exportar.__setattr__ = t_set_atr",
-                ]
-                
-                preparo = [
-                    f"def var_{fun['name']}():",
-                     "    class private:pass",#"    private = (MD())",
-                     "    class me:pass",
-                          preparo2,
-                    f"    var_private = private()",
-                    f"    private = var_private",
-                        self.generator(fun["code"], "module"),
-                    #f"    var_private = private()",
-                     "    return NS(me())",
-                    f"var_{fun['name']} = (var_{fun['name']})()"
                 ]
                 salida+=preparo
                 pass
@@ -2361,6 +2489,44 @@ class appcls():
                 ]
                 salida+=preparo
                 pass
+            
+                # Modulos
+            
+            elif (i["tipo"] == "module-def")       and (modo in ["normal", "func-imp", "func"]):
+                fun = i
+
+                preparo2 = [
+                     "def t_get_atr(self, v): ",
+                     "    return None",
+                    
+                     "me.__getattr__ = t_get_atr",
+                     "private.__getattr__ = t_get_atr",
+                    #"exportar.__getattr__ = t_get_atr",
+                    
+                     "def t_set_atr(self, a, v): ",
+                    #"    print('atr:', a)",
+                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
+                    
+                    "me.__setattr__ = t_set_atr",
+                    "private.__setattr__ = t_set_atr",
+                    #"exportar.__setattr__ = t_set_atr",
+                    
+                ]
+                
+                preparo = [
+                    f"def var_{fun['name']}():",
+                     "    class private:pass",#"    private = (MD())",
+                     "    class me:pass",
+                          preparo2,
+                    f"    var_private = private()",
+                    f"    private = var_private",
+                        self.generator(fun["code"], "module"),
+                    #f"    var_private = private()",
+                     "    return me()",
+                    f"var_{fun['name']} = (var_{fun['name']})()"
+                ]
+                salida+=preparo
+                pass 
             elif (i["tipo"] == "module-def")       and (modo in ["module"]):
                 fun = i
 
@@ -2402,6 +2568,132 @@ class appcls():
                 salida+=preparo
                 pass
             
+                # Espacios de nomres
+
+            elif (i["tipo"] == "namespace-def")    and (modo in ["normal", "func-imp", "func"]):
+                fun = i
+
+                preparo2 = [
+                     "def t_get_atr(self, v): ",
+                     "    return None",
+                    
+                     "me.__getattr__ = t_get_atr",
+                     "private.__getattr__ = t_get_atr",
+                    #"exportar.__getattr__ = t_get_atr",
+                    
+                     "def t_set_atr(self, a, v): ",
+                    #"    print('atr:', a)",
+                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
+                    
+                    "me.__setattr__ = t_set_atr",
+                    "private.__setattr__ = t_set_atr",
+                    #"exportar.__setattr__ = t_set_atr",
+                ]
+                
+                preparo = [
+                    f"def var_{fun['name']}():",
+                     "    class private:pass",#"    private = (MD())",
+                     "    class me:pass",
+                          preparo2,
+                    f"    var_private = private()",
+                    f"    private = var_private",
+                        self.generator(fun["code"], "module"),
+                    #f"    var_private = private()",
+                     "    return NS(me())",
+                    f"var_{fun['name']} = (var_{fun['name']})()"
+                ]
+                salida+=preparo
+                pass
+            
+                # Estructuras
+            
+            elif (i["tipo"] == "struct-def")       and (modo in ["normal", "func-imp", "func"]):
+                fun = i
+
+                preparo2 = [
+                     "def t_get_atr(self, v): ",
+                     "    return None",
+                    
+                     "me.__getattr__ = t_get_atr",
+                     "private.__getattr__ = t_get_atr",
+                    #"exportar.__getattr__ = t_get_atr",
+                    
+                     "def t_set_atr(self, a, v): ",
+                    #"    print('atr:', a)",
+                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
+                    
+                     "me.__setattr__ = t_set_atr",
+                     "private.__setattr__ = t_set_atr",
+                     "me.default = lambda x: me()",
+                    f"me.__str__ = lambda x: '<Struct {fun['name']}>'",
+                     "me._str = me.__str__",
+                     "me.__repl__ = me.__str__",
+
+                    #"exportar.__setattr__ = t_set_atr",
+                    
+                ]
+                
+                preparo = [
+                    f"def var_{fun['name']}():",
+                     "    class private:pass",#"    private = (MD())",
+                     "    class me:pass",
+                          preparo2,
+                    f"    var_private = private()",
+                    f"    private = var_private",
+                          self.generator(fun["code"], "struct"),
+                    #f"    var_private = private()",
+                     "    return me",
+                    f"var_{fun['name']} = (var_{fun['name']})()"
+                ]
+                salida+=preparo
+                pass 
+            elif (i["tipo"] == "struct-def")       and (modo in ["module"]):
+                fun = i
+
+                preparo2 = [
+                     "def t_get_atr(self, v): ",
+                     "    return None",
+                    
+                     "me.__getattr__ = t_get_atr",
+                     "private.__getattr__ = t_get_atr",
+                    #"exportar.__getattr__ = t_get_atr",
+                    
+                     "def t_set_atr(self, a, v): ",
+                    #"    print('atr:', a)",
+                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
+                    
+                     "me.__setattr__ = t_set_atr",
+                     "private.__setattr__ = t_set_atr",
+                     "me.default = lambda x: me()",
+                    f"me.default = lambda x: '<Struct {fun['name']}>'",
+                     "me._str = me.__str__",
+                     "me.__repl__ = me.__str__",
+                     
+                    #"exportar.__setattr__ = t_set_atr",
+                    
+                ]
+
+                ta = "me"
+
+                if fun["visisble"] == "private":
+                    ta = "private"
+                
+                preparo = [
+                    f"def var_{fun['name']}():",
+                     "    class private:pass",#"    private = (MD())",
+                     "    class me:pass",
+                          preparo2,
+                    f"    var_private = private()",
+                    f"    private = var_private",
+                        self.generator(fun["code"], "struct"),
+                    #f"    var_private = private()",
+                     "    return me",
+                    f"{ta}.{fun['name']} = (var_{fun['name']})()"
+                ]
+                salida+=preparo
+                pass
+        
+
             #Elementos de compilacion
             elif (i["tipo"] == "$using-comp")      and (modo in ["normal", "func", "func-imp"]):
                 
@@ -2462,7 +2754,7 @@ class appcls():
 
                 salida += ordenar
                 pass
-            elif (i["tipo"] == "var-def")          and (modo in ["class", "module"]):
+            elif (i["tipo"] == "var-def")          and (modo in ["class", "module", "struct"]):
                 ordenar = []                
                 for x in i["dim"]:
                     
@@ -2513,7 +2805,7 @@ class appcls():
 
                 salida += ordenar
                 pass
-            elif (i["tipo"] == "var-eval")         and (modo in ["normal", "func-imp", "func", "class", "module"]):
+            elif (i["tipo"] == "var-eval")         and (modo in ["normal", "func-imp", "func", "class", "module", "struct"]):
                 
                 if i["onename"]:
                     t_name = i["var"][0]["name"]
@@ -2528,7 +2820,7 @@ class appcls():
                             f"{g_1} = app.dim(({g_2}), sta_values.get('{g_1}', var_{self.tydef}))",
                         ], i["i"])
                         pass
-                    elif modo in ["class"]:
+                    elif modo in ["class", "struct"]:
 
                         g_1 = i["var"][0]["name"]
                         g_2 = self.generator_one(i["eval"], modo)
@@ -2586,11 +2878,49 @@ class appcls():
 
                 ], i["i"])
                 pass
+            elif (i["tipo"] == "template-def")     and (modo in ["normal", "func-imp", "func"]):
+                
+                pati = lib.find(i["template"])
+
+                tem = []
+                if pati == "None":
+                    print(f"template '{i['template']}' not found")
+                    pass
+                else:
+                    _ftp = open(pati, "r")
+                    tem = _ftp.read().split("\n")
+                    _ftp.close()
+                    pass
+
+                salida += p_error(tem, i["i"])
+                pass
+            elif (i["tipo"] == "template-if-def")     and (modo in ["normal", "func-imp", "func"]):
+                #print(i, self.PRO.get(i["var"], None))
+                
+                if self.PRO.get(i["var"], None) == i["value"]:
+                    pati = lib.find(i["template"])
+
+                    tem = []
+                    if pati == "None":
+                        print(f"template '{i['template']}' not found")
+                        pass
+                    else:
+                        _ftp = open(pati, "r")
+                        tem = _ftp.read().split("\n")
+                        _ftp.close()
+                        pass
+
+                    salida += p_error(tem, i["i"])
+                    pass
+
+                pass
             
             pass
         if (using_namespace) and (usingmode == "compiled"):
             #print("que?")
             self.namespace = "std"
+        if modo == "switch":
+            salida += lastcode
         if isinstance(c, dict):
             salida +=["app.variables.pop()"]
             code = c["data"]
@@ -2634,6 +2964,7 @@ class appcls():
                         elif i["name"][0]==".":
                             pass
                         else:
+                            print(i)
                             fallo()
                             pass
                         pass
@@ -2699,7 +3030,7 @@ class appcls():
                 last = i
                 pass
             
-            if modo in ["func", "func-imp", "class", "module", "normal"]:
+            if modo in ["func", "func-imp", "class", "module", "normal", "struct"]:
 
                 if i["tipo"]=="name":
                     if iskey:
@@ -2845,7 +3176,6 @@ class appcls():
         
 
         return ObjectCls.cml(data)
-    
     def error(self, msg:(list[str]), type:str, i:int, before:str="") -> None:
         lin0 = self.codigo[0:i].count(N)
         lin1 = self.codigo.split(N, lin0+1)

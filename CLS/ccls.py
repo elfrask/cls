@@ -25,6 +25,7 @@ cls.lib_path += [
     "",
     path + "/std/std",
     path + "/lib",
+    path + "/template",
     path + "/libpy",
     path + "/dlls",
     os.getcwd(),
