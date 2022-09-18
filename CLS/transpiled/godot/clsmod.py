@@ -26,9 +26,7 @@ class ModCLs(appcls):
 
         def p_error(code, i) -> list:
             
-            return [
-                code
-            ]
+            return code
         def print_arg(args) -> list:
             s_out = ""
             it = -1
@@ -42,31 +40,16 @@ class ModCLs(appcls):
                 defa=(col)
 
                 s_out += f"var_{arg}"
-                if (arg != "Any"): s_out += f": var_{sta}"
+                if not (sta in ["Any", "any"]): s_out += f": var_{sta}"
                 if (i["def"] != []): s_out += f"= ({defa})"
                 s_out+=", "
 
                 pass
             
-            return s_out
+            return s_out[:-2]
 
         if isinstance(c, dict):
-            modo_a = [
-                "sta_values = {}",
-                "constant = {}"
-                ]
-            if modo == "normal":
-                modo_a = [
-                    "sta_values = stasta.get('tae', {})",
-                    "constant   = stasta.get('const', [])",
-                    "stasta = {}",
-                    #"print(constant)"
-                ]
-
-                pass
-            salida +=[
-                "app.variables.append([locals(), globals()])",
-                ] + modo_a
+            
             
             code = c["data"]
             func = c["func"]
@@ -723,10 +706,12 @@ class ModCLs(appcls):
                     if col == "": col = "None"
                     defa=(col)
 
-                    out_s += f"var_{arg}"
-                    if (arg != "Any"): out_s += f": var_{sta}"
-                    if (i["def"] != []): out_s += f"= ({defa})"
-                    out_s+=", "
+                    #print(f"'{sta}'")
+
+                    out_s += f"var var_{arg}"
+                    if not (sta in ["Any", "any"]): out_s += f": var_{sta}"
+                    if (x["def"] != []): out_s += f"= ({defa})"
+                    
 
                     ordenar.append(out_s)
 
@@ -785,50 +770,14 @@ class ModCLs(appcls):
 
                 salida += ordenar
                 pass
-            elif (i["tipo"] == "$var-eval")         and (modo in ["normal", "func-imp", "func", "class", "module", "struct"]):
+            elif (i["tipo"] == "var-eval")         and (modo in ["func-imp", "func", "class", "module", "struct"]):
                 
-                if i["onename"]:
-                    t_name = i["var"][0]["name"]
-                    qqq = f"if 'var_{t_name}' in constant: app.constE('var_{t_name}')"
-                    #print("onename", t_name)
-                    #print(qqq)
-                    if modo in ["func", "func-imp", "normal"]:
-                        g_1 = self.generator_one(i["var"], modo)
-                        g_2 = self.generator_one(i["eval"], modo)
-                        preparo = p_error([
-                            qqq,
-                            f"{g_1} = app.dim(({g_2}), sta_values.get('{g_1}', var_{self.tydef}))",
-                        ], i["i"])
-                        pass
-                    elif modo in ["class", "struct"]:
-
-                        g_1 = i["var"][0]["name"]
-                        g_2 = self.generator_one(i["eval"], modo)
-                        preparo = p_error([
-                            qqq,
-                            f"{g_1} = ({g_2})",
-                        ], i["i"])
-                        pass
-                    elif modo in ["module"]:
-
-                        g_1 = i["var"][0]["name"]
-                        g_2 = self.generator_one(i["eval"], modo)
-                        preparo = p_error([
-                            qqq,
-                            f"me.{g_1} = ({g_2})",
-                            f"var_{g_1} = (me.{g_1})",
-                        ], i["i"])
-                        pass
-                    
-                    
-                    pass
-                else:
-                    g_1 = self.generator_one(i["var"], modo)
-                    g_2 = self.generator_one(i["eval"], modo)
-                    preparo = p_error([
-                        f"{g_1} = ({g_2})"
-                    ], i["i"])
-                    pass
+                
+                g_1 = self.generator_one(i["var"], modo)
+                g_2 = self.generator_one(i["eval"], modo)
+                preparo = p_error([
+                    f"{g_1} = ({g_2})"
+                ], i["i"])
 
                 salida+=preparo
                 pass
@@ -909,7 +858,7 @@ class ModCLs(appcls):
         if modo == "switch":
             salida += lastcode
         if isinstance(c, dict):
-            salida +=["app.variables.pop()"]
+            #salida +=["app.variables.pop()"]
             code = c["data"]
             func = c["func"]
             pass
@@ -1124,6 +1073,223 @@ class ModCLs(appcls):
         
             
         return salida
+    def generator_one(self, line:list, modo:str="normal", modi:str ="eval", key:bool=False) -> str:
+        salida = ""
+        last = {"tipo":"none"}
+        iskey= False
+        
+        ite =-1
+        for i in line:
+            #print(i)
+            ite+=1
+            def fallo(msg:str="", x:int=False):
+                if x == False:
+                    x = i["i"]
+                if msg=="": msg = "Error Syntax"
+                #print("Fallo", x)
+                self.error(msg, errores.ErrorSyntax, x)
+            if True:
+
+                if i["tipo"] in ["()", "[]", "code"]:
+                    i["fist"] = False
+                    if last["tipo"] in ["none", "ope", "sim"]:
+                        i["fist"] = True
+                        #print("llego:", salida)
+                        pass
+                    pass
+
+
+                if i["tipo"] == last["tipo"]:
+                    if i["tipo"] == "name":
+                        if (i["name"] in nombre_reservados["codi"]) or (last["name"] in nombre_reservados["codi"]):
+                            #last = i
+                            pass
+                        elif i["name"][0]==".":
+                            pass
+                        else:
+                            print(i)
+                            fallo()
+                            pass
+                        pass
+                    elif i["tipo"] in ["[]", "()"]:
+                        if last["tipo"] in ["name", "()", "[]"]:
+                            last = i
+                            pass
+                        elif last["tipo"] == "value":
+                            if last["type"] == "str":
+                                last=i
+                                pass
+                            else:
+                                fallo()
+                                pass
+                            pass
+                        else:
+                            fallo()
+                            pass
+                        pass
+                    elif i["tipo"] in ["ope"]:
+                        if (last["char"] in [":"]) and (not i["tipo"] in [":"]):
+                            pass
+                        else:
+                            fallo()
+                        pass
+                    else:
+                        fallo()
+
+                    pass
+                else:
+                    if i["tipo"] in ["name", "value"]:
+                        if last["tipo"] in ["[]", "()", "code", "name", "value"]:
+                            if i["tipo"] == "name":
+                                if i["name"][0]==".":
+                                    pass
+                                else:
+                                    fallo()
+                                pass
+                            else:
+                                fallo()
+                            pass
+                        else:
+                            pass
+                        pass
+                    elif i["tipo"] in ["code"]:
+                        if last["tipo"] in ["name", "[]", "value", "()"]:
+                            fallo()
+                            pass
+                        else:
+                            pass
+                        pass
+                    else:
+                        pass
+                    pass
+                if key:
+                    if last["tipo"] in ["sim", "none"]:
+                        if last.get("char", ",") == ",":
+                            iskey = True
+                            #print("error 1", i)
+
+                            pass
+                        pass
+                last = i
+                pass
+            
+            if modo in ["func", "func-imp", "class", "module", "normal", "struct"]:
+
+                if i["tipo"]=="name":
+                    if iskey:
+                        #print("error 2", i)
+
+                        t = {"tipo":"value", "value":f"'{i['name']}'", "type":"str", "i":i["i"], "byte":""}
+                        salida+= f" {self.print_value(t)} "
+                        pass
+                    elif i["notmod"]:
+                        salida+= f" {i['name']} "
+                        pass
+                    elif i["name"] in nombre_reservados["codi"]:
+                        salida+= f" {i['name']} "
+                        pass                  
+                    elif (i["name"] in nombre_reservados["bucle"]):
+                        if modi == "exec":
+                            if salida == "":
+                                salida+= f" {i['name']} "
+                            else:
+                                fallo(f"Error Syntax with the token '{i['name']}'")
+                            pass
+                        else:
+                            fallo(f"the token '{i['name']}' is invalid in this case")
+                        pass
+                    elif i["name"][0]==".":
+                        salida+= f"{i['name']} "
+                        pass
+                    elif i["name"][0]=="0":
+                        
+                        salida+= f" app.fint('{i['name']}', '{i['name'][1]}') "
+                        pass
+                    elif compara([{"tipo":"ope", "char":"::"}], line[ite+1:ite+2]):
+                        salida+= f" var_{i['name']}.__names__"
+                        pass
+                    elif compara([{"tipo":"ope", "char":"::"}], line[ite-1:ite]):
+                        salida+= f".{i['name']}"
+                        pass
+                    else:
+                        salida+= f" var_{i['name']} "
+                        pass
+                    pass
+                elif i["tipo"] == "sim":
+                    salida += f" {i['char']} "
+                    pass
+                elif i["tipo"] == "ope":
+                    if i["char"] in ["+", "-", "*", "/", "**", "%", ":"]:
+                        salida += f" {i['char']} "
+                    elif i["char"] in tokens["convert"]["condi"]:
+                        salida += f" {tokens['convert']['condi'][i['char']]} "
+                        pass
+                    elif i["char"] in tokens["convert"]["expre-"+str(modi)]:
+                        salida += f" {tokens['convert']['expre-'+str(modi)][i['char']]} "
+                        pass
+                    elif i["char"] in tokens["cond"]:
+                        salida += f" {i['char']} "
+                    elif (i["char"] in ["="]) and (modi=="exec"):
+                        salida += f" = "
+                    
+                    
+                    pass
+                elif i["tipo"] == "()":
+                    be = f" ({self.generator_one(i['data'], modo)}) "
+                    if i["fist"]:
+                        be = " cls_engine.fist("+be+") "
+                    salida+= be
+                    pass
+                elif i["tipo"] == "[]":
+                    be = f" [{self.generator_one(i['data'], modo)}] "
+                    if i["fist"]:
+                        be = " cls_engine.fist("+be+") "
+                    salida+= be
+                    pass
+                elif i["tipo"] == "code":
+                    be = f" {'{'+self.generator_one(i['one'], modo, 'eval', True)+'}'} "
+                    if i["fist"]:
+                        #print("code")
+
+                        be = " cls_engine.fist("+be+") "
+                    salida+= be
+                    pass
+                elif i["tipo"] == "value":
+                    salida+= f" {self.print_value(i)} "
+                    pass
+                elif i["tipo"] == "cml":
+                    salida+= f" cls_engine.cml({repr(i['data'])}) "
+                    pass
+                elif i["tipo"] == "$if-exp":
+                    be_if = f" ({self.generator_one(i['then']['data'], modo)}) "
+                    be_else = f" ({self.generator_one(i['else']['data'], modo)}) "
+                    be_cond = f" ({self.generator_one(i['if']['data'], modo)}) "
+
+                    salida+= f" ({be_if} if {be_cond} else {be_else}) "
+                    pass
+                
+                pass
+            iskey = False
+
+            
+            pass
+        while salida[:1]==" ":
+            salida = salida[1:]
+            pass
+        while salida[-1:]==" ":
+            salida = salida[:-1]
+            pass
+        
+            
+        return salida
+    def print_value(self, v) -> str:
+        salida = f"cls_engine.parse_values('{v['type']}', {v['value']})"
+
+        if v["type"] == "str":
+            salida = f"cls_engine.strf('{v['byte']}', {v['value']})"
+
+        return salida
+    
     
     
     pass
