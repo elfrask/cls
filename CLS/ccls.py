@@ -6,6 +6,9 @@ import json
 #import shutil
 import platform
 
+year_last_update = "2022"
+version_cls = "1.1.0"
+
 def cwd():
     app_path = ""
 
@@ -130,8 +133,8 @@ if __name__ == "__main__":
                 addcode = ""
                 o_s = platform.system()
                 print("")
-                print(f"Cls 1.0.0 - Build for {o_s} platforms, CLS 2016-2021")
-                print("Vinestar Studio 2021 (C) Todos los derechos recervados")
+                print(f"Cls {version_cls} - Build for {o_s} platforms, CLS 2016-{year_last_update}")
+                print(f"Vinestar Studio {year_last_update} (C) Todos los derechos recervados")
                 print("")
                 print("has entrado al modo debug")
                 while True:
@@ -162,11 +165,11 @@ if __name__ == "__main__":
                             pass
                         addcode = ""
                     pass
-            if sys.argv[1] == "//process":
+            if sys.argv[1] == "//process": #ccls //process
 
                 modcls = {"mod":{}}
                 
-                file_mod_cls = open(f"{path}/transpiled/{sys.argv[2]}.py", "r")
+                file_mod_cls = open(f"{path}/transpiled/{sys.argv[2]}/clsmod.py", "r")
 
                 data_mod = file_mod_cls.read()
                 exec(
@@ -179,7 +182,7 @@ if __name__ == "__main__":
 
                 Mod:cls.appcls = variables.get("ModCLs", cls.appcls)
 
-                main(sys.argv[3], Mod(0))
+                main(sys.argv[3], Mod(0, sys.argv[2].replace("/", ".")))
 
 
                 pass
@@ -194,8 +197,8 @@ if __name__ == "__main__":
         la_app = cls.appcls(0)
         addcode = ""
         o_s = platform.system()
-        print(f"Cls 1.0.0 - Build for {o_s} platforms, CLS 2016-2021")
-        print("Vinestar Studio 2021 (C) Todos los derechos recervados")
+        print(f"Cls {version_cls} - Build for {o_s} platforms, CLS 2016-{year_last_update}")
+        print(f"Vinestar Studio {year_last_update} (C) Todos los derechos recervados")
         while True:
             
             try:

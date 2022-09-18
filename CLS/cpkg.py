@@ -221,6 +221,8 @@ def pack_init(path="./"):
     return salida
 
 def un_pack_init(datacode = {}, path="."):
+
+    salida= {}
     
     for i in datacode:
         dd = datacode[i]

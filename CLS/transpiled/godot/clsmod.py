@@ -1,13 +1,25 @@
 from clsengine.clsengine import *
+import sys
 
-
-class ClsMod(appcls):
+class ModCLs(appcls):
     
-    def generator(self, c, modo:str="normal", usingmode = "compiled") -> list:
+    def exec(self, listo:str):
+
+        pre_name = sys.argv[3].split(".")
+        pre_name.pop()
+        rename = ".".join(pre_name) + ".gd"
+
+        with open(rename, "w") as file:
+            file.write(listo)
+            pass
+        
+        pass
+    def generator(self, c, modo:str="normal", usingmode = "compiled", data = {}) -> list:
         
         salida = []
         code = []
         func = []
+        lastcode = []
         #print(usingmode)
         using_namespace = False
         #modo = "normal"
@@ -15,14 +27,10 @@ class ClsMod(appcls):
         def p_error(code, i) -> list:
             
             return [
-                "app.index = " + str(i),
-                "try:",
-                code,
-                "except Exception as e:",
-                [f"app.error(e, 'ErrorExecute', {i})"]
+                code
             ]
         def print_arg(args) -> list:
-            s_out = []
+            s_out = ""
             it = -1
             for i in args:
                 it+=1
@@ -33,23 +41,11 @@ class ClsMod(appcls):
                 if col == "": col = "None"
                 defa=(col)
 
-                s_out+=[
-                    f"try:",
-                    f"    sta_var = var_{sta}",
-                    f"except:",
-                    f"    try:"
-                    f"        sta_var = var_{sta}",
-                    f"    except:",
-                    f"        app.error('the {sta} class not found', errores.ErrorName)",
-                    f"try:",
-                    f"    var_{arg} = arg[{it}]",
-                    f"except:",
-                    f"    var_{arg} = ({defa})",
-                    #f"print('var',var_{arg})",
-                    #f"print('sta',var_{sta})",
-                     #"print(globals().get('var_main', 'no'))",
-                    f"app.dim(var_{arg}, sta_var)"
-                ]
+                s_out += f"var_{arg}"
+                if (arg != "Any"): s_out += f": var_{sta}"
+                if (i["def"] != []): s_out += f"= ({defa})"
+                s_out+=", "
+
                 pass
             
             return s_out
@@ -82,45 +78,45 @@ class ClsMod(appcls):
         else: return []
         
         for i in func:
-            nombre = i[0]
-            fun = i[1]
+            break
+            if modo in ["normal", "func", "func-imp", "module", "class"]:
 
-            asy=""
-            if fun["async"]: asy = "async "
-            preparo = [
-                f"{asy}def {nombre}(*arg):",
-                 "    try:"
-                f"        f_rt = (var_{fun['return']})",
-                 "    except:"
-                f"        f_rt = (var_{fun['return']})",
-                print_arg(fun["arg"]) +
-                self.generator(fun["code"], "func"),
-                "    pass"
-            ]
-            salida+=preparo
-            pass
-        
-        for i in code:
-            salida += ["app.foins()"]
-            
-            #Declaracion de Funciones
-            if   (i["tipo"] == "func-def")         and (modo in ["normal", "func-imp", "func"]):
+                nombre = i[0]
+                fun = i[1]
+
                 asy=""
-                fun = i
                 if fun["async"]: asy = "async "
                 preparo = [
-                    f"{asy}def var_{fun['name']}(*arg):",
-                    f"    try:",
+                    f"{asy}def {nombre}(*arg):",
+                    "    try:"
                     f"        f_rt = (var_{fun['return']})",
-                    f"    except:",
+                    "    except:"
                     f"        f_rt = (var_{fun['return']})",
                     print_arg(fun["arg"]) +
                     self.generator(fun["code"], "func"),
                     "    pass"
                 ]
+                
+                salida+=preparo
+            pass
+        
+        for i in code:
+            if modo in ["normal", "func", "func-imp", "module", "class"] and False:
+                salida += ["app.foins()"]
+            
+            #Declaracion de Funciones
+            if   (i["tipo"] == "func-def")         and (modo in ["normal"]):
+                asy=""
+                fun = i
+                if fun["async"]: asy = "async "
+                preparo = [
+                    f"func var_{fun['name']}({print_arg(fun['arg'])}):",                    
+                    self.generator(fun["code"], "func"),
+                    "    pass"
+                ]
                 salida+=preparo
                 pass
-            elif (i["tipo"] == "func-def")         and (modo in ["module"]):
+            elif (i["tipo"] == "$func-def")         and (modo in ["module"]):
 
                 asy=""
                 qqq=""
@@ -158,7 +154,7 @@ class ClsMod(appcls):
                 ]
                 salida+=preparo
                 pass
-            elif (i["tipo"] == "func-def")         and (modo in ["class"]):
+            elif (i["tipo"] == "$func-def")         and (modo in ["class"]):
 
                 asy=""
                 qqq=""
@@ -209,14 +205,15 @@ class ClsMod(appcls):
                 pass
             
             #Ejecucion, y operaciones basicas
-            elif (i["tipo"] == "exe")              and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "exe")              and (modo in ["func-imp", "func"]):
+
                 le = self.generator_one(i["exe"], modo, "exec")
                 salida += p_error(
                     [le],
                     i["i"]
                 )
                 pass
-            elif (i["tipo"] == "if-def")           and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "if-def")           and (modo in ["func-imp", "func"]):
                 if_out=[]
                 #tipo, cond, code
                 for x in i["lista"]: 
@@ -241,7 +238,50 @@ class ClsMod(appcls):
                 salida += p_error(if_out, i["i"])
 
                 pass
-            elif (i["tipo"] == "while-def")        and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "switch-def")       and (modo in ["func-imp", "func"]):
+                if_out=[]
+                #tipo, cond, code
+                cond = self.generator_one(i["cond"], modo)
+                codigo = self.generator(i["code"], "switch", data = {"modo": modo})
+                if_out += [
+                    f"match ({cond}):",
+                        codigo,
+                     "    pass",
+                ]
+
+                salida += p_error(if_out, i["i"])
+
+                pass
+            elif (i["tipo"] == "case-def")         and (modo in ["switch"]):
+                if_out=[]
+                #tipo, cond, code
+
+                cond = self.generator_one(i["cond"], data.get("modo", "normal"))
+                codigo = self.generator(i["code"], data.get("modo", "normal"))
+                if_out += [
+                    f"({cond}):",
+                     codigo,
+                     "    pass",
+                ]
+
+                salida += if_out
+
+                pass
+            elif (i["tipo"] == "case-d-def")       and (modo in ["switch"]):
+                if_out=[]
+
+                #tipo, cond, code
+                codigo = self.generator(i["code"], data.get("modo", "normal"))
+                if_out += [
+                    f"_:",
+                     codigo,
+                     "    pass",
+                ]
+
+                lastcode = if_out
+
+                pass
+            elif (i["tipo"] == "while-def")        and (modo in ["func-imp", "func"]):
                 if_out=[]
                 #tipo, cond, code
                 x=i
@@ -257,7 +297,7 @@ class ClsMod(appcls):
                 salida += p_error(if_out, i["i"])
 
                 pass
-            elif (i["tipo"] == "for-def")          and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "for-def")          and (modo in ["func-imp", "func"]):
                 if_out=[]
                 #tipo, cond, code
                 x=i
@@ -267,8 +307,8 @@ class ClsMod(appcls):
                 post_code = self.generator_one(d_for[2], modo, "exec")
                 if_out += [
                     f"var_{d_for[0][0]['name']} = ({self.generator_one(d_for[0][2:], modo)})",
-                    f"while (True):",
-                    f"    if not ({cond}): break",
+                    f"while (true):",
+                    f"    if !({cond}): break",
                     codigo,
                     f"    {post_code}",
                      "    pass"
@@ -278,7 +318,7 @@ class ClsMod(appcls):
                 salida += p_error(if_out, i["i"])
 
                 pass
-            elif (i["tipo"] == "for-each-def")     and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "for-each-def")     and (modo in ["func-imp", "func"]):
                 if_out=[]
                 #tipo, cond, code
                 x=i
@@ -294,7 +334,7 @@ class ClsMod(appcls):
                 salida += p_error(if_out, i["i"])
 
                 pass
-            elif (i["tipo"] == "with-def")         and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "$with-def")         and (modo in ["normal", "func-imp", "func"]):
                 if_out=[]
                 #tipo, cond, code
                 x=i
@@ -318,12 +358,13 @@ class ClsMod(appcls):
                 
                 out = self.generator_one(i["eval"], modo)
                 preparo = [
-                    f"return app.dim(({out}), f_rt)"
+                    #f"return app.dim(({out}), f_rt)",
+                    f"return {out}",
                 ]
 
                 salida+=p_error(preparo, i["i"])
                 pass
-            elif (i["tipo"] == "try-def")          and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "$try-def")          and (modo in ["normal", "func-imp", "func"]):
                 if_out=[]
                 #tipo, cond, code
                 x=i
@@ -346,8 +387,11 @@ class ClsMod(appcls):
 
                 pass
             
-            #Declaracion de Clases y Modulos
-            elif (i["tipo"] == "class-def")        and (modo in ["normal", "func-imp", "func"]):
+            #Declaracion de Clases, Estructuras, Espacios de nombres y Modulos
+
+                # Clases
+
+            elif (i["tipo"] == "$class-def")        and (modo in ["normal", "func-imp", "func"]):
                 fun = i
                 arg= []
                 for x in fun["extend"]:
@@ -379,7 +423,7 @@ class ClsMod(appcls):
                      "    exportar = {}",
                     f"    me = obj",
                      "    class private:pass",
-                        preparo2,
+                          preparo2,
                     f"    var_private = private",
                     f"    private = var_private",
                      "    def out(*arg): return me(*arg)",
@@ -401,76 +445,7 @@ class ClsMod(appcls):
                 ]
                 salida+=preparo
                 pass
-            elif (i["tipo"] == "module-def")       and (modo in ["normal", "func-imp", "func"]):
-                fun = i
-
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    #"    print('atr:', a)",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                    "me.__setattr__ = t_set_atr",
-                    "private.__setattr__ = t_set_atr",
-                    #"exportar.__setattr__ = t_set_atr",
-                    
-                ]
-                
-                preparo = [
-                    f"def var_{fun['name']}():",
-                     "    class private:pass",#"    private = (MD())",
-                     "    class me:pass",
-                          preparo2,
-                    f"    var_private = private()",
-                    f"    private = var_private",
-                        self.generator(fun["code"], "module"),
-                    #f"    var_private = private()",
-                     "    return me()",
-                    f"var_{fun['name']} = (var_{fun['name']})()"
-                ]
-                salida+=preparo
-                pass
-            elif (i["tipo"] == "namespace-def")       and (modo in ["normal", "func-imp", "func"]):
-                fun = i
-
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    #"    print('atr:', a)",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                    "me.__setattr__ = t_set_atr",
-                    "private.__setattr__ = t_set_atr",
-                    #"exportar.__setattr__ = t_set_atr",
-                ]
-                
-                preparo = [
-                    f"def var_{fun['name']}():",
-                     "    class private:pass",#"    private = (MD())",
-                     "    class me:pass",
-                          preparo2,
-                    f"    var_private = private()",
-                    f"    private = var_private",
-                        self.generator(fun["code"], "module"),
-                    #f"    var_private = private()",
-                     "    return NS(me())",
-                    f"var_{fun['name']} = (var_{fun['name']})()"
-                ]
-                salida+=preparo
-                pass
-            elif (i["tipo"] == "class-def")        and (modo in ["module"]):
+            elif (i["tipo"] == "$class-def")        and (modo in ["module"]):
                 fun = i
                 arg= []
                 for x in fun["extend"]:
@@ -528,7 +503,45 @@ class ClsMod(appcls):
                 ]
                 salida+=preparo
                 pass
-            elif (i["tipo"] == "module-def")       and (modo in ["module"]):
+            
+                # Modulos
+            
+            elif (i["tipo"] == "$module-def")       and (modo in ["normal", "func-imp", "func"]):
+                fun = i
+
+                preparo2 = [
+                     "def t_get_atr(self, v): ",
+                     "    return None",
+                    
+                     "me.__getattr__ = t_get_atr",
+                     "private.__getattr__ = t_get_atr",
+                    #"exportar.__getattr__ = t_get_atr",
+                    
+                     "def t_set_atr(self, a, v): ",
+                    #"    print('atr:', a)",
+                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
+                    
+                    "me.__setattr__ = t_set_atr",
+                    "private.__setattr__ = t_set_atr",
+                    #"exportar.__setattr__ = t_set_atr",
+                    
+                ]
+                
+                preparo = [
+                    f"def var_{fun['name']}():",
+                     "    class private:pass",#"    private = (MD())",
+                     "    class me:pass",
+                          preparo2,
+                    f"    var_private = private()",
+                    f"    private = var_private",
+                        self.generator(fun["code"], "module"),
+                    #f"    var_private = private()",
+                     "    return me()",
+                    f"var_{fun['name']} = (var_{fun['name']})()"
+                ]
+                salida+=preparo
+                pass 
+            elif (i["tipo"] == "$module-def")       and (modo in ["module"]):
                 fun = i
 
                 preparo2 = [
@@ -569,67 +582,159 @@ class ClsMod(appcls):
                 salida+=preparo
                 pass
             
-            #Elementos de compilacion
-            elif (i["tipo"] == "$using-comp")      and (modo in ["normal", "func", "func-imp"]):
+                # Espacios de nomres
+
+            elif (i["tipo"] == "$namespace-def")    and (modo in ["normal", "func-imp", "func"]):
+                fun = i
+
+                preparo2 = [
+                     "def t_get_atr(self, v): ",
+                     "    return None",
+                    
+                     "me.__getattr__ = t_get_atr",
+                     "private.__getattr__ = t_get_atr",
+                    #"exportar.__getattr__ = t_get_atr",
+                    
+                     "def t_set_atr(self, a, v): ",
+                    #"    print('atr:', a)",
+                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
+                    
+                    "me.__setattr__ = t_set_atr",
+                    "private.__setattr__ = t_set_atr",
+                    #"exportar.__setattr__ = t_set_atr",
+                ]
                 
-                #preparo = []
-                lel = i["using"]
-
-
-                #print(lel)
-
-                if compara([{"tipo":"name", "name":"namespace"}, "name"], lel):
-                    self.namespace = lel[1]["name"]
-                    using_namespace =True
-                    pass
-                elif compara([{"tipo":"name", "name":"namespace"}], lel):
-                    using_namespace =True
-                    self.namespace = "std"
-                    pass
-                
-
-
-                #salida+=preparo
+                preparo = [
+                    f"def var_{fun['name']}():",
+                     "    class private:pass",#"    private = (MD())",
+                     "    class me:pass",
+                          preparo2,
+                    f"    var_private = private()",
+                    f"    private = var_private",
+                        self.generator(fun["code"], "module"),
+                    #f"    var_private = private()",
+                     "    return NS(me())",
+                    f"var_{fun['name']} = (var_{fun['name']})()"
+                ]
+                salida+=preparo
                 pass
+            
+                # Estructuras
+            
+            elif (i["tipo"] == "$struct-def")       and (modo in ["normal", "func-imp", "func"]):
+                fun = i
+
+                preparo2 = [
+                     "def t_get_atr(self, v): ",
+                     "    return None",
+                    
+                     "me.__getattr__ = t_get_atr",
+                     "private.__getattr__ = t_get_atr",
+                    #"exportar.__getattr__ = t_get_atr",
+                    
+                     "def t_set_atr(self, a, v): ",
+                    #"    print('atr:', a)",
+                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
+                    
+                     "me.__setattr__ = t_set_atr",
+                     "private.__setattr__ = t_set_atr",
+                     "me.default = lambda x: me()",
+                    f"me.__str__ = lambda x: '<Struct {fun['name']}>'",
+                     "me._str = me.__str__",
+                     "me.__repl__ = me.__str__",
+
+                    #"exportar.__setattr__ = t_set_atr",
+                    
+                ]
+                
+                preparo = [
+                    f"def var_{fun['name']}():",
+                     "    class private:pass",#"    private = (MD())",
+                     "    class me:pass",
+                          preparo2,
+                    f"    var_private = private()",
+                    f"    private = var_private",
+                          self.generator(fun["code"], "struct"),
+                    #f"    var_private = private()",
+                     "    return me",
+                    f"var_{fun['name']} = (var_{fun['name']})()"
+                ]
+                salida+=preparo
+                pass 
+            elif (i["tipo"] == "$struct-def")       and (modo in ["module"]):
+                fun = i
+
+                preparo2 = [
+                     "def t_get_atr(self, v): ",
+                     "    return None",
+                    
+                     "me.__getattr__ = t_get_atr",
+                     "private.__getattr__ = t_get_atr",
+                    #"exportar.__getattr__ = t_get_atr",
+                    
+                     "def t_set_atr(self, a, v): ",
+                    #"    print('atr:', a)",
+                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
+                    
+                     "me.__setattr__ = t_set_atr",
+                     "private.__setattr__ = t_set_atr",
+                     "me.default = lambda x: me()",
+                    f"me.default = lambda x: '<Struct {fun['name']}>'",
+                     "me._str = me.__str__",
+                     "me.__repl__ = me.__str__",
+                     
+                    #"exportar.__setattr__ = t_set_atr",
+                    
+                ]
+
+                ta = "me"
+
+                if fun["visisble"] == "private":
+                    ta = "private"
+                
+                preparo = [
+                    f"def var_{fun['name']}():",
+                     "    class private:pass",#"    private = (MD())",
+                     "    class me:pass",
+                          preparo2,
+                    f"    var_private = private()",
+                    f"    private = var_private",
+                        self.generator(fun["code"], "struct"),
+                    #f"    var_private = private()",
+                     "    return me",
+                    f"{ta}.{fun['name']} = (var_{fun['name']})()"
+                ]
+                salida+=preparo
+                pass
+        
+
             
             #Declaracion de Variables
             elif (i["tipo"] == "var-def")          and (modo in ["normal", "func-imp", "func"]):
                 ordenar = []                
                 for x in i["dim"]:
-                    
-                    #print(i)
+                    out_s = ""
+
+                    if (modo == "normal"): out_s = "onready "
+
                     arg=x["name"]
                     sta=x["type"][0]
                     col = self.generator_one(x["def"], "func")
                     if col == "": col = "None"
                     defa=(col)
 
-                    qqq = ""
-                    if i["const"]:qqq = f"constant.append('var_{arg}')"
+                    out_s += f"var_{arg}"
+                    if (arg != "Any"): out_s += f": var_{sta}"
+                    if (i["def"] != []): out_s += f"= ({defa})"
+                    out_s+=", "
 
-                    ordenar+=p_error([
-                        
-                        f"if 'var_{arg}' in constant: app.constE('var_{arg}')",
-                        f"try:",
-                        f"    sta_var = var_{sta}",
-                        f"except:",
-                        f"    try:",
-                        f"        sta_var = var_{sta}",
-                        f"    except:",
-                        f"        app.error('the {sta} class not found', '{errores.ErrorName}', app.index)",
-                        f"try:",
-                        f"    var_{arg} = ({defa})",
-                        f"except:",
-                        f"    var_{arg} = None",
-                        f"sta_values['var_{arg}'] = sta_var",
-                        f"var_{arg} = app.dim(var_{arg}, sta_var)",
-                        qqq
-                    ], i["i"])
+                    ordenar.append(out_s)
+
                     pass
 
                 salida += ordenar
                 pass
-            elif (i["tipo"] == "var-def")          and (modo in ["class", "module"]):
+            elif (i["tipo"] == "$var-def")          and (modo in ["class", "module", "struct"]):
                 ordenar = []                
                 for x in i["dim"]:
                     
@@ -680,7 +785,7 @@ class ClsMod(appcls):
 
                 salida += ordenar
                 pass
-            elif (i["tipo"] == "var-eval")         and (modo in ["normal", "func-imp", "func", "class", "module"]):
+            elif (i["tipo"] == "$var-eval")         and (modo in ["normal", "func-imp", "func", "class", "module", "struct"]):
                 
                 if i["onename"]:
                     t_name = i["var"][0]["name"]
@@ -695,7 +800,7 @@ class ClsMod(appcls):
                             f"{g_1} = app.dim(({g_2}), sta_values.get('{g_1}', var_{self.tydef}))",
                         ], i["i"])
                         pass
-                    elif modo in ["class"]:
+                    elif modo in ["class", "struct"]:
 
                         g_1 = i["var"][0]["name"]
                         g_2 = self.generator_one(i["eval"], modo)
@@ -729,19 +834,19 @@ class ClsMod(appcls):
                 pass
             
             #Elementos de importacion de modulos externo e internos
-            elif (i["tipo"] == "import-def")       and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "import-def")       and (modo in ["normal"]):
                 
                 salida += p_error([
-                    f"var_{i['as']} = app.getlib('{i['import']}')"
+                    f"onready var_{i['as']} = cls_engine.getlib('{i['import']}')"
                 ], i["i"])
                 pass
-            elif (i["tipo"] == "from-def")         and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "$from-def")         and (modo in ["normal", "func-imp", "func"]):
                 
                 salida += p_error([
                     f"var_{i['as']} = app.getlib('{i['from']}').{i['import']}"
                 ], i["i"])
                 pass
-            elif (i["tipo"] == "include-def")      and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "$include-def")      and (modo in ["normal", "func-imp", "func"]):
                 
                 salida += p_error([
                     f"incluir = app.getlib('{i['include']}')",
@@ -753,11 +858,56 @@ class ClsMod(appcls):
 
                 ], i["i"])
                 pass
+            elif (i["tipo"] == "template-def")     and (modo in ["normal", "func-imp", "func"]):
+                
+                pati = lib.find(i["template"])
+
+                tem = []
+                if pati == "None":
+                    print(f"template '{i['template']}' not found")
+                    pass
+                else:
+                    _ftp = open(pati, "r")
+                    tem = _ftp.read().split("\n")
+                    _ftp.close()
+                    pass
+
+                salida += p_error(tem, i["i"])
+                pass
+            elif (i["tipo"] == "template-if-def")     and (modo in ["normal", "func-imp", "func"]):
+                #print(i, self.PRO.get(i["var"], None))
+                
+                if "Godot" == i["value"]:
+                    pati = lib.find(i["template"])
+
+                    tem = []
+                    if pati == "None":
+                        print(f"template '{i['template']}' not found")
+                        pass
+                    else:
+                        _ftp = open(pati, "r")
+                        tem = _ftp.read().split("\n")
+                        _ftp.close()
+                        pass
+
+                    salida += p_error(tem, i["i"])
+                    pass
+
+                pass
             
+
+
+            else:
+                self.error([
+                    f"the sentence of type {i['tipo']} is unsopport for it compiler"
+                ], errores.ErrorUnsopportSyntax, i["i"])
+                pass
             pass
         if (using_namespace) and (usingmode == "compiled"):
             #print("que?")
             self.namespace = "std"
+        if modo == "switch":
+            salida += lastcode
         if isinstance(c, dict):
             salida +=["app.variables.pop()"]
             code = c["data"]
@@ -767,7 +917,6 @@ class ClsMod(appcls):
         #del c, using_namespace, usingmode
 
         return salida
-    def generator_one(self, line:list, modo:str="normal", modi:str ="eval", key:bool=False) -> str:
         salida = ""
         last = {"tipo":"none"}
         iskey= False

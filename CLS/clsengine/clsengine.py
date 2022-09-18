@@ -64,7 +64,8 @@ class errores:
     ErrorSemant:str="ErrorSemant"
     ErrorAritmetic:str="ErrorAritmetic"
     ErrorTyping:str="ErrorTyping"
-    ErrorName = "ErrorName"
+    ErrorName:str = "ErrorName"
+    ErrorUnsopportSyntax = "ErrorUnsopportSyntax"
     pass
         
 
@@ -228,10 +229,12 @@ class PyImports:
         return export  
     pass
 
+pre_exit = lambda x=0: exit(x)
 
 class process:
     argv = sys.argv
     PyImports = PyImports
+    exit = pre_exit
     class io:
         stdin = sys.stdin
         stdout = sys.stdout
@@ -2008,8 +2011,8 @@ class appcls():
             for i in args:
                 it+=1
                 #print(i)
-                arg=i["name"]
-                sta=i["type"][0]
+                arg=i["name"] 
+                sta=i["type"][0] # "Any" default
                 col = self.generator_one(i["def"], "func")
                 if col == "": col = "None"
                 defa=(col)
@@ -2063,22 +2066,25 @@ class appcls():
         else: return []
         
         for i in func:
-            nombre = i[0]
-            fun = i[1]
+            if modo in ["normal", "func", "func-imp", "module", "class"]:
 
-            asy=""
-            if fun["async"]: asy = "async "
-            preparo = [
-                f"{asy}def {nombre}(*arg):",
-                 "    try:"
-                f"        f_rt = (var_{fun['return']})",
-                 "    except:"
-                f"        f_rt = (var_{fun['return']})",
-                print_arg(fun["arg"]) +
-                self.generator(fun["code"], "func"),
-                "    pass"
-            ]
-            salida+=preparo
+                nombre = i[0]
+                fun = i[1]
+
+                asy=""
+                if fun["async"]: asy = "async "
+                preparo = [
+                    f"{asy}def {nombre}(*arg):",
+                    "    try:"
+                    f"        f_rt = (var_{fun['return']})",
+                    "    except:"
+                    f"        f_rt = (var_{fun['return']})",
+                    print_arg(fun["arg"]) +
+                    self.generator(fun["code"], "func"),
+                    "    pass"
+                ]
+                
+                salida+=preparo
             pass
         
         for i in code:

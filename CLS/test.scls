@@ -1,47 +1,7 @@
-# para incorporar codigo de diferentes lenguajes deacuerdo al modo
-
-template "std/stdio.py" if mode default;
 
 
-test();
-
-# Declaraciones tipo C
-
-void main() {
-
-    String opcion = input("opcion 1, 2, 3: ");
-
-
-    switch (opcion) {
-        case default {
-            print("Opcion por defecto");
-        };
-        case ("1") {
-            print("Opcion 1");
-        };
-        case ("2") {
-            print("Opcion 2");
-        };
-        case ("3") {
-            print("Opcion 3");
-        };
-    };
+int saludo(nombre) {
+    print("Hola,", nombre);
 };
 
-main();
-
-
-
-# switch para remplazar al if en ocaciones de muchas condiciones
-
-
-# determina un tipo de dato estructurado
-struct Persona {
-    int x = 0;
-    char nombre = char[100]("texto");
-    float peso = 1.0;
-};
-
-Persona xx;
-
-print(xx.peso);
+saludo()
