@@ -1,6 +1,21 @@
 from clsengine.clsengine import *
 import sys
 
+godot_keywords = [
+    "String", "str", "int", "bool", "print", "print_debug", "float", "Dictionary", "Array",
+    "cos", "sin", "tan", "acos", "asin", "atan", "atan2", "lerp", "cosh", "sinh", "tanh",
+    "posmod", "ord", "len", "rad2deg", "deg2rad", "true", "false", "is_inf", "is_nan", "max", "min",
+    "range", "sing", "type_exist", "Vector2", "Vector3", "Color", "Node"
+
+]
+
+godot_replace_keywords = {
+    "load": "cls_engine.load",
+    "random": "cls_engine.random",
+    "type": "typeof"
+}
+
+
 class ModCLs(appcls):
     
     def exec(self, listo:str):
@@ -40,7 +55,14 @@ class ModCLs(appcls):
                 defa=(col)
 
                 s_out += f"var_{arg}"
-                if not (sta in ["Any", "any"]): s_out += f": var_{sta}"
+                if not (sta in ["Any", "any"]): 
+                    if sta in godot_keywords:
+                        s_out += f": {sta}"
+                    elif sta in godot_replace_keywords:
+                        s_out += f": {godot_replace_keywords[sta]}"
+                    else:
+                        s_out += f": var_{sta}"
+                    
                 if (i["def"] != []): s_out += f"= ({defa})"
                 s_out+=", "
 
@@ -229,7 +251,7 @@ class ModCLs(appcls):
                 if_out += [
                     f"match ({cond}):",
                         codigo,
-                     "    pass",
+                    #"    pass",
                 ]
 
                 salida += p_error(if_out, i["i"])
@@ -244,7 +266,7 @@ class ModCLs(appcls):
                 if_out += [
                     f"({cond}):",
                      codigo,
-                     "    pass",
+                     "    continue",
                 ]
 
                 salida += if_out
@@ -258,7 +280,7 @@ class ModCLs(appcls):
                 if_out += [
                     f"_:",
                      codigo,
-                     "    pass",
+                     "    continue",
                 ]
 
                 lastcode = if_out
@@ -709,7 +731,13 @@ class ModCLs(appcls):
                     #print(f"'{sta}'")
 
                     out_s += f"var var_{arg}"
-                    if not (sta in ["Any", "any"]): out_s += f": var_{sta}"
+                    if not (sta in ["Any", "any"]): 
+                        if sta in godot_keywords:
+                            out_s += f": {sta}"
+                        elif sta in godot_replace_keywords:
+                            out_s += f": {godot_replace_keywords[sta]}"
+                        else:
+                            out_s += f": var_{sta}"
                     if (x["def"] != []): out_s += f"= ({defa})"
                     
 
@@ -786,7 +814,7 @@ class ModCLs(appcls):
             elif (i["tipo"] == "import-def")       and (modo in ["normal"]):
                 
                 salida += p_error([
-                    f"onready var_{i['as']} = cls_engine.getlib('{i['import']}')"
+                    f"onready var var_{i['as']} = cls_engine.getlib('{i['import']}')"
                 ], i["i"])
                 pass
             elif (i["tipo"] == "$from-def")         and (modo in ["normal", "func-imp", "func"]):
@@ -1182,6 +1210,12 @@ class ModCLs(appcls):
                         t = {"tipo":"value", "value":f"'{i['name']}'", "type":"str", "i":i["i"], "byte":""}
                         salida+= f" {self.print_value(t)} "
                         pass
+                    elif i["name"] in godot_keywords:
+                        salida+= f" {i['name']} "
+                        pass
+                    elif i["name"] in godot_replace_keywords:
+                        salida+= f" {godot_replace_keywords[i['name']]} "
+                        pass
                     elif i["notmod"]:
                         salida+= f" {i['name']} "
                         pass
@@ -1237,7 +1271,8 @@ class ModCLs(appcls):
                 elif i["tipo"] == "()":
                     be = f" ({self.generator_one(i['data'], modo)}) "
                     if i["fist"]:
-                        be = " cls_engine.fist("+be+") "
+                        #be = " cls_engine.fist("+be+") "
+                        pass
                     salida+= be
                     pass
                 elif i["tipo"] == "[]":
@@ -1257,7 +1292,7 @@ class ModCLs(appcls):
                 elif i["tipo"] == "value":
                     salida+= f" {self.print_value(i)} "
                     pass
-                elif i["tipo"] == "cml":
+                elif i["tipo"] == "$cml":
                     salida+= f" cls_engine.cml({repr(i['data'])}) "
                     pass
                 elif i["tipo"] == "$if-exp":
@@ -1283,10 +1318,12 @@ class ModCLs(appcls):
             
         return salida
     def print_value(self, v) -> str:
-        salida = f"cls_engine.parse_values('{v['type']}', {v['value']})"
+        #salida = f"cls_engine.parse_values('{v['type']}', {v['value']})"
+        salida = v['value']
 
         if v["type"] == "str":
-            salida = f"cls_engine.strf('{v['byte']}', {v['value']})"
+            #salida = f"cls_engine.strf('{v['byte']}', {v['value']})"
+            salida = v['value']
 
         return salida
     

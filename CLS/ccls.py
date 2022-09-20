@@ -2,7 +2,11 @@ import clsengine.clsengine as cls
 import sys
 import os
 import json
-#import dill
+
+try: 
+    import dill
+except Exception as e:
+    pass
 #import shutil
 import platform
 

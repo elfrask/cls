@@ -1226,6 +1226,10 @@ class appcls():
                     elif i[0]["name"] == "switch":#switch-def
                         fallo = generar_error("error to build at switch", i[0]["i"])
                         
+                        if len(i) != 3:
+                            fallo()
+                            pass
+                        
                         if compara(["name", "()", "code"], i):
                             sw_a = {
                                 "tipo":"switch-def",
@@ -1243,6 +1247,10 @@ class appcls():
                         pass
                     elif i[0]["name"] == "case":#case-def
                         fallo = generar_error("error to build at case", i[0]["i"])
+
+                        if len(i) != 3:
+                            fallo()
+                            pass
                         
                         if compara(["name", "()", "code"], i):
                             case_a = {
