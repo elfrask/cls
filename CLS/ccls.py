@@ -138,7 +138,7 @@ if __name__ == "__main__":
                 o_s = platform.system()
                 print("")
                 print(f"Cls {version_cls} - Build for {o_s} platforms, CLS 2016-{year_last_update}")
-                print(f"Vinestar Studio {year_last_update} (C) Todos los derechos recervados")
+                print(f"Vinestar Studio {year_last_update} (C) Todos los derechos reservados")
                 print("")
                 print("has entrado al modo debug")
                 while True:
@@ -202,7 +202,7 @@ if __name__ == "__main__":
         addcode = ""
         o_s = platform.system()
         print(f"Cls {version_cls} - Build for {o_s} platforms, CLS 2016-{year_last_update}")
-        print(f"Vinestar Studio {year_last_update} (C) Todos los derechos recervados")
+        print(f"Vinestar Studio {year_last_update} (C) Todos los derechos reservados")
         while True:
             
             try:
