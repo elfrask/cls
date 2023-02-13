@@ -3,68 +3,39 @@ sta_values = stasta.get('tae', {})
 constant   = stasta.get('const', [])
 stasta = {}
 app.foins()
-app.index = 0
+def var_error(*arg):
+    try:
+        f_rt = (var_Any)
+    except:
+        f_rt = (var_Any)
+    app.variables.append([locals(), globals()])
+    sta_values = {}
+    constant = {}
+    app.foins()
+    app.index = 21
+    try:
+        var_catch  (app.str['']("FALLO!")  ,  app.str['']("meh dyo anziedat :c"))
+
+    except Exception as e:
+        app.error(e, 'ErrorExecute', 21)
+
+    app.variables.pop()
+
+    pass
+app.foins()
+app.index = 65
 try:
-    var_py = app.getlib('pypkg')
+    var_export.hola = (app.str['']("Hola mundo"))
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 0)
+    app.error(e, 'ErrorExecute', 65)
 
 app.foins()
-app.index = 24
+app.index = 93
 try:
-    if 'var_req' in constant: app.constE('var_req')
-    var_req = app.dim((var_py.require  (app.str['']("req.py"))), sta_values.get('var_req', var_Any))
+    var_export.error = (var_error)
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 24)
-
-app.foins()
-app.index = 54
-try:
-    var_export.request = (var_req.request)
-
-except Exception as e:
-    app.error(e, 'ErrorExecute', 54)
-
-app.foins()
-app.index = 84
-try:
-    var_export.arequest = (var_req.arequest)
-
-except Exception as e:
-    app.error(e, 'ErrorExecute', 84)
-
-app.foins()
-app.index = 116
-try:
-    var_export.codes = (var_req.codes)
-
-except Exception as e:
-    app.error(e, 'ErrorExecute', 116)
-
-app.foins()
-app.index = 142
-try:
-    var_export.session = (var_req.Session)
-
-except Exception as e:
-    app.error(e, 'ErrorExecute', 142)
-
-app.foins()
-app.index = 172
-try:
-    var_export.ver = (app.fist( [app.values['int'](0)  ,  app.values['int'](1)  ,  app.values['int'](0)] ))
-
-except Exception as e:
-    app.error(e, 'ErrorExecute', 172)
-
-app.foins()
-app.index = 196
-try:
-    var_export.name = (app.str['']("[RequestLibrary (request)]"))
-
-except Exception as e:
-    app.error(e, 'ErrorExecute', 196)
+    app.error(e, 'ErrorExecute', 93)
 
 app.variables.pop()

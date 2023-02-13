@@ -48,11 +48,11 @@ tokens = {
 }
 
 nombre_reservados = {
-    "visible":["export", "static", "private", "public", "global"],
+    "visible":["export", "static", "private", "public", "global"], 
     "nombre":[
-        "func", "function", "class", "module", "with", "for", "if", "while", "define",
-        "from", "import", "global", "try", "def", "fub", "method", "include", "using", "var",
-        "template", "switch", "struct", "case",
+            "func", "function", "class", "module", "with", "for", "if", "while", "define",
+            "from", "import", "global", "try", "def", "fub", "method", "include", "using", "var",
+            "template", "switch", "struct", "case",
         ],
     "codi":["or", "in", "and", "is"],
     "bucle":["break", "continue"]
@@ -298,7 +298,7 @@ Api_cls = {
 #procesador = 1/int(sys.argv[2])
 
 class appcls():
-    def __init__(self, id:int = uid, mode="default") -> None:
+    def __init__(self, id:int = uid, mode="default", root=True) -> None:
         global uid
         uid += 1
         self.codigo:str = "" 
@@ -325,6 +325,7 @@ class appcls():
             "f":self.str_format,
             "c":lambda x: Api_cls["char"](x, len(x))
         } 
+        self.parent = None
         self.api = c(Api_cls) 
         self.cracheos = [] 
         self.libs = {
@@ -339,6 +340,7 @@ class appcls():
             "mode":mode
         }
         self.api["catch"] = self.catch
+        self.root = root
 
         def print_debug(*arg):
             lin0 = self.codigo[0:self.index].count(N)
@@ -353,7 +355,7 @@ class appcls():
     def getlib(self, file):
         
         def load_lib(file):
-            app = appcls()
+            app = appcls(uid, "default", False)
 
             r_file = file
 
@@ -367,6 +369,7 @@ class appcls():
             parseado:list = app.parselex(crude)
             f:list = []
             estructurado:list = app.estructuration(parseado, f)
+            app.parent = self
             generado:dict = app.generator({
                         "data":estructurado,
                         "func":f
@@ -1923,7 +1926,7 @@ class appcls():
             exec(before +N+ code +after, values)
             pass
         except Exception as e:
-            if root:
+            if True:
                 salida = ""
                 tipo = ""
                 mensage = ""
@@ -1934,12 +1937,17 @@ class appcls():
                     tipo = e["type"]
                     mensage = e["msg"]
                     pass
-                self.cracheos = []
-                print("--CLS Virtual Machine to stop" + N)
-                print(salida)
-                #print(mensage)
-                print(" TypeError: " + tipo)
-                print(" Detailed: " + str(mensage))
+                if root:
+                    self.cracheos = []
+                    print("--CLS Virtual Machine to stop" + N)
+                    print(salida)
+                    #print(mensage)
+                    print(" TypeError: " + tipo)
+                    print(" Detailed: " + str(mensage))
+                else:
+                    #self.parent.cracheos.append(*self.cracheos)
+
+                    pass
             else:
                 raise Exception(e)
             pass
@@ -3248,7 +3256,10 @@ class appcls():
         if False in gee:
             #print("añadir")
             #print(gee)
+
             self.cracheos.append(gen)
+            if not self.root:
+                self.parent.cracheos.append(gen)
 
         #raise Exception(before+N+f" error: {type}: {msg}"+N+ salida + cursor)
         raise Exception(msg)

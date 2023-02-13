@@ -3,42 +3,47 @@ sta_values = stasta.get('tae', {})
 constant   = stasta.get('const', [])
 stasta = {}
 app.foins()
-def var_saludo(*arg):
+app.index = 0
+try:
+    var_lib = app.getlib('lib.scls')
+
+except Exception as e:
+    app.error(e, 'ErrorExecute', 0)
+
+app.foins()
+def var_main(*arg):
     try:
-        f_rt = (var_int)
+        f_rt = (var_Any)
     except:
-        f_rt = (var_int)
-    try:
-        sta_var = var_Any
-    except:
-        try:        sta_var = var_Any
-        except:
-            app.error('the Any class not found', errores.ErrorName)
-    try:
-        var_nombre = arg[0]
-    except:
-        var_nombre = (None)
-    app.dim(var_nombre, sta_var)
+        f_rt = (var_Any)
     app.variables.append([locals(), globals()])
     sta_values = {}
     constant = {}
     app.foins()
-    app.index = 27
+    app.index = 50
     try:
-        var_print  (app.str['']("Hola,")  ,  var_nombre)
+        var_print  (app.str['']("Holis")  ,  var_lib.hola)
 
     except Exception as e:
-        app.error(e, 'ErrorExecute', 27)
+        app.error(e, 'ErrorExecute', 50)
+
+    app.foins()
+    app.index = 80
+    try:
+        var_lib.error  ()
+
+    except Exception as e:
+        app.error(e, 'ErrorExecute', 80)
 
     app.variables.pop()
 
     pass
 app.foins()
-app.index = 55
+app.index = 99
 try:
-    var_saludo  ()
+    var_main  ()
 
 except Exception as e:
-    app.error(e, 'ErrorExecute', 55)
+    app.error(e, 'ErrorExecute', 99)
 
 app.variables.pop()

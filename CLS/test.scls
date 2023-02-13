@@ -1,7 +1,11 @@
+import "lib.scls" as lib;
 
 
-int saludo(nombre) {
-    print("Hola,", nombre);
+function main() {
+    print("Holis", lib.hola);
+    lib.error();
 };
 
-saludo()
+
+
+main();
