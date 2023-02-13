@@ -1933,7 +1933,9 @@ class appcls():
                 for e in self.cracheos:
                     salida += f"  file '{e['file']}' line {e['line']}, column {e['column']}" +N
                     salida += f"    {e['code']}" +N
-                    salida +=  "    " + (" "*e['column']) + "^" +N
+                    count_tab = e["code"][0:e["column"]-1].count("\t")
+
+                    salida +=  "    " + ("\t"*count_tab) + (" "*(e['column']-count_tab-1)) + "^" +N
                     tipo = e["type"]
                     mensage = e["msg"]
                     pass
