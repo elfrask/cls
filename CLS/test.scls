@@ -1,11 +1,8 @@
-import "lib.scls" as lib;
 
 
-function main() {
-    print("Holis", lib.hola);
-    lib.error();
+int suma(a:int = 0, b:int = 0) {
+
+    return a + b;
 };
 
-
-
-main();
+print(suma(10, 20));

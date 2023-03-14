@@ -52,7 +52,7 @@ nombre_reservados = {
     "nombre":[
             "func", "function", "class", "module", "with", "for", "if", "while", "define",
             "from", "import", "global", "try", "def", "fub", "method", "include", "using", "var",
-            "template", "switch", "struct", "case",
+            "template", "switch", "struct", "case", "return", "setrule"
         ],
     "codi":["or", "in", "and", "is"],
     "bucle":["break", "continue"]
@@ -988,10 +988,11 @@ class appcls():
                                 pass
                             pass
                         pass
-                    
+                    #dim = [0, 0]
                     dim = find({"tipo":"ope", "char":"="}, i)
                     is_dim = dim[0]
                     i_dim = dim[1]
+                    #print(i)
 
                     if i[0]["name"] in ["func", "function", "def", "fub", "method"]:#func-def
                         rt = self.tydef
@@ -1970,7 +1971,7 @@ class appcls():
         self.memory["stasta"]["const"] = k.get("constant", [])
         return None
     def dim(self, v, tipo) -> any:
-        #print(v, tipo)
+        #print(v, tipo) 
 
 
         if confirm(self, v, tipo):
@@ -3189,6 +3190,7 @@ class appcls():
             v = ObjectCls.Array(v)
         elif True in [isinstance(v, tuple), isinstance(v, set)]:
             raise Exception('the tokens "," is invalids')
+        print("fist value:", v)
         return v
     def fint(self, v, x):
         salida = 0

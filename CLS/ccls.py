@@ -3,6 +3,8 @@ import sys
 import os
 import json
 
+#github.com/elfrask/cls
+
 try: 
     import dill
 except Exception as e:
@@ -10,8 +12,8 @@ except Exception as e:
 #import shutil
 import platform
 
-year_last_update = "2022"
-version_cls = "1.1.0"
+year_last_update = "2023"
+version_cls = "1.1.1"
 
 def cwd():
     app_path = ""
