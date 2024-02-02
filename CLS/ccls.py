@@ -12,7 +12,7 @@ except Exception as e:
 #import shutil
 import platform
 
-year_last_update = "2023"
+year_last_update = "2024"
 version_cls = "1.1.1"
 
 def cwd():

@@ -1,2 +1,5 @@
 CLS/web/node_modules
 clsexe
+dist
+cache
+dist_old

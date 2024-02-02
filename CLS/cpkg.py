@@ -22,17 +22,17 @@ na = "cpkg"
 
 ayuda = {
     "head":[
-        'CLS - Frask - Vinestar Studio (C) (2021)',
+        'CLS - Frask - Vinestar Studio (C) (2024)',
         'CPKG el gestor de paquetes de CLS',
         '',
         'El gestor de paquetes de CPKG es un herramienta que te ayuda a administrar',
-        'tus proyectos, compilar, adquirir librerias de CLS, publicar tus librerias',
+        'tus proyectos, compilar, adquirir librerías de CLS, publicar tus librerías',
         'de CLS, administrar tus dominios, configurar el compilador, actualizar tus',
-        'librerias, administrar tu cuenta de desarrollador, entre otras cosas para',
+        'librerías, administrar tu cuenta de desarrollador, entre otras cosas para',
         'darte facilidad a la hora de emplear CLS en tu trabajo',
         '',
         'puedes visitar: https://www.test-url.com/',
-        'para obtener mas informacion en la pagina oficial'
+        'para obtener mas información en la pagina oficial'
     ],
     "lista":[
         etiquetas.categoria(
@@ -64,10 +64,10 @@ ayuda = {
                 etiquetas.cmd(f"{na} list-domain", "listar mis dominios"),#
                 etiquetas.cmd(f"{na} del-domain [paquete]", "liberar un dominio"),#
                 etiquetas.cmd(f"{na} set-domain [paquete] [repositorio]", "establecer repositorio en un dominio"),#
-                etiquetas.cmd(f"{na} set-domain-info [paquete] [info]", "establecer descripcion al dominio"),#
+                etiquetas.cmd(f"{na} set-domain-info [paquete] [info]", "establecer descripción al dominio"),#
                 etiquetas.cmd(f"{na} set-domain-page [paquete] [url]", "establecer pagina del dominio"),#
                 etiquetas.cmd(f"{na} mark-update [paquete] [ver/1.0]", "marcar como actualizado y nombrar la version"),#
-                etiquetas.cmd(f"{na} info-domain [paquete]", "mostrar informacion del dominio"),#
+                etiquetas.cmd(f"{na} info-domain [paquete]", "mostrar información del dominio"),#
             ]
         ),
         etiquetas.categoria(
@@ -95,7 +95,7 @@ ayuda = {
                 ]),#
                 etiquetas.cmd(f"{na} plix [databuild]", "compila tu proyecto de CLS"),
                 etiquetas.cmd(f"{na} conf-databuild [nuevo/editar databuild]", "configurar el databuild de un modo"),#
-                etiquetas.cmd(f"{na} run [databuild]", "ejecucion de argumentos rapidos asignados por databuild"),#
+                etiquetas.cmd(f"{na} run [databuild]", "ejecución de argumentos rápidos asignados por databuild"),#
             ]
         ),
         
@@ -521,7 +521,7 @@ def main(argv = []):
             elif argv[1] == "user-register":
                 data = {
                     "user":"Usuario: ",
-                    "email":"Correo electronico: ",
+                    "email":"Correo electrónico: ",
                     "pass":"Contraseña: ",
                     "repass":"Contraseña otra vez: ",
                 }
@@ -709,7 +709,7 @@ def main(argv = []):
                 if res.status_code==200:
                     yei = res.json()
                     if yei.get("done", False):
-                        print("se ha establecido la descripcion exitosamente")
+                        print("se ha establecido la descripción exitosamente")
                     else:
                         print("Hubo problemas al escribir la descripcion")
                     pass
@@ -757,9 +757,9 @@ def main(argv = []):
                 if res.status_code==200:
                     yei = res.json()
                     if yei.get("done", False):
-                        print("se ha marcado la actualizacion!")
+                        print("se ha marcado la actualización!")
                     else:
-                        print("Hubo problemas para marcar una actualizacion")
+                        print("Hubo problemas para marcar una actualización")
                     pass
                 else:
                     show_error()

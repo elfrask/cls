@@ -1,8 +1,33 @@
 
 
-int suma(a:int = 0, b:int = 0) {
+print("opciones(1, 2, 3): ");
+var nota = input("opcion: ");
 
-    return a + b;
-};
+switch (nota) {
+    case ("1") {
+        function holabb() -> str {
+            print("Este es la funcion 'Hola BB'");
+            return "retornado"
+        };
 
-print(suma(10, 20));
+        print("la funcion retorno:", holabb());
+
+
+    };
+
+    case ("2") {
+
+        var FA = (xd) -> String {
+            print("Saludos a", xd, "desde una funcion anonima");
+            return xd + xd + xd;
+        };
+
+        FA("frask")
+
+
+    };
+
+    case default {
+        print("Caso no disponible")
+    };
+}

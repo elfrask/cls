@@ -5,4 +5,4 @@ void play() {
     print_debug("saludos Bv")
 };
 
-export.pla = play;
+export.play = play;
