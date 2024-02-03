@@ -1,7 +1,26 @@
 
+namespace ns {
+    var value = "NS: test.scls"
+};
 
-print("opciones(1, 2, 3): ");
+module useModules {
+    function hi() {
+        print("Hola!!, soy un modulo!")
+    };
+
+    module subModule {
+        function hi() {
+            print("Hola!!, soy un submodulo!")
+        };
+    }
+};
+
+
+print("opciones(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15): ");
 var nota = input("opcion: ");
+
+
+
 
 switch (nota) {
     case ("1") {
@@ -11,8 +30,6 @@ switch (nota) {
         };
 
         print("la funcion retorno:", holabb());
-
-
     };
 
     case ("2") {
@@ -23,11 +40,178 @@ switch (nota) {
         };
 
         FA("frask")
+    };
 
+    case("3") {
 
+        if (nota == "3") {
+            print("este si es el caso 3")
+        };
+
+        if (nota == "2") {
+        } elif (true) {
+            print("y este no es el caso 2");
+
+        };
+    };
+
+    case("4") {
+
+        while (true) {
+            var pass = input("contraseña: ");
+
+            if (pass == "done") {
+                break;
+            };
+        }
+    };
+
+    case("5") {
+        var lista = [1,2,3,4,5];
+
+        for (index = 0; index < len(lista); index ++) {
+            var element = lista[index];
+
+            print(element);
+        }
+    };
+
+    case ("6") {
+
+        var lista = [1,2,3,4,5];
+        print("con for each");
+
+        for each x (lista) {
+            print(x);
+        }
+    };
+
+    case ("7") {
+
+        print("sentencia con with");
+
+        with x ("Carlos") {
+            print("¡Hola!", x);
+        }
+    };
+
+    case ("8") {
+
+        try {
+            xd
+        } catch e {
+            print("Hubo un error: ", e)
+        }
+    };
+
+    case ("9") {
+
+        class Persona() {
+            private var x = 0;
+            private var y = 0;
+            var name = "";
+            function main(name, x, y) {
+                private.x = x;
+                private.y = y;
+                me.name = name;
+            };
+            String getname() {
+                return me.name;
+            };
+            Array get_position() {
+                return [private.x, private.y];
+            }
+        };
+
+        var Carlos:Persona = Persona("Carlos", 10, 10);
+
+        
+        print("Carlos es una instancia de Persona");
+        print("Nombre:", Carlos.getname());
+        print("Pocision:", Carlos.get_position());
+
+        class Chambeador(Persona) {
+            private var x = 0;
+            private var y = 0;
+            var chamba: String = "";
+
+            function main(name, x, y, chamba) {
+                private.x = x;
+                private.y = y;
+                me.name = name;
+                me.chamba = chamba;
+            };
+            String get_chamba() {
+                return me.chamba
+            };
+
+            static function play() {
+                print("ha chambear");
+            };
+        };
+
+        var Pablo:Chambeador = Chambeador("Pablo", 10, 10, "prostitucion");
+
+        
+        print("Pablo es una instancia de Chambeador");
+        print("Nombre:", Pablo.getname());
+        print("Pocision:", Pablo.get_position());
+        print("Chamba:", Pablo.get_chamba());
+
+        Chambeador.play();
+    };
+
+    case ("10") {
+        useModules.hi();;
+        useModules.subModule.hi();
+    };
+
+    case("11") {
+
+        print("nombre de espacio:", ns::value);
+    };
+
+    case ("12") {
+        struct Vec2 {
+            int X = 0;
+            int Y = 0;
+
+        };
+
+        Vec2 Vector;
+
+        Vector.X = 10;
+        Vector.Y = 20 + 10;
+
+        print("vector:", Vector.X, Vector.Y);
+    };
+
+    case ("13") {
+        var arreglo = [1,2,3, [1]];
+
+        arreglo[3][0] = 4;
+
+        print(arreglo);
+    };
+
+    case ("14") {
+
+        var objeto = {
+            nombre: "Carlos",
+            edad: 19,
+            virgen: true
+        };
+
+        print(objeto)
+    };
+    
+    case ("15") {
+        var ask = input("es verdadero? (s, n): ");
+        print(if (ask == "s") then ("es verdadero") else ("no es verdadero"))
     };
 
     case default {
         print("Caso no disponible")
     };
-}
+};
+

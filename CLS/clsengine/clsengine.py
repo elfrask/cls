@@ -1,6 +1,7 @@
 from copy import copy as c
 import os
 import sys
+import types
 
 from clsengine.tools import *
 from clsengine.gen_char import *
@@ -1620,7 +1621,7 @@ class appclsBase():
                             "var":self.estructuration_one(i[0:i_dim], func),
                             "eval":self.estructuration_one(i[i_dim+1:], func),
                             "visible":visible,
-                            "onename":(is_dim==1) and not ("." in i[0]["name"]), 
+                            "onename":(i_dim==1) and not ("." in i[0]["name"]), 
                             "i":i[0]["i"]
                         }
 
@@ -2014,67 +2015,21 @@ class appclsBase():
         lastcode = []
         #print(usingmode)
         using_namespace = False
+
+        GE = self.GeneratorEngine
         #modo = "normal"
 
-        def p_error(code, i) -> list:
-            
-            return [
-                "app.index = " + str(i),
-                "try:",
-                code,
-                "except Exception as e:",
-                [f"app.error(e, 'ErrorExecute', {i})"]
-            ]
-        def print_arg(args) -> list:
-            s_out = []
-            it = -1
-            for i in args:
-                it+=1
-                #print(i)
-                arg=i["name"] 
-                sta=i["type"][0] # "Any" default
-                col = self.generator_one(i["def"], "func")
-                if col == "": col = "None"
-                defa=(col)
+        p_error = GE.engine_error
+        print_arg = lambda x: GE.print_arg(x, self)
 
-                s_out+=[
-                    f"try:",
-                    f"    sta_var = var_{sta}",
-                    f"except:",
-                    f"    try:"
-                    f"        sta_var = var_{sta}",
-                    f"    except:",
-                    f"        app.error('the {sta} class not found', errores.ErrorName)",
-                    f"try:",
-                    f"    var_{arg} = arg[{it}]",
-                    f"except:",
-                    f"    var_{arg} = ({defa})",
-                    #f"print('var',var_{arg})",
-                    #f"print('sta',var_{sta})",
-                     #"print(globals().get('var_main', 'no'))",
-                    f"app.dim(var_{arg}, sta_var)"
-                ]
-                pass
-            
-            return s_out
+        _pass_arguments = [self, c, modo, usingmode, data]
+        _pass_obligue_arguments = [self, c]
 
+        
+        
         if isinstance(c, dict):
-            modo_a = [
-                "sta_values = {}",
-                "constant = {}"
-                ]
-            if modo == "normal":
-                modo_a = [
-                    "sta_values = stasta.get('tae', {})",
-                    "constant   = stasta.get('const', [])",
-                    "stasta = {}",
-                    #"print(constant)"
-                ]
-
-                pass
-            salida +=[
-                "app.variables.append([locals(), globals()])",
-                ] + modo_a
+            
+            salida += GE.block_before(*_pass_arguments)
             
             code = c["data"]
             func = c["func"]
@@ -2086,642 +2041,119 @@ class appclsBase():
         else: return []
         
         for i in func:
-            if modo in ["normal", "func", "func-imp", "module", "class"]:
-
-                nombre = i[0]
-                fun = i[1]
-
-                asy=""
-                if fun["async"]: asy = "async "
-                preparo = [
-                    f"{asy}def {nombre}(*arg):",
-                    "    try:"
-                    f"        f_rt = (var_{fun['return']})",
-                    "    except:"
-                    f"        f_rt = (var_{fun['return']})",
-                    print_arg(fun["arg"]) +
-                    self.generator(fun["code"], "func"),
-                    "    pass"
-                ]
-                
-                salida+=preparo
+            salida += GE.function_lambda(*_pass_arguments, i)
+            
             pass
         
         for i in code:
-            if modo in ["normal", "func", "func-imp", "module", "class"]:
-                salida += ["app.foins()"]
+            salida += GE.sentence_before(*_pass_arguments)
+            # Declaracion de Funciones
             
-            #Declaracion de Funciones
-            if   (i["tipo"] == "func-def")               and (modo in ["normal", "func-imp", "func"]):
-                asy=""
-                fun = i
-                if fun["async"]: asy = "async "
-                preparo = [
-                    f"{asy}def var_{fun['name']}(*arg):",
-                    f"    try:",
-                    f"        f_rt = (var_{fun['return']})",
-                    f"    except:",
-                    f"        f_rt = (var_{fun['return']})",
-                    print_arg(fun["arg"]) +
-                    self.generator(fun["code"], "func"),
-                    "    pass"
-                ]
-                salida+=preparo
-                pass
-            elif (i["tipo"] == "func-def")               and (modo in ["module"]):
 
-                asy=""
-                qqq=""
-                fun = i
+            if   (i["tipo"] == "func-def"):
                 
-                
-                if fun["async"]: asy = "async "
-                visible = fun["visible"]
-                #nombre = self.namespace+"_"+fun['name']
-                nombre = fun["name"]
+                salida += GE.sentence_function(*_pass_arguments, i)
 
-                selfi = "self,"
-                sefi2 = f"var_me = self"
-                qqq = f"me.{nombre} = var_{nombre}"
-                #qqq2 = f"var_{nombre} = p_call(var_{nombre})"
-                
-                if visible == "private":
-                    qqq=f"private.{nombre} = var_{nombre}"
-                    #qqq2=""
-                    pass
-                
-                
-                
-                preparo = [
-                    f"{asy}def var_{nombre}(*arg):",
-                    f"    try:",
-                    f"        f_rt = (var_{fun['return']})",
-                    f"    except:",
-                    f"        f_rt = (var_{fun['return']})",
-                    print_arg(fun["arg"]) +
-                    self.generator(fun["code"], "func"),
-                    "    pass",
-                    qqq,
-                    #qqq2
-                ]
-                salida+=preparo
-                pass
-            elif (i["tipo"] == "func-def")               and (modo in ["class"]):
-
-                asy=""
-                qqq=""
-                fun = i
-                
-                
-                if fun["async"]: asy = "async "
-                visible = fun["visible"]
-                #nombre = self.namespace+"_"+fun['name']
-                nombre = fun["name"]
-
-                selfi = "self,"
-                sefi2 = f"var_me = self"
-                qqq = f"me.{tokens['metodos'].get(nombre, nombre)} = var_{nombre}"
-                qqq2 = f"var_{nombre} = p_call(var_{nombre})"
-                privado=""
-                if visible=="static":
-                    selfi = ""
-                    qqq = f"out.{nombre} = var_{nombre}"
-                    sefi2=""
-                    qqq2=""
-                    pass
-                elif visible == "private":
-                    privado="private_"
-                    qqq=f"var_{nombre} = p_call({privado}var_{nombre})"
-                    qqq2=f"private.{nombre} = var_{nombre}"
-                    pass
-                elif visible == "export":
-                    privado="private_"
-                    #qqq=f"private.{nombre} = p_call({privado}var_{nombre})"
-                    pass
-                
-                
-                preparo = [
-                    f"{asy}def {privado}var_{nombre}({selfi} *arg):",
-                    f"    try:",
-                    f"        f_rt = (var_{fun['return']})",
-                    f"    except:",
-                    f"        f_rt = (var_{fun['return']})",
-                    f"    {sefi2}",
-                    print_arg(fun["arg"]) +
-                    self.generator(fun["code"], "func"),
-                    "    pass",
-                    qqq,
-                    qqq2
-                ]
-                salida+=preparo
                 pass
             
-            #Ejecucion, y operaciones basicas
-            elif (i["tipo"] == "exe")                    and (modo in ["normal", "func-imp", "func"]):
+            #Sentencias, y operaciones basicas
+            elif (i["tipo"] == "exe"):
 
-                le = self.generator_one(i["exe"], modo, "exec")
-                salida += p_error(
-                    [le],
-                    i["i"]
-                )
+                salida += GE.sentence_simple_exec(*_pass_arguments, i)
                 pass
-            elif (i["tipo"] == "if-def")                 and (modo in ["normal", "func-imp", "func"]):
-                if_out=[]
-                #tipo, cond, code
-                for x in i["lista"]: 
-                    if x["tipo"] in ["if", "elif"]:
-                        cond = self.generator_one(x["cond"], modo)
-                        codigo = self.generator(x["code"], modo)
-                        if_out += [
-                            f"{x['tipo']} ({cond}):",
-                            codigo,
-                            "    pass"
-                        ]
-                    else:
-                        codigo = self.generator(x["code"], modo)
-                        if_out += [
-                            f"else:",
-                            codigo,
-                            "    pass"
-                        ]
-                        break
-                    pass
-
-                salida += p_error(if_out, i["i"])
-
-                pass
-            elif (i["tipo"] == "switch-def")             and (modo in ["normal", "func-imp", "func"]):
-                if_out=[]
-                #tipo, cond, code
-                cond = self.generator_one(i["cond"], modo)
-                codigo = self.generator(i["code"], "switch", data = {"modo": modo})
-                if_out += [
-                    f"switch_val = ({cond})",
-                     "if False:",
-                     "    pass",
-                     *codigo,
-                ]
-
-                salida += p_error(if_out, i["i"])
-
-                pass
-            elif (i["tipo"] == "case-def")               and (modo in ["switch"]):
-                if_out=[]
-                #tipo, cond, code
-
-                cond = self.generator_one(i["cond"], data.get("modo", "normal"))
-                codigo = self.generator(i["code"], data.get("modo", "normal"))
-                if_out += [
-                    f"elif ({cond}) == (switch_val):",
-                     codigo,
-                     "    pass",
-                ]
-
-                salida += if_out
-
-                pass
-            elif (i["tipo"] == "case-d-def")             and (modo in ["switch"]):
-                if_out=[]
-
-                #tipo, cond, code
-                codigo = self.generator(i["code"], data.get("modo", "normal"))
-                if_out += [
-                    f"else:",
-                     codigo,
-                     "    pass",
-                ]
-
-                lastcode = if_out
-
-                pass
-            elif (i["tipo"] == "while-def")              and (modo in ["normal", "func-imp", "func"]):
-                if_out=[]
-                #tipo, cond, code
-                x=i
-                cond = self.generator_one(x["cond"], modo)
-                codigo = self.generator(x["code"], modo)
-                if_out += [
-                    f"while ({cond}):",
-                    codigo,
-                    "    pass"
-                ]
-                
-
-                salida += p_error(if_out, i["i"])
-
-                pass
-            elif (i["tipo"] == "for-def")                and (modo in ["normal", "func-imp", "func"]):
-                if_out=[]
-                #tipo, cond, code
-                x=i
-                d_for =x["for"] #self.generator_one(x["for"], modo)
-                cond = self.generator_one(d_for[1], modo)
-                codigo = self.generator(x["code"], modo)
-                post_code = self.generator_one(d_for[2], modo, "exec")
-                if_out += [
-                    f"var_{d_for[0][0]['name']} = ({self.generator_one(d_for[0][2:], modo)})",
-                    f"while (True):",
-                    f"    if not ({cond}): break",
-                    codigo,
-                    f"    {post_code}",
-                     "    pass"
-                ]
-                
-
-                salida += p_error(if_out, i["i"])
-
-                pass
-            elif (i["tipo"] == "for-each-def")           and (modo in ["normal", "func-imp", "func"]):
-                if_out=[]
-                #tipo, cond, code
-                x=i
-                cond = self.generator_one(x["cond"], modo)
-                codigo = self.generator(x["code"], modo)
-                if_out += [
-                    f"for var_{x['var']} in ({cond}):",
-                        codigo,
-                    "    pass"
-                ]
-                
-
-                salida += p_error(if_out, i["i"])
-
-                pass
-            elif (i["tipo"] == "with-def")               and (modo in ["normal", "func-imp", "func"]):
-                if_out=[]
-                #tipo, cond, code
-                x=i
-                cond = self.generator_one(x["value"], modo)
-                codigo = self.generator(x["code"], modo)
-                if_out += [
-                    f"def t_tmp_with(t_t):",
-                    f"    var_{x['name']} = t_t",
-                        codigo,
-                    "    pass",
-                    f"t_tmp_with({cond})",
-                    f"del t_tmp_with"
-                ]
-                
-
-                salida += p_error(if_out, i["i"])
-
-                pass
-            elif (i["tipo"] == "rt-def")                 and (modo in ["func"]):
+            elif (i["tipo"] == "if-def"):
                 
                 
-                out = self.generator_one(i["eval"], modo)
-                preparo = [
-                    f"return app.dim(({out}), f_rt)"
-                ]
+                salida += GE.sentence_if(*_pass_arguments, i)
 
-                salida+=p_error(preparo, i["i"])
                 pass
-            elif (i["tipo"] == "try-def")                and (modo in ["normal", "func-imp", "func"]):
-                if_out=[]
-                #tipo, cond, code
-                x=i
-                #cond = self.generator_one(x["cond"], modo)
-                code_try = self.generator(x["try"], modo)
-                code_error = self.generator(x["error"], modo)
-                if_out += [
-                     "try:",
-                          code_try,
-                     "    pass",
-                     "except Exception as ero:",
-                    f"    var_{x['e']} = ero",
-                     "    app.cracheos = []",
-                          code_error,
-                     "    pass",
-                ]
+            elif (i["tipo"] == "switch-def"):
+                
+                salida += GE.sentence_switch(*_pass_arguments, i)
+
+                pass
+            elif (i["tipo"] == "case-def"):
                 
 
-                salida += p_error(if_out, i["i"])
+                salida += GE.sentence_case(*_pass_arguments, i)
+
+                pass
+            elif (i["tipo"] == "case-d-def"):
+
+
+                salida += GE.sentence_case_default(*_pass_arguments, i, lastcode)
+
+
+                pass
+            elif (i["tipo"] == "while-def"):
+                
+                
+
+                salida += GE.sentence_while(*_pass_arguments, i)
+
+                pass
+            elif (i["tipo"] == "for-def"):
+                
+                
+
+                salida += GE.sentence_for(*_pass_arguments, i)
+
+                pass
+            elif (i["tipo"] == "for-each-def"):
+                
+                salida += GE.sentence_for_each(*_pass_arguments, i)
+
+                pass
+            elif (i["tipo"] == "with-def"):
+                
+                salida += GE.sentence_with(*_pass_arguments, i)
+
+                pass
+            elif (i["tipo"] == "rt-def"):
+                
+                
+                salida += GE.sentence_return(*_pass_arguments, i)
+                pass
+            elif (i["tipo"] == "try-def"):
+                
+                salida += GE.sentence_try(*_pass_arguments, i)
+
 
                 pass
             
             #Declaracion de Clases, Estructuras, Espacios de nombres y Modulos
 
-                # Clases
 
-            elif (i["tipo"] == "class-def")              and (modo in ["normal", "func-imp", "func"]):
-                fun = i
-                arg= []
-                for x in fun["extend"]:
-                    #print(x)
-                    arg.append("var_"+x["name"])
-                    pass
+            elif (i["tipo"] == "class-def"):
                 
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                     "me.__setattr__ = t_set_atr",
-                     "private.__setattr__ = t_set_atr",
-                    #"exportar.__setattr__ = t_set_atr",
-                    
-                ]
-                
-                preparo = [
-                    f"class tmp_class_{fun['name']}({','.join(arg)}):",
-                     "    pass",#"    def __dict__():pass",
-                    f"def tmp_var_{fun['name']}(obj):",
-                     "    exportar = {}",
-                    f"    me = obj",
-                     "    class private:pass",
-                          preparo2,
-                    f"    var_private = private",
-                    f"    private = var_private",
-                     "    def out(*arg): return me(*arg)",
-                     "    def p_call(o):",
-                     "        def eo(*arg):",
-                     "            o(me, *arg)",
-                     "        return eo",
+                salida += GE.sentence_class(*_pass_arguments, i)
 
-
-                            self.generator(fun["code"], "class"),
-
-
-                    f"    out.__export__ = exportar",
-                    f"    me.__export__ = exportar",
-                     "    return out",
-                    f"var_{fun['name']} = tmp_var_{fun['name']}(tmp_class_{fun['name']})",
-                    f"var_{fun['name']}.__clase__ = tmp_class_{fun['name']}",
-                        #self.generator(fun["code"], "class"),
-                ]
-                salida+=preparo
                 pass
-            elif (i["tipo"] == "class-def")              and (modo in ["module"]):
-                fun = i
-                arg= []
-                for x in fun["extend"]:
-                    #print(x)
-                    arg.append("var_"+x["name"])
-                    pass
+            elif (i["tipo"] == "module-def"):
                 
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                     "me.__setattr__ = t_set_atr",
-                     "private.__setattr__ = t_set_atr",
-                    #"exportar.__setattr__ = t_set_atr",
-                    
-                ]
-                ta = "me"
-
-                if fun["visisble"] == "private":
-                    ta = "private"
+                salida += GE.sentence_module(*_pass_arguments, i)
                 
-                preparo = [
-                    f"class tmp_class_{fun['name']}({','.join(arg)}):",
-                     "    pass",#"    def __dict__():pass",
-                    f"def tmp_var_{fun['name']}(obj):",
-                     "    exportar = {}",
-                    f"    me = obj",
-                     "    class private:pass",
-                        preparo2,
-                    f"    var_private = private",
-                    f"    private = var_private",
-                     "    def out(*arg): return me(*arg)",
-                     "    def p_call(o):",
-                     "        def eo(*arg):",
-                     "            o(me, *arg)",
-                     "        return eo",
-
-
-                            self.generator(fun["code"], "class"),
-
-
-                    f"    out.__export__ = exportar",
-                    f"    me.__export__ = exportar",
-                     "    return out",
-                    f"{ta}.{fun['name']} = tmp_var_{fun['name']}(tmp_class_{fun['name']})",
-                    f"{ta}.{fun['name']}.__clase__ = tmp_class_{fun['name']}",
-                        #self.generator(fun["code"], "class"),
-                ]
-                salida+=preparo
-                pass
-            
-                # Modulos
-            
-            elif (i["tipo"] == "module-def")             and (modo in ["normal", "func-imp", "func"]):
-                fun = i
-
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    #"    print('atr:', a)",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                    "me.__setattr__ = t_set_atr",
-                    "private.__setattr__ = t_set_atr",
-                    #"exportar.__setattr__ = t_set_atr",
-                    
-                ]
-                
-                preparo = [
-                    f"def var_{fun['name']}():",
-                     "    class private:pass",#"    private = (MD())",
-                     "    class me:pass",
-                          preparo2,
-                    f"    var_private = private()",
-                    f"    private = var_private",
-                        self.generator(fun["code"], "module"),
-                    #f"    var_private = private()",
-                     "    return me()",
-                    f"var_{fun['name']} = (var_{fun['name']})()"
-                ]
-                salida+=preparo
-                pass 
-            elif (i["tipo"] == "module-def")             and (modo in ["module"]):
-                fun = i
-
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    #"    print('atr:', a)",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                    "me.__setattr__ = t_set_atr",
-                    "private.__setattr__ = t_set_atr",
-                    #"exportar.__setattr__ = t_set_atr",
-                    
-                ]
-
-                ta = "me"
-
-                if fun["visisble"] == "private":
-                    ta = "private"
-                
-                preparo = [
-                    f"def var_{fun['name']}():",
-                     "    class private:pass",#"    private = (MD())",
-                     "    class me:pass",
-                          preparo2,
-                    f"    var_private = private()",
-                    f"    private = var_private",
-                        self.generator(fun["code"], "module"),
-                    #f"    var_private = private()",
-                     "    return me()",
-                    f"{ta}.{fun['name']} = (var_{fun['name']})()"
-                ]
-                salida+=preparo
-                pass
             
                 # Espacios de nomres
-
-            elif (i["tipo"] == "namespace-def")          and (modo in ["normal", "func-imp", "func"]):
-                fun = i
-
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    #"    print('atr:', a)",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                    "me.__setattr__ = t_set_atr",
-                    "private.__setattr__ = t_set_atr",
-                    #"exportar.__setattr__ = t_set_atr",
-                ]
+            elif (i["tipo"] == "namespace-def"):
                 
-                preparo = [
-                    f"def var_{fun['name']}():",
-                     "    class private:pass",#"    private = (MD())",
-                     "    class me:pass",
-                          preparo2,
-                    f"    var_private = private()",
-                    f"    private = var_private",
-                        self.generator(fun["code"], "module"),
-                    #f"    var_private = private()",
-                     "    return NS(me())",
-                    f"var_{fun['name']} = (var_{fun['name']})()"
-                ]
-                salida+=preparo
+                salida += GE.sentence_namespace(*_pass_arguments, i)
+
                 pass
             
                 # Estructuras
-            
-            elif (i["tipo"] == "struct-def")             and (modo in ["normal", "func-imp", "func"]):
-                fun = i
-
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    #"    print('atr:', a)",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                     "me.__setattr__ = t_set_atr",
-                     "private.__setattr__ = t_set_atr",
-                     "me.default = lambda x: me()",
-                    f"me.__str__ = lambda x: '<Struct {fun['name']}>'",
-                     "me._str = me.__str__",
-                     "me.__repl__ = me.__str__",
-
-                    #"exportar.__setattr__ = t_set_atr",
-                    
-                ]
+            elif (i["tipo"] == "struct-def"):
                 
-                preparo = [
-                    f"def var_{fun['name']}():",
-                     "    class private:pass",#"    private = (MD())",
-                     "    class me:pass",
-                          preparo2,
-                    f"    var_private = private()",
-                    f"    private = var_private",
-                          self.generator(fun["code"], "struct"),
-                    #f"    var_private = private()",
-                     "    return me",
-                    f"var_{fun['name']} = (var_{fun['name']})()"
-                ]
-                salida+=preparo
+
+                salida += GE.sentence_struct(*_pass_arguments, i)
+
+
                 pass 
-            elif (i["tipo"] == "struct-def")             and (modo in ["module"]):
-                fun = i
-
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    #"    print('atr:', a)",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                     "me.__setattr__ = t_set_atr",
-                     "private.__setattr__ = t_set_atr",
-                     "me.default = lambda x: me()",
-                    f"me.default = lambda x: '<Struct {fun['name']}>'",
-                     "me._str = me.__str__",
-                     "me.__repl__ = me.__str__",
-                     
-                    #"exportar.__setattr__ = t_set_atr",
-                    
-                ]
-
-                ta = "me"
-
-                if fun["visisble"] == "private":
-                    ta = "private"
-                
-                preparo = [
-                    f"def var_{fun['name']}():",
-                     "    class private:pass",#"    private = (MD())",
-                     "    class me:pass",
-                          preparo2,
-                    f"    var_private = private()",
-                    f"    private = var_private",
-                        self.generator(fun["code"], "struct"),
-                    #f"    var_private = private()",
-                     "    return me",
-                    f"{ta}.{fun['name']} = (var_{fun['name']})()"
-                ]
-                salida+=preparo
-                pass
+            
         
 
             #Elementos de compilacion
-            elif (i["tipo"] == "$using-comp")            and (modo in ["normal", "func", "func-imp"]):
+            elif (i["tipo"] == "$using-comp")      and (modo in ["normal", "func", "func-imp"]):
                 
                 #preparo = []
                 lel = i["using"]
@@ -2744,200 +2176,39 @@ class appclsBase():
                 pass
             
             #Declaracion de Variables
-            elif (i["tipo"] == "var-def")                and (modo in ["normal", "func-imp", "func"]):
-                ordenar = []                
-                for x in i["dim"]:
-                    
-                    #print(i)
-                    arg=x["name"]
-                    sta=x["type"][0]
-                    col = self.generator_one(x["def"], "func")
-                    if col == "": col = "None"
-                    defa=(col)
-
-                    qqq = ""
-                    if i["const"]:qqq = f"constant.append('var_{arg}')"
-
-                    ordenar+=p_error([
-                        
-                        f"if 'var_{arg}' in constant: app.constE('var_{arg}')",
-                        f"try:",
-                        f"    sta_var = var_{sta}",
-                        f"except:",
-                        f"    try:",
-                        f"        sta_var = var_{sta}",
-                        f"    except:",
-                        f"        app.error('the {sta} class not found', '{errores.ErrorName}', app.index)",
-                        f"try:",
-                        f"    var_{arg} = ({defa})",
-                        f"except:",
-                        f"    var_{arg} = None",
-                        f"sta_values['var_{arg}'] = sta_var",
-                        f"var_{arg} = app.dim(var_{arg}, sta_var)",
-                        qqq
-                    ], i["i"])
-                    pass
-
-                salida += ordenar
-                pass
-            elif (i["tipo"] == "var-def")                and (modo in ["class", "module", "struct"]):
-                ordenar = []                
-                for x in i["dim"]:
-                    
-                    #print(i)
-                    arg=x["name"]
-                    sta=x["type"][0]
-                    col = self.generator_one(x["def"], "func")
-                    if col == "": col = "None"
-                    defa=(col)
-
-                    na = "me"
-                    qqq = ""
-                    qqq2 = ""
-                    if i["const"]:qqq2 = f"constant.append('var_{arg}')"
-
-
-                    if i["visible"] == "private":
-                        na = "private"
-                        pass
-                    elif i["visible"] == "static" and modo == "class":
-                        na = "out"
-                        pass
-                    elif i["visible"] == "export" and modo == "class":
-                        qqq = f"exportar['{arg}'] = app.dim(var_{arg}, sta_var)"
-                        pass
-                    
-                    
-
-                    ordenar+=p_error([
-                        f"if 'var_{arg}' in constant: app.constE('var_{arg}')",
-                        f"try:",
-                        f"    sta_var = var_{sta}",
-                        f"except:",
-                        f"    try:",
-                        f"        sta_var = var_{sta}",
-                        f"    except:",
-                        f"        app.error('the {sta} class not found', '{errores.ErrorName}', app.index)",
-                        f"try:",
-                        f"    var_{arg} = ({defa})",
-                        f"except:",
-                        f"    var_{arg} = None",
-                        f"sta_values['var_{arg}'] = sta_var",
-                        f"{na}.{arg} = app.dim(var_{arg}, sta_var)",
-                        qqq,
-                        qqq2
-                    ], i["i"])
-                    pass
-
-                salida += ordenar
-                pass
-            elif (i["tipo"] == "var-eval")               and (modo in ["normal", "func-imp", "func", "class", "module", "struct"]):
+            elif (i["tipo"] == "var-def"):
                 
-                if i["onename"]:
-                    t_name = i["var"][0]["name"]
-                    qqq = f"if 'var_{t_name}' in constant: app.constE('var_{t_name}')"
-                    #print("onename", t_name)
-                    #print(qqq)
-                    if modo in ["func", "func-imp", "normal"]:
-                        g_1 = self.generator_one(i["var"], modo)
-                        g_2 = self.generator_one(i["eval"], modo)
-                        preparo = p_error([
-                            qqq,
-                            f"{g_1} = app.dim(({g_2}), sta_values.get('{g_1}', var_{self.tydef}))",
-                        ], i["i"])
-                        pass
-                    elif modo in ["class", "struct"]:
+                salida += GE.sentence_vardefine(*_pass_arguments, i)
+                pass
+            elif (i["tipo"] == "var-eval"):
+                
+                # print("eval mode", i)
 
-                        g_1 = i["var"][0]["name"]
-                        g_2 = self.generator_one(i["eval"], modo)
-                        preparo = p_error([
-                            qqq,
-                            f"{g_1} = ({g_2})",
-                        ], i["i"])
-                        pass
-                    elif modo in ["module"]:
-
-                        g_1 = i["var"][0]["name"]
-                        g_2 = self.generator_one(i["eval"], modo)
-                        preparo = p_error([
-                            qqq,
-                            f"me.{g_1} = ({g_2})",
-                            f"var_{g_1} = (me.{g_1})",
-                        ], i["i"])
-                        pass
-                    
-                    
-                    pass
-                else:
-                    g_1 = self.generator_one(i["var"], modo)
-                    g_2 = self.generator_one(i["eval"], modo)
-                    preparo = p_error([
-                        f"{g_1} = ({g_2})"
-                    ], i["i"])
-                    pass
-
-                salida+=preparo
+                salida += GE.sentence_vareval(*_pass_arguments, i)
                 pass
             
             #Elementos de importacion de modulos externo e internos
-            elif (i["tipo"] == "import-def")             and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "import-def"):
                 
-                salida += p_error([
-                    f"var_{i['as']} = app.getlib('{i['import']}')"
-                ], i["i"])
+                salida += GE.sentence_import(*_pass_arguments, i)
                 pass
-            elif (i["tipo"] == "from-def")               and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "from-def"):
+                salida += GE.sentence_from(*_pass_arguments, i)
                 
-                salida += p_error([
-                    f"var_{i['as']} = app.getlib('{i['from']}').{i['import']}"
-                ], i["i"])
+                
                 pass
-            elif (i["tipo"] == "include-def")            and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "include-def"):
                 
-                salida += p_error([
-                    f"incluir = app.getlib('{i['include']}')",
-                     #"print(type(incluir))",
-                     "for x in dir(incluir):",
-                     #"    print(getattr(incluir, x))",
-                    f"    globals()['var_' + x] = getattr(incluir, x)",
-                    f"    locals()['var_' + x] = getattr(incluir, x)",
+                salida += GE.sentence_include(*_pass_arguments, i)
 
-                ], i["i"])
                 pass
-            elif (i["tipo"] == "template-def")           and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "template-def"):
                 
-                pati = lib.find(i["template"])
-
-                tem = []
-                if pati == "None":
-                    print(f"template '{i['template']}' not found")
-                    pass
-                else:
-                    _ftp = open(pati, "r")
-                    tem = _ftp.read().split("\n")
-                    _ftp.close()
-                    pass
-
-                salida += p_error(tem, i["i"])
+                salida += GE.sentence_template(*_pass_arguments, i)
                 pass
-            elif (i["tipo"] == "template-if-def")        and (modo in ["normal", "func-imp", "func"]):
+            elif (i["tipo"] == "template-if-def"):
                 #print(i, self.PRO.get(i["var"], None))
-                
-                if self.PRO.get(i["var"], None) == i["value"]:
-                    pati = lib.find(i["template"])
-
-                    tem = []
-                    if pati == "None":
-                        print(f"template '{i['template']}' not found")
-                        pass
-                    else:
-                        _ftp = open(pati, "r")
-                        tem = _ftp.read().split("\n")
-                        _ftp.close()
-                        pass
-
-                    salida += p_error(tem, i["i"])
-                    pass
+                salida += GE.sentence_template_if(*_pass_arguments, i)
 
                 pass
             
@@ -2945,10 +2216,9 @@ class appclsBase():
         if (using_namespace) and (usingmode == "compiled"):
             #print("que?")
             self.namespace = "std"
-        if modo == "switch":
-            salida += lastcode
+        
+        salida += GE.block_after(*_pass_arguments, lastcode)
         if isinstance(c, dict):
-            salida +=["app.variables.pop()"]
             code = c["data"]
             func = c["func"]
             pass
@@ -2960,6 +2230,10 @@ class appclsBase():
         salida = ""
         last = {"tipo":"none"}
         iskey= False
+
+        _pass_arguments = [self, line, modo, modi, key]
+
+        GE = self.GeneratorEngine
         
         ite =-1
         for i in line:
@@ -2990,7 +2264,7 @@ class appclsBase():
                         elif i["name"][0]==".":
                             pass
                         else:
-                            print(i)
+                            # print(i)
                             fallo()
                             pass
                         pass
@@ -3056,78 +2330,32 @@ class appclsBase():
                 last = i
                 pass
             
-            if modo in ["func", "func-imp", "class", "module", "normal", "struct"]:
+            if True:
+                __dict_arguments = {
+                    "fallo": fallo,
+                    "iskey": iskey,
+                    "ite": ite
+                }
 
                 if i["tipo"]=="name":
-                    if iskey:
-                        #print("error 2", i)
-
-                        t = {"tipo":"value", "value":f"'{i['name']}'", "type":"str", "i":i["i"], "byte":""}
-                        salida+= f" {self.print_value(t)} "
-                        pass
-                    elif i["notmod"]:
-                        salida+= f" {i['name']} "
-                        pass
-                    elif i["name"] in nombre_reservados["codi"]:
-                        salida+= f" {i['name']} "
-                        pass                  
-                    elif (i["name"] in nombre_reservados["bucle"]):
-                        if modi == "exec":
-                            if salida == "":
-                                salida+= f" {i['name']} "
-                            else:
-                                fallo(f"Error Syntax with the token '{i['name']}'")
-                            pass
-                        else:
-                            fallo(f"the token '{i['name']}' is invalid in this case")
-                        pass
-                    elif i["name"][0]==".":
-                        salida+= f"{i['name']} "
-                        pass
-                    elif i["name"][0]=="0":
-                        
-                        salida+= f" app.fint('{i['name']}', '{i['name'][1]}') "
-                        pass
-                    elif compara([{"tipo":"ope", "char":"::"}], line[ite+1:ite+2]):
-                        salida+= f" var_{i['name']}.__names__"
-                        pass
-                    elif compara([{"tipo":"ope", "char":"::"}], line[ite-1:ite]):
-                        salida+= f".{i['name']}"
-                        pass
-                    else:
-                        salida+= f" var_{i['name']} "
-                        pass
+                    salida += GE.expression_name(*_pass_arguments, i, **__dict_arguments)
                     pass
                 elif i["tipo"] == "sim":
-                    salida += f" {i['char']} "
+                    salida += GE.expression_sim(*_pass_arguments, i, **__dict_arguments)
+                   
                     pass
                 elif i["tipo"] == "ope":
-                    if i["char"] in ["+", "-", "*", "/", "**", "%", ":"]:
-                        salida += f" {i['char']} "
-                    elif i["char"] in tokens["convert"]["condi"]:
-                        salida += f" {tokens['convert']['condi'][i['char']]} "
-                        pass
-                    elif i["char"] in tokens["convert"]["expre-"+str(modi)]:
-                        salida += f" {tokens['convert']['expre-'+str(modi)][i['char']]} "
-                        pass
-                    elif i["char"] in tokens["cond"]:
-                        salida += f" {i['char']} "
-                    elif (i["char"] in ["="]) and (modi=="exec"):
-                        salida += f" = "
+                    salida += GE.expression_ope(*_pass_arguments, i, **__dict_arguments)
                     
                     
                     pass
                 elif i["tipo"] == "()":
-                    be = f" ({self.generator_one(i['data'], modo)}) "
-                    if i["fist"]:
-                        be = " app.fist("+be+") "
-                    salida+= be
+                    salida += GE.expression_tuple(*_pass_arguments, i, **__dict_arguments)
+                    
                     pass
                 elif i["tipo"] == "[]":
-                    be = f" [{self.generator_one(i['data'], modo)}] "
-                    if i["fist"]:
-                        be = " app.fist("+be+") "
-                    salida+= be
+                    salida += GE.expression_list(*_pass_arguments, i, **__dict_arguments)
+                    
                     pass
                 elif i["tipo"] == "code":
                     be = f" {'{'+self.generator_one(i['one'], modo, 'eval', True)+'}'} "
@@ -3138,17 +2366,14 @@ class appclsBase():
                     salida+= be
                     pass
                 elif i["tipo"] == "value":
-                    salida+= f" {self.print_value(i)} "
+                    salida+= GE.expression_value(*_pass_arguments, i, **__dict_arguments)
                     pass
                 elif i["tipo"] == "cml":
-                    salida+= f" app.cml({repr(i['data'])}) "
+                    salida+= GE.expression_cml(*_pass_arguments, i, **__dict_arguments)
                     pass
                 elif i["tipo"] == "if-exp":
-                    be_if = f" ({self.generator_one(i['then']['data'], modo)}) "
-                    be_else = f" ({self.generator_one(i['else']['data'], modo)}) "
-                    be_cond = f" ({self.generator_one(i['if']['data'], modo)}) "
-
-                    salida+= f" ({be_if} if {be_cond} else {be_else}) "
+                    salida+= GE.expression_if(*_pass_arguments, i, **__dict_arguments)
+                    
                     pass
                 
                 pass
@@ -3180,18 +2405,13 @@ class appclsBase():
         
         return salida
     def print_value(self, v) -> str:
-        salida = f"app.values['{v['type']}']({v['value']})"
-
-        if v["type"] == "str":
-            salida = f"app.str['{v['byte']}']({v['value']})"
-
-        return salida
+        return self.GeneratorEngine.print_value(self, v)
     def fist(self, v):
         if isinstance(v, list):
             v = ObjectCls.Array(v)
         elif True in [isinstance(v, tuple), isinstance(v, set)]:
             raise Exception('the tokens "," is invalids')
-        print("fist value:", v)
+        #print("fist value:", v)
         return v
     def fint(self, v, x):
         salida = 0
@@ -3268,12 +2488,28 @@ class appclsBase():
 
         #raise Exception(before+N+f" error: {type}: {msg}"+N+ salida + cursor)
         raise Exception(msg)
+    def code2class(self, *clases):
+
+        out = []
+
+        for i in clases:
+            if isinstance(i, types.FunctionType):
+                
+                out.append(i.__clase__)
+            if isinstance(i, type):
+                
+                out.append(i)
+            
+            pass
+
+        return out
     pass
 
 
 #debes de crear los modulos y construir el resto de funcionalidades, PyCLS casi terminado
 
 class EngineOutput():
+    # infraestructura 
     def engine_error(self, code, i) -> list:
             
         return [
@@ -3323,6 +2559,7 @@ class EngineOutput():
 
         return salida
     
+    # eventos de inicio y fin de bloque
     def block_before(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}) -> list:
 
         modo_a = [
@@ -3351,7 +2588,15 @@ class EngineOutput():
             out += ["app.variables.pop()"]
 
         return out
+    def sentence_before(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, lastcode:list =[]) -> list:
+        out = []
+
+        if modo in ["normal", "func", "func-imp", "module", "class"]:
+            out += ["app.foins()"]
+
+        return out
     
+    # funciones anonimas
     def function_lambda(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, iterator=[]) -> list:
         out = []
         if modo in ["normal", "func", "func-imp", "module", "class"]:
@@ -3376,855 +2621,844 @@ class EngineOutput():
             out += preparo
             
         return out
-    pass
-
-
-
-class appclss(appclsBase):
     
-    
-    def print_value(self, v) -> str:
-        return self.GeneratorEngine.print_value(self, v)
-    def generator(self, c, modo:str="normal", usingmode = "compiled", data = {}) -> list:
-        
-        salida = []
-        code = []
-        func = []
-        lastcode = []
-        #print(usingmode)
-        using_namespace = False
+    # generador de sentencias
 
-        GE = self.GeneratorEngine
-        #modo = "normal"
+    def sentence_function(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
 
-        p_error = GE.engine_error
-        print_arg = lambda x: GE.print_arg(x, self)
+        # function main() {
+        #     print("Hello");
+        # }
 
-        _pass_arguments = [self, c, modo, usingmode, data]
-        
-        
-        if isinstance(c, dict):
-            
-            salida += GE.block_before(*_pass_arguments)
-            
-            code = c["data"]
-            func = c["func"]
+        out = []
+
+        def print_arg(args):
+
+            return self.print_arg(args, engine)
+
+        if   (modo in ["normal", "func-imp", "func"]):
+            asy=""
+            fun = sentence
+            if fun["async"]: asy = "async "
+            preparo = [
+                f"{asy}def var_{fun['name']}(*arg):",
+                f"    try:",
+                f"        f_rt = (var_{fun['return']})",
+                f"    except:",
+                f"        f_rt = (var_{fun['return']})",
+                print_arg(fun["arg"]) +
+                engine.generator(fun["code"], "func"),
+                "    pass"
+            ]
+            out+=preparo
             pass
-        elif isinstance(c, list):
-            code = c
-            func = []
-            pass
-        else: return []
-        
-        for i in func:
-            salida += GE.function_lambda(*_pass_arguments, i)
+        elif (modo in ["module"]):
+
+            asy=""
+            qqq=""
+            fun = sentence
             
-            pass
-        
-        for i in code:
-            if modo in ["normal", "func", "func-imp", "module", "class"]:
-                salida += ["app.foins()"]
             
-            #Declaracion de Funciones
-            if   (i["tipo"] == "func-def")         and (modo in ["normal", "func-imp", "func"]):
-                asy=""
-                fun = i
-                if fun["async"]: asy = "async "
-                preparo = [
-                    f"{asy}def var_{fun['name']}(*arg):",
-                    f"    try:",
-                    f"        f_rt = (var_{fun['return']})",
-                    f"    except:",
-                    f"        f_rt = (var_{fun['return']})",
-                    print_arg(fun["arg"]) +
-                    self.generator(fun["code"], "func"),
+            if fun["async"]: asy = "async "
+            visible = fun["visible"]
+            #nombre = self.namespace+"_"+fun['name']
+            nombre = fun["name"]
+
+            selfi = "self,"
+            sefi2 = f"var_me = self"
+            qqq = f"me.{nombre} = var_{nombre}"
+            #qqq2 = f"var_{nombre} = p_call(var_{nombre})"
+            
+            if visible == "private":
+                qqq=f"private.{nombre} = var_{nombre}"
+                #qqq2=""
+                pass
+            
+            
+            
+            preparo = [
+                f"{asy}def var_{nombre}(*arg):",
+                f"    try:",
+                f"        f_rt = (var_{fun['return']})",
+                f"    except:",
+                f"        f_rt = (var_{fun['return']})",
+                print_arg(fun["arg"]) +
+                engine.generator(fun["code"], "func"),
+                "    pass",
+                qqq,
+                #qqq2
+            ]
+            out+=preparo
+            pass
+        elif (modo in ["class"]):
+
+            asy=""
+            qqq=""
+            fun = sentence
+            
+            
+            if fun["async"]: asy = "async "
+            visible = fun["visible"]
+            #nombre = self.namespace+"_"+fun['name']
+            nombre = fun["name"]
+
+            selfi = "self,"
+            sefi2 = f"var_me = self"
+            qqq = f"me.{tokens['metodos'].get(nombre, nombre)} = var_{nombre}"
+            qqq2 = f"var_{nombre} = p_call(var_{nombre})"
+            privado=""
+            if visible=="static":
+                selfi = ""
+                qqq = f"out.{nombre} = var_{nombre}"
+                sefi2=""
+                qqq2=""
+                pass
+            elif visible == "private":
+                privado="private_"
+                qqq=f"var_{nombre} = p_call({privado}var_{nombre})"
+                qqq2=f"private.{nombre} = var_{nombre}"
+                pass
+            elif visible == "export":
+                privado="private_"
+                #qqq=f"private.{nombre} = p_call({privado}var_{nombre})"
+                pass
+            
+            
+            preparo = [
+                f"{asy}def {privado}var_{nombre}({selfi} *arg):",
+                f"    try:",
+                f"        f_rt = (var_{fun['return']})",
+                f"    except:",
+                f"        f_rt = (var_{fun['return']})",
+                f"    {sefi2}",
+                print_arg(fun["arg"]) +
+                engine.generator(fun["code"], "func"),
+                "    pass",
+                qqq,
+                qqq2
+            ]
+            out+=preparo
+            pass
+            
+
+        return out
+    def sentence_simple_exec(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        # function(20, 10) + 6
+
+        if (modo in ["normal", "func-imp", "func"]):
+            le = engine.generator_one(sentence["exe"], modo, "exec")
+            return self.engine_error(
+                [le],
+                sentence["i"]
+            )
+
+        return []
+    def sentence_if(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        if_out=[]
+        if (modo in ["normal", "func-imp", "func"]):
+            #tipo, cond, code
+            for x in sentence["lista"]: 
+                if x["tipo"] in ["if", "elif"]:
+                    cond = engine.generator_one(x["cond"], modo)
+                    codigo = engine.generator(x["code"], modo)
+                    if_out += [
+                        f"{x['tipo']} ({cond}):",
+                        codigo,
+                        "    pass"
+                    ]
+                else:
+                    codigo = engine.generator(x["code"], modo)
+                    if_out += [
+                        f"else:",
+                        codigo,
+                        "    pass"
+                    ]
+                    break
+                pass
+            pass
+
+
+        return self.engine_error(if_out, sentence["i"])
+    def sentence_switch(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        if_out=[]
+        if (modo in ["normal", "func-imp", "func"]):
+            #tipo, cond, code
+            if_out=[]
+                #tipo, cond, code
+            cond = engine.generator_one(sentence["cond"], modo)
+            codigo = engine.generator(sentence["code"], "switch", data = {"modo": modo})
+            if_out += [
+                f"switch_val = ({cond})",
+                    "if False:",
+                    "    pass",
+                    *codigo,
+            ]
+
+
+        return self.engine_error(if_out, sentence["i"])
+    def sentence_case(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        
+        if_out=[]
+        #tipo, cond, code
+        if (modo in ["switch"]):
+            cond = engine.generator_one(sentence["cond"], data.get("modo", "normal"))
+            codigo = engine.generator(sentence["code"], data.get("modo", "normal"))
+            if_out += [
+                f"elif ({cond}) == (switch_val):",
+                    codigo,
+                "    pass",
+            ]
+        return if_out
+    def sentence_case_default(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}, lastcode:list=[]) -> list:
+        if_out=[]
+
+        #tipo, cond, code
+        if (modo in ["switch"]):
+            codigo = engine.generator(sentence["code"], data.get("modo", "normal"))
+            if_out += [
+                f"else:",
+                    codigo,
+                "    pass",
+            ]
+
+        for x in if_out:
+            lastcode.append(x)
+        return []
+    def sentence_while(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out=[]
+
+        #tipo, cond, code
+        if (modo in ["normal", "func-imp", "func"]):
+            x=sentence
+            cond = engine.generator_one(x["cond"], modo)
+            codigo = engine.generator(x["code"], modo)
+            out += [
+                f"while ({cond}):",
+                codigo,
+                "    pass"
+            ]
+
+        return self.engine_error(out, sentence["i"])
+    def sentence_for(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out=[]
+
+        #tipo, cond, code
+        if (modo in ["normal", "func-imp", "func"]):
+            x=sentence
+            d_for =x["for"] #self.generator_one(x["for"], modo)
+            cond = engine.generator_one(d_for[1], modo)
+            codigo = engine.generator(x["code"], modo)
+            post_code = engine.generator_one(d_for[2], modo, "exec")
+        
+            out += [
+                f"var_{d_for[0][0]['name']} = ({engine.generator_one(d_for[0][2:], modo)})",
+                f"while (True):",
+                f"    if not ({cond}): break",
+                    codigo,
+                f"    {post_code}",
                     "    pass"
-                ]
-                salida+=preparo
+            ]
+
+        return self.engine_error(out, sentence["i"])
+    def sentence_for_each(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out=[]
+
+        #tipo, cond, code
+        if (modo in ["normal", "func-imp", "func"]):
+            x=sentence
+            cond = engine.generator_one(x["cond"], modo)
+            codigo = engine.generator(x["code"], modo)
+        
+            out += [
+                f"for var_{x['var']} in ({cond}):",
+                    codigo,
+                "    pass"
+            ]
+
+        return self.engine_error(out, sentence["i"])
+    def sentence_with(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out=[]
+
+        #tipo, cond, code
+        if (modo in ["normal", "func-imp", "func"]):
+            x=sentence
+            cond = engine.generator_one(x["value"], modo)
+            codigo = engine.generator(x["code"], modo)
+            out += [
+                f"def t_tmp_with(t_t):",
+                f"    var_{x['name']} = t_t",
+                    codigo,
+                "    pass",
+                f"t_tmp_with({cond})",
+                f"del t_tmp_with"
+            ]
+
+        return self.engine_error(out, sentence["i"])
+    def sentence_return(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out=[]
+
+        #tipo, cond, code
+        if (modo in ["func"]):
+            outt = engine.generator_one(sentence["eval"], modo)
+            preparo = [
+                f"return app.dim(({outt}), f_rt)"
+            ]
+            out += preparo
+            
+
+        return self.engine_error(out, sentence["i"])
+    def sentence_try(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out=[]
+
+        #tipo, cond, code
+        if (modo in ["normal", "func-imp", "func"]):
+            x=sentence
+            #cond = self.generator_one(x["cond"], modo)
+            code_try = engine.generator(x["try"], modo)
+            code_error = engine.generator(x["error"], modo)
+            out += [
+                "try:",
+                    code_try,
+                "    pass",
+                "except Exception as ero:",
+               f"    var_{x['e']} = ero",
+                "    app.cracheos = []",
+                    code_error,
+                "    pass",
+            ]
+
+        return self.engine_error(out, sentence["i"])
+    def sentence_class(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out=[]
+
+        #tipo, cond, code
+        if (modo in ["normal", "func-imp", "func"]):
+            fun = sentence
+            arg= []
+            for x in fun["extend"]:
+                #print(x)
+                arg.append("var_"+x["name"])
                 pass
-            elif (i["tipo"] == "func-def")         and (modo in ["module"]):
+            
+            preparo2 = [
+                    "def t_get_atr(self, v): ",
+                    "    return None",
+                
+                    "me.__getattr__ = t_get_atr",
+                    "private.__getattr__ = t_get_atr",
+                #"exportar.__getattr__ = t_get_atr",
+                
+                    "def t_set_atr(self, a, v): ",
+                f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{engine.tydef}))",
+                
+                    "me.__setattr__ = t_set_atr",
+                    "private.__setattr__ = t_set_atr",
+                #"exportar.__setattr__ = t_set_atr",
+                
+            ]
+            
+            preparo = [
+                f"class tmp_class_{fun['name']}(*app.code2class({','.join(arg)})):",
+                    "    pass",#"    def __dict__():pass",
+                f"def tmp_var_{fun['name']}(obj):",
+                    "    exportar = {}",
+                f"    me = obj",
+                    "    class private:pass",
+                        preparo2,
+                f"    var_private = private",
+                f"    private = var_private",
+                    "    def out(*arg): return me(*arg)",
+                    "    def p_call(o):",
+                    "        def eo(*arg):",
+                    "            o(me, *arg)",
+                    "        return eo",
 
-                asy=""
-                qqq=""
-                fun = i
-                
-                
-                if fun["async"]: asy = "async "
-                visible = fun["visible"]
-                #nombre = self.namespace+"_"+fun['name']
-                nombre = fun["name"]
 
-                selfi = "self,"
-                sefi2 = f"var_me = self"
-                qqq = f"me.{nombre} = var_{nombre}"
-                #qqq2 = f"var_{nombre} = p_call(var_{nombre})"
-                
-                if visible == "private":
-                    qqq=f"private.{nombre} = var_{nombre}"
-                    #qqq2=""
-                    pass
-                
-                
-                
-                preparo = [
-                    f"{asy}def var_{nombre}(*arg):",
-                    f"    try:",
-                    f"        f_rt = (var_{fun['return']})",
-                    f"    except:",
-                    f"        f_rt = (var_{fun['return']})",
-                    print_arg(fun["arg"]) +
-                    self.generator(fun["code"], "func"),
-                    "    pass",
-                    qqq,
-                    #qqq2
-                ]
-                salida+=preparo
+                        engine.generator(fun["code"], "class"),
+
+
+                f"    out.__export__ = exportar",
+                f"    me.__export__ = exportar",
+                 "    return out",
+                f"var_{fun['name']} = tmp_var_{fun['name']}(tmp_class_{fun['name']})",
+                f"var_{fun['name']}.__clase__ = tmp_class_{fun['name']}",
+                    #self.generator(fun["code"], "class"),
+            ]
+            out+=preparo
+        elif (modo in ["module"]):
+            fun = sentence
+            arg= []
+            for x in fun["extend"]:
+                #print(x)
+                arg.append("var_"+x["name"])
                 pass
-            elif (i["tipo"] == "func-def")         and (modo in ["class"]):
+            
+            preparo2 = [
+                    "def t_get_atr(self, v): ",
+                    "    return None",
+                
+                    "me.__getattr__ = t_get_atr",
+                    "private.__getattr__ = t_get_atr",
+                #"exportar.__getattr__ = t_get_atr",
+                
+                    "def t_set_atr(self, a, v): ",
+                f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{engine.tydef}))",
+                
+                    "me.__setattr__ = t_set_atr",
+                    "private.__setattr__ = t_set_atr",
+                #"exportar.__setattr__ = t_set_atr",
+                
+            ]
+            ta = "me"
 
-                asy=""
-                qqq=""
-                fun = i
-                
-                
-                if fun["async"]: asy = "async "
-                visible = fun["visible"]
-                #nombre = self.namespace+"_"+fun['name']
-                nombre = fun["name"]
+            if fun["visible"] == "private":
+                ta = "private"
+            
+            preparo = [
+                f"class tmp_class_{fun['name']}(*app.code2class({','.join(arg)})):",
+                    "    pass",#"    def __dict__():pass",
+                f"def tmp_var_{fun['name']}(obj):",
+                    "    exportar = {}",
+                f"    me = obj",
+                    "    class private:pass",
+                    preparo2,
+                f"    var_private = private",
+                f"    private = var_private",
+                    "    def out(*arg): return me(*arg)",
+                    "    def p_call(o):",
+                    "        def eo(*arg):",
+                    "            o(me, *arg)",
+                    "        return eo",
 
-                selfi = "self,"
-                sefi2 = f"var_me = self"
-                qqq = f"me.{tokens['metodos'].get(nombre, nombre)} = var_{nombre}"
-                qqq2 = f"var_{nombre} = p_call(var_{nombre})"
-                privado=""
-                if visible=="static":
-                    selfi = ""
-                    qqq = f"out.{nombre} = var_{nombre}"
-                    sefi2=""
-                    qqq2=""
-                    pass
-                elif visible == "private":
-                    privado="private_"
-                    qqq=f"var_{nombre} = p_call({privado}var_{nombre})"
-                    qqq2=f"private.{nombre} = var_{nombre}"
-                    pass
-                elif visible == "export":
-                    privado="private_"
-                    #qqq=f"private.{nombre} = p_call({privado}var_{nombre})"
-                    pass
+
+                        engine.generator(fun["code"], "class"),
+
+
+                f"    out.__export__ = exportar",
+                f"    me.__export__ = exportar",
+                    "    return out",
+                f"{ta}.{fun['name']} = tmp_var_{fun['name']}(tmp_class_{fun['name']})",
+                f"{ta}.{fun['name']}.__clase__ = tmp_class_{fun['name']}",
+                    #self.generator(fun["code"], "class"),
+            ]
+            out+=preparo
+
+        return self.engine_error(out, sentence["i"])
+    def sentence_module(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out=[]
+
+        #tipo, cond, code
+        if (modo in ["normal", "func-imp", "func"]):
+            fun = sentence
+
+            preparo2 = [
+                    "def t_get_atr(self, v): ",
+                    "    return None",
                 
+                    "me.__getattr__ = t_get_atr",
+                    "private.__getattr__ = t_get_atr",
+                #"exportar.__getattr__ = t_get_atr",
                 
-                preparo = [
-                    f"{asy}def {privado}var_{nombre}({selfi} *arg):",
+                    "def t_set_atr(self, a, v): ",
+                #"    print('atr:', a)",
+                f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{engine.tydef}))",
+                
+                "me.__setattr__ = t_set_atr",
+                "private.__setattr__ = t_set_atr",
+                #"exportar.__setattr__ = t_set_atr",
+                
+            ]
+            
+            preparo = [
+                f"def var_{fun['name']}():",
+                    "    class private:pass",#"    private = (MD())",
+                    "    class me:pass",
+                        preparo2,
+                f"    var_private = private()",
+                f"    private = var_private",
+                    engine.generator(fun["code"], "module"),
+                #f"    var_private = private()",
+                    "    return me()",
+                f"var_{fun['name']} = (var_{fun['name']})()"
+            ]
+
+            out += preparo
+        elif (modo in ["module"]):
+            fun = sentence
+
+            preparo2 = [
+                    "def t_get_atr(self, v): ",
+                    "    return None",
+                
+                    "me.__getattr__ = t_get_atr",
+                    "private.__getattr__ = t_get_atr",
+                #"exportar.__getattr__ = t_get_atr",
+                
+                    "def t_set_atr(self, a, v): ",
+                #"    print('atr:', a)",
+                f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{engine.tydef}))",
+                
+                "me.__setattr__ = t_set_atr",
+                "private.__setattr__ = t_set_atr",
+                #"exportar.__setattr__ = t_set_atr",
+                
+            ]
+
+            ta = "me"
+
+            if fun["visible"] == "private":
+                ta = "private"
+            
+            preparo = [
+                f"def var_{fun['name']}():",
+                    "    class private:pass",#"    private = (MD())",
+                    "    class me:pass",
+                        preparo2,
+                f"    var_private = private()",
+                f"    private = var_private",
+                    engine.generator(fun["code"], "module"),
+                #f"    var_private = private()",
+                    "    return me()",
+                f"{ta}.{fun['name']} = (var_{fun['name']})()"
+            ]
+            out+=preparo
+
+        return self.engine_error(out, sentence["i"])
+    def sentence_namespace(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out=[]
+
+        #tipo, cond, code
+        if (modo in ["normal", "func-imp", "func"]):
+            fun = sentence
+
+            preparo2 = [
+                    "def t_get_atr(self, v): ",
+                    "    return None",
+                
+                    "me.__getattr__ = t_get_atr",
+                    "private.__getattr__ = t_get_atr",
+                #"exportar.__getattr__ = t_get_atr",
+                
+                    "def t_set_atr(self, a, v): ",
+                #"    print('atr:', a)",
+                f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{engine.tydef}))",
+                
+                "me.__setattr__ = t_set_atr",
+                "private.__setattr__ = t_set_atr",
+                #"exportar.__setattr__ = t_set_atr",
+            ]
+            
+            preparo = [
+                f"def var_{fun['name']}():",
+                    "    class private:pass",#"    private = (MD())",
+                    "    class me:pass",
+                        preparo2,
+                f"    var_private = private()",
+                f"    private = var_private",
+                    engine.generator(fun["code"], "module"),
+                #f"    var_private = private()",
+                    "    return NS(me())",
+                f"var_{fun['name']} = (var_{fun['name']})()"
+            ]
+            out+=preparo
+
+        return self.engine_error(out, sentence["i"])
+    def sentence_struct(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out=[]
+
+        #tipo, cond, code
+        if (modo in ["normal", "func-imp", "func"]):
+            fun = sentence
+
+            preparo2 = [
+                    "def t_get_atr(self, v): ",
+                    "    return None",
+                
+                    "me.__getattr__ = t_get_atr",
+                    "private.__getattr__ = t_get_atr",
+                #"exportar.__getattr__ = t_get_atr",
+                
+                    "def t_set_atr(self, a, v): ",
+                #"    print('atr:', a)",
+                f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{engine.tydef}))",
+                
+                    "me.__setattr__ = t_set_atr",
+                    "private.__setattr__ = t_set_atr",
+                    "me.default = lambda x: me()",
+                f"me.__str__ = lambda x: '<Struct {fun['name']}>'",
+                    "me._str = me.__str__",
+                    "me.__repl__ = me.__str__",
+
+                #"exportar.__setattr__ = t_set_atr",
+                
+            ]
+            
+            preparo = [
+                f"def var_{fun['name']}():",
+                    "    class private:pass",#"    private = (MD())",
+                    "    class me:pass",
+                        preparo2,
+                f"    var_private = private()",
+                f"    private = var_private",
+                        engine.generator(fun["code"], "struct"),
+                #f"    var_private = private()",
+                    "    return me",
+                f"var_{fun['name']} = (var_{fun['name']})()"
+            ]
+            out+=preparo
+        elif (modo in ["module"]):
+            fun = sentence
+
+            preparo2 = [
+                    "def t_get_atr(self, v): ",
+                    "    return None",
+                
+                    "me.__getattr__ = t_get_atr",
+                    "private.__getattr__ = t_get_atr",
+                #"exportar.__getattr__ = t_get_atr",
+                
+                    "def t_set_atr(self, a, v): ",
+                #"    print('atr:', a)",
+                f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{engine.tydef}))",
+                
+                    "me.__setattr__ = t_set_atr",
+                    "private.__setattr__ = t_set_atr",
+                    "me.default = lambda x: me()",
+                f"me.default = lambda x: '<Struct {fun['name']}>'",
+                    "me._str = me.__str__",
+                    "me.__repl__ = me.__str__",
+                    
+                #"exportar.__setattr__ = t_set_atr",
+                
+            ]
+
+            ta = "me"
+
+            if fun["visisble"] == "private":
+                ta = "private"
+            
+            preparo = [
+                f"def var_{fun['name']}():",
+                    "    class private:pass",#"    private = (MD())",
+                    "    class me:pass",
+                        preparo2,
+                f"    var_private = private()",
+                f"    private = var_private",
+                    engine.generator(fun["code"], "struct"),
+                #f"    var_private = private()",
+                    "    return me",
+                f"{ta}.{fun['name']} = (var_{fun['name']})()"
+            ]
+            out+=preparo
+
+        return self.engine_error(out, sentence["i"])
+    def sentence_vardefine(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out = []
+        if modo in ["normal", "func-imp", "func"]:
+            ordenar = []
+            
+            for x in sentence["dim"]:
+            
+                #print(i)
+                arg=x["name"]
+                sta=x["type"][0]
+                col = engine.generator_one(x["def"], "func")
+                if col == "": col = "None"
+                defa=(col)
+
+                qqq = ""
+                if sentence["const"]:qqq = f"constant.append('var_{arg}')"
+
+                ordenar+=self.engine_error([
+                    
+                    f"if 'var_{arg}' in constant: app.constE('var_{arg}')",
+                    f"try:",
+                    f"    sta_var = var_{sta}",
+                    f"except:",
                     f"    try:",
-                    f"        f_rt = (var_{fun['return']})",
+                    f"        sta_var = var_{sta}",
                     f"    except:",
-                    f"        f_rt = (var_{fun['return']})",
-                    f"    {sefi2}",
-                    print_arg(fun["arg"]) +
-                    self.generator(fun["code"], "func"),
-                    "    pass",
+                    f"        app.error('the {sta} class not found', '{errores.ErrorName}', app.index)",
+                    f"try:",
+                    f"    var_{arg} = ({defa})",
+                    f"except:",
+                    f"    var_{arg} = None",
+                    f"sta_values['var_{arg}'] = sta_var",
+                    f"var_{arg} = app.dim(var_{arg}, sta_var)",
+                    qqq
+                ], sentence["i"])
+                pass
+
+            out += ordenar
+        elif modo in ["class", "module", "struct"]:
+            ordenar = []                
+            for x in sentence["dim"]:
+                
+                #print(i)
+                arg=x["name"]
+                sta=x["type"][0]
+                col = engine.generator_one(x["def"], "func")
+                if col == "": col = "None"
+                defa=(col)
+
+                na = "me"
+                qqq = ""
+                qqq2 = ""
+                if sentence["const"]:qqq2 = f"constant.append('var_{arg}')"
+
+
+                if sentence["visible"] == "private":
+                    na = "private"
+                    pass
+                elif sentence["visible"] == "static" and modo == "class":
+                    na = "out"
+                    pass
+                elif sentence["visible"] == "export" and modo == "class":
+                    qqq = f"exportar['{arg}'] = app.dim(var_{arg}, sta_var)"
+                    pass
+                
+                
+
+                ordenar+= self.engine_error([
+                    f"if 'var_{arg}' in constant: app.constE('var_{arg}')",
+                    f"try:",
+                    f"    sta_var = var_{sta}",
+                    f"except:",
+                    f"    try:",
+                    f"        sta_var = var_{sta}",
+                    f"    except:",
+                    f"        app.error('the {sta} class not found', '{errores.ErrorName}', app.index)",
+                    f"try:",
+                    f"    var_{arg} = ({defa})",
+                    f"except:",
+                    f"    var_{arg} = None",
+                    f"sta_values['var_{arg}'] = sta_var",
+                    f"{na}.{arg} = app.dim(var_{arg}, sta_var)",
                     qqq,
                     qqq2
-                ]
-                salida+=preparo
+                ], sentence["i"])
                 pass
-            
-            #Ejecucion, y operaciones basicas
-            elif (i["tipo"] == "exe")              and (modo in ["normal", "func-imp", "func"]):
 
-                le = self.generator_one(i["exe"], modo, "exec")
-                salida += p_error(
-                    [le],
-                    i["i"]
-                )
-                pass
-            elif (i["tipo"] == "if-def")           and (modo in ["normal", "func-imp", "func"]):
-                if_out=[]
-                #tipo, cond, code
-                for x in i["lista"]: 
-                    if x["tipo"] in ["if", "elif"]:
-                        cond = self.generator_one(x["cond"], modo)
-                        codigo = self.generator(x["code"], modo)
-                        if_out += [
-                            f"{x['tipo']} ({cond}):",
-                            codigo,
-                            "    pass"
-                        ]
-                    else:
-                        codigo = self.generator(x["code"], modo)
-                        if_out += [
-                            f"else:",
-                            codigo,
-                            "    pass"
-                        ]
-                        break
-                    pass
+            out += ordenar
 
-                salida += p_error(if_out, i["i"])
-
-                pass
-            elif (i["tipo"] == "switch-def")       and (modo in ["normal", "func-imp", "func"]):
-                if_out=[]
-                #tipo, cond, code
-                cond = self.generator_one(i["cond"], modo)
-                codigo = self.generator(i["code"], "switch", data = {"modo": modo})
-                if_out += [
-                    f"switch_val = ({cond})",
-                     "if False:",
-                     "    pass",
-                     *codigo,
-                ]
-
-                salida += p_error(if_out, i["i"])
-
-                pass
-            elif (i["tipo"] == "case-def")         and (modo in ["switch"]):
-                if_out=[]
-                #tipo, cond, code
-
-                cond = self.generator_one(i["cond"], data.get("modo", "normal"))
-                codigo = self.generator(i["code"], data.get("modo", "normal"))
-                if_out += [
-                    f"elif ({cond}) == (switch_val):",
-                     codigo,
-                     "    pass",
-                ]
-
-                salida += if_out
-
-                pass
-            elif (i["tipo"] == "case-d-def")       and (modo in ["switch"]):
-                if_out=[]
-
-                #tipo, cond, code
-                codigo = self.generator(i["code"], data.get("modo", "normal"))
-                if_out += [
-                    f"else:",
-                     codigo,
-                     "    pass",
-                ]
-
-                lastcode = if_out
-
-                pass
-            elif (i["tipo"] == "while-def")        and (modo in ["normal", "func-imp", "func"]):
-                if_out=[]
-                #tipo, cond, code
-                x=i
-                cond = self.generator_one(x["cond"], modo)
-                codigo = self.generator(x["code"], modo)
-                if_out += [
-                    f"while ({cond}):",
-                    codigo,
-                    "    pass"
-                ]
-                
-
-                salida += p_error(if_out, i["i"])
-
-                pass
-            elif (i["tipo"] == "for-def")          and (modo in ["normal", "func-imp", "func"]):
-                if_out=[]
-                #tipo, cond, code
-                x=i
-                d_for =x["for"] #self.generator_one(x["for"], modo)
-                cond = self.generator_one(d_for[1], modo)
-                codigo = self.generator(x["code"], modo)
-                post_code = self.generator_one(d_for[2], modo, "exec")
-                if_out += [
-                    f"var_{d_for[0][0]['name']} = ({self.generator_one(d_for[0][2:], modo)})",
-                    f"while (True):",
-                    f"    if not ({cond}): break",
-                    codigo,
-                    f"    {post_code}",
-                     "    pass"
-                ]
-                
-
-                salida += p_error(if_out, i["i"])
-
-                pass
-            elif (i["tipo"] == "for-each-def")     and (modo in ["normal", "func-imp", "func"]):
-                if_out=[]
-                #tipo, cond, code
-                x=i
-                cond = self.generator_one(x["cond"], modo)
-                codigo = self.generator(x["code"], modo)
-                if_out += [
-                    f"for var_{x['var']} in ({cond}):",
-                        codigo,
-                    "    pass"
-                ]
-                
-
-                salida += p_error(if_out, i["i"])
-
-                pass
-            elif (i["tipo"] == "with-def")         and (modo in ["normal", "func-imp", "func"]):
-                if_out=[]
-                #tipo, cond, code
-                x=i
-                cond = self.generator_one(x["value"], modo)
-                codigo = self.generator(x["code"], modo)
-                if_out += [
-                    f"def t_tmp_with(t_t):",
-                    f"    var_{x['name']} = t_t",
-                        codigo,
-                    "    pass",
-                    f"t_tmp_with({cond})",
-                    f"del t_tmp_with"
-                ]
-                
-
-                salida += p_error(if_out, i["i"])
-
-                pass
-            elif (i["tipo"] == "rt-def")           and (modo in ["func"]):
-                
-                
-                out = self.generator_one(i["eval"], modo)
-                preparo = [
-                    f"return app.dim(({out}), f_rt)"
-                ]
-
-                salida+=p_error(preparo, i["i"])
-                pass
-            elif (i["tipo"] == "try-def")          and (modo in ["normal", "func-imp", "func"]):
-                if_out=[]
-                #tipo, cond, code
-                x=i
-                #cond = self.generator_one(x["cond"], modo)
-                code_try = self.generator(x["try"], modo)
-                code_error = self.generator(x["error"], modo)
-                if_out += [
-                     "try:",
-                          code_try,
-                     "    pass",
-                     "except Exception as ero:",
-                    f"    var_{x['e']} = ero",
-                     "    app.cracheos = []",
-                          code_error,
-                     "    pass",
-                ]
-                
-
-                salida += p_error(if_out, i["i"])
-
-                pass
-            
-            #Declaracion de Clases, Estructuras, Espacios de nombres y Modulos
-
-                # Clases
-
-            elif (i["tipo"] == "class-def")        and (modo in ["normal", "func-imp", "func"]):
-                fun = i
-                arg= []
-                for x in fun["extend"]:
-                    #print(x)
-                    arg.append("var_"+x["name"])
-                    pass
-                
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                     "me.__setattr__ = t_set_atr",
-                     "private.__setattr__ = t_set_atr",
-                    #"exportar.__setattr__ = t_set_atr",
-                    
-                ]
-                
-                preparo = [
-                    f"class tmp_class_{fun['name']}({','.join(arg)}):",
-                     "    pass",#"    def __dict__():pass",
-                    f"def tmp_var_{fun['name']}(obj):",
-                     "    exportar = {}",
-                    f"    me = obj",
-                     "    class private:pass",
-                          preparo2,
-                    f"    var_private = private",
-                    f"    private = var_private",
-                     "    def out(*arg): return me(*arg)",
-                     "    def p_call(o):",
-                     "        def eo(*arg):",
-                     "            o(me, *arg)",
-                     "        return eo",
-
-
-                            self.generator(fun["code"], "class"),
-
-
-                    f"    out.__export__ = exportar",
-                    f"    me.__export__ = exportar",
-                     "    return out",
-                    f"var_{fun['name']} = tmp_var_{fun['name']}(tmp_class_{fun['name']})",
-                    f"var_{fun['name']}.__clase__ = tmp_class_{fun['name']}",
-                        #self.generator(fun["code"], "class"),
-                ]
-                salida+=preparo
-                pass
-            elif (i["tipo"] == "class-def")        and (modo in ["module"]):
-                fun = i
-                arg= []
-                for x in fun["extend"]:
-                    #print(x)
-                    arg.append("var_"+x["name"])
-                    pass
-                
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                     "me.__setattr__ = t_set_atr",
-                     "private.__setattr__ = t_set_atr",
-                    #"exportar.__setattr__ = t_set_atr",
-                    
-                ]
-                ta = "me"
-
-                if fun["visisble"] == "private":
-                    ta = "private"
-                
-                preparo = [
-                    f"class tmp_class_{fun['name']}({','.join(arg)}):",
-                     "    pass",#"    def __dict__():pass",
-                    f"def tmp_var_{fun['name']}(obj):",
-                     "    exportar = {}",
-                    f"    me = obj",
-                     "    class private:pass",
-                        preparo2,
-                    f"    var_private = private",
-                    f"    private = var_private",
-                     "    def out(*arg): return me(*arg)",
-                     "    def p_call(o):",
-                     "        def eo(*arg):",
-                     "            o(me, *arg)",
-                     "        return eo",
-
-
-                            self.generator(fun["code"], "class"),
-
-
-                    f"    out.__export__ = exportar",
-                    f"    me.__export__ = exportar",
-                     "    return out",
-                    f"{ta}.{fun['name']} = tmp_var_{fun['name']}(tmp_class_{fun['name']})",
-                    f"{ta}.{fun['name']}.__clase__ = tmp_class_{fun['name']}",
-                        #self.generator(fun["code"], "class"),
-                ]
-                salida+=preparo
-                pass
-            
-                # Modulos
-            
-            elif (i["tipo"] == "module-def")       and (modo in ["normal", "func-imp", "func"]):
-                fun = i
-
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    #"    print('atr:', a)",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                    "me.__setattr__ = t_set_atr",
-                    "private.__setattr__ = t_set_atr",
-                    #"exportar.__setattr__ = t_set_atr",
-                    
-                ]
-                
-                preparo = [
-                    f"def var_{fun['name']}():",
-                     "    class private:pass",#"    private = (MD())",
-                     "    class me:pass",
-                          preparo2,
-                    f"    var_private = private()",
-                    f"    private = var_private",
-                        self.generator(fun["code"], "module"),
-                    #f"    var_private = private()",
-                     "    return me()",
-                    f"var_{fun['name']} = (var_{fun['name']})()"
-                ]
-                salida+=preparo
-                pass 
-            elif (i["tipo"] == "module-def")       and (modo in ["module"]):
-                fun = i
-
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    #"    print('atr:', a)",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                    "me.__setattr__ = t_set_atr",
-                    "private.__setattr__ = t_set_atr",
-                    #"exportar.__setattr__ = t_set_atr",
-                    
-                ]
-
-                ta = "me"
-
-                if fun["visisble"] == "private":
-                    ta = "private"
-                
-                preparo = [
-                    f"def var_{fun['name']}():",
-                     "    class private:pass",#"    private = (MD())",
-                     "    class me:pass",
-                          preparo2,
-                    f"    var_private = private()",
-                    f"    private = var_private",
-                        self.generator(fun["code"], "module"),
-                    #f"    var_private = private()",
-                     "    return me()",
-                    f"{ta}.{fun['name']} = (var_{fun['name']})()"
-                ]
-                salida+=preparo
-                pass
-            
-                # Espacios de nomres
-
-            elif (i["tipo"] == "namespace-def")    and (modo in ["normal", "func-imp", "func"]):
-                fun = i
-
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    #"    print('atr:', a)",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                    "me.__setattr__ = t_set_atr",
-                    "private.__setattr__ = t_set_atr",
-                    #"exportar.__setattr__ = t_set_atr",
-                ]
-                
-                preparo = [
-                    f"def var_{fun['name']}():",
-                     "    class private:pass",#"    private = (MD())",
-                     "    class me:pass",
-                          preparo2,
-                    f"    var_private = private()",
-                    f"    private = var_private",
-                        self.generator(fun["code"], "module"),
-                    #f"    var_private = private()",
-                     "    return NS(me())",
-                    f"var_{fun['name']} = (var_{fun['name']})()"
-                ]
-                salida+=preparo
-                pass
-            
-                # Estructuras
-            
-            elif (i["tipo"] == "struct-def")       and (modo in ["normal", "func-imp", "func"]):
-                fun = i
-
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    #"    print('atr:', a)",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                     "me.__setattr__ = t_set_atr",
-                     "private.__setattr__ = t_set_atr",
-                     "me.default = lambda x: me()",
-                    f"me.__str__ = lambda x: '<Struct {fun['name']}>'",
-                     "me._str = me.__str__",
-                     "me.__repl__ = me.__str__",
-
-                    #"exportar.__setattr__ = t_set_atr",
-                    
-                ]
-                
-                preparo = [
-                    f"def var_{fun['name']}():",
-                     "    class private:pass",#"    private = (MD())",
-                     "    class me:pass",
-                          preparo2,
-                    f"    var_private = private()",
-                    f"    private = var_private",
-                          self.generator(fun["code"], "struct"),
-                    #f"    var_private = private()",
-                     "    return me",
-                    f"var_{fun['name']} = (var_{fun['name']})()"
-                ]
-                salida+=preparo
-                pass 
-            elif (i["tipo"] == "struct-def")       and (modo in ["module"]):
-                fun = i
-
-                preparo2 = [
-                     "def t_get_atr(self, v): ",
-                     "    return None",
-                    
-                     "me.__getattr__ = t_get_atr",
-                     "private.__getattr__ = t_get_atr",
-                    #"exportar.__getattr__ = t_get_atr",
-                    
-                     "def t_set_atr(self, a, v): ",
-                    #"    print('atr:', a)",
-                    f"    self.__dict__[a] = app.dim(v, sta_values.get('var_'+a, var_{self.tydef}))",
-                    
-                     "me.__setattr__ = t_set_atr",
-                     "private.__setattr__ = t_set_atr",
-                     "me.default = lambda x: me()",
-                    f"me.default = lambda x: '<Struct {fun['name']}>'",
-                     "me._str = me.__str__",
-                     "me.__repl__ = me.__str__",
-                     
-                    #"exportar.__setattr__ = t_set_atr",
-                    
-                ]
-
-                ta = "me"
-
-                if fun["visisble"] == "private":
-                    ta = "private"
-                
-                preparo = [
-                    f"def var_{fun['name']}():",
-                     "    class private:pass",#"    private = (MD())",
-                     "    class me:pass",
-                          preparo2,
-                    f"    var_private = private()",
-                    f"    private = var_private",
-                        self.generator(fun["code"], "struct"),
-                    #f"    var_private = private()",
-                     "    return me",
-                    f"{ta}.{fun['name']} = (var_{fun['name']})()"
-                ]
-                salida+=preparo
-                pass
-        
-
-            #Elementos de compilacion
-            elif (i["tipo"] == "$using-comp")      and (modo in ["normal", "func", "func-imp"]):
-                
-                #preparo = []
-                lel = i["using"]
-
-
-                #print(lel)
-
-                if compara([{"tipo":"name", "name":"namespace"}, "name"], lel):
-                    self.namespace = lel[1]["name"]
-                    using_namespace =True
-                    pass
-                elif compara([{"tipo":"name", "name":"namespace"}], lel):
-                    using_namespace =True
-                    self.namespace = "std"
-                    pass
-                
-
-
-                #salida+=preparo
-                pass
-            
-            #Declaracion de Variables
-            elif (i["tipo"] == "var-def")          and (modo in ["normal", "func-imp", "func"]):
-                ordenar = []                
-                for x in i["dim"]:
-                    
-                    #print(i)
-                    arg=x["name"]
-                    sta=x["type"][0]
-                    col = self.generator_one(x["def"], "func")
-                    if col == "": col = "None"
-                    defa=(col)
-
-                    qqq = ""
-                    if i["const"]:qqq = f"constant.append('var_{arg}')"
-
-                    ordenar+=p_error([
-                        
-                        f"if 'var_{arg}' in constant: app.constE('var_{arg}')",
-                        f"try:",
-                        f"    sta_var = var_{sta}",
-                        f"except:",
-                        f"    try:",
-                        f"        sta_var = var_{sta}",
-                        f"    except:",
-                        f"        app.error('the {sta} class not found', '{errores.ErrorName}', app.index)",
-                        f"try:",
-                        f"    var_{arg} = ({defa})",
-                        f"except:",
-                        f"    var_{arg} = None",
-                        f"sta_values['var_{arg}'] = sta_var",
-                        f"var_{arg} = app.dim(var_{arg}, sta_var)",
-                        qqq
-                    ], i["i"])
-                    pass
-
-                salida += ordenar
-                pass
-            elif (i["tipo"] == "var-def")          and (modo in ["class", "module", "struct"]):
-                ordenar = []                
-                for x in i["dim"]:
-                    
-                    #print(i)
-                    arg=x["name"]
-                    sta=x["type"][0]
-                    col = self.generator_one(x["def"], "func")
-                    if col == "": col = "None"
-                    defa=(col)
-
-                    na = "me"
-                    qqq = ""
-                    qqq2 = ""
-                    if i["const"]:qqq2 = f"constant.append('var_{arg}')"
-
-
-                    if i["visible"] == "private":
-                        na = "private"
-                        pass
-                    elif i["visible"] == "static" and modo == "class":
-                        na = "out"
-                        pass
-                    elif i["visible"] == "export" and modo == "class":
-                        qqq = f"exportar['{arg}'] = app.dim(var_{arg}, sta_var)"
-                        pass
-                    
-                    
-
-                    ordenar+=p_error([
-                        f"if 'var_{arg}' in constant: app.constE('var_{arg}')",
-                        f"try:",
-                        f"    sta_var = var_{sta}",
-                        f"except:",
-                        f"    try:",
-                        f"        sta_var = var_{sta}",
-                        f"    except:",
-                        f"        app.error('the {sta} class not found', '{errores.ErrorName}', app.index)",
-                        f"try:",
-                        f"    var_{arg} = ({defa})",
-                        f"except:",
-                        f"    var_{arg} = None",
-                        f"sta_values['var_{arg}'] = sta_var",
-                        f"{na}.{arg} = app.dim(var_{arg}, sta_var)",
+        return self.engine_error(out, sentence["i"])
+    def sentence_vareval(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out = []
+        if modo in ["normal", "func-imp", "func", "class", "module", "struct"]:
+            if sentence["onename"]:
+                t_name = sentence["var"][0]["name"]
+                qqq = f"if 'var_{t_name}' in constant: app.constE('var_{t_name}')"
+                #print("onename", t_name)
+                #print(qqq)
+                if modo in ["func", "func-imp", "normal"]:
+                    g_1 = engine.generator_one(sentence["var"], modo)
+                    g_2 = engine.generator_one(sentence["eval"], modo)
+                    preparo = self.engine_error([
                         qqq,
-                        qqq2
-                    ], i["i"])
+                        f"{g_1} = app.dim(({g_2}), sta_values.get('{g_1}', var_{engine.tydef}))",
+                    ], sentence["i"])
                     pass
+                elif modo in ["class", "struct"]:
 
-                salida += ordenar
-                pass
-            elif (i["tipo"] == "var-eval")         and (modo in ["normal", "func-imp", "func", "class", "module", "struct"]):
+                    g_1 = sentence["var"][0]["name"]
+                    g_2 = engine.generator_one(sentence["eval"], modo)
+                    preparo = self.engine_error([
+                        qqq,
+                        f"{g_1} = ({g_2})",
+                    ], sentence["i"])
+                    pass
+                elif modo in ["module"]:
+
+                    g_1 = sentence["var"][0]["name"]
+                    g_2 = engine.generator_one(sentence["eval"], modo)
+                    preparo = self.engine_error([
+                        qqq,
+                        f"me.{g_1} = ({g_2})",
+                        f"var_{g_1} = (me.{g_1})",
+                    ], sentence["i"])
+                    pass
                 
-                if i["onename"]:
-                    t_name = i["var"][0]["name"]
-                    qqq = f"if 'var_{t_name}' in constant: app.constE('var_{t_name}')"
-                    #print("onename", t_name)
-                    #print(qqq)
-                    if modo in ["func", "func-imp", "normal"]:
-                        g_1 = self.generator_one(i["var"], modo)
-                        g_2 = self.generator_one(i["eval"], modo)
-                        preparo = p_error([
-                            qqq,
-                            f"{g_1} = app.dim(({g_2}), sta_values.get('{g_1}', var_{self.tydef}))",
-                        ], i["i"])
-                        pass
-                    elif modo in ["class", "struct"]:
-
-                        g_1 = i["var"][0]["name"]
-                        g_2 = self.generator_one(i["eval"], modo)
-                        preparo = p_error([
-                            qqq,
-                            f"{g_1} = ({g_2})",
-                        ], i["i"])
-                        pass
-                    elif modo in ["module"]:
-
-                        g_1 = i["var"][0]["name"]
-                        g_2 = self.generator_one(i["eval"], modo)
-                        preparo = p_error([
-                            qqq,
-                            f"me.{g_1} = ({g_2})",
-                            f"var_{g_1} = (me.{g_1})",
-                        ], i["i"])
-                        pass
-                    
-                    
-                    pass
-                else:
-                    g_1 = self.generator_one(i["var"], modo)
-                    g_2 = self.generator_one(i["eval"], modo)
-                    preparo = p_error([
-                        f"{g_1} = ({g_2})"
-                    ], i["i"])
-                    pass
-
-                salida+=preparo
+                
                 pass
+            else:
+                g_1 = engine.generator_one(sentence["var"], modo)
+                g_2 = engine.generator_one(sentence["eval"], modo)
+                preparo = self.engine_error([
+                    f"{g_1} = ({g_2})"
+                ], sentence["i"])
+                pass
+
+            out+=preparo
+            pass
+        return self.engine_error(out, sentence["i"])
+    def sentence_import(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out = []
+        if modo in ["normal", "func-imp", "func"]:
             
-            #Elementos de importacion de modulos externo e internos
-            elif (i["tipo"] == "import-def")       and (modo in ["normal", "func-imp", "func"]):
-                
-                salida += p_error([
-                    f"var_{i['as']} = app.getlib('{i['import']}')"
-                ], i["i"])
-                pass
-            elif (i["tipo"] == "from-def")         and (modo in ["normal", "func-imp", "func"]):
-                
-                salida += p_error([
-                    f"var_{i['as']} = app.getlib('{i['from']}').{i['import']}"
-                ], i["i"])
-                pass
-            elif (i["tipo"] == "include-def")      and (modo in ["normal", "func-imp", "func"]):
-                
-                salida += p_error([
-                    f"incluir = app.getlib('{i['include']}')",
-                     #"print(type(incluir))",
-                     "for x in dir(incluir):",
-                     #"    print(getattr(incluir, x))",
-                    f"    globals()['var_' + x] = getattr(incluir, x)",
-                    f"    locals()['var_' + x] = getattr(incluir, x)",
+            out+=[
+                f"var_{sentence['as']} = app.getlib('{sentence['import']}')"
+            ]
 
-                ], i["i"])
+            pass
+        return self.engine_error(out, sentence["i"])
+    def sentence_from(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out = []
+        if modo in ["normal", "func-imp", "func"]:
+            
+            out += [
+                f"var_{sentence['as']} = app.getlib('{sentence['from']}').{sentence['import']}"
+            ]
+
+            pass
+        return self.engine_error(out, sentence["i"])
+    def sentence_include(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out = []
+        if modo in ["normal", "func-imp", "func"]:
+            
+            out += [
+                f"incluir = app.getlib('{sentence['include']}')",
+                    #"print(type(incluir))",
+                    "for x in dir(incluir):",
+                    #"    print(getattr(incluir, x))",
+                f"    globals()['var_' + x] = getattr(incluir, x)",
+                f"    locals()['var_' + x] = getattr(incluir, x)",
+            ]
+
+            pass
+        return self.engine_error(out, sentence["i"])
+    def sentence_template(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out = []
+
+        if modo in ["normal", "func-imp", "func"]:
+
+            pati = lib.find(sentence["template"])
+
+            tem = []
+            if pati == "None":
+                print(f"template '{sentence['template']}' not found")
                 pass
-            elif (i["tipo"] == "template-def")     and (modo in ["normal", "func-imp", "func"]):
-                
-                pati = lib.find(i["template"])
+            else:
+                _ftp = open(pati, "r")
+                tem = _ftp.read().split("\n")
+                _ftp.close()
+                pass
+
+            out += tem
+
+
+
+        return self.engine_error(out, sentence["i"])
+    def sentence_template_if(self, engine, c, modo:str="normal", usingmode = "compiled", data = {}, sentence={}) -> list:
+        out = []
+
+        if modo in ["normal", "func-imp", "func"]:
+
+            if self.PRO.get(sentence["var"], None) == sentence["value"]:
+                pati = lib.find(sentence["template"])
 
                 tem = []
                 if pati == "None":
-                    print(f"template '{i['template']}' not found")
+                    print(f"template '{sentence['template']}' not found")
                     pass
                 else:
                     _ftp = open(pati, "r")
@@ -4232,46 +3466,137 @@ class appclss(appclsBase):
                     _ftp.close()
                     pass
 
-                salida += p_error(tem, i["i"])
+                out += tem
                 pass
-            elif (i["tipo"] == "template-if-def")     and (modo in ["normal", "func-imp", "func"]):
-                #print(i, self.PRO.get(i["var"], None))
-                
-                if self.PRO.get(i["var"], None) == i["value"]:
-                    pati = lib.find(i["template"])
 
-                    tem = []
-                    if pati == "None":
-                        print(f"template '{i['template']}' not found")
-                        pass
+
+
+        return self.engine_error(out, sentence["i"])
+    # generador de expresiones
+
+    def expression_name(self, engine, line:list, modo:str="normal", modi:str ="eval", key:bool=False, expression={}, ite:int = 0, fallo:types.FunctionType = (lambda x: []), iskey:bool=False) -> str:
+        out = ""
+        if modo in ["func", "func-imp", "class", "module", "normal", "struct"]:
+            if iskey:
+                #print("error 2", i)
+
+                t = {"tipo":"value", "value":f"'{expression['name']}'", "type":"str", "i":expression["i"], "byte":""}
+                out+= f" {engine.print_value(t)} "
+                pass
+            elif expression["notmod"]:
+                out+= f" {expression['name']} "
+                pass
+            elif expression["name"] in nombre_reservados["codi"]:
+                out+= f" {expression['name']} "
+                pass                  
+            elif (expression["name"] in nombre_reservados["bucle"]):
+                if modi == "exec":
+                    if out == "":
+                        out+= f" {expression['name']} "
                     else:
-                        _ftp = open(pati, "r")
-                        tem = _ftp.read().split("\n")
-                        _ftp.close()
-                        pass
-
-                    salida += p_error(tem, i["i"])
+                        fallo(f"Error Syntax with the token '{expression['name']}'")
                     pass
-
+                else:
+                    fallo(f"the token '{expression['name']}' is invalid in this case")
                 pass
+            elif expression["name"][0]==".":
+                out+= f"{expression['name']} "
+                pass
+            elif expression["name"][0]=="0":
+                
+                out+= f" app.fint('{expression['name']}', '{expression['name'][1]}') "
+                pass
+            elif compara([{"tipo":"ope", "char":"::"}], line[ite+1:ite+2]):
+                out+= f" var_{expression['name']}.__names__"
+                pass
+            elif compara([{"tipo":"ope", "char":"::"}], line[ite-1:ite]):
+                out+= f".{expression['name']}"
+                pass
+            else:
+                out+= f" var_{expression['name']} "
+                pass
+            pass
+        return out
+    def expression_sim(self, engine, line:list, modo:str="normal", modi:str ="eval", key:bool=False, expression={}, ite:int = 0, fallo:types.FunctionType = (lambda x: []), iskey:bool=False) -> str:
+        out = ""
+        if modo in ["func", "func-imp", "class", "module", "normal", "struct"]:
+            out += f" {expression['char']} "
+            pass
+        return out
+    def expression_ope(self, engine, line:list, modo:str="normal", modi:str ="eval", key:bool=False, expression={}, ite:int = 0, fallo:types.FunctionType = (lambda x: []), iskey:bool=False) -> str:
+        out = ""
+        if modo in ["func", "func-imp", "class", "module", "normal", "struct"]:
+            if expression["char"] in ["+", "-", "*", "/", "**", "%", ":"]:
+                out += f" {expression['char']} "
+            elif expression["char"] in tokens["convert"]["condi"]:
+                out += f" {tokens['convert']['condi'][expression['char']]} "
+                pass
+            elif expression["char"] in tokens["convert"]["expre-"+str(modi)]:
+                out += f" {tokens['convert']['expre-'+str(modi)][expression['char']]} "
+                pass
+            elif expression["char"] in tokens["cond"]:
+                out += f" {expression['char']} "
+            elif (expression["char"] in ["="]) and (modi=="exec"):
+                out += f" = "
             
+            
+        return out
+    def expression_tuple(self, engine, line:list, modo:str="normal", modi:str ="eval", key:bool=False, expression={}, ite:int = 0, fallo:types.FunctionType = (lambda x: []), iskey:bool=False) -> str:
+        out = ""
+        if modo in ["func", "func-imp", "class", "module", "normal", "struct"]:
+            be = f" ({engine.generator_one(expression['data'], modo)}) "
+            if expression["fist"]:
+                be = " app.fist("+be+") "
+            out+= be
             pass
-        if (using_namespace) and (usingmode == "compiled"):
-            #print("que?")
-            self.namespace = "std"
-        
-        salida += GE.block_after(*_pass_arguments, lastcode)
-        if isinstance(c, dict):
-            code = c["data"]
-            func = c["func"]
+        return out
+    def expression_list(self, engine, line:list, modo:str="normal", modi:str ="eval", key:bool=False, expression={}, ite:int = 0, fallo:types.FunctionType = (lambda x: []), iskey:bool=False) -> str:
+        out = ""
+        if modo in ["func", "func-imp", "class", "module", "normal", "struct"]:
+            be = f" [{engine.generator_one(expression['data'], modo)}] "
+            if expression["fist"]:
+                be = " app.fist("+be+") "
+            out+= be
             pass
-        
-        #del c, using_namespace, usingmode
+        return out
+    def expression_code(self, engine, line:list, modo:str="normal", modi:str ="eval", key:bool=False, expression={}, ite:int = 0, fallo:types.FunctionType = (lambda x: []), iskey:bool=False) -> str:
+        out = ""
+        if modo in ["func", "func-imp", "class", "module", "normal", "struct"]:
+            be = f" {'{'+engine.generator_one(expression['one'], modo, 'eval', True)+'}'} "
+            if expression["fist"]:
+                be = " app.fist("+be+") "
+            out+= be
+            pass
+        return out
+    def expression_value(self, engine, line:list, modo:str="normal", modi:str ="eval", key:bool=False, expression={}, ite:int = 0, fallo:types.FunctionType = (lambda x: []), iskey:bool=False) -> str:
+        out = ""
+        if modo in ["func", "func-imp", "class", "module", "normal", "struct"]:
+            out += f" {engine.print_value(expression)} "
+            pass
+        return out
+    def expression_cml(self, engine, line:list, modo:str="normal", modi:str ="eval", key:bool=False, expression={}, ite:int = 0, fallo:types.FunctionType = (lambda x: []), iskey:bool=False) -> str:
+        out = ""
+        if modo in ["func", "func-imp", "class", "module", "normal", "struct"]:
+            out += f" app.cml({repr(expression['data'])}) "
+            pass
+        return out
+    def expression_if(self, engine, line:list, modo:str="normal", modi:str ="eval", key:bool=False, expression={}, ite:int = 0, fallo:types.FunctionType = (lambda x: []), iskey:bool=False) -> str:
+        out = ""
+        if modo in ["func", "func-imp", "class", "module", "normal", "struct"]:
+            be_if = f" ({engine.generator_one(expression['then']['data'], modo)}) "
+            be_else = f" ({engine.generator_one(expression['else']['data'], modo)}) "
+            be_cond = f" ({engine.generator_one(expression['if']['data'], modo)}) "
 
-        return salida
+            out += f" ({be_if} if {be_cond} else {be_else}) "
+            pass
+        return out
     pass
 
 
 
 
-appcls = appclss
+
+
+
+
+appcls = appclsBase

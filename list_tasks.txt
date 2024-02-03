@@ -3,3 +3,10 @@
 - create "setrule" sentences for can will set new syntax, rules, especial compiles and architecture objects
 - create modules and rewrite the system of import and include libraries
 - fusion CLSJS with CLS and convert a new addon/Framework
+
+
+
+update: 
+
+    -Bug at set values to vars complex assignation
+    -System custom compiler worked and rewriter 
