@@ -2506,8 +2506,6 @@ class appclsBase():
     pass
 
 
-#debes de crear los modulos y construir el resto de funcionalidades, PyCLS casi terminado
-
 class EngineOutput():
     # infraestructura 
     def engine_error(self, code, i) -> list:
