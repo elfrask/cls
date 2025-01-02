@@ -2,6 +2,7 @@ import clsengine.clsengine as cls
 import sys
 import os
 import json
+import dill
 
 #github.com/elfrask/cls
 
@@ -12,8 +13,10 @@ except Exception as e:
 #import shutil
 import platform
 
-year_last_update = "2024"
+year_last_update = "2025"
 version_cls = "1.1.1"
+
+
 
 def cwd():
     app_path = ""
