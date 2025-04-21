@@ -3,3 +3,11 @@ clsexe
 dist
 cache
 dist_old
+
+*.pyc
+*.pyd
+
+*/clslang/*.c
+*/clslang/*.h
+*/__pycache__/*
+

@@ -1,7 +1,9 @@
 {
     "cSpell.words": [
-        "cpkg",
-        "CPKG"
-    ],
-    "workbench.editor.wrapTabs": true
+        "isinstance",
+        "iterador",
+        "Simbol",
+        "spfunction",
+        "toks"
+    ]
 }
