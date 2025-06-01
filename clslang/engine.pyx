@@ -1,4 +1,5 @@
 from . import _tokens as tokens
+# from . import _tokens as tokens
 
 # from clslang cimport _tokens as tokens
 # cimport clslang._tokens as tokens
@@ -41,7 +42,8 @@ _toks = {
 # B0 = int(b"0")
 
 _nombre_reservados = {
-    "visible":["export", "static", "private", "public", "global"], 
+    "visible":["export", "static", "private", "public", "global"],
+    "thread":["sync", "async"],
     "nombre":[
             "func", "function", "class", "module", "with", "for", "if", "while", "define",
             "from", "import", "global", "try", "def", "fub", "method", "include", "using", "var",
@@ -52,6 +54,38 @@ _nombre_reservados = {
 }
 
 # TokenTemplate = tokens.tokenTemplate
+
+cdef class subjectFind():
+
+    cdef object tokenType
+    cdef dict[str, str] params
+
+    def __init__(self, type tokenType, dict[str, str] params = {}):
+
+        self.tokenType = tokenType
+        self.params = params
+        
+        pass
+    cdef bint checkEval(self, token: tokens.tokenTemplate):
+
+        if isinstance(token, self.tokenType):
+
+            # if not self.params:
+            #     return True
+            
+            for i in self.params:
+                
+                if hasattr(token, i):
+                    if getattr(token, i) != self.params[i]:
+                        return False
+                else:
+                    return False
+
+            return True
+
+        return False
+    pass
+
 
 cdef class spfunction():
 
@@ -94,6 +128,17 @@ cdef class spfunction():
         return tiene_digito  # Asegura que haya al menos un dígito
 
     
+    def compare(list[tokens.tokenTemplate] Expression, list[subjectFind] check):
+
+        if len(check) > len(Expression):
+            return False
+        
+        for i in range(0, len(check)):
+
+            if not check[i].checkEval(Exception[i]):
+                return False
+
+        return True
     
 
     pass
@@ -137,8 +182,19 @@ cdef class StackParsingEviroment():
     
 
     pass
-    
 
+cdef class ClsBlock():
+
+    cdef list[tokens.tokenTemplate] ByteCodeScript
+    cdef list[tokens.FunctionToken] EnvironmentFunctions
+
+    def __init__(self, list[tokens.tokenTemplate] _ByteCodeScript, list EnvironmentFunctions) -> None:
+        
+        self.ByteCodeScript = _ByteCodeScript
+        self.EnvironmentFunctions = EnvironmentFunctions
+        pass
+
+    pass
 
 
 cdef class ClsScript():
@@ -146,7 +202,7 @@ cdef class ClsScript():
     cdef public str _code
     cdef public str name_module
     cdef public int id
-    cdef public list[list[tokens.tokenTemplate]] result
+    cdef public ClsBlock result
 
     def __init__(self, str code, str name_module, int ID = 0):
 
@@ -180,9 +236,6 @@ cdef class ClsApplication():
         pass
     pass
 
-cdef class ClsByteCodes:
-
-    pass
 
 cdef class ClsCompiler():
 
@@ -195,7 +248,11 @@ cdef class ClsCompiler():
         self.lib_path = []
         pass
     
-    
+    cdef void Catch(self, int i, str message = ""):
+
+        print(f"Hubo un error en el index {i}: {message}")
+        pass
+
     cdef list _tokenizer(self, ClsScript _script):
         cdef list[list] output = [] 
         cdef list[tokens.tokenTemplate] line = []
@@ -475,16 +532,111 @@ cdef class ClsCompiler():
 
         return _current_level.get_data_returning()
     
-    cdef list[tokens.tokenTemplate] _structure():
+    cdef ClsBlock _structureSentence(self, list[list[tokens.tokenTemplate]] SentenceCode, list[tokens.FunctionToken] Environment = [], mode = "normal"):
         
-        pass
+        cdef list[tokens.tokenTemplate] blockSentence = []
+
+        cdef list[tokens.tokenTemplate] sentence = []
+
+        cdef str scope = "unknown"
+        cdef _asyncFunction = False
+        cdef onlyFunction = False
+        cdef onlyDeclaration = False
+
+
+        for i in SentenceCode:
+
+            sentence = [*i]
+            
+            scope = "unknown"
+            _asyncFunction = False
+            onlyFunction = False
+            onlyDeclaration = False
+
+            if isinstance(sentence[0], tokens.NameValue):
+
+
+                    
+                # if 
+
+                if sentence[0].Value in _nombre_reservados["visible"]:
+                    scope = sentence[0].Value
+                    onlyDeclaration = True
+                    sentence = sentence[1:]
+                    pass
+
+
+                if sentence[0].Value in _nombre_reservados["thread"]:
+                    _asyncFunction = sentence[0].Value == "async"
+                    onlyDeclaration = True
+                    onlyFunction = True
+                    sentence = sentence[1:]
+                    pass
+
+                if not sentence[0].Value in _nombre_reservados["nombre"]:
+
+                    
+                    if spfunction.compare(sentence, [
+                        subjectFind(tokens.NameValue),
+                        subjectFind(tokens.NameValue),
+                        subjectFind(tokens.NodeToken, {"format": "()"}), 
+                        subjectFind(tokens.NodeToken, {"format": "{}"})
+                        ]):
+
+                        sentence = [
+                            tokens.NameValue("function", sentence[0].index),
+                            sentence[1],
+                            sentence[2],
+                            tokens.OperatorToken("->", 0),
+                            sentence[0],
+                            sentence[3]
+
+                        ]
+
+                        pass
+                    pass
+
+                if sentence[0].Value in ["function", "func", "fub", "method"]:
+                    
+                    # sentence = sentence[1:]
+
+                    if spfunction.compare(sentence, [
+                        subjectFind(tokens.NameValue), 
+                        subjectFind(tokens.NameValue), 
+                        subjectFind(tokens.NodeToken, {"format": "()"}), 
+                        subjectFind(tokens.NodeToken, {"format": "{}"})
+                        ]):
+
+                        blockSentence.append(
+                            tokens.FunctionToken(
+                                sentence[0].index,
+                                sentence[3].ContentComplex,
+                                sentence[1].Value
+                            )
+                        )
+
+                        pass
+
+                    pass
+
+                pass
+                
+                pass
+            
+
+            pass
+
+        return ClsBlock(blockSentence, Environment)
     
     cpdef ClsScript Compile(self, ClsScript _script):
 
         cdef list[list[tokens.tokenTemplate]] tokenize = self._tokenizer(_script)
         cdef list[list[tokens.tokenTemplate]] tokenize_node_parsed = self._parsing(tokenize)
 
+        cdef list[tokens.FunctionToken] EnvironmentFunction = []
+        cdef ClsBlock block_content = self._structureSentence(tokenize_node_parsed, EnvironmentFunction)
 
-        _script.result = tokenize_node_parsed
+
+        _script.result = block_content
 
         return _script

@@ -145,6 +145,76 @@ cdef class NodeToken(tokenTemplate):
         return str(f"NodeToken({self.index}, {self.format}, {show})")
 
 
+# =========================================================================================
+# =================================== Structure Tokens ====================================
+# =========================================================================================
+
+
+cdef class DeclareToken(tokenTemplate):
+
+    TypeToken = "DeclareToken"
+
+    cdef public str VarName
+    cdef public list[tokenTemplate] ContextType
+    cdef public list[tokenTemplate] DefaultExpression
+
+
+    def __init__(self, int index, str VarName, list[tokenTemplate] ContextType = [], list[tokenTemplate] DefaultExpression = []):
+        super().__init__(index)
+
+        self.DefaultExpression = DefaultExpression
+        self.VarName = VarName
+        self.ContextType = ContextType
+    
+    def __repr__(self) -> str:
+
+        
+
+        return str(f"index-{self.index}: var {self.VarName}: ({self.ContentComplex}) = {self.DefaultExpression}")
+
+
+
+
+cdef class FunctionToken(tokenTemplate):
+
+    TypeToken = "FunctionToken"
+
+    cdef public list[tokenTemplate] ContentSentence
+    cdef public list[DeclareToken] ParamsFunction
+    cdef public list[tokenTemplate] ReturnType
+    cdef public bint AnonymousFunction
+    cdef public str Scope
+    cdef public str FunctionName 
+
+
+    def __init__(
+        self, 
+        int index, 
+        list[tokenTemplate] contentSentence, 
+        str FunctionName = "",
+        str Scope = "public",
+        list[DeclareToken] ParamsFunction = [], 
+        list[tokenTemplate] ReturnType = [],
+        bint AnonymousFunction = False,
+    ):
+        super().__init__(index)
+        
+        self.ContentSentence = contentSentence
+        self.FunctionName = FunctionName
+        self.ParamsFunction = ParamsFunction
+        self.Scope = Scope
+        self.ReturnType = ReturnType
+        self.AnonymousFunction = AnonymousFunction
+
+
+    def __repr__(self) -> str:
+
+        
+
+        # return str(f"NodeToken({self.index}, {self.format}, {show})")
+        return str(f"index-{self.index}: function {self.FunctionName}({self.ParamsFunction}) -> {self.ReturnType} " + "{ ... }")
+
+
 
 
 
