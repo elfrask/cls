@@ -1,0 +1,22 @@
+[project]
+name = "clslang"
+version = "1.2"
+description = "cls lang a lite and fast programming language"
+authors = [
+    {name = "elfrask",email = "elfraskodev@gmail.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "click (>=8.1.8,<9.0.0)"
+]
+
+[tool.poetry]
+
+[tool.poetry.group.dev.dependencies]
+cython = "^3.0.12"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
