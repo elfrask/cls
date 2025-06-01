@@ -1,4 +1,4 @@
-*.pyd
-clslang/*.c
-clslang/*.h
-clslang/*.cpp
+# *.pyd
+# clslang/*.c
+# clslang/*.h
+# clslang/*.cpp
