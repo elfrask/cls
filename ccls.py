@@ -60,9 +60,9 @@ def main(file):
 
 
 
-    print(ClsCompiler.Compile(ClsScript).result)
+    print((ClsCompiler.Compile(ClsScript).result.getCode()))
 
-    
+    # input("Finalizado")
     
 
     pass

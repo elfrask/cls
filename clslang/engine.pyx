@@ -15,7 +15,7 @@ from cpython cimport list as cy_list
 
 _toks = {
     "ope":["+", "-", "/", "*", "!", "|", "@", "&", "%", "=", "?", "<", ">", "^", ":"],
-    "multi-ope":["++", "--", "//", "**", "!=", "||", "==", "<<", ">>", "^^", "::", "<=", ">=", "->"],
+    "multi-ope":["++", "--", "//", "**", "!=", "||", "==", "<<", ">>", "^^", "::", ":=", "<=", ">=", "->"],
     "sim":["{", "}", "(", ")", "[", "]", ","],
     "cond":["==", "<", ">", "!=", "<=", ">=", "!"],
     "open-close":{
@@ -66,7 +66,7 @@ cdef class subjectFind():
         self.params = params
         
         pass
-    cdef bint checkEval(self, token: tokens.tokenTemplate):
+    cpdef bint checkEval(self, token: tokens.tokenTemplate):
 
         if isinstance(token, self.tokenType):
 
@@ -78,6 +78,7 @@ cdef class subjectFind():
                 if hasattr(token, i):
                     if getattr(token, i) != self.params[i]:
                         return False
+                    
                 else:
                     return False
 
@@ -135,10 +136,33 @@ cdef class spfunction():
         
         for i in range(0, len(check)):
 
-            if not check[i].checkEval(Exception[i]):
+            if not check[i].checkEval(Expression[i]):
                 return False
 
         return True
+    
+    def token2SimpleString(token: tokens.tokenTemplate):
+
+        if isinstance(token, tokens.NameValue):
+            return token.Value
+        elif isinstance(token, tokens.SymbolToken):
+            return token.symbol
+        elif isinstance(token, tokens.StringToken):
+            return f"{token.format}{token.content}{token.format}"
+        elif isinstance(token, tokens.NumberValue):
+            return str(token.Value)
+        elif isinstance(token, tokens.NodeToken):
+            if len(token.ContentComplex) > 1:
+                return  f"{token.format[0]} ({len(token.ContentComplex)}) Sentences {token.format[1]}"
+            
+            return f"{token.format[0]} ({len(token.content)}) Elements {token.format[1]}"
+        elif isinstance(token, tokens.OperatorToken):
+            return token._operator
+        # elif isinstance(token, tokens.):
+        #     return token.symbol
+        
+
+        return f"no reconocido ({token.index}) '{token.TypeToken}'"
     
 
     pass
@@ -193,6 +217,14 @@ cdef class ClsBlock():
         self.ByteCodeScript = _ByteCodeScript
         self.EnvironmentFunctions = EnvironmentFunctions
         pass
+    
+    cpdef list[tokens.tokenTemplate] getCode(self):
+
+        return self.ByteCodeScript
+    cpdef list[tokens.tokenTemplate] getEnvironment(self):
+
+        return self.EnvironmentFunctions
+    
 
     pass
 
@@ -306,18 +338,18 @@ cdef class ClsCompiler():
 
                             if isinstance(line[len(line) - 1], tokens.OperatorToken):
                                 if (iterator - line[len(line) - 1].index) == 1:
-                                    if f"{character}{line[len(line) - 1]._operator}" in _toks["multi-ope"]:
+                                    if f"{line[len(line) - 1]._operator}{character}" in _toks["multi-ope"]:
 
                                         before_token = line.pop()
 
-                                        if f"{character}{before_token._operator}" == "//":
+                                        if f"{before_token._operator}{character}" == "//":
 
                                             modo = "comment"
                                             continue
 
                                         line.append(
                                             tokens.OperatorToken(
-                                                f"{character}{before_token._operator}", before_token.index
+                                                f"{before_token._operator}{character}", before_token.index
                                             )
                                         )
 
@@ -532,16 +564,228 @@ cdef class ClsCompiler():
 
         return _current_level.get_data_returning()
     
+    cdef list[tokens.DeclareToken] _parsing_args(self, list[tokens.tokenTemplate] declaresCode, list[tokens.FunctionToken] Environment = []):
+
+        cdef str mode = "name"
+        cdef int index = 0
+        cdef list[tokens.DeclareToken] output = []
+        cdef str var_name = ""
+        cdef list[tokens.tokenTemplate] var_type = []
+        cdef list[tokens.tokenTemplate] var_default_value = []
+
+       
+
+        for i in declaresCode:
+
+            if isinstance(i, tokens.SymbolToken):
+                if i.symbol == ",":
+                    if not var_name:
+                        self.Catch(i.index, "no se esperaba un ',' en esta ubicación")
+                        continue
+                    
+                    output.append(
+                        tokens.DeclareToken(
+                            index, 
+                            var_name,
+                            var_type,
+                            self._structureExpression(var_default_value, Environment)
+                        )
+                    )
+
+                    mode = "name"
+                    index = 0
+                    var_name = ""
+                    var_type = []
+                    var_default_value = []
+                    continue
+            
+            if mode == "name":
+
+                if not var_name:
+                    if isinstance(i, tokens.NameValue):
+                        if i.Value.count("."):
+                            self.Catch(i.index + i.Value.find("."), f"no se esperaba '.' en una declaración")
+                            continue
+                        
+                        var_name = i.Value
+                        continue
+                    else:
+                        self.Catch(i.index, f"no se esperaba '{spfunction.token2SimpleString(i)}' en una declaración")
+                        continue
+                else:
+                    if isinstance(i, tokens.OperatorToken):
+
+                        if i._operator == ":":
+
+                            mode = "type"
+                            continue
+                        elif i._operator == "=":
+
+                            mode = "default"
+                            continue
+                        elif i._operator == ":=":
+                            var_type = [tokens.NameValue("auto", i.index)]
+                            mode = "default"
+                            continue
+                        else:
+                            self.Catch(i.index, f"no se esperaba '{i._operator}' en una declaración")
+                            continue
+                    else:
+                        self.Catch(i.index, f"no se esperaba '{spfunction.token2SimpleString(i)}' en una declaración")
+                        continue
+            elif mode == "type":
+
+                if isinstance(i, tokens.OperatorToken):
+                    if i._operator == "=":
+                        if not var_type:
+                            var_type = [tokens.NameValue("auto", i.index)]
+                        mode = "default"
+                        # print("set: ", i)
+                        continue
+                    elif i._operator in ["<", ">", ">>"]:
+                        var_type.append(i)
+
+                        if i._operator == ">>":
+                            var_type.pop()
+                            var_type.append(tokens.OperatorToken(">", i.index))
+                            var_type.append(tokens.OperatorToken(">", i.index+1))
+                        continue
+                    else:
+                        self.Catch(i.index, f"no se esperaba '{i._operator}' en una declaración de tipos para '{var_name}'")
+                        continue
+                elif isinstance(i, tokens.SymbolToken):
+                    self.Catch(i.index, f"no se esperaba '{i.symbol}' en una declaración de tipos para '{var_name}'")
+                    continue
+                else:
+                    var_type.append(i)
+                    continue
+            elif mode == "default":
+
+                var_default_value.append(i)
+                pass
+            
+            pass
+
+        if var_name:
+            output.append(
+                tokens.DeclareToken(
+                    index, 
+                    var_name,
+                    var_type,
+                    self._structureExpression(var_default_value, Environment)
+                )
+            )
+
+        return output
+    
+    cdef list[tokens.tokenTemplate] _structureExpression(self, list[tokens.tokenTemplate] ExpressionCode, list[tokens.FunctionToken] Environment, Param_mode = "normal"):
+
+        cdef list[tokens.tokenTemplate] blockExpressions = []
+
+        cdef list[tokens.tokenTemplate] TypeFunction = []
+        cdef list[tokens.FunctionToken] ContextFunctionEnvironment = []
+        cdef list[tokens.DeclareToken] Params = []
+        cdef int FunctionIndex = 0
+        cdef str mode = "normal"
+
+        cdef ClsBlock BlockCode
+        
+        for i in ExpressionCode:
+
+            if mode == "normal":
+
+                if isinstance(i, tokens.OperatorToken):
+                    if i._operator == "->":
+                        if isinstance(blockExpressions[-1], tokens.NodeToken):
+                            if blockExpressions[-1].format == "()":
+                                FunctionIndex = blockExpressions[-1].index
+                                Params = self._parsing_args(blockExpressions.pop().content)
+                                mode = "arrow_function"
+
+
+                                continue
+
+                
+                blockExpressions.append(i)
+            elif mode == "arrow_function":
+
+                if isinstance(i, tokens.NodeToken):
+                    if i.format == "{}":
+
+                        blockExpressions.append(
+                            tokens.NameValue(
+                                "_tmp_index" + str(len(Environment)),
+                                FunctionIndex,
+                                True
+                            )
+                        )
+
+                        BlockCode = self._structureSentence(i.ContentComplex, ContextFunctionEnvironment)
+
+                        Environment.append(
+                            tokens.FunctionToken(
+                                FunctionIndex,
+                                BlockCode.ByteCodeScript,
+                                "",
+                                "Anonymous",
+                                Params,
+                                TypeFunction,
+                                BlockCode.EnvironmentFunctions,
+                                True
+                                
+                            )
+                        )
+
+                        Params = []
+                        TypeFunction = []
+                        ContextFunctionEnvironment = []
+                        FunctionIndex = 0
+                        mode = "normal"
+
+                        continue
+                    TypeFunction.append(i)
+                
+                if isinstance(i, tokens.NameValue):
+                    TypeFunction.append(i)
+
+                    continue
+                if isinstance(i, tokens.OperatorToken):
+                    if i._operator in ["<", ">", ">>"]:
+                        TypeFunction.append(i)
+
+                        if i._operator == ">>":
+                            TypeFunction.pop()
+                            TypeFunction.append(tokens.OperatorToken(">", i.index))
+                            TypeFunction.append(tokens.OperatorToken(">", i.index+1))
+                        continue
+                    
+                
+                self.Catch(i.index, f"no se esperaba '{spfunction.token2SimpleString(i)}' en una declaración de tipos para una función flecha")
+                
+
+                pass
+
+            pass
+
+
+        return blockExpressions
+    
     cdef ClsBlock _structureSentence(self, list[list[tokens.tokenTemplate]] SentenceCode, list[tokens.FunctionToken] Environment = [], mode = "normal"):
         
         cdef list[tokens.tokenTemplate] blockSentence = []
 
         cdef list[tokens.tokenTemplate] sentence = []
 
+        cdef list[tokens.FunctionToken] ContextFunctionEnvironment = []
         cdef str scope = "unknown"
         cdef _asyncFunction = False
         cdef onlyFunction = False
         cdef onlyDeclaration = False
+        cdef ClsBlock BlockCode 
+
+
+
+        
 
 
         for i in SentenceCode:
@@ -552,6 +796,7 @@ cdef class ClsCompiler():
             _asyncFunction = False
             onlyFunction = False
             onlyDeclaration = False
+            ContextFunctionEnvironment = []
 
             if isinstance(sentence[0], tokens.NameValue):
 
@@ -574,9 +819,9 @@ cdef class ClsCompiler():
                     pass
 
                 if not sentence[0].Value in _nombre_reservados["nombre"]:
-
+                    # print("llego")
                     
-                    if spfunction.compare(sentence, [
+                    if spfunction.compare(sentence, [ # si tiene estructura de función C lo reestructura
                         subjectFind(tokens.NameValue),
                         subjectFind(tokens.NameValue),
                         subjectFind(tokens.NodeToken, {"format": "()"}), 
@@ -597,28 +842,80 @@ cdef class ClsCompiler():
                     pass
 
                 if sentence[0].Value in ["function", "func", "fub", "method"]:
-                    
+                    # print("llego a function", sentence)
                     # sentence = sentence[1:]
 
-                    if spfunction.compare(sentence, [
+                    if spfunction.compare(sentence, [ # Funcion normal sin tipado de retorno
                         subjectFind(tokens.NameValue), 
                         subjectFind(tokens.NameValue), 
                         subjectFind(tokens.NodeToken, {"format": "()"}), 
                         subjectFind(tokens.NodeToken, {"format": "{}"})
                         ]):
 
+                        BlockCode = self._structureSentence(sentence[3].ContentComplex, ContextFunctionEnvironment)
+
                         blockSentence.append(
                             tokens.FunctionToken(
                                 sentence[0].index,
-                                sentence[3].ContentComplex,
-                                sentence[1].Value
+                                BlockCode.ByteCodeScript,
+                                sentence[1].Value,
+                                scope,
+                                self._parsing_args(sentence[2].content),
+                                [], # sin tipo de retorno
+                                BlockCode.EnvironmentFunctions,
+                                False
                             )
                         )
+
+                        ContextFunctionEnvironment = []
+
+
+                        continue
+                    elif spfunction.compare(sentence, [ # Funcion normal con tipado de retorno
+                        subjectFind(tokens.NameValue), 
+                        subjectFind(tokens.NameValue), 
+                        subjectFind(tokens.NodeToken, {"format": "()"}), 
+                        subjectFind(tokens.OperatorToken, {"_operator": "->"})
+                        ]):
+
+                        # print("funcion tipada")
+
+                        if isinstance(sentence[-1], tokens.NodeToken):
+                            if sentence[-1].format == "{}":
+                                
+
+                                BlockCode = self._structureSentence(sentence.pop().ContentComplex, ContextFunctionEnvironment)
+
+                                blockSentence.append(
+                                    tokens.FunctionToken(
+                                        sentence[0].index,
+                                        BlockCode.ByteCodeScript,
+                                        sentence[1].Value,
+                                        scope,
+                                        self._parsing_args(sentence[2].content),
+                                        sentence[4:],
+                                        BlockCode.EnvironmentFunctions,
+                                        False
+                                    )
+                                )
+
+                                ContextFunctionEnvironment = []
+                    else:
+                        self.Catch(sentence[3].index, f"no se esperaba '{spfunction.token2SimpleString(sentence[3])}' esta expresión para una función")
+                        continue
+
+                    pass
+                elif sentence[0].Value == "if":
+
+                    if spfunction.compare(sentence, [ # Funcion normal sin tipado de retorno
+                        subjectFind(tokens.NameValue), 
+                        subjectFind(tokens.NodeToken, {"format": "()"}), 
+                        subjectFind(tokens.NodeToken, {"format": "{}"})
+                        ]):
 
                         pass
 
                     pass
-
                 pass
                 
                 pass

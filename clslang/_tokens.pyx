@@ -30,10 +30,12 @@ cdef class NameValue(tokenTemplate):
     TypeToken = "NameValue"
     # cdef public str Value
     cdef public str Value
+    cdef bint noMutable
 
-    def __init__(self, str _value, index: int = 0):
+    def __init__(self, str _value, index: int = 0, bint noMutable = False):
         super().__init__(index)
         self.Value = _value
+        self.noMutable = _value
 
     def __repr__(self) -> str:
 
@@ -170,7 +172,7 @@ cdef class DeclareToken(tokenTemplate):
 
         
 
-        return str(f"index-{self.index}: var {self.VarName}: ({self.ContentComplex}) = {self.DefaultExpression}")
+        return str(f"index-{self.index}: var {self.VarName}: ({self.ContextType}) = {self.DefaultExpression}")
 
 
 
@@ -180,6 +182,7 @@ cdef class FunctionToken(tokenTemplate):
     TypeToken = "FunctionToken"
 
     cdef public list[tokenTemplate] ContentSentence
+    cdef public list[FunctionToken] ContextFunctionsAnonymous
     cdef public list[DeclareToken] ParamsFunction
     cdef public list[tokenTemplate] ReturnType
     cdef public bint AnonymousFunction
@@ -195,7 +198,9 @@ cdef class FunctionToken(tokenTemplate):
         str Scope = "public",
         list[DeclareToken] ParamsFunction = [], 
         list[tokenTemplate] ReturnType = [],
+        list[FunctionToken] ContextFunctionsAnonymous = [],
         bint AnonymousFunction = False,
+
     ):
         super().__init__(index)
         
@@ -215,6 +220,67 @@ cdef class FunctionToken(tokenTemplate):
         return str(f"index-{self.index}: function {self.FunctionName}({self.ParamsFunction}) -> {self.ReturnType} " + "{ ... }")
 
 
+cdef class IfToken(tokenTemplate):
+
+    TypeToken = "IfToken"
+
+    cdef public list[tokenTemplate] ContentSentence
+    cdef public list[tokenTemplate] Condition
+    cdef public bint isElse
+
+
+    def __init__(
+        self, 
+        int index,
+        list[tokenTemplate] Condition,
+        list[tokenTemplate] ContentSentence,
+        bint isElse = False
+    ):
+        super().__init__(index)
+
+        self.Condition = Condition
+        self.ContentSentence = ContentSentence
+        self.isElse = isElse
+        
+
+
+    def __repr__(self) -> str:
+
+        dif = "if"
+
+        if self.isElse:
+            dif = "else"
+
+        return str(f"index-{self.index}: {dif} ({self.Condition}) " + "{ ... }")
+
+cdef class IfSequence(tokenTemplate):
+
+    TypeToken = "IfSequence"
+
+    cdef public list[IfToken] listIfs
+
+
+    def __init__(
+        self, 
+        int index, 
+        list[tokenTemplate] listIfs = [] 
+
+    ):
+        super().__init__(index)
+        
+        self.listIfs = listIfs
+    
+    cdef add(self, IfToken IfUnit):
+
+        self.listIfs.append(IfUnit)
+
+
+    def __repr__(self) -> str:
+
+        
+
+        # return str(f"NodeToken({self.index}, {self.format}, {show})")
+        return str(f"index-{self.index}: IfSequence: {self.listIfs} ")
 
 
 
