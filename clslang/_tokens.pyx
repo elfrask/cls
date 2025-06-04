@@ -220,6 +220,34 @@ cdef class FunctionToken(tokenTemplate):
         return str(f"index-{self.index}: function {self.FunctionName}({self.ParamsFunction}) -> {self.ReturnType} " + "{ ... }")
 
 
+cdef class WhileToken(tokenTemplate):
+
+    TypeToken = "WhileToken"
+
+    cdef public list[tokenTemplate] ContentSentence
+    cdef public list[tokenTemplate] Condition
+
+
+    def __init__(
+        self, 
+        int index,
+        list[tokenTemplate] Condition,
+        list[tokenTemplate] ContentSentence
+    ):
+        super().__init__(index)
+
+        self.Condition = Condition
+        self.ContentSentence = ContentSentence
+        
+
+
+    def __repr__(self) -> str:
+
+        
+
+        return str(f"index-{self.index}: while ({self.Condition}) " + "{ ... }")
+
+
 cdef class IfToken(tokenTemplate):
 
     TypeToken = "IfToken"
@@ -246,12 +274,12 @@ cdef class IfToken(tokenTemplate):
 
     def __repr__(self) -> str:
 
-        dif = "if"
+       
 
         if self.isElse:
-            dif = "else"
+            return str(f"index-{self.index}: else " + "{ ... }")
 
-        return str(f"index-{self.index}: {dif} ({self.Condition}) " + "{ ... }")
+        return str(f"index-{self.index}: if ({self.Condition}) " + "{ ... }")
 
 cdef class IfSequence(tokenTemplate):
 
@@ -270,7 +298,7 @@ cdef class IfSequence(tokenTemplate):
         
         self.listIfs = listIfs
     
-    cdef add(self, IfToken IfUnit):
+    cpdef add(self, IfToken IfUnit):
 
         self.listIfs.append(IfUnit)
 
@@ -283,6 +311,73 @@ cdef class IfSequence(tokenTemplate):
         return str(f"index-{self.index}: IfSequence: {self.listIfs} ")
 
 
+cdef class ForToken(tokenTemplate):
+
+    TypeToken = "ForToken"
+
+    cdef public list[DeclareToken] Declare
+    cdef public list[tokenTemplate] Condition
+    cdef public list[tokenTemplate] IteratorSentence
+    cdef public list[tokenTemplate] ContentSentence
+
+
+    def __init__(
+        self, 
+        int index,
+        list[DeclareToken] Declare,
+        list[tokenTemplate] Condition,
+        list[tokenTemplate] IteratorSentence,
+        list[tokenTemplate] ContentSentence
+    ):
+        super().__init__(index)
+
+        self.Condition = Condition
+        self.Declare = Declare
+        self.ContentSentence = ContentSentence
+        self.IteratorSentence = IteratorSentence
+        
+
+
+    def __repr__(self) -> str:
+
+        
+
+        return str(f"index-{self.index}: for ({self.Declare} ; ... ; ...) " + "{ ... }")
+
+cdef class ForEachToken(tokenTemplate):
+
+    TypeToken = "ForEachToken"
+
+    cdef public str iteratorName
+    cdef public str indexName
+    cdef public list[tokenTemplate] ArrayElement
+    cdef public list[tokenTemplate] ContentSentence
+
+
+    def __init__(
+        self, 
+        int index,
+        str iteratorName,
+        list[tokenTemplate] ArrayElement,
+        list[tokenTemplate] ContentSentence,
+        str indexName = "",
+    ):
+        super().__init__(index)
+
+        self.iteratorName = iteratorName
+        self.indexName = indexName
+        self.ContentSentence = ContentSentence
+        self.ArrayElement = ArrayElement
+        
+
+
+    def __repr__(self) -> str:
+
+        if self.indexName:
+            return str(f"index-{self.index}: for each {self.iteratorName} and {self.indexName} in (...) " + "{ ... }")
+
+
+        return str(f"index-{self.index}: for each {self.iteratorName} in (...) " + "{ ... }")
 
 
 
@@ -290,6 +385,181 @@ cdef class IfSequence(tokenTemplate):
 
 
 
+cdef class TryToken(tokenTemplate):
+    TypeToken = "TryToken"
+    cdef public list[tokenTemplate] TryBlock
+    cdef public list[tokenTemplate] ExceptBlock
+    cdef public list[tokenTemplate] FinallyBlock
+
+    cdef public str ExceptVarName
+
+    def __init__(self, int index, list[tokenTemplate] TryBlock = [], str ExceptVarName = "", list[tokenTemplate] ExceptBlock = [], list[tokenTemplate] FinallyBlock = []):
+        super().__init__(index)
+        self.TryBlock = TryBlock
+        self.ExceptVarName = ExceptVarName
+        self.ExceptBlock = ExceptBlock
+        self.FinallyBlock = FinallyBlock
+
+    def __repr__(self) -> str:
+        return str(f"index-{self.index}: try {{ ... }} except {self.ExceptVarName} {{ ... }} finally {{ ... }}")
+
+
+cdef class ClassToken(tokenTemplate):
+    TypeToken = "ClassToken"
+    cdef public str ClassName
+    cdef public list[tokenTemplate] BaseClasses
+    cdef public list[tokenTemplate] Body
+
+    def __init__(self, int index, str ClassName, list[tokenTemplate] BaseClasses = [], list[tokenTemplate] Body = []):
+        super().__init__(index)
+        self.ClassName = ClassName
+        self.BaseClasses = BaseClasses
+        self.Body = Body
+
+    def __repr__(self) -> str:
+        return str(f"index-{self.index}: class {self.ClassName}({self.BaseClasses}) {{ ... }}")
+
+
+cdef class ReturnToken(tokenTemplate):
+    TypeToken = "ReturnToken"
+    cdef public list[tokenTemplate] Value
+
+    def __init__(self, int index, list[tokenTemplate] Value = []):
+        super().__init__(index)
+        self.Value = Value
+
+    def __repr__(self) -> str:
+        return str(f"index-{self.index}: return ({self.Value})")
+
+
+cdef class SwitchToken(tokenTemplate):
+    TypeToken = "SwitchToken"
+    cdef public list[tokenTemplate] Expression
+    cdef public list[tokenTemplate] Cases
+
+    def __init__(self, int index, list[tokenTemplate] Expression = [], list[tokenTemplate] Cases = []):
+        super().__init__(index)
+        self.Expression = Expression
+        self.Cases = Cases
+
+    def __repr__(self) -> str:
+        return str(f"index-{self.index}: switch ({self.Expression}) {{ ... }}")
+
+
+cdef class CaseToken(tokenTemplate):
+    TypeToken = "CaseToken"
+    cdef public list[tokenTemplate] Values
+    cdef public list[tokenTemplate] Body
+    cdef public bint isDefault
+
+    def __init__(self, int index, list[tokenTemplate] Values = [], list[tokenTemplate] Body = [], bint isDefault = False):
+        super().__init__(index)
+        self.Values = Values
+        self.Body = Body
+        self.isDefault = isDefault
+
+    def __repr__(self) -> str:
+        if self.isDefault:
+            return str(f"index-{self.index}: case default: {{ ... }}")
+        return str(f"index-{self.index}: case ({self.Values}): {{ ... }}")
+
+
+cdef class ModuleToken(tokenTemplate):
+    TypeToken = "ModuleToken"
+    cdef public str ModuleName
+    cdef public list[tokenTemplate] Body
+
+    def __init__(self, int index, str ModuleName, list[tokenTemplate] Body = []):
+        super().__init__(index)
+        self.ModuleName = ModuleName
+        self.Body = Body
+
+    def __repr__(self) -> str:
+        return str(f"index-{self.index}: module {self.ModuleName} {{ ... }}")
+
+
+cdef class StructureToken(tokenTemplate):
+    TypeToken = "StructureToken"
+    cdef public str StructureName
+    cdef public list[DeclareToken] Fields
+
+    def __init__(self, int index, str StructureName, list[DeclareToken] Fields = []):
+        super().__init__(index)
+        self.StructureName = StructureName
+        self.Fields = Fields
+
+    def __repr__(self) -> str:
+        return str(f"index-{self.index}: struct {self.StructureName} {{ {self.Fields} }}")
+
+
+cdef class ImportToken(tokenTemplate):
+    TypeToken = "ImportToken"
+    cdef public str ModuleName
+    cdef public str ImportedRoute
+
+    def __init__(self, int index, str ModuleName, str ImportedRoute = ""):
+        super().__init__(index)
+        self.ModuleName = ModuleName
+        self.ImportedRoute = ImportedRoute
+
+    def __repr__(self) -> str:
+        return str(f"index-{self.index}: import '{self.ImportedRoute}' as {self.ModuleName}")
+
+cdef class FromModuleToken(tokenTemplate):
+    TypeToken = "FromModuleToken"
+    cdef public str NameElementModule
+    cdef public str RenameModule
+
+    def __init__(self, int index, str NameElementModule, str RenameModule = ""):
+        super().__init__(index)
+        self.NameElementModule = NameElementModule
+        self.RenameModule = RenameModule
+
+    def __repr__(self) -> str:
+        if self.RenameModule:
+            return str(f"{self.NameElementModule} as {self.RenameModule}")
+        else:
+            return str(f"{self.NameElementModule}")
+
+cdef class FromImportToken(tokenTemplate):
+    TypeToken = "FromImportToken"
+    cdef public list[FromModuleToken] ModulesNames
+    cdef public str ImportedRoute
+
+    def __init__(self, int index, list[NameValue] ModulesNames, str ImportedRoute = ""):
+        super().__init__(index)
+        self.ModulesNames = ModulesNames
+        self.ImportedRoute = ImportedRoute
+
+
+    def __repr__(self) -> str:
+        return str(f"index-{self.index}: from '{self.ImportedRoute}' import {', '.join(self.ModulesNames)}")
+
+
+cdef class IncludeToken(tokenTemplate):
+    TypeToken = "IncludeToken"
+    cdef public str FileName
+
+    def __init__(self, int index, str FileName):
+        super().__init__(index)
+        self.FileName = FileName
+
+    def __repr__(self) -> str:
+        return str(f"index-{self.index}: include '{self.FileName}'")
+
+
+cdef class VarToken(tokenTemplate):
+    TypeToken = "VarToken"
+    cdef public str VarName
+    cdef public list[tokenTemplate] Value
+
+    def __init__(self, int index, str VarName, list[tokenTemplate] Value = []):
+        super().__init__(index)
+        self.VarName = VarName
+        self.Value = Value
+
+    def __repr__(self) -> str:
+        return str(f"index-{self.index}: var {self.VarName} = {self.Value}")
         
 
 

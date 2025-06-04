@@ -704,7 +704,27 @@ cdef class ClsCompiler():
 
 
                                 continue
+                if isinstance(i, tokens.NodeToken):
 
+                    # if i.Multiline:
+                    blockExpressions.append(
+                        tokens.NodeToken(
+                            i.format,
+                            i.Multiline,
+                            i.index
+                        )
+                    )
+
+                    if isinstance(blockExpressions[-1], tokens.NodeToken): # Forzar tipado
+
+                        blockExpressions[-1].content = self._structureExpression(i.content, Environment, Param_mode)
+
+                        if len(i.ContentComplex) > 1:
+                            blockExpressions[-1].ContentComplex = self._structureExpression(i.ContentComplex, Environment, Param_mode)
+                        else:
+                            blockExpressions[-1].ContentComplex = [blockExpressions[-1].content]
+
+                    continue
                 
                 blockExpressions.append(i)
             elif mode == "arrow_function":
@@ -783,7 +803,7 @@ cdef class ClsCompiler():
         cdef onlyDeclaration = False
         cdef ClsBlock BlockCode 
 
-
+        # cdef tokens.tokenTemplate currect_sentence
 
         
 
@@ -908,11 +928,198 @@ cdef class ClsCompiler():
                 elif sentence[0].Value == "if":
 
                     if spfunction.compare(sentence, [ # Funcion normal sin tipado de retorno
-                        subjectFind(tokens.NameValue), 
-                        subjectFind(tokens.NodeToken, {"format": "()"}), 
-                        subjectFind(tokens.NodeToken, {"format": "{}"})
+                            subjectFind(tokens.NameValue), 
+                            subjectFind(tokens.NodeToken, {"format": "()"}), 
+                            subjectFind(tokens.NodeToken, {"format": "{}"})
                         ]):
 
+                        blockSentence.append(
+                            tokens.IfSequence(sentence[0].index, [
+                                tokens.IfToken(
+                                    sentence[0].index, 
+                                    self._structureExpression(sentence[1].content, Environment, mode), 
+                                    self._structureSentence(sentence[2].ContentComplex, Environment, mode).ByteCodeScript
+                                )
+                            ])
+                        )
+
+                        if isinstance(blockSentence[-1], tokens.IfSequence): # Fuerza el tipado
+                            
+                            sentence = sentence[3:]
+                            while sentence:
+                                if spfunction.compare(sentence, [ # Caso elif/elseif (condition) { ... }
+                                        subjectFind(tokens.NameValue), 
+                                        subjectFind(tokens.NodeToken, {"format": "()"}), 
+                                        subjectFind(tokens.NodeToken, {"format": "{}"})
+                                    ]):
+
+                                    if not sentence[0].Value in ["elif", "elseif"]:
+
+                                        self.Catch(sentence[0].index, f"no se esperaba '{sentence[0].Value}' para una secuencia de if, elseif/else if, else")
+                                        continue
+
+                                    blockSentence[-1].add(
+                                        tokens.IfToken(
+                                            sentence[0].index, 
+                                            self._structureExpression(sentence[1].content, Environment, mode), 
+                                            self._structureSentence(sentence[2].ContentComplex, Environment, mode).ByteCodeScript
+                                        )
+                                    )
+
+                                    sentence = sentence[3:]
+
+                                    continue
+                                elif spfunction.compare(sentence, [ # Caso else if (condition) { ... }
+                                        subjectFind(tokens.NameValue),
+                                        subjectFind(tokens.NameValue),
+                                        subjectFind(tokens.NodeToken, {"format": "()"}), 
+                                        subjectFind(tokens.NodeToken, {"format": "{}"})
+                                    ]):
+
+                                    if sentence[0].Value != "else":
+
+                                        self.Catch(sentence[0].index, f"no se esperaba '{sentence[0].Value}' para una secuencia de if, elseif/else if, else")
+                                        continue
+                                    if sentence[1].Value != "if":
+
+                                        self.Catch(sentence[1].index, f"no se esperaba '{sentence[1].Value}' para una secuencia de if, elseif/else if, else")
+                                        continue
+                                    
+
+                                    blockSentence[-1].add(
+                                        tokens.IfToken(
+                                            sentence[0].index, 
+                                            self._structureExpression(sentence[2].content, Environment, mode), 
+                                            self._structureSentence(sentence[3].ContentComplex, Environment, mode).ByteCodeScript
+                                        )
+                                    )
+
+                                    sentence = sentence[4:]
+
+                                    continue
+                                elif spfunction.compare(sentence, [ # Caso else { ... }
+                                        subjectFind(tokens.NameValue),
+                                        subjectFind(tokens.NodeToken, {"format": "{}"})
+                                    ]):
+
+                                    if sentence[0].Value != "else":
+
+                                        self.Catch(sentence[0].index, f"no se esperaba '{sentence[0].Value}' para una secuencia de if, elseif/else if, else")
+                                        continue
+
+                                    blockSentence[-1].add(
+                                        tokens.IfToken(
+                                            sentence[0].index, 
+                                            [],
+                                            self._structureSentence(sentence[1].ContentComplex, Environment, mode).ByteCodeScript,
+                                            True
+                                        )
+                                    )
+
+                                    break
+                                else:
+                                    self.Catch(sentence[0].index, f"no se esperaba '{spfunction.token2SimpleString(sentence[1])}' para una secuencia de if, elseif/else if, else")
+                                    pass
+                                pass
+                            pass
+
+                        pass
+                    else:
+                        self.Catch(sentence[0].index, f"no se esperaba '{spfunction.token2SimpleString(sentence[1])}' para una secuencia de if, elseif/else if, else")
+                        pass
+
+                    pass
+                elif sentence[0].Value == "while":
+
+                    if spfunction.compare(sentence, [ # While
+                            subjectFind(tokens.NameValue), 
+                            subjectFind(tokens.NodeToken, {"format": "()"}), 
+                            subjectFind(tokens.NodeToken, {"format": "{}"})
+                        ]):
+
+                        blockSentence.append(
+                            tokens.WhileToken(
+                                sentence[0].index, 
+                                self._structureExpression(sentence[1].content, Environment, mode), 
+                                self._structureSentence(sentence[2].ContentComplex, Environment, mode).ByteCodeScript
+                            )
+                        )
+
+                        pass
+                    else:
+                        self.Catch(sentence[0].index, f"no se esperaba '{spfunction.token2SimpleString(sentence[1])}' para while")
+                        pass
+
+                    pass
+                elif sentence[0].Value == "for":
+
+                    if spfunction.compare(sentence, [ # Manual "For"
+                            subjectFind(tokens.NameValue), 
+                            subjectFind(tokens.NodeToken, {"format": "()"}), 
+                            subjectFind(tokens.NodeToken, {"format": "{}"})
+                        ]):
+
+                        if isinstance(sentence[1], tokens.NodeToken):
+                            if len(sentence[1].ContentComplex) < 3:
+                                self.Catch(sentence[1].index, f"error de sintaxis en la iteración manual")
+                                continue
+                        
+
+                        blockSentence.append(
+                            tokens.ForToken(
+                                sentence[0].index,
+                                self._parsing_args(sentence[1].ContentComplex[0], Environment),
+                                self._structureExpression(sentence[1].ContentComplex[1], Environment, mode),
+                                self._structureSentence(sentence[1].ContentComplex[2:], Environment, mode).ByteCodeScript,
+                                self._structureSentence(sentence[2].ContentComplex, Environment, mode).ByteCodeScript
+                            )
+                        )
+
+                        pass
+                    elif spfunction.compare(sentence, [ # Auto "For"
+                            subjectFind(tokens.NameValue), 
+                            subjectFind(tokens.NameValue, {"Value": "each"}), 
+                            subjectFind(tokens.NameValue), 
+                            subjectFind(tokens.NameValue, {"Value": "in"}), 
+                            subjectFind(tokens.NodeToken, {"format": "()"}), 
+                            subjectFind(tokens.NodeToken, {"format": "{}"})
+                        ]):
+
+                        blockSentence.append(
+                            tokens.ForEachToken(
+                                sentence[0].index,
+                                sentence[2].Value,
+                                self._structureExpression(sentence[4].content, Environment, mode),
+                                self._structureSentence(sentence[5].ContentComplex, Environment, mode).ByteCodeScript
+                                
+                            )
+                        )
+
+                        pass
+                    elif spfunction.compare(sentence, [ # Auto "For" con index
+                            subjectFind(tokens.NameValue), 
+                            subjectFind(tokens.NameValue, {"Value": "each"}), 
+                            subjectFind(tokens.NameValue),  
+                            subjectFind(tokens.NameValue, {"Value": "and"}), 
+                            subjectFind(tokens.NameValue), 
+                            subjectFind(tokens.NameValue, {"Value": "in"}), 
+                            subjectFind(tokens.NodeToken, {"format": "()"}), 
+                            subjectFind(tokens.NodeToken, {"format": "{}"})
+                        ]):
+
+                        blockSentence.append(
+                            tokens.ForEachToken(
+                                sentence[0].index,
+                                sentence[2].Value,
+                                self._structureExpression(sentence[6].content, Environment, mode),
+                                self._structureSentence(sentence[7].ContentComplex, Environment, mode).ByteCodeScript,
+                                sentence[4].Value
+                            )
+                        )
+
+                        pass
+                    else:
+                        self.Catch(sentence[0].index, f"no se esperaba '{spfunction.token2SimpleString(sentence[1])}' para for")
                         pass
 
                     pass
