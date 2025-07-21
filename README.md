@@ -1,8 +1,9 @@
 <h1>
 	CLS Lang 1.2 in development
+
 </h1>
 <p>
-	Hi!! it is a programming language created for me as hobby in his startings.
+	Hi!! it is a programming language created for me as hobby in his starting.
 	but with the time this be convert in my project more ambitious.
 	<br><br>
 	actually this project yet next it in progress, so it's not finished yet
