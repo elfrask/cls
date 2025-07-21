@@ -15,7 +15,7 @@
 	CLS 1.2 EXPERIMENTAL
 </h2>
 <p>
-	Se esta en el desarrollo de la version 1.2 de CLS que se esta haciendo de 0 para tratar los
-	grandes tiempos de compilación incluso con archivos no muy grandes, proximamente estara disponible
-	el primer candidato de lanzamiento para la 1.2
+
+We are currently developing version 1.2 of CLS, which will be considered 'THE PERFORMANCE VERSION.' It is being built from scratch to address the most critical performance issues. Version 1.1 will remain available until the development of 1.2 is complete; after that, it will take a back seat, although you will always be able to clone the repository for versions 1.0-1.1.
 </p>
+

@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"name": "cls",
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"*.py":"cython"
+		},
+		"cSpell.words": [
+			"elif"
+		]
+	},
+	
+}
