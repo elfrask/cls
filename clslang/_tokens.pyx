@@ -1,4 +1,8 @@
 
+# =========================================================================================
+# =================================== Primitive Tokens ====================================
+# =========================================================================================
+
 
 cdef str _repr(self, str added = ""):
         
@@ -8,7 +12,7 @@ cdef str _repr(self, str added = ""):
     return str(f"<TOKEN:{self.TypeToken} index={self.index}{added}>")
 
 
-cdef class tokenTemplate():
+cdef class tokenTemplate(): #Token Padre
 
     TypeToken = "TokenTemplate"
     cdef public int index 
@@ -26,7 +30,7 @@ cdef class tokenTemplate():
     pass
 
 
-cdef class NameValue(tokenTemplate):
+cdef class NameValue(tokenTemplate): #Nombres, variables
     TypeToken = "NameValue"
     # cdef public str Value
     cdef public str Value
@@ -44,7 +48,7 @@ cdef class NameValue(tokenTemplate):
     pass
 
 
-cdef class NumberValue(tokenTemplate):
+cdef class NumberValue(tokenTemplate): # Números enteros y flotante
     TypeToken = "NumberValue"
     cdef public str Value
     cdef public bint isFloat
@@ -65,7 +69,7 @@ cdef class NumberValue(tokenTemplate):
     pass
 
 
-cdef class SymbolToken(tokenTemplate):
+cdef class SymbolToken(tokenTemplate): # Símbolos () [] {} ","
     TypeToken = "SymbolToken"
     cdef public str symbol
 
@@ -78,7 +82,7 @@ cdef class SymbolToken(tokenTemplate):
         return _repr(self, str(f"symbol='{self.symbol}'"))
 
 
-cdef class OperatorToken(tokenTemplate):
+cdef class OperatorToken(tokenTemplate): # Operadores aritméticos y lógicos
     TypeToken = "OperatorToken"
     cdef public str _operator
 
@@ -92,7 +96,7 @@ cdef class OperatorToken(tokenTemplate):
 
 
 
-cdef class StringToken(tokenTemplate):
+cdef class StringToken(tokenTemplate): # Cadenas de texto
     TypeToken = "StringToken"
     cdef public str content
     cdef public str _operator
@@ -109,7 +113,7 @@ cdef class StringToken(tokenTemplate):
         return _repr(self, str(f"string: {self.format}{self._operator}{self.content}{self._operator}"))
 
 
-cdef class NodeToken(tokenTemplate):
+cdef class NodeToken(tokenTemplate): # Nodos anidados ([], {}, {[], ()}, {[]})
 
     TypeToken = "NodeToken"
 
@@ -148,11 +152,11 @@ cdef class NodeToken(tokenTemplate):
 
 
 # =========================================================================================
-# =================================== Structure Tokens ====================================
+# =================================== Sentences Tokens ====================================
 # =========================================================================================
 
 
-cdef class DeclareToken(tokenTemplate):
+cdef class DeclareToken(tokenTemplate): # Declaraciones
 
     TypeToken = "DeclareToken"
 
@@ -177,7 +181,7 @@ cdef class DeclareToken(tokenTemplate):
 
 
 
-cdef class FunctionToken(tokenTemplate):
+cdef class FunctionToken(tokenTemplate): # Funciones
 
     TypeToken = "FunctionToken"
 
@@ -186,6 +190,7 @@ cdef class FunctionToken(tokenTemplate):
     cdef public list[DeclareToken] ParamsFunction
     cdef public list[tokenTemplate] ReturnType
     cdef public bint AnonymousFunction
+    cdef public bint AsyncFunction
     cdef public str Scope
     cdef public str FunctionName 
 
@@ -200,6 +205,8 @@ cdef class FunctionToken(tokenTemplate):
         list[tokenTemplate] ReturnType = [],
         list[FunctionToken] ContextFunctionsAnonymous = [],
         bint AnonymousFunction = False,
+        bint AsyncFunction = False,
+
 
     ):
         super().__init__(index)
@@ -210,6 +217,7 @@ cdef class FunctionToken(tokenTemplate):
         self.Scope = Scope
         self.ReturnType = ReturnType
         self.AnonymousFunction = AnonymousFunction
+        self.AnonymousFunction = AsyncFunction
 
 
     def __repr__(self) -> str:
@@ -220,7 +228,7 @@ cdef class FunctionToken(tokenTemplate):
         return str(f"index-{self.index}: function {self.FunctionName}({self.ParamsFunction}) -> {self.ReturnType} " + "{ ... }")
 
 
-cdef class WhileToken(tokenTemplate):
+cdef class WhileToken(tokenTemplate): # Ciclos While
 
     TypeToken = "WhileToken"
 
@@ -248,7 +256,7 @@ cdef class WhileToken(tokenTemplate):
         return str(f"index-{self.index}: while ({self.Condition}) " + "{ ... }")
 
 
-cdef class IfToken(tokenTemplate):
+cdef class IfToken(tokenTemplate): # Sentencia If, Else y Else If
 
     TypeToken = "IfToken"
 
@@ -281,7 +289,7 @@ cdef class IfToken(tokenTemplate):
 
         return str(f"index-{self.index}: if ({self.Condition}) " + "{ ... }")
 
-cdef class IfSequence(tokenTemplate):
+cdef class IfSequence(tokenTemplate): # Listas y secuencias condicionales If
 
     TypeToken = "IfSequence"
 
@@ -311,7 +319,7 @@ cdef class IfSequence(tokenTemplate):
         return str(f"index-{self.index}: IfSequence: {self.listIfs} ")
 
 
-cdef class ForToken(tokenTemplate):
+cdef class ForToken(tokenTemplate): # For manuales
 
     TypeToken = "ForToken"
 
@@ -344,7 +352,7 @@ cdef class ForToken(tokenTemplate):
 
         return str(f"index-{self.index}: for ({self.Declare} ; ... ; ...) " + "{ ... }")
 
-cdef class ForEachToken(tokenTemplate):
+cdef class ForEachToken(tokenTemplate): # For automáticos "Each"
 
     TypeToken = "ForEachToken"
 
@@ -385,18 +393,25 @@ cdef class ForEachToken(tokenTemplate):
 
 
 
-cdef class TryToken(tokenTemplate):
+cdef class TryToken(tokenTemplate): # Sentencia Try, Catch y Finally
     TypeToken = "TryToken"
     cdef public list[tokenTemplate] TryBlock
     cdef public list[tokenTemplate] ExceptBlock
     cdef public list[tokenTemplate] FinallyBlock
 
-    cdef public str ExceptVarName
+    cdef public list[DeclareToken] ExceptDeclare
 
-    def __init__(self, int index, list[tokenTemplate] TryBlock = [], str ExceptVarName = "", list[tokenTemplate] ExceptBlock = [], list[tokenTemplate] FinallyBlock = []):
+    def __init__(
+        self, 
+        int index, 
+        list[tokenTemplate] TryBlock = [], 
+        list[DeclareToken] ExceptDeclare = [], 
+        list[tokenTemplate] ExceptBlock = [], 
+        list[tokenTemplate] FinallyBlock = []
+    ):
         super().__init__(index)
         self.TryBlock = TryBlock
-        self.ExceptVarName = ExceptVarName
+        self.ExceptDeclare = ExceptDeclare
         self.ExceptBlock = ExceptBlock
         self.FinallyBlock = FinallyBlock
 
@@ -432,7 +447,7 @@ cdef class ReturnToken(tokenTemplate):
         return str(f"index-{self.index}: return ({self.Value})")
 
 
-cdef class SwitchToken(tokenTemplate):
+cdef class SwitchToken(tokenTemplate): # Sentencias Switch
     TypeToken = "SwitchToken"
     cdef public list[tokenTemplate] Expression
     cdef public list[tokenTemplate] Cases
@@ -446,7 +461,7 @@ cdef class SwitchToken(tokenTemplate):
         return str(f"index-{self.index}: switch ({self.Expression}) {{ ... }}")
 
 
-cdef class CaseToken(tokenTemplate):
+cdef class CaseToken(tokenTemplate): # Sentencias Case
     TypeToken = "CaseToken"
     cdef public list[tokenTemplate] Values
     cdef public list[tokenTemplate] Body
@@ -561,67 +576,19 @@ cdef class VarToken(tokenTemplate):
     def __repr__(self) -> str:
         return str(f"index-{self.index}: var {self.VarName} = {self.Value}")
         
+cdef class WithToken(tokenTemplate): # Sentencia With
+    TypeToken = "WithToken"
 
+    cdef public str VarName
+    cdef public list[tokenTemplate] Values
+    cdef public list[tokenTemplate] Body
 
-
-
-
-
-# class tokenTemplate():
-
-#     TypeToken = "TokenTemplate"
-#     index = 0 
-
-#     def __init__(self, index: int = 0):
-
-#         self.index = index
-
-#         pass
-#     def __repr__(self) -> str:
-
-#         return self.__c_repr()
-#     def __c_repr(self, added: str = "") -> str:
-        
-#         if added:
-#             added = " "+added
-
-#         return str(f"<TOKEN:{self.TypeToken} index={self.index}{added}>")
-
-
-#     pass
-
-
-# class NameValue(tokenTemplate):
-#     TypeToken = "NameValue"
-#     Value = ""
-
-#     def __init__(self, _value, index: int = 0):
-#         super().__init__(index)
-#         self.Value = _value
-
-#     def __repr__(self) -> str:
-
-#         return self.__c_repr(f"name='{self.Value}'")
-
-#     pass
-
-
-# class NumberValue(tokenTemplate):
-#     TypeToken = "NumberValue"
-#     Value = ""
-#     isFloat = False
-
-#     def __init__(self, _value, isFloat: bool = False, index: int = 0):
-#         super().__init__(index)
-#         self.Value = _value
-#         self.isFloat = isFloat
-
-#     def __repr__(self) -> str:
-
-#         return self.__c_repr(f"value='{self.Value}' isFloat={str(self.isFloat)}")
-
-#     pass
-
-
-
+    def __init__(self, index: int, str VarName, list[tokenTemplate] Values, list[tokenTemplate] Body):
+        super().__init__(index)
+        self.VarName = VarName
+        self.Values = Values
+        self.Body = Body
+    def __repr__(self) -> str:
+        return str(f"with-{self.index}: with {self.VarName} in () {{ ... }}")
+    pass
 

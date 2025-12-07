@@ -10,6 +10,11 @@ import subprocess
 extensions = [
     Extension("clslang._tokens", ["clslang/_tokens.pyx"]),
     Extension("clslang.engine", ["clslang/engine.pyx"], depends=["clslang/_tokens.pyx"]),
+    Extension("clslang._lib", ["clslang/_lib.pyx"], depends=["clslang/_lib.pyx"]),
+    # "clslang/_tokens.pyx",
+    # "clslang/_lib.pyx",
+    # "clslang/engine.pyx",
+
 ]
 
 setup(

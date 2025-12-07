@@ -1,16 +1,9 @@
 from . import _tokens as tokens
-# from . import _tokens as tokens
-
-# from clslang cimport _tokens as tokens
-# cimport clslang._tokens as tokens
+from . import _lib as lib
 from cpython cimport list as cy_list
-# cimport numpy as np
 
-
-
-
-
-# lib_path = []
+spfunction = lib.spfunction
+subjectFind = lib.subjectFind
 
 
 _toks = {
@@ -38,8 +31,6 @@ _toks = {
     "to_c":{"String":"str", "Array":"list", "Int":"int", "Float":"float", "Dictionary":"dict"}
 }
 
-# B9 = int(b"9")
-# B0 = int(b"0")
 
 _nombre_reservados = {
     "visible":["export", "static", "private", "public", "global"],
@@ -52,120 +43,6 @@ _nombre_reservados = {
     "codi":["or", "in", "and", "is"],
     "bucle":["break", "continue"]
 }
-
-# TokenTemplate = tokens.tokenTemplate
-
-cdef class subjectFind():
-
-    cdef object tokenType
-    cdef dict[str, str] params
-
-    def __init__(self, type tokenType, dict[str, str] params = {}):
-
-        self.tokenType = tokenType
-        self.params = params
-        
-        pass
-    cpdef bint checkEval(self, token: tokens.tokenTemplate):
-
-        if isinstance(token, self.tokenType):
-
-            # if not self.params:
-            #     return True
-            
-            for i in self.params:
-                
-                if hasattr(token, i):
-                    if getattr(token, i) != self.params[i]:
-                        return False
-                    
-                else:
-                    return False
-
-            return True
-
-        return False
-    pass
-
-
-cdef class spfunction():
-
-    def autoToken(str string, i):
-
-        _m_tk = "name"
-
-        # if spfunction.es_decimal_cython(bytes(string, "utf8")):
-        if spfunction.es_decimal_cython(string):
-            _m_tk = "int"
-            if string.count("."):
-                _m_tk = "float"
-
-        if _m_tk == "int":
-            return tokens.NumberValue(string, False, i)
-        elif _m_tk == "float":
-            return tokens.NumberValue(string, True, i)
-        else:
-            return tokens.NameValue(string, i)
-
-    # def es_decimal_cython(char* s):
-    def es_decimal_cython(str s):
-        cdef bint tiene_punto = False
-        cdef bint tiene_digito = False
-        
-        
-        
-        # Recorre los caracteres
-        for i in s:
-            if i in ("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"):
-            # if (i <= B9) and (i >= B0):
-                tiene_digito = True
-            elif i == b'.' and not tiene_punto:
-                tiene_punto = True
-            else:
-                # print(f"no es digito en '{s}' el: {i}")
-                return False  # Carácter inválido
-            
-        
-        return tiene_digito  # Asegura que haya al menos un dígito
-
-    
-    def compare(list[tokens.tokenTemplate] Expression, list[subjectFind] check):
-
-        if len(check) > len(Expression):
-            return False
-        
-        for i in range(0, len(check)):
-
-            if not check[i].checkEval(Expression[i]):
-                return False
-
-        return True
-    
-    def token2SimpleString(token: tokens.tokenTemplate):
-
-        if isinstance(token, tokens.NameValue):
-            return token.Value
-        elif isinstance(token, tokens.SymbolToken):
-            return token.symbol
-        elif isinstance(token, tokens.StringToken):
-            return f"{token.format}{token.content}{token.format}"
-        elif isinstance(token, tokens.NumberValue):
-            return str(token.Value)
-        elif isinstance(token, tokens.NodeToken):
-            if len(token.ContentComplex) > 1:
-                return  f"{token.format[0]} ({len(token.ContentComplex)}) Sentences {token.format[1]}"
-            
-            return f"{token.format[0]} ({len(token.content)}) Elements {token.format[1]}"
-        elif isinstance(token, tokens.OperatorToken):
-            return token._operator
-        # elif isinstance(token, tokens.):
-        #     return token.symbol
-        
-
-        return f"no reconocido ({token.index}) '{token.TypeToken}'"
-    
-
-    pass
 
 
 cdef class StackParsingEviroment():
@@ -292,20 +169,17 @@ cdef class ClsCompiler():
         cdef str code = _script._code
 
         code = code.replace("\t", " ")
-        #code = code.replace(N, " ")
         code = code.replace("\r", " ")
 
         cdef str string = ""
         cdef int iterator = -1
         cdef str modo = "normal"
-        # cdef bint ope_active = False
 
         cdef str string_format = ""
         cdef str string_operator = ""
 
 
     
-        # cdef tokens.OperatorToken before_token
 
         for character in code:
             iterator += 1
@@ -802,6 +676,7 @@ cdef class ClsCompiler():
         cdef onlyFunction = False
         cdef onlyDeclaration = False
         cdef ClsBlock BlockCode 
+        cdef list[any] Params = []
 
         # cdef tokens.tokenTemplate currect_sentence
 
@@ -817,6 +692,7 @@ cdef class ClsCompiler():
             onlyFunction = False
             onlyDeclaration = False
             ContextFunctionEnvironment = []
+            Params = []
 
             if isinstance(sentence[0], tokens.NameValue):
 
@@ -883,7 +759,8 @@ cdef class ClsCompiler():
                                 self._parsing_args(sentence[2].content),
                                 [], # sin tipo de retorno
                                 BlockCode.EnvironmentFunctions,
-                                False
+                                False,
+                                _asyncFunction,
                             )
                         )
 
@@ -915,7 +792,9 @@ cdef class ClsCompiler():
                                         self._parsing_args(sentence[2].content),
                                         sentence[4:],
                                         BlockCode.EnvironmentFunctions,
-                                        False
+                                        False,
+                                        _asyncFunction,
+
                                     )
                                 )
 
@@ -1121,7 +1000,121 @@ cdef class ClsCompiler():
                     else:
                         self.Catch(sentence[0].index, f"no se esperaba '{spfunction.token2SimpleString(sentence[1])}' para for")
                         pass
+                    pass
+                elif sentence[0].Value == "with":
+                    
+                    if spfunction.compare(sentence, [
+                        subjectFind(tokens.NameValue), 
+                        subjectFind(tokens.NameValue),  
+                        subjectFind(tokens.NameValue, {"Value": "in"}), 
+                        subjectFind(tokens.NodeToken, {"format": "()"}), 
+                        subjectFind(tokens.NodeToken, {"format": "{}"})
+                    ]):
+                        blockSentence.append(
+                            tokens.WithToken(
+                                sentence[0].index,
+                                sentence[1].Value,
+                                self._structureExpression(sentence[3].content, Environment, mode),
+                                self._structureSentence(sentence[4].ContentComplex, Environment, mode).ByteCodeScript,
+                            )
+                        )
+                        pass
+                    else:
+                        self.Catch(sentence[0].index, f"no se esperaba '{spfunction.token2SimpleString(sentence[1])}' para with")
+                    pass
+                elif sentence[0].Value == "switch":
 
+                    if spfunction.compare(sentence, [
+                        subjectFind(tokens.NameValue),
+                        subjectFind(tokens.NodeToken, {"format": "()"}),
+                        subjectFind(tokens.NodeToken, {"format": "{}"}),
+                        ]):
+                            blockSentence.append(
+                                tokens.SwitchToken(
+                                    sentence[0].index,
+                                    self._structureExpression(sentence[1].content),
+                                    self._structureSentence(sentence[2].ContentComplex).ByteCodeScript
+                                )
+                            )
+                            pass
+                    else:
+                        self.Catch(sentence[0].index, f"no se esperaba '{spfunction.token2SimpleString(sentence[1])}' para switch")
+
+                    pass
+                elif sentence[0].Value == "case":
+
+                    if spfunction.compare(sentence, [ # case ("[Value]") {...}
+                            subjectFind(tokens.NameValue),
+                            subjectFind(tokens.NodeToken, {"format": "()"}),
+                            subjectFind(tokens.NodeToken, {"format": "{}"}),
+                        ]):
+                            blockSentence.append(
+                                tokens.CaseToken(
+                                    sentence[0].index,
+                                    self._structureExpression(sentence[1].content),
+                                    self._structureSentence(sentence[2].ContentComplex).ByteCodeScript,
+                                    True
+                                )
+                            )
+                            pass
+                    elif spfunction.compare(sentence, [ # case default {...}
+                            subjectFind(tokens.NameValue),
+                            subjectFind(tokens.NameValue, {"Value": "default"}),
+                            subjectFind(tokens.NodeToken, {"format": "{}"}),
+                        ]):
+                        blockSentence.append(
+                            tokens.CaseToken(
+                                sentence[0].index,
+                                [],
+                                self._structureSentence(sentence[2].ContentComplex).ByteCodeScript,
+                                False
+                            )
+                        )
+                        pass
+                    else:
+                        self.Catch(sentence[0].index, f"no se esperaba '{spfunction.token2SimpleString(sentence[1])}' para switch")
+
+                    pass
+                elif sentence[0].Value == "try":
+
+                    if spfunction.compare(sentence, [
+                            subjectFind(tokens.NameValue),
+                            subjectFind(tokens.NodeToken, {"format": "{}"}),
+                            subjectFind(tokens.NameValue, {"Value": "catch"}),
+                            subjectFind(tokens.NodeToken, {"format": "()"}),
+                            subjectFind(tokens.NodeToken, {"format": "{}"}),
+                        ]):
+
+                        
+                        if spfunction.compare(sentence[5:], [
+                                subjectFind(tokens.NameValue, {"Value": "finally"}),
+                                subjectFind(tokens.NodeToken, {"format": "{}"}),
+                            ]):
+                            Params = self._structureSentence(sentence[6].contentSentence, Environment, mode).ByteCodeScript
+                            pass
+
+                        blockSentence.append(
+                            tokens.TryToken(
+                                sentence[0].index,
+                                self._structureSentence(sentence[1].contentSentence, Environment, mode).ByteCodeScript,
+                                self._parsing_args(sentence[3].content, Environment),
+                                self._structureSentence(sentence[4].contentSentence, Environment, mode).ByteCodeScript,
+                                Params
+                            )
+                        )
+                        pass
+                    else:
+                        self.Catch(sentence[0].index, f"no se esperaba '{spfunction.token2SimpleString(sentence[1])}' para try")
+
+                    pass
+                elif sentence[0].Value in ["structure", "interface"]:
+
+                    if spfunction.compare(sentence, [
+                            subjectFind(tokens.NameValue),
+                            subjectFind(tokens.NameValue)
+                        ]):
+
+                            pass
                     pass
                 pass
                 

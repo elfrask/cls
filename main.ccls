@@ -1,5 +1,83 @@
 
+# Funciones
+function main() -> String[] {
+  # función normal con tipado
+};
 
 
+# Condiciones
+if (cond) {
+  # si
+} else if (cond2) {
+  # si no si
+} else {
+  # si no
+};
+
+# Ciclos For
+for (i: Number; i < len(array); i++) {
+  # For manual
+};
+
+for each Elemento in (array) {
+  # For iterado por elementos
+};
+
+for each Elemento and Index in (array) {
+  # For iterado por elemento y index
+};
 
 
+# Ciclo While
+while (cond) {
+  # Ciclo while
+};
+
+# Ciclo infinito
+loop {
+  # Ciclo infinito (al menos que use break, return o throw/catch)
+};
+
+# Sentencia With
+with value in (AnyValue) {
+  # Uso local de variable 
+};
+
+# Switch y Case
+
+switch (value) {
+  case ("v1") {
+    print("V1");
+  };
+  case ("v2") {
+    print("V2");
+  };
+  case default {
+    print("Ninguno de los anteriores");
+  };
+  
+};
+
+# Sentencia Try
+
+try {
+  # Intentar
+} catch (e: ErrorToken) {
+  # Si falla
+};
+
+
+# Estructura / Interfaces
+
+interface Persona() {
+  name: String = "",
+  ages: Number = 18,
+  skills: String[] = ["Python", "Cls", "Javascript"]
+};
+
+# Variables, declaraciones, constantes
+
+const value: Persona = Persona({name: "Juan"});
+value = {edad: 20}; # value es {name: "Juan", ages: 20, skills: ["Python", "Cls", "Javascript"]}
+
+var value2: Persona = Persona(); # value2 si se puede sobrescribir

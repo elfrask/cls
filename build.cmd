@@ -1,2 +1,3 @@
 @echo off
-call py setup.py build_ext --inplace --force
+set CC=sccache cl.exe
+call py setup.py build_ext --inplace 

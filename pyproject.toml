@@ -5,7 +5,7 @@ description = "cls lang a lite and fast programming language"
 authors = [
     {name = "elfrask",email = "elfraskodev@gmail.com"}
 ]
-license = {text = "MIT"}
+license = "MIT AND (Apache-2.0 OR BSD-2-Clause)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
