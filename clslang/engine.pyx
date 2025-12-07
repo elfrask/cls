@@ -37,8 +37,8 @@ _nombre_reservados = {
     "thread":["sync", "async"],
     "nombre":[
             "func", "function", "class", "module", "with", "for", "if", "while", "define",
-            "from", "import", "global", "try", "def", "fub", "method", "include", "using", "var",
-            "template", "switch", "struct", "case", "return", "setrule"
+            "from", "import", "global", "try", "def", "fub", "method", "include", "using", "var", "const",
+            "template", "switch", "structure", "case", "return", "setrule"
         ],
     "codi":["or", "in", "and", "is"],
     "bucle":["break", "continue"]
@@ -748,7 +748,7 @@ cdef class ClsCompiler():
                         subjectFind(tokens.NodeToken, {"format": "{}"})
                         ]):
 
-                        BlockCode = self._structureSentence(sentence[3].ContentComplex, ContextFunctionEnvironment)
+                        BlockCode = self._structureSentence(sentence[3].ContentComplex, ContextFunctionEnvironment, "function")
 
                         blockSentence.append(
                             tokens.FunctionToken(
@@ -781,7 +781,7 @@ cdef class ClsCompiler():
                             if sentence[-1].format == "{}":
                                 
 
-                                BlockCode = self._structureSentence(sentence.pop().ContentComplex, ContextFunctionEnvironment)
+                                BlockCode = self._structureSentence(sentence.pop().ContentComplex, ContextFunctionEnvironment, "function")
 
                                 blockSentence.append(
                                     tokens.FunctionToken(
@@ -1111,11 +1111,141 @@ cdef class ClsCompiler():
 
                     if spfunction.compare(sentence, [
                             subjectFind(tokens.NameValue),
-                            subjectFind(tokens.NameValue)
+                            subjectFind(tokens.NameValue),
+                            subjectFind(tokens.NodeToken, {"format": "()"}),
+                            subjectFind(tokens.NameValue, {"format": "{}"}),
                         ]):
-
+                            blockSentence.append(
+                                tokens.StructureToken(
+                                    sentence[0].index,
+                                    sentence[1].Value,
+                                    self._parsing_args(sentence[3].content, Environment),
+                                    self._structureExpression(sentence[2].content, Environment, mode),
+                                    sentence[0].Value == "interface"
+                                )
+                            )
                             pass
+                    else:
+                        self.Catch(sentence[0].index, f"no se esperaba '{spfunction.token2SimpleString(sentence[1])}' para esta estructura/interface")
+
                     pass
+                elif sentence[0].Value == "class":
+
+                    if spfunction.compare(sentence, [
+                            subjectFind(tokens.NameValue),
+                            subjectFind(tokens.NameValue),
+                            subjectFind(tokens.NodeToken, {"format": "()"}),
+                            subjectFind(tokens.NameValue, {"format": "{}"}),
+                        ]):
+                            blockSentence.append(
+                                tokens.ClassToken(
+                                    sentence[0].index,
+                                    sentence[1].Value,
+                                    self._structureExpression(sentence[2].content, Environment, "class"),
+                                    self._structureSentence(sentence[3].ContentComplex, Environment, "class").ByteCodeScript,
+                                    
+                                )
+                            )
+                            pass
+                    
+                    else:
+                        self.Catch(sentence[0].index, f"no se esperaba '{spfunction.token2SimpleString(sentence[1])}' para class")
+                elif sentence[0].Value == "module":
+
+                    if spfunction.compare(sentence, [
+                            subjectFind(tokens.NameValue),
+                            subjectFind(tokens.NameValue),
+                            subjectFind(tokens.NameValue, {"format": "{}"}),
+                        ]):
+                            blockSentence.append(
+                                tokens.ModuleToken(
+                                    sentence[0].index,
+                                    sentence[1].Value,
+                                    self._structureSentence(sentence[3].ContentComplex, Environment, "module").ByteCodeScript,
+                                )
+                            )
+                            pass
+                    else:
+                        self.Catch(sentence[0].index, f"no se esperaba '{spfunction.token2SimpleString(sentence[1])}' para module")
+
+
+                    pass
+                elif sentence[0].Value == "import":
+
+                    if spfunction.compare(sentence, [
+                            subjectFind(tokens.NameValue),
+                            subjectFind(tokens.StringToken),
+                            subjectFind(tokens.NameValue, {"Value": "as"}),
+                            subjectFind(tokens.NameValue),
+                        ]):
+                            blockSentence.append(
+                                tokens.ImportToken(
+                                    sentence[0].index,
+                                    sentence[1].content,
+                                    sentence[3].Value
+                                )
+                            )
+                            pass
+                    else:
+                        self.Catch(sentence[0].index, f"no se esperaba '{spfunction.token2SimpleString(sentence[1])}' para import")
+
+
+                    pass
+                elif sentence[0].Value == "from":
+
+                    if spfunction.compare(sentence, [
+                            subjectFind(tokens.NameValue),
+                            subjectFind(tokens.StringToken),
+                            subjectFind(tokens.NameValue, {"Value": "import"}),
+                            subjectFind(tokens.NameValue),
+                        ]):
+                            blockSentence.append(
+                                tokens.FromImportToken(
+                                    sentence[0].index,
+                                    lib.getListName(sentence[3:]),
+                                    sentence[1].content
+                                )
+                            )
+                            pass
+                    else:
+                        self.Catch(sentence[0].index, f"no se esperaba '{spfunction.token2SimpleString(sentence[1])}' para from/import")
+
+
+                    pass
+                elif sentence[0].Value == "include":
+                    if spfunction.compare(sentence, [
+                            subjectFind(tokens.NameValue),
+                            subjectFind(tokens.StringToken),
+                        ]):
+                            blockSentence.append(
+                                tokens.IncludeToken(
+                                    sentence[0].index,
+                                    sentence[1].content
+                                )
+                            )
+                            pass
+                    else:
+                        self.Catch(sentence[0].index, f"no se esperaba '{spfunction.token2SimpleString(sentence[1])}' para include")
+
+                    pass
+                elif sentence[0].Value == "return":
+                    blockSentence.append(
+                        tokens.ReturnToken(
+                            sentence[0].index,
+                            self._structureExpression(sentence[1:], Environment, mode)
+                        )
+                    )
+                    pass
+                elif sentence[0].Value in ["var", "const"]:
+                    blockSentence.append(
+                        tokens.VarToken(
+                            sentence[0].index,
+                            self._parsing_args(sentence[1:], Environment),
+                            sentence[0].Value == "const"
+                        )
+                    )
+                    pass
+                
                 pass
                 
                 pass

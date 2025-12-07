@@ -419,32 +419,32 @@ cdef class TryToken(tokenTemplate): # Sentencia Try, Catch y Finally
         return str(f"index-{self.index}: try {{ ... }} except {self.ExceptVarName} {{ ... }} finally {{ ... }}")
 
 
-cdef class ClassToken(tokenTemplate):
+cdef class ClassToken(tokenTemplate): # Plantillas de objetos, clases y encapsular métodos y atributos de objetos
     TypeToken = "ClassToken"
     cdef public str ClassName
-    cdef public list[tokenTemplate] BaseClasses
+    cdef public list[tokenTemplate] Extends
     cdef public list[tokenTemplate] Body
 
-    def __init__(self, int index, str ClassName, list[tokenTemplate] BaseClasses = [], list[tokenTemplate] Body = []):
+    def __init__(self, int index, str ClassName, list[tokenTemplate] Extends = [], list[tokenTemplate] Body = []):
         super().__init__(index)
         self.ClassName = ClassName
-        self.BaseClasses = BaseClasses
+        self.Extends = Extends
         self.Body = Body
 
     def __repr__(self) -> str:
         return str(f"index-{self.index}: class {self.ClassName}({self.BaseClasses}) {{ ... }}")
 
 
-cdef class ReturnToken(tokenTemplate):
+cdef class ReturnToken(tokenTemplate): # Sentencia para devolver valores al finalizar una función
     TypeToken = "ReturnToken"
-    cdef public list[tokenTemplate] Value
+    cdef public list[tokenTemplate] Expression
 
-    def __init__(self, int index, list[tokenTemplate] Value = []):
+    def __init__(self, int index, list[tokenTemplate] Expression = []):
         super().__init__(index)
-        self.Value = Value
+        self.Expression = Expression
 
     def __repr__(self) -> str:
-        return str(f"index-{self.index}: return ({self.Value})")
+        return str(f"index-{self.index}: return ({self.Expression})")
 
 
 cdef class SwitchToken(tokenTemplate): # Sentencias Switch
@@ -479,7 +479,7 @@ cdef class CaseToken(tokenTemplate): # Sentencias Case
         return str(f"index-{self.index}: case ({self.Values}): {{ ... }}")
 
 
-cdef class ModuleToken(tokenTemplate):
+cdef class ModuleToken(tokenTemplate): # Método de organización y agrupación de métodos y variables fuera del top-level
     TypeToken = "ModuleToken"
     cdef public str ModuleName
     cdef public list[tokenTemplate] Body
@@ -493,21 +493,25 @@ cdef class ModuleToken(tokenTemplate):
         return str(f"index-{self.index}: module {self.ModuleName} {{ ... }}")
 
 
-cdef class StructureToken(tokenTemplate):
+cdef class StructureToken(tokenTemplate): # Sentencias e interfaces para tipado estático
     TypeToken = "StructureToken"
     cdef public str StructureName
     cdef public list[DeclareToken] Fields
+    cdef public list[tokenTemplate] Extends
+    cdef public bint onlyTypeInterface
 
-    def __init__(self, int index, str StructureName, list[DeclareToken] Fields = []):
+    def __init__(self, int index, str StructureName, list[DeclareToken] Fields = [], list[DeclareToken] Extends = [], bint onlyTypeInterface = False):
         super().__init__(index)
         self.StructureName = StructureName
         self.Fields = Fields
+        self.onlyTypeInterface = onlyTypeInterface
+        self.Extends = Extends
 
     def __repr__(self) -> str:
         return str(f"index-{self.index}: struct {self.StructureName} {{ {self.Fields} }}")
 
 
-cdef class ImportToken(tokenTemplate):
+cdef class ImportToken(tokenTemplate): # importa una librería y dale nombre
     TypeToken = "ImportToken"
     cdef public str ModuleName
     cdef public str ImportedRoute
@@ -520,7 +524,7 @@ cdef class ImportToken(tokenTemplate):
     def __repr__(self) -> str:
         return str(f"index-{self.index}: import '{self.ImportedRoute}' as {self.ModuleName}")
 
-cdef class FromModuleToken(tokenTemplate):
+cdef class FromModuleToken(tokenTemplate): # parámetros de abstracción de módulos para from "..." import at1, at2 as _at, ...
     TypeToken = "FromModuleToken"
     cdef public str NameElementModule
     cdef public str RenameModule
@@ -536,7 +540,7 @@ cdef class FromModuleToken(tokenTemplate):
         else:
             return str(f"{self.NameElementModule}")
 
-cdef class FromImportToken(tokenTemplate):
+cdef class FromImportToken(tokenTemplate): # importa una librería pero solo importa lo seleccionado y renombrados
     TypeToken = "FromImportToken"
     cdef public list[FromModuleToken] ModulesNames
     cdef public str ImportedRoute
@@ -551,27 +555,27 @@ cdef class FromImportToken(tokenTemplate):
         return str(f"index-{self.index}: from '{self.ImportedRoute}' import {', '.join(self.ModulesNames)}")
 
 
-cdef class IncludeToken(tokenTemplate):
+cdef class IncludeToken(tokenTemplate): # importa una librería y incluye todos sus atributos al top-level
     TypeToken = "IncludeToken"
-    cdef public str FileName
+    cdef public str ImportedRoute
 
-    def __init__(self, int index, str FileName):
+    def __init__(self, int index, str ImportedRoute):
         super().__init__(index)
-        self.FileName = FileName
+        self.ImportedRoute = ImportedRoute
 
     def __repr__(self) -> str:
-        return str(f"index-{self.index}: include '{self.FileName}'")
+        return str(f"index-{self.index}: include '{self.ImportedRoute}'")
 
 
 cdef class VarToken(tokenTemplate):
     TypeToken = "VarToken"
-    cdef public str VarName
-    cdef public list[tokenTemplate] Value
+    cdef public bint isConst
+    cdef public list[DeclareToken] Declares
 
-    def __init__(self, int index, str VarName, list[tokenTemplate] Value = []):
+    def __init__(self, int index, list[DeclareToken] Declares = [], bint isConst = False):
         super().__init__(index)
-        self.VarName = VarName
-        self.Value = Value
+        self.Declares = Declares
+        self.isConst = isConst
 
     def __repr__(self) -> str:
         return str(f"index-{self.index}: var {self.VarName} = {self.Value}")

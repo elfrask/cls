@@ -1,5 +1,5 @@
 from . import _tokens as tokens
-
+from . import engine
 
 
 cdef class subjectFind():
@@ -115,3 +115,76 @@ cdef class spfunction():
     
 
     pass
+
+
+cdef list[tokens.FromModuleToken] getListName(engine.ClsCompiler self, list[tokens.tokenTemplate] lista = []):
+
+    cdef list[str] names = []
+    cdef str mode = "name"
+
+    cdef currentName = ""
+    cdef newName = ""
+    cdef index = 0
+
+    for i in lista:
+
+        if mode == "name":
+            if isinstance(i, tokens.NameValue):
+
+                currentName = i.Value
+                mode = "separator"
+                index = i.index
+            else:
+                self.Catch(i.index, f"No se esperaba '{spfunction.token2SimpleString(i)}'")
+                pass
+            pass
+        elif mode == "rename":
+            if isinstance(i, tokens.NameValue):
+                newName = i.Value
+                mode = "separator"
+            else:
+                self.Catch(i.index, f"No se esperaba '{spfunction.token2SimpleString(i)}'")
+                pass
+            pass
+        elif mode == "separator":
+            if isinstance(i, tokens.NameValue):
+
+                if i.Value == "as": 
+                    if newName == "":
+                        mode = "rename"
+                    else:
+                        self.Catch(i.index, f"No se esperaba '{spfunction.token2SimpleString(i)}'")
+                else:
+                    self.Catch(i.index, f"No se esperaba '{spfunction.token2SimpleString(i)}'")
+            elif isinstance(i, tokens.SymbolToken):
+
+                if i.TypeToken == ",": 
+                    names.append(
+                        tokens.FromModuleToken(
+                            index,
+                            currentName,
+                            newName
+                        )
+                    )
+                    mode = "name"
+                    currentName = ""
+                    index = 0
+                    newName = ""
+                else:
+                    self.Catch(i.index, f"No se esperaba '{spfunction.token2SimpleString(i)}'")
+            else:
+                self.Catch(i.index, f"No se esperaba '{spfunction.token2SimpleString(i)}'")
+                pass
+
+        pass
+    
+    if currentName:
+        names.append(
+            tokens.FromModuleToken(
+                index,
+                currentName,
+                newName
+            )
+        )
+
+    return names

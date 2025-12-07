@@ -81,3 +81,7 @@ const value: Persona = Persona({name: "Juan"});
 value = {edad: 20}; # value es {name: "Juan", ages: 20, skills: ["Python", "Cls", "Javascript"]}
 
 var value2: Persona = Persona(); # value2 si se puede sobrescribir
+
+
+from "lib" import lib1, lib2m as abel, comeon;
+import "lib" as lib;
