@@ -1,6 +1,8 @@
+# cython: autogen_pxd=True
 from . import _tokens as tokens
 from . import _lib as lib
 from cpython cimport list as cy_list
+
 
 spfunction = lib.spfunction
 subjectFind = lib.subjectFind
@@ -38,7 +40,7 @@ _nombre_reservados = {
     "nombre":[
             "func", "function", "class", "module", "with", "for", "if", "while", "define",
             "from", "import", "global", "try", "def", "fub", "method", "include", "using", "var", "const",
-            "template", "switch", "structure", "case", "return", "setrule"
+            "template", "switch", "structure", "case", "return", "setrule", "interface"
         ],
     "codi":["or", "in", "and", "is"],
     "bucle":["break", "continue"]
@@ -482,6 +484,7 @@ cdef class ClsCompiler():
                             continue
                         
                         var_name = i.Value
+                        index = i.index
                         continue
                     else:
                         self.Catch(i.index, f"no se esperaba '{spfunction.token2SimpleString(i)}' en una declaración")
@@ -1032,8 +1035,8 @@ cdef class ClsCompiler():
                             blockSentence.append(
                                 tokens.SwitchToken(
                                     sentence[0].index,
-                                    self._structureExpression(sentence[1].content),
-                                    self._structureSentence(sentence[2].ContentComplex).ByteCodeScript
+                                    self._structureExpression(sentence[1].content, Environment, mode),
+                                    self._structureSentence(sentence[2].ContentComplex, Environment, mode).ByteCodeScript
                                 )
                             )
                             pass
@@ -1051,8 +1054,8 @@ cdef class ClsCompiler():
                             blockSentence.append(
                                 tokens.CaseToken(
                                     sentence[0].index,
-                                    self._structureExpression(sentence[1].content),
-                                    self._structureSentence(sentence[2].ContentComplex).ByteCodeScript,
+                                    self._structureExpression(sentence[1].content, Environment, mode),
+                                    self._structureSentence(sentence[2].ContentComplex, Environment, mode).ByteCodeScript,
                                     True
                                 )
                             )
@@ -1066,7 +1069,7 @@ cdef class ClsCompiler():
                             tokens.CaseToken(
                                 sentence[0].index,
                                 [],
-                                self._structureSentence(sentence[2].ContentComplex).ByteCodeScript,
+                                self._structureSentence(sentence[2].ContentComplex, Environment, mode).ByteCodeScript,
                                 False
                             )
                         )
@@ -1090,15 +1093,15 @@ cdef class ClsCompiler():
                                 subjectFind(tokens.NameValue, {"Value": "finally"}),
                                 subjectFind(tokens.NodeToken, {"format": "{}"}),
                             ]):
-                            Params = self._structureSentence(sentence[6].contentSentence, Environment, mode).ByteCodeScript
+                            Params = self._structureSentence(sentence[6].ContentComplex, Environment, mode).ByteCodeScript
                             pass
 
                         blockSentence.append(
                             tokens.TryToken(
                                 sentence[0].index,
-                                self._structureSentence(sentence[1].contentSentence, Environment, mode).ByteCodeScript,
+                                self._structureSentence(sentence[1].ContentComplex, Environment, mode).ByteCodeScript,
                                 self._parsing_args(sentence[3].content, Environment),
-                                self._structureSentence(sentence[4].contentSentence, Environment, mode).ByteCodeScript,
+                                self._structureSentence(sentence[4].ContentComplex, Environment, mode).ByteCodeScript,
                                 Params
                             )
                         )
@@ -1113,7 +1116,7 @@ cdef class ClsCompiler():
                             subjectFind(tokens.NameValue),
                             subjectFind(tokens.NameValue),
                             subjectFind(tokens.NodeToken, {"format": "()"}),
-                            subjectFind(tokens.NameValue, {"format": "{}"}),
+                            subjectFind(tokens.NodeToken, {"format": "{}"}),
                         ]):
                             blockSentence.append(
                                 tokens.StructureToken(

@@ -1,4 +1,4 @@
-
+# cython: autogen_pxd=True
 # =========================================================================================
 # =================================== Primitive Tokens ====================================
 # =========================================================================================
@@ -176,7 +176,7 @@ cdef class DeclareToken(tokenTemplate): # Declaraciones
 
         
 
-        return str(f"index-{self.index}: var {self.VarName}: ({self.ContextType}) = {self.DefaultExpression}")
+        return str(f"index-{self.index}: {self.VarName}: ({self.ContextType}) = {self.DefaultExpression}")
 
 
 
@@ -416,7 +416,7 @@ cdef class TryToken(tokenTemplate): # Sentencia Try, Catch y Finally
         self.FinallyBlock = FinallyBlock
 
     def __repr__(self) -> str:
-        return str(f"index-{self.index}: try {{ ... }} except {self.ExceptVarName} {{ ... }} finally {{ ... }}")
+        return str(f"index-{self.index}: try {{ ... }} except (...) {{ ... }} finally {{ ... }}")
 
 
 cdef class ClassToken(tokenTemplate): # Plantillas de objetos, clases y encapsular métodos y atributos de objetos
@@ -508,7 +508,7 @@ cdef class StructureToken(tokenTemplate): # Sentencias e interfaces para tipado 
         self.Extends = Extends
 
     def __repr__(self) -> str:
-        return str(f"index-{self.index}: struct {self.StructureName} {{ {self.Fields} }}")
+        return str(f"index-{self.index}: structure {self.StructureName} {{ {self.Fields} }}")
 
 
 cdef class ImportToken(tokenTemplate): # importa una librería y dale nombre
@@ -539,6 +539,8 @@ cdef class FromModuleToken(tokenTemplate): # parámetros de abstracción de mód
             return str(f"{self.NameElementModule} as {self.RenameModule}")
         else:
             return str(f"{self.NameElementModule}")
+    def __str__(self) -> str:
+        return self.__repr__()
 
 cdef class FromImportToken(tokenTemplate): # importa una librería pero solo importa lo seleccionado y renombrados
     TypeToken = "FromImportToken"
@@ -578,7 +580,12 @@ cdef class VarToken(tokenTemplate):
         self.isConst = isConst
 
     def __repr__(self) -> str:
-        return str(f"index-{self.index}: var {self.VarName} = {self.Value}")
+
+        _v = "var"
+        if self.isConst:
+            _v = "const"
+
+        return str(f"index-{self.index}: {_v} {self.Declares}")
         
 cdef class WithToken(tokenTemplate): # Sentencia With
     TypeToken = "WithToken"
@@ -593,6 +600,5 @@ cdef class WithToken(tokenTemplate): # Sentencia With
         self.Values = Values
         self.Body = Body
     def __repr__(self) -> str:
-        return str(f"with-{self.index}: with {self.VarName} in () {{ ... }}")
+        return str(f"index-{self.index}: with {self.VarName} in ( ... ) {{ ... }}")
     pass
-

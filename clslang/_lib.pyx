@@ -1,13 +1,19 @@
+# cython: autogen_pxd=True
 from . import _tokens as tokens
-from . import engine
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from . import engine
+# from libcpp import cast
+
+# ClsC: engine.ClsCompiler = cast.static_cast(engine.ClsCompiler)
 
 cdef class subjectFind():
 
     cdef object tokenType
-    cdef dict[str, str] params
+    cdef dict params
 
-    def __init__(self, type tokenType, dict[str, str] params = {}):
+    def __init__(self, type tokenType, dict params = {}):
 
         self.tokenType = tokenType
         self.params = params
@@ -117,9 +123,16 @@ cdef class spfunction():
     pass
 
 
-cdef list[tokens.FromModuleToken] getListName(engine.ClsCompiler self, list[tokens.tokenTemplate] lista = []):
-
-    cdef list[str] names = []
+cpdef list[tokens.FromModuleToken] getListName(object self, list[tokens.tokenTemplate] lista = []):
+# cpdef list[tokens.FromModuleToken] getListName(self, lista):
+    
+    """
+    :param lista: los tokens a evaluar.
+    :type _self: engine.ClsCompiler
+    :rtype: list[tokens.FromModuleToken]
+    """
+    
+    cdef list[tokens.FromModuleToken] names = []
     cdef str mode = "name"
 
     cdef currentName = ""
@@ -186,5 +199,7 @@ cdef list[tokens.FromModuleToken] getListName(engine.ClsCompiler self, list[toke
                 newName
             )
         )
+    
+    print(names)
 
     return names

@@ -1,8 +1,17 @@
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message="", 
+    category=RuntimeWarning
+)
+
 from clslang import engine as cls
 import sys
 import os
 import json
 import platform
+
 
 year_last_update = "2025"
 version_cls = "1.2"
