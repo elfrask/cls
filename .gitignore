@@ -1,5 +1,5 @@
 *.pyd
-clslang/*.c
-clslang/*.h
-clslang/*.cpp
+clslang/**/*.c
+clslang/**/*.h
+clslang/**/*.cpp
 build

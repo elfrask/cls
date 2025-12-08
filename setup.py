@@ -2,18 +2,29 @@ from setuptools import setup, Extension, find_packages
 from Cython.Build import cythonize
 import sys
 import subprocess
+import glob
+import os, sys
 
+files = glob.glob("./clslang/**/*.pyx")
 
-# subprocess.run(["autopxd", "clslang/_tokens.pyx", "clslang/_tokens.pxd"], check=True)
+def Exp(file: str):
+  
+  point = os.path.splitext(file)[0].replace("\\", "/").replace("/", ".")
 
+  while point[0] == ".":
+    point = point[1:]
+  
+  return Extension(point, [file])
+
+Extenciones = [Exp(file) for file in files] 
+
+print(Extenciones)
 
 extensions = [
-    Extension("clslang._tokens", ["clslang/_tokens.pyx"]),
-    Extension("clslang.engine", ["clslang/engine.pyx"], depends=["clslang/_tokens.pyx"]),
-    Extension("clslang._lib", ["clslang/_lib.pyx"], depends=["clslang/_lib.pyx"]),
-    # "clslang/_tokens.pyx",
-    # "clslang/_lib.pyx",
-    # "clslang/engine.pyx",
+    # Extension("clslang._tokens", ["clslang/_tokens.pyx"]),
+    # Extension("clslang.engine", ["clslang/engine.pyx"], depends=["clslang/_tokens.pyx"]),
+    # Extension("clslang._lib", ["clslang/_lib.pyx"], depends=["clslang/_lib.pyx"]),
+    *Extenciones
 
 ]
 
