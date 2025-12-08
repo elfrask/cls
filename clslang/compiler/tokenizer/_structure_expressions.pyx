@@ -1,13 +1,13 @@
 from .. cimport tokens
 from ...workspace cimport cls_block
-from ... cimport _lib as lib
+from ...libs cimport _lib as lib
 from .. cimport cls_compiler
 
 cdef list[tokens.tokenTemplate] _structureExpression(
     cls_compiler.ClsCompiler self, 
     list[tokens.tokenTemplate] ExpressionCode, 
     list[tokens.FunctionToken] Environment, 
-    Param_mode = "normal"
+    str Param_mode = "normal"
   ):
 
     cdef list[tokens.tokenTemplate] blockExpressions = []

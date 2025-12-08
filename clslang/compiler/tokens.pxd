@@ -164,7 +164,8 @@ cdef class FromModuleToken(tokenTemplate): # Abstracción de módulos
 
 cdef class FromImportToken(tokenTemplate): # Importación from ... import ...
     # ModulesNames contiene FromModuleToken (cdef class)
-    cdef public list ModulesNames
+    # cdef public list ModulesNames
+    cdef public list[FromModuleToken] ModulesNames
     cdef public str ImportedRoute
 
 

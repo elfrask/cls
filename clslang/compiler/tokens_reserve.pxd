@@ -1,2 +1,2 @@
 cdef dict _toks
-cdef dict _nombres_reservados
+cdef dict _nombre_reservados

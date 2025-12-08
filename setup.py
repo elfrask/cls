@@ -5,7 +5,7 @@ import subprocess
 import glob
 import os, sys
 
-files = glob.glob("./clslang/**/*.pyx")
+files = [*glob.glob("./clslang/**/*.pyx", recursive=True)]
 
 def Exp(file: str):
   
@@ -17,8 +17,10 @@ def Exp(file: str):
   return Extension(point, [file])
 
 Extenciones = [Exp(file) for file in files] 
-
-print(Extenciones)
+_i = 0
+for i in files:
+  print("Select: ", _i, i)
+  _i+=1
 
 extensions = [
     # Extension("clslang._tokens", ["clslang/_tokens.pyx"]),

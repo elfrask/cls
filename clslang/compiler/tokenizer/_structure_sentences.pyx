@@ -1,5 +1,5 @@
 from ...workspace cimport cls_block
-from ... cimport _lib as spfunction
+from ...libs cimport _lib as spfunction
 from .. cimport tokens
 from ...workspace cimport cls_block
 from .. cimport tokens_reserve
@@ -10,10 +10,10 @@ cdef dict _nombre_reservados = tokens_reserve._nombre_reservados
 cdef subjectFind = spfunction.subjectFind
 
 cdef cls_block.ClsBlock _structureSentence(
-    cls_compiler.ClsCompiler self, list[list[tokens.tokenTemplate]] 
-    SentenceCode, list[tokens.FunctionToken] 
-    Environment = [], 
-    mode = "normal"
+    cls_compiler.ClsCompiler self, 
+    list[list[tokens.tokenTemplate]] SentenceCode, 
+    list[tokens.FunctionToken] Environment = [], 
+    str mode = "normal"
   ):
         
     cdef list[tokens.tokenTemplate] blockSentence = []
@@ -552,7 +552,7 @@ cdef cls_block.ClsBlock _structureSentence(
                         blockSentence.append(
                             tokens.FromImportToken(
                                 sentence[0].index,
-                                spfunction.getListName(sentence[3:]),
+                                spfunction.getListName(self, sentence[3:]),
                                 sentence[1].content
                             )
                         )

@@ -1,4 +1,4 @@
-from ... cimport _lib as lib
+from ...libs cimport _lib as lib
 from .. cimport tokens
 from .. cimport cls_compiler
 

@@ -1,4 +1,4 @@
-from . cimport cls_block
+
 
 
 cdef class ClsScript():

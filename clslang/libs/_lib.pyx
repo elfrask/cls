@@ -1,11 +1,11 @@
 # cython: autogen_pxd=True
-from .compiler cimport tokens
-from .compiler cimport cls_compiler
+from ..compiler cimport tokens
+from ..compiler cimport cls_compiler
 
 cdef class subjectFind():
 
-    cdef object tokenType
-    cdef dict params
+    # cdef object tokenType
+    # cdef dict params
 
     def __init__(self, type tokenType, dict params = {}):
 
@@ -13,7 +13,7 @@ cdef class subjectFind():
         self.params = params
         
         pass
-    cpdef bint checkEval(self, token: tokens.tokenTemplate):
+    cpdef bint checkEval(self, tokens.tokenTemplate token):
 
         if isinstance(token, self.tokenType):
             for i in self.params:
@@ -48,6 +48,8 @@ cdef autoToken(str string, int i):
     else:
         return tokens.NameValue(string, i - len(string))
 
+punto = b"."
+
 cdef es_decimal_cython(str s):
     cdef bint tiene_punto = False
     cdef bint tiene_digito = False
@@ -57,7 +59,7 @@ cdef es_decimal_cython(str s):
     for i in s:
         if i in ("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"):
             tiene_digito = True
-        elif i == b'.' and not tiene_punto:
+        elif punto == '.' and not tiene_punto:
             tiene_punto = True
         else:
             return False 
@@ -78,7 +80,7 @@ cdef compare(list[tokens.tokenTemplate] Expression, list[subjectFind] check):
 
     return True
 
-cdef token2SimpleString(token: tokens.tokenTemplate):
+cdef token2SimpleString(tokens.tokenTemplate token):
 
     if isinstance(token, tokens.NameValue):
         return token.Value

@@ -1,4 +1,4 @@
-from ... cimport _lib as lib
+from ...libs cimport _lib as lib
 from .. cimport tokens
 from .. cimport tokens_reserve
 from ...workspace cimport cls_script

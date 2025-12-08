@@ -1,4 +1,4 @@
-cdef _toks = {
+cdef dict _toks = {
     "ope":["+", "-", "/", "*", "!", "|", "@", "&", "%", "=", "?", "<", ">", "^", ":"],
     "multi-ope":["++", "--", "//", "**", "!=", "||", "==", "<<", ">>", "^^", "::", ":=", "<=", ">=", "->"],
     "sim":["{", "}", "(", ")", "[", "]", ","],
@@ -24,7 +24,7 @@ cdef _toks = {
 }
 
 
-cdef _nombre_reservados = {
+cdef dict _nombre_reservados = {
     "visible":["export", "static", "private", "public", "global"],
     "thread":["sync", "async"],
     "nombre":[

@@ -547,14 +547,22 @@ cdef class FromImportToken(tokenTemplate): # importa una librería pero solo imp
     # cdef public list[FromModuleToken] ModulesNames
     # cdef public str ImportedRoute
 
-    def __init__(self, int index, list[NameValue] ModulesNames, str ImportedRoute = ""):
+    def __init__(self, int index, list[FromModuleToken] ModulesNames, str ImportedRoute = ""):
         super().__init__(index)
         self.ModulesNames = ModulesNames
         self.ImportedRoute = ImportedRoute
 
+        
 
     def __repr__(self) -> str:
-        return str(f"index-{self.index}: from '{self.ImportedRoute}' import {', '.join(self.ModulesNames)}")
+
+        names = []
+
+        for i in self.ModulesNames:
+            names.append(str(i))
+            pass
+
+        return str(f"index-{self.index}: from '{self.ImportedRoute}' import {', '.join(names)}")
 
 
 cdef class IncludeToken(tokenTemplate): # importa una librería y incluye todos sus atributos al top-level
