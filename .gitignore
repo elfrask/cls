@@ -4,3 +4,5 @@ clslang/**/*.c
 clslang/**/*.h
 clslang/**/*.cpp
 build
+*__pycache__
+
