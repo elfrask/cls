@@ -1,5 +1,1 @@
-interface Persona() {
-  name: String = "",
-  ages: Number = 18,
-  skills: String[] = ["Python", "Cls", "Javascript"]
-};
+from "lib" import lib1, lib2m as abel, comeon

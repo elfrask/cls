@@ -125,6 +125,7 @@ cpdef list[tokens.FromModuleToken] getListName(cls_compiler.ClsCompiler self, li
                 mode = "separator"
                 index = i.index
             else:
+                
                 self.Catch(i.index, f"No se esperaba '{token2SimpleString(i)}'")
                 pass
             pass
@@ -148,7 +149,7 @@ cpdef list[tokens.FromModuleToken] getListName(cls_compiler.ClsCompiler self, li
                     self.Catch(i.index, f"No se esperaba '{token2SimpleString(i)}'")
             elif isinstance(i, tokens.SymbolToken):
 
-                if i.TypeToken == ",": 
+                if i.symbol == ",": 
                     names.append(
                         tokens.FromModuleToken(
                             index,
@@ -177,6 +178,5 @@ cpdef list[tokens.FromModuleToken] getListName(cls_compiler.ClsCompiler self, li
             )
         )
     
-    print(names)
 
     return names

@@ -7,6 +7,7 @@ from .tokenizer cimport _parsing_args
 from .tokenizer cimport _structure_expressions
 from .tokenizer cimport _structure_sentences
 from . cimport tokens
+import sys
 
 cdef class ClsCompiler():
 
@@ -21,8 +22,13 @@ cdef class ClsCompiler():
     
     cpdef void Catch(self, int i, str message = ""):
 
-        print(f"Hubo un error en el index {i}: {message}")
-        pass
+        cdef str msg = f"Hubo un error en el index {i}: {message}"
+
+        if "-debug" in sys.argv:
+            raise
+        else:
+            print(msg)
+        # pass
 
     cdef list _tokenizer(self, cls_script.ClsScript _script):
         
