@@ -27,6 +27,7 @@ cdef cls_block.ClsBlock _structureSentence(
     cdef onlyDeclaration = False
     cdef cls_block.ClsBlock BlockCode 
     cdef list[any] Params = []
+    cdef int _indexUse = -1
 
     # cdef tokens.tokenTemplate currect_sentence
 
@@ -42,6 +43,7 @@ cdef cls_block.ClsBlock _structureSentence(
         onlyFunction = False
         onlyDeclaration = False
         ContextFunctionEnvironment = []
+        _indexUse = -1
         Params = []
 
         if isinstance(sentence[0], tokens.NameValue):
@@ -597,7 +599,31 @@ cdef cls_block.ClsBlock _structureSentence(
                 pass
             
             pass
-            
+        else: 
+
+            _indexUse = spfunction.FindToken(subjectFind(tokens.OperatorToken, {"_operator": "="}))
+
+            if _indexUse > -1:
+                if _indexUse == 0:
+                    self.Catch(sentence[0], f"No se esperaba '{spfunction.token2SimpleString(sentence[0])}'")
+                    continue
+
+                blockSentence.append(
+                    tokens.AssignVarValue(
+                        sentence[0].index,
+                        self._structureExpression(sentence[0:_indexUse], Environment, mode),
+                        self._structureExpression(sentence[_indexUse+1:], Environment, mode),
+                    )
+                )
+                pass
+            else:
+                blockSentence.append(
+                    tokens.ExpressionSentence(
+                        sentence[0].index,
+                        self._structureExpression(sentence, Environment, mode)
+                    )
+                )
+
             pass
         
 

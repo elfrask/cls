@@ -180,3 +180,17 @@ cpdef list[tokens.FromModuleToken] getListName(cls_compiler.ClsCompiler self, li
     
 
     return names
+
+
+cdef int FindToken(subjectFind subject, list[tokens.tokenTemplate] TokensList):
+
+    cdef index = -1
+    for i in TokensList:
+        index = index + 1
+
+        if subject.checkEval(i):
+
+            return index
+        pass
+
+    return -1
