@@ -184,3 +184,14 @@ cdef class WithToken(tokenTemplate): # Sentencia With
     cdef public str VarName
     cdef public list Values
     cdef public list Body
+
+
+cdef class ExpressionSentence(tokenTemplate): # Expression secuencial / imperativa
+    cdef public list[tokenTemplate] Body
+
+cdef class AssignVarValue(tokenTemplate): # Asignación declarativa
+    cdef public list[tokenTemplate] Expression
+    cdef public str VarName
+
+    cdef public bint complex
+    cdef public list[tokenTemplate] AssignVar

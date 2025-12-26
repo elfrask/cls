@@ -602,7 +602,7 @@ cdef class WithToken(tokenTemplate): # Sentencia With
     # cdef public list[tokenTemplate] Values
     # cdef public list[tokenTemplate] Body
 
-    def __init__(self, index: int, str VarName, list[tokenTemplate] Values, list[tokenTemplate] Body):
+    def __init__(self, int index, str VarName, list[tokenTemplate] Values, list[tokenTemplate] Body):
         super().__init__(index)
         self.VarName = VarName
         self.Values = Values
@@ -610,3 +610,23 @@ cdef class WithToken(tokenTemplate): # Sentencia With
     def __repr__(self) -> str:
         return str(f"index-{self.index}: with {self.VarName} in ( ... ) {{ ... }}")
     pass
+
+cdef class ExpressionSentence(tokenTemplate): # Expression secuencial / imperativa
+    TypeToken = "ExpressionSentence"
+    def __init__(self, int index, list[tokenTemplate] body):
+        super().__init__(index)
+        self.Body = body
+
+cdef class AssignVarValue(tokenTemplate): # Asignación declarativa
+
+    def __init__(self, int index, list[tokenTemplate] AssignVar, list[tokenTemplate] Expression):
+        super().__init__(index)
+        self.AssignVar = AssignVar
+        self.Expression = Expression
+        self.complex = True
+
+        if len(AssignVar) == 1:
+            if isinstance(AssignVar[0], NameValue):
+                self.complex = False
+                self.VarName = AssignVar[0].Value
+        
