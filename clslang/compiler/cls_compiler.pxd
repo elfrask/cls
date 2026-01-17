@@ -3,11 +3,13 @@
 from ..workspace cimport cls_application
 from ..workspace cimport cls_script
 from ..workspace cimport cls_block
+from ..workspace cimport cls_script
 from . cimport tokens
 
 cdef class ClsCompiler():
     cdef cls_application.ClsApplication ClsApp
     cdef public list[str] lib_path
+    cdef public cls_script.ClsScript script
 
     cpdef void Catch(
       self, 

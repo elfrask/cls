@@ -8,6 +8,7 @@ cdef dict _toks = tokens_reserve._toks
 
 
 cdef list _tokenizer(cls_compiler.ClsCompiler self, cls_script.ClsScript _script):
+    self.script = _script
     cdef list[list] output = [] 
     cdef list[tokens.tokenTemplate] line = []
 

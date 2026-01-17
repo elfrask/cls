@@ -1,6 +1,7 @@
 from ..workspace cimport cls_application
 from ..workspace cimport cls_script
 from ..workspace cimport cls_block
+from ..workspace cimport stack_error
 from .tokenizer cimport _tokenizer
 from .tokenizer cimport parsing
 from .tokenizer cimport _parsing_args
@@ -27,7 +28,10 @@ cdef class ClsCompiler():
         if "-debug" in sys.argv:
             raise
         else:
-            print(msg)
+            self.ClsApp.StacksErrors.append(
+                stack_error.StackError(i, self.script, message)
+            )
+            raise message
         # pass
 
     cdef list _tokenizer(self, cls_script.ClsScript _script):

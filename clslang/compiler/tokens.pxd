@@ -193,5 +193,5 @@ cdef class AssignVarValue(tokenTemplate): # Asignación declarativa
     cdef public list[tokenTemplate] Expression
     cdef public str VarName
 
-    cdef public bint complex
+    cdef public bint complexAssignVar
     cdef public list[tokenTemplate] AssignVar
