@@ -623,10 +623,10 @@ cdef class AssignVarValue(tokenTemplate): # Asignación declarativa
         super().__init__(index)
         self.AssignVar = AssignVar
         self.Expression = Expression
-        self.complex = True
+        self.complexAssignVar = True
 
         if len(AssignVar) == 1:
             if isinstance(AssignVar[0], NameValue):
-                self.complex = False
+                self.complexAssignVar = False
                 self.VarName = AssignVar[0].Value
         

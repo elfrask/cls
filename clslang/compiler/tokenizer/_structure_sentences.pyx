@@ -5,7 +5,6 @@ from ...workspace cimport cls_block
 from .. cimport tokens_reserve
 from .. cimport cls_compiler
 
-
 cdef dict _nombre_reservados = tokens_reserve._nombre_reservados
 cdef subjectFind = spfunction.subjectFind
 
@@ -601,7 +600,7 @@ cdef cls_block.ClsBlock _structureSentence(
             pass
         else: 
 
-            _indexUse = spfunction.FindToken(subjectFind(tokens.OperatorToken, {"_operator": "="}))
+            _indexUse = spfunction.FindToken(subjectFind(tokens.OperatorToken, {"_operator": "="}), sentence)
 
             if _indexUse > -1:
                 if _indexUse == 0:

@@ -15,3 +15,4 @@ cdef compare(list[tokens.tokenTemplate] Expression, list[subjectFind] check)
 cdef token2SimpleString(tokens.tokenTemplate token)
 
 cpdef list[tokens.FromModuleToken] getListName(cls_compiler.ClsCompiler self, list[tokens.tokenTemplate] lista = *)
+cdef int FindToken(subjectFind subject, list[tokens.tokenTemplate] TokensList)
