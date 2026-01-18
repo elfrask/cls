@@ -1,1 +1,8 @@
-from "lib" import lib1, lib2m as abel, comeon
+from "lib" import lib1, lib2m as abel, comeon;
+
+while () {
+  while eu {}
+}
+
+# error de sintaxis colocado apropósito, despues 
+# de cada sentencia se debe finalizar con un ";"

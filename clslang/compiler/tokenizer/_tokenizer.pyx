@@ -3,6 +3,7 @@ from .. cimport tokens
 from .. cimport tokens_reserve
 from ...workspace cimport cls_script
 from .. cimport cls_compiler
+import math
 
 cdef dict _toks = tokens_reserve._toks
 
@@ -14,8 +15,8 @@ cdef list _tokenizer(cls_compiler.ClsCompiler self, cls_script.ClsScript _script
 
     cdef str code = _script._code
 
-    code = code.replace("\t", " ")
-    code = code.replace("\r", " ")
+    # code = code.replace("\t", " ")
+    # code = code.replace("\r", " ")
 
     cdef str string = ""
     cdef int iterator = -1
@@ -30,9 +31,16 @@ cdef list _tokenizer(cls_compiler.ClsCompiler self, cls_script.ClsScript _script
     for character in code:
         iterator += 1
 
+        # print(
+        #     "debug tokenizer:", 
+        #     iterator, 
+        #     repr(code[(iterator-5): iterator] + f"[{code[iterator]}]" + code[iterator+1: iterator+5]),
+        #     f" | character?: " + repr(character)     
+        # )
+
         if modo == "normal":
 
-            if not character in [" ", "\n"]:
+            if not character in [" ", "\n", "\t", "\r"]:
 
                 if character in _toks["sim"]:
                     if string:

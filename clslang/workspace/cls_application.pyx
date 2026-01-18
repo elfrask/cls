@@ -6,6 +6,7 @@ cdef class ClsApplication():
 
         self.cwd = cwd
         self.pid = pid
+        self.StacksErrors = []
         # self.AppModules = {}
 
         pass

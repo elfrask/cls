@@ -7,6 +7,7 @@ from .tokenizer cimport parsing
 from .tokenizer cimport _parsing_args
 from .tokenizer cimport _structure_expressions
 from .tokenizer cimport _structure_sentences
+from ..libs cimport exceptions
 from . cimport tokens
 import sys
 
@@ -29,9 +30,9 @@ cdef class ClsCompiler():
             raise
         else:
             self.ClsApp.StacksErrors.append(
-                stack_error.StackError(i, self.script, message)
+                stack_error.StackError(i, self.script, self.ClsApp, message)
             )
-            raise message
+            raise exceptions.ClsException(message)
         # pass
 
     cdef list _tokenizer(self, cls_script.ClsScript _script):
