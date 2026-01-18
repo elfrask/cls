@@ -104,7 +104,7 @@ import "lib" as lib;
 
 var value3: fun = (value: String): String[] -> {
   return ["inicio", value, value, "fin"]
-} 
+};
 
 
 function fib() -> int[] {
@@ -113,7 +113,7 @@ function fib() -> int[] {
   var fibList: int[] = [0, 1];
   var limit: int = int(num);
 
-  while(true) {
+  while (true) {
 
     if(fibList[-1] > limit) {
       fibList.pop();

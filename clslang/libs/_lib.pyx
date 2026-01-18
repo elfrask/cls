@@ -34,6 +34,8 @@ cdef class subjectFind():
 
 cdef autoToken(str string, int i):
 
+    # print("autotoken:", string, i)
+
     _m_tk = "name"
 
     if es_decimal_cython(string):
@@ -91,6 +93,9 @@ cdef token2SimpleString(tokens.tokenTemplate token):
     elif isinstance(token, tokens.NumberValue):
         return str(token.Value)
     elif isinstance(token, tokens.NodeToken):
+
+        return f"{token.format[0]}"
+
         if len(token.ContentComplex) > 1:
             return  f"{token.format[0]} ({len(token.ContentComplex)}) Sentences {token.format[1]}"
         

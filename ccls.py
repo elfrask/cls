@@ -68,9 +68,20 @@ def main(file):
 
 
 
+    try:
+        print((ClsCompiler.Compile(ClsScript).result.getCode()))
+    except cls.ClsExceptions as err:
 
-    print((ClsCompiler.Compile(ClsScript).result.getCode()))
+        print("Excepción de CLS")
+        # print(err, ClsApp.StacksErrors)
+        for i in ClsApp.StacksErrors:
+            print(i.generateLog())
+        pass
+    except Exception as err:
 
+        if not isinstance(err, cls.ClsExceptions):
+            print(type(err))
+            print(err)
     # input("Finalizado")
     
 
