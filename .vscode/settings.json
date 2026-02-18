@@ -1,10 +1,9 @@
 {
-    "python.autoComplete.extraPaths": [
-        "./clslang"
-    ],
-    "python.analysis.extraPaths": [
-        "./clslang"
-    ],
-    "python.linting.enabled": true,
-    "python.linting.pylintEnabled": true
+    "cSpell.words": [
+        "isinstance",
+        "iterador",
+        "Simbol",
+        "spfunction",
+        "toks"
+    ]
 }

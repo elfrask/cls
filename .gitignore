@@ -1,9 +1,13 @@
-*.pyd
+CLS/web/node_modules
+clsexe
+dist
+cache
+dist_old
+
 *.pyc
-clslang/**/*.c
-clslang/**/*.h
-clslang/**/*.cpp
-build
-*__pycache__
-.git-old
+*.pyd
+
+*/clslang/*.c
+*/clslang/*.h
+*/__pycache__/*
 

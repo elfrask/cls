@@ -1,0 +1,17 @@
+{
+    "name": "apptest1",
+    "ver": "1.0",
+    "mode": "CLS",
+    "depends": [],
+    "run": {
+        "default": {
+            "x64": false,
+            "main": "main.scls",
+            "run": "ccls main.scls",
+            "platform": [
+                "win32"
+            ],
+            "output": "main.cle"
+        }
+    }
+}

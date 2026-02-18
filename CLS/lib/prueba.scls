@@ -1,0 +1,8 @@
+
+void play() {
+    print("Testeando...");
+    print("Testeo completo!");
+    print_debug("saludos Bv")
+};
+
+export.play = play;

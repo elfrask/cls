@@ -1,0 +1,12 @@
+import "pypkg" as py;
+
+
+req = py.require("req.py");
+
+
+export.request = req.request;
+export.arequest = req.arequest;
+export.codes = req.codes;
+export.session = req.Session;
+export.ver = [0, 1, 0];
+export.name = "[RequestLibrary (request)]"

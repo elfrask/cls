@@ -1,0 +1,8 @@
+
+function error() {
+	catch("FALLO!", "meh dyo anziedat :c")
+};
+
+
+export.hola = "Hola mundo";
+export.error = error;

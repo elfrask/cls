@@ -1,0 +1,15 @@
+import "pypkg" as py;
+
+fs = py.require("fs.py");
+
+export.open = fs.open;
+export.dir = fs.dir;
+export.Async = fs.Async;
+export.exist = fs.exist;
+export.ver = [1,0,0];
+export.name = "[FileSystemLibrary (fs)]";
+export.unlink = fs.delete;
+export.mkdir = fs.mkdir;
+export.mkfile = fs.mkfile;
+export.copy = fs.copy;
+export.move = fs.move;
