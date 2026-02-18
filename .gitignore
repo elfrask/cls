@@ -5,4 +5,5 @@ clslang/**/*.h
 clslang/**/*.cpp
 build
 *__pycache__
+.git-old
 
