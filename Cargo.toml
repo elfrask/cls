@@ -3,4 +3,15 @@ name = "cls"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
+# [dependencies]
+# Aquí irían librerías como 'nom' para el parsing o 'clap' para el CLI
+# nom = "7.1" 
+# clap = { version = "4.0", features = ["derive"] }
+
+# [lib]
+# name = "cls_core"
+# path = "src/cls-lib.rs"
+
+[[bin]]
+name = "ccls"
+path = "src/main.rs"
