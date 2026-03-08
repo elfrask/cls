@@ -1,9 +1,9 @@
 // --- SIMBOLOS ---
 // solo son delimitadores
-pub const SIMBOLOS: &[&str] = &["(", ")", "[", "]", "{", "}", ",", ".", ";"];
+pub const SIMBOLOS: &[&str] = &["(", ")", "[", "]", "{", "}", ",", "."];
 
 // --- Delimitadores y espacios ---
-pub const DELIMITADORES: &[&str] = &["\n", "\t", "\r"];
+pub const DELIMITADORES: &[&str] = &["\n", "\t", "\r", " "];
 
 
 // --- OPERADORES (Simples) ---
