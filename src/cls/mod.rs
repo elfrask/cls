@@ -1,4 +1,6 @@
 
 
 pub mod cls;
-mod parser;
+pub mod parser;
+pub mod lib;
+pub mod consts;
