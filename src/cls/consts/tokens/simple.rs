@@ -6,6 +6,10 @@ pub const SIMBOLOS: &[&str] = &["(", ")", "[", "]", "{", "}", ",", "."];
 pub const DELIMITADORES: &[&str] = &["\n", "\t", "\r", " "];
 
 
+pub const DELIMITADORES_STRINGS: &[&str] = &["'", "\"", "`"];
+
+
+
 // --- OPERADORES (Simples) ---
 // Operadores de un solo carácter
 pub const OPERADORES: &[&str] = &[
@@ -18,5 +22,5 @@ pub const OPERADORES: &[&str] = &[
 // falsos positivos con los operadores simples.
 pub const COMPUESTOS: &[&str] = &[
   "==", "!=", ">=", "<=", "&&", "||", "++", "--", "**", "+=", "-=", "*=", "/=", "=>", "->", "::",
-  "..",
+  "..", "<<", ">>", "//", "/*"
 ];

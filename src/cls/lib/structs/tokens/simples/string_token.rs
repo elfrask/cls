@@ -1,4 +1,4 @@
-use crate::{cls::lib::structs::tokens::{meta::TokenMeta, types::TokenTypesNames}, impl_base_token};
+use crate::{cls::lib::structs::tokens::{meta::{BaseToken, TokenMeta}, types::TokenTypesNames}};
 
 pub struct StringToken {
   pub meta: TokenMeta,
@@ -7,10 +7,10 @@ pub struct StringToken {
   pub string: String,
 }
 
-impl_base_token!(StringToken);
+// impl_base_token!(StringToken);
 
 impl StringToken {
-  fn new(index: i64, delimiter: char, format: Option<String>) -> Self {
+  pub fn new(index: i64, delimiter: char, format: Option<String>) -> Self {
     let mut _format: String = "".to_string(); 
     
     if let Some(v) = format {
@@ -29,6 +29,15 @@ impl StringToken {
   }
   pub fn push_string(&mut self, string: &str) {
     self.string.push_str(string);
+    
   }
+
   
+  
+}
+
+impl BaseToken for StringToken {
+  fn repr(&self) -> String {
+    format!("{}: '{}'", self.meta, self.string)
+  }
 }
