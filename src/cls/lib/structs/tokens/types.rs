@@ -6,6 +6,7 @@ pub enum TokenTypesNames {
   Number,
   String,
   Operator,
+  Symbol
 }
 
 

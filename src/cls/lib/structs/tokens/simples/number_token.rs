@@ -1,4 +1,4 @@
-use crate::{cls::lib::structs::tokens::{meta::TokenMeta, types::TokenTypesNames}, impl_base_token};
+use crate::cls::lib::structs::tokens::{meta::{BaseToken, TokenMeta}, types::TokenTypesNames};
 
 pub struct NumberToken {
   pub meta: TokenMeta,
@@ -6,7 +6,7 @@ pub struct NumberToken {
   pub value: i64,
 }
 
-impl_base_token!(NumberToken);
+// impl_base_token!(NumberToken);
 
 impl NumberToken {
   pub fn newInt(index: i64, value: i64) -> NumberToken {
@@ -26,5 +26,11 @@ impl NumberToken {
   
   pub fn get_float(&self) -> f64 {
     f64::from_bits(self.value as u64)
+  }
+}
+
+impl BaseToken for NumberToken  {
+  fn repr(&self) -> String {
+    format!("{}: is float: '{}' value: ({})", self.meta, self.is_float, self.value)
   }
 }
