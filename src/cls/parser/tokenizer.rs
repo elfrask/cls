@@ -1,6 +1,9 @@
 use std::ptr::eq;
+use std::rc::Rc;
 
+use crate::cls::environment::script::Script;
 use crate::cls::{consts::tokens::simple::{COMPUESTOS, DELIMITADORES, DELIMITADORES_STRINGS, OPERADORES, SIMBOLOS}, lib::structs::tokens::{lib::passToken, simples::{enums::SimpleTokensEnum, operator_token::OperatorToken, string_token::StringToken, symbol_token::SymbolToken}}};
+// use crate::environment::script::Script, lib::structs::tokens::{lib::passToken, simples::{enums::SimpleTokensEnum, operator_token::OperatorToken, string_token::StringToken, symbol_token::SymbolToken}}}
 
 // use crate::
 pub const LEX_VERSION: &str = "0.1.0";
@@ -13,10 +16,12 @@ enum States {
 }
 
 
-pub struct Tokenizador {
-  pub pathFile: String,
+// pub struct Tokenizador {
+pub struct Tokenizador<'a> {
+  // pub script: Script,
+  pub script: &'a mut Script,
   
-  pub result: Vec<Vec<SimpleTokensEnum>>,
+  // pub result: Vec<Vec<SimpleTokensEnum>>,
   stack_line: Vec<SimpleTokensEnum>,
   stack: String,
   state: States,
@@ -24,12 +29,14 @@ pub struct Tokenizador {
   
 }
 
-impl Tokenizador {
-  pub fn new(pathFile: &str) -> Self {
+// impl Tokenizador {
+impl<'a> Tokenizador<'a> {
+  // pub fn new(script: Script) -> Self {
+  pub fn new(script: &'a mut Script) -> Self {
     Tokenizador { 
-      result: Vec::new(),
+      // result: Vec::new(),
       stack_line: Vec::new(),
-      pathFile: pathFile.to_string(),
+      script: script,
       state: States::Main,
       stack: "".to_string(),
       ok: true,
@@ -44,15 +51,16 @@ impl Tokenizador {
   fn next_line(&mut self, index: i64) {
     self.next_stack(index);
     if !self.stack_line.is_empty() {
-      self.result.push(std::mem::take(&mut self.stack_line));
+      self.script.tokens.push(std::mem::take(&mut self.stack_line));
     }
   }
-  pub fn parse(&mut self, code: &str) -> &Vec<Vec<SimpleTokensEnum>> {
+  pub fn parse(&mut self) -> &Vec<Vec<SimpleTokensEnum>> {
     
-    let chars = code.chars().enumerate();
+    let code: &str = &self.script.code_raw.clone();
+    let chars = (code).chars().enumerate();
     // let mut iter = chars.iter().enumerate().peekable();
    
-    self.result = Vec::new();
+    // self.result = Vec::new();
     self.stack_line = Vec::new();
     self.stack = String::new();
     self.state = States::Main;
@@ -178,12 +186,12 @@ impl Tokenizador {
     };
 
     match self.state {
-       States::Main | 
-       States::CommentLine |
-       States::CommentMultiLine
-       => {
-         self.next_line(cursor as i64);
-       }
+      States::Main | 
+      States::CommentLine |
+      States::CommentMultiLine
+      => {
+        self.next_line(cursor as i64);
+      }
       _ => {
         self.ok = false;
         panic!("Hay scopes abierto, por favor ciérralos")
@@ -191,7 +199,7 @@ impl Tokenizador {
     }
 
     // println!("longitud de tokens: {}", self.result.len());
-
-    return &self.result;
+    // self.script.tokens = self.result;
+    return &self.script.tokens;
   } 
 }
