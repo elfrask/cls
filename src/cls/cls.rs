@@ -12,7 +12,7 @@ pub fn run_file(_path: &str, _code: &str) -> bool {
   // token_parsed.parse();
 
   println!("Compilado!");
-  debug_tokenizer(&script.tokens);
+  debug_tokenizer("",&script.tokens);
 
   return true
 }

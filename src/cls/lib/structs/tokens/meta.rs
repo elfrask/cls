@@ -4,7 +4,7 @@ use std::fmt::write;
 use crate::cls::lib::structs::tokens::types::TokenTypesNames;
 
 pub trait BaseToken {
-  fn repr(&self) -> String;
+  fn repr(&self, prefix: &str) -> String;
   // fn repr(&self) -> &'static str;
 }
 
