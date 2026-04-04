@@ -18,7 +18,7 @@ impl SymbolToken {
 
 
 impl BaseToken for SymbolToken  {
-  fn repr(&self) -> String {
+  fn repr(&self, prefix: &str) -> String {
     format!("{}: '{}'", self.meta, self.symbol)
   }
 }

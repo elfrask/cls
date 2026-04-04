@@ -24,7 +24,7 @@ pub fn passToken(index: i64, value: &str) -> SimpleTokensEnum {
   panic!("Token inválido: '{}'", value);
 }
 
-pub fn debug_tokenizer(tokenList: &Vec<Vec<SimpleTokensEnum>>) {
+pub fn debug_tokenizer(prefix: &str, tokenList: &Vec<Vec<SimpleTokensEnum>>) {
 
   println!("longitud de tokens: {}", tokenList.len());
 
@@ -33,8 +33,8 @@ pub fn debug_tokenizer(tokenList: &Vec<Vec<SimpleTokensEnum>>) {
   for line_tokens in tokenList {
     println!("  [");
     for token in line_tokens {
-      print!("    ");
-      println!("{}", token.repr());
+      print!("     {}", prefix);
+      println!("{}", token.repr(prefix));
     };
     println!("  ]");
   };

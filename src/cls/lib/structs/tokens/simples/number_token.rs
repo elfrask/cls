@@ -30,7 +30,7 @@ impl NumberToken {
 }
 
 impl BaseToken for NumberToken  {
-  fn repr(&self) -> String {
+  fn repr(&self, prefix: &str) -> String {
     format!("{}: is float: '{}' value: ({})", self.meta, self.is_float, self.value)
   }
 }

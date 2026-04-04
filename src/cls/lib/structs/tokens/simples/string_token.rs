@@ -37,7 +37,7 @@ impl StringToken {
 }
 
 impl BaseToken for StringToken {
-  fn repr(&self) -> String {
+  fn repr(&self, prefix: &str) -> String {
     format!("{}: '{}'", self.meta, self.string)
   }
 }

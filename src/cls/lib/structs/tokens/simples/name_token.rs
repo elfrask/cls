@@ -18,7 +18,7 @@ impl NameToken {
 
 
 impl BaseToken for NameToken  {
-  fn repr(&self) -> String {
+  fn repr(&self, prefix: &str) -> String {
     format!("{}: '{}'", self.meta, self.name)
   }
 }

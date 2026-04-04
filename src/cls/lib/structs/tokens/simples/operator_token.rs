@@ -21,7 +21,7 @@ impl OperatorToken {
 }
 
 impl BaseToken for OperatorToken  {
-  fn repr(&self) -> String {
+  fn repr(&self, prefix: &str) -> String {
     // println!("DEBUG - operator: '{}'", self.operator);
     format!("{}: '{}'", self.meta, self.operator)
   }
