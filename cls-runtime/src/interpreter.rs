@@ -27,16 +27,150 @@ impl Interpreter {
         &self.diagnostics
     }
 
-    /// Registra funciones de la biblioteca estándar
+    /// Registra funciones fundamentales y módulos stdlib
     fn register_stdlib(&mut self) {
+        // Globales fundamentales
         stdlib::io::register(&mut self.env);
-        stdlib::math::register(&mut self.env);
-        stdlib::fs::register(&mut self.env);
-        // args como variable global
+
+        // Módulos importables
+        self.env.define("math", stdlib::math::module());
+        self.env.define("fs", stdlib::fs::module());
+        self.env.define("json", stdlib::json::module());
+        self.env.define("http", stdlib::http::module());
+
+        // Intrínsecas
+        self.register_intrinsics();
+
         let args_array = Value::Array(
             self.args.iter().map(|a| Value::String(a.clone())).collect(),
         );
         self.env.define("args", args_array);
+    }
+
+    fn register_intrinsics(&mut self) {
+        // now() → timestamp en ms
+        self.env.define("now", Value::Fun(FunValue::new_native(
+            "now", vec![],
+            |_| {
+                use std::time::{SystemTime, UNIX_EPOCH};
+                let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
+                Ok(Value::Int(t))
+            },
+        )));
+
+        // exit(code)
+        self.env.define("exit", Value::Fun(FunValue::new_native(
+            "exit", vec!["code".into()],
+            |a| {
+                let code = match a.first() {
+                    Some(Value::Int(i)) => *i as i32,
+                    _ => 0,
+                };
+                std::process::exit(code);
+            },
+        )));
+
+        // toString(val)
+        self.env.define("toString", Value::Fun(FunValue::new_native(
+            "toString", vec!["val".into()],
+            |a| {
+                let s = a.first().map(|v| v.to_string()).unwrap_or_default();
+                Ok(Value::String(s))
+            },
+        )));
+
+        // int(val)
+        self.env.define("int", Value::Fun(FunValue::new_native(
+            "int", vec!["val".into()],
+            |a| {
+                let v = a.first().ok_or(ClsError::RuntimeError("int: esperaba 1 arg".into()))?;
+                match v {
+                    Value::Int(_) => Ok(v.clone()),
+                    Value::Float(f) => Ok(Value::Int(*f as i64)),
+                    Value::String(s) => s.parse::<i64>()
+                        .map(Value::Int)
+                        .map_err(|_| ClsError::RuntimeError(format!("int: no se puede convertir '{}'", s))),
+                    _ => Err(ClsError::RuntimeError(format!("int: no se puede convertir {}", v.type_name()))),
+                }
+            },
+        )));
+
+        // str(val)
+        self.env.define("str", Value::Fun(FunValue::new_native(
+            "str", vec!["val".into()],
+            |a| {
+                Ok(Value::String(a.first().map(|v| v.to_string()).unwrap_or_default()))
+            },
+        )));
+
+        // float(val)
+        self.env.define("float", Value::Fun(FunValue::new_native(
+            "float", vec!["val".into()],
+            |a| {
+                let v = a.first().ok_or(ClsError::RuntimeError("float: esperaba 1 arg".into()))?;
+                match v {
+                    Value::Float(_) => Ok(v.clone()),
+                    Value::Int(i) => Ok(Value::Float(*i as f64)),
+                    Value::String(s) => s.parse::<f64>()
+                        .map(Value::Float)
+                        .map_err(|_| ClsError::RuntimeError(format!("float: no se puede convertir '{}'", s))),
+                    _ => Err(ClsError::RuntimeError(format!("float: no se puede convertir {}", v.type_name()))),
+                }
+            },
+        )));
+
+        // bool(val)
+        self.env.define("bool", Value::Fun(FunValue::new_native(
+            "bool", vec!["val".into()],
+            |a| {
+                let v = a.first().unwrap_or(&Value::Null);
+                Ok(Value::Bool(v.is_truthy()))
+            },
+        )));
+
+        // len(val) - longitud de array, string o record
+        self.env.define("len", Value::Fun(FunValue::new_native(
+            "len", vec!["val".into()],
+            |a| {
+                let v = a.first().ok_or(ClsError::RuntimeError("len: esperaba 1 arg".into()))?;
+                match v {
+                    Value::Array(arr) => Ok(Value::Int(arr.len() as i64)),
+                    Value::String(s) => Ok(Value::Int(s.len() as i64)),
+                    Value::Record(r) => Ok(Value::Int(r.len() as i64)),
+                    _ => Err(ClsError::RuntimeError(format!("len: no aplicable a {}", v.type_name()))),
+                }
+            },
+        )));
+
+        // type(val)
+        self.env.define("type", Value::Fun(FunValue::new_native(
+            "type", vec!["val".into()],
+            |a| {
+                let name = a.first().map(|v| v.type_name()).unwrap_or("Unknown");
+                Ok(Value::String(name.to_string()))
+            },
+        )));
+
+        // sleep(ms)
+        self.env.define("sleep", Value::Fun(FunValue::new_native(
+            "sleep", vec!["ms".into()],
+            |a| {
+                let ms = match a.first() { Some(Value::Int(i)) => *i as u64, _ => 0 };
+                std::thread::sleep(std::time::Duration::from_millis(ms));
+                Ok(Value::Void)
+            },
+        )));
+
+        // push(arr, val), pop(arr)
+        self.env.define("push", Value::Fun(FunValue::new_native(
+            "push", vec!["arr".into(), "val".into()],
+            |a| {
+                if a.len() < 2 { return Err(ClsError::RuntimeError("push: esperaba 2 args".into())); }
+                // No podemos modificar self.env desde aquí, así que esto es limitado
+                // El usuario debe usar arr.push(val) en el futuro
+                Err(ClsError::RuntimeError("push: usa arr.push(val) en su lugar".into()))
+            },
+        )));
     }
 
     /// Ejecuta un módulo completo
