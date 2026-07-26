@@ -11,3 +11,4 @@ path = "src/main.rs"
 [dependencies]
 cls-core = { workspace = true }
 cls-runtime = { workspace = true }
+ureq = "2"

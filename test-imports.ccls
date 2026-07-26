@@ -1,0 +1,19 @@
+from "math" import abs, PI;
+from "json" import parse, stringify;
+import "math" as math;
+
+function main(args: String[]) -> int {
+    print("from import test:");
+    print("  abs(-10):", abs(-10));
+    print("  PI:", PI);
+
+    print("json test:");
+    var obj = parse('{"hello": "world"}');
+    print("  parse:", obj);
+    print("  stringify:", stringify(obj));
+
+    print("import as test:");
+    print("  math.sqrt(25):", math.sqrt(25));
+
+    return 0;
+}

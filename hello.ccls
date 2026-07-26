@@ -1,5 +1,5 @@
 function main(args: String[]) -> int {
     print("CLS 2.0 - Hello!");
-    print("Arguments:", args[0]);
+    print("Arguments:", args);
     return 0;
 }

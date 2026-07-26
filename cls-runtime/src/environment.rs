@@ -53,6 +53,11 @@ impl Environment {
     pub fn scope_depth(&self) -> usize {
         self.scopes.len()
     }
+
+    /// Devuelve todas las variables del scope global (útil para exports)
+    pub fn all(&self) -> std::collections::HashMap<String, Value> {
+        self.scopes.first().map(|s| s.all()).unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -81,5 +86,9 @@ impl Scope {
 
     fn contains(&self, name: &str) -> bool {
         self.variables.contains_key(name)
+    }
+
+    fn all(&self) -> std::collections::HashMap<String, Value> {
+        self.variables.clone()
     }
 }
