@@ -141,6 +141,7 @@ fn sub_eval_literal(expr: &cls_core::frontend::ast::Expression) -> Value {
                 _ => Value::Null,
             }
         }
+        Expression::Parenthesized(inner, _) => sub_eval_literal(inner),
         _ => Value::Null,
     }
 }
@@ -214,9 +215,7 @@ fn cmd_run(args: &[String]) -> i32 {
     let resolver = make_desktop_resolver();
     let mut interpreter = Interpreter::new(intrinsics, resolver);
     if let Err(e) = interpreter.execute(&module) {
-        eprintln!("{}", e);
-        // No mostrar contexto de fuente para errores de ejecución
-        // (la línea/columna puede referirse a otro archivo)
+        show_runtime_error(&e.to_string());
         return 1;
     }
 
@@ -224,7 +223,7 @@ fn cmd_run(args: &[String]) -> i32 {
     match interpreter.call_main() {
         Ok(code) => code,
         Err(e) => {
-            eprintln!("Error en '{}': {}", path, &e);
+            show_runtime_error(&e.to_string());
             1
         }
     }
@@ -326,6 +325,40 @@ fn show_error(source: &str, error_msg: &str, path: &str) {
                 eprintln!("  {} | {}{}", " ".repeat(line.to_string().len()), " ".repeat(col - 1), "^");
             } else {
                 eprintln!("  {} | ^", " ".repeat(line.to_string().len()));
+            }
+        }
+    }
+}
+
+/// Muestra un error de runtime intentando cargar el contexto fuente del módulo
+fn show_runtime_error(error_msg: &str) {
+    eprintln!("{}", error_msg);
+
+    // Extraer nombre de archivo del error: "Error en 'lib': ..."
+    let file_hint = error_msg.split('\'').nth(1).map(|s| s.trim());
+    if let Some(hint) = file_hint {
+        let path = format!("{}.ccls", hint);
+        if let Ok(source) = std_fs::read_to_string(&path) {
+            let line_col: Option<(usize, usize)> = error_msg
+                .split("línea")
+                .nth(1)
+                .and_then(|s| {
+                    let col_part = s.split(',').nth(1)?;
+                    let line = s.splitn(2, ',').next()?.trim().parse::<usize>().ok()?;
+                    let col = col_part.split("columna").nth(1)
+                        .and_then(|c| c.trim().trim_matches(|p| p == ')' || p == '(').parse::<usize>().ok())?;
+                    Some((line, col))
+                });
+            if let Some((line, col)) = line_col {
+                if let Some(src_line) = source.lines().nth(line.saturating_sub(1)) {
+                    eprintln!("");
+                    eprintln!("  {} | {}", line, src_line);
+                    if col > 1 {
+                        eprintln!("  {} | {}{}", " ".repeat(line.to_string().len()), " ".repeat(col - 1), "^");
+                    } else {
+                        eprintln!("  {} | ^", " ".repeat(line.to_string().len()));
+                    }
+                }
             }
         }
     }
