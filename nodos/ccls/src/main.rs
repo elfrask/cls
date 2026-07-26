@@ -3,9 +3,9 @@
 mod fs;
 mod http;
 
-use cls_runtime::{Intrinsics, ModuleResolver, Interpreter, Environment, Value};
+use cls_runtime::{Intrinsics, ModuleResolver, Interpreter, Environment, Value, ImportFrame};
 use cls_runtime::value::FunValue;
-use cls_core::error::{ClsError, ClsResult};
+use cls_core::error::ClsResult;
 use cls_core::frontend::ast::Visibility;
 use std::collections::HashSet;
 use std::env;
@@ -214,8 +214,10 @@ fn cmd_run(args: &[String]) -> i32 {
     let intrinsics = Intrinsics::desktop_defaults(app_args);
     let resolver = make_desktop_resolver();
     let mut interpreter = Interpreter::new(intrinsics, resolver);
+    interpreter.set_source_file(path.to_string());
+
     if let Err(e) = interpreter.execute(&module) {
-        show_runtime_error(&e.to_string());
+        show_runtime_error(&e.to_string(), interpreter.get_import_trace());
         return 1;
     }
 
@@ -223,7 +225,7 @@ fn cmd_run(args: &[String]) -> i32 {
     match interpreter.call_main() {
         Ok(code) => code,
         Err(e) => {
-            show_runtime_error(&e.to_string());
+            eprintln!("Error: {}", e);
             1
         }
     }
@@ -330,62 +332,88 @@ fn show_error(source: &str, error_msg: &str, path: &str) {
     }
 }
 
-/// Muestra un error de runtime con trace (cadena de módulos)
-fn show_runtime_error(error_msg: &str) {
-    // Extraer nombre del módulo y descripción del error
+/// Muestra un error con trace numerado usando frames de importación
+fn show_runtime_error(error_msg: &str, trace: &[ImportFrame]) {
+    // Extraer módulo y error de la cadena
     let file_hint = error_msg.split('\'').nth(1).map(|s| s.trim());
-
-    // Encontrar la descripción real (después del último ": ")
+    
+    // Error desc: todo desde el último "Error de "
     let error_desc = {
-        if let Some(last_colon) = error_msg.rfind(": Error de ") {
-            // Saltar ": " para empezar desde "Error de ..."
-            Some(&error_msg[last_colon + 2..])
+        if let Some(pos) = error_msg.rfind(": Error de ") {
+            &error_msg[pos + 2..]
         } else {
-            None
+            error_msg
         }
     };
 
+    // Extraer línea/col del error (hasta el primer cierre de paréntesis)
+    let error_line_col: Option<(usize, usize)> = error_msg
+        .split("línea").nth(1)
+        .and_then(|s| {
+            let end = s.find(')').unwrap_or(s.len());
+            let inner = &s[..end];
+            let parts: Vec<&str> = inner.splitn(2, ',').collect();
+            let line = parts.first()?.trim().parse::<usize>().ok()?;
+            let col = if parts.len() > 1 {
+                parts[1].split("columna").nth(1)
+                    .and_then(|c| c.trim().parse::<usize>().ok())?
+            } else { 1 };
+            Some((line, col))
+        });
+
+    // Mostrar cabecera
     if let Some(module) = file_hint {
-        eprintln!("  ┌─ script");
-        eprintln!("  ├─ import '{}'", module);
-        eprintln!("  └─ {}", error_desc.unwrap_or(error_msg).trim());
+        eprintln!("Error al importar módulo '{}':\n", module);
     } else {
-        eprintln!("  {}", error_msg);
+        eprintln!("Error:\n{}", error_msg);
+        return;
     }
 
-    // Mostrar contexto fuente del módulo
+    // Paso 1: mostrar cada frame del trace
+    for (i, frame) in trace.iter().enumerate() {
+        let num = i + 1;
+        if let Ok(source) = std_fs::read_to_string(&frame.source_file) {
+            let src_line = source.lines()
+                .nth(frame.line.saturating_sub(1) as usize)
+                .unwrap_or("");
+            eprintln!("{}. En {}:{}:{}",
+                num, frame.source_file, frame.line, frame.col);
+            eprintln!("  {} | {}", frame.line, src_line);
+            let pad = " ".repeat(frame.line.to_string().len());
+            if frame.col > 1 {
+                eprintln!("  {} | {}^^^^^^", pad, " ".repeat(frame.col.saturating_sub(1) as usize));
+            } else {
+                eprintln!("  {} | ^^^^^^", pad);
+            }
+        } else {
+            eprintln!("{}. import '{}' desde {}:{}:{}",
+                num, frame.module_name,
+                frame.source_file, frame.line, frame.col);
+        }
+    }
+
+    // Paso final: el error en el módulo importado
+    let step = trace.len() + 1;
     if let Some(hint) = file_hint {
         let path = format!("{}.ccls", hint);
         if let Ok(source) = std_fs::read_to_string(&path) {
-            let line_col: Option<(usize, usize)> = error_msg
-                .split("línea")
-                .nth(1)
-                .and_then(|s| {
-                    let parts: Vec<&str> = s.splitn(2, ',').collect();
-                    let line = parts.first()?.trim().parse::<usize>().ok()?;
-                    let col = if parts.len() > 1 {
-                        parts[1]
-                            .split("columna")
-                            .nth(1)
-                            .and_then(|c| c.trim().trim_matches(|p| p == ')' || p == '(').parse::<usize>().ok())?
-                    } else {
-                        1
-                    };
-                    Some((line, col))
-                });
-            if let Some((line, col)) = line_col {
-                if let Some(src_line) = source.lines().nth(line.saturating_sub(1)) {
-                    eprintln!("");
-                    eprintln!("     {} | {}", line, src_line);
-                    if col > 1 {
-                        eprintln!("     {} | {}{}", " ".repeat(line.to_string().len()), " ".repeat(col - 1), "^");
-                    } else {
-                        eprintln!("     {} | ^", " ".repeat(line.to_string().len()));
-                    }
+            if let Some((line, col)) = error_line_col {
+                let src_line = source.lines().nth(line.saturating_sub(1)).unwrap_or("");
+                eprintln!("{}. En {}:{}:{} [Sintaxis Inválida]",
+                    step, path, line, col);
+                eprintln!("  {} | {}", line, src_line);
+                let pad = " ".repeat(line.to_string().len());
+                if col > 1 {
+                    eprintln!("  {} | {}{}", pad, " ".repeat(col.saturating_sub(1) as usize), "^");
+                } else {
+                    eprintln!("  {} | ^", pad);
                 }
             }
         }
     }
+    
+    eprintln!("  Error: {}", error_desc.trim());
+    eprintln!("");
 }
 
 fn cmd_build(args: &[String]) -> i32 {
