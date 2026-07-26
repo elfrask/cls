@@ -330,12 +330,30 @@ fn show_error(source: &str, error_msg: &str, path: &str) {
     }
 }
 
-/// Muestra un error de runtime intentando cargar el contexto fuente del módulo
+/// Muestra un error de runtime con trace (cadena de módulos)
 fn show_runtime_error(error_msg: &str) {
-    eprintln!("{}", error_msg);
-
-    // Extraer nombre de archivo del error: "Error en 'lib': ..."
+    // Extraer nombre del módulo y descripción del error
     let file_hint = error_msg.split('\'').nth(1).map(|s| s.trim());
+
+    // Encontrar la descripción real (después del último ": ")
+    let error_desc = {
+        if let Some(last_colon) = error_msg.rfind(": Error de ") {
+            // Saltar ": " para empezar desde "Error de ..."
+            Some(&error_msg[last_colon + 2..])
+        } else {
+            None
+        }
+    };
+
+    if let Some(module) = file_hint {
+        eprintln!("  ┌─ script");
+        eprintln!("  ├─ import '{}'", module);
+        eprintln!("  └─ {}", error_desc.unwrap_or(error_msg).trim());
+    } else {
+        eprintln!("  {}", error_msg);
+    }
+
+    // Mostrar contexto fuente del módulo
     if let Some(hint) = file_hint {
         let path = format!("{}.ccls", hint);
         if let Ok(source) = std_fs::read_to_string(&path) {
@@ -343,20 +361,26 @@ fn show_runtime_error(error_msg: &str) {
                 .split("línea")
                 .nth(1)
                 .and_then(|s| {
-                    let col_part = s.split(',').nth(1)?;
-                    let line = s.splitn(2, ',').next()?.trim().parse::<usize>().ok()?;
-                    let col = col_part.split("columna").nth(1)
-                        .and_then(|c| c.trim().trim_matches(|p| p == ')' || p == '(').parse::<usize>().ok())?;
+                    let parts: Vec<&str> = s.splitn(2, ',').collect();
+                    let line = parts.first()?.trim().parse::<usize>().ok()?;
+                    let col = if parts.len() > 1 {
+                        parts[1]
+                            .split("columna")
+                            .nth(1)
+                            .and_then(|c| c.trim().trim_matches(|p| p == ')' || p == '(').parse::<usize>().ok())?
+                    } else {
+                        1
+                    };
                     Some((line, col))
                 });
             if let Some((line, col)) = line_col {
                 if let Some(src_line) = source.lines().nth(line.saturating_sub(1)) {
                     eprintln!("");
-                    eprintln!("  {} | {}", line, src_line);
+                    eprintln!("     {} | {}", line, src_line);
                     if col > 1 {
-                        eprintln!("  {} | {}{}", " ".repeat(line.to_string().len()), " ".repeat(col - 1), "^");
+                        eprintln!("     {} | {}{}", " ".repeat(line.to_string().len()), " ".repeat(col - 1), "^");
                     } else {
-                        eprintln!("  {} | ^", " ".repeat(line.to_string().len()));
+                        eprintln!("     {} | ^", " ".repeat(line.to_string().len()));
                     }
                 }
             }
