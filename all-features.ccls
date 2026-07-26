@@ -1,0 +1,224 @@
+# ═══════════════════════════════════════════════
+# CLS 2.0 — All Features Demo
+# ═══════════════════════════════════════════════
+
+import "math" as math;
+from "json" import parse as parseJson, stringify as toJson;
+
+# ─── Variables ───
+var x: int = 42;
+var name: str = "CLS";
+var PI: Float = math.PI;
+let y = 10;                    # let = var con inferencia
+
+# ─── Funciones ───
+function add(a: int, b: int) -> int {
+    return a + b;
+}
+
+void greet(name: str) {
+    print("Hello,", name, "!");
+}
+
+function square(n: int) -> int {
+    return n * n;
+}
+
+# ─── Arrow function (coming soon) ───
+# var double = (x) -> int { x * 2 };
+
+# ─── Arrays y Records ───
+var numbers: int[] = [1, 2, 3, 4, 5];
+var user = {
+    name: "John",
+    age: 30,
+    active: true
+};
+
+# ═══════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════
+function main(args: String[]) -> int {
+    print("═══ CLS 2.0 — All Features ═══");
+    print("");
+
+    print("── Variables ──");
+    print("  x:", x);
+    print("  name:", name);
+    print("  PI:", PI);
+    print("  y:", y);
+
+    print("");
+    print("── Functions ──");
+    print("  add(3, 7):", add(3, 7));
+    greet("CLS");
+    print("  square(6):", square(6));
+
+    print("");
+    print("── Arrow Function (coming soon) ──");
+    # print("  double(21):", double(21));
+
+    print("");
+    print("── Type System ──");
+    print("  type(42):", type(42));
+    print("  type(3.14):", type(3.14));
+    print("  type('hello'):", type("hello"));
+    print("  type(true):", type(true));
+    print("  int('99'):", int("99"));
+    print("  str(123):", str(123));
+    print("  float('3.14'):", float("3.14"));
+    print("  bool(0):", bool(0));
+    print("  bool(1):", bool(1));
+    print("  toString(42):", toString(42));
+
+    print("");
+    print("── Operators ──");
+    print("  2 + 3:", 2 + 3);
+    print("  10 - 4:", 10 - 4);
+    print("  3 * 7:", 3 * 7);
+    print("  15 / 3:", 15 / 3);
+    print("  10 % 3:", 10 % 3);
+    print("  5 == 5:", 5 == 5);
+    print("  5 != 3:", 5 != 3);
+    print("  3 < 7:", 3 < 7);
+    print("  5 >= 5:", 5 >= 5);
+    print("  !false:", !false);
+
+    print("");
+    print("── Strings ──");
+    print("  Hello, $name!");
+    print("  len('hello'):", len("hello"));
+
+    print("");
+    print("── Arrays ──");
+    print("  numbers:", numbers);
+    print("  len(numbers):", len(numbers));
+    print("  numbers[0]:", numbers[0]);
+    print("  numbers[4]:", numbers[4]);
+
+    print("");
+    print("── Records ──");
+    print("  user:", user);
+    print("  user.name:", user.name);
+    print("  user.age:", user.age);
+    print("  user.active:", user.active);
+
+    print("");
+    print("── If / elif / else ──");
+    if (x > 100) {
+        print("  x > 100");
+    } elif (x > 10) {
+        print("  x > 10 (x =", x, ")");
+    } else {
+        print("  x is small");
+    };
+
+    print("");
+    print("── Ternary (coming soon) ──");
+    # var status = if (x > 0) then ("positive") else ("negative");
+
+    print("");
+    print("── While ──");
+    var n: int = 3;
+    while (n > 0) {
+        print("  countdown:", n);
+        n = n - 1;
+    };
+
+    print("");
+    print("── For ──");
+    for (i = 0; i < 3; i = i + 1) {
+        print("  iteration:", i);
+    };
+
+    print("");
+    print("── For Each ──");
+    for each item in (numbers) {
+        print("  item:", item);
+    };
+
+    print("── For Each + Index ──");
+    for each item and idx in (["a", "b", "c"]) {
+        print("  index", idx, ":", item);
+    };
+
+    print("");
+    print("── Loop + Break ──");
+    var count: int = 0;
+    loop {
+        count = count + 1;
+        if (count > 2) {
+            break;
+        };
+        print("  loop iteration:", count);
+    };
+
+    print("");
+    print("── Switch ──");
+    var mode: str = "dev";
+    switch (mode) {
+        case ("prod") {
+            print("  production mode");
+        };
+        case ("dev") {
+            print("  dev mode");
+        };
+        case default {
+            print("  unknown");
+        };
+    };
+
+    print("");
+    print("── Try / Catch ──");
+    try {
+        var result = 10 / 0;
+        print("  never reached");
+    } catch (e: Error) {
+        print("  caught:", e);
+    };
+
+    print("");
+    print("── With ──");
+    with value in (42) {
+        print("  inside with, value:", value);
+    };
+
+    print("");
+    print("── Module: math ──");
+    print("  math.abs(-10):", math.abs(-10));
+    print("  math.sqrt(25):", math.sqrt(25));
+    print("  math.pow(2, 8):", math.pow(2, 8));
+    print("  math.min(5, 10):", math.min(5, 10));
+    print("  math.max(5, 10):", math.max(5, 10));
+    print("  math.floor(3.7):", math.floor(3.7));
+    print("  math.ceil(3.2):", math.ceil(3.2));
+    print("  math.round(3.5):", math.round(3.5));
+    print("  math.PI:", math.PI);
+    print("  math.E:", math.E);
+    print("  math.sin(PI/2):", math.sin(PI / 2));
+    print("  math.cos(0):", math.cos(0));
+    print("  math.random():", math.random());
+    print("  math.range(0, 5):", math.range(0, 5));
+
+    print("");
+    print("── Module: json ──");
+    var data = parseJson('{"name":"CLS","version":2.0}');
+    print("  parseJson:", data);
+    print("  toJson:", toJson(data));
+
+    print("");
+    print("── Intrinsics ──");
+    print("  now():", now());
+    print("  sleep(100) ...");
+    sleep(100);
+    print("  slept 100ms");
+
+    print("");
+    print("── CLI Arguments ──");
+    print("  args:", args);
+    print("  len(args):", len(args));
+
+    print("");
+    print("═══ All features passed ═══");
+    return 0;
+}
