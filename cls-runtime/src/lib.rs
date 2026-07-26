@@ -13,7 +13,7 @@ pub mod error;
 
 pub use value::Value;
 pub use environment::Environment;
-pub use interpreter::Interpreter;
+pub use interpreter::{Interpreter, ImportFrame};
 pub use intrinsics::Intrinsics;
 pub use resolver::ModuleResolver;
 pub use gc::GarbageCollector;

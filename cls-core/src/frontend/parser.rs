@@ -904,6 +904,7 @@ impl Parser {
     }
 
     fn parse_import(&mut self) -> ClsResult<Statement> {
+        let import_span = self.span();  // span de 'import'
         self.expect_keyword(Keyword::Import)?;
         let path = self.expect_string()?;
         
@@ -918,7 +919,7 @@ impl Parser {
         Ok(Statement::Import(ImportStatement {
             path,
             alias,
-            span: self.span(),
+            span: import_span,
         }))
     }
 

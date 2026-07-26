@@ -14,6 +14,17 @@ pub struct Interpreter {
     diagnostics: Vec<Diagnostic>,
     args: Vec<String>,
     exports: HashSet<String>,  // nombres exportados
+    source_file: String,        // archivo actual (para trace de errores)
+    import_trace: Vec<ImportFrame>,  // trazado de imports
+}
+
+/// Frame de importación para trace de errores
+#[derive(Debug, Clone)]
+pub struct ImportFrame {
+    pub source_file: String,
+    pub module_name: String,
+    pub line: u32,
+    pub col: u32,
 }
 
 impl Interpreter {
@@ -25,6 +36,8 @@ impl Interpreter {
             diagnostics: Vec::new(),
             args,
             exports: HashSet::new(),
+            source_file: String::new(),
+            import_trace: Vec::new(),
         };
         interpreter.register_intrinsics(intrinsics);
         interpreter
@@ -168,6 +181,16 @@ impl Interpreter {
                 Err(ClsError::RuntimeError("push: usa arr.push(val) en su lugar".into()))
             },
         )));
+    }
+
+    /// Establece el archivo fuente actual (para trace de errores)
+    pub fn set_source_file(&mut self, path: String) {
+        self.source_file = path;
+    }
+
+    /// Obtiene el trace de importaciones para errores
+    pub fn get_import_trace(&self) -> &[ImportFrame] {
+        &self.import_trace
     }
 
     /// Ejecuta un módulo completo
@@ -395,10 +418,27 @@ impl Interpreter {
     }
 
     fn execute_import(&mut self, import: &ImportStatement) -> ClsResult<Value> {
-        let module = self.resolver.resolve(&import.path, &mut self.env)?;
-        let alias = import.alias.as_deref().unwrap_or(&import.path);
-        self.env.define(alias, module);
-        Ok(Value::Void)
+        // Registrar frame para trace de errores
+        self.import_trace.push(ImportFrame {
+            source_file: self.source_file.clone(),
+            module_name: import.path.clone(),
+            line: import.span.start_line,
+            col: import.span.start_col,
+        });
+
+        let result = self.resolver.resolve(&import.path, &mut self.env);
+
+        match result {
+            Ok(module) => {
+                let alias = import.alias.as_deref().unwrap_or(&import.path);
+                self.env.define(alias, module);
+                Ok(Value::Void)
+            }
+            Err(e) => {
+                // Dejar que el error se propague tal cual (el trace ya tiene la info)
+                Err(e)
+            }
+        }
     }
 
     fn execute_from_import(&mut self, fi: &FromImportStatement) -> ClsResult<Value> {
