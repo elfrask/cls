@@ -101,7 +101,7 @@ impl TypeChecker {
                                 "Tipo de retorno {} no coincide con el declarado {}",
                                 ret_type, expected
                             ),
-                            Span::new(0, 0, 0, 0),
+                            Span::new(1, 1, 1, 1),
                         );
                     }
                 }

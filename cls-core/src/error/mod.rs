@@ -26,3 +26,21 @@ pub enum ClsError {
     #[error("Error de parseo de configuración: {0}")]
     ConfigError(String),
 }
+
+impl ClsError {
+    /// Construye un SyntaxError con información de span
+    pub fn syntax_at(msg: &str, span: &Span) -> Self {
+        ClsError::SyntaxError(format!(
+            "{} (línea {}, columna {})",
+            msg, span.start_line, span.start_col
+        ))
+    }
+
+    /// Construye un error con mensaje y span
+    pub fn with_span(msg: &str, span: &Span) -> Self {
+        ClsError::SyntaxError(format!(
+            "{} en línea {}, columna {}",
+            msg, span.start_line, span.start_col
+        ))
+    }
+}
