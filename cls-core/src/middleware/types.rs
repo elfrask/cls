@@ -1,0 +1,136 @@
+/// Sistema de tipos de CLS
+use std::fmt;
+
+/// Representa un tipo en el sistema de tipos CLS
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Type {
+    // Primitivos
+    Int,
+    Float,
+    String,
+    Bool,
+    Char,
+    Any,
+    Unknown,
+    Null,
+    Void,
+    Empty,
+
+    // Con parámetros
+    Array(Box<Type>),                    // type[]
+    Record(Box<Type>, Box<Type>),       // String{Integer}
+    Fun(Vec<Type>, Box<Type>),          // (Int, String) -> Bool
+
+    // Tipos acrónimos (alias)
+    I32, I64, I16, I8, F32, F64, Cmx,
+
+    // Tipos nombrados por usuario
+    Named(String, Vec<Type>), // Persona, Array<String>
+
+    // Inferencia (para type checking)
+    Infer(usize), // Variable de tipo inferido
+}
+
+impl Type {
+    pub fn is_assignable_to(&self, other: &Type) -> bool {
+        match (self, other) {
+            // Any puede ser cualquier cosa
+            (Type::Any, _) | (_, Type::Any) => true,
+
+            // Tipos idénticos
+            (a, b) if a == b => true,
+
+            // Enteros a flotantes (implícito)
+            (Type::Int, Type::Float) => true,
+
+            // Alias de enteros
+            (Type::I32, Type::Int)
+            | (Type::I64, Type::Int)
+            | (Type::I16, Type::Int)
+            | (Type::I8, Type::Int) => true,
+
+            // Arrays
+            (Type::Array(a), Type::Array(b)) => a.is_assignable_to(b),
+
+            // Records
+            (Type::Record(a1, b1), Type::Record(a2, b2)) => {
+                a1.is_assignable_to(a2) && b1.is_assignable_to(b2)
+            }
+
+            // Functions
+            (Type::Fun(params_a, ret_a), Type::Fun(params_b, ret_b)) => {
+                // params: contravariante, ret: covariante
+                let params_match = params_a.len() == params_b.len()
+                    && params_a
+                        .iter()
+                        .zip(params_b.iter())
+                        .all(|(a, b)| b.is_assignable_to(a)); // contravariante
+                params_match && ret_a.is_assignable_to(ret_b) // covariante
+            }
+
+            // Tipos nombrados: mismo nombre y parámetros compatibles
+            (Type::Named(name_a, params_a), Type::Named(name_b, params_b)) => {
+                name_a == name_b
+                    && params_a.len() == params_b.len()
+                    && params_a
+                        .iter()
+                        .zip(params_b.iter())
+                        .all(|(a, b)| a.is_assignable_to(b))
+            }
+
+            // Default: no asignable
+            _ => false,
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            Type::Int => "Int".to_string(),
+            Type::Float => "Float".to_string(),
+            Type::String => "String".to_string(),
+            Type::Bool => "Bool".to_string(),
+            Type::Char => "Char".to_string(),
+            Type::Any => "Any".to_string(),
+            Type::Unknown => "Unknown".to_string(),
+            Type::Null => "Null".to_string(),
+            Type::Void => "Void".to_string(),
+            Type::Empty => "Empty".to_string(),
+            Type::Array(inner) => format!("{}[]", inner.to_string()),
+            Type::Record(k, v) => format!("{}{{{}}}", k.to_string(), v.to_string()),
+            Type::Fun(params, ret) => {
+                let params_str = params
+                    .iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("fun({}): {}", params_str, ret.to_string())
+            }
+            Type::I32 => "i32".to_string(),
+            Type::I64 => "i64".to_string(),
+            Type::I16 => "i16".to_string(),
+            Type::I8 => "i8".to_string(),
+            Type::F32 => "f32".to_string(),
+            Type::F64 => "f64".to_string(),
+            Type::Cmx => "cmx".to_string(),
+            Type::Named(name, params) => {
+                if params.is_empty() {
+                    name.clone()
+                } else {
+                    let params_str = params
+                        .iter()
+                        .map(|p| p.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("{}<{}>", name, params_str)
+                }
+            }
+            Type::Infer(id) => format!("_{}", id),
+        }
+    }
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
