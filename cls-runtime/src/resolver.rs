@@ -9,8 +9,8 @@ use std::collections::HashMap;
 pub struct ModuleResolver {
     /// Módulos internos (Map de nombre → módulo)
     internals: HashMap<String, Value>,
-    /// Hook externo: (path, env) → Option<module>
-    external: Option<Box<dyn Fn(String, &mut Environment) -> Option<Value>>>,
+    /// Hook externo: (path, env) → Ok(Some(module)) | Ok(None) | Err(error)
+    external: Option<Box<dyn Fn(String, &mut Environment) -> ClsResult<Option<Value>>>>,
     /// Caché de módulos ya importados
     cache: HashMap<String, Value>,
 }
@@ -24,22 +24,21 @@ impl ModuleResolver {
         }
     }
 
-    /// Agrega las stdlib core (math, json)
     pub fn with_core_stdlib(mut self) -> Self {
         self.internals.insert("math".into(), crate::stdlib::math::module());
         self.internals.insert("json".into(), crate::stdlib::json::module());
         self
     }
 
-    /// Agrega/sobrescribe un módulo interno
     pub fn add_internal(&mut self, name: &str, module: Value) {
         self.internals.insert(name.into(), module);
     }
 
     /// Hook para módulos externos (.ccls, .clsapp, etc.)
+    /// Debe retornar Ok(Some(module)) si se encontró, Ok(None) si no, Err si hubo error.
     pub fn set_external<F>(&mut self, resolver: F)
     where
-        F: Fn(String, &mut Environment) -> Option<Value> + 'static,
+        F: Fn(String, &mut Environment) -> ClsResult<Option<Value>> + 'static,
     {
         self.external = Some(Box::new(resolver));
     }
@@ -59,9 +58,17 @@ impl ModuleResolver {
 
         // 3. External hook
         if let Some(ref hook) = self.external {
-            if let Some(m) = hook(path.to_string(), env) {
-                self.cache.insert(path.into(), m.clone());
-                return Ok(m);
+            match hook(path.to_string(), env) {
+                Ok(Some(m)) => {
+                    self.cache.insert(path.into(), m.clone());
+                    return Ok(m);
+                }
+                Ok(None) => {} // No encontrado, continuar
+                Err(e) => {
+                    return Err(ClsError::RuntimeError(format!(
+                        "Error en '{}': {}", path, e
+                    )));
+                }
             }
         }
 

@@ -1,0 +1,13 @@
+# lib.ccls — Módulo de usuario exportable
+
+export function greet(name: String) -> String {
+    return "Hello, " + name + "!";
+}
+
+export function add(a: int, b: int) -> int {
+    return a + b;
+}
+
+export var VERSION = "1.0.0";
+
+var internal_secret = "no exportado - no visible fuera";

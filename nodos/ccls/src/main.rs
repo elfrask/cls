@@ -4,6 +4,10 @@ mod fs;
 mod http;
 
 use cls_runtime::{Intrinsics, ModuleResolver, Interpreter, Environment, Value};
+use cls_runtime::value::FunValue;
+use cls_core::error::{ClsError, ClsResult};
+use cls_core::frontend::ast::Visibility;
+use std::collections::HashSet;
 use std::env;
 use std::fs as std_fs;
 use std::process;
@@ -19,89 +23,125 @@ fn make_desktop_resolver() -> ModuleResolver {
     resolver.add_internal("http", http::module());
 
     // Hook externo: busca archivos .ccls en el filesystem
-    resolver.set_external(|path: String, _env: &mut Environment| -> Option<Value> {
+    resolver.set_external(|path: String, _env: &mut Environment| -> ClsResult<Option<Value>> {
         let candidate = format!("{}.ccls", path);
-        if let Ok(source) = std_fs::read_to_string(&candidate) {
-            // Compilar el módulo externo
-            let mut lexer = cls_core::frontend::Lexer::new(&source);
-            let tokens = lexer.tokenize().ok()?;
-            let mut parser = cls_core::frontend::Parser::new(tokens);
-            let module = parser.parse().ok()?;
-            // Ejecutarlo en un scope aislado y recolectar exports
-            let mut sub_env = Environment::new();
-            let mut sub_interpreter = SubInterpreter::new(sub_env);
-            sub_interpreter.execute_module(&module).ok()?;
-            let exports = sub_interpreter.collect_exports();
-            Some(Value::Record(exports))
-        } else {
-            None
+        match std_fs::read_to_string(&candidate) {
+            Ok(source) => {
+                let module = SubInterpreter::load_module(&source)?;
+                Ok(Some(module))
+            }
+            Err(_) => Ok(None),
         }
     });
 
     resolver
 }
 
-/// Mini-intérprete para cargar módulos externos
+/// Mini-intérprete para cargar módulos externos (archivos .ccls)
 struct SubInterpreter {
     env: Environment,
+    exports: HashSet<String>,
 }
 
 impl SubInterpreter {
-    fn new(env: Environment) -> Self { Self { env } }
+    fn load_module(source: &str) -> cls_core::error::ClsResult<Value> {
+        let mut lexer = cls_core::frontend::Lexer::new(source);
+        let tokens = lexer.tokenize()?;
+        let mut parser = cls_core::frontend::Parser::new(tokens);
+        let module = parser.parse()?;
 
-    fn execute_module(&mut self, module: &cls_core::frontend::ast::Module) -> cls_core::error::ClsResult<()> {
+        let mut sub = SubInterpreter {
+            env: Environment::new(),
+            exports: HashSet::new(),
+        };
+
+        // Registrar math y json para que el módulo los use
+        sub.env.define("math", cls_runtime::stdlib::math::module());
+        sub.env.define("json", cls_runtime::stdlib::json::module());
+
         for stmt in &module.statements {
-            self.execute_stmt(stmt)?;
+            sub.execute_stmt(stmt)?;
         }
-        Ok(())
+
+        // Solo devolver exportados
+        let mut entries = std::collections::HashMap::new();
+        for name in &sub.exports {
+            if let Some(val) = sub.env.get(name) {
+                entries.insert(name.clone(), val.clone());
+            }
+        }
+
+        Ok(Value::Record(entries))
     }
 
     fn execute_stmt(&mut self, stmt: &cls_core::frontend::ast::Statement) -> cls_core::error::ClsResult<()> {
         match stmt {
+            cls_core::frontend::ast::Statement::FunctionDecl(f) => {
+                let fun = Value::Fun(FunValue::new_user(
+                    &f.name,
+                    f.params.clone(),
+                    f.body.clone(),
+                ));
+                self.env.define(&f.name, fun);
+                if let Visibility::Export = f.visibility {
+                    self.exports.insert(f.name.clone());
+                }
+            }
             cls_core::frontend::ast::Statement::VarDecl(v) => {
-                let val = self.eval_or_null(&v.value);
+                let val = if let Some(expr) = &v.value {
+                    sub_eval_literal(expr)
+                } else {
+                    Value::Null
+                };
                 self.env.define(&v.name, val);
+                if let Visibility::Export = v.visibility {
+                    self.exports.insert(v.name.clone());
+                }
             }
             cls_core::frontend::ast::Statement::ConstDecl(v) => {
-                let val = self.eval_or_null(&v.value);
+                let val = if let Some(expr) = &v.value {
+                    sub_eval_literal(expr)
+                } else {
+                    Value::Null
+                };
                 self.env.define(&v.name, val);
-            }
-            cls_core::frontend::ast::Statement::FunctionDecl(f) => {
-                use cls_runtime::value::FunValue;
-                self.env.define(&f.name, Value::Fun(FunValue::new_user(
-                    &f.name, f.params.clone(), f.body.clone(),
-                )));
+                if let Visibility::Export = v.visibility {
+                    self.exports.insert(v.name.clone());
+                }
             }
             _ => {}
         }
         Ok(())
     }
+}
 
-    fn eval_or_null(&mut self, expr: &Option<cls_core::frontend::ast::Expression>) -> Value {
-        match expr {
-            Some(e) => self.eval_literal_or_string(e),
-            None => Value::Null,
-        }
-    }
-
-    fn eval_literal_or_string(&mut self, expr: &cls_core::frontend::ast::Expression) -> Value {
-        use cls_core::frontend::ast::*;
-        match expr {
-            Expression::Literal(l) => match &l.kind {
-                LiteralKind::Int(v) => Value::Int(*v),
-                LiteralKind::Float(v) => Value::Float(*v),
-                LiteralKind::String(s) => Value::String(s.clone()),
-                LiteralKind::Bool(b) => Value::Bool(*b),
-                _ => Value::Null,
-            },
+/// Evalúa literales y expresiones simples para módulos
+fn sub_eval_literal(expr: &cls_core::frontend::ast::Expression) -> Value {
+    use cls_core::frontend::ast::*;
+    match expr {
+        Expression::Literal(l) => match &l.kind {
+            LiteralKind::Int(v) => Value::Int(*v),
+            LiteralKind::Float(v) => Value::Float(*v),
+            LiteralKind::String(s) => Value::String(s.clone()),
+            LiteralKind::Bool(b) => Value::Bool(*b),
             _ => Value::Null,
+        },
+        Expression::Array(arr) => {
+            Value::Array(arr.elements.iter().map(|e| sub_eval_literal(e)).collect())
         }
-    }
-
-    fn collect_exports(&self) -> std::collections::HashMap<String, Value> {
-        // Por ahora, devolvemos todo lo del scope global
-        // En el futuro, solo lo marcado con 'export'
-        self.env.all()
+        Expression::Record(rec) => {
+            Value::Record(rec.entries.iter().map(|(k, e)| (k.clone(), sub_eval_literal(e))).collect())
+        }
+        Expression::Identifier(name, _) => Value::String(name.clone()),
+        Expression::Binary(b) => {
+            let l = sub_eval_literal(&b.left);
+            let r = sub_eval_literal(&b.right);
+            match (&l, &r) {
+                (Value::Int(a), Value::Int(b)) => Value::Int(a + b),
+                _ => Value::Null,
+            }
+        }
+        _ => Value::Null,
     }
 }
 
@@ -174,7 +214,9 @@ fn cmd_run(args: &[String]) -> i32 {
     let resolver = make_desktop_resolver();
     let mut interpreter = Interpreter::new(intrinsics, resolver);
     if let Err(e) = interpreter.execute(&module) {
-        eprintln!("Error de ejecución: {}", e);
+        eprintln!("{}", e);
+        // No mostrar contexto de fuente para errores de ejecución
+        // (la línea/columna puede referirse a otro archivo)
         return 1;
     }
 
@@ -182,7 +224,7 @@ fn cmd_run(args: &[String]) -> i32 {
     match interpreter.call_main() {
         Ok(code) => code,
         Err(e) => {
-            eprintln!("Error en main(): {}", e);
+            eprintln!("Error en '{}': {}", path, &e);
             1
         }
     }
@@ -252,10 +294,12 @@ fn cmd_check(args: &[String]) -> i32 {
 
 /// Muestra un error con contexto del código fuente
 fn show_error(source: &str, error_msg: &str, path: &str) {
-    eprintln!("Error en '{}': {}", path, error_msg);
+    eprintln!("Error en '{}':", path);
+    eprintln!("  {}", error_msg);
 
-    // Intentar extraer línea y columna del mensaje de error
-    // Busca patrones como "línea N, columna M" o "(línea N, columna M)"
+    // Si hay source disponible, intentar extraer línea/col y mostrar contexto
+    if source.is_empty() { return; }
+
     let line_col: Option<(usize, usize)> = error_msg
         .split("línea")
         .nth(1)

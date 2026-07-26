@@ -114,7 +114,9 @@ impl Parser {
             Token::Keyword(Keyword::Include) => self.parse_include(),
 
             // Modifiers
-            Token::Keyword(Keyword::Public) | Token::Keyword(Keyword::Private) => {
+            Token::Keyword(Keyword::Public)
+            | Token::Keyword(Keyword::Private)
+            | Token::Keyword(Keyword::Export) => {
                 self.parse_visibility_modifier()
             }
 
@@ -961,14 +963,15 @@ impl Parser {
     }
 
     fn parse_visibility_modifier(&mut self) -> ClsResult<Statement> {
-        // public/private func/var/etc
+        // public/private/export/static func/var/etc
         let visibility = match self.current_token {
             Token::Keyword(Keyword::Public) => Visibility::Public,
             Token::Keyword(Keyword::Private) => Visibility::Private,
+            Token::Keyword(Keyword::Export) => Visibility::Export,
             _ => Visibility::Default,
         };
         
-        self.advance(); // consume public/private
+        self.advance(); // consume modifier
         
         // Luego parsear la declaración
         let mut stmt = self.parse_statement()?;

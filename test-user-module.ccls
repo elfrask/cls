@@ -1,0 +1,9 @@
+import "lib" as lib;
+
+function main(args: String[]) -> int {
+    print("=== User Module Import Test ===");
+    print("  greet('CLS'):", lib.greet("CLS"));
+    print("  add(10, 20):", lib.add(10, 20));
+    print("  VERSION:", lib.VERSION);
+    return 0;
+}
