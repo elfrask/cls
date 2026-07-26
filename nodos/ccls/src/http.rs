@@ -1,4 +1,4 @@
-use crate::value::{FunValue, Value};
+use cls_runtime::value::{FunValue, Value};
 use cls_core::error::{ClsError, ClsResult};
 use std::collections::HashMap;
 

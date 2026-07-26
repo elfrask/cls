@@ -1,6 +1,7 @@
 use crate::environment::Environment;
+use crate::intrinsics::Intrinsics;
+use crate::resolver::ModuleResolver;
 use crate::value::{FunValue, Value};
-use crate::stdlib;
 use cls_core::error::{ClsError, ClsResult, Diagnostic};
 use cls_core::frontend::ast::*;
 
@@ -8,18 +9,21 @@ use cls_core::frontend::ast::*;
 /// Ejecuta el AST directamente, sin compilación intermedia
 pub struct Interpreter {
     env: Environment,
+    resolver: ModuleResolver,
     diagnostics: Vec<Diagnostic>,
     args: Vec<String>,
 }
 
 impl Interpreter {
-    pub fn new(args: Vec<String>) -> Self {
+    pub fn new(intrinsics: Intrinsics, resolver: ModuleResolver) -> Self {
+        let args = intrinsics.args.clone();
         let mut interpreter = Self {
             env: Environment::new(),
+            resolver,
             diagnostics: Vec::new(),
             args,
         };
-        interpreter.register_stdlib();
+        interpreter.register_intrinsics(intrinsics);
         interpreter
     }
 
@@ -27,27 +31,17 @@ impl Interpreter {
         &self.diagnostics
     }
 
-    /// Registra funciones fundamentales y módulos stdlib
-    fn register_stdlib(&mut self) {
-        // Globales fundamentales
-        stdlib::io::register(&mut self.env);
+    fn register_intrinsics(&mut self, intrinsics: Intrinsics) {
+        // Registra los globales del nodo (print, input, etc.)
+        for (name, value) in &intrinsics.globals {
+            self.env.define(name, value.clone());
+        }
 
-        // Módulos importables
-        self.env.define("math", stdlib::math::module());
-        self.env.define("fs", stdlib::fs::module());
-        self.env.define("json", stdlib::json::module());
-        self.env.define("http", stdlib::http::module());
-
-        // Intrínsecas
-        self.register_intrinsics();
-
-        let args_array = Value::Array(
-            self.args.iter().map(|a| Value::String(a.clone())).collect(),
-        );
-        self.env.define("args", args_array);
+        // Intrínsecos del core
+        self.register_core_intrinsics();
     }
 
-    fn register_intrinsics(&mut self) {
+    fn register_core_intrinsics(&mut self) {
         // now() → timestamp en ms
         self.env.define("now", Value::Fun(FunValue::new_native(
             "now", vec![],
@@ -391,18 +385,47 @@ impl Interpreter {
         Ok(Value::Void)
     }
 
-    fn execute_import(&mut self, _import: &ImportStatement) -> ClsResult<Value> {
-        // TODO: cargar módulo externo
+    fn execute_import(&mut self, import: &ImportStatement) -> ClsResult<Value> {
+        let module = self.resolver.resolve(&import.path, &mut self.env)?;
+        let alias = import.alias.as_deref().unwrap_or(&import.path);
+        self.env.define(alias, module);
         Ok(Value::Void)
     }
 
-    fn execute_from_import(&mut self, _from_import: &FromImportStatement) -> ClsResult<Value> {
-        // TODO: cargar símbolos específicos
+    fn execute_from_import(&mut self, fi: &FromImportStatement) -> ClsResult<Value> {
+        let module = self.resolver.resolve(&fi.path, &mut self.env)?;
+        match module {
+            Value::Record(entries) => {
+                for im in &fi.names {
+                    let alias = im.alias.as_deref().unwrap_or(&im.name);
+                    if let Some(val) = entries.get(&im.name) {
+                        self.env.define(alias, val.clone());
+                    } else {
+                        return Err(ClsError::RuntimeError(format!(
+                            "'{}' no existe en el módulo '{}'", im.name, fi.path
+                        )));
+                    }
+                }
+            }
+            _ => return Err(ClsError::RuntimeError(format!(
+                "'{}' no es un módulo (no tiene exports)", fi.path
+            ))),
+        }
         Ok(Value::Void)
     }
 
-    fn execute_include(&mut self, _include: &IncludeStatement) -> ClsResult<Value> {
-        // TODO: incluir módulo completo
+    fn execute_include(&mut self, include: &IncludeStatement) -> ClsResult<Value> {
+        let module = self.resolver.resolve(&include.path, &mut self.env)?;
+        match module {
+            Value::Record(entries) => {
+                for (name, val) in &entries {
+                    self.env.define(name, val.clone());
+                }
+            }
+            _ => return Err(ClsError::RuntimeError(format!(
+                "'{}' no es un módulo", include.path
+            ))),
+        }
         Ok(Value::Void)
     }
 

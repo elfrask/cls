@@ -30,6 +30,7 @@ version = "2.0.0"
 dependencies = [
  "cls-core",
  "cls-runtime",
+ "ureq",
 ]
 
 [[package]]
