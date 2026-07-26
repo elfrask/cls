@@ -90,8 +90,8 @@ impl Lexer {
                 continue;
             }
 
-            // Espacios en blanco (excepto newline)
-            if ch == ' ' || ch == '\t' || ch == '\r' {
+            // Espacios en blanco (incluyendo newlines)
+            if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' {
                 self.advance();
                 continue;
             }
@@ -297,25 +297,27 @@ impl Lexer {
 
     fn try_lex_multi_operator(&mut self) -> Option<Token> {
         // Intentar match de 2 caracteres primero
-        if let Some(two) = self.try_match_operator(2) {
-            return Some(Token::Operator(two));
+        if self.pos + 2 <= self.source.len() {
+            let candidate: String = self.source[self.pos..self.pos + 2].iter().collect();
+            if let Some(op) = Operator::from_str(&candidate) {
+                self.advance();
+                self.advance();
+                return Some(Token::Operator(op));
+            }
         }
 
         // Intentar match de 3 caracteres
-        if let Some(three) = self.try_match_operator(3) {
-            return Some(Token::Operator(three));
+        if self.pos + 3 <= self.source.len() {
+            let candidate: String = self.source[self.pos..self.pos + 3].iter().collect();
+            if let Some(op) = Operator::from_str(&candidate) {
+                self.advance();
+                self.advance();
+                self.advance();
+                return Some(Token::Operator(op));
+            }
         }
 
         None
-    }
-
-    fn try_match_operator(&self, len: usize) -> Option<Operator> {
-        if self.pos + len > self.source.len() {
-            return None;
-        }
-
-        let candidate: String = self.source[self.pos..self.pos + len].iter().collect();
-        Operator::from_str(&candidate)
     }
 
     fn peek_is_cmx_start(&self) -> bool {
