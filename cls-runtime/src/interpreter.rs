@@ -16,6 +16,7 @@ pub struct Interpreter {
     exports: HashSet<String>,  // nombres exportados
     source_file: String,        // archivo actual (para trace de errores)
     import_trace: Vec<ImportFrame>,  // trazado de imports
+    call_stack: Vec<String>,    // stack de llamadas a funciones
 }
 
 /// Frame de importación para trace de errores
@@ -38,6 +39,7 @@ impl Interpreter {
             exports: HashSet::new(),
             source_file: String::new(),
             import_trace: Vec::new(),
+            call_stack: Vec::new(),
         };
         interpreter.register_intrinsics(intrinsics);
         interpreter
@@ -594,8 +596,9 @@ impl Interpreter {
             }
 
             _ => Err(ClsError::RuntimeError(format!(
-                "Operación no soportada: {:?} {:?} {:?}",
-                left, bin.op, right
+                "Operación no soportada: {} {} {} (línea {}, columna {})",
+                left.type_name(), bin.op, right.type_name(),
+                bin.span.start_line, bin.span.start_col
             ))),
         }
     }
@@ -643,7 +646,13 @@ impl Interpreter {
 
     /// Ejecuta un valor de función con argumentos ya evaluados
     fn call_function_value(&mut self, callee: Value, args: Vec<Value>) -> ClsResult<Value> {
-        match callee {
+        let fn_name = match &callee {
+            Value::Fun(f) => f.name.clone(),
+            _ => "<unknown>".to_string(),
+        };
+        self.call_stack.push(fn_name.clone());
+
+        let result = match callee {
             Value::Fun(fun) => match &fun.kind {
                 crate::value::FunKind::Native { params: _, func } => {
                     func(&args)
@@ -662,14 +671,27 @@ impl Interpreter {
                     }
                     let result = self.execute_block(body);
                     self.env.pop_scope();
-                    // Si el return fue con valor, propagarlo
                     result
                 }
             },
             _ => Err(ClsError::RuntimeError(format!(
                 "No se puede llamar: {:?}", callee
             ))),
-        }
+        };
+
+        self.call_stack.pop();
+        // Añadir stack trace al error
+        result.map_err(|e| {
+            let trace = self.call_stack.join("\n  → ");
+            if trace.is_empty() {
+                e
+            } else {
+                ClsError::RuntimeError(format!(
+                    "{}\n  Call stack:\n  → {} → {}",
+                    e, trace, fn_name
+                ))
+            }
+        })
     }
 
     /// Carga un archivo .ccls como módulo, devolviendo solo lo exportado.
@@ -723,10 +745,7 @@ impl Interpreter {
             match self.call_function_value(main_val, vec![args_val]) {
                 Ok(Value::Int(code)) => Ok(code as i32),
                 Ok(_) => Ok(0),
-                Err(e) => {
-                    eprintln!("Error en main(): {}", e);
-                    Ok(1)
-                }
+                Err(e) => Err(e),
             }
         } else {
             Ok(0)

@@ -217,7 +217,7 @@ fn cmd_run(args: &[String]) -> i32 {
     interpreter.set_source_file(path.to_string());
 
     if let Err(e) = interpreter.execute(&module) {
-        show_runtime_error(&e.to_string(), interpreter.get_import_trace());
+        show_runtime_error(&e.to_string(), interpreter.get_import_trace(), path);
         return 1;
     }
 
@@ -225,7 +225,7 @@ fn cmd_run(args: &[String]) -> i32 {
     match interpreter.call_main() {
         Ok(code) => code,
         Err(e) => {
-            eprintln!("Error: {}", e);
+            show_runtime_error(&e.to_string(), interpreter.get_import_trace(), path);
             1
         }
     }
@@ -333,7 +333,7 @@ fn show_error(source: &str, error_msg: &str, path: &str) {
 }
 
 /// Muestra un error con trace numerado usando frames de importación
-fn show_runtime_error(error_msg: &str, trace: &[ImportFrame]) {
+fn show_runtime_error(error_msg: &str, trace: &[ImportFrame], source_file: &str) {
     // Extraer módulo y error de la cadena
     let file_hint = error_msg.split('\'').nth(1).map(|s| s.trim());
     
@@ -361,12 +361,20 @@ fn show_runtime_error(error_msg: &str, trace: &[ImportFrame]) {
             Some((line, col))
         });
 
-    // Mostrar cabecera
-    if let Some(module) = file_hint {
-        eprintln!("Error al importar módulo '{}':\n", module);
+    // Determinar archivo fuente: usar el último módulo del trace si hay
+    let src_file: String = if let Some(module) = file_hint {
+        format!("{}.ccls", module)
+    } else if let Some(frame) = trace.last() {
+        format!("{}.ccls", frame.module_name)
     } else {
-        eprintln!("Error:\n{}", error_msg);
-        return;
+        source_file.to_string()
+    };
+
+    // Mostrar cabecera
+    if file_hint.is_some() {
+        eprintln!("Error al importar módulo '{}':\n", file_hint.unwrap());
+    } else {
+        eprintln!("Error de ejecución:\n");
     }
 
     // Paso 1: mostrar cada frame del trace
@@ -392,22 +400,20 @@ fn show_runtime_error(error_msg: &str, trace: &[ImportFrame]) {
         }
     }
 
-    // Paso final: el error en el módulo importado
+    // Paso final: el error en el archivo fuente
     let step = trace.len() + 1;
-    if let Some(hint) = file_hint {
-        let path = format!("{}.ccls", hint);
-        if let Ok(source) = std_fs::read_to_string(&path) {
-            if let Some((line, col)) = error_line_col {
-                let src_line = source.lines().nth(line.saturating_sub(1)).unwrap_or("");
-                eprintln!("{}. En {}:{}:{} [Sintaxis Inválida]",
-                    step, path, line, col);
-                eprintln!("  {} | {}", line, src_line);
-                let pad = " ".repeat(line.to_string().len());
-                if col > 1 {
-                    eprintln!("  {} | {}{}", pad, " ".repeat(col.saturating_sub(1) as usize), "^");
-                } else {
-                    eprintln!("  {} | ^", pad);
-                }
+    if let Ok(source) = std_fs::read_to_string(&src_file) {
+        if let Some((line, col)) = error_line_col {
+            let src_line = source.lines().nth(line.saturating_sub(1)).unwrap_or("");
+            let label = if file_hint.is_some() { "[Sintaxis Inválida]" } else { "[Runtime Error]" };
+            eprintln!("{}. En {}:{}:{} {}",
+                step, src_file, line, col, label);
+            eprintln!("  {} | {}", line, src_line);
+            let pad = " ".repeat(line.to_string().len());
+            if col > 1 {
+                eprintln!("  {} | {}{}", pad, " ".repeat(col.saturating_sub(1) as usize), "^");
+            } else {
+                eprintln!("  {} | ^", pad);
             }
         }
     }
