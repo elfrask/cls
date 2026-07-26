@@ -53,7 +53,7 @@ fn cmd_run(args: &[String]) -> i32 {
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("Error de tokenización: {}", e);
+            show_error(&source, &e.to_string(), path);
             return 1;
         }
     };
@@ -63,7 +63,7 @@ fn cmd_run(args: &[String]) -> i32 {
     let module = match parser.parse() {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("Error de parseo: {}", e);
+            show_error(&source, &e.to_string(), path);
             return 1;
         }
     };
@@ -105,7 +105,7 @@ fn cmd_check(args: &[String]) -> i32 {
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("Error de tokenización: {}", e);
+            show_error(&source, &e.to_string(), &args[0]);
             return 1;
         }
     };
@@ -114,7 +114,7 @@ fn cmd_check(args: &[String]) -> i32 {
     let module = match parser.parse() {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("Error de parseo: {}", e);
+            show_error(&source, &e.to_string(), &args[0]);
             return 1;
         }
     };
@@ -147,6 +147,43 @@ fn cmd_check(args: &[String]) -> i32 {
     }
     let errors = diagnostics.iter().filter(|d| matches!(d.severity, cls_core::error::diagnostic::Severity::Error)).count();
     if errors > 0 { 1 } else { 0 }
+}
+
+/// Muestra un error con contexto del código fuente
+fn show_error(source: &str, error_msg: &str, path: &str) {
+    eprintln!("Error en '{}': {}", path, error_msg);
+
+    // Intentar extraer línea y columna del mensaje de error
+    // Busca patrones como "línea N, columna M" o "(línea N, columna M)"
+    let line_col: Option<(usize, usize)> = error_msg
+        .split("línea")
+        .nth(1)
+        .and_then(|s| {
+            let parts: Vec<&str> = s.splitn(2, ',').collect();
+            let line = parts.first()?.trim().parse::<usize>().ok()?;
+            let col = if parts.len() > 1 {
+                parts[1]
+                    .split("columna")
+                    .nth(1)
+                    .and_then(|c| c.trim().trim_matches(|p| p == ')' || p == '(').parse::<usize>().ok())?
+            } else {
+                1
+            };
+            Some((line, col))
+        });
+
+    if let Some((line, col)) = line_col {
+        let source_line = source.lines().nth(line.saturating_sub(1));
+        if let Some(src_line) = source_line {
+            eprintln!("");
+            eprintln!("  {} | {}", line, src_line);
+            if col > 1 {
+                eprintln!("  {} | {}{}", " ".repeat(line.to_string().len()), " ".repeat(col - 1), "^");
+            } else {
+                eprintln!("  {} | ^", " ".repeat(line.to_string().len()));
+            }
+        }
+    }
 }
 
 fn cmd_build(args: &[String]) -> i32 {

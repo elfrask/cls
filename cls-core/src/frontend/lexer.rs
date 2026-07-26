@@ -1,6 +1,6 @@
 use crate::error::{ClsError, ClsResult, Diagnostic};
 use crate::error::diagnostic::Span;
-use crate::frontend::token::{CmxToken, Keyword, Operator, Symbol, Token};
+use crate::frontend::token::{CmxToken, Keyword, Operator, Symbol, Token, SpannedToken};
 
 /// Tokenizador/lexer de CLS
 /// Convierte código fuente en una lista de tokens con información de posición
@@ -33,13 +33,13 @@ impl Lexer {
     }
 
     /// Tokeniza todo el código fuente
-    pub fn tokenize(&mut self) -> ClsResult<Vec<Token>> {
+    pub fn tokenize(&mut self) -> ClsResult<Vec<SpannedToken>> {
         let mut tokens = Vec::new();
 
         loop {
-            let token = self.next_token()?;
-            let is_eof = matches!(token, Token::EOF);
-            tokens.push(token);
+            let spanned = self.next_token()?;
+            let is_eof = matches!(spanned.token, Token::EOF);
+            tokens.push(spanned);
             if is_eof {
                 break;
             }
@@ -48,32 +48,30 @@ impl Lexer {
         Ok(tokens)
     }
 
-    fn next_token(&mut self) -> ClsResult<Token> {
+    fn next_token(&mut self) -> ClsResult<SpannedToken> {
         self.skip_whitespace_and_comments();
 
         if self.is_eof() {
-            return Ok(Token::EOF);
+            return Ok(SpannedToken::new(Token::EOF, self.current_span()));
         }
 
         let ch = self.current_char();
         let start_span = self.current_span();
 
-        match ch {
+        let token = match ch {
             // Strings
-            '"' | '\'' | '`' => self.lex_string(ch, start_span),
-
+            '"' | '\'' | '`' => self.lex_string(ch),
             // Números
-            '0'..='9' => self.lex_number(start_span),
-
+            '0'..='9' => self.lex_number(),
             // Identificadores y keywords
-            c if c.is_alphabetic() || c == '_' => self.lex_identifier_or_keyword(start_span),
-
-            // CMX (JSX nativo)
-            '<' if self.peek_is_cmx_start() => self.lex_cmx(start_span),
-
+            c if c.is_alphabetic() || c == '_' => self.lex_identifier_or_keyword(),
+            // CMX
+            '<' if self.peek_is_cmx_start() => self.lex_cmx(),
             // Operadores y símbolos
-            _ => self.lex_operator_or_symbol(start_span),
-        }
+            _ => self.lex_operator_or_symbol(),
+        }?;
+
+        Ok(SpannedToken::new(token, start_span))
     }
 
     fn skip_whitespace_and_comments(&mut self) {
@@ -110,7 +108,7 @@ impl Lexer {
         }
     }
 
-    fn lex_string(&mut self, delimiter: char, _start: Span) -> ClsResult<Token> {
+    fn lex_string(&mut self, delimiter: char) -> ClsResult<Token> {
         let mut content = String::new();
         self.advance(); // Consume el delimiter
 
@@ -151,7 +149,7 @@ impl Lexer {
         Ok(Token::StringLiteral(content))
     }
 
-    fn lex_number(&mut self, _start: Span) -> ClsResult<Token> {
+    fn lex_number(&mut self) -> ClsResult<Token> {
         let mut num_str = String::new();
         let mut has_dot = false;
 
@@ -187,7 +185,7 @@ impl Lexer {
         }
     }
 
-    fn lex_identifier_or_keyword(&mut self, _start: Span) -> ClsResult<Token> {
+    fn lex_identifier_or_keyword(&mut self) -> ClsResult<Token> {
         let mut ident = String::new();
 
         while !self.is_eof()
@@ -250,7 +248,7 @@ impl Lexer {
         Ok(token)
     }
 
-    fn lex_cmx(&mut self, _start: Span) -> ClsResult<Token> {
+    fn lex_cmx(&mut self) -> ClsResult<Token> {
         // Por ahora, devolvemos un token Cmx que será procesado más adelante
         // El parser se encargará de la estructura completa
         self.advance(); // Consume '<'
@@ -262,7 +260,7 @@ impl Lexer {
         }))
     }
 
-    fn lex_operator_or_symbol(&mut self, _start: Span) -> ClsResult<Token> {
+    fn lex_operator_or_symbol(&mut self) -> ClsResult<Token> {
         let ch = self.current_char();
 
         // Símbolos primero (no ambiguos)

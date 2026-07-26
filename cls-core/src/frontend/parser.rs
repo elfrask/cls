@@ -1,27 +1,35 @@
 use crate::error::{ClsError, ClsResult, Diagnostic};
 use crate::error::diagnostic::Span;
 use crate::frontend::ast::*;
-use crate::frontend::token::{Keyword, Operator, Symbol, Token};
+use crate::frontend::token::{Keyword, Operator, Symbol, Token, SpannedToken};
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
 /// Parser recursive descent de CLS
 /// Convierte tokens en un AST
 pub struct Parser {
-    tokens: Peekable<IntoIter<Token>>,
+    tokens: Peekable<IntoIter<SpannedToken>>,
     current_token: Token,
+    current_span: Span,
     diagnostics: Vec<Diagnostic>,
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
+    pub fn new(tokens: Vec<SpannedToken>) -> Self {
         let mut iter = tokens.into_iter().peekable();
-        let first = iter.next().unwrap_or(Token::EOF);
+        let first = iter.next().unwrap_or(SpannedToken::new(Token::EOF, Span::new(1, 1, 1, 1)));
+        let span = first.span.clone();
         Self {
             tokens: iter,
-            current_token: first,
+            current_token: first.token,
+            current_span: span,
             diagnostics: Vec::new(),
         }
+    }
+
+    /// Obtiene el span del token actual
+    fn span(&self) -> Span {
+        self.current_span.clone()
     }
 
     /// Obtiene los diagnósticos (errores/warnings)
@@ -74,6 +82,7 @@ impl Parser {
             // Declaraciones de variables
             Token::Keyword(Keyword::Var) => self.parse_var_decl(),
             Token::Keyword(Keyword::Const) => self.parse_const_decl(),
+            Token::Keyword(Keyword::Let) => self.parse_var_decl(), // let es alias de var
 
             // Funciones
             Token::Keyword(Keyword::Function) => self.parse_function_decl(),
@@ -137,9 +146,16 @@ impl Parser {
     }
 
     fn parse_var_decl(&mut self) -> ClsResult<Statement> {
-        self.expect_keyword(Keyword::Var)?;
+        // Acepta var, let, o const
+        if !(self.consume_keyword(Keyword::Var)
+            || self.consume_keyword(Keyword::Let)
+            || self.consume_keyword(Keyword::Const))
+        {
+            return Err(ClsError::SyntaxError("Esperaba 'var', 'let' o 'const'".to_string()));
+        }
+        let is_const = matches!(self.current_token, _); // TODO: track const vs var
         let name = self.expect_identifier()?;
-        
+
         let type_ann = if self.consume_operator(Operator::Colon) {
             Some(self.parse_type_annotation()?)
         } else {
@@ -159,7 +175,7 @@ impl Parser {
             type_ann,
             value,
             visibility: Visibility::Default,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -186,7 +202,7 @@ impl Parser {
             type_ann,
             value,
             visibility: Visibility::Default,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -218,7 +234,7 @@ impl Parser {
             body,
             visibility: Visibility::Default,
             modifiers: Vec::new(),
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -238,12 +254,12 @@ impl Parser {
             params,
             return_type: Some(TypeAnnotation {
                 kind: TypeKind::Void,
-                span: Span::new(0, 0, 0, 0),
+                span: self.span(),
             }),
             body,
             visibility: Visibility::Default,
             modifiers: Vec::new(),
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -275,7 +291,7 @@ impl Parser {
                     name,
                     type_ann,
                     default_value,
-                    span: Span::new(0, 0, 0, 0),
+                    span: self.span(),
                 });
 
                 if !self.consume_symbol(Symbol::Comma) {
@@ -296,7 +312,7 @@ impl Parser {
         }
 
         let mut kind = self.parse_base_type()?;
-        let span = Span::new(0, 0, 0, 0);
+        let span = self.span();
 
         // Postfix: [] para arrays (sin llaves para evitar ambigüedad con bloques)
         loop {
@@ -398,7 +414,7 @@ impl Parser {
 
         Ok(TypeAnnotation {
             kind: TypeKind::Fun(params, Box::new(return_type)),
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         })
     }
 
@@ -426,7 +442,7 @@ impl Parser {
             elif_branches.push(ElifBranch {
                 condition: elif_cond,
                 block: elif_block,
-                span: Span::new(0, 0, 0, 0),
+                span: self.span(),
             });
         }
         
@@ -443,14 +459,22 @@ impl Parser {
             then_block,
             elif_branches,
             else_block,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
     fn parse_while_statement(&mut self) -> ClsResult<Statement> {
         self.expect_keyword(Keyword::While)?;
         self.expect_symbol(Symbol::LParen)?;
-        let condition = self.parse_expression()?;
+        // Condición vacía = true (bucle infinito)
+        let condition = if self.check_symbol(Symbol::RParen) {
+            Expression::Literal(Literal {
+                kind: LiteralKind::Bool(true),
+                span: self.span(),
+            })
+        } else {
+            self.parse_expression()?
+        };
         self.expect_symbol(Symbol::RParen)?;
         let block = self.parse_block()?;
         self.consume_symbol(Symbol::Semicolon);
@@ -458,7 +482,7 @@ impl Parser {
         Ok(Statement::While(WhileStatement {
             condition,
             block,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -517,7 +541,7 @@ impl Parser {
             condition,
             update,
             block,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -543,7 +567,7 @@ impl Parser {
             index_name,
             iterable,
             block,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -569,7 +593,7 @@ impl Parser {
                     cases.push(CaseClause {
                         pattern,
                         block,
-                        span: Span::new(0, 0, 0, 0),
+                        span: self.span(),
                     });
                 }
                 self.consume_symbol(Symbol::Semicolon);
@@ -585,7 +609,7 @@ impl Parser {
             value,
             cases,
             default,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -620,7 +644,7 @@ impl Parser {
                 param_name,
                 param_type,
                 block,
-                span: Span::new(0, 0, 0, 0),
+                span: self.span(),
             });
             self.consume_symbol(Symbol::Semicolon);
         }
@@ -637,7 +661,7 @@ impl Parser {
             try_block,
             catch_clauses,
             finally_block,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -655,7 +679,7 @@ impl Parser {
             name,
             value,
             block,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -718,7 +742,7 @@ impl Parser {
             extends,
             implements,
             body,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -772,7 +796,7 @@ impl Parser {
                 name: field_name,
                 type_ann,
                 default_value,
-                span: Span::new(0, 0, 0, 0),
+                span: self.span(),
             });
             
             self.consume_symbol(Symbol::Comma);
@@ -784,7 +808,7 @@ impl Parser {
         Ok(Statement::StructureDecl(StructureDecl {
             name,
             fields,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -815,7 +839,7 @@ impl Parser {
                 name: sig_name,
                 params,
                 return_type,
-                span: Span::new(0, 0, 0, 0),
+                span: self.span(),
             });
             
             self.consume_symbol(Symbol::Comma);
@@ -827,7 +851,7 @@ impl Parser {
         Ok(Statement::InterfaceDecl(InterfaceDecl {
             name,
             signatures,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -850,7 +874,7 @@ impl Parser {
         Ok(Statement::ModuleDecl(ModuleDecl {
             name,
             body,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -873,7 +897,7 @@ impl Parser {
         Ok(Statement::NamespaceDecl(NamespaceDecl {
             name,
             body,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -892,7 +916,7 @@ impl Parser {
         Ok(Statement::Import(ImportStatement {
             path,
             alias,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -921,7 +945,7 @@ impl Parser {
         Ok(Statement::FromImport(FromImportStatement {
             path,
             names,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -932,7 +956,7 @@ impl Parser {
         
         Ok(Statement::Include(IncludeStatement {
             path,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         }))
     }
 
@@ -983,7 +1007,7 @@ impl Parser {
         
         Ok(Block {
             statements,
-            span: Span::new(0, 0, 0, 0),
+            span: self.span(),
         })
     }
 
@@ -1005,7 +1029,7 @@ impl Parser {
                 target: Box::new(expr),
                 op,
                 value: Box::new(value),
-                span: Span::new(0, 0, 0, 0),
+                span: self.span(),
             }));
         }
         
@@ -1043,7 +1067,7 @@ impl Parser {
                 condition: Box::new(cond),
                 then_expr: Box::new(then_expr),
                 else_expr: Box::new(else_expr),
-                span: Span::new(0, 0, 0, 0),
+                span: self.span(),
             }));
         }
         
@@ -1060,7 +1084,7 @@ impl Parser {
                 left: Box::new(expr),
                 op: Operator::Or,
                 right: Box::new(right),
-                span: Span::new(0, 0, 0, 0),
+                span: self.span(),
             });
         }
         
@@ -1077,7 +1101,7 @@ impl Parser {
                 left: Box::new(expr),
                 op: Operator::And,
                 right: Box::new(right),
-                span: Span::new(0, 0, 0, 0),
+                span: self.span(),
             });
         }
         
@@ -1098,7 +1122,7 @@ impl Parser {
                 left: Box::new(expr),
                 op,
                 right: Box::new(right),
-                span: Span::new(0, 0, 0, 0),
+                span: self.span(),
             });
         }
         
@@ -1122,7 +1146,7 @@ impl Parser {
                 left: Box::new(expr),
                 op,
                 right: Box::new(right),
-                span: Span::new(0, 0, 0, 0),
+                span: self.span(),
             });
         }
         
@@ -1143,7 +1167,7 @@ impl Parser {
                 left: Box::new(expr),
                 op,
                 right: Box::new(right),
-                span: Span::new(0, 0, 0, 0),
+                span: self.span(),
             });
         }
         
@@ -1167,7 +1191,7 @@ impl Parser {
                 left: Box::new(expr),
                 op,
                 right: Box::new(right),
-                span: Span::new(0, 0, 0, 0),
+                span: self.span(),
             });
         }
         
@@ -1187,7 +1211,7 @@ impl Parser {
             return Ok(Expression::Unary(UnaryExpr {
                 op,
                 operand: Box::new(operand),
-                span: Span::new(0, 0, 0, 0),
+                span: self.span(),
             }));
         }
         
@@ -1207,7 +1231,7 @@ impl Parser {
                     expr = Expression::Call(CallExpr {
                         callee: Box::new(expr),
                         args,
-                        span: Span::new(0, 0, 0, 0),
+                        span: self.span(),
                     });
                 }
                 // Acceso a miembro
@@ -1217,7 +1241,7 @@ impl Parser {
                     expr = Expression::MemberAccess(MemberAccessExpr {
                         object: Box::new(expr),
                         member,
-                        span: Span::new(0, 0, 0, 0),
+                        span: self.span(),
                     });
                 }
                 // Namespace access
@@ -1230,7 +1254,7 @@ impl Parser {
                             _ => return Err(ClsError::SyntaxError("Esperaba identificador".to_string())),
                         },
                         member,
-                        Span::new(0, 0, 0, 0),
+                        self.span(),
                     );
                 }
                 // Indexado
@@ -1241,7 +1265,7 @@ impl Parser {
                     expr = Expression::Index(IndexExpr {
                         object: Box::new(expr),
                         index: Box::new(index),
-                        span: Span::new(0, 0, 0, 0),
+                        span: self.span(),
                     });
                 }
                 _ => break,
@@ -1273,7 +1297,7 @@ impl Parser {
                 self.advance();
                 Ok(Expression::Literal(Literal {
                     kind: LiteralKind::Int(v),
-                    span: Span::new(0, 0, 0, 0),
+                    span: self.span(),
                 }))
             }
             Token::FloatLiteral(v) => {
@@ -1281,7 +1305,7 @@ impl Parser {
                 self.advance();
                 Ok(Expression::Literal(Literal {
                     kind: LiteralKind::Float(v),
-                    span: Span::new(0, 0, 0, 0),
+                    span: self.span(),
                 }))
             }
             Token::StringLiteral(v) => {
@@ -1289,7 +1313,7 @@ impl Parser {
                 self.advance();
                 Ok(Expression::Literal(Literal {
                     kind: LiteralKind::String(v),
-                    span: Span::new(0, 0, 0, 0),
+                    span: self.span(),
                 }))
             }
             Token::BoolLiteral(v) => {
@@ -1297,7 +1321,7 @@ impl Parser {
                 self.advance();
                 Ok(Expression::Literal(Literal {
                     kind: LiteralKind::Bool(v),
-                    span: Span::new(0, 0, 0, 0),
+                    span: self.span(),
                 }))
             }
             Token::CharLiteral(v) => {
@@ -1305,7 +1329,7 @@ impl Parser {
                 self.advance();
                 Ok(Expression::Literal(Literal {
                     kind: LiteralKind::Char(v),
-                    span: Span::new(0, 0, 0, 0),
+                    span: self.span(),
                 }))
             }
             Token::Identifier(name) => {
@@ -1316,27 +1340,27 @@ impl Parser {
                 if self.check_symbol(Symbol::LParen) {
                     // Podría ser una llamada o una función flecha
                     // Por ahora devolvemos el identificador y que parse_call lo maneje
-                    return Ok(Expression::Identifier(name, Span::new(0, 0, 0, 0)));
+                    return Ok(Expression::Identifier(name, self.span()));
                 }
                 
-                Ok(Expression::Identifier(name, Span::new(0, 0, 0, 0)))
+                Ok(Expression::Identifier(name, self.span()))
             }
             Token::Keyword(Keyword::Me) => {
                 self.advance();
-                Ok(Expression::Identifier("me".to_string(), Span::new(0, 0, 0, 0)))
+                Ok(Expression::Identifier("me".to_string(), self.span()))
             }
             Token::Keyword(Keyword::True) => {
                 self.advance();
                 Ok(Expression::Literal(Literal {
                     kind: LiteralKind::Bool(true),
-                    span: Span::new(0, 0, 0, 0),
+                    span: self.span(),
                 }))
             }
             Token::Keyword(Keyword::False) => {
                 self.advance();
                 Ok(Expression::Literal(Literal {
                     kind: LiteralKind::Bool(false),
-                    span: Span::new(0, 0, 0, 0),
+                    span: self.span(),
                 }))
             }
             Token::Symbol(Symbol::LParen) => {
@@ -1353,7 +1377,7 @@ impl Parser {
                 // Paréntesis
                 let expr = self.parse_expression()?;
                 self.expect_symbol(Symbol::RParen)?;
-                Ok(Expression::Parenthesized(Box::new(expr), Span::new(0, 0, 0, 0)))
+                Ok(Expression::Parenthesized(Box::new(expr), self.span()))
             }
             Token::Symbol(Symbol::LBracket) => {
                 self.advance();
@@ -1369,7 +1393,7 @@ impl Parser {
                 self.expect_symbol(Symbol::RBracket)?;
                 Ok(Expression::Array(ArrayExpr {
                     elements,
-                    span: Span::new(0, 0, 0, 0),
+                    span: self.span(),
                 }))
             }
             Token::Symbol(Symbol::LBrace) => {
@@ -1394,7 +1418,7 @@ impl Parser {
                 self.expect_symbol(Symbol::RBrace)?;
                 Ok(Expression::Record(RecordExpr {
                     entries,
-                    span: Span::new(0, 0, 0, 0),
+                    span: self.span(),
                 }))
             }
             _ => Err(ClsError::SyntaxError(format!(
@@ -1421,8 +1445,10 @@ impl Parser {
 
     fn advance(&mut self) {
         if let Some(next) = self.tokens.next() {
-            self.current_token = next;
+            self.current_span = next.span;
+            self.current_token = next.token;
         } else {
+            self.current_span = self.span();
             self.current_token = Token::EOF;
         }
     }
@@ -1474,9 +1500,10 @@ impl Parser {
         if self.consume_symbol(symbol) {
             Ok(())
         } else {
+            let s = self.span();
             Err(ClsError::SyntaxError(format!(
-                "Esperaba símbolo {:?}, encontró {:?}",
-                symbol, self.current_token
+                "Esperaba símbolo {:?}, encontró {:?} (línea {}, columna {})",
+                symbol, self.current_token, s.start_line, s.start_col
             )))
         }
     }
@@ -1485,9 +1512,10 @@ impl Parser {
         if self.consume_keyword(keyword) {
             Ok(())
         } else {
+            let s = self.span();
             Err(ClsError::SyntaxError(format!(
-                "Esperaba keyword {:?}, encontró {:?}",
-                keyword, self.current_token
+                "Esperaba keyword {:?}, encontró {:?} (línea {}, columna {})",
+                keyword, self.current_token, s.start_line, s.start_col
             )))
         }
     }
@@ -1496,9 +1524,10 @@ impl Parser {
         if self.consume_operator(op) {
             Ok(())
         } else {
+            let s = self.span();
             Err(ClsError::SyntaxError(format!(
-                "Esperaba operador {:?}, encontró {:?}",
-                op, self.current_token
+                "Esperaba operador {:?}, encontró {:?} (línea {}, columna {})",
+                op, self.current_token, s.start_line, s.start_col
             )))
         }
     }

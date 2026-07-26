@@ -290,3 +290,16 @@ impl fmt::Display for Token {
         }
     }
 }
+
+/// Token con información de span (línea, columna)
+#[derive(Debug, Clone)]
+pub struct SpannedToken {
+    pub token: Token,
+    pub span: Span,
+}
+
+impl SpannedToken {
+    pub fn new(token: Token, span: Span) -> Self {
+        Self { token, span }
+    }
+}
