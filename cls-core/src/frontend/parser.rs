@@ -115,6 +115,7 @@ impl Parser {
             // Default: expresión
             _ => {
                 let expr = self.parse_expression()?;
+                self.consume_symbol(Symbol::Semicolon);
                 Ok(Statement::Expression(expr))
             }
         }
@@ -969,6 +970,7 @@ impl Parser {
         let mut statements = Vec::new();
         while !self.check_symbol(Symbol::RBrace) && !self.is_eof() {
             self.skip_newlines();
+            self.skip_semicolons();
             if self.check_symbol(Symbol::RBrace) {
                 break;
             }
@@ -977,6 +979,7 @@ impl Parser {
         }
         
         self.expect_symbol(Symbol::RBrace)?;
+        self.skip_semicolons();
         
         Ok(Block {
             statements,
@@ -1531,6 +1534,12 @@ impl Parser {
     fn skip_newlines(&mut self) {
         while matches!(self.current_token, Token::Newline) {
             self.advance();
+        }
+    }
+
+    fn skip_semicolons(&mut self) {
+        while self.consume_symbol(Symbol::Semicolon) {
+            // saltar todos los ; consecutivos
         }
     }
 
