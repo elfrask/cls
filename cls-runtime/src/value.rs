@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
+use cls_core::error::ClsResult;
+use cls_core::frontend::ast::Block;
 
 /// Valores runtime de CLS
 #[derive(Debug, Clone, PartialEq)]
@@ -77,7 +79,7 @@ impl Value {
                     .collect();
                 format!("{{{}}}", entries.join(", "))
             }
-            Value::Fun(_) => "<function>".to_string(),
+            Value::Fun(f) => format!("<function {}>", f.name),
             Value::Unknown => "unknown".to_string(),
             Value::Cmx(_) => "<cmx>".to_string(),
         }
@@ -90,12 +92,91 @@ impl fmt::Display for Value {
     }
 }
 
+pub type NativeFn = Box<dyn Fn(&[Value]) -> ClsResult<Value>>;
+
 /// Valor de función (callable)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 pub struct FunValue {
     pub name: String,
-    pub params: Vec<String>,
-    // TODO: body, closure, etc.
+    pub kind: FunKind,
+}
+
+impl fmt::Debug for FunValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FunValue")
+            .field("name", &self.name)
+            .field("kind", &self.kind)
+            .finish()
+    }
+}
+
+#[derive(Clone)]
+pub enum FunKind {
+    /// Función nativa de Rust
+    Native {
+        params: Vec<String>,
+        func: std::sync::Arc<dyn Fn(&[Value]) -> ClsResult<Value>>,
+    },
+    /// Función definida por el usuario (AST)
+    User {
+        params: Vec<cls_core::frontend::ast::Parameter>,
+        body: Block,
+    },
+}
+
+impl PartialEq for FunValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl PartialEq for FunKind {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (FunKind::Native { .. }, FunKind::Native { .. })
+                | (FunKind::User { .. }, FunKind::User { .. })
+        )
+    }
+}
+
+impl fmt::Debug for FunKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FunKind::Native { params, .. } => f
+                .debug_struct("Native")
+                .field("params", params)
+                .field("func", &"<native>")
+                .finish(),
+            FunKind::User { params, body } => f
+                .debug_struct("User")
+                .field("params", params)
+                .field("body", body)
+                .finish(),
+        }
+    }
+}
+
+impl FunValue {
+    pub fn new_native<F>(name: &str, params: Vec<String>, func: F) -> Self
+    where
+        F: Fn(&[Value]) -> ClsResult<Value> + 'static,
+    {
+        Self {
+            name: name.to_string(),
+            kind: FunKind::Native {
+                params,
+                func: std::sync::Arc::new(func),
+            },
+        }
+    }
+
+    pub fn new_user(name: &str, params: Vec<cls_core::frontend::ast::Parameter>, body: Block) -> Self {
+        Self {
+            name: name.to_string(),
+            kind: FunKind::User { params, body },
+        }
+    }
 }
 
 /// Valor CMX (JSX nativo)

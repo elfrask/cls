@@ -287,13 +287,125 @@ impl Parser {
     }
 
     fn parse_type_annotation(&mut self) -> ClsResult<TypeAnnotation> {
-        // TODO: implementar tipos completos con parámetros
+        // Fun types: fun(params...) -> ReturnType
+        if let Token::Identifier(ref s) = &self.current_token {
+            if s == "fun" && self.lookahead_is(1, Symbol::LParen) {
+                return self.parse_fun_type();
+            }
+        }
+
+        let mut kind = self.parse_base_type()?;
+        let span = Span::new(0, 0, 0, 0);
+
+        // Postfix: [] para arrays (sin llaves para evitar ambigüedad con bloques)
+        loop {
+            if self.consume_symbol(Symbol::LBracket) {
+                if !self.consume_symbol(Symbol::RBracket) {
+                    return Err(ClsError::SyntaxError("Esperaba ']' en tipo array".to_string()));
+                }
+                kind = TypeKind::Array(Box::new(TypeAnnotation {
+                    kind: kind.clone(),
+                    span: span.clone(),
+                }));
+            } else {
+                break;
+            }
+        }
+
+        Ok(TypeAnnotation { kind, span })
+    }
+
+    fn parse_base_type(&mut self) -> ClsResult<TypeKind> {
+        // Paréntesis
+        if self.consume_symbol(Symbol::LParen) {
+            let inner = self.parse_type_annotation()?;
+            self.expect_symbol(Symbol::RParen)?;
+            return Ok(inner.kind);
+        }
+
+        // Identificador o acrónimo
         let name = self.expect_identifier()?;
-        
+        let name_str = name.as_str();
+
+        // Acrónimos
+        match name_str {
+            "int" | "Integer" => return Ok(TypeKind::Int),
+            "str" | "String" => return Ok(TypeKind::String),
+            "float" | "Float" => return Ok(TypeKind::Float),
+            "bool" | "Boolean" => return Ok(TypeKind::Bool),
+            "char" | "Character" => return Ok(TypeKind::Char),
+            "any" | "Any" => return Ok(TypeKind::Any),
+            "unknown" => return Ok(TypeKind::Unknown),
+            "null" => return Ok(TypeKind::Null),
+            "Void" | "void" => return Ok(TypeKind::Void),
+            "cmx" | "Cmx" => return Ok(TypeKind::Cmx),
+            "i32" => return Ok(TypeKind::I32),
+            "i64" => return Ok(TypeKind::I64),
+            "i16" => return Ok(TypeKind::I16),
+            "i8" => return Ok(TypeKind::I8),
+            "f32" => return Ok(TypeKind::F32),
+            "f64" => return Ok(TypeKind::F64),
+            _ => {}
+        }
+
+        // Tipo nombrado (puede tener parámetros genéricos <T, U>)
+        let mut type_params = Vec::new();
+        if !self.is_eof() && matches!(self.current_token, Token::Operator(Operator::LessThan)) {
+            // Consumir '<'
+            self.advance(); // consume '<'
+            loop {
+                type_params.push(self.parse_type_annotation()?);
+                if !self.consume_symbol(Symbol::Comma) {
+                    break;
+                }
+            }
+            // Consumir '>' (que puede ser Operator::GreaterThan)
+            if matches!(self.current_token, Token::Operator(Operator::GreaterThan)
+                | Token::Operator(Operator::ShiftRight))
+            {
+                self.advance();
+            } else {
+                return Err(ClsError::SyntaxError(
+                    "Esperaba '>' para cerrar parámetros genéricos".to_string(),
+                ));
+            }
+        }
+
+        Ok(TypeKind::Named(name, type_params))
+    }
+
+    fn parse_fun_type(&mut self) -> ClsResult<TypeAnnotation> {
+        // "fun" ya fue verificado
+        let ident = self.expect_identifier()?;
+        assert!(ident == "fun", "parse_fun_type called without 'fun'");
+
+        self.expect_symbol(Symbol::LParen)?;
+
+        let mut params = Vec::new();
+        if !self.check_symbol(Symbol::RParen) {
+            loop {
+                params.push(self.parse_type_annotation()?);
+                if !self.consume_symbol(Symbol::Comma) {
+                    break;
+                }
+            }
+        }
+        self.expect_symbol(Symbol::RParen)?;
+
+        self.expect_operator(Operator::Colon)?;
+        let return_type = self.parse_type_annotation()?;
+
         Ok(TypeAnnotation {
-            kind: TypeKind::Named(name, Vec::new()),
+            kind: TypeKind::Fun(params, Box::new(return_type)),
             span: Span::new(0, 0, 0, 0),
         })
+    }
+
+    fn lookahead_is(&self, offset: usize, expected: Symbol) -> bool {
+        // Lookahead básico: verificar si el token a N posiciones es el símbolo esperado
+        // Por ahora esto es una aproximación simple
+        // TODO: implementar lookahead real con peekable tokens
+        false
     }
 
     fn parse_if_statement(&mut self) -> ClsResult<Statement> {

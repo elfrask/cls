@@ -1,5 +1,5 @@
 use crate::environment::Environment;
-use crate::value::Value;
+use crate::value::{FunValue, Value};
 use crate::stdlib;
 use cls_core::error::{ClsError, ClsResult, Diagnostic};
 use cls_core::frontend::ast::*;
@@ -97,11 +97,11 @@ impl Interpreter {
     }
 
     fn execute_function_decl(&mut self, func: &FunctionDecl) -> ClsResult<Value> {
-        // TODO: crear valor de función con closure
-        let fun_val = Value::Fun(crate::value::FunValue {
-            name: func.name.clone(),
-            params: func.params.iter().map(|p| p.name.clone()).collect(),
-        });
+        let fun_val = Value::Fun(FunValue::new_user(
+            &func.name,
+            func.params.clone(),
+            func.body.clone(),
+        ));
         self.env.define(&func.name, fun_val);
         Ok(Value::Void)
     }
@@ -424,15 +424,62 @@ impl Interpreter {
             args.push(self.evaluate_expression(arg)?);
         }
 
+        self.call_function_value(callee, args)
+    }
+
+    fn evaluate_member_call(&mut self, _call: &CallExpr) -> ClsResult<Value> {
+        // TODO: método de objeto/clase
+        Err(ClsError::RuntimeError("Member call no implementado".to_string()))
+    }
+
+    /// Ejecuta un valor de función con argumentos ya evaluados
+    fn call_function_value(&mut self, callee: Value, args: Vec<Value>) -> ClsResult<Value> {
         match callee {
-            Value::Fun(_fun) => {
-                // TODO: ejecutar función con args
-                Ok(Value::Void)
-            }
+            Value::Fun(fun) => match &fun.kind {
+                crate::value::FunKind::Native { params: _, func } => {
+                    func(&args)
+                }
+                crate::value::FunKind::User { params, body } => {
+                    self.env.push_scope();
+                    for (i, param) in params.iter().enumerate() {
+                        let arg_val = if i < args.len() {
+                            args[i].clone()
+                        } else if let Some(default) = &param.default_value {
+                            self.evaluate_expression(default)?
+                        } else {
+                            Value::Null
+                        };
+                        self.env.define(&param.name, arg_val);
+                    }
+                    let result = self.execute_block(body);
+                    self.env.pop_scope();
+                    // Si el return fue con valor, propagarlo
+                    result
+                }
+            },
             _ => Err(ClsError::RuntimeError(format!(
-                "No se puede llamar: {:?}",
-                callee
+                "No se puede llamar: {:?}", callee
             ))),
+        }
+    }
+
+    /// Llama a main() con los args del CLI.
+    /// Retorna el código de salida (i32).
+    pub fn call_main(&mut self) -> ClsResult<i32> {
+        if let Some(main_val) = self.env.get("main").cloned() {
+            let args_val = Value::Array(
+                self.args.iter().map(|a| Value::String(a.clone())).collect(),
+            );
+            match self.call_function_value(main_val, vec![args_val]) {
+                Ok(Value::Int(code)) => Ok(code as i32),
+                Ok(_) => Ok(0),
+                Err(e) => {
+                    eprintln!("Error en main(): {}", e);
+                    Ok(1)
+                }
+            }
+        } else {
+            Ok(0)
         }
     }
 
@@ -490,12 +537,24 @@ impl Interpreter {
         Ok(Value::Record(entries))
     }
 
-    fn evaluate_arrow_function(&mut self, _arrow: &ArrowFunctionExpr) -> ClsResult<Value> {
-        // TODO: crear closure
-        Ok(Value::Fun(crate::value::FunValue {
-            name: "<anonymous>".to_string(),
-            params: Vec::new(),
-        }))
+    fn evaluate_arrow_function(&mut self, arrow: &ArrowFunctionExpr) -> ClsResult<Value> {
+        let block = match &*arrow.body {
+            Statement::Expression(expr) => {
+                let stmt = Statement::Return(Some(expr.clone()));
+                Block {
+                    statements: vec![stmt],
+                    span: arrow.span.clone(),
+                }
+            }
+            stmt => {
+                // Si es otro tipo de statement, lo envolvemos en un bloque
+                Block {
+                    statements: vec![stmt.clone()],
+                    span: arrow.span.clone(),
+                }
+            }
+        };
+        Ok(Value::Fun(FunValue::new_user("<anonymous>", arrow.params.clone(), block)))
     }
 
     fn evaluate_conditional(&mut self, cond: &ConditionalExpr) -> ClsResult<Value> {
