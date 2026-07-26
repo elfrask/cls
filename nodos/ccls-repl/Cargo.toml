@@ -1,0 +1,13 @@
+[package]
+name = "ccls-repl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ccls-repl"
+path = "src/main.rs"
+
+[dependencies]
+cls-core = { workspace = true }
+cls-runtime = { workspace = true }

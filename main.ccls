@@ -123,4 +123,15 @@ function fib() -> int[] {
     fibList.push(fibList[-2] + fibList[-1])
   };
 
-}
+};
+
+
+var CMXapp = (
+  <App>
+    Hello world
+    <Dashboard />
+    <Button name="test" click={async () -> {
+      print("boton clickeado!")
+    }} />
+  </App>
+)

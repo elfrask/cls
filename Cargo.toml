@@ -1,17 +1,22 @@
-[package]
-name = "cls"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+resolver = "2"
+members = [
+    "cls-core",
+    "cls-runtime",
+    "nodos/ccls",
+    "nodos/ccls-repl",
+    "nodos/cpkg",
+    "nodos/ecls",
+]
 
-# [dependencies]
-# Aquí irían librerías como 'nom' para el parsing o 'clap' para el CLI
-# nom = "7.1" 
-# clap = { version = "4.0", features = ["derive"] }
+[workspace.package]
+version = "2.0.0"
+edition = "2021"
+license = "MIT"
+description = "CLS Language - Modular WASM-first programming language"
+homepage = "https://github.com/frask/cls"
+repository = "https://github.com/frask/cls"
 
-# [lib]
-# name = "cls_core"
-# path = "src/cls-lib.rs"
-
-[[bin]]
-name = "ccls"
-path = "src/main.rs"
+[workspace.dependencies]
+cls-core = { path = "cls-core" }
+cls-runtime = { path = "cls-runtime" }

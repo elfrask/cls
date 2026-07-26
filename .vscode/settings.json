@@ -1,4 +1,6 @@
 {
   "editor.indentSize": 2,
-  
+  "files.associations": {
+    "*.ccls": "ccls"
+  }
 }

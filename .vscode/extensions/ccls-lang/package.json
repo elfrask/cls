@@ -1,0 +1,30 @@
+{
+  "name": "ccls-lang",
+  "displayName": "CLS Language Support",
+  "description": "Syntax highlighting and language support for CLS (.ccls)",
+  "version": "1.0.0",
+  "publisher": "frask",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "ccls",
+        "aliases": ["CLS", "ccls"],
+        "extensions": [".ccls"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ccls",
+        "scopeName": "source.ccls",
+        "path": "./syntaxes/ccls.tmLanguage.json"
+      }
+    ]
+  }
+}
