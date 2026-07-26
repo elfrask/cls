@@ -32,7 +32,10 @@ var numbers: int[] = [1, 2, 3, 4, 5];
 var user = {
     name: "John",
     age: 30,
-    active: true
+    active: true,
+    obj: {
+        abc: 123
+    }
 };
 
 # ═══════════════════════════════════════════════
@@ -115,7 +118,7 @@ function main(args: String[]) -> int {
 
     print("");
     print("── Ternary ──");
-    var status = if (x > 0) then ("positive") else ("negative");
+    var status = if (x > 0) then ("positive") else ( if (x < 0) then ("negative") else ("neutro") );
     print("  status:", status);
 
     print("");
