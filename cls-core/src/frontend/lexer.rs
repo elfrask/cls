@@ -242,6 +242,7 @@ impl Lexer {
             "global" => Token::Keyword(Keyword::Global),
             "true" => Token::Keyword(Keyword::True),
             "false" => Token::Keyword(Keyword::False),
+            "then" => Token::Keyword(Keyword::Then),
             _ => Token::Identifier(ident),
         };
 

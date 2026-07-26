@@ -114,8 +114,9 @@ function main(args: String[]) -> int {
     };
 
     print("");
-    print("── Ternary (coming soon) ──");
-    # var status = if (x > 0) then ("positive") else ("negative");
+    print("── Ternary ──");
+    var status = if (x > 0) then ("positive") else ("negative");
+    print("  status:", status);
 
     print("");
     print("── While ──");
