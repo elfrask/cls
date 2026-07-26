@@ -4,6 +4,7 @@ use crate::resolver::ModuleResolver;
 use crate::value::{FunValue, Value};
 use cls_core::error::{ClsError, ClsResult, Diagnostic};
 use cls_core::frontend::ast::*;
+use std::collections::HashSet;
 
 /// Intérprete tree-walker de CLS
 /// Ejecuta el AST directamente, sin compilación intermedia
@@ -12,6 +13,7 @@ pub struct Interpreter {
     resolver: ModuleResolver,
     diagnostics: Vec<Diagnostic>,
     args: Vec<String>,
+    exports: HashSet<String>,  // nombres exportados
 }
 
 impl Interpreter {
@@ -22,6 +24,7 @@ impl Interpreter {
             resolver,
             diagnostics: Vec::new(),
             args,
+            exports: HashSet::new(),
         };
         interpreter.register_intrinsics(intrinsics);
         interpreter
@@ -221,6 +224,9 @@ impl Interpreter {
             Value::Null
         };
         self.env.define(&var.name, value.clone());
+        if matches!(var.visibility, Visibility::Export) {
+            self.exports.insert(var.name.clone());
+        }
         Ok(value)
     }
 
@@ -231,6 +237,9 @@ impl Interpreter {
             func.body.clone(),
         ));
         self.env.define(&func.name, fun_val);
+        if matches!(func.visibility, Visibility::Export) {
+            self.exports.insert(func.name.clone());
+        }
         Ok(Value::Void)
     }
 
@@ -621,6 +630,47 @@ impl Interpreter {
                 "No se puede llamar: {:?}", callee
             ))),
         }
+    }
+
+    /// Carga un archivo .ccls como módulo, devolviendo solo lo exportado.
+    pub fn load_module_source(&mut self, module_name: &str, source: &str) -> ClsResult<Value> {
+        // Compilar el módulo externo
+        let mut lexer = cls_core::frontend::Lexer::new(source);
+        let tokens = lexer.tokenize().map_err(|e| {
+            ClsError::RuntimeError(format!("Tokenización de '{}': {}", module_name, e))
+        })?;
+        let mut parser = cls_core::frontend::Parser::new(tokens);
+        let module = parser.parse().map_err(|e| {
+            ClsError::RuntimeError(format!("Parseo de '{}': {}", module_name, e))
+        })?;
+
+        // Guardar estado actual (scope global, exports, resolver)
+        let saved_exports = std::mem::take(&mut self.exports);
+        let saved_env = std::mem::replace(&mut self.env, Environment::new());
+        let saved_resolver = std::mem::replace(
+            &mut self.resolver,
+            ModuleResolver::new().with_core_stdlib(),
+        );
+
+        // Ejecutar el módulo en scope aislado
+        for stmt in &module.statements {
+            self.execute_statement(stmt)?;
+        }
+
+        // Recolectar solo exportados
+        let mut entries = std::collections::HashMap::new();
+        for name in &self.exports {
+            if let Some(val) = self.env.get(name) {
+                entries.insert(name.clone(), val.clone());
+            }
+        }
+
+        // Restaurar estado
+        self.exports = saved_exports;
+        self.env = saved_env;
+        self.resolver = saved_resolver;
+
+        Ok(Value::Record(entries))
     }
 
     /// Llama a main() con los args del CLI.
