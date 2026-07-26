@@ -493,28 +493,31 @@ impl Interpreter {
             }
             (Operator::Minus, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
             (Operator::Minus, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
+            (Operator::Minus, Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 - b)),
+            (Operator::Minus, Value::Float(a), Value::Int(b)) => Ok(Value::Float(a - *b as f64)),
             (Operator::Star, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a * b)),
             (Operator::Star, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
+            (Operator::Star, Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 * b)),
+            (Operator::Star, Value::Float(a), Value::Int(b)) => Ok(Value::Float(a * *b as f64)),
             (Operator::Slash, Value::Int(a), Value::Int(b)) => {
-                if *b == 0 {
-                    Err(ClsError::RuntimeError("División por cero".to_string()))
-                } else {
-                    Ok(Value::Int(a / b))
-                }
+                if *b == 0 { Err(ClsError::RuntimeError("División por cero".into())) }
+                else { Ok(Value::Int(a / b)) }
             }
             (Operator::Slash, Value::Float(a), Value::Float(b)) => {
-                if *b == 0.0 {
-                    Err(ClsError::RuntimeError("División por cero".to_string()))
-                } else {
-                    Ok(Value::Float(a / b))
-                }
+                if *b == 0.0 { Err(ClsError::RuntimeError("División por cero".into())) }
+                else { Ok(Value::Float(a / b)) }
+            }
+            (Operator::Slash, Value::Int(a), Value::Float(b)) => {
+                if *b == 0.0 { Err(ClsError::RuntimeError("División por cero".into())) }
+                else { Ok(Value::Float(*a as f64 / b)) }
+            }
+            (Operator::Slash, Value::Float(a), Value::Int(b)) => {
+                if *b == 0 { Err(ClsError::RuntimeError("División por cero".into())) }
+                else { Ok(Value::Float(a / *b as f64)) }
             }
             (Operator::Percent, Value::Int(a), Value::Int(b)) => {
-                if *b == 0 {
-                    Err(ClsError::RuntimeError("Módulo por cero".to_string()))
-                } else {
-                    Ok(Value::Int(a % b))
-                }
+                if *b == 0 { Err(ClsError::RuntimeError("Módulo por cero".into())) }
+                else { Ok(Value::Int(a % b)) }
             }
 
             // Comparación
