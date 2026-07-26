@@ -1048,30 +1048,7 @@ impl Parser {
     }
 
     fn parse_conditional(&mut self) -> ClsResult<Expression> {
-        let condition = self.parse_logical_or()?;
-        
-        if self.consume_keyword(Keyword::If) {
-            self.expect_symbol(Symbol::LParen)?;
-            let cond = self.parse_expression()?;
-            self.expect_symbol(Symbol::RParen)?;
-            self.expect_keyword(Keyword::Then)?;
-            self.expect_symbol(Symbol::LParen)?;
-            let then_expr = self.parse_expression()?;
-            self.expect_symbol(Symbol::RParen)?;
-            self.expect_keyword(Keyword::Else)?;
-            self.expect_symbol(Symbol::LParen)?;
-            let else_expr = self.parse_expression()?;
-            self.expect_symbol(Symbol::RParen)?;
-            
-            return Ok(Expression::Conditional(ConditionalExpr {
-                condition: Box::new(cond),
-                then_expr: Box::new(then_expr),
-                else_expr: Box::new(else_expr),
-                span: self.span(),
-            }));
-        }
-        
-        Ok(condition)
+        self.parse_logical_or()
     }
 
     fn parse_logical_or(&mut self) -> ClsResult<Expression> {
@@ -1418,6 +1395,27 @@ impl Parser {
                 self.expect_symbol(Symbol::RBrace)?;
                 Ok(Expression::Record(RecordExpr {
                     entries,
+                    span: self.span(),
+                }))
+            }
+            // Ternario: if (cond) then (a) else (b)
+            Token::Keyword(Keyword::If) => {
+                self.advance();
+                self.expect_symbol(Symbol::LParen)?;
+                let cond = self.parse_expression()?;
+                self.expect_symbol(Symbol::RParen)?;
+                self.expect_keyword(Keyword::Then)?;
+                self.expect_symbol(Symbol::LParen)?;
+                let then_expr = self.parse_expression()?;
+                self.expect_symbol(Symbol::RParen)?;
+                self.expect_keyword(Keyword::Else)?;
+                self.expect_symbol(Symbol::LParen)?;
+                let else_expr = self.parse_expression()?;
+                self.expect_symbol(Symbol::RParen)?;
+                Ok(Expression::Conditional(ConditionalExpr {
+                    condition: Box::new(cond),
+                    then_expr: Box::new(then_expr),
+                    else_expr: Box::new(else_expr),
                     span: self.span(),
                 }))
             }
