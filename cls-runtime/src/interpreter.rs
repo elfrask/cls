@@ -757,12 +757,15 @@ impl Interpreter {
         match object {
             Value::Record(rec) => {
                 rec.get(&member.member).cloned().ok_or_else(|| {
-                    ClsError::RuntimeError(format!("Miembro no encontrado: {}", member.member))
+                    ClsError::RuntimeError(format!(
+                        "Miembro no encontrado: '{}' (línea {}, columna {})",
+                        member.member, member.span.start_line, member.span.start_col
+                    ))
                 })
             }
             _ => Err(ClsError::RuntimeError(format!(
-                "No se puede acceder a miembro en: {:?}",
-                object
+                "No se puede acceder a miembro en: {:?} (línea {}, columna {})",
+                object, member.span.start_line, member.span.start_col
             ))),
         }
     }
