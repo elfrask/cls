@@ -6,6 +6,9 @@ use cls_core::error::{ClsError, ClsResult, Diagnostic};
 use cls_core::frontend::ast::*;
 use std::collections::HashSet;
 
+#[derive(Debug, Clone)]
+enum Flow { Normal, Return(Value), Break, Continue }
+
 /// Intérprete tree-walker de CLS
 /// Ejecuta el AST directamente, sin compilación intermedia
 pub struct Interpreter {
@@ -13,10 +16,11 @@ pub struct Interpreter {
     resolver: ModuleResolver,
     diagnostics: Vec<Diagnostic>,
     args: Vec<String>,
-    exports: HashSet<String>,  // nombres exportados
-    source_file: String,        // archivo actual (para trace de errores)
-    import_trace: Vec<ImportFrame>,  // trazado de imports
-    call_stack: Vec<String>,    // stack de llamadas a funciones
+    exports: HashSet<String>,
+    source_file: String,
+    import_trace: Vec<ImportFrame>,
+    call_stack: Vec<String>,
+    flow: Flow,
 }
 
 /// Frame de importación para trace de errores
@@ -40,6 +44,7 @@ impl Interpreter {
             source_file: String::new(),
             import_trace: Vec::new(),
             call_stack: Vec::new(),
+            flow: Flow::Normal,
         };
         interpreter.register_intrinsics(intrinsics);
         interpreter
@@ -218,16 +223,22 @@ impl Interpreter {
             Statement::Try(try_stmt) => self.execute_try(try_stmt),
             Statement::With(with_stmt) => self.execute_with(with_stmt),
             Statement::Return(expr) => {
-                if let Some(expr) = expr {
-                    let val = self.evaluate_expression(expr)?;
-                    // TODO: return from function (necesita control de flujo)
-                    Ok(val)
+                let val = if let Some(expr) = expr {
+                    self.evaluate_expression(expr)?
                 } else {
-                    Ok(Value::Void)
-                }
+                    Value::Void
+                };
+                self.flow = Flow::Return(val.clone());
+                Ok(val)
             }
-            Statement::Break => Ok(Value::Void), // TODO: control de flujo
-            Statement::Continue => Ok(Value::Void), // TODO: control de flujo
+            Statement::Break => {
+                self.flow = Flow::Break;
+                Ok(Value::Void)
+            }
+            Statement::Continue => {
+                self.flow = Flow::Continue;
+                Ok(Value::Void)
+            }
             Statement::Expression(expr) => self.evaluate_expression(expr),
             Statement::ClassDecl(class) => self.execute_class_decl(class),
             Statement::StructureDecl(structure) => self.execute_structure_decl(structure),
@@ -287,20 +298,30 @@ impl Interpreter {
 
     fn execute_while(&mut self, while_stmt: &WhileStatement) -> ClsResult<Value> {
         loop {
+            self.flow = Flow::Normal;
             let condition = self.evaluate_expression(&while_stmt.condition)?;
-            if !condition.is_truthy() {
-                break;
-            }
+            if !condition.is_truthy() { break; }
             self.execute_block(&while_stmt.block)?;
+            match std::mem::replace(&mut self.flow, Flow::Normal) {
+                Flow::Break => break,
+                Flow::Continue => continue,
+                Flow::Return(v) => { self.flow = Flow::Return(v); break; }
+                _ => continue,
+            }
         }
         Ok(Value::Void)
     }
 
     fn execute_loop(&mut self, block: &Block) -> ClsResult<Value> {
         loop {
+            self.flow = Flow::Normal;
             self.execute_block(block)?;
-            // TODO: break/continue
-            break;
+            match std::mem::replace(&mut self.flow, Flow::Normal) {
+                Flow::Break => break,
+                Flow::Continue => continue,
+                Flow::Return(v) => { self.flow = Flow::Return(v); break; }
+                Flow::Normal => continue,
+            }
         }
         Ok(Value::Void)
     }
@@ -310,13 +331,15 @@ impl Interpreter {
             self.execute_statement(init)?;
         }
         loop {
+            self.flow = Flow::Normal;
             if let Some(cond) = &for_stmt.condition {
                 let cond_val = self.evaluate_expression(cond)?;
-                if !cond_val.is_truthy() {
-                    break;
-                }
+                if !cond_val.is_truthy() { break; }
             }
             self.execute_block(&for_stmt.block)?;
+            let flow = std::mem::replace(&mut self.flow, Flow::Normal);
+            if matches!(flow, Flow::Return(_)) { self.flow = flow; break; }
+            if matches!(flow, Flow::Break) { break; }
             if let Some(update) = &for_stmt.update {
                 self.evaluate_expression(update)?;
             }
@@ -485,6 +508,7 @@ impl Interpreter {
         let mut result = Value::Void;
         for stmt in &block.statements {
             result = self.execute_statement(stmt)?;
+            if !matches!(self.flow, Flow::Normal) { break; }
         }
         self.env.pop_scope();
         Ok(result)
@@ -621,11 +645,29 @@ impl Interpreter {
             UnaryOp::BitwiseNot => match operand {
                 Value::Int(v) => Ok(Value::Int(!v)),
                 _ => Err(ClsError::RuntimeError(format!(
-                    "No se puede aplicar ~: {:?}",
-                    operand
+                    "No se puede aplicar ~: {:?}", operand
                 ))),
             },
             UnaryOp::TypeOf => Ok(Value::String(operand.type_name().to_string())),
+            UnaryOp::PostInc | UnaryOp::PreInc | UnaryOp::PostDec | UnaryOp::PreDec => {
+                let name = match &*un.operand {
+                    Expression::Identifier(n, _) => n.clone(),
+                    _ => return Err(ClsError::RuntimeError("++/-- requiere identificador".to_string())),
+                };
+                let delta: i64 = match un.op { UnaryOp::PostInc | UnaryOp::PreInc => 1, _ => -1 };
+                let new_val = match &operand {
+                    Value::Int(v) => Value::Int(v + delta),
+                    Value::Float(f) => Value::Float(f + delta as f64),
+                    _ => return Err(ClsError::RuntimeError("++/-- solo aplica a números".to_string())),
+                };
+                self.env.set(&name, new_val);
+                match un.op {
+                    UnaryOp::PreInc | UnaryOp::PreDec => self.env.get(&name).cloned()
+                        .ok_or_else(|| ClsError::RuntimeError(format!("Variable no definida: {}", name))),
+                    UnaryOp::PostInc | UnaryOp::PostDec => Ok(operand),
+                    _ => unreachable!(),
+                }
+            }
         }
     }
 
@@ -670,6 +712,11 @@ impl Interpreter {
                         self.env.define(&param.name, arg_val);
                     }
                     let result = self.execute_block(body);
+                    // Si hubo return, tomar el valor de la señal
+                    let result = match std::mem::replace(&mut self.flow, Flow::Normal) {
+                        Flow::Return(val) => Ok(val),
+                        _ => result,
+                    };
                     self.env.pop_scope();
                     result
                 }

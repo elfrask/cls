@@ -1249,6 +1249,23 @@ impl Parser {
                         span: self.span(),
                     });
                 }
+                // Postfix ++ y --
+                Token::Operator(Operator::PlusPlus) => {
+                    self.advance();
+                    expr = Expression::Unary(UnaryExpr {
+                        op: UnaryOp::PostInc,
+                        operand: Box::new(expr),
+                        span: self.span(),
+                    });
+                }
+                Token::Operator(Operator::MinusMinus) => {
+                    self.advance();
+                    expr = Expression::Unary(UnaryExpr {
+                        op: UnaryOp::PostDec,
+                        operand: Box::new(expr),
+                        span: self.span(),
+                    });
+                }
                 _ => break,
             }
         }
@@ -1431,14 +1448,65 @@ impl Parser {
     }
 
     fn is_arrow_function(&self) -> bool {
-        // Mirar adelante para ver si hay -> 
-        // Esto es una aproximación simple
-        false // TODO: implementar look-ahead real
+        // Buscar -> mirando adelante sin consumir tokens
+        // Clonamos el iterador para explorar
+        let mut cursor = self.tokens.clone();
+        let mut depth = 1;
+        while let Some(next) = cursor.peek() {
+            match &next.token {
+                Token::Symbol(Symbol::LParen) => depth += 1,
+                Token::Symbol(Symbol::RParen) => {
+                    depth -= 1;
+                    if depth == 0 {
+                        // Despues del ) cerrado, ver si viene ->
+                        cursor.next();
+                        if let Some(after) = cursor.peek() {
+                            return matches!(&after.token, Token::Operator(Operator::Arrow));
+                        }
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            cursor.next();
+        }
+        false
     }
 
     fn parse_arrow_function(&mut self) -> ClsResult<Expression> {
-        // TODO: implementar
-        Err(ClsError::SyntaxError("Arrow functions no implementadas aún".to_string()))
+        // Ya se consumio el ( inicial
+        let params = self.parse_parameters()?;
+        self.expect_symbol(Symbol::RParen)?;
+        self.expect_operator(Operator::Arrow)?;
+        // Determinar si hay tipo de retorno: si despues de -> viene un
+        // identificador seguido de { , es return_type { body }
+        // si viene cualquier otra cosa, es el body directamente
+        let has_return_type = matches!(&self.current_token, Token::Identifier(_))
+            && self.tokens.peek().map(|t| matches!(&t.token, Token::Symbol(Symbol::LBrace))).unwrap_or(false);
+        let return_type = if has_return_type {
+            Some(self.parse_type_annotation()?)
+        } else {
+            None
+        };
+        let body = if matches!(self.current_token, Token::Symbol(Symbol::LBrace)) {
+            let block = self.parse_block()?;
+            let stmt = block.statements.into_iter().next()
+                .unwrap_or(Statement::Expression(Expression::Literal(Literal {
+                    kind: LiteralKind::Null,
+                    span: self.span(),
+                })));
+            stmt
+        } else {
+            let expr = self.parse_expression()?;
+            self.consume_symbol(Symbol::Semicolon);
+            Statement::Expression(expr)
+        };
+        Ok(Expression::ArrowFunction(ArrowFunctionExpr {
+            params,
+            return_type,
+            body: Box::new(body),
+            span: self.span(),
+        }))
     }
 
     // ═══════════════════════════════════════════

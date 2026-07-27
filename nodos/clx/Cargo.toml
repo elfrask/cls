@@ -13,3 +13,4 @@ cls-core = { workspace = true }
 cls-runtime = { workspace = true }
 ureq = "2"
 serde_json = "1"
+zip = "2"

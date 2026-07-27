@@ -438,6 +438,8 @@ impl TypeChecker {
             UnaryOp::Not => Type::Bool,
             UnaryOp::BitwiseNot => Type::Int,
             UnaryOp::TypeOf => Type::String,
+            UnaryOp::PostInc | UnaryOp::PreInc => Type::Int,
+            UnaryOp::PostDec | UnaryOp::PreDec => Type::Int,
         }
     }
 

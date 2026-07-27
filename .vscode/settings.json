@@ -1,6 +1,8 @@
 {
   "editor.indentSize": 2,
   "files.associations": {
-    "*.clsx": "cls"
-  }
+    "*.clsx": "clx",
+    "*.clx": "clx"
+  },
+  "editor.semanticHighlighting.enabled": true
 }

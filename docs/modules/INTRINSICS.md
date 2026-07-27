@@ -32,7 +32,7 @@ Las funciones intrínsecas están disponibles globalmente sin importar.
 
 ## Uso
 
-```ccls
+```clx
 function main(args: String[]) -> int {
     var name = input("Nombre: ");
     print("Hola,", name);
