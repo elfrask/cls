@@ -254,16 +254,18 @@ impl Symbol {
 /// Token CMX (JSX nativo)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CmxToken {
-    // Tag de apertura
+    /// Tag de apertura: <Tag> o <Tag />
     OpenTag { name: String, is_self_closing: bool },
-    // Tag de cierre
+    /// Tag de cierre: </Tag>
     CloseTag { name: String },
-    // Texto entre tags
+    /// Texto entre tags
     Text { content: String },
-    // Inicio de expresión dentro de CMX
-    ExpressionStart,
-    // Fin de expresión dentro de CMX
-    ExpressionEnd,
+    /// Atributo string: name="value"
+    AttrString { name: String, value: String },
+    /// Inicio de atributo expresión: name={ → el parser lee expresión hasta ExprEnd
+    AttrExpr { name: String },
+    /// Fin de expresión dentro de CMX ({ → ... → })
+    ExprEnd,
 }
 
 impl fmt::Display for Token {
@@ -286,6 +288,21 @@ impl fmt::Display for Token {
 }
 
 // ─── Display impls legibles ───
+
+impl fmt::Display for CmxToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CmxToken::OpenTag { name, is_self_closing } => {
+                if *is_self_closing { write!(f, "<{}/>", name) } else { write!(f, "<{}>", name) }
+            }
+            CmxToken::CloseTag { name } => write!(f, "</{}>", name),
+            CmxToken::Text { content } => write!(f, "text({})", content),
+            CmxToken::AttrString { name, value } => write!(f, "{}=\"{}\"", name, value),
+            CmxToken::AttrExpr { name } => write!(f, "{}={{...}}", name),
+            CmxToken::ExprEnd => write!(f, "}}"),
+        }
+    }
+}
 
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

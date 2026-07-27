@@ -1,0 +1,11 @@
+function main(args: String[]) -> int {
+    var app = (
+        <App>
+            Hello world
+            <Dashboard />
+            <Button name="test" click={print("click!")} />
+        </App>
+    );
+    print("ok:", app);
+    return 0;
+}
