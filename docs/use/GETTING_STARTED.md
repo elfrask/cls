@@ -1,6 +1,6 @@
 # Uso de CLS
 
-CLS se ejecuta desde terminal con el comando `ccls`.
+CLS se ejecuta desde terminal con el comando `clx`.
 
 ## Comandos principales
 
@@ -13,7 +13,7 @@ ccls ast <archivo> --json        # Mostrar AST como JSON
 
 ## Primer script
 
-Crea un archivo `hello.ccls`:
+Crea un archivo `hello.clsx`:
 
 ```ccls
 function main(args: String[]) -> int {
@@ -25,13 +25,13 @@ function main(args: String[]) -> int {
 Ejecuta:
 
 ```bash
-ccls run hello.ccls
+ccls run hello.clsx
 ```
 
 ## Pasar argumentos
 
 ```bash
-ccls run hello.ccls arg1 arg2 --flag
+ccls run hello.clsx arg1 arg2 --flag
 ```
 
 Dentro del script, `args` es un `String[]` con los argumentos.
@@ -45,7 +45,7 @@ Cada proyecto puede tener un archivo `module.clsconfig` en la raíz:
   "name": "mi-app",
   "version": "1.0.0",
   "project": {
-    "entry": "src/main.ccls",
+    "entry": "src/main.clsx",
     "target": "executable"
   }
 }

@@ -25,23 +25,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ccls"
-version = "2.0.0"
-dependencies = [
- "cls-core",
- "cls-runtime",
- "ureq",
-]
-
-[[package]]
-name = "ccls-repl"
-version = "2.0.0"
-dependencies = [
- "cls-core",
- "cls-runtime",
-]
-
-[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -66,7 +49,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "cpkg"
+name = "clx"
+version = "2.0.0"
+dependencies = [
+ "cls-core",
+ "cls-runtime",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
+name = "clxr"
 version = "2.0.0"
 dependencies = [
  "cls-core",
@@ -91,14 +84,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "ecls"
-version = "2.0.0"
-dependencies = [
- "cls-core",
- "cls-runtime",
 ]
 
 [[package]]

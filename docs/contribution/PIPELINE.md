@@ -3,7 +3,7 @@
 El pipeline de CLS procesa código fuente a través de las siguientes etapas:
 
 ```
-Código fuente (.ccls)
+Código fuente (.clsx)
     │
     ▼
 ┌─────────────────────────────────────────┐

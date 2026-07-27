@@ -1,7 +1,7 @@
 {
-  "name": "ccls-lang",
+  "name": "cls-lang",
   "displayName": "CLS Language Support",
-  "description": "Syntax highlighting and language support for CLS (.ccls)",
+  "description": "Syntax highlighting and language support for CLS (.clsx)",
   "version": "1.0.0",
   "publisher": "frask",
   "engines": {
@@ -13,17 +13,17 @@
   "contributes": {
     "languages": [
       {
-        "id": "ccls",
-        "aliases": ["CLS", "ccls"],
-        "extensions": [".ccls"],
+        "id": "clx",
+        "aliases": ["CLS", "clsx", "clx"],
+        "extensions": [".clsx"],
         "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
       {
-        "language": "ccls",
-        "scopeName": "source.ccls",
-        "path": "./syntaxes/ccls.tmLanguage.json"
+        "language": "clx",
+        "scopeName": "source.clsx",
+        "path": "./syntaxes/clsx.tmLanguage.json"
       }
     ]
   }

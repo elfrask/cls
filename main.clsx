@@ -1,0 +1,137 @@
+
+# Funciones
+function main() -> String[] {
+  # función normal con tipado
+};
+
+
+# Condiciones
+if (cond) {
+  # si
+} else if (cond2) {
+  # si no si
+} else {
+  # si no
+};
+
+# Ciclos For
+for (i: int; i < len(array); i++) {
+  # For manual
+};
+
+for each Elemento in (array) {
+  # For iterado por elementos
+};
+
+for each Elemento and Index in (array) {
+  # For iterado por elemento y index
+};
+
+
+# Ciclo While
+while (cond) {
+  # Ciclo while
+};
+
+# Ciclo infinito
+loop {
+  # Ciclo infinito (al menos que use break, return o throw/catch)
+};
+
+# Sentencia With
+with value in (AnyValue) {
+  # Uso local de variable 
+};
+
+# Switch y Case
+
+switch (value) {
+  case ("v1") {
+    print("V1");
+  };
+  case ("v2") {
+    print("V2");
+  };
+  case default {
+    print("Ninguno de los anteriores");
+  };
+  
+};
+
+# Sentencia Try
+
+try {
+  # Intentar
+} catch (e: ErrorToken) {
+  # Si falla
+};
+
+
+# Estructura / Interfaces
+# las interfaces son unicamente firmas para los editores
+# mientras que las estructuras si tienen un funcionamiento a nivel de memoria sin embargo esta no puede poseer estructuras anidadas
+interface Persona() {
+  name: String = "",
+  ages: Integer = 18,
+  skills: String[] = ["Python", "Cls", "Javascript"]
+};
+
+# Variables, declaraciones, constantes
+
+const value: Persona = Persona({name: "Juan"});
+
+# esto solo pasa si es una estructura y constante:
+value = {edad: 20}; # value sera {name: "Juan", ages: 20, skills: ["Python", "Cls", "Javascript"]}
+
+var value2: Persona = Persona(); # value2 si se puede sobrescribir
+
+
+from "lib" import lib1, lib2m as abel, comeon;
+import "lib" as lib;
+
+
+# Expresiones:
+
+# los tipos tiene acrónimos o versiones simplificadas 
+# int (Integer), str (String), float, array/Array, 
+# i32, i64, i16, i8, char (Character),
+# bool (Boolean), cmx (Cmx), fun (function), any/Any
+# unknown, null, Empty (este es un tipo interno, no se puede asignar desde el lenguaje)
+# type[]: es como Array pero especifico para el tipo
+# String{Integer}: es como Record<string, number> no confundir la funcion de {} con <> en tipado
+# también se puede usar tipos con parámetros Record<String, i32>
+
+
+var value3: fun = (value: String): String[] -> {
+  return ["inicio", value, value, "fin"]
+};
+
+
+function fib() -> int[] {
+
+  const num: String = input("valor: ");
+  var fibList: int[] = [0, 1];
+  var limit: int = int(num);
+
+  while (true) {
+
+    if(fibList[-1] > limit) {
+      fibList.pop();
+      return fibList
+    };
+
+    fibList.push(fibList[-2] + fibList[-1])
+  };
+
+};
+
+
+var CMXapp = (
+  <App>
+    Hello world
+    <Dashboard />
+    <Button name="test" click={async () -> {
+      print("boton clickeado!")
+    }} />
+  </App>
+)

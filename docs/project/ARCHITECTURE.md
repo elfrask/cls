@@ -3,7 +3,7 @@
 CLS sigue una arquitectura de 3 capas:
 
 ```
-Código fuente (.ccls)
+Código fuente (.clsx)
     │
     ▼
 ┌───────────────┐
@@ -25,7 +25,7 @@ Código fuente (.ccls)
 
 ```
 DESARROLLO:
-  app.ccls → cls-core → AST → cls-runtime → ejecución
+  app.clsx → cls-core → AST → cls-runtime → ejecución
 
 PRODUCCIÓN (nodo Rust):
   .clsapp → cls-runtime (crate) → ejecución
@@ -43,4 +43,4 @@ Cada nodo configura:
 - **Resolver**: qué módulos están disponibles y cómo cargarlos
 - **Stdlib**: módulos que el entorno provee (fs, http, etc.)
 
-El nodo `ccls` es el nodo desktop estándar que incluye acceso a filesystem y red.
+El nodo `clx` es el nodo desktop estándar que incluye acceso a filesystem y red.

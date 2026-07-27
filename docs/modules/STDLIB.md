@@ -65,7 +65,7 @@ print(stringify(obj));     # {"name":"CLS","version":2.0}
 
 ## fs (solo nodo desktop)
 
-Módulo de sistema de archivos. Solo disponible en el nodo `ccls` (desktop).
+Módulo de sistema de archivos. Solo disponible en el nodo `clx` (desktop).
 
 ### Funciones
 
@@ -91,7 +91,7 @@ fs.writeFile("output.txt", "Hello");
 
 ## http (solo nodo desktop)
 
-Módulo HTTP. Solo disponible en el nodo `ccls` (desktop).
+Módulo HTTP. Solo disponible en el nodo `clx` (desktop).
 
 ### Funciones
 
