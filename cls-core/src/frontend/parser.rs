@@ -1504,7 +1504,7 @@ impl Parser {
         } else {
             let s = self.span();
             Err(ClsError::SyntaxError(format!(
-                "Esperaba símbolo {:?}, encontró {:?} (línea {}, columna {})",
+                "Esperaba símbolo {}, encontró {} (línea {}, columna {})",
                 symbol, self.current_token, s.start_line, s.start_col
             )))
         }
@@ -1516,7 +1516,7 @@ impl Parser {
         } else {
             let s = self.span();
             Err(ClsError::SyntaxError(format!(
-                "Esperaba keyword {:?}, encontró {:?} (línea {}, columna {})",
+                "Esperaba keyword {}, encontró {} (línea {}, columna {})",
                 keyword, self.current_token, s.start_line, s.start_col
             )))
         }
@@ -1528,7 +1528,7 @@ impl Parser {
         } else {
             let s = self.span();
             Err(ClsError::SyntaxError(format!(
-                "Esperaba operador {:?}, encontró {:?} (línea {}, columna {})",
+                "Esperaba operador {}, encontró {} (línea {}, columna {})",
                 op, self.current_token, s.start_line, s.start_col
             )))
         }
@@ -1542,7 +1542,7 @@ impl Parser {
                 Ok(name)
             }
             _ => Err(ClsError::SyntaxError(format!(
-                "Esperaba identificador, encontró {:?}",
+                "Esperaba identificador, encontró {}",
                 self.current_token
             ))),
         }
@@ -1556,7 +1556,7 @@ impl Parser {
                 Ok(s)
             }
             _ => Err(ClsError::SyntaxError(format!(
-                "Esperaba string, encontró {:?}",
+                "Esperaba string, encontró {}",
                 self.current_token
             ))),
         }

@@ -114,12 +114,6 @@ pub enum Keyword {
     False,
 }
 
-impl fmt::Display for Operator {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
 /// Operadores de CLS
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Operator {
@@ -275,19 +269,135 @@ pub enum CmxToken {
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Token::IntLiteral(v) => write!(f, "Int({})", v),
-            Token::FloatLiteral(v) => write!(f, "Float({})", v),
-            Token::StringLiteral(v) => write!(f, "String({:?})", v),
-            Token::BoolLiteral(v) => write!(f, "Bool({})", v),
-            Token::CharLiteral(v) => write!(f, "Char({:?})", v),
-            Token::Identifier(v) => write!(f, "Ident({})", v),
-            Token::Keyword(k) => write!(f, "Keyword({:?})", k),
-            Token::Operator(o) => write!(f, "Op({:?})", o),
-            Token::Symbol(s) => write!(f, "Sym({:?})", s),
-            Token::Cmx(c) => write!(f, "Cmx({:?})", c),
-            Token::Newline => write!(f, "Newline"),
-            Token::EOF => write!(f, "EOF"),
+            Token::IntLiteral(v) => write!(f, "{}", v),
+            Token::FloatLiteral(v) => write!(f, "{}", v),
+            Token::StringLiteral(v) => write!(f, "\"{}\"", v),
+            Token::BoolLiteral(v) => write!(f, "{}", v),
+            Token::CharLiteral(v) => write!(f, "'{}'", v),
+            Token::Identifier(v) => write!(f, "{}", v),
+            Token::Keyword(k) => write!(f, "{}", k),
+            Token::Operator(o) => write!(f, "{}", o),
+            Token::Symbol(s) => write!(f, "{}", s),
+            Token::Cmx(_) => write!(f, "<cmx>"),
+            Token::Newline => write!(f, "\\n"),
+            Token::EOF => write!(f, "<eof>"),
         }
+    }
+}
+
+// ─── Display impls legibles ───
+
+impl fmt::Display for Symbol {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Symbol::LParen => write!(f, "'('"),
+            Symbol::RParen => write!(f, "')'"),
+            Symbol::LBracket => write!(f, "'['"),
+            Symbol::RBracket => write!(f, "']'"),
+            Symbol::LBrace => write!(f, "'{{'"),
+            Symbol::RBrace => write!(f, "'}}'"),
+            Symbol::Comma => write!(f, "','"),
+            Symbol::Dot => write!(f, "'.'"),
+            Symbol::Semicolon => write!(f, "';'"),
+            Symbol::Ellipsis => write!(f, "'...'"),
+        }
+    }
+}
+
+impl fmt::Display for Keyword {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Keyword::Var => "var",
+            Keyword::Const => "const",
+            Keyword::Let => "let",
+            Keyword::Function => "function",
+            Keyword::Void => "void",
+            Keyword::Method => "method",
+            Keyword::Export => "export",
+            Keyword::If => "if",
+            Keyword::Elif => "elif",
+            Keyword::Else => "else",
+            Keyword::While => "while",
+            Keyword::Loop => "loop",
+            Keyword::For => "for",
+            Keyword::Each => "each",
+            Keyword::In => "in",
+            Keyword::And => "and",
+            Keyword::Switch => "switch",
+            Keyword::Case => "case",
+            Keyword::Default => "default",
+            Keyword::Try => "try",
+            Keyword::Catch => "catch",
+            Keyword::Finally => "finally",
+            Keyword::With => "with",
+            Keyword::Return => "return",
+            Keyword::Break => "break",
+            Keyword::Continue => "continue",
+            Keyword::Class => "class",
+            Keyword::Structure => "structure",
+            Keyword::Interface => "interface",
+            Keyword::Module => "module",
+            Keyword::Namespace => "namespace",
+            Keyword::Public => "public",
+            Keyword::Private => "private",
+            Keyword::Static => "static",
+            Keyword::Me => "me",
+            Keyword::Import => "import",
+            Keyword::From => "from",
+            Keyword::As => "as",
+            Keyword::Include => "include",
+            Keyword::Async => "async",
+            Keyword::Sync => "sync",
+            Keyword::Macro => "macro",
+            Keyword::Global => "global",
+            Keyword::Config => "config",
+            Keyword::Then => "then",
+            Keyword::True => "true",
+            Keyword::False => "false",
+        };
+        write!(f, "'{}'", s)
+    }
+}
+
+impl fmt::Display for Operator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Operator::Plus => "+",
+            Operator::Minus => "-",
+            Operator::Star => "*",
+            Operator::Slash => "/",
+            Operator::Percent => "%",
+            Operator::StarStar => "**",
+            Operator::Equal => "=",
+            Operator::NotEqual => "!=",
+            Operator::LessThan => "<",
+            Operator::GreaterThan => ">",
+            Operator::LessEqual => "<=",
+            Operator::GreaterEqual => ">=",
+            Operator::StrictEqual => "==",
+            Operator::And => "&",
+            Operator::Or => "|",
+            Operator::Not => "!",
+            Operator::Question => "?",
+            Operator::PlusEqual => "+=",
+            Operator::MinusEqual => "-=",
+            Operator::StarEqual => "*=",
+            Operator::SlashEqual => "/=",
+            Operator::PlusPlus => "++",
+            Operator::MinusMinus => "--",
+            Operator::Arrow => "->",
+            Operator::ColonColon => "::",
+            Operator::DotDot => "..",
+            Operator::Colon => ":",
+            Operator::At => "@",
+            Operator::Pipe => "|",
+            Operator::Tilde => "~",
+            Operator::Caret => "^",
+            Operator::ShiftLeft => "<<",
+            Operator::ShiftRight => ">>",
+            Operator::Backslash => "\\",
+        };
+        write!(f, "'{}'", s)
     }
 }
 
