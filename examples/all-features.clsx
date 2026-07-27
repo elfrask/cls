@@ -29,6 +29,8 @@ function square(n: int) -> int {
 
 # ─── Arrays y Records ───
 var numbers: int[] = [1, 2, 3, 4, 5];
+
+
 var user = {
     name: "John",
     age: 30,
@@ -224,5 +226,7 @@ function main(args: String[]) -> int {
 
     print("");
     print("═══ All features passed ═══");
+    # print("test:", user1)
+    # input("espera...");
     return 0;
 }
