@@ -1309,10 +1309,14 @@ impl Parser {
             Token::StringLiteral(v) => {
                 let v = v.clone();
                 self.advance();
-                Ok(Expression::Literal(Literal {
-                    kind: LiteralKind::String(v),
-                    span: self.span(),
-                }))
+                if v.contains('$') {
+                    self.parse_string_interpolation(&v)
+                } else {
+                    Ok(Expression::Literal(Literal {
+                        kind: LiteralKind::String(v),
+                        span: self.span(),
+                    }))
+                }
             }
             Token::BoolLiteral(v) => {
                 let v = *v;
@@ -1471,6 +1475,74 @@ impl Parser {
             cursor.next();
         }
         false
+    }
+
+    /// Parsea una string con interpolación: "Hello, $name!" o "${a + b}"
+    fn parse_string_interpolation(&self, s: &str) -> ClsResult<Expression> {
+
+        let chars: Vec<char> = s.chars().collect();
+        let mut parts: Vec<InterpolationPart> = Vec::new();
+        let mut i = 0;
+
+        while i < chars.len() {
+            if chars[i] == '$' && i + 1 < chars.len() {
+                if chars[i + 1] == '{' {
+                    // ${expr} — parsear expresión
+                    let mut depth = 1;
+                    let mut expr_str = String::new();
+                    let mut j = i + 2;
+                    while j < chars.len() && depth > 0 {
+                        match chars[j] {
+                            '{' => depth += 1,
+                            '}' => depth -= 1,
+                            _ => {}
+                        }
+                        if depth > 0 {
+                            expr_str.push(chars[j]);
+                        }
+                        j += 1;
+                    }
+                    if depth != 0 {
+                        return Err(ClsError::SyntaxError(
+                            "${} sin cerrar".to_string(),
+                        ));
+                    }
+                    // Parsear la expresión interna
+                    let expr = parse_expr_from_str(&expr_str)?;
+                    parts.push(InterpolationPart::Expr(expr));
+                    i = j; // saltar }
+                } else if chars[i + 1].is_alphabetic() || chars[i + 1] == '_' {
+                    // $var — variable lookup
+                    let mut var_name = String::new();
+                    let mut j = i + 1;
+                    while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_') {
+                        var_name.push(chars[j]);
+                        j += 1;
+                    }
+                    parts.push(InterpolationPart::Expr(
+                        Expression::Identifier(var_name, Span::new(0, 0, 0, 0))
+                    ));
+                    i = j;
+                } else {
+                    // $ literal, no es interpolación
+                    parts.push(InterpolationPart::Text("$".to_string()));
+                    i += 1;
+                }
+            } else {
+                // Texto normal
+                let mut text = String::new();
+                while i < chars.len() && chars[i] != '$' {
+                    text.push(chars[i]);
+                    i += 1;
+                }
+                parts.push(InterpolationPart::Text(text));
+            }
+        }
+
+        Ok(Expression::StringInterpolation(StringInterpolation {
+            parts,
+            span: Span::new(0, 0, 0, 0),
+        }))
     }
 
     fn parse_arrow_function(&mut self) -> ClsResult<Expression> {
@@ -1652,4 +1724,18 @@ impl Parser {
             self.advance();
         }
     }
+}
+
+/// Parsea una expresión desde un string (para interpolación ${expr})
+fn parse_expr_from_str(expr_str: &str) -> ClsResult<Expression> {
+    let source = format!("({})", expr_str);
+    let mut lexer = crate::frontend::Lexer::new(&source);
+    let tokens = lexer.tokenize().map_err(|e| {
+        ClsError::SyntaxError(format!("Error en interpolación: {}", e))
+    })?;
+    let mut parser = Parser::new(tokens);
+    let expr = parser.parse_expression().map_err(|e| {
+        ClsError::SyntaxError(format!("Error en expresión interpolada: {}", e))
+    })?;
+    Ok(expr)
 }
