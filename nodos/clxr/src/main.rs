@@ -2,6 +2,7 @@
 //! Uso: clxr <archivo.clsx | .clsapp> [args...]
 use std::env;
 use std::fs;
+use std::io::Read;
 use std::process;
 
 fn main() {
@@ -9,21 +10,25 @@ fn main() {
     if args.len() < 2 {
         eprintln!("clxr 2.0 — CLS Runtime Executor");
         eprintln!("Uso: clxr <archivo> [args...]");
-        eprintln!("  Ejecuta archivos .clsx o .clsapp directamente");
+        eprintln!("  .clsx  → ejecución directa");
+        eprintln!("  .clsapp → extrae y ejecuta (formato zip)");
         process::exit(1);
     }
 
     let path = &args[1];
     let app_args: Vec<String> = args[2..].to_vec();
 
-    if path.ends_with(".clsapp") {
-        eprintln!("[clxr] .clsapp support no implementado aún");
-        process::exit(1);
-    }
-
-    let source = match fs::read_to_string(path) {
-        Ok(s) => s,
-        Err(e) => { eprintln!("Error al leer '{}': {}", path, e); process::exit(1); }
+    let source = if path.ends_with(".clsapp") {
+        // Extraer .clsapp (zip)
+        match extract_source_from_clsapp(path) {
+            Ok(s) => s,
+            Err(e) => { eprintln!("Error al cargar '{}': {}", path, e); process::exit(1); }
+        }
+    } else {
+        match fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => { eprintln!("Error al leer '{}': {}", path, e); process::exit(1); }
+        }
     };
 
     let mut lexer = cls_core::frontend::Lexer::new(&source);
@@ -38,7 +43,6 @@ fn main() {
         Err(e) => { show_error(&source, &e.to_string(), path); process::exit(1); }
     };
 
-    // Runtime ligero: solo math + json (sin fs, sin http)
     let resolver = cls_runtime::ModuleResolver::new().with_core_stdlib();
     let mut interpreter = cls_runtime::Interpreter::new(
         cls_runtime::Intrinsics::desktop_defaults(app_args),
@@ -54,6 +58,31 @@ fn main() {
         Ok(code) => process::exit(code),
         Err(e) => { eprintln!("{}", e); process::exit(1); }
     }
+}
+
+/// Extrae el código fuente de un .clsapp (zip)
+fn extract_source_from_clsapp(path: &str) -> Result<String, String> {
+    let file = fs::File::open(path).map_err(|e| format!("No se puede abrir: {}", e))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Zip inválido: {}", e))?;
+
+    // Buscar manifest.json para encontrar entry point
+    let entry = if let Ok(mut mf) = archive.by_name("manifest.json") {
+        let mut content = String::new();
+        mf.read_to_string(&mut content).ok();
+        let json: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+        json["entry"].as_str().unwrap_or("source.clsx").to_string()
+    } else {
+        "source.clsx".to_string()
+    };
+
+    let mut source = String::new();
+    archive
+        .by_name(&entry)
+        .map_err(|e| format!("Entry '{}' no encontrado: {}", entry, e))?
+        .read_to_string(&mut source)
+        .map_err(|e| format!("Error leyendo '{}': {}", entry, e))?;
+
+    Ok(source)
 }
 
 fn show_error(source: &str, error_msg: &str, path: &str) {
@@ -75,7 +104,11 @@ fn show_error(source: &str, error_msg: &str, path: &str) {
             eprintln!("");
             eprintln!("  {} | {}", line, src_line);
             let pad = " ".repeat(line.to_string().len());
-            eprintln!("  {} | {}{}", pad, " ".repeat(col.saturating_sub(1) as usize), "^");
+            if col > 1 {
+                eprintln!("  {} | {}{}", pad, " ".repeat(col.saturating_sub(1)), "^");
+            } else {
+                eprintln!("  {} | ^", pad);
+            }
         }
     }
 }

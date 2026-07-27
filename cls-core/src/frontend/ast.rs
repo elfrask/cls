@@ -380,6 +380,10 @@ pub enum UnaryOp {
     Not,        // !x
     BitwiseNot, // ~x
     TypeOf,     // typeof x
+    PostInc,    // x++
+    PostDec,    // x--
+    PreInc,     // ++x
+    PreDec,     // --x
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

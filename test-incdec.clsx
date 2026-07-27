@@ -1,0 +1,23 @@
+function main(args: String[]) -> int {
+    # postfix increment
+    var i = 5;
+    print("i:", i);
+    var old = i++;
+    print("i after i++:", i);
+    print("old value:", old);
+    
+    # postfix decrement
+    var j = 3;
+    var old2 = j--;
+    print("j after j--:", j);
+    print("old value:", old2);
+    
+    # for loop with ++
+    var sum = 0;
+    for (k = 0; k < 5; k++) {
+        sum = sum + k;
+    };
+    print("sum(0..4):", sum);
+    
+    return 0;
+}

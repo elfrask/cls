@@ -4,3 +4,4 @@ agent-context
 opencode.jsonc
 out.txt
 err.txt
+*.clsapp

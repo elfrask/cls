@@ -1,0 +1,28 @@
+function main(args: String[]) -> int {
+    print("--- Loop con break ---");
+    var i = 0;
+    loop {
+        i = i + 1;
+        if (i > 3) {
+            break;
+        };
+        print("i =", i);
+    };
+    print("--- While con continue ---");
+    var j = 0;
+    while (j < 5) {
+        j = j + 1;
+        if (j == 2) {
+            continue;
+        };
+        print("j =", j);
+    };
+    print("--- For con break ---");
+    for (k = 0; k < 10; k = k + 1) {
+        if (k > 3) {
+            break;
+        };
+        print("k =", k);
+    };
+    return 0;
+}

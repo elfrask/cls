@@ -1,0 +1,11 @@
+function main(args: String[]) -> int {
+    # Simple arrow function
+    var double = (x) -> x * 2;
+    print("double(5):", double(5));
+    
+    # Arrow with typed params
+    var add = (a, b) -> int { a + b };
+    print("add(10, 20):", add(10, 20));
+    
+    return 0;
+}
