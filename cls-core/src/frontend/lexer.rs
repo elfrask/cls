@@ -1,6 +1,7 @@
 use crate::error::{ClsError, ClsResult, Diagnostic};
 use crate::error::diagnostic::Span;
 use crate::frontend::token::{CmxToken, Keyword, Operator, Symbol, Token, SpannedToken};
+use std::collections::VecDeque;
 
 /// Tokenizador/lexer de CLS
 /// Convierte código fuente en una lista de tokens con información de posición
@@ -12,6 +13,8 @@ pub struct Lexer {
     col: u32,
     line_start: usize,
     diagnostics: Vec<Diagnostic>,
+    cmx_buffer: VecDeque<SpannedToken>,
+    in_cmx_expr: bool,
 }
 
 impl Lexer {
@@ -24,6 +27,8 @@ impl Lexer {
             col: 1,
             line_start: 0,
             diagnostics: Vec::new(),
+            cmx_buffer: VecDeque::new(),
+            in_cmx_expr: false,
         }
     }
 
@@ -50,6 +55,13 @@ impl Lexer {
 
     fn next_token(&mut self) -> ClsResult<SpannedToken> {
         self.skip_whitespace_and_comments();
+
+        // Si hay tokens CMX en buffer y no estamos dentro de expresión CMX
+        if !self.in_cmx_expr {
+            if let Some(t) = self.cmx_buffer.pop_front() {
+                return Ok(t);
+            }
+        }
 
         if self.is_eof() {
             return Ok(SpannedToken::new(Token::EOF, self.current_span()));
@@ -250,15 +262,148 @@ impl Lexer {
     }
 
     fn lex_cmx(&mut self) -> ClsResult<Token> {
-        // Por ahora, devolvemos un token Cmx que será procesado más adelante
-        // El parser se encargará de la estructura completa
-        self.advance(); // Consume '<'
-        
-        // TODO: Implementar lexing completo de CMX
-        Ok(Token::Cmx(CmxToken::OpenTag {
-            name: "placeholder".to_string(),
-            is_self_closing: false,
-        }))
+        self.advance(); // consume '<'
+        let (_, all_tokens) = self.lex_cmx_element_tokens()?;
+        // Push all tokens except the first (OpenTag) to global buffer
+        let first = all_tokens[0].token.clone();
+        for tok in all_tokens.iter().skip(1) {
+            self.cmx_buffer.push_back(tok.clone());
+        }
+        Ok(first)
+    }
+
+    /// Parsea un elemento CMX completo → Vec de tokens en orden
+    fn lex_cmx_element_tokens(&mut self) -> ClsResult<(String, Vec<SpannedToken>)> {
+        let mut tokens = Vec::new();
+        let tag_span = self.current_span();
+        let tag_name = self.read_cmx_identifier()?;
+        let self_closing = self.lex_cmx_attrs_into(&mut tokens)?;
+
+        tokens.insert(0, SpannedToken::new(
+            Token::Cmx(CmxToken::OpenTag { name: tag_name.clone(), is_self_closing: self_closing }),
+            tag_span,
+        ));
+
+        if !self_closing {
+            self.lex_cmx_children_into(&tag_name, &mut tokens)?;
+        }
+        Ok((tag_name, tokens))
+    }
+
+    /// Parsea atributos CMX, agregando tokens al Vec
+    fn lex_cmx_attrs_into(&mut self, tokens: &mut Vec<SpannedToken>) -> ClsResult<bool> {
+        loop {
+            self.skip_cmx_whitespace();
+            if self.is_eof() { return Err(ClsError::SyntaxError("Tag CMX sin cerrar".into())); }
+            let ch = self.current_char();
+            if ch == '>' { self.advance(); return Ok(false); }
+            if ch == '/' && self.pos+1 < self.source.len() && self.source[self.pos+1] == '>' {
+                self.advance(); self.advance(); return Ok(true);
+            }
+            if ch == '{' {
+                self.advance();
+                let name = self.read_cmx_identifier().unwrap_or_default();
+                tokens.push(SpannedToken::new(Token::Cmx(CmxToken::AttrExpr { name }), self.current_span()));
+                continue;
+            }
+            let name = self.read_cmx_identifier()?;
+            self.skip_cmx_whitespace();
+            if self.current_char() == '=' {
+                self.advance(); self.skip_cmx_whitespace();
+                if self.current_char() == '"' {
+                    let value = self.read_cmx_string()?;
+                    tokens.push(SpannedToken::new(Token::Cmx(CmxToken::AttrString { name, value }), self.current_span()));
+                } else if self.current_char() == '{' {
+                    let span = self.current_span(); self.advance();
+                    tokens.push(SpannedToken::new(Token::Cmx(CmxToken::AttrExpr { name }), span));
+                    self.in_cmx_expr = true;
+                    let mut depth = 1;
+                    while !self.is_eof() && depth > 0 {
+                        let c = self.current_char();
+                        if c == '{' { depth += 1; self.advance(); }
+                        else if c == '}' { depth -= 1; self.advance(); if depth == 0 { break; } }
+                        else { tokens.push(self.next_token()?); }
+                    }
+                    self.in_cmx_expr = false;
+                } else { return Err(ClsError::SyntaxError("Valor attr CMX inválido".into())); }
+            }
+        }
+    }
+
+    /// Parsea children CMX, agregando tokens al Vec
+    fn lex_cmx_children_into(&mut self, close_tag: &str, tokens: &mut Vec<SpannedToken>) -> ClsResult<()> {
+        loop {
+            self.skip_cmx_whitespace();
+            if self.is_eof() { return Err(ClsError::SyntaxError(format!("Tag '{}' sin cerrar", close_tag))); }
+            let ch = self.current_char();
+            if ch == '<' {
+                if self.pos+1 < self.source.len() && self.source[self.pos+1] == '/' {
+                    self.advance(); self.advance();
+                    let name = self.read_cmx_identifier()?;
+                    self.skip_cmx_whitespace();
+                    if self.current_char() != '>' { return Err(ClsError::SyntaxError("Tag cierre inválido".into())); }
+                    self.advance();
+                    tokens.push(SpannedToken::new(Token::Cmx(CmxToken::CloseTag { name }), self.current_span()));
+                    return Ok(());
+                }
+                if self.peek_is_cmx_start() {
+                    self.advance();
+                    let (_, child) = self.lex_cmx_element_tokens()?;
+                    tokens.extend(child);
+                    continue;
+                }
+                tokens.push(SpannedToken::new(Token::Cmx(CmxToken::Text { content: "<".into() }), self.current_span()));
+                self.advance();
+            } else if ch == '{' {
+                self.advance();
+                self.in_cmx_expr = true;
+                let mut depth = 1;
+                while !self.is_eof() && depth > 0 {
+                    let c = self.current_char();
+                    if c == '{' { depth += 1; self.advance(); continue; }
+                    if c == '}' { depth -= 1; self.advance(); if depth == 0 { break; } continue; }
+                    tokens.push(self.next_token()?);
+                }
+                self.in_cmx_expr = false;
+            } else {
+                let mut text = String::new();
+                while !self.is_eof() && self.current_char() != '<' && self.current_char() != '{' {
+                    text.push(self.current_char()); self.advance();
+                }
+                if !text.trim().is_empty() {
+                    tokens.push(SpannedToken::new(Token::Cmx(CmxToken::Text { content: text }), self.current_span()));
+                }
+            }
+        }
+    }
+
+    /// Lee un identificador CMX (tag name o attribute name)
+    fn read_cmx_identifier(&mut self) -> ClsResult<String> {
+        let mut name = String::new();
+        while !self.is_eof() && (self.current_char().is_alphanumeric() || self.current_char() == '_' || self.current_char() == '-') {
+            name.push(self.current_char());
+            self.advance();
+        }
+        if name.is_empty() { Err(ClsError::SyntaxError("Esperaba nombre de tag CMX".into())) } else { Ok(name) }
+    }
+
+    /// Salta espacios CMX
+    fn skip_cmx_whitespace(&mut self) {
+        while !self.is_eof() && matches!(self.current_char(), ' ' | '\t' | '\n' | '\r') { self.advance(); }
+    }
+
+    /// Lee string CMX entre comillas dobles
+    fn read_cmx_string(&mut self) -> ClsResult<String> {
+        self.advance();
+        let mut s = String::new();
+        while !self.is_eof() && self.current_char() != '"' {
+            if self.current_char() == '\\' { self.advance(); if !self.is_eof() { s.push(self.current_char()); } }
+            else { s.push(self.current_char()); }
+            self.advance();
+        }
+        if self.is_eof() { return Err(ClsError::SyntaxError("String CMX sin cerrar".into())); }
+        self.advance();
+        Ok(s)
     }
 
     fn lex_operator_or_symbol(&mut self) -> ClsResult<Token> {
@@ -320,12 +465,8 @@ impl Lexer {
     }
 
     fn peek_is_cmx_start(&self) -> bool {
-        // Un '<' es CMX si:
-        // 1. No es comparación (<, <=, <<)
-        // 2. El siguiente char es letra o '>'
-        if self.pos + 1 >= self.source.len() {
-            return false;
-        }
+        if self.in_cmx_expr { return false; }
+        if self.pos + 1 >= self.source.len() { return false; }
         let next = self.source[self.pos + 1];
         next.is_alphabetic() || next == '>'
     }

@@ -1,7 +1,7 @@
 use crate::error::{ClsError, ClsResult, Diagnostic};
 use crate::error::diagnostic::Span;
 use crate::frontend::ast::*;
-use crate::frontend::token::{Keyword, Operator, Symbol, Token, SpannedToken};
+use crate::frontend::token::{CmxToken, Keyword, Operator, Symbol, Token, SpannedToken};
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
@@ -988,8 +988,61 @@ impl Parser {
     }
 
     fn parse_cmx(&mut self) -> ClsResult<Statement> {
-        // TODO: implementar CMX parser
-        Err(ClsError::SyntaxError("CMX parser no implementado aún".to_string()))
+        let element = self.parse_cmx_element()?;
+        Ok(Statement::Cmx(element))
+    }
+
+    fn parse_cmx_element(&mut self) -> ClsResult<CmxElement> {
+        let (tag_name, is_self_closing) = match &self.current_token {
+            Token::Cmx(CmxToken::OpenTag { name, is_self_closing }) => (name.clone(), *is_self_closing),
+            _ => return Err(ClsError::SyntaxError("Se esperaba OpenTag CMX".to_string())),
+        };
+        let tag_span = self.span();
+        self.advance();
+
+        let mut attributes = Vec::new();
+        loop {
+            let is_attr_str = matches!(&self.current_token, Token::Cmx(CmxToken::AttrString { .. }));
+            let is_attr_expr = matches!(&self.current_token, Token::Cmx(CmxToken::AttrExpr { .. }));
+            if is_attr_str {
+                if let Token::Cmx(CmxToken::AttrString { name, value }) = &self.current_token {
+                    attributes.push(CmxAttribute { name: name.clone(), value: Some(CmxAttributeValue::String(value.clone())), span: self.span() });
+                }
+                self.advance();
+            } else if is_attr_expr {
+                if let Token::Cmx(CmxToken::AttrExpr { name }) = &self.current_token {
+                    let expr_name = name.clone();
+                    self.advance();
+                    let expr = self.parse_expression()?;
+                    attributes.push(CmxAttribute { name: expr_name, value: Some(CmxAttributeValue::Expression(Box::new(expr))), span: self.span() });
+                }
+            } else { break; }
+        }
+
+        if is_self_closing { return Ok(CmxElement { tag: tag_name, attributes, children: vec![], span: tag_span }); }
+
+        let mut children = Vec::new();
+        loop {
+            let is_text = matches!(&self.current_token, Token::Cmx(CmxToken::Text { .. }));
+            let is_open = matches!(&self.current_token, Token::Cmx(CmxToken::OpenTag { .. }));
+            let is_close = matches!(&self.current_token, Token::Cmx(CmxToken::CloseTag { .. }));
+            
+            if is_text {
+                if let Token::Cmx(CmxToken::Text { content }) = &self.current_token {
+                    let text = content.clone();
+                    self.advance();
+                    children.push(CmxChild::Text(text));
+                }
+            } else if is_open {
+                if let Token::Cmx(CmxToken::OpenTag { .. }) = &self.current_token {
+                    let el = self.parse_cmx_element()?;
+                    children.push(CmxChild::Element(Box::new(el)));
+                }
+            } else if is_close {
+                self.advance(); break;
+            } else { break; }
+        }
+        Ok(CmxElement { tag: tag_name, attributes, children, span: tag_span })
     }
 
     fn parse_block(&mut self) -> ClsResult<Block> {
@@ -1443,6 +1496,11 @@ impl Parser {
                     else_expr: Box::new(else_expr),
                     span: self.span(),
                 }))
+            }
+            // CMX (JSX nativo)
+            Token::Cmx(CmxToken::OpenTag { .. }) => {
+                let element = self.parse_cmx_element()?;
+                Ok(Expression::Cmx(element))
             }
             _ => Err(ClsError::SyntaxError(format!(
                 "Token inesperado: {:?}",
