@@ -1420,14 +1420,11 @@ impl Parser {
             }
             Token::Symbol(Symbol::LParen) => {
                 self.advance();
-                
-                // Función flecha: (params) -> type { body }
-                // O paréntesis: (expr)
-                
-                // Verificar si es función flecha
-                if self.is_arrow_function() {
-                    return self.parse_arrow_function();
-                }
+                let is_arrow = self.is_arrow_function()
+                    || matches!(&self.current_token, Token::Symbol(Symbol::RParen))
+                        && self.tokens.clone().next()
+                            .map_or(false, |t| matches!(&t.token, Token::Operator(Operator::Arrow)));
+                if is_arrow { return self.parse_arrow_function(); }
                 
                 // Paréntesis
                 let expr = self.parse_expression()?;

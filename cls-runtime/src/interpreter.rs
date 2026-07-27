@@ -810,6 +810,16 @@ impl Interpreter {
                     ))
                 })
             }
+            Value::Cmx(ref cmx) => match member.member.as_str() {
+                "tag" => Ok(Value::String(cmx.tag.clone())),
+                "props" => Ok(Value::Record(cmx.props.clone())),
+                "children" => Ok(Value::Array(cmx.children.clone())),
+                name => cmx.props.get(name).cloned().ok_or_else(|| {
+                    ClsError::RuntimeError(format!(
+                        "Propiedad CMX no encontrada: '{}'", name
+                    ))
+                }),
+            },
             _ => Err(ClsError::RuntimeError(format!(
                 "No se puede acceder a miembro en: {:?} (línea {}, columna {})",
                 object, member.span.start_line, member.span.start_col
@@ -912,11 +922,28 @@ impl Interpreter {
         Ok(Value::String(result))
     }
 
-    fn evaluate_cmx(&mut self, _cmx: &CmxElement) -> ClsResult<Value> {
-        // TODO: crear estructura CmxValue
-        Ok(Value::Cmx(Box::new(crate::value::CmxValue::new(
-            "placeholder".to_string(),
-        ))))
+    fn evaluate_cmx(&mut self, cmx: &CmxElement) -> ClsResult<Value> {
+        let mut props = std::collections::HashMap::new();
+        for attr in &cmx.attributes {
+            let val = match &attr.value {
+                Some(CmxAttributeValue::String(s)) => Value::String(s.clone()),
+                Some(CmxAttributeValue::Expression(expr)) => self.evaluate_expression(expr)?,
+                Some(CmxAttributeValue::Shorthand(name)) => {
+                    self.env.get(name).cloned().unwrap_or(Value::Null)
+                }
+                None => Value::Bool(true),
+            };
+            props.insert(attr.name.clone(), val);
+        }
+        let mut children = Vec::new();
+        for child in &cmx.children {
+            children.push(match child {
+                CmxChild::Text(s) => Value::String(s.clone()),
+                CmxChild::Expression(expr) => self.evaluate_expression(expr)?,
+                CmxChild::Element(el) => self.evaluate_cmx(el)?,
+            });
+        }
+        Ok(Value::Cmx(Box::new(crate::value::CmxValue { tag: cmx.tag.clone(), props, children })))
     }
 
     fn evaluate_namespace_access(&mut self, ns: &str, name: &str) -> ClsResult<Value> {
