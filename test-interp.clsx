@@ -1,0 +1,10 @@
+function main(args: String[]) -> int {
+    var name = "CLS";
+    var age = 5;
+
+    print("Hello, $name!");
+    print("${age + 1} years");
+    print("$name is ${age} years old");
+
+    return 0;
+}
