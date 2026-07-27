@@ -317,12 +317,15 @@ impl Lexer {
                     let span = self.current_span(); self.advance();
                     tokens.push(SpannedToken::new(Token::Cmx(CmxToken::AttrExpr { name }), span));
                     self.in_cmx_expr = true;
-                    let mut depth = 1;
+                    let mut depth: i32 = 1;
                     while !self.is_eof() && depth > 0 {
-                        let c = self.current_char();
-                        if c == '{' { depth += 1; self.advance(); }
-                        else if c == '}' { depth -= 1; self.advance(); if depth == 0 { break; } }
-                        else { tokens.push(self.next_token()?); }
+                        let t = self.next_token()?;
+                        match &t.token {
+                            Token::Symbol(Symbol::LBrace) => depth += 1,
+                            Token::Symbol(Symbol::RBrace) => { depth -= 1; if depth == 0 { break; } }
+                            _ => {}
+                        }
+                        tokens.push(t);
                     }
                     self.in_cmx_expr = false;
                 } else { return Err(ClsError::SyntaxError("Valor attr CMX inválido".into())); }
@@ -357,12 +360,15 @@ impl Lexer {
             } else if ch == '{' {
                 self.advance();
                 self.in_cmx_expr = true;
-                let mut depth = 1;
+                let mut depth: i32 = 1;
                 while !self.is_eof() && depth > 0 {
-                    let c = self.current_char();
-                    if c == '{' { depth += 1; self.advance(); continue; }
-                    if c == '}' { depth -= 1; self.advance(); if depth == 0 { break; } continue; }
-                    tokens.push(self.next_token()?);
+                    let t = self.next_token()?;
+                    match &t.token {
+                        Token::Symbol(Symbol::LBrace) => depth += 1,
+                        Token::Symbol(Symbol::RBrace) => { depth -= 1; if depth == 0 { break; } }
+                        _ => {}
+                    }
+                    tokens.push(t);
                 }
                 self.in_cmx_expr = false;
             } else {

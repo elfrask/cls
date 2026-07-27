@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    var e = <Button click={() -> { print("hi") }} />;
+    print("ok");
+    return 0;
+}
