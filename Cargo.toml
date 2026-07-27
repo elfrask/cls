@@ -3,10 +3,8 @@ resolver = "2"
 members = [
     "cls-core",
     "cls-runtime",
-    "nodos/ccls",
-    "nodos/ccls-repl",
-    "nodos/cpkg",
-    "nodos/ecls",
+    "nodos/clx",
+    "nodos/clxr",
 ]
 
 [workspace.package]

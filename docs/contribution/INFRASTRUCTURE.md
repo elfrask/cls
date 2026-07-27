@@ -58,7 +58,7 @@ Los errores se muestran con:
 
 Ejemplo:
 ```
-Error en 'app.ccls': Error de sintaxis: Esperaba ';' (línea 3, columna 12)
+Error en 'app.clsx': Error de sintaxis: Esperaba ';' (línea 3, columna 12)
 
   3 |     print("hello"   ← falta ')'
     |            ^
@@ -91,7 +91,7 @@ pub struct ModuleManifest {
 
 ```rust
 pub struct ProjectConfig {
-    pub entry: String,       // "src/main.ccls"
+    pub entry: String,       // "src/main.clsx"
     pub source_dir: String,  // "src"
     pub out_dir: String,     // "dist"
     pub target: String,      // "executable" | "library" | "dynamic-lib"

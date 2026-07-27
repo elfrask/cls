@@ -17,10 +17,10 @@ y como lenguaje de propósito general.
 |-----------|-------------|
 | `cls-core` | Compilador: lexer, parser, type checker, backend |
 | `cls-runtime` | Motor de ejecución: intérprete tree-walker, stdlib core |
-| `ccls` | CLI principal: `run`, `check`, `build`, `ast` |
+| `clx` | CLI principal: `run`, `check`, `build`, `ast` |
 | `ccls-repl` | REPL interactivo (pendiente) |
 | `cpkg` | Gestor de paquetes y proyectos (pendiente) |
-| `ecls` | Ejecutor directo de `.clsapp` (pendiente) |
+| `clxr` | Ejecutor directo de `.clsapp` (pendiente) |
 
 ## Estructura del proyecto
 
@@ -32,7 +32,7 @@ cls/
 │   ├── ccls/          # CLI principal
 │   ├── ccls-repl/     # REPL interactivo
 │   ├── cpkg/          # Gestor de paquetes
-│   └── ecls/          # Ejecutor de apps
+│   └── clxr/          # Ejecutor de apps
 ├── scripts/           # Scripts de ejecución y build
 ├── docs/              # Documentación
 └── host-libs/         # Wrappers para otros lenguajes
@@ -57,8 +57,8 @@ cargo build --bin ccls
 cargo build --release --bin ccls
 
 # Ejecutar
-cargo run --bin ccls -- run archivo.ccls
+cargo run --bin clx -- run archivo.clsx
 # o directamente
-.\scripts\ccls.cmd run archivo.ccls     # Windows
-./scripts/ccls.sh run archivo.ccls      # Linux/macOS
+.\scripts\ccls.cmd run archivo.clsx     # Windows
+./scripts/ccls.sh run archivo.clsx      # Linux/macOS
 ```

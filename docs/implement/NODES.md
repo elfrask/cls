@@ -21,9 +21,9 @@ fn make_desktop_resolver() -> ModuleResolver {
     resolver.add_internal("fs", fs_module());
     resolver.add_internal("http", http_module());
 
-    // Hook externo: buscar archivos .ccls
+    // Hook externo: buscar archivos .clsx
     resolver.set_external(|path, env| {
-        let candidate = format!("{}.ccls", path);
+        let candidate = format!("{}.clsx", path);
         if let Ok(source) = std::fs::read_to_string(&candidate) {
             compile_and_load(&source)
         } else {
@@ -41,7 +41,7 @@ fn main() {
     let intrinsics = Intrinsics::desktop_defaults(app_args);
     let resolver = make_desktop_resolver();
 
-    let source = std::fs::read_to_string("app.ccls").unwrap();
+    let source = std::fs::read_to_string("app.clsx").unwrap();
     let tokens = cls_core::frontend::Lexer::new(&source).tokenize().unwrap();
     let module = cls_core::frontend::Parser::new(tokens).parse().unwrap();
 
