@@ -1,11 +1,12 @@
 function main(args: String[]) -> int {
     var name = "CLS";
     var age = 5;
-    var lolcow = {};
+    var lolcow = {"lol" : "dalas review $name"};
 
     print("Hello, $name!");
     print("${age + 1} years");
     print("$name is ${age} years old");
+    print("lolcow: $lolcow");
 
     return 0;
 }
