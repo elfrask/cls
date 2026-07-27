@@ -1,11 +1,16 @@
 function main(args: String[]) -> int {
-    var app = (
-        <App>
-            Hello world
-            <Dashboard />
-            <Button name="test" click={print("click!")} />
-        </App>
-    );
-    print("ok:", app);
+    print("--- Basic CMX ---");
+    var a = <App />;
+    print("a:", a);
+    var b = <App>Hello</App>;
+    print("b:", b);
+    var c = <App><Dash /></App>;
+    print("c:", c);
+    var d = <Button name="test" />;
+    print("d:", d);
+    var e = <Button click={print("hi")} />;
+    print("e:", e);
+    var f = ( <App><Dash /><Button name="ok" /></App> );
+    print("f:", f);
     return 0;
 }
