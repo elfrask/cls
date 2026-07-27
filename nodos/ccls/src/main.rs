@@ -334,8 +334,12 @@ fn show_error(source: &str, error_msg: &str, path: &str) {
 
 /// Muestra un error con trace numerado usando frames de importación
 fn show_runtime_error(error_msg: &str, trace: &[ImportFrame], source_file: &str) {
-    // Extraer módulo y error de la cadena
-    let file_hint = error_msg.split('\'').nth(1).map(|s| s.trim());
+    // Extraer módulo de la cadena (solo si es "Error en 'X'")
+    let file_hint: Option<&str> = if error_msg.contains("Error en '") {
+        error_msg.split('\'').nth(1).map(|s| s.trim())
+    } else {
+        None
+    };
     
     // Error desc: todo desde el último "Error de "
     let error_desc = {
@@ -361,11 +365,9 @@ fn show_runtime_error(error_msg: &str, trace: &[ImportFrame], source_file: &str)
             Some((line, col))
         });
 
-    // Determinar archivo fuente: usar el último módulo del trace si hay
+    // Determinar archivo fuente para contexto
     let src_file: String = if let Some(module) = file_hint {
         format!("{}.ccls", module)
-    } else if let Some(frame) = trace.last() {
-        format!("{}.ccls", frame.module_name)
     } else {
         source_file.to_string()
     };
