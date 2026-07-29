@@ -1,5 +1,6 @@
 use cls_runtime::{Intrinsics, Interpreter};
 use cls_runtime::{VfsResolver, LocalFs, ClsLibResolver};
+use cls_core::config::ModuleManifest;
 use crate::module_loader;
 use std::sync::Arc;
 
@@ -28,11 +29,15 @@ pub fn execute(args: &[String]) -> i32 {
         Err(e) => { cls_runtime::show_syntax_error(&e, &source, path); return 1; }
     };
 
-    let vfs = make_vfs();
+    let config = load_config();
+
+    // VFS con rutas de config
+    let vfs = make_vfs(config.as_ref());
     let lib_resolver = make_lib_resolver(vfs.clone());
     let resolver = make_desktop_resolver(vfs, lib_resolver);
     let mut interpreter = Interpreter::new(Intrinsics::desktop_defaults(app_args), resolver);
     interpreter.set_source_file(path.to_string());
+    interpreter.set_config(config);
 
     if let Err(e) = interpreter.execute(&module) {
         let report = interpreter.build_error_report(e);
@@ -49,7 +54,23 @@ pub fn execute(args: &[String]) -> i32 {
     }
 }
 
-fn make_vfs() -> Arc<VfsResolver> {
+fn load_config() -> Option<ModuleManifest> {
+    let cwd = std::env::current_dir().ok()?;
+    let path = cwd.join("cls.json");
+    if path.exists() {
+        match ModuleManifest::from_file(&path) {
+            Ok(m) => Some(m),
+            Err(e) => {
+                eprintln!("Advertencia: cls.json invalido: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    }
+}
+
+fn make_vfs(config: Option<&ModuleManifest>) -> Arc<VfsResolver> {
     let mut vfs = VfsResolver::new();
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     vfs.register("app", Arc::new(LocalFs::new("app", &cwd, false)));
@@ -64,6 +85,15 @@ fn make_vfs() -> Arc<VfsResolver> {
 
     let tmp = std::env::temp_dir();
     vfs.register("tmp", Arc::new(LocalFs::new("tmp", &tmp, false)));
+
+    // Ruta personalizada desde entry de cls.json
+    if let Some(cfg) = config {
+        let entry_path = std::path::Path::new(&cfg.entry);
+        if let Some(parent) = entry_path.parent() {
+            vfs.add_route("project", &parent.to_string_lossy()).ok();
+        }
+    }
+
     Arc::new(vfs)
 }
 
@@ -106,7 +136,6 @@ impl DesktopLibResolver {
 
 impl ClsLibResolver for DesktopLibResolver {
     fn resolve(&self, name: &str) -> ClsResult<Option<Vec<u8>>> {
-        // Si es path directo (contiene / o termina en .clslib), intentar directo
         if name.contains('/') || name.contains('\\') || name.ends_with(".clslib") {
             if let Ok(data) = self.try_read(name) {
                 return Ok(Some(data));
@@ -116,12 +145,10 @@ impl ClsLibResolver for DesktopLibResolver {
 
         let name = name.trim_end_matches(".clslib");
 
-        // 1. Local: ./libs/{name}.clslib
         if let Ok(data) = self.try_read(&format!("./libs/{}.clslib", name)) {
             return Ok(Some(data));
         }
 
-        // 2. Global names/: ~/.cls/clslibs/names/{name}.clslib
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_default();
@@ -131,7 +158,6 @@ impl ClsLibResolver for DesktopLibResolver {
                 return Ok(Some(data));
             }
 
-            // 3. Via index.json → by-hash/
             let index_path = format!("{}/.cls/clslibs/index.json", home);
             if let Ok(index_json) = std::fs::read_to_string(&index_path) {
                 if let Ok(index) = serde_json::from_str::<ClsLibIndex>(&index_json) {

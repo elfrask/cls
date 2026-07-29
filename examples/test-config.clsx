@@ -1,0 +1,4 @@
+function main(args: String[]) -> int {
+    print("Config test OK");
+    return 0;
+};
