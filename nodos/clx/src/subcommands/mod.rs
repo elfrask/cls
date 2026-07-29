@@ -5,4 +5,5 @@ pub mod ast;
 pub mod new;
 pub mod pkg;
 pub mod repl;
+pub mod lsp;
 pub mod util;
