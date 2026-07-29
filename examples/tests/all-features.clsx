@@ -227,6 +227,6 @@ function main(args: String[]) -> int {
     print("");
     print("═══ All features passed ═══");
     # print("test:", user1)
-    # input("espera...");
+    input("espera...");
     return 0;
 }

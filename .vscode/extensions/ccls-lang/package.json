@@ -1,7 +1,7 @@
 {
   "name": "cls-lang",
   "displayName": "CLS Language Support",
-  "description": "Syntax highlighting, snippets and language support for CLS (.clsx, cls.json)",
+  "description": "Syntax highlighting, LSP, snippets and language support for CLS (.clsx, cls.json)",
   "version": "1.0.0",
   "publisher": "frask",
   "engines": {
@@ -9,7 +9,12 @@
   },
   "categories": [
     "Programming Languages",
-    "Snippets"
+    "Snippets",
+    "Linters"
+  ],
+  "main": "./client/extension.js",
+  "activationEvents": [
+    "onLanguage:clx"
   ],
   "contributes": {
     "languages": [

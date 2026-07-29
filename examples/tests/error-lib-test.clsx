@@ -5,6 +5,6 @@ import "test-libs/error-test" as err;
 function main(argvs: String[]) -> int {
 
   err.down();
-
+  
   return 0;
 }

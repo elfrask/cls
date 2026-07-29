@@ -2,6 +2,7 @@
 //! CLI de desarrollo para el lenguaje CLS.
 mod modules;
 mod module_loader;
+mod lsp;
 mod subcommands;
 
 use std::env;
@@ -33,6 +34,9 @@ fn main() {
 
         // Compilación
         "build" => subcommands::build::execute(&args[2..]),
+
+        // Servidor LSP
+        "lsp" => subcommands::lsp::execute(&args[2..]),
 
         // Inspección
         "ast" => subcommands::ast::execute(&args[2..]),
