@@ -32,6 +32,12 @@
         "language": "json",
         "path": "./snippets/cls.json.json"
       }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": "cls.json",
+        "url": "./snippets/cls.schema.json"
+      }
     ]
   }
 }
