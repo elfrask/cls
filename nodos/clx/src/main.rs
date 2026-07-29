@@ -73,12 +73,12 @@ fn print_help() {
     println!("  install              Instalar dependencias desde registry");
     println!("");
     println!("Desarrollo:");
-    println!("  run <archivo> [--]    Ejecutar con tree-walker");
-    println!("  check <archivo>       Type checking");
+    println!("  run [archivo] [--]    Ejecutar (usa 'entry' de cls.json si no se da archivo)");
+    println!("  check [archivo|dir]   Type checking (escanear directorio si no se da archivo)");
     println!("  repl                 REPL interactivo (placeholder)");
     println!("");
     println!("Compilación:");
-    println!("  build <archivo> -o    Compilar a .clsapp (placeholder)");
+    println!("  build [archivo] -o    Compilar a .clsapp (usa 'entry' de cls.json si no se da archivo)");
     println!("");
     println!("Inspección:");
     println!("  ast <archivo> --json Dump AST");

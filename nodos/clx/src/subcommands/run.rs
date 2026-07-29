@@ -3,40 +3,43 @@ use cls_runtime::{VfsResolver, LocalFs, ClsLibResolver};
 use cls_core::config::ModuleManifest;
 use crate::module_loader;
 use std::sync::Arc;
+use std::path::Path;
 
 pub fn execute(args: &[String]) -> i32 {
-    if args.is_empty() {
-        eprintln!("Uso: clx run <archivo> [--] [args...]");
-        return 1;
-    }
-    let path = &args[0];
-    let app_args: Vec<String> = args[1..].to_vec();
+    let config = load_config();
 
-    let source = match std::fs::read_to_string(path) {
+    // Resolver entry point: arg > config > default
+    let entry = resolve_entry(args, config.as_ref());
+
+    // Separar args de la app (todo después de --)
+    let app_args: Vec<String> = args.iter()
+        .skip_while(|a| *a != "--")
+        .skip(1)
+        .map(|s| s.to_string())
+        .collect();
+
+    let source = match std::fs::read_to_string(&entry) {
         Ok(s) => s,
-        Err(e) => { eprintln!("Error al leer '{}': {}", path, e); return 1; }
+        Err(e) => { eprintln!("Error al leer '{}': {}", entry, e); return 1; }
     };
 
     let mut lexer = cls_core::frontend::Lexer::new(&source);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
-        Err(e) => { cls_runtime::show_syntax_error(&e, &source, path); return 1; }
+        Err(e) => { cls_runtime::show_syntax_error(&e, &source, &entry); return 1; }
     };
 
     let mut parser = cls_core::frontend::Parser::new(tokens);
     let module = match parser.parse() {
         Ok(m) => m,
-        Err(e) => { cls_runtime::show_syntax_error(&e, &source, path); return 1; }
+        Err(e) => { cls_runtime::show_syntax_error(&e, &source, &entry); return 1; }
     };
 
-    let config = load_config();
-
-    // VFS con rutas de config
     let vfs = make_vfs(config.as_ref());
     let lib_resolver = make_lib_resolver(vfs.clone());
     let resolver = make_desktop_resolver(vfs, lib_resolver);
     let mut interpreter = Interpreter::new(Intrinsics::desktop_defaults(app_args), resolver);
-    interpreter.set_source_file(path.to_string());
+    interpreter.set_source_file(entry);
     interpreter.set_config(config);
 
     if let Err(e) = interpreter.execute(&module) {
@@ -54,17 +57,36 @@ pub fn execute(args: &[String]) -> i32 {
     }
 }
 
+fn resolve_entry(args: &[String], config: Option<&ModuleManifest>) -> String {
+    // Solo considerar args antes de -- (después son app_args)
+    let entry_arg = args.iter().take_while(|a| *a != "--").find(|a| !a.starts_with("-"));
+    if let Some(e) = entry_arg {
+        return e.to_string();
+    }
+    // Si no, usar entry de cls.json
+    if let Some(cfg) = config {
+        let proposed = &cfg.entry;
+        if !proposed.is_empty() && Path::new(proposed).exists() {
+            return proposed.clone();
+        }
+        // Si el entry no existe, buscar main.clsx
+        let candidates = ["main.clsx", "src/main.clsx", "mod.clsx", "src/mod.clsx"];
+        for c in &candidates {
+            if Path::new(c).exists() {
+                return c.to_string();
+            }
+        }
+    }
+    eprintln!("Uso: clx run <archivo> [--] [args...]");
+    eprintln!("  (o ejecuta desde un proyecto con cls.json que tenga 'entry')");
+    std::process::exit(1);
+}
+
 fn load_config() -> Option<ModuleManifest> {
     let cwd = std::env::current_dir().ok()?;
     let path = cwd.join("cls.json");
     if path.exists() {
-        match ModuleManifest::from_file(&path) {
-            Ok(m) => Some(m),
-            Err(e) => {
-                eprintln!("Advertencia: cls.json invalido: {}", e);
-                None
-            }
-        }
+        ModuleManifest::from_file(&path).ok()
     } else {
         None
     }
@@ -86,9 +108,8 @@ fn make_vfs(config: Option<&ModuleManifest>) -> Arc<VfsResolver> {
     let tmp = std::env::temp_dir();
     vfs.register("tmp", Arc::new(LocalFs::new("tmp", &tmp, false)));
 
-    // Ruta personalizada desde entry de cls.json
     if let Some(cfg) = config {
-        let entry_path = std::path::Path::new(&cfg.entry);
+        let entry_path = Path::new(&cfg.entry);
         if let Some(parent) = entry_path.parent() {
             vfs.add_route("project", &parent.to_string_lossy()).ok();
         }
