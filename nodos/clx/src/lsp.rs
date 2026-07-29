@@ -4,11 +4,60 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tower_lsp::{Client, LspService, Server, jsonrpc::Result};
 use tower_lsp::lsp_types::*;
-use cls_core::error::Diagnostic as ClsDiag;
+use cls_core::error::{Diagnostic as ClsDiag, Span};
 use cls_core::error::diagnostic::Severity;
 use cls_core::frontend::{Lexer, Parser};
+use cls_core::frontend::ast::*;
+use cls_core::frontend::ast::*;
 use cls_core::middleware::{TypeChecker, NameResolver};
 use cls_core::config::TypesConfig;
+
+/// Símbolo con su ubicación (para go-to-definition)
+#[derive(Debug, Clone)]
+struct SymEntry {
+    name: String,
+    span: Span,
+    kind: SymKind,
+}
+
+#[derive(Debug, Clone)]
+enum SymKind {
+    Function,
+    Variable,
+    Parameter,
+}
+
+/// Construye tabla de símbolos desde un módulo parsed
+fn build_symbols(module: &Module) -> Vec<SymEntry> {
+    let mut symbols = Vec::new();
+    for stmt in &module.statements {
+        match stmt {
+            Statement::FunctionDecl(f) => {
+                symbols.push(SymEntry {
+                    name: f.name.clone(),
+                    span: f.span,
+                    kind: SymKind::Function,
+                });
+                for param in &f.params {
+                    symbols.push(SymEntry {
+                        name: param.name.clone(),
+                        span: param.span,
+                        kind: SymKind::Parameter,
+                    });
+                }
+            }
+            Statement::VarDecl(v) | Statement::ConstDecl(v) => {
+                symbols.push(SymEntry {
+                    name: v.name.clone(),
+                    span: v.span,
+                    kind: SymKind::Variable,
+                });
+            }
+            _ => {}
+        }
+    }
+    symbols
+}
 
 /// Backend LSP. El nodo (clx) provee acceso a filesystem via el external hook
 /// de ModuleResolver. Core/runtime nunca tocan el disco.
@@ -267,20 +316,117 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
 
     // ─── Hover ───────────────────────────────────────────────────────────
 
-    async fn hover(&self, _: HoverParams) -> Result<Option<Hover>> {
-        Ok(Some(Hover {
-            contents: HoverContents::Scalar(MarkedString::String("CLS Language — .clsx".into())),
-            range: None,
-        }))
-    }
-
-    async fn goto_definition(&self, _: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+        let source = self.get_doc(&uri).await.unwrap_or_default();
+        let line = pos.line as usize;
+        let col = pos.character as usize;
+        let word = extract_word_at(&source, line, col).unwrap_or_default();
+        if !word.is_empty() {
+            return Ok(Some(Hover {
+                contents: HoverContents::Scalar(MarkedString::String(
+                    format!("`{}` — CLS symbol", word)
+                )),
+                range: None,
+            }));
+        }
         Ok(None)
     }
 
-    async fn document_symbol(&self, _: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {
+    // ─── Go-to-definition ────────────────────────────────────────────────
+
+    async fn goto_definition(&self, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+        let source = self.get_doc(&uri).await.unwrap_or_default();
+
+        let mut lexer = Lexer::new(&source);
+        let tokens = match lexer.tokenize() {
+            Ok(t) => t,
+            Err(_) => return Ok(None),
+        };
+        let mut parser = Parser::new(tokens);
+        let module = match parser.parse() {
+            Ok(m) => m,
+            Err(_) => return Ok(None),
+        };
+
+        let symbols = build_symbols(&module);
+        let line = pos.line as usize;
+        let col = pos.character as usize;
+
+        if let Some(word) = extract_word_at(&source, line, col) {
+            for sym in &symbols {
+                if sym.name == word {
+                    let loc = Location {
+                        uri: uri.clone(),
+                        range: Range {
+                            start: Position { line: sym.span.start_line.saturating_sub(1), character: sym.span.start_col.saturating_sub(1) },
+                            end: Position { line: sym.span.end_line.saturating_sub(1), character: sym.span.end_col.saturating_sub(1) },
+                        },
+                    };
+                    return Ok(Some(GotoDefinitionResponse::Scalar(loc)));
+                }
+            }
+        }
         Ok(None)
     }
+
+    // ─── Document symbols ────────────────────────────────────────────────
+
+    async fn document_symbol(&self, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {
+        let source = self.get_doc(&params.text_document.uri).await.unwrap_or_default();
+        let mut lexer = Lexer::new(&source);
+        let tokens = match lexer.tokenize() {
+            Ok(t) => t,
+            Err(_) => return Ok(None),
+        };
+        let mut parser = Parser::new(tokens);
+        let module = match parser.parse() {
+            Ok(m) => m,
+            Err(_) => return Ok(None),
+        };
+
+        let symbols = build_symbols(&module);
+        let info: Vec<SymbolInformation> = symbols.iter().map(|s| {
+            let kind = match s.kind {
+                SymKind::Function => tower_lsp::lsp_types::SymbolKind::FUNCTION,
+                SymKind::Variable | SymKind::Parameter => tower_lsp::lsp_types::SymbolKind::VARIABLE,
+            };
+            SymbolInformation {
+                name: s.name.clone(),
+                kind,
+                location: Location {
+                    uri: params.text_document.uri.clone(),
+                    range: Range {
+                        start: Position { line: s.span.start_line.saturating_sub(1), character: s.span.start_col.saturating_sub(1) },
+                        end: Position { line: s.span.end_line.saturating_sub(1), character: s.span.end_col.saturating_sub(1) },
+                    },
+                },
+                container_name: None,
+                tags: None,
+                deprecated: None,
+            }
+        }).collect();
+        Ok(Some(DocumentSymbolResponse::Flat(info)))
+    }
+}
+
+/// Extrae el identificador bajo una posición (line, col) del source
+fn extract_word_at(source: &str, line: usize, col: usize) -> Option<String> {
+    let line_text = source.lines().nth(line)?;
+    if col >= line_text.len() { return None; }
+    let chars: Vec<char> = line_text.chars().collect();
+    let mut start = col;
+    let mut end = col;
+    while start > 0 && (chars[start - 1].is_alphanumeric() || chars[start - 1] == '_') {
+        start -= 1;
+    }
+    while end < chars.len() && (chars[end].is_alphanumeric() || chars[end] == '_') {
+        end += 1;
+    }
+    if start < end { Some(chars[start..end].iter().collect()) } else { None }
 }
 
 /// Inicia el servidor LSP usando stdin/stdout.
