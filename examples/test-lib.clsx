@@ -1,0 +1,14 @@
+import "Lib" as Lib;
+
+function main(args: String[]) -> int {
+    print("=== Lib.load test ===");
+
+    var content = Lib.load("test");
+    print("Contenido de test.clslib:", content);
+
+    # Probar con path directo
+    var direct = Lib.load("./libs/test.clslib");
+    print("Directo:", direct);
+
+    return 0;
+};

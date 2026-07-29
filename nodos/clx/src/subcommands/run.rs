@@ -1,5 +1,5 @@
-use cls_runtime::{Intrinsics, Interpreter, ImportFrame};
-use cls_runtime::{VfsResolver, LocalFs};
+use cls_runtime::{Intrinsics, Interpreter};
+use cls_runtime::{VfsResolver, LocalFs, ClsLibResolver};
 use crate::module_loader;
 use std::sync::Arc;
 
@@ -29,7 +29,8 @@ pub fn execute(args: &[String]) -> i32 {
     };
 
     let vfs = make_vfs();
-    let resolver = make_desktop_resolver(vfs.clone());
+    let lib_resolver = make_lib_resolver(vfs.clone());
+    let resolver = make_desktop_resolver(vfs, lib_resolver);
     let mut interpreter = Interpreter::new(Intrinsics::desktop_defaults(app_args), resolver);
     interpreter.set_source_file(path.to_string());
 
@@ -64,10 +65,15 @@ fn make_vfs() -> Arc<VfsResolver> {
     Arc::new(vfs)
 }
 
-fn make_desktop_resolver(vfs: Arc<VfsResolver>) -> cls_runtime::ModuleResolver {
+fn make_lib_resolver(vfs: Arc<VfsResolver>) -> Arc<dyn ClsLibResolver> {
+    Arc::new(DesktopLibResolver { vfs })
+}
+
+fn make_desktop_resolver(vfs: Arc<VfsResolver>, lib_resolver: Arc<dyn ClsLibResolver>) -> cls_runtime::ModuleResolver {
     let mut resolver = cls_runtime::ModuleResolver::new().with_core_stdlib();
     resolver.add_internal("fs", crate::modules::fs::module(vfs));
     resolver.add_internal("http", crate::modules::http::module());
+    resolver.add_internal("Lib", crate::modules::lib::module(lib_resolver));
     resolver.set_external(|path: String, _env: &mut cls_runtime::Environment| -> cls_core::error::ClsResult<Option<cls_runtime::Value>> {
         let candidate = format!("{}.clsx", path);
         match std::fs::read_to_string(&candidate) {
@@ -76,4 +82,67 @@ fn make_desktop_resolver(vfs: Arc<VfsResolver>) -> cls_runtime::ModuleResolver {
         }
     });
     resolver
+}
+
+// ─── DesktopClsLibResolver ──────────────────────────────────────────────────
+use cls_runtime::ClsLibIndex;
+use cls_core::error::ClsResult;
+
+struct DesktopLibResolver {
+    vfs: Arc<VfsResolver>,
+}
+
+impl DesktopLibResolver {
+    fn try_read(&self, path: &str) -> Result<Vec<u8>, ()> {
+        if path.contains("://") {
+            self.vfs.read_file(path).map_err(|_| ())
+        } else {
+            std::fs::read(path).map_err(|_| ())
+        }
+    }
+}
+
+impl ClsLibResolver for DesktopLibResolver {
+    fn resolve(&self, name: &str) -> ClsResult<Option<Vec<u8>>> {
+        // Si es path directo (contiene / o termina en .clslib), intentar directo
+        if name.contains('/') || name.contains('\\') || name.ends_with(".clslib") {
+            if let Ok(data) = self.try_read(name) {
+                return Ok(Some(data));
+            }
+            return Ok(None);
+        }
+
+        let name = name.trim_end_matches(".clslib");
+
+        // 1. Local: ./libs/{name}.clslib
+        if let Ok(data) = self.try_read(&format!("./libs/{}.clslib", name)) {
+            return Ok(Some(data));
+        }
+
+        // 2. Global names/: ~/.cls/clslibs/names/{name}.clslib
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_default();
+        if !home.is_empty() {
+            let named = format!("{}/.cls/clslibs/names/{}.clslib", home, name);
+            if let Ok(data) = self.try_read(&named) {
+                return Ok(Some(data));
+            }
+
+            // 3. Via index.json → by-hash/
+            let index_path = format!("{}/.cls/clslibs/index.json", home);
+            if let Ok(index_json) = std::fs::read_to_string(&index_path) {
+                if let Ok(index) = serde_json::from_str::<ClsLibIndex>(&index_json) {
+                    if let Some(entry) = index.find(name) {
+                        let hash_path = format!("{}/.cls/clslibs/by-hash/{}/{}.clslib", home, entry.hash, name);
+                        if let Ok(data) = self.try_read(&hash_path) {
+                            return Ok(Some(data));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
 }
