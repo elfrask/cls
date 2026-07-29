@@ -1,0 +1,30 @@
+import "fs" as fs;
+
+function main(args: String[]) -> int {
+    print("=== VFS Test ===");
+
+    # Leer archivo local
+    var local = fs.readFile("test-vfs/.data.txt");
+    print("Local:", local);
+
+    # Escribir archivo via app://
+    fs.writeFile("test-vfs/out.txt", "Hola desde VFS!");
+    print("Escrito en test-vfs/out.txt");
+
+    # Verificar que existe
+    var exists = fs.exists("test-vfs/out.txt");
+    print("out.txt existe:", toString(exists));
+
+    # Leer el archivo recien creado
+    var out = fs.readFile("test-vfs/out.txt");
+    print("out.txt:", out);
+
+    # Listar directorio
+    var files = fs.listDir("test-vfs");
+    print("Archivos en test-vfs:", toString(files));
+
+    # cwd normal
+    print("CWD:", fs.cwd());
+
+    return 0;
+};

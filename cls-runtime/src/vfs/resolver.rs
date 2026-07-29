@@ -97,4 +97,35 @@ impl VfsResolver {
             false
         }
     }
+
+    pub fn list_dir(&self, path: &str) -> ClsResult<Vec<String>> {
+        let (proto, resolved) = self.resolve(path)?;
+        proto.list_dir(&resolved)
+    }
+
+    pub fn remove(&self, path: &str) -> ClsResult<()> {
+        let (proto, resolved) = self.resolve(path)?;
+        if proto.is_read_only() {
+            return Err(ClsError::RuntimeError(format!("{} es read-only", proto.name())));
+        }
+        let full = std::path::Path::new(&resolved);
+        if full.exists() && full.is_dir() {
+            std::fs::remove_dir_all(full)
+                .map_err(|e| ClsError::RuntimeError(format!("rm: {}", e)))?;
+        } else if full.exists() {
+            std::fs::remove_file(full)
+                .map_err(|e| ClsError::RuntimeError(format!("rm: {}", e)))?;
+        }
+        Ok(())
+    }
+
+    pub fn create_dir(&self, path: &str) -> ClsResult<()> {
+        let (proto, resolved) = self.resolve(path)?;
+        if proto.is_read_only() {
+            return Err(ClsError::RuntimeError(format!("{} es read-only", proto.name())));
+        }
+        std::fs::create_dir_all(std::path::Path::new(&resolved))
+            .map_err(|e| ClsError::RuntimeError(format!("mkdir: {}", e)))?;
+        Ok(())
+    }
 }

@@ -1,6 +1,7 @@
 use cls_runtime::{Intrinsics, Interpreter, ImportFrame};
+use cls_runtime::{VfsResolver, LocalFs};
 use crate::module_loader;
-use std::fs;
+use std::sync::Arc;
 
 pub fn execute(args: &[String]) -> i32 {
     if args.is_empty() {
@@ -10,7 +11,7 @@ pub fn execute(args: &[String]) -> i32 {
     let path = &args[0];
     let app_args: Vec<String> = args[1..].to_vec();
 
-    let source = match fs::read_to_string(path) {
+    let source = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => { eprintln!("Error al leer '{}': {}", path, e); return 1; }
     };
@@ -27,7 +28,8 @@ pub fn execute(args: &[String]) -> i32 {
         Err(e) => { super::util::show_error(&source, &e.to_string(), path); return 1; }
     };
 
-    let resolver = make_desktop_resolver();
+    let vfs = make_vfs();
+    let resolver = make_desktop_resolver(vfs.clone());
     let mut interpreter = Interpreter::new(Intrinsics::desktop_defaults(app_args), resolver);
     interpreter.set_source_file(path.to_string());
 
@@ -44,13 +46,31 @@ pub fn execute(args: &[String]) -> i32 {
     }
 }
 
-fn make_desktop_resolver() -> cls_runtime::ModuleResolver {
+fn make_vfs() -> Arc<VfsResolver> {
+    let mut vfs = VfsResolver::new();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    vfs.register("app", Arc::new(LocalFs::new("app", &cwd, false)));
+
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .ok();
+    if let Some(ref h) = home {
+        vfs.register("user", Arc::new(LocalFs::new("user", h, false)));
+    }
+
+    let tmp = std::env::temp_dir();
+    vfs.register("tmp", Arc::new(LocalFs::new("tmp", &tmp, false)));
+    Arc::new(vfs)
+}
+
+fn make_desktop_resolver(vfs: Arc<VfsResolver>) -> cls_runtime::ModuleResolver {
     let mut resolver = cls_runtime::ModuleResolver::new().with_core_stdlib();
-    resolver.add_internal("fs", crate::modules::fs::module());
+    resolver.add_internal("fs", crate::modules::fs::module(vfs));
     resolver.add_internal("http", crate::modules::http::module());
     resolver.set_external(|path: String, _env: &mut cls_runtime::Environment| -> cls_core::error::ClsResult<Option<cls_runtime::Value>> {
         let candidate = format!("{}.clsx", path);
-        match fs::read_to_string(&candidate) {
+        match std::fs::read_to_string(&candidate) {
             Ok(source) => Ok(Some(module_loader::load_module(&source)?)),
             Err(_) => Ok(None),
         }
