@@ -1,5 +1,6 @@
 function main(args: String[]) -> int {
     var e = <Button click={() -> { print("hi") }} />;
-    print("ok");
+    var x = <Button click={print("hi2")} />;
+    print("ok", e.props);
     return 0;
 }
