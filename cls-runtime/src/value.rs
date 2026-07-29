@@ -3,6 +3,31 @@ use std::fmt;
 use cls_core::error::ClsResult;
 use cls_core::frontend::ast::Block;
 
+/// Definición de un struct (almacenada en el intérprete)
+#[derive(Debug, Clone)]
+pub struct StructDef {
+    pub name: String,
+    pub fields: Vec<StructField>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructField {
+    pub name: String,
+}
+
+/// Instancia de un struct en runtime (Vec-based, como C/Rust)
+#[derive(Debug, Clone)]
+pub struct StructInstance {
+    pub def_name: String,
+    pub fields: Vec<Value>,
+}
+
+impl PartialEq for StructInstance {
+    fn eq(&self, other: &Self) -> bool {
+        self.def_name == other.def_name && self.fields == other.fields
+    }
+}
+
 /// Valores runtime de CLS
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -19,6 +44,7 @@ pub enum Value {
     Array(Vec<Value>),
     Record(HashMap<String, Value>),
     Fun(FunValue),
+    Struct(Box<StructInstance>),
 
     // Tipos especiales
     Unknown,
@@ -40,6 +66,7 @@ impl Value {
             Value::Array(_) => "Array",
             Value::Record(_) => "Record",
             Value::Fun(_) => "Fun",
+            Value::Struct(_) => "Struct",  // nombre real via to_string()
             Value::Unknown => "Unknown",
             Value::Cmx(_) => "Cmx",
         }
@@ -51,10 +78,10 @@ impl Value {
             Value::Int(v) => *v != 0,
             Value::Float(v) => *v != 0.0,
             Value::String(v) => !v.is_empty(),
-            Value::Null => false,
-            Value::Void => false,
+            Value::Null | Value::Void => false,
             Value::Array(v) => !v.is_empty(),
             Value::Record(v) => !v.is_empty(),
+            Value::Struct(_) => true,
             _ => true,
         }
     }
@@ -80,6 +107,11 @@ impl Value {
                 format!("{{{}}}", entries.join(", "))
             }
             Value::Fun(f) => format!("<function {}>", f.name),
+            Value::Struct(s) => {
+                let def_name = &s.def_name;
+                let fields: Vec<String> = s.fields.iter().map(|v| v.to_string()).collect();
+                format!("{}({})", def_name, fields.join(", "))
+            }
             Value::Unknown => "unknown".to_string(),
             Value::Cmx(_) => "<cmx>".to_string(),
         }

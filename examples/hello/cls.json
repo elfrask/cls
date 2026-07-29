@@ -12,6 +12,10 @@
     "target": "executable"
   },
   "registry": "https://registry.cls-lang.org",
-  "version": "0.1.0"
-  
+  "version": "0.1.0",
+  "compiler": {
+    "targetArchitecture": "arm64",
+    "features": {}
+
+  }
 }
