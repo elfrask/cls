@@ -79,3 +79,82 @@ pub fn module() -> Value {
 
     Value::Record(m)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::value::FunKind;
+    use cls_core::error::ClsResult;
+
+    fn get_fn(name: &str) -> std::sync::Arc<dyn Fn(&[Value]) -> ClsResult<Value>> {
+        let module = module();
+        match &module {
+            Value::Record(m) => match m.get(name) {
+                Some(Value::Fun(f)) => match &f.kind {
+                    FunKind::Native { func, .. } => func.clone(),
+                    _ => panic!("not native"),
+                },
+                _ => panic!("fn '{}' not found", name),
+            },
+            _ => panic!("not a module"),
+        }
+    }
+
+    #[test]
+    fn test_abs() {
+        let f = get_fn("abs");
+        assert_eq!(f(&[Value::Int(-5)]).unwrap(), Value::Int(5));
+        assert_eq!(f(&[Value::Float(-3.5)]).unwrap(), Value::Float(3.5));
+    }
+
+    #[test]
+    fn test_sqrt() {
+        let r = get_fn("sqrt")(&[Value::Int(9)]).unwrap();
+        assert!(matches!(r, Value::Float(v) if (v - 3.0).abs() < 0.001));
+    }
+
+    #[test]
+    fn test_pow() {
+        let f = get_fn("pow");
+        let r = f(&[Value::Int(2), Value::Int(3)]).unwrap();
+        assert!(matches!(r, Value::Float(v) if (v - 8.0).abs() < 0.001));
+    }
+
+    #[test]
+    fn test_min_max() {
+        assert_eq!(get_fn("min")(&[Value::Int(3), Value::Int(7)]).unwrap(), Value::Float(3.0));
+        assert_eq!(get_fn("max")(&[Value::Int(3), Value::Int(7)]).unwrap(), Value::Float(7.0));
+    }
+
+    #[test]
+    fn test_floor_ceil_round() {
+        let v = Value::Float(3.7);
+        assert_eq!(get_fn("floor")(&[v.clone()]).unwrap(), Value::Int(3));
+        assert_eq!(get_fn("ceil")(&[v.clone()]).unwrap(), Value::Int(4));
+        assert_eq!(get_fn("round")(&[v.clone()]).unwrap(), Value::Int(4));
+    }
+
+    #[test]
+    fn test_range() {
+        let r = get_fn("range")(&[Value::Int(1), Value::Int(5)]).unwrap();
+        assert_eq!(r, Value::Array(vec![Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4)]));
+    }
+
+    #[test]
+    fn test_constants() {
+        match &module() {
+            Value::Record(m) => {
+                assert!(matches!(m.get("PI"), Some(Value::Float(_))));
+                assert!(matches!(m.get("E"), Some(Value::Float(_))));
+            }
+            _ => panic!("not record"),
+        }
+    }
+
+    #[test]
+    fn test_errors() {
+        let f = get_fn("abs");
+        assert!(f(&[]).is_err());
+        assert!(f(&[Value::String("x".into())]).is_err());
+    }
+}

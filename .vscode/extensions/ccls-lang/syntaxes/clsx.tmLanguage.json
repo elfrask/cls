@@ -126,7 +126,7 @@
       "patterns": [
         {
           "name": "keyword.control.ccls",
-          "match": "\\b(if|elif|then|else|while|loop|for|switch|case|default|try|catch|finally|return|break|continue|with|each|in|and)\\b"
+          "match": "\\b(if|elif|then|else|while|loop|for|switch|case|default|try|catch|finally|throw|return|break|continue|with|each|in|and)\\b"
         },
         {
           "name": "keyword.declaration.ccls",

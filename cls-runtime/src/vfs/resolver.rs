@@ -129,3 +129,100 @@ impl VfsResolver {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vfs::protocol::LocalFs;
+    use std::sync::Arc;
+
+    fn test_resolver() -> VfsResolver {
+        let mut v = VfsResolver::new();
+        let tmp = std::env::temp_dir().join("cls-vfs-test");
+        std::fs::create_dir_all(&tmp).ok();
+        v.register("app", Arc::new(LocalFs::new("app", &tmp, false)));
+        v
+    }
+
+    #[test]
+    fn test_resolve_noproto() {
+        let v = test_resolver();
+        let (proto, path) = v.resolve("file.txt").unwrap();
+        assert_eq!(proto.name(), "app");
+        assert_eq!(path, "file.txt");
+    }
+
+    #[test]
+    fn test_resolve_proto() {
+        let v = test_resolver();
+        let (proto, path) = v.resolve("app://sub/file.txt").unwrap();
+        assert_eq!(proto.name(), "app");
+        assert_eq!(path, "sub/file.txt");
+    }
+
+    #[test]
+    fn test_resolve_unknown_proto() {
+        let v = test_resolver();
+        assert!(v.resolve("bad://file.txt").is_err());
+    }
+
+    #[test]
+    fn test_write_and_read() {
+        let v = test_resolver();
+        v.write_file("test.txt", b"hello vfs").unwrap();
+        let data = v.read_file("test.txt").unwrap();
+        assert_eq!(data, b"hello vfs");
+    }
+
+    #[test]
+    fn test_read_to_string() {
+        let v = test_resolver();
+        v.write_file("greeting.txt", b"hola mundo").unwrap();
+        let s = v.read_to_string("greeting.txt").unwrap();
+        assert_eq!(s, "hola mundo");
+    }
+
+    #[test]
+    fn test_exists() {
+        let v = test_resolver();
+        v.write_file("exists_test.txt", b"").unwrap();
+        assert!(v.exists("exists_test.txt"));
+        assert!(!v.exists("no_such_file.txt"));
+    }
+
+    #[test]
+    fn test_list_dir() {
+        let v = test_resolver();
+        v.write_file("dir_list_a.txt", b"").unwrap();
+        v.write_file("dir_list_b.txt", b"").unwrap();
+        let entries = v.list_dir(".").unwrap();
+        assert!(entries.contains(&"dir_list_a.txt".to_string()));
+        assert!(entries.contains(&"dir_list_b.txt".to_string()));
+    }
+
+    #[test]
+    fn test_proto_write_and_read() {
+        let v = test_resolver();
+        v.write_file("app://proto_test.txt", b"proto").unwrap();
+        let data = v.read_to_string("app://proto_test.txt").unwrap();
+        assert_eq!(data, "proto");
+    }
+
+    #[test]
+    fn test_custom_route() {
+        let mut v = test_resolver();
+        v.add_route("data", "app://custom/").unwrap();
+        let (proto, path) = v.resolve("data://config.json").unwrap();
+        assert_eq!(proto.name(), "app");
+        assert_eq!(path, "custom/config.json");
+    }
+
+    #[test]
+    fn test_readonly_deny_write() {
+        let mut v = VfsResolver::new();
+        let tmp = std::env::temp_dir().join("cls-vfs-readonly-test");
+        std::fs::create_dir_all(&tmp).ok();
+        v.register("ro", Arc::new(LocalFs::new("ro", &tmp, true)));
+        assert!(v.write_file("ro://x.txt", b"data").is_err());
+    }
+}

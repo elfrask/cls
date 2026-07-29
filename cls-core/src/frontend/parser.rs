@@ -1794,3 +1794,106 @@ fn parse_expr_from_str(expr_str: &str) -> ClsResult<Expression> {
     })?;
     Ok(expr)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frontend::ast::{FunctionModifier, Visibility};
+    use crate::frontend::lexer::Lexer;
+
+    fn parse(source: &str) -> Module {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        parser.parse().unwrap()
+    }
+
+    fn parse_expr(source: &str) -> Expression {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        parser.parse_expression().unwrap()
+    }
+
+    #[test]
+    fn test_parse_empty() { let m = parse(""); assert!(m.statements.is_empty()); }
+
+    #[test]
+    fn test_parse_var_decl() {
+        let m = parse("var x = 42");
+        assert!(matches!(&m.statements[0], Statement::VarDecl(v) if v.name == "x"));
+    }
+
+    #[test]
+    fn test_parse_function_decl() {
+        let m = parse("function add(a: int, b: int) -> int { return a + b; };");
+        assert!(matches!(&m.statements[0], Statement::FunctionDecl(f) if f.name == "add" && f.params.len() == 2));
+    }
+
+    #[test]
+    fn test_parse_if() { let m = parse("if (true) { var x = 1; };"); assert!(matches!(&m.statements[0], Statement::If(_))); }
+
+    #[test]
+    fn test_parse_while() { let m = parse("while (true) { break; };"); assert!(matches!(&m.statements[0], Statement::While(_))); }
+
+    #[test]
+    fn test_parse_return() {
+        let m = parse("function f() -> int { return 42; };");
+        assert!(matches!(&m.statements[0], Statement::FunctionDecl(f) if matches!(&f.body.statements[0], Statement::Return(_))));
+    }
+
+    #[test]
+    fn test_parse_import() { let m = parse(r#"import "math" as math;"#); assert!(matches!(&m.statements[0], Statement::Import(_))); }
+
+    #[test]
+    fn test_parse_from_import() { let m = parse(r#"from "math" import abs, PI;"#); assert!(matches!(&m.statements[0], Statement::FromImport(_))); }
+
+    #[test]
+    fn test_parse_int() { assert!(matches!(parse_expr("42"), Expression::Literal(l) if matches!(l.kind, LiteralKind::Int(42)))); }
+
+    #[test]
+    fn test_parse_string() { assert!(matches!(parse_expr(r#""hello""#), Expression::Literal(l) if matches!(l.kind, LiteralKind::String(ref s) if s == "hello"))); }
+
+    #[test]
+    fn test_parse_binary() { assert!(matches!(parse_expr("1+2"), Expression::Binary(_))); }
+
+    #[test]
+    fn test_parse_call() { assert!(matches!(parse_expr("f(1)"), Expression::Call(c) if c.args.len() == 1)); }
+
+    #[test]
+    fn test_parse_record() { assert!(matches!(parse_expr(r#"{"a":1}"#), Expression::Record(_))); }
+
+    #[test]
+    fn test_parse_array() { assert!(matches!(parse_expr("[1,2,3]"), Expression::Array(a) if a.elements.len() == 3)); }
+
+    #[test]
+    fn test_parse_arrow() { assert!(matches!(parse_expr("(x)->x*2"), Expression::ArrowFunction(_))); }
+
+    #[test]
+    fn test_parse_member() { assert!(matches!(parse_expr("a.b"), Expression::MemberAccess(_))); }
+
+    #[test]
+    fn test_parse_index() { assert!(matches!(parse_expr("a[0]"), Expression::Index(_))); }
+
+    #[test]
+    fn test_parse_unary() { assert!(matches!(parse_expr("-5"), Expression::Unary(u) if u.op == UnaryOp::Negate)); }
+
+    #[test]
+    fn test_parse_interpolation() { assert!(matches!(parse_expr("`a $b`"), Expression::StringInterpolation(_))); }
+
+    #[test]
+    fn test_parse_assignment() { assert!(matches!(parse_expr("x=10"), Expression::Assignment(_))); }
+
+    #[test]
+    fn test_parse_export() {
+        let m = parse("export function f() -> int {};");
+        assert!(matches!(&m.statements[0], Statement::FunctionDecl(f) if f.visibility == Visibility::Export));
+    }
+
+    #[test]
+    fn test_parse_error_syntax() {
+        let mut l = Lexer::new("var x = ;");
+        let t = l.tokenize().unwrap();
+        assert!(Parser::new(t).parse().is_err());
+    }
+}
