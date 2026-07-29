@@ -18,7 +18,7 @@ pub use environment::Environment;
 pub use interpreter::{Interpreter, ImportFrame};
 pub use intrinsics::Intrinsics;
 pub use resolver::ModuleResolver;
-pub use vfs::{VfsResolver, VfsProtocol, LocalFs, resolve_safe};
+pub use vfs::{VfsResolver, VfsProtocol, LocalFs, ZipFs, resolve_safe};
 pub use gc::GarbageCollector;
 pub use sandbox::Sandbox;
 pub use error::{ClsError, ClsResult};
