@@ -15,10 +15,6 @@ impl ClsLspBackend {
         Self { client, documents: Arc::new(Mutex::new(HashMap::new())) }
     }
 
-    fn kv() -> CompletionItemKind { CompletionItemKind::KEYWORD }
-    fn fn_kind() -> CompletionItemKind { CompletionItemKind::FUNCTION }
-    fn mod_kind() -> CompletionItemKind { CompletionItemKind::MODULE }
-
     async fn get_doc(&self, uri: &Url) -> Option<String> {
         self.documents.lock().await.get(uri).cloned()
     }
@@ -71,8 +67,6 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
                     ..Default::default()
                 }),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
-                definition_provider: Some(OneOf::Left(true)),
-                document_symbol_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
@@ -83,12 +77,10 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
     }
 
     async fn initialized(&self, _: InitializedParams) {
-        eprintln!("[clx lsp] Servidor LSP listo");
+        eprintln!("[clx lsp] ready");
     }
 
-    async fn shutdown(&self) -> Result<()> {
-        Ok(())
-    }
+    async fn shutdown(&self) -> Result<()> { Ok(()) }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         self.documents.lock().await.insert(
@@ -118,21 +110,21 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
         for kw in &["var", "function", "if", "else", "while", "for", "return",
                      "import", "from", "as", "export", "structure", "interface",
                      "true", "false", "null", "break", "continue", "loop", "switch"] {
-            items.push(CompletionItem { label: kw.to_string(), kind: Some(Self::kv()), ..Default::default() });
+            items.push(CompletionItem { label: kw.to_string(), kind: Some(CompletionItemKind::KEYWORD), ..Default::default() });
         }
         for f in &["print", "input", "toString", "int", "float", "str", "bool",
                     "len", "type", "now", "exit", "sleep", "throw"] {
-            items.push(CompletionItem { label: f.to_string(), kind: Some(Self::fn_kind()), detail: Some("intrinsic".into()), ..Default::default() });
+            items.push(CompletionItem { label: f.to_string(), kind: Some(CompletionItemKind::FUNCTION), detail: Some("intrinsic".into()), ..Default::default() });
         }
         for m in &["math", "json", "fs", "http", "Lib"] {
-            items.push(CompletionItem { label: m.to_string(), kind: Some(Self::mod_kind()), detail: Some("module".into()), ..Default::default() });
+            items.push(CompletionItem { label: m.to_string(), kind: Some(CompletionItemKind::MODULE), detail: Some("module".into()), ..Default::default() });
         }
         Ok(Some(CompletionResponse::Array(items)))
     }
 
     async fn hover(&self, _: HoverParams) -> Result<Option<Hover>> {
         Ok(Some(Hover {
-            contents: HoverContents::Scalar(MarkedString::String("CLS Language — .clsx".into())),
+            contents: HoverContents::Scalar(MarkedString::String("CLS — .clsx".into())),
             range: None,
         }))
     }
@@ -146,12 +138,16 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
     }
 }
 
-pub fn run_server() {
+/// Inicia el servidor LSP usando stdin/stdout (estandar LSP).
+/// `silent` evita prints a stderr para no interferir con rust-analyzer.
+pub fn run_server(silent: bool) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
+        if !silent {
+            eprintln!("[clx lsp] ready");
+        }
         let stdin = tokio::io::stdin();
         let stdout = tokio::io::stdout();
-
         let (service, socket) = LspService::new(|client| ClsLspBackend::new(client));
         Server::new(stdin, stdout, socket).serve(service).await;
     });

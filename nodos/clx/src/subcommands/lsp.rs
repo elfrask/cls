@@ -1,5 +1,5 @@
-pub fn execute(_args: &[String]) -> i32 {
-    eprintln!("[clx lsp] Iniciando servidor LSP...");
-    crate::lsp::run_server();
+pub fn execute(args: &[String]) -> i32 {
+    let silent = args.iter().any(|a| a == "--silent" || a == "-s");
+    crate::lsp::run_server(silent);
     0
 }
