@@ -1,14 +1,15 @@
 {
   "name": "cls-lang",
   "displayName": "CLS Language Support",
-  "description": "Syntax highlighting and language support for CLS (.clsx)",
+  "description": "Syntax highlighting, snippets and language support for CLS (.clsx, cls.json)",
   "version": "1.0.0",
   "publisher": "frask",
   "engines": {
     "vscode": "^1.80.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Snippets"
   ],
   "contributes": {
     "languages": [
@@ -24,6 +25,12 @@
         "language": "clx",
         "scopeName": "source.clsx",
         "path": "./syntaxes/clsx.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "json",
+        "path": "./snippets/cls.json.json"
       }
     ]
   }
