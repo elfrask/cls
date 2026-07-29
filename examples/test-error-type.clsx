@@ -1,0 +1,8 @@
+function greet(name: String) -> String {
+    return "Hello, " + name + "!" + 2;
+};
+
+function main(args: String[]) -> int {
+    print(greet("world"));
+    return 0;
+};

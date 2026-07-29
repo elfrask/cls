@@ -2,7 +2,7 @@ use crate::environment::Environment;
 use crate::intrinsics::Intrinsics;
 use crate::resolver::ModuleResolver;
 use crate::value::{FunValue, Value};
-use cls_core::error::{ClsError, ClsResult, Diagnostic};
+use cls_core::error::{ClsError, ClsResult, Diagnostic, Span, StackFrame};
 use cls_core::frontend::ast::*;
 use std::collections::HashSet;
 
@@ -19,7 +19,7 @@ pub struct Interpreter {
     exports: HashSet<String>,
     source_file: String,
     import_trace: Vec<ImportFrame>,
-    call_stack: Vec<String>,
+    call_stack: Vec<StackFrame>,
     flow: Flow,
 }
 
@@ -200,6 +200,26 @@ impl Interpreter {
         &self.import_trace
     }
 
+    /// Construye un ErrorReport desde un error de runtime
+    pub fn build_error_report(&self, error: ClsError) -> crate::error_report::ErrorReport {
+        crate::error_report::ErrorReport::from_runtime(
+            error,
+            self.call_stack.clone(),
+            &self.import_trace,
+            &self.source_file,
+        )
+    }
+
+    /// Crea un RuntimeError con línea/columna embebidos
+    fn err_at(&self, msg: impl Into<String>, span: &Span) -> ClsError {
+        ClsError::RuntimeError(format!(
+            "{} (línea {}, columna {})",
+            msg.into(),
+            span.start_line,
+            span.start_col
+        ))
+    }
+
     /// Ejecuta un módulo completo
     pub fn execute(&mut self, module: &Module) -> ClsResult<Value> {
         let mut result = Value::Void;
@@ -362,10 +382,7 @@ impl Interpreter {
                 }
                 Ok(Value::Void)
             }
-            _ => Err(ClsError::RuntimeError(format!(
-                "No se puede iterar sobre: {:?}",
-                iterable
-            ))),
+            _ => Err(self.err_at(format!("No se puede iterar sobre: {:?}", iterable), &for_each.span)),
         }
     }
 
@@ -475,15 +492,11 @@ impl Interpreter {
                     if let Some(val) = entries.get(&im.name) {
                         self.env.define(alias, val.clone());
                     } else {
-                        return Err(ClsError::RuntimeError(format!(
-                            "'{}' no existe en el módulo '{}'", im.name, fi.path
-                        )));
+                        return Err(self.err_at(format!("'{}' no existe en el módulo '{}'", im.name, fi.path), &fi.span));
                     }
                 }
             }
-            _ => return Err(ClsError::RuntimeError(format!(
-                "'{}' no es un módulo (no tiene exports)", fi.path
-            ))),
+            _ => return Err(self.err_at(format!("'{}' no es un módulo (no tiene exports)", fi.path), &fi.span)),
         }
         Ok(Value::Void)
     }
@@ -496,9 +509,7 @@ impl Interpreter {
                     self.env.define(name, val.clone());
                 }
             }
-            _ => return Err(ClsError::RuntimeError(format!(
-                "'{}' no es un módulo", include.path
-            ))),
+            _ => return Err(self.err_at(format!("'{}' no es un módulo", include.path), &include.span)),
         }
         Ok(Value::Void)
     }
@@ -517,9 +528,9 @@ impl Interpreter {
     fn evaluate_expression(&mut self, expr: &Expression) -> ClsResult<Value> {
         match expr {
             Expression::Literal(lit) => self.evaluate_literal(lit),
-            Expression::Identifier(name, _) => {
+            Expression::Identifier(name, span) => {
                 self.env.get(name).cloned().ok_or_else(|| {
-                    ClsError::RuntimeError(format!("Variable no definida: {}", name))
+                    self.err_at(format!("Variable no definida: {}", name), span)
                 })
             }
             Expression::Binary(bin) => self.evaluate_binary(bin),
@@ -535,7 +546,7 @@ impl Interpreter {
             Expression::Parenthesized(inner, _) => self.evaluate_expression(inner),
             Expression::StringInterpolation(interp) => self.evaluate_string_interpolation(interp),
             Expression::Cmx(cmx) => self.evaluate_cmx(cmx),
-            Expression::NamespaceAccess(ns, name, _) => self.evaluate_namespace_access(ns, name),
+            Expression::NamespaceAccess(ns, name, span) => self.evaluate_namespace_access(ns, name, span),
         }
     }
 
@@ -575,23 +586,23 @@ impl Interpreter {
             (Operator::Star, Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 * b)),
             (Operator::Star, Value::Float(a), Value::Int(b)) => Ok(Value::Float(a * *b as f64)),
             (Operator::Slash, Value::Int(a), Value::Int(b)) => {
-                if *b == 0 { Err(ClsError::RuntimeError("División por cero".into())) }
+                if *b == 0 { Err(self.err_at("División por cero", &bin.span)) }
                 else { Ok(Value::Int(a / b)) }
             }
             (Operator::Slash, Value::Float(a), Value::Float(b)) => {
-                if *b == 0.0 { Err(ClsError::RuntimeError("División por cero".into())) }
+                if *b == 0.0 { Err(self.err_at("División por cero", &bin.span)) }
                 else { Ok(Value::Float(a / b)) }
             }
             (Operator::Slash, Value::Int(a), Value::Float(b)) => {
-                if *b == 0.0 { Err(ClsError::RuntimeError("División por cero".into())) }
+                if *b == 0.0 { Err(self.err_at("División por cero", &bin.span)) }
                 else { Ok(Value::Float(*a as f64 / b)) }
             }
             (Operator::Slash, Value::Float(a), Value::Int(b)) => {
-                if *b == 0 { Err(ClsError::RuntimeError("División por cero".into())) }
+                if *b == 0 { Err(self.err_at("División por cero", &bin.span)) }
                 else { Ok(Value::Float(a / *b as f64)) }
             }
             (Operator::Percent, Value::Int(a), Value::Int(b)) => {
-                if *b == 0 { Err(ClsError::RuntimeError("Módulo por cero".into())) }
+                if *b == 0 { Err(self.err_at("Módulo por cero", &bin.span)) }
                 else { Ok(Value::Int(a % b)) }
             }
 
@@ -633,10 +644,7 @@ impl Interpreter {
             UnaryOp::Negate => match operand {
                 Value::Int(v) => Ok(Value::Int(-v)),
                 Value::Float(v) => Ok(Value::Float(-v)),
-                _ => Err(ClsError::RuntimeError(format!(
-                    "No se puede negar: {:?}",
-                    operand
-                ))),
+                _ => Err(self.err_at(format!("No se puede negar: {:?}", operand), &un.span)),
             },
             UnaryOp::Not => {
                 let val = operand.is_truthy();
@@ -644,26 +652,24 @@ impl Interpreter {
             }
             UnaryOp::BitwiseNot => match operand {
                 Value::Int(v) => Ok(Value::Int(!v)),
-                _ => Err(ClsError::RuntimeError(format!(
-                    "No se puede aplicar ~: {:?}", operand
-                ))),
+                _ => Err(self.err_at(format!("No se puede aplicar ~: {:?}", operand), &un.span)),
             },
             UnaryOp::TypeOf => Ok(Value::String(operand.type_name().to_string())),
             UnaryOp::PostInc | UnaryOp::PreInc | UnaryOp::PostDec | UnaryOp::PreDec => {
                 let name = match &*un.operand {
                     Expression::Identifier(n, _) => n.clone(),
-                    _ => return Err(ClsError::RuntimeError("++/-- requiere identificador".to_string())),
+                    _ => return Err(self.err_at("++/-- requiere identificador", &un.span)),
                 };
                 let delta: i64 = match un.op { UnaryOp::PostInc | UnaryOp::PreInc => 1, _ => -1 };
                 let new_val = match &operand {
                     Value::Int(v) => Value::Int(v + delta),
                     Value::Float(f) => Value::Float(f + delta as f64),
-                    _ => return Err(ClsError::RuntimeError("++/-- solo aplica a números".to_string())),
+                    _ => return Err(self.err_at("++/-- solo aplica a números", &un.span)),
                 };
                 self.env.set(&name, new_val);
                 match un.op {
                     UnaryOp::PreInc | UnaryOp::PreDec => self.env.get(&name).cloned()
-                        .ok_or_else(|| ClsError::RuntimeError(format!("Variable no definida: {}", name))),
+                        .ok_or_else(|| self.err_at(format!("Variable no definida: {}", name), &un.span)),
                     UnaryOp::PostInc | UnaryOp::PostDec => Ok(operand),
                     _ => unreachable!(),
                 }
@@ -678,21 +684,23 @@ impl Interpreter {
             args.push(self.evaluate_expression(arg)?);
         }
 
-        self.call_function_value(callee, args)
+        self.call_function_value(callee, args, &call.span)
     }
 
-    fn evaluate_member_call(&mut self, _call: &CallExpr) -> ClsResult<Value> {
+    #[allow(dead_code)]
+    fn evaluate_member_call(&mut self, call: &CallExpr) -> ClsResult<Value> {
         // TODO: método de objeto/clase
-        Err(ClsError::RuntimeError("Member call no implementado".to_string()))
+        Err(self.err_at("Member call no implementado", &call.span))
     }
 
     /// Ejecuta un valor de función con argumentos ya evaluados
-    fn call_function_value(&mut self, callee: Value, args: Vec<Value>) -> ClsResult<Value> {
+    fn call_function_value(&mut self, callee: Value, args: Vec<Value>, call_span: &Span) -> ClsResult<Value> {
         let fn_name = match &callee {
             Value::Fun(f) => f.name.clone(),
             _ => "<unknown>".to_string(),
         };
-        self.call_stack.push(fn_name.clone());
+        let current_frame = StackFrame::new(&fn_name, Some(*call_span), &self.source_file);
+        self.call_stack.push(current_frame.clone());
 
         let result = match callee {
             Value::Fun(fun) => match &fun.kind {
@@ -712,7 +720,6 @@ impl Interpreter {
                         self.env.define(&param.name, arg_val);
                     }
                     let result = self.execute_block(body);
-                    // Si hubo return, tomar el valor de la señal
                     let result = match std::mem::replace(&mut self.flow, Flow::Normal) {
                         Flow::Return(val) => Ok(val),
                         _ => result,
@@ -721,23 +728,35 @@ impl Interpreter {
                     result
                 }
             },
-            _ => Err(ClsError::RuntimeError(format!(
-                "No se puede llamar: {:?}", callee
-            ))),
+            _ => Err(self.err_at("No se puede llamar", call_span)),
         };
 
         self.call_stack.pop();
-        // Añadir stack trace al error
         result.map_err(|e| {
-            let trace = self.call_stack.join("\n  → ");
-            if trace.is_empty() {
-                e
-            } else {
-                ClsError::RuntimeError(format!(
-                    "{}\n  Call stack:\n  → {} → {}",
-                    e, trace, fn_name
-                ))
+            let err_msg = e.to_string();
+            // Si el error ya tiene call stack, no duplicar
+            if err_msg.contains("\n  Call stack:") {
+                return e;
             }
+            let stack_trace: Vec<String> = self.call_stack.iter()
+                .map(|f| {
+                    if let Some(s) = &f.span {
+                        format!("{} ({}:{})", f.function, f.source_file, s)
+                    } else {
+                        f.function.clone()
+                    }
+                })
+                .collect();
+            let trace_str = stack_trace.join("\n  → ");
+            let span_display = if let Some(s) = &current_frame.span {
+                format!(" (línea {}, columna {})", s.start_line, s.start_col)
+            } else {
+                String::new()
+            };
+            ClsError::RuntimeError(format!(
+                "{}\n  Call stack:\n  → {} → {}{}",
+                err_msg, trace_str, current_frame.function, span_display
+            ))
         })
     }
 
@@ -789,7 +808,8 @@ impl Interpreter {
             let args_val = Value::Array(
                 self.args.iter().map(|a| Value::String(a.clone())).collect(),
             );
-            match self.call_function_value(main_val, vec![args_val]) {
+            let dummy_span = Span::new(0, 0, 0, 0);
+            match self.call_function_value(main_val, vec![args_val], &dummy_span) {
                 Ok(Value::Int(code)) => Ok(code as i32),
                 Ok(_) => Ok(0),
                 Err(e) => Err(e),
@@ -804,10 +824,7 @@ impl Interpreter {
         match object {
             Value::Record(rec) => {
                 rec.get(&member.member).cloned().ok_or_else(|| {
-                    ClsError::RuntimeError(format!(
-                        "Miembro no encontrado: '{}' (línea {}, columna {})",
-                        member.member, member.span.start_line, member.span.start_col
-                    ))
+                    self.err_at(format!("Miembro no encontrado: '{}'", member.member), &member.span)
                 })
             }
             Value::Cmx(ref cmx) => match member.member.as_str() {
@@ -815,15 +832,10 @@ impl Interpreter {
                 "props" => Ok(Value::Record(cmx.props.clone())),
                 "children" => Ok(Value::Array(cmx.children.clone())),
                 name => cmx.props.get(name).cloned().ok_or_else(|| {
-                    ClsError::RuntimeError(format!(
-                        "Propiedad CMX no encontrada: '{}'", name
-                    ))
+                    self.err_at(format!("Propiedad CMX no encontrada: '{}'", name), &member.span)
                 }),
             },
-            _ => Err(ClsError::RuntimeError(format!(
-                "No se puede acceder a miembro en: {:?} (línea {}, columna {})",
-                object, member.span.start_line, member.span.start_col
-            ))),
+            _ => Err(self.err_at(format!("No se puede acceder a miembro en: {:?}", object), &member.span)),
         }
     }
 
@@ -833,20 +845,17 @@ impl Interpreter {
         match (object, index) {
             (Value::Array(arr), Value::Int(i)) => {
                 if i < 0 || i >= arr.len() as i64 {
-                    Err(ClsError::RuntimeError(format!(
-                        "Índice fuera de rango: {}",
-                        i
-                    )))
+                    Err(self.err_at(format!("Índice fuera de rango: {}", i), &idx.span))
                 } else {
                     Ok(arr[i as usize].clone())
                 }
             }
             (Value::Record(rec), Value::String(key)) => {
                 rec.get(&key).cloned().ok_or_else(|| {
-                    ClsError::RuntimeError(format!("Key no encontrada: {}", key))
+                    self.err_at(format!("Key no encontrada: {}", key), &idx.span)
                 })
             }
-            _ => Err(ClsError::RuntimeError("Indexado no soportado".to_string())),
+            _ => Err(self.err_at("Indexado no soportado", &idx.span)),
         }
     }
 
@@ -902,9 +911,7 @@ impl Interpreter {
                 self.env.set(name, value.clone());
                 Ok(value)
             }
-            _ => Err(ClsError::RuntimeError(
-                "Target de asignación no soportado".to_string(),
-            )),
+            _ => Err(self.err_at("Target de asignación no soportado", &assign.span)),
         }
     }
 
@@ -946,11 +953,8 @@ impl Interpreter {
         Ok(Value::Cmx(Box::new(crate::value::CmxValue { tag: cmx.tag.clone(), props, children })))
     }
 
-    fn evaluate_namespace_access(&mut self, ns: &str, name: &str) -> ClsResult<Value> {
+    fn evaluate_namespace_access(&mut self, ns: &str, name: &str, span: &Span) -> ClsResult<Value> {
         // TODO: resolver namespace::name
-        Err(ClsError::RuntimeError(format!(
-            "Namespace access no implementado: {}::{}",
-            ns, name
-        )))
+        Err(self.err_at(format!("Namespace access no implementado: {}::{}", ns, name), span))
     }
 }

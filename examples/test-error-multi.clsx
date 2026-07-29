@@ -1,0 +1,12 @@
+function inner(x: int) -> int {
+    return x / 0;
+};
+
+function outer(y: int) -> int {
+    return inner(y);
+};
+
+function main(args: String[]) -> int {
+    print(outer(10));
+    return 0;
+};

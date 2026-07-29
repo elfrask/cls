@@ -1,6 +1,5 @@
 use crate::value::Value;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 /// Entorno de ejecución: scopes anidados con variables
 #[derive(Debug, Clone)]
