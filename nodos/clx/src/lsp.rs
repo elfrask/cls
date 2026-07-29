@@ -136,8 +136,8 @@ impl ClsLspBackend {
     fn push_cls_diag(diags: &mut Vec<Diagnostic>, d: &ClsDiag, severity: DiagnosticSeverity) {
         diags.push(Diagnostic {
             range: Range {
-                start: Position { line: d.span.start_line, character: d.span.start_col.saturating_sub(1) },
-                end: Position { line: d.span.end_line, character: d.span.end_col },
+                start: Position { line: d.span.start_line.saturating_sub(1), character: d.span.start_col.saturating_sub(1) },
+                end: Position { line: d.span.end_line.saturating_sub(1), character: d.span.end_col.saturating_sub(1) },
             },
             severity: Some(severity),
             message: d.message.clone(),

@@ -20,10 +20,21 @@ impl TypeChecker {
             scopes: vec![HashMap::new()],
             current_return_type: None,
         };
-        // Registrar funciones built-in
+        // Registrar funciones built-in (core intrinsics)
         tc.define("print", Type::Fun(vec![Type::Any], Box::new(Type::Void)));
         tc.define("input", Type::Fun(vec![Type::String], Box::new(Type::String)));
         tc.define("args", Type::Array(Box::new(Type::String)));
+        tc.define("toString", Type::Fun(vec![Type::Any], Box::new(Type::String)));
+        tc.define("int", Type::Fun(vec![Type::Any], Box::new(Type::Int)));
+        tc.define("float", Type::Fun(vec![Type::Any], Box::new(Type::Float)));
+        tc.define("str", Type::Fun(vec![Type::Any], Box::new(Type::String)));
+        tc.define("bool", Type::Fun(vec![Type::Any], Box::new(Type::Bool)));
+        tc.define("len", Type::Fun(vec![Type::Any], Box::new(Type::Int)));
+        tc.define("type", Type::Fun(vec![Type::Any], Box::new(Type::String)));
+        tc.define("now", Type::Fun(vec![], Box::new(Type::Int)));
+        tc.define("exit", Type::Fun(vec![Type::Int], Box::new(Type::Void)));
+        tc.define("sleep", Type::Fun(vec![Type::Int], Box::new(Type::Void)));
+        tc.define("throw", Type::Fun(vec![Type::Any], Box::new(Type::Unknown)));
         tc
     }
 

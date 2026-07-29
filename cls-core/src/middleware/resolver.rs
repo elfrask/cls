@@ -199,11 +199,11 @@ impl NameResolver {
 
     fn resolve_expression(&mut self, expr: &Expression) -> ClsResult<()> {
         match expr {
-            Expression::Identifier(name, _) => {
+            Expression::Identifier(name, span) => {
                 if !self.lookup(name) {
                     return Err(ClsError::SyntaxError(format!(
-                        "Variable no definida: {}",
-                        name
+                        "Variable no definida: {} (línea {}, columna {})",
+                        name, span.start_line, span.start_col
                     )));
                 }
             }
@@ -310,7 +310,10 @@ impl Scope {
 
     fn global() -> Self {
         let mut scope = Self::new();
-        // TODO: registrar funciones y tipos intrínsecos
+        for name in &["print", "input", "toString", "int", "float", "str", "bool",
+                       "len", "type", "now", "exit", "sleep", "throw", "args"] {
+            scope.symbols.insert(name.to_string(), SymbolKind::Function);
+        }
         scope
     }
 
