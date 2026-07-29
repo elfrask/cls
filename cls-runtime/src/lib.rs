@@ -19,6 +19,7 @@ pub use interpreter::{Interpreter, ImportFrame};
 pub use intrinsics::Intrinsics;
 pub use resolver::ModuleResolver;
 pub use vfs::{VfsResolver, VfsProtocol, LocalFs, ZipFs, resolve_safe};
+pub use clslib::{ClsLibIndex, ClsLibEntry, ClsLibResolver, compute_hash_bytes};
 pub use gc::GarbageCollector;
 pub use sandbox::Sandbox;
 pub use error::{ClsError, ClsResult};
