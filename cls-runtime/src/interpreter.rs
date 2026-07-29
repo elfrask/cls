@@ -178,6 +178,19 @@ impl Interpreter {
             },
         )));
 
+        // throw(msg) — lanza un error de runtime intencional
+        self.env.define("throw", Value::Fun(FunValue::new_native(
+            "throw", vec!["msg".into()],
+            |a| {
+                let msg = match a.first() {
+                    Some(Value::String(s)) => s.clone(),
+                    Some(v) => v.to_string(),
+                    None => "error".to_string(),
+                };
+                Err(ClsError::RuntimeError(msg))
+            },
+        )));
+
         // push(arr, val), pop(arr)
         self.env.define("push", Value::Fun(FunValue::new_native(
             "push", vec!["arr".into(), "val".into()],
