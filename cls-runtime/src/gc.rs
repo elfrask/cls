@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 
 /// Garbage Collector de CLS
 pub struct GarbageCollector {
