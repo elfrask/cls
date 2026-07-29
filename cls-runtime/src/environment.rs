@@ -91,3 +91,77 @@ impl Scope {
         self.variables.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env_with_values() -> Environment {
+        let mut e = Environment::new();
+        e.define("x", Value::Int(10));
+        e.define("y", Value::String("hello".into()));
+        e
+    }
+
+    #[test]
+    fn test_define_and_get() {
+        let e = env_with_values();
+        assert_eq!(e.get("x"), Some(&Value::Int(10)));
+        assert_eq!(e.get("y"), Some(&Value::String("hello".into())));
+        assert_eq!(e.get("z"), None);
+    }
+
+    #[test]
+    fn test_set_updates_existing() {
+        let mut e = env_with_values();
+        e.set("x", Value::Int(99));
+        assert_eq!(e.get("x"), Some(&Value::Int(99)));
+    }
+
+    #[test]
+    fn test_set_creates_new() {
+        let mut e = env_with_values();
+        e.set("z", Value::Bool(true));
+        assert_eq!(e.get("z"), Some(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn test_scope_isolation() {
+        let mut e = env_with_values();
+        e.push_scope();
+        e.define("x", Value::Int(42));
+        // inner scope shadow
+        assert_eq!(e.get("x"), Some(&Value::Int(42)));
+        e.pop_scope();
+        // original restored
+        assert_eq!(e.get("x"), Some(&Value::Int(10)));
+    }
+
+    #[test]
+    fn test_scope_depth() {
+        let mut e = Environment::new();
+        assert_eq!(e.scope_depth(), 1);
+        e.push_scope();
+        assert_eq!(e.scope_depth(), 2);
+        e.push_scope();
+        assert_eq!(e.scope_depth(), 3);
+        e.pop_scope();
+        assert_eq!(e.scope_depth(), 2);
+    }
+
+    #[test]
+    fn test_contains() {
+        let e = env_with_values();
+        assert!(e.contains("x"));
+        assert!(!e.contains("z"));
+    }
+
+    #[test]
+    fn test_all_globals() {
+        let e = env_with_values();
+        let all = e.all();
+        assert_eq!(all.len(), 2);
+        assert!(all.contains_key("x"));
+        assert!(all.contains_key("y"));
+    }
+}

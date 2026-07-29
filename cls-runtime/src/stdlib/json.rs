@@ -42,3 +42,69 @@ fn value_to_json(v: &Value) -> serde_json::Value {
         _ => serde_json::Value::Null,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::value::FunKind;
+    use cls_core::error::ClsResult;
+
+    fn get_fn(name: &str) -> std::sync::Arc<dyn Fn(&[Value]) -> ClsResult<Value>> {
+        let module = module();
+        match &module {
+            Value::Record(m) => match m.get(name) {
+                Some(Value::Fun(f)) => match &f.kind {
+                    FunKind::Native { func, .. } => func.clone(),
+                    _ => panic!("not native"),
+                },
+                _ => panic!("fn '{}' not found", name),
+            },
+            _ => panic!("not a module"),
+        }
+    }
+
+    #[test]
+    fn test_parse_null() {
+        let r = get_fn("parse")(&[Value::String("null".into())]).unwrap();
+        assert_eq!(r, Value::Null);
+    }
+
+    #[test]
+    fn test_parse_int() {
+        let r = get_fn("parse")(&[Value::String("42".into())]).unwrap();
+        assert_eq!(r, Value::Int(42));
+    }
+
+    #[test]
+    fn test_parse_string() {
+        let r = get_fn("parse")(&[Value::String(r#""hello""#.into())]).unwrap();
+        assert_eq!(r, Value::String("hello".into()));
+    }
+
+    #[test]
+    fn test_parse_object() {
+        let r = get_fn("parse")(&[Value::String(r#"{"a":1,"b":"x"}"#.into())]).unwrap();
+        match &r {
+            Value::Record(m) => {
+                assert_eq!(m.get("a"), Some(&Value::Int(1)));
+                assert_eq!(m.get("b"), Some(&Value::String("x".into())));
+            }
+            _ => panic!("expected Record"),
+        }
+    }
+
+    #[test]
+    fn test_stringify() {
+        let r = get_fn("stringify")(&[Value::Record({
+            let mut m = HashMap::new();
+            m.insert("x".into(), Value::Int(10));
+            m
+        })]).unwrap();
+        assert_eq!(r, Value::String(r#"{"x":10}"#.into()));
+    }
+
+    #[test]
+    fn test_parse_error() {
+        assert!(get_fn("parse")(&[Value::String("invalid".into())]).is_err());
+    }
+}

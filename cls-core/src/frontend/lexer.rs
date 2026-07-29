@@ -526,25 +526,93 @@ impl Lexer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frontend::token::*;
 
-    #[test]
-    fn test_lexer_simple() {
-        let mut lexer = Lexer::new("var x = 42");
-        let tokens = lexer.tokenize().unwrap();
-        assert!(tokens.len() > 0);
+    fn tokenize(source: &str) -> Vec<Token> {
+        let mut lexer = Lexer::new(source);
+        lexer.tokenize().unwrap().into_iter().map(|st| st.token).collect()
     }
 
     #[test]
-    fn test_lexer_string() {
-        let mut lexer = Lexer::new(r#""hello world""#);
-        let tokens = lexer.tokenize().unwrap();
-        // assert!(matches!(tokens[0], Token::StringLiteral(_)));
+    fn test_numbers() {
+        let toks = tokenize("42 3.14");
+        assert_eq!(toks.len(), 3);
+        assert!(matches!(&toks[0], Token::IntLiteral(42)));
+        assert!(matches!(&toks[1], Token::FloatLiteral(_)));
+        assert!(matches!(&toks[2], Token::EOF));
     }
 
     #[test]
-    fn test_lexer_comment() {
-        let mut lexer = Lexer::new("# comentario\nvar x = 1");
-        let tokens = lexer.tokenize().unwrap();
-        // assert!(matches!(tokens[0], Token::Keyword(_)));
+    fn test_strings() {
+        let toks = tokenize(r#""hello" 'world'"#);
+        assert_eq!(toks.len(), 3);
+        assert!(matches!(&toks[0], Token::StringLiteral(s) if s == "hello"));
+        assert!(matches!(&toks[1], Token::StringLiteral(s) if s == "world"));
+    }
+
+    #[test]
+    fn test_identifiers_and_keywords() {
+        let toks = tokenize("foo var function if");
+        assert_eq!(toks.len(), 5);
+        assert!(matches!(&toks[0], Token::Identifier(name) if name == "foo"));
+        assert!(matches!(&toks[1], Token::Keyword(Keyword::Var)));
+        assert!(matches!(&toks[2], Token::Keyword(Keyword::Function)));
+        assert!(matches!(&toks[3], Token::Keyword(Keyword::If)));
+    }
+
+    #[test]
+    fn test_operators() {
+        let toks = tokenize("+ - * / == != ->");
+        assert_eq!(toks.len(), 8);
+        assert!(matches!(&toks[0], Token::Operator(Operator::Plus)));
+        assert!(matches!(&toks[1], Token::Operator(Operator::Minus)));
+        assert!(matches!(&toks[2], Token::Operator(Operator::Star)));
+        assert!(matches!(&toks[3], Token::Operator(Operator::Slash)));
+        assert!(matches!(&toks[4], Token::Operator(Operator::StrictEqual)));
+        assert!(matches!(&toks[5], Token::Operator(Operator::NotEqual)));
+        assert!(matches!(&toks[6], Token::Operator(Operator::Arrow)));
+    }
+
+    #[test]
+    fn test_comments_skipped() {
+        let toks = tokenize("# comentario\nvar x = 1");
+        assert!(toks.len() > 1);
+        assert!(matches!(&toks[0], Token::Keyword(Keyword::Var)));
+    }
+
+    #[test]
+    fn test_symbols() {
+        let toks = tokenize("(){}[],.;");
+        let expected = vec![
+            Token::Symbol(Symbol::LParen),
+            Token::Symbol(Symbol::RParen),
+            Token::Symbol(Symbol::LBrace),
+            Token::Symbol(Symbol::RBrace),
+            Token::Symbol(Symbol::LBracket),
+            Token::Symbol(Symbol::RBracket),
+            Token::Symbol(Symbol::Comma),
+            Token::Symbol(Symbol::Dot),
+            Token::Symbol(Symbol::Semicolon),
+        ];
+        assert_eq!(toks.len(), expected.len() + 1); // +1 for EOF
+        for (i, exp) in expected.iter().enumerate() {
+            assert_eq!(&toks[i], exp, "position {}", i);
+        }
+    }
+
+    #[test]
+    fn test_string_unterminated() {
+        let mut lexer = Lexer::new(r#""unterminated"#);
+        let result = lexer.tokenize();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_span_tracking() {
+        let mut lexer = Lexer::new("a + b");
+        let spanned = lexer.tokenize().unwrap();
+        assert_eq!(spanned[0].span.start_line, 1);
+        assert_eq!(spanned[0].span.start_col, 1);
+        assert_eq!(spanned[2].span.start_col, 5);
     }
 }

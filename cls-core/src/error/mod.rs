@@ -72,3 +72,86 @@ impl ClsError {
         Some((line, col))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_span_new_and_display() {
+        let s = Span::new(1, 5, 3, 20);
+        assert_eq!(s.start_line, 1);
+        assert_eq!(s.start_col, 5);
+        assert_eq!(s.end_line, 3);
+        assert_eq!(s.end_col, 20);
+        assert_eq!(s.to_string(), "1:5");
+    }
+
+    #[test]
+    fn test_span_merge() {
+        let a = Span::new(1, 1, 2, 10);
+        let b = Span::new(3, 5, 4, 15);
+        let merged = a.merge(&b);
+        assert_eq!(merged.start_line, 1);
+        assert_eq!(merged.start_col, 1);
+        assert_eq!(merged.end_line, 4);
+        assert_eq!(merged.end_col, 15);
+    }
+
+    #[test]
+    fn test_stack_frame_new() {
+        let span = Span::new(2, 10, 2, 20);
+        let f = StackFrame::new("foo", Some(span), "test.clsx");
+        assert_eq!(f.function, "foo");
+        assert!(f.span.is_some());
+        assert_eq!(f.source_file, "test.clsx");
+    }
+
+    #[test]
+    fn test_stack_frame_no_span() {
+        let f = StackFrame::new("bar", None, "lib.clsx");
+        assert_eq!(f.function, "bar");
+        assert!(f.span.is_none());
+    }
+
+    #[test]
+    fn test_cls_error_display() {
+        let err = ClsError::RuntimeError("test error".into());
+        let msg = err.to_string();
+        assert!(msg.contains("test error"));
+        assert!(msg.contains("Error de runtime"));
+
+        let err = ClsError::SyntaxError("bad token".into());
+        assert!(err.to_string().contains("Error de sintaxis"));
+    }
+
+    #[test]
+    fn test_syntax_at() {
+        let span = Span::new(3, 7, 3, 7);
+        let err = ClsError::syntax_at("error", &span);
+        let msg = err.to_string();
+        assert!(msg.contains("línea 3"));
+        assert!(msg.contains("columna 7"));
+    }
+
+    #[test]
+    fn test_extract_line_col() {
+        let msg = "Error de runtime: División por cero (línea 2, columna 38)";
+        let (line, col) = ClsError::extract_line_col(msg).unwrap();
+        assert_eq!(line, 2);
+        assert_eq!(col, 38);
+    }
+
+    #[test]
+    fn test_extract_line_col_no_match() {
+        let msg = "Error de runtime: algo salió mal";
+        assert!(ClsError::extract_line_col(msg).is_none());
+    }
+
+    #[test]
+    fn test_cls_error_from_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let err: ClsError = io_err.into();
+        assert!(matches!(err, ClsError::IoError(_)));
+    }
+}

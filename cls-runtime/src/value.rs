@@ -196,3 +196,65 @@ impl CmxValue {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_value_type_names() {
+        assert_eq!(Value::Int(42).type_name(), "Int");
+        assert_eq!(Value::Float(3.14).type_name(), "Float");
+        assert_eq!(Value::String("hi".into()).type_name(), "String");
+        assert_eq!(Value::Bool(true).type_name(), "Bool");
+        assert_eq!(Value::Null.type_name(), "Null");
+        assert_eq!(Value::Void.type_name(), "Void");
+        assert_eq!(Value::Array(vec![]).type_name(), "Array");
+        assert_eq!(Value::Record(HashMap::new()).type_name(), "Record");
+    }
+
+    #[test]
+    fn test_value_truthy() {
+        assert!(Value::Bool(true).is_truthy());
+        assert!(!Value::Bool(false).is_truthy());
+        assert!(Value::Int(5).is_truthy());
+        assert!(!Value::Int(0).is_truthy());
+        assert!(Value::String("a".into()).is_truthy());
+        assert!(!Value::String("".into()).is_truthy());
+        assert!(!Value::Null.is_truthy());
+        assert!(!Value::Void.is_truthy());
+        assert!(Value::Array(vec![Value::Int(1)]).is_truthy());
+        assert!(!Value::Array(vec![]).is_truthy());
+        assert!(!Value::Record(HashMap::new()).is_truthy());
+    }
+
+    #[test]
+    fn test_value_display() {
+        assert_eq!(Value::Int(42).to_string(), "42");
+        assert_eq!(Value::String("hello".into()).to_string(), "hello");
+        assert_eq!(Value::Bool(true).to_string(), "true");
+        assert_eq!(Value::Null.to_string(), "null");
+        assert_eq!(Value::Void.to_string(), "void");
+        assert_eq!(Value::Array(vec![Value::Int(1), Value::Int(2)]).to_string(), "[1, 2]");
+    }
+
+    #[test]
+    fn test_fun_value_native() {
+        let f = FunValue::new_native("test", vec!["x".into()], |a| {
+            Ok(a.first().cloned().unwrap_or(Value::Null))
+        });
+        assert_eq!(f.name, "test");
+        match &f.kind {
+            FunKind::Native { params, .. } => assert_eq!(params[0], "x"),
+            _ => panic!("expected Native"),
+        }
+    }
+
+    #[test]
+    fn test_cmx_value_new() {
+        let mut cmx = CmxValue::new("App".into());
+        assert_eq!(cmx.tag, "App");
+        cmx.props.insert("color".into(), Value::String("red".into()));
+        assert_eq!(cmx.props.len(), 1);
+    }
+}
