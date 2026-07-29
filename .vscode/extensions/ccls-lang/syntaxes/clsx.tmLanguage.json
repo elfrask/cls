@@ -182,16 +182,17 @@
             "3": { "name": "punctuation.section.parens.begin.ccls" }
           },
           "patterns": [
+            {
+              "name": "variable.parameter.ccls",
+              "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=[:),])"
+            },
+            { "include": "#types" },
             { "include": "$self" }
           ]
         },
         {
-          "name": "entity.name.function.arrow.ccls",
-          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(=)\\s*(\\()",
-          "captures": {
-            "1": { "name": "variable.other.ccls" },
-            "2": { "name": "keyword.operator.assignment.ccls" }
-          }
+          "name": "entity.name.function.call.ccls",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
         }
       ]
     },
@@ -268,6 +269,13 @@
         {
           "name": "variable.other.constant.ccls",
           "match": "\\b([A-Z_][A-Z0-9_]*)\\b"
+        },
+        {
+          "name": "variable.other.declaration.ccls",
+          "match": "(?<=\\b(var|let|const)\\s+)([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "2": { "name": "variable.other.ccls" }
+          }
         }
       ]
     },
