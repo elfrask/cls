@@ -1,5 +1,8 @@
+from "fs" import fs;
+
 function main(args: String[]) -> int {
     var x = (a) -> 5;
     print("ok", x(1));
+    
     return 0;
 }
