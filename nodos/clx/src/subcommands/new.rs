@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use cls_core::config::ModuleManifest;
 
 pub fn execute(args: &[String]) -> i32 {
     if args.is_empty() {
@@ -15,34 +16,18 @@ pub fn execute(args: &[String]) -> i32 {
         return 1;
     }
 
-    // Crear estructura de directorios
     let src_dir = dir.join("src");
     let mod_dir = dir.join("modules");
     fs::create_dir_all(&src_dir).unwrap();
     fs::create_dir_all(&mod_dir).unwrap();
 
-    // cls.json
-    let registry = std::env::var("CLS_REGISTRY")
-        .unwrap_or_else(|_| "https://registry.cls-lang.org".to_string());
-    let manifest = serde_json::json!({
-        "name": name,
-        "version": "0.1.0",
-        "entry": if is_lib { "" } else { "src/main.clsx" },
-        "description": "",
-        "authors": [],
-        "license": "MIT",
-        "registry": registry,
-        "project": {
-            "sourceDir": "src",
-            "outDir": "dist",
-            "target": if is_lib { "library" } else { "executable" }
-        },
-        "dependencies": {},
-        "devDependencies": {}
-    });
-    fs::write(dir.join("cls.json"), serde_json::to_string_pretty(&manifest).unwrap()).unwrap();
+    // cls.json via ModuleManifest
+    let mut manifest = ModuleManifest::default_for(name);
+    manifest.entry = if is_lib { String::new() } else { "src/main.clsx".to_string() };
+    manifest.project.target = if is_lib { "library".to_string() } else { "executable".to_string() };
+    manifest.save(&dir.join("cls.json")).unwrap();
 
-    // main.clsx (solo si es binario)
+    // main.clsx
     if !is_lib {
         let main_content = r#"function main(args: String[]) -> int {
     print("Hello from CLS!");
@@ -55,6 +40,6 @@ pub fn execute(args: &[String]) -> i32 {
     // .gitignore
     fs::write(dir.join(".gitignore"), "modules/\ndist/\n").unwrap();
 
-    println!("✅ Proyecto '{}' creado", name);
+    println!("Proyecto '{}' creado", name);
     0
 }

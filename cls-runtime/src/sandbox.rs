@@ -16,6 +16,14 @@ impl Sandbox {
         }
     }
 
+    pub fn from_config(config: &cls_core::config::SandboxConfig) -> Self {
+        Self {
+            allow_fs: config.allow_fs,
+            allow_net: config.allow_net,
+            max_execution_time_ms: config.max_execution_time,
+        }
+    }
+
     pub fn check_fs_access(&self) -> ClsResult<()> {
         if !self.allow_fs {
             return Err(crate::error::ClsError::RuntimeError(

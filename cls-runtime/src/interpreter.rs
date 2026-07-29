@@ -2,6 +2,7 @@ use crate::environment::Environment;
 use crate::intrinsics::Intrinsics;
 use crate::resolver::ModuleResolver;
 use crate::value::{FunValue, Value};
+use cls_core::config::ModuleManifest;
 use cls_core::error::{ClsError, ClsResult, Diagnostic, Span, StackFrame};
 use cls_core::frontend::ast::*;
 use std::collections::HashSet;
@@ -21,6 +22,7 @@ pub struct Interpreter {
     import_trace: Vec<ImportFrame>,
     call_stack: Vec<StackFrame>,
     flow: Flow,
+    config: Option<ModuleManifest>,
 }
 
 /// Frame de importación para trace de errores
@@ -45,9 +47,14 @@ impl Interpreter {
             import_trace: Vec::new(),
             call_stack: Vec::new(),
             flow: Flow::Normal,
+            config: None,
         };
         interpreter.register_intrinsics(intrinsics);
         interpreter
+    }
+
+    pub fn set_config(&mut self, config: Option<ModuleManifest>) {
+        self.config = config;
     }
 
     pub fn diagnostics(&self) -> &[Diagnostic] {

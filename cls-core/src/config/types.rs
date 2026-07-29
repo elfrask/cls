@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Configuración de tipos del compilador
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TypesConfig {
     /// Habilitar chequeo de tipos (true = híbrido, false = dinámico)
     #[serde(default = "default_true")]
@@ -37,6 +38,7 @@ impl Default for TypesConfig {
 
 /// Configuración del compilador
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CompilerConfig {
     /// Arquitectura objetivo: "x86_64", "arm64", "wasm", "bytecode"
     #[serde(default = "default_arch")]
@@ -85,6 +87,7 @@ impl Default for CompilerConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct FeaturesConfig {
     #[serde(default)]
     pub async_: bool,
@@ -97,6 +100,7 @@ pub struct FeaturesConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WarningsConfig {
     #[serde(default = "default_warn")]
     pub unused_variables: String,
@@ -124,6 +128,7 @@ impl Default for WarningsConfig {
 
 /// Configuración del intérprete/runtime
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InterpreterConfig {
     /// Habilitar optimización en interpretación
     #[serde(default)]
@@ -158,6 +163,7 @@ impl Default for InterpreterConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RuntimeMemoryConfig {
     #[serde(default = "default_mem")]
     pub memory_limit: String,
@@ -188,6 +194,7 @@ impl Default for RuntimeMemoryConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GcConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -219,6 +226,7 @@ impl Default for GcConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SandboxConfig {
     #[serde(default)]
     pub allow_fs: bool,
