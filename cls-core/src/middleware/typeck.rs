@@ -117,6 +117,9 @@ impl TypeChecker {
             }
             Statement::InterfaceDecl(i) => {
                 self.define(&i.name, Type::Named(i.name.clone(), vec![]));
+                if !self.config.strict {
+                    self.warn(&format!("interface '{}' solo tiene efecto en type-checker (stub)", i.name), i.span);
+                }
                 Type::Void
             }
             Statement::ModuleDecl(m) => {
@@ -464,6 +467,10 @@ impl TypeChecker {
                     );
                 }
                 *ret
+            }
+            Type::Named(_, _) => {
+                // Struct constructor — devuelve el tipo del struct
+                callee_type.clone()
             }
             Type::Any => Type::Any,
             _ => self.error(

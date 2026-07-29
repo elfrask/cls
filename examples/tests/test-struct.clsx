@@ -1,0 +1,17 @@
+structure Person {
+    name: String,
+    age: int
+};
+
+function main(args: String[]) -> int {
+    var p = Person("Alice", 30);
+
+    print("Nombre:", p.name);
+    print("Edad:", toString(p.age));
+
+    # Mutar campo
+    p.name = "Bob";
+    print("Nombre cambiado:", p.name);
+
+    return 0;
+};

@@ -1,10 +1,11 @@
 use crate::environment::Environment;
 use crate::intrinsics::Intrinsics;
 use crate::resolver::ModuleResolver;
-use crate::value::{FunValue, Value};
+use crate::value::{FunValue, Value, StructDef, StructField, StructInstance};
 use cls_core::config::ModuleManifest;
 use cls_core::error::{ClsError, ClsResult, Diagnostic, Span, StackFrame};
 use cls_core::frontend::ast::*;
+use std::collections::HashMap;
 use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
@@ -23,6 +24,7 @@ pub struct Interpreter {
     call_stack: Vec<StackFrame>,
     flow: Flow,
     config: Option<ModuleManifest>,
+    structs: HashMap<String, StructDef>,
 }
 
 /// Frame de importación para trace de errores
@@ -48,6 +50,7 @@ impl Interpreter {
             call_stack: Vec::new(),
             flow: Flow::Normal,
             config: None,
+            structs: HashMap::new(),
         };
         interpreter.register_intrinsics(intrinsics);
         interpreter
@@ -459,13 +462,46 @@ impl Interpreter {
         Ok(Value::Void)
     }
 
-    fn execute_structure_decl(&mut self, _structure: &StructureDecl) -> ClsResult<Value> {
-        // TODO: registrar estructura
+    fn execute_structure_decl(&mut self, structure: &StructureDecl) -> ClsResult<Value> {
+        let fields: Vec<StructField> = structure.fields.iter()
+            .map(|f| StructField { name: f.name.clone() })
+            .collect();
+
+        let struct_name = structure.name.clone();
+        let def = StructDef {
+            name: struct_name.clone(),
+            fields: fields.clone(),
+        };
+        self.structs.insert(struct_name.clone(), def);
+
+        let field_names: Vec<String> = fields.iter().map(|f| f.name.clone()).collect();
+        let closure_fields = fields.clone();
+        let closure_name = struct_name.clone();
+        let fn_display = struct_name.clone();
+        let constructor = FunValue::new_native(
+            &fn_display,
+            field_names,
+            move |a| {
+                let values: Vec<Value> = a.to_vec();
+                if values.len() != closure_fields.len() {
+                    return Err(ClsError::RuntimeError(format!(
+                        "{}: esperaba {} argumentos, se recibieron {}",
+                        closure_name, closure_fields.len(), values.len()
+                    )));
+                }
+                Ok(Value::Struct(Box::new(StructInstance {
+                    def_name: closure_name.clone(),
+                    fields: values,
+                })))
+            },
+        );
+        self.env.define(&struct_name, Value::Fun(constructor));
+
         Ok(Value::Void)
     }
 
     fn execute_interface_decl(&mut self, _interface: &InterfaceDecl) -> ClsResult<Value> {
-        // TODO: registrar interfaz
+        // Las interfaces solo tienen impacto en type-checker
         Ok(Value::Void)
     }
 
@@ -847,6 +883,15 @@ impl Interpreter {
                     self.err_at(format!("Miembro no encontrado: '{}'", member.member), &member.span)
                 })
             }
+            Value::Struct(inst) => {
+                let def = self.structs.get(&inst.def_name).ok_or_else(|| {
+                    self.err_at(format!("Struct '{}' no definido", inst.def_name), &member.span)
+                })?;
+                let idx = def.fields.iter().position(|f| f.name == member.member).ok_or_else(|| {
+                    self.err_at(format!("Campo '{}' no encontrado en struct '{}'", member.member, inst.def_name), &member.span)
+                })?;
+                Ok(inst.fields[idx].clone())
+            }
             Value::Cmx(ref cmx) => match member.member.as_str() {
                 "tag" => Ok(Value::String(cmx.tag.clone())),
                 "props" => Ok(Value::Record(cmx.props.clone())),
@@ -930,6 +975,30 @@ impl Interpreter {
             Expression::Identifier(name, _) => {
                 self.env.set(name, value.clone());
                 Ok(value)
+            }
+            Expression::MemberAccess(member) => {
+                let mut object = self.evaluate_expression(&member.object)?;
+                match object {
+                    Value::Struct(mut inst) => {
+                        let def = self.structs.get(&inst.def_name).ok_or_else(|| {
+                            self.err_at(format!("Struct '{}' no definido", inst.def_name), &assign.span)
+                        })?;
+                        let idx = def.fields.iter().position(|f| f.name == member.member).ok_or_else(|| {
+                            self.err_at(format!("Campo '{}' no encontrado", member.member), &assign.span)
+                        })?;
+                        inst.fields[idx] = value.clone();
+                        // Re-insertar el struct modificado
+                        if let Expression::Identifier(name, _) = &*member.object {
+                            self.env.set(name, Value::Struct(inst));
+                        }
+                        Ok(value)
+                    }
+                    Value::Record(ref mut rec) => {
+                        rec.insert(member.member.clone(), value.clone());
+                        Ok(value)
+                    }
+                    _ => Err(self.err_at("No se puede asignar a este miembro", &assign.span)),
+                }
             }
             _ => Err(self.err_at("Target de asignación no soportado", &assign.span)),
         }

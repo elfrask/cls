@@ -130,7 +130,7 @@
         },
         {
           "name": "keyword.declaration.ccls",
-          "match": "\\b(function|void|method|var|const|let)\\b"
+          "match": "\\b(function|fun|void|method|var|const|let)\\b"
         },
         {
           "name": "keyword.structure.ccls",
