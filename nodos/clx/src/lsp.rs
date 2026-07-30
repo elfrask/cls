@@ -10,9 +10,10 @@ use cls_core::frontend::{Lexer, Parser};
 use cls_core::frontend::ast::*;
 use cls_core::middleware::{TypeChecker, NameResolver};
 use cls_core::config::TypesConfig;
-use cls_runtime::{Value, VfsResolver, LocalFs};
+use cls_runtime::{Value, VfsResolver};
 use cls_runtime::stdlib::{math, json};
 use crate::modules::{fs, http};
+use crate::type_defs::{self, TypeModule};
 
 #[derive(Debug, Clone)]
 struct SymEntry { name: String, span: Span, kind: SymKind }
@@ -41,11 +42,17 @@ pub struct ClsLspBackend {
     client: Client,
     documents: Arc<Mutex<HashMap<Url, String>>>,
     workspace_root: Arc<Mutex<Option<String>>>,
+    type_defs: Arc<Mutex<HashMap<String, TypeModule>>>,
 }
 
 impl ClsLspBackend {
     pub fn new(client: Client) -> Self {
-        Self { client, documents: Arc::new(Mutex::new(HashMap::new())), workspace_root: Arc::new(Mutex::new(None)) }
+        Self {
+            client,
+            documents: Arc::new(Mutex::new(HashMap::new())),
+            workspace_root: Arc::new(Mutex::new(None)),
+            type_defs: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 
     async fn get_doc(&self, uri: &Url) -> Option<String> {
@@ -87,20 +94,14 @@ impl ClsLspBackend {
 
     fn push_diag(diags: &mut Vec<Diagnostic>, msg: &str, severity: DiagnosticSeverity) {
         if let Some((line, col)) = cls_core::error::ClsError::extract_line_col(msg) {
-            diags.push(Diagnostic {
-                range: Range { start: Position { line: line.saturating_sub(1) as u32, character: col.saturating_sub(1) as u32 }, end: Position { line: line.saturating_sub(1) as u32, character: col as u32 } },
-                severity: Some(severity), message: msg.to_string(), source: Some("clx".into()), ..Default::default()
-            });
+            diags.push(Diagnostic { range: Range { start: Position { line: line.saturating_sub(1) as u32, character: col.saturating_sub(1) as u32 }, end: Position { line: line.saturating_sub(1) as u32, character: col as u32 } }, severity: Some(severity), message: msg.to_string(), source: Some("clx".into()), ..Default::default() });
         } else if !msg.is_empty() {
-            diags.push(Diagnostic { range: Range { start: Position::default(), end: Position::default() }, severity: Some(severity), message: msg.to_string(), source: Some("clx".into()), ..Default::default() });
+            diags.push(Diagnostic { range: Range::default(), severity: Some(severity), message: msg.to_string(), source: Some("clx".into()), ..Default::default() });
         }
     }
 
     fn push_cls_diag(diags: &mut Vec<Diagnostic>, d: &ClsDiag, severity: DiagnosticSeverity) {
-        diags.push(Diagnostic {
-            range: Range { start: Position { line: d.span.start_line.saturating_sub(1), character: d.span.start_col.saturating_sub(1) }, end: Position { line: d.span.end_line.saturating_sub(1), character: d.span.end_col.saturating_sub(1) } },
-            severity: Some(severity), message: d.message.clone(), source: Some("clx".into()), ..Default::default()
-        });
+        diags.push(Diagnostic { range: Range { start: Position { line: d.span.start_line.saturating_sub(1), character: d.span.start_col.saturating_sub(1) }, end: Position { line: d.span.end_line.saturating_sub(1), character: d.span.end_col.saturating_sub(1) } }, severity: Some(severity), message: d.message.clone(), source: Some("clx".into()), ..Default::default() });
     }
 
     fn scan_workspace_clsx(root: &str) -> Vec<String> {
@@ -109,9 +110,11 @@ impl ClsLspBackend {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    for sub in std::fs::read_dir(&path).unwrap().flatten() {
-                        let sp = sub.path();
-                        if sp.extension().map(|e| e == "clsx").unwrap_or(false) { files.push(sp.to_string_lossy().to_string()); }
+                    if let Ok(subs) = std::fs::read_dir(&path) {
+                        for sub in subs.flatten() {
+                            let sp = sub.path();
+                            if sp.extension().map(|e| e == "clsx").unwrap_or(false) { files.push(sp.to_string_lossy().to_string()); }
+                        }
                     }
                 } else if path.extension().map(|e| e == "clsx").unwrap_or(false) { files.push(path.to_string_lossy().to_string()); }
             }
@@ -123,11 +126,18 @@ impl ClsLspBackend {
 #[tower_lsp::async_trait]
 impl tower_lsp::LanguageServer for ClsLspBackend {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
-        if let Some(uri) = params.root_uri {
-            if let Ok(path) = uri.to_file_path() {
-                *self.workspace_root.lock().await = Some(path.to_string_lossy().to_string());
-            }
+        let ws = params.root_uri.as_ref()
+            .and_then(|u| u.to_file_path().ok())
+            .map(|p| p.to_string_lossy().to_string());
+
+        if let Some(ref w) = ws {
+            *self.workspace_root.lock().await = Some(w.clone());
         }
+
+        // Cargar type_defs (builtins embebidos + workspace override)
+        let defs = type_defs::load_all_type_definitions(ws.as_deref());
+        *self.type_defs.lock().await = defs;
+
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
@@ -159,57 +169,85 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
         self.client.publish_diagnostics(params.text_document.uri, vec![], None).await;
     }
 
+    // ─── Completion ──────────────────────────────────────────────────────
+
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let uri = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
         let source = self.get_doc(&uri).await.unwrap_or_default();
+        let defs = self.type_defs.lock().await.clone();
 
         let is_member = params.context.as_ref().and_then(|c| c.trigger_character.as_deref()).map(|c| c == ".").unwrap_or(false);
         if is_member {
-            return Ok(complete_member(&source, pos));
+            return Ok(complete_member(&source, pos, &defs));
         }
 
         let mut items: Vec<CompletionItem> = Vec::new();
 
-        // Scope symbols
-        let scope = scope_symbols(&source);
-        for (name, kind) in &scope {
+        // Scope symbols: funciones y variables del documento
+        for (name, kind) in &scope_symbols(&source) {
             let icon = match kind { SymKind::Function => CompletionItemKind::FUNCTION, _ => CompletionItemKind::VARIABLE };
             items.push(CompletionItem { label: name.clone(), kind: Some(icon), detail: Some("scope".into()), ..Default::default() });
         }
 
+        // Keywords
         for kw in &["var", "function", "if", "else", "while", "for", "return", "import", "from", "as", "export", "structure", "interface", "true", "false", "null", "break", "continue", "loop", "switch"] {
             items.push(CompletionItem { label: kw.to_string(), kind: Some(CompletionItemKind::KEYWORD), ..Default::default() });
         }
-        for f in &["print", "input", "toString", "int", "float", "str", "bool", "len", "type", "now", "exit", "sleep", "throw"] {
-            items.push(CompletionItem { label: f.to_string(), kind: Some(CompletionItemKind::FUNCTION), detail: Some("intrinsic".into()), ..Default::default() });
-        }
-        for m in &["math", "json", "fs", "http", "Lib"] {
-            items.push(CompletionItem { label: m.to_string(), kind: Some(CompletionItemKind::MODULE), detail: Some("built-in".into()), ..Default::default() });
+
+        // Intrinsics desde core.clsi
+        if let Some(core) = defs.get("core") {
+            for m in &core.members {
+                let kind = match m.kind { type_defs::MemberKind::Function => CompletionItemKind::FUNCTION, _ => CompletionItemKind::VARIABLE };
+                items.push(CompletionItem { label: m.name.clone(), kind: Some(kind), detail: Some(m.signature.clone()), documentation: format_doc(&m.doc), ..Default::default() });
+            }
         }
 
+        // Modulos
+        for (name, tm) in &defs {
+            if name == "core" { continue; }
+            items.push(CompletionItem { label: name.clone(), kind: Some(CompletionItemKind::MODULE), detail: Some(tm.description.clone()), ..Default::default() });
+        }
+
+        // Workspace files
         if let Some(root) = self.workspace_root.lock().await.clone() {
             for path in Self::scan_workspace_clsx(&root) {
                 let p = Path::new(&path);
-                if let Some(mod_name) = p.file_stem().and_then(|s| s.to_str()) {
-                    if !mod_name.is_empty() {
-                        items.push(CompletionItem { label: mod_name.to_string(), kind: Some(CompletionItemKind::FILE), detail: Some(format!("workspace/{}", path)), ..Default::default() });
+                if let Some(name) = p.file_stem().and_then(|s| s.to_str()) {
+                    if !name.is_empty() {
+                        items.push(CompletionItem { label: name.to_string(), kind: Some(CompletionItemKind::FILE), detail: Some(format!("workspace/{}", path)), ..Default::default() });
                     }
                 }
             }
         }
+
         Ok(Some(CompletionResponse::Array(items)))
     }
+
+    // ─── Hover ───────────────────────────────────────────────────────────
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         let source = self.get_doc(&params.text_document_position_params.text_document.uri).await.unwrap_or_default();
         let pos = params.text_document_position_params.position;
         let word = extract_word_at(&source, pos.line as usize, pos.character as usize).unwrap_or_default();
-        if !word.is_empty() {
-            return Ok(Some(Hover { contents: HoverContents::Scalar(MarkedString::String(format!("`{}`", word))), range: None }));
+        if word.is_empty() { return Ok(None); }
+
+        let defs = self.type_defs.lock().await.clone();
+
+        // Buscar la palabra en los type_defs (core tiene prioridad, despues modulos)
+        for tm in defs.values() {
+            for m in &tm.members {
+                if m.name == word {
+                    let content = format_doc_content(tm, m);
+                    return Ok(Some(Hover { contents: HoverContents::Scalar(MarkedString::String(content)), range: None }));
+                }
+            }
         }
-        Ok(None)
+
+        Ok(Some(Hover { contents: HoverContents::Scalar(MarkedString::String(format!("`{}`", word))), range: None }))
     }
+
+    // ─── Go-to-definition ────────────────────────────────────────────────
 
     async fn goto_definition(&self, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
         let uri = params.text_document_position_params.text_document.uri;
@@ -233,6 +271,8 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
         Ok(None)
     }
 
+    // ─── Document symbols ────────────────────────────────────────────────
+
     async fn document_symbol(&self, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {
         let source = self.get_doc(&params.text_document.uri).await.unwrap_or_default();
         let mut lexer = Lexer::new(&source);
@@ -254,26 +294,20 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
 
 // ─── Free helpers ──────────────────────────────────────────────────────
 
-/// Obtiene las claves de un Value::Record (nombres de miembros exportados)
 fn record_keys(v: &Value) -> Vec<String> {
     if let Value::Record(map) = v { map.keys().cloned().collect() } else { vec![] }
 }
 
-/// Carga un módulo runtime y devuelve sus exportaciones
 fn load_module_exports(name: &str) -> Option<Vec<String>> {
     match name {
         "math" => Some(record_keys(&math::module())),
         "json" => Some(record_keys(&json::module())),
-        "fs" => {
-            let vfs = Arc::new(VfsResolver::new());
-            Some(record_keys(&fs::module(vfs)))
-        }
+        "fs" => { let vfs = Arc::new(VfsResolver::new()); Some(record_keys(&fs::module(vfs))) }
         "http" => Some(record_keys(&http::module())),
         _ => None,
     }
 }
 
-/// Construye mapa: nombre_de_variable → nombre_del_módulo para imports en el source
 fn build_import_map(source: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
     let toks = match Lexer::new(source).tokenize() { Ok(t) => t, Err(_) => return map };
@@ -281,17 +315,13 @@ fn build_import_map(source: &str) -> HashMap<String, String> {
     for stmt in &module.statements {
         match stmt {
             Statement::Import(i) => {
-                // import "math" as m  →  m → math
-                if let Some(alias) = &i.alias {
-                    map.insert(alias.clone(), i.path.clone());
-                } else {
-                    let name = i.path.rsplit('/').next().unwrap_or(&i.path);
-                    let name = name.trim_end_matches(".clsx");
+                if let Some(alias) = &i.alias { map.insert(alias.clone(), i.path.clone()); }
+                else {
+                    let name = i.path.rsplit('/').next().unwrap_or(&i.path).trim_end_matches(".clsx");
                     map.insert(name.to_string(), i.path.clone());
                 }
             }
             Statement::FromImport(fi) => {
-                // from "math" import abs, PI  →  abs → math, PI → math
                 for im in &fi.names {
                     let alias = im.alias.as_deref().unwrap_or(&im.name);
                     map.insert(alias.to_string(), fi.path.clone());
@@ -307,23 +337,19 @@ fn extract_word_at(source: &str, line: usize, col: usize) -> Option<String> {
     let line_text = source.lines().nth(line)?;
     if col >= line_text.len() { return None; }
     let chars: Vec<char> = line_text.chars().collect();
-    let mut start = col;
-    let mut end = col;
+    let mut start = col; let mut end = col;
     while start > 0 && (chars[start - 1].is_alphanumeric() || chars[start - 1] == '_') { start -= 1; }
     while end < chars.len() && (chars[end].is_alphanumeric() || chars[end] == '_') { end += 1; }
     if start < end { Some(chars[start..end].iter().collect()) } else { None }
 }
 
 fn scope_symbols(source: &str) -> Vec<(String, SymKind)> {
-    let mut lexer = match Lexer::new(source).tokenize() { Ok(t) => t, Err(_) => return vec![] };
-    let module = match Parser::new(lexer).parse() { Ok(m) => m, Err(_) => return vec![] };
+    let tokens = match Lexer::new(source).tokenize() { Ok(t) => t, Err(_) => return vec![] };
+    let module = match Parser::new(tokens).parse() { Ok(m) => m, Err(_) => return vec![] };
     let mut r = Vec::new();
     for stmt in &module.statements {
         match stmt {
-            Statement::FunctionDecl(f) => {
-                r.push((f.name.clone(), SymKind::Function));
-                for p in &f.params { r.push((p.name.clone(), SymKind::Parameter)); }
-            }
+            Statement::FunctionDecl(f) => { r.push((f.name.clone(), SymKind::Function)); for p in &f.params { r.push((p.name.clone(), SymKind::Parameter)); } }
             Statement::VarDecl(v) | Statement::ConstDecl(v) => { r.push((v.name.clone(), SymKind::Variable)); }
             _ => {}
         }
@@ -332,8 +358,8 @@ fn scope_symbols(source: &str) -> Vec<(String, SymKind)> {
 }
 
 fn struct_fields(source: &str, struct_name: &str) -> Vec<(String, String)> {
-    let mut lexer = match Lexer::new(source).tokenize() { Ok(t) => t, Err(_) => return vec![] };
-    let module = match Parser::new(lexer).parse() { Ok(m) => m, Err(_) => return vec![] };
+    let tokens = match Lexer::new(source).tokenize() { Ok(t) => t, Err(_) => return vec![] };
+    let module = match Parser::new(tokens).parse() { Ok(m) => m, Err(_) => return vec![] };
     for stmt in &module.statements {
         if let Statement::StructureDecl(s) = stmt {
             if s.name == struct_name {
@@ -347,7 +373,8 @@ fn struct_fields(source: &str, struct_name: &str) -> Vec<(String, String)> {
     vec![]
 }
 
-fn complete_member(source: &str, pos: Position) -> Option<CompletionResponse> {
+/// Completa miembros de objeto: módulos, structs
+fn complete_member(source: &str, pos: Position, defs: &HashMap<String, TypeModule>) -> Option<CompletionResponse> {
     let line = pos.line as usize;
     let col = (pos.character.saturating_sub(2)) as usize;
     let word = if let Some(line_text) = source.lines().nth(line) {
@@ -364,50 +391,64 @@ fn complete_member(source: &str, pos: Position) -> Option<CompletionResponse> {
     let obj = word.unwrap_or_default();
     if obj.is_empty() { return None; }
 
-    let mut members: Vec<(String, CompletionItemKind, String)> = Vec::new();
+    let mut items: Vec<CompletionItem> = Vec::new();
 
-    // 1. Buscar en módulos runtime via import map
+    // 1. Buscar en type_defs por import map
     let import_map = build_import_map(source);
     if let Some(module_name) = import_map.get(&obj) {
-        if let Some(keys) = load_module_exports(module_name) {
-            for k in keys {
-                members.push((k.clone(), CompletionItemKind::FUNCTION, format!("{}::{}", module_name, k)));
-            }
+        if let Some(tm) = defs.get(module_name.as_str()).or_else(|| defs.get(module_name)) {
+            add_type_members(&mut items, tm);
+        } else if let Some(keys) = load_module_exports(module_name) {
+            for k in keys { items.push(CompletionItem { label: k, kind: Some(CompletionItemKind::FUNCTION), ..Default::default() }); }
         }
     }
 
-    // 2. Buscar si es un nombre de módulo directo (sin import)
-    if members.is_empty() {
-        if let Some(keys) = load_module_exports(&obj) {
-            for k in keys {
-                members.push((k.clone(), CompletionItemKind::FUNCTION, format!("{}::{}", obj, k)));
-            }
+    // 2. Buscar por nombre directo
+    if items.is_empty() {
+        if let Some(tm) = defs.get(&obj) {
+            add_type_members(&mut items, tm);
+        } else if let Some(keys) = load_module_exports(&obj) {
+            for k in keys { items.push(CompletionItem { label: k, kind: Some(CompletionItemKind::FUNCTION), ..Default::default() }); }
         }
     }
 
-    // 3. Buscar fields de structure declarado en el source
-    if members.is_empty() {
-        let fields = struct_fields(source, &obj);
-        for (name, detail) in fields {
-            members.push((name, CompletionItemKind::PROPERTY, detail));
+    // 3. Struct fields
+    if items.is_empty() {
+        for (name, type_hint) in struct_fields(source, &obj) {
+            items.push(CompletionItem { label: name, kind: Some(CompletionItemKind::PROPERTY), detail: Some(type_hint), ..Default::default() });
         }
     }
 
-    // 4. Scope symbols: funciones, variables, parámetros
-    if members.is_empty() {
-        let scope = scope_symbols(source);
-        for (name, kind) in &scope {
-            if name == &obj { continue; }
-            let icon = match kind { SymKind::Function => CompletionItemKind::FUNCTION, _ => CompletionItemKind::VARIABLE };
-            members.push((name.clone(), icon, "scope".to_string()));
-        }
+    if items.is_empty() { None } else { Some(CompletionResponse::Array(items)) }
+}
+
+fn add_type_members(items: &mut Vec<CompletionItem>, tm: &TypeModule) {
+    for m in &tm.members {
+        let kind = match m.kind { type_defs::MemberKind::Function => CompletionItemKind::FUNCTION, type_defs::MemberKind::Constant => CompletionItemKind::CONSTANT, type_defs::MemberKind::Variable => CompletionItemKind::VARIABLE };
+        items.push(CompletionItem { label: m.name.clone(), kind: Some(kind), detail: Some(m.signature.clone()), documentation: format_doc(&m.doc), ..Default::default() });
     }
+}
 
-    if members.is_empty() { return None; }
+// ─── Doc formatting ───────────────────────────────────────────────────
 
-    Some(CompletionResponse::Array(members.into_iter().map(|(name, kind, detail)| CompletionItem {
-        label: name, kind: Some(kind), detail: Some(detail), ..Default::default()
-    }).collect()))
+fn format_doc(doc: &str) -> Option<Documentation> {
+    if doc.is_empty() { None } else { Some(Documentation::String(doc.to_string())) }
+}
+
+fn format_doc_content(tm: &TypeModule, m: &type_defs::TypeMember) -> String {
+    let mut parts = vec![
+        format!("**{}**  `{}`", m.name, m.signature),
+    ];
+    if !tm.description.is_empty() { parts.push(format!("_{}_", tm.description)); }
+    let lines: Vec<&str> = m.doc.lines().collect();
+    for line in &lines {
+        let l = line.trim_start_matches('#').trim();
+        if l.starts_with("@description") { parts.push(l.trim_start_matches("@description ").to_string()); }
+        else if l.starts_with("@params") { parts.push(format!("- `{}`", l.trim_start_matches("@params "))); }
+        else if l.starts_with("@return") { parts.push(format!("→ {}", l.trim_start_matches("@return "))); }
+        else if l.starts_with("@deprecated") { parts.push(format!("~~DEPRECATED: {}~~", l.trim_start_matches("@deprecated "))); }
+    }
+    parts.join("\n\n")
 }
 
 pub fn run_server(silent: bool) {
