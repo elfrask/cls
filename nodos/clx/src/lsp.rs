@@ -10,6 +10,9 @@ use cls_core::frontend::{Lexer, Parser};
 use cls_core::frontend::ast::*;
 use cls_core::middleware::{TypeChecker, NameResolver};
 use cls_core::config::TypesConfig;
+use cls_runtime::{Value, VfsResolver, LocalFs};
+use cls_runtime::stdlib::{math, json};
+use crate::modules::{fs, http};
 
 #[derive(Debug, Clone)]
 struct SymEntry { name: String, span: Span, kind: SymKind }
@@ -251,6 +254,55 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
 
 // ─── Free helpers ──────────────────────────────────────────────────────
 
+/// Obtiene las claves de un Value::Record (nombres de miembros exportados)
+fn record_keys(v: &Value) -> Vec<String> {
+    if let Value::Record(map) = v { map.keys().cloned().collect() } else { vec![] }
+}
+
+/// Carga un módulo runtime y devuelve sus exportaciones
+fn load_module_exports(name: &str) -> Option<Vec<String>> {
+    match name {
+        "math" => Some(record_keys(&math::module())),
+        "json" => Some(record_keys(&json::module())),
+        "fs" => {
+            let vfs = Arc::new(VfsResolver::new());
+            Some(record_keys(&fs::module(vfs)))
+        }
+        "http" => Some(record_keys(&http::module())),
+        _ => None,
+    }
+}
+
+/// Construye mapa: nombre_de_variable → nombre_del_módulo para imports en el source
+fn build_import_map(source: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let toks = match Lexer::new(source).tokenize() { Ok(t) => t, Err(_) => return map };
+    let module = match Parser::new(toks).parse() { Ok(m) => m, Err(_) => return map };
+    for stmt in &module.statements {
+        match stmt {
+            Statement::Import(i) => {
+                // import "math" as m  →  m → math
+                if let Some(alias) = &i.alias {
+                    map.insert(alias.clone(), i.path.clone());
+                } else {
+                    let name = i.path.rsplit('/').next().unwrap_or(&i.path);
+                    let name = name.trim_end_matches(".clsx");
+                    map.insert(name.to_string(), i.path.clone());
+                }
+            }
+            Statement::FromImport(fi) => {
+                // from "math" import abs, PI  →  abs → math, PI → math
+                for im in &fi.names {
+                    let alias = im.alias.as_deref().unwrap_or(&im.name);
+                    map.insert(alias.to_string(), fi.path.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+    map
+}
+
 fn extract_word_at(source: &str, line: usize, col: usize) -> Option<String> {
     let line_text = source.lines().nth(line)?;
     if col >= line_text.len() { return None; }
@@ -279,7 +331,7 @@ fn scope_symbols(source: &str) -> Vec<(String, SymKind)> {
     r
 }
 
-fn struct_members(source: &str, struct_name: &str) -> Vec<(String, CompletionItemKind, String)> {
+fn struct_fields(source: &str, struct_name: &str) -> Vec<(String, String)> {
     let mut lexer = match Lexer::new(source).tokenize() { Ok(t) => t, Err(_) => return vec![] };
     let module = match Parser::new(lexer).parse() { Ok(m) => m, Err(_) => return vec![] };
     for stmt in &module.statements {
@@ -287,7 +339,7 @@ fn struct_members(source: &str, struct_name: &str) -> Vec<(String, CompletionIte
             if s.name == struct_name {
                 return s.fields.iter().map(|f| {
                     let hint = match &f.type_ann.kind { TypeKind::Named(n, _) => n.clone(), _ => "Any".to_string() };
-                    (f.name.clone(), CompletionItemKind::PROPERTY, hint)
+                    (f.name.clone(), hint)
                 }).collect();
             }
         }
@@ -310,24 +362,52 @@ fn complete_member(source: &str, pos: Position) -> Option<CompletionResponse> {
     } else { None };
 
     let obj = word.unwrap_or_default();
+    if obj.is_empty() { return None; }
+
     let mut members: Vec<(String, CompletionItemKind, String)> = Vec::new();
 
-    match obj.as_str() {
-        "math" => {
-            for (n, k, d) in &[("PI","CONSTANT","3.1415..."),("E","CONSTANT","2.718..."),("abs","FUNCTION","abs(x)"),("sqrt","FUNCTION","sqrt(x)"),("pow","FUNCTION","pow(base,exp)"),("min","FUNCTION","min(a,b)"),("max","FUNCTION","max(a,b)"),("floor","FUNCTION","floor(x)"),("ceil","FUNCTION","ceil(x)"),("round","FUNCTION","round(x)"),("random","FUNCTION","random()"),("sin","FUNCTION","sin(x)"),("cos","FUNCTION","cos(x)"),("tan","FUNCTION","tan(x)"),("log","FUNCTION","log(x)"),("range","FUNCTION","range(start,end)")] {
-                let kind = match *k { "CONSTANT" => CompletionItemKind::CONSTANT, _ => CompletionItemKind::FUNCTION };
-                members.push((n.to_string(), kind, d.to_string()));
+    // 1. Buscar en módulos runtime via import map
+    let import_map = build_import_map(source);
+    if let Some(module_name) = import_map.get(&obj) {
+        if let Some(keys) = load_module_exports(module_name) {
+            for k in keys {
+                members.push((k.clone(), CompletionItemKind::FUNCTION, format!("{}::{}", module_name, k)));
             }
         }
-        "json" => { for (n, d) in &[("parse","parse(text)->Any"),("stringify","stringify(value)->String")] { members.push((n.to_string(), CompletionItemKind::FUNCTION, d.to_string())); } }
-        "fs" => { for (n, d) in &[("readFile","readFile(path)->String"),("writeFile","writeFile(path,content)"),("exists","exists(path)->Bool"),("rm","rm(path)"),("mkdir","mkdir(path)"),("listDir","listDir(path)->Array"),("cwd","cwd()->String")] { members.push((n.to_string(), CompletionItemKind::FUNCTION, d.to_string())); } }
-        "http" => { for (n, d) in &[("get","get(url)->String"),("post","post(url,body)->String")] { members.push((n.to_string(), CompletionItemKind::FUNCTION, d.to_string())); } }
-        "Lib" => { members.push(("load".to_string(), CompletionItemKind::FUNCTION, "load(name)->String".to_string())); }
-        _ => { members = struct_members(source, &obj); }
+    }
+
+    // 2. Buscar si es un nombre de módulo directo (sin import)
+    if members.is_empty() {
+        if let Some(keys) = load_module_exports(&obj) {
+            for k in keys {
+                members.push((k.clone(), CompletionItemKind::FUNCTION, format!("{}::{}", obj, k)));
+            }
+        }
+    }
+
+    // 3. Buscar fields de structure declarado en el source
+    if members.is_empty() {
+        let fields = struct_fields(source, &obj);
+        for (name, detail) in fields {
+            members.push((name, CompletionItemKind::PROPERTY, detail));
+        }
+    }
+
+    // 4. Scope symbols: funciones, variables, parámetros
+    if members.is_empty() {
+        let scope = scope_symbols(source);
+        for (name, kind) in &scope {
+            if name == &obj { continue; }
+            let icon = match kind { SymKind::Function => CompletionItemKind::FUNCTION, _ => CompletionItemKind::VARIABLE };
+            members.push((name.clone(), icon, "scope".to_string()));
+        }
     }
 
     if members.is_empty() { return None; }
-    Some(CompletionResponse::Array(members.into_iter().map(|(name, kind, detail)| CompletionItem { label: name, kind: Some(kind), detail: Some(detail), ..Default::default() }).collect()))
+
+    Some(CompletionResponse::Array(members.into_iter().map(|(name, kind, detail)| CompletionItem {
+        label: name, kind: Some(kind), detail: Some(detail), ..Default::default()
+    }).collect()))
 }
 
 pub fn run_server(silent: bool) {
