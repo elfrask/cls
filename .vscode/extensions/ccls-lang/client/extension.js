@@ -15,9 +15,8 @@ function activate(context) {
     if (wsRoot) {
         const clxPath = findClx();
         if (clxPath) {
-            console.log('[cls] Iniciando maptype --watch en:', wsRoot);
-            // Primero generar todos los types
-            spawnSync(clxPath, ['maptype', '.', '-o', '.cls-types'], { cwd: wsRoot });
+            console.log('[cls] Generando type maps iniciales...');
+            runSync(clxPath, ['maptype', '.', '-o', '.cls-types'], { cwd: wsRoot });
             // Luego iniciar watch mode
             maptypeProcess = spawn(clxPath, ['maptype', '.', '-o', '.cls-types', '--watch'], {
                 cwd: wsRoot,
@@ -27,6 +26,12 @@ function activate(context) {
             maptypeProcess.stderr.on('data', d => { /* silenciado */ });
             maptypeProcess.on('error', err => console.log('[cls] maptype error:', err.message));
             console.log('[cls] maptype --watch activo');
+            // Indicador en status bar
+            const statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+            statusItem.text = '$(sync) CLS Types';
+            statusItem.tooltip = 'CLS Type Maps: auto-generando .cls-types/';
+            statusItem.show();
+            context.subscriptions.push(statusItem);
         } else {
             console.log('[cls] clx no encontrado, type maps no se generaran automaticamente');
         }
@@ -227,20 +232,38 @@ function snip(label, body) {
 function findClx() {
     const { execSync } = require('child_process');
     try { execSync('clx --version', { stdio: 'pipe' }); return 'clx'; } catch {}
-    const extDir = path.resolve(__dirname, '..');
-    for (const c of [
-        path.resolve(extDir, '../../../target/debug/clx'),
-        path.resolve(extDir, '../../../target/release/clx'),
-        path.join(process.env.HOME || process.env.USERPROFILE || '', '.cargo', 'bin', 'clx'),
-    ]) {
-        try { if (fs.existsSync(c)) { execSync(`"${c}" --version`, { stdio: 'pipe' }); return c; } } catch {}
+    // Buscar en target/debug relativo al workspace
+    const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath;
+    if (wsRoot) {
+        const debugPath = path.join(wsRoot, 'target', 'debug', 'clx');
+        const releasePath = path.join(wsRoot, 'target', 'release', 'clx');
+        for (const c of [debugPath, releasePath]) {
+            if (fs.existsSync(c) || fs.existsSync(c + '.exe')) {
+                const bin = fs.existsSync(c) ? c : c + '.exe';
+                try { execSync(`"${bin}" --version`, { stdio: 'pipe' }); return bin; } catch {}
+            }
+        }
+    }
+    // Fallback: ~/.cargo/bin/clx
+    const home = process.env.HOME || process.env.USERPROFILE || '';
+    const cargoBin = path.join(home, '.cargo', 'bin', 'clx');
+    if (fs.existsSync(cargoBin) || fs.existsSync(cargoBin + '.exe')) {
+        const bin = fs.existsSync(cargoBin) ? cargoBin : cargoBin + '.exe';
+        try { execSync(`"${bin}" --version`, { stdio: 'pipe' }); return bin; } catch {}
     }
     return null;
 }
 
-function spawnSync(cmd, args, opts) {
+function runSync(cmd, args, opts) {
     const { execSync } = require('child_process');
-    try { execSync(`"${cmd}" ${args.join(' ')}`, { ...opts, timeout: 30000 }); } catch {}
+    try {
+        const full = `"${cmd}" ${args.join(' ')}`;
+        console.log('[cls] Running:', full);
+        execSync(full, { ...opts, timeout: 60000, encoding: 'utf8' });
+        console.log('[cls] OK:', full);
+    } catch (e) {
+        console.log('[cls] Error running maptype:', e.message);
+    }
 }
 
 function deactivate() {}
