@@ -1,14 +1,3 @@
 # @title http
-# @description Modulo para peticiones HTTP. Requiere que el sandbox tenga allowNet = true.
-# @version 1.0.0
-
-# @description Realiza una peticion HTTP GET
-# @params url URL completa (incluyendo http:// o https://)
-# @return String Cuerpo de la respuesta
-function get(url: String): String;
-
-# @description Realiza una peticion HTTP POST con un body
-# @params url URL completa
-# @params body Cuerpo de la peticion
-# @return String Cuerpo de la respuesta
-function post(url: String, body: String): String;
+function get(url: String) -> String {};
+function post(url: String, body: String) -> String {};

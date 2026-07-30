@@ -1,18 +1,318 @@
 {
-  "source": "core.clsi",
+  "source": "cls-runtime/clsi\\core.clsi",
   "entries": [
-    {"name":"print","kind":"function","signature":"print(...args) -> void","params":[{"name":"...args","type_":"Any"}],"return_type":"void","doc":"Imprime valores en consola. Acepta multiples argumentos separados por coma."},
-    {"name":"input","kind":"function","signature":"input() -> String","params":[],"return_type":"String","doc":"Lee una linea desde la entrada estandar."},
-    {"name":"toString","kind":"function","signature":"toString(val) -> String","params":[{"name":"val","type_":"Any"}],"return_type":"String","doc":"Convierte cualquier valor a su representacion como string."},
-    {"name":"int","kind":"function","signature":"int(val) -> int","params":[{"name":"val","type_":"Any"}],"return_type":"int","doc":"Convierte un valor a entero. Soporta int, float y strings numericos."},
-    {"name":"float","kind":"function","signature":"float(val) -> float","params":[{"name":"val","type_":"Any"}],"return_type":"float","doc":"Convierte un valor a flotante. Soporta float, int y strings numericos."},
-    {"name":"str","kind":"function","signature":"str(val) -> String","params":[{"name":"val","type_":"Any"}],"return_type":"String","doc":"Convierte cualquier valor a string."},
-    {"name":"bool","kind":"function","signature":"bool(val) -> bool","params":[{"name":"val","type_":"Any"}],"return_type":"bool","doc":"Convierte un valor a booleano segun reglas de truthiness."},
-    {"name":"len","kind":"function","signature":"len(val) -> int","params":[{"name":"val","type_":"Any"}],"return_type":"int","doc":"Devuelve la longitud de arrays, strings o records."},
-    {"name":"type","kind":"function","signature":"type(val) -> String","params":[{"name":"val","type_":"Any"}],"return_type":"String","doc":"Devuelve el nombre del tipo de un valor."},
-    {"name":"now","kind":"function","signature":"now() -> int","params":[],"return_type":"int","doc":"Devuelve el timestamp actual en milisegundos desde UNIX epoch."},
-    {"name":"exit","kind":"function","signature":"exit(code)","params":[{"name":"code","type_":"int"}],"return_type":"void","doc":"Finaliza la ejecucion del programa con un codigo de salida."},
-    {"name":"sleep","kind":"function","signature":"sleep(ms)","params":[{"name":"ms","type_":"int"}],"return_type":"void","doc":"Duerme la ejecucion durante una cantidad de milisegundos."},
-    {"name":"throw","kind":"function","signature":"throw(msg)","params":[{"name":"msg","type_":"Any"}],"return_type":"void","doc":"Lanza un error de runtime intencional con un mensaje."}
+    {
+      "name": "print",
+      "kind": "function",
+      "line": 8,
+      "col": 1,
+      "end_line": 8,
+      "end_col": 1,
+      "doc": "Imprime valores en consola",
+      "version": null,
+      "deprecated": null,
+      "signature": "print(val: Any)",
+      "params": [
+        {
+          "name": "val",
+          "type_": "Any",
+          "doc": null
+        }
+      ],
+      "return_type": null,
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "input",
+      "kind": "function",
+      "line": 11,
+      "col": 1,
+      "end_line": 11,
+      "end_col": 1,
+      "doc": "Lee una linea desde la entrada estandar",
+      "version": null,
+      "deprecated": null,
+      "signature": "input() -> String",
+      "params": [],
+      "return_type": "String",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "toString",
+      "kind": "function",
+      "line": 14,
+      "col": 1,
+      "end_line": 14,
+      "end_col": 1,
+      "doc": "Convierte cualquier valor a string",
+      "version": null,
+      "deprecated": null,
+      "signature": "toString(val: Any) -> String",
+      "params": [
+        {
+          "name": "val",
+          "type_": "Any",
+          "doc": null
+        }
+      ],
+      "return_type": "String",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "int",
+      "kind": "function",
+      "line": 17,
+      "col": 1,
+      "end_line": 17,
+      "end_col": 1,
+      "doc": "Convierte un valor a entero",
+      "version": null,
+      "deprecated": null,
+      "signature": "int(val: Any) -> int",
+      "params": [
+        {
+          "name": "val",
+          "type_": "Any",
+          "doc": null
+        }
+      ],
+      "return_type": "int",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "float",
+      "kind": "function",
+      "line": 20,
+      "col": 1,
+      "end_line": 20,
+      "end_col": 1,
+      "doc": "Convierte un valor a flotante",
+      "version": null,
+      "deprecated": null,
+      "signature": "float(val: Any) -> float",
+      "params": [
+        {
+          "name": "val",
+          "type_": "Any",
+          "doc": null
+        }
+      ],
+      "return_type": "float",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "str",
+      "kind": "function",
+      "line": 23,
+      "col": 1,
+      "end_line": 23,
+      "end_col": 1,
+      "doc": "Convierte cualquier valor a string",
+      "version": null,
+      "deprecated": null,
+      "signature": "str(val: Any) -> String",
+      "params": [
+        {
+          "name": "val",
+          "type_": "Any",
+          "doc": null
+        }
+      ],
+      "return_type": "String",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "bool",
+      "kind": "function",
+      "line": 26,
+      "col": 1,
+      "end_line": 26,
+      "end_col": 1,
+      "doc": "Convierte un valor a booleano",
+      "version": null,
+      "deprecated": null,
+      "signature": "bool(val: Any) -> bool",
+      "params": [
+        {
+          "name": "val",
+          "type_": "Any",
+          "doc": null
+        }
+      ],
+      "return_type": "bool",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "len",
+      "kind": "function",
+      "line": 29,
+      "col": 1,
+      "end_line": 29,
+      "end_col": 1,
+      "doc": "Devuelve la longitud de arrays, strings o records",
+      "version": null,
+      "deprecated": null,
+      "signature": "len(val: Any) -> int",
+      "params": [
+        {
+          "name": "val",
+          "type_": "Any",
+          "doc": null
+        }
+      ],
+      "return_type": "int",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "type",
+      "kind": "function",
+      "line": 32,
+      "col": 1,
+      "end_line": 32,
+      "end_col": 1,
+      "doc": "Devuelve el nombre del tipo de un valor",
+      "version": null,
+      "deprecated": null,
+      "signature": "type(val: Any) -> String",
+      "params": [
+        {
+          "name": "val",
+          "type_": "Any",
+          "doc": null
+        }
+      ],
+      "return_type": "String",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "now",
+      "kind": "function",
+      "line": 35,
+      "col": 1,
+      "end_line": 35,
+      "end_col": 1,
+      "doc": "Timestamp actual en ms",
+      "version": null,
+      "deprecated": null,
+      "signature": "now() -> int",
+      "params": [],
+      "return_type": "int",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "exit",
+      "kind": "function",
+      "line": 38,
+      "col": 1,
+      "end_line": 38,
+      "end_col": 1,
+      "doc": "Finaliza la ejecucion",
+      "version": null,
+      "deprecated": null,
+      "signature": "exit(code: int)",
+      "params": [
+        {
+          "name": "code",
+          "type_": "int",
+          "doc": null
+        }
+      ],
+      "return_type": null,
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "sleep",
+      "kind": "function",
+      "line": 41,
+      "col": 1,
+      "end_line": 41,
+      "end_col": 1,
+      "doc": "Duerme la ejecucion",
+      "version": null,
+      "deprecated": null,
+      "signature": "sleep(ms: int)",
+      "params": [
+        {
+          "name": "ms",
+          "type_": "int",
+          "doc": null
+        }
+      ],
+      "return_type": null,
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "throw",
+      "kind": "function",
+      "line": 42,
+      "col": 1,
+      "end_line": 42,
+      "end_col": 1,
+      "doc": "Lanza un error intencional",
+      "version": null,
+      "deprecated": null,
+      "signature": "throw(msg: Any)",
+      "params": [
+        {
+          "name": "msg",
+          "type_": "Any",
+          "doc": null
+        }
+      ],
+      "return_type": null,
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    }
   ]
 }

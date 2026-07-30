@@ -1,13 +1,8 @@
 # @title json
-# @description Modulo para serializar y deserializar JSON.
-# @version 1.0.0
+# @description Modulo JSON
 
-# @description Parsea un string JSON y devuelve un valor Any (Array, Record, primitivo)
-# @params text String con JSON valido
-# @return Any El valor parseado, o Record si es un objeto
-function parse(text: String): Any;
+# @description Parsea un string JSON
+function parse(text: String) -> Any {};
 
-# @description Convierte un valor Any a su representacion como string JSON
-# @params value Valor a serializar
-# @return String Representacion JSON
-function stringify(value: Any): String;
+# @description Convierte un valor a JSON string
+function stringify(value: Any) -> String {};
