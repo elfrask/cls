@@ -3,6 +3,7 @@
 mod modules;
 mod module_loader;
 mod lsp;
+mod type_defs;
 mod subcommands;
 
 use std::env;

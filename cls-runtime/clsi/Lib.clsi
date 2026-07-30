@@ -1,0 +1,8 @@
+# @title Lib
+# @description Modulo para cargar librerias compiladas (.clslib) con su manifest basado en hash.
+# @version 1.0.0
+
+# @description Carga una libreria por nombre desde el sistema de busqueda
+# @params name Nombre de la libreria (sin extension)
+# @return String Contenido de la libreria (.clslib)
+function load(name: String): String;

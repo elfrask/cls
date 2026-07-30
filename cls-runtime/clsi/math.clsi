@@ -1,0 +1,82 @@
+# @title math
+# @description Modulo de operaciones matematicas. Constantes y funciones trigonometricas, logaritmos, redondeo y generacion de numeros aleatorios.
+# @version 1.0.0
+
+# @description Valor de PI (3.14159...)
+var PI: float;
+
+# @description Constante de Euler (2.71828...)
+var E: float;
+
+# @description Calcula el valor absoluto de un numero
+# @params x Numero de entrada
+# @return number |x| (el mismo tipo que la entrada)
+function abs(x: number): number;
+
+# @description Raiz cuadrada de un numero
+# @params x Numero no negativo
+# @return float sqrt(x)
+function sqrt(x: number): float;
+
+# @description Eleva una base a una potencia
+# @params base Numero base
+# @params exp Exponente
+# @return float base^exp
+function pow(base: number, exp: number): float;
+
+# @description Devuelve el menor de dos numeros
+# @params a Primer numero
+# @params b Segundo numero
+# @return float El menor
+function min(a: number, b: number): float;
+
+# @description Devuelve el mayor de dos numeros
+# @params a Primer numero
+# @params b Segundo numero
+# @return float El mayor
+function max(a: number, b: number): float;
+
+# @description Redondea hacia abajo al entero mas cercano
+# @params x Numero
+# @return int floor(x)
+function floor(x: number): int;
+
+# @description Redondea hacia arriba al entero mas cercano
+# @params x Numero
+# @return int ceil(x)
+function ceil(x: number): int;
+
+# @description Redondea al entero mas cercano (mitades hacia arriba)
+# @params x Numero
+# @return int round(x)
+function round(x: number): int;
+
+# @description Genera un numero pseudoaleatorio en [0, 1)
+# @return float Numero aleatorio entre 0 y 1
+function random(): float;
+
+# @description Seno de un angulo en radianes
+# @params x Angulo en radianes
+# @return float sin(x)
+function sin(x: number): float;
+
+# @description Coseno de un angulo en radianes
+# @params x Angulo en radianes
+# @return float cos(x)
+function cos(x: number): float;
+
+# @description Tangente de un angulo en radianes
+# @params x Angulo en radianes
+# @return float tan(x)
+function tan(x: number): float;
+
+# @description Logaritmo natural (base e)
+# @params x Numero positivo
+# @return float ln(x)
+function log(x: number): float;
+
+# @description Genera un array de enteros en el rango [start, end)
+# @params start Inicio (inclusivo)
+# @params end Fin (exclusivo)
+# @return Array Array de enteros
+function range(start: int, end: int): Array;
