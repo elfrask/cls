@@ -37,6 +37,7 @@ impl TypeModule {
 /// Se distribuyen con el ejecutable via include_str!
 fn builtin_type_definitions() -> Vec<(&'static str, &'static str)> {
     vec![
+        ("core", include_str!("../../../cls-runtime/clsi/core.clsi")),
         ("math", include_str!("../../../cls-runtime/clsi/math.clsi")),
         ("json", include_str!("../../../cls-runtime/clsi/json.clsi")),
         ("fs", include_str!("../../../cls-runtime/clsi/fs.clsi")),
