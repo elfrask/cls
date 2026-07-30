@@ -1,3 +1,4 @@
+
 async function fetchData(url: String) -> String {
     # En el futuro: http.get(url) async real
     # Por ahora: await es un passthrough

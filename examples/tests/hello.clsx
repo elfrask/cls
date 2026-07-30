@@ -6,7 +6,6 @@ function main(args: String[]) -> int {
     for (i = 0; i < 10; i++) {
         print("number", i);
     };
-
     
     
     return 0;
