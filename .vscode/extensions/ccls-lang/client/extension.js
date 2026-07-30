@@ -3,180 +3,173 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-function activate(context) {
-    console.log('[cls-lsp] Activando extension...');
+let reqId = 1;
+const pending = {}; // id -> { resolve, reject }
 
+function activate(context) {
+    console.log('[cls-lsp] Activando...');
     const clxPath = findClx();
     if (!clxPath) {
-        vscode.window.showErrorMessage(
-            'CLS LSP: clx no encontrado.\n' +
-            'Compilalo con: cargo build -p clx\n' +
-            'O agrega target/debug/ a tu PATH'
-        );
+        vscode.window.showErrorMessage('CLS LSP: clx no encontrado. Compila con: cargo build -p clx');
         return;
     }
+    console.log('[cls-lsp] clx en:', clxPath);
 
-    console.log('[cls-lsp] usando clx en:', clxPath);
-
-    // 1. Spawn server process
     const serverProcess = spawn(clxPath, ['lsp', '--silent'], {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true
     });
 
-    let serverReady = false;
     let buf = '';
-    let pendingDiags = []; // cola de diagnostics pendientes hasta que el server responda initialize
+    let ready = false;
 
-    // Inicializacion LSP: enviar initialize inmediatamente
+    // Timer de reintento de initialize
+    const initTimer = setInterval(() => {
+        if (serverProcess?.stdin?.writable && !ready) {
+            sendInitialize();
+            ready = true;
+        }
+    }, 200);
+
     function sendInitialize() {
         const root = vscode.workspace.workspaceFolders?.[0]?.uri?.toString() || null;
-        sendMsg({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'initialize',
-            params: {
-                processId: process.pid,
-                capabilities: {},
-                rootUri: root,
-                workspaceFolders: null
-            }
-        });
+        sendMsg({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { processId: process.pid, capabilities: {}, rootUri: root } });
         sendMsg({ jsonrpc: '2.0', method: 'initialized', params: {} });
-        serverReady = true;
-        // Enviar cola de diagnostics pendientes
-        for (const { uri, text } of pendingDiags) {
-            sendDidOpen(uri, text);
-        }
-        pendingDiags = [];
+        clearInterval(initTimer);
     }
 
     function sendMsg(msg) {
         if (serverProcess?.stdin?.writable) {
             const body = JSON.stringify(msg);
-            const header = `Content-Length: ${Buffer.byteLength(body, 'utf8')}\r\n\r\n`;
-            serverProcess.stdin.write(header + body);
+            serverProcess.stdin.write(`Content-Length: ${Buffer.byteLength(body, 'utf8')}\r\n\r\n${body}`);
         }
     }
 
-    function sendDidOpen(uri, text) {
-        sendMsg({
-            jsonrpc: '2.0', method: 'textDocument/didOpen',
-            params: { textDocument: { uri, languageId: 'clx', version: 1, text } }
+    // JSON-RPC request con promesa
+    function request(method, params) {
+        return new Promise((resolve, reject) => {
+            const id = ++reqId;
+            pending[id] = { resolve, reject };
+            sendMsg({ jsonrpc: '2.0', id, method, params });
+            setTimeout(() => { if (pending[id]) { delete pending[id]; reject(new Error('timeout')); } }, 5000);
         });
     }
 
-    // Cuando stdout recibe datos del server, procesar JSON-RPC
     serverProcess.stdout.on('data', (data) => {
         buf += data.toString();
         processMessages();
     });
-
-    // Server listo apenas spawna
-    serverProcess.on('spawn', () => {
-        sendInitialize();
-    });
-
-    serverProcess.on('error', (err) => {
-        if (err.code === 'ENOENT') {
-            vscode.window.showErrorMessage('CLS LSP: binario no encontrado en: ' + clxPath);
-        } else {
-            vscode.window.showErrorMessage('CLS LSP: ' + err.message);
-        }
-    });
-
-    serverProcess.on('exit', (code) => {
-        console.log('[cls-lsp] Servidor terminado, codigo:', code);
-    });
-
-    // Stderr silenciado
+    serverProcess.on('error', (err) => { vscode.window.showErrorMessage('CLS LSP: ' + err.message); });
     serverProcess.stderr.on('data', () => {});
 
-    // Parse JSON-RPC con Content-Length
     function processMessages() {
         while (true) {
             const idx = buf.indexOf('\r\n\r\n');
             if (idx === -1) break;
-            const m = buf.substring(0, idx).match(/Content-Length: (\d+)/i);
-            if (!m) { buf = buf.substring(idx + 4); continue; }
-            const len = parseInt(m[1]);
+            const match = buf.substring(0, idx).match(/Content-Length: (\d+)/i);
+            if (!match) { buf = buf.substring(idx + 4); continue; }
+            const len = parseInt(match[1]);
             const start = idx + 4;
             if (buf.length < start + len) break;
             const body = buf.substring(start, start + len);
             buf = buf.substring(start + len);
-            handleMessage(JSON.parse(body));
+            const msg = JSON.parse(body);
+            // Si es respuesta a un request, resolver promesa
+            if (msg.id && pending[msg.id]) {
+                if (msg.error) pending[msg.id].reject(new Error(msg.error.message));
+                else pending[msg.id].resolve(msg.result);
+                delete pending[msg.id];
+            } else if (msg.method) {
+                handleNotification(msg);
+            }
         }
     }
 
-    // Manejar mensajes del server
+    // Diagnostics
     const diagCollection = vscode.languages.createDiagnosticCollection('cls');
     context.subscriptions.push(diagCollection);
 
-    function handleMessage(msg) {
+    function handleNotification(msg) {
         if (msg.method === 'textDocument/publishDiagnostics') {
             const p = msg.params;
             const uri = vscode.Uri.parse(p.uri);
-            const diags = p.diagnostics.map(d => {
-                const sev = d.severity === 1 ? vscode.DiagnosticSeverity.Error
-                          : d.severity === 2 ? vscode.DiagnosticSeverity.Warning
-                          : vscode.DiagnosticSeverity.Information;
-                return new vscode.Diagnostic(
-                    new vscode.Range(d.range.start.line, d.range.start.character,
-                                     d.range.end.line, d.range.end.character),
-                    d.message, sev
-                );
-            });
+            const diags = p.diagnostics.map(d => new vscode.Diagnostic(
+                new vscode.Range(d.range.start.line, d.range.start.character,
+                                 d.range.end.line, d.range.end.character),
+                d.message,
+                d.severity === 1 ? vscode.DiagnosticSeverity.Error
+                    : d.severity === 2 ? vscode.DiagnosticSeverity.Warning
+                    : vscode.DiagnosticSeverity.Information
+            ));
             diagCollection.set(uri, diags);
         }
     }
 
-    // Register completion provider (local, no depende del server)
+    // Completion provider que consulta al LSP server
     context.subscriptions.push(
         vscode.languages.registerCompletionItemProvider('clx', {
-            provideCompletionItems(document, position) {
-                const linePrefix = document.lineAt(position).text.substring(0, position.character);
+            async provideCompletionItems(document, position) {
                 const items = [];
 
-                // Keywords
-                const kws = ['var','function','if','else','while','for','return',
+                // Keywords (locales)
+                for (const kw of ['var','function','if','else','while','for','return',
                     'import','from','as','export','structure','interface',
-                    'true','false','null','break','continue','loop','switch'];
-                for (const kw of kws) {
+                    'true','false','null','break','continue','loop','switch']) {
                     items.push(new vscode.CompletionItem(kw, vscode.CompletionItemKind.Keyword));
                 }
 
                 // Snippets
-                items.push(snippet('if', 'if (${1:cond}) {\n\t$0\n}'));
-                items.push(snippet('for', 'for (${1:i}=0; ${1:i}<${2:n}; ${1:i}++) {\n\t$0\n}'));
-                items.push(snippet('while', 'while (${1:cond}) {\n\t$0\n}'));
-                items.push(snippet('function', 'function ${1:name}(${2:params}) -> ${3:void} {\n\t$0\n}'));
-                items.push(snippet('structure', 'structure ${1:Name} {\n\t${2:field}: ${3:type}\n};'));
-                items.push(snippet('interface', 'interface ${1:Name} {\n\t${2:method}(${3:params}): ${4:ret}\n};'));
-                items.push(snippet('import', 'import "${1:module}" as ${2:alias};'));
-                items.push(snippet('from', 'from "${1:module}" import ${2:func};'));
-                items.push(snippet('ternary', '${1:cond} ? ${2:then} : ${3:else}'));
+                items.push(snip('if', 'if (${1:cond}) {\n\t$0\n}'));
+                items.push(snip('for', 'for (${1:i}=0; ${1:i}<${2:n}; ${1:i}++) {\n\t$0\n}'));
+                items.push(snip('while', 'while (${1:cond}) {\n\t$0\n}'));
+                items.push(snip('function', 'function ${1:name}(${2:params}) -> ${3:void} {\n\t$0\n}'));
+                items.push(snip('structure', 'structure ${1:Name} {\n\t${2:field}: ${3:type}\n};'));
+                items.push(snip('import', 'import "${1:module}" as ${2:alias};'));
+                items.push(snip('from', 'from "${1:module}" import ${2:func};'));
+                items.push(snip('ternary', '${1:cond} ? ${2:then} : ${3:else}'));
+
+                // Consultar al LSP server
+                if (serverProcess?.stdin?.writable) {
+                    try {
+                        const linePrefix = document.lineAt(position).text.substring(0, position.character);
+                        const triggerChar = linePrefix.endsWith('.') ? '.' : '';
+                        const result = await request('textDocument/completion', {
+                            textDocument: { uri: document.uri.toString() },
+                            position: { line: position.line, character: position.character },
+                            context: { triggerKind: triggerChar ? 2 : 1, triggerCharacter: triggerChar || undefined }
+                        });
+                        if (result && result.items) {
+                            for (const item of result.items) {
+                                const ci = new vscode.CompletionItem(item.label, mapKind(item.kind));
+                                ci.detail = item.detail || '';
+                                ci.documentation = item.documentation || '';
+                                items.push(ci);
+                            }
+                        }
+                    } catch (e) {
+                        console.log('[cls-lsp] completion error:', e.message);
+                    }
+                }
 
                 return items;
             }
         }, '.', '"', '/', '>')
     );
 
-    // Enviar didOpen para cada archivo .clsx que se abra
+    // Enviar didOpen/didChange al server
     context.subscriptions.push(
-        vscode.workspace.onDidOpenTextDocument((doc) => {
+        vscode.workspace.onDidOpenTextDocument(doc => {
             if (doc.languageId === 'clx') {
-                if (serverReady) {
-                    sendDidOpen(doc.uri.toString(), doc.getText());
-                } else {
-                    pendingDiags.push({ uri: doc.uri.toString(), text: doc.getText() });
-                }
+                sendMsg({
+                    jsonrpc: '2.0', method: 'textDocument/didOpen',
+                    params: { textDocument: { uri: doc.uri.toString(), languageId: 'clx', version: 1, text: doc.getText() } }
+                });
             }
         })
     );
 
-    // Enviar didChange al editar
     context.subscriptions.push(
-        vscode.workspace.onDidChangeTextDocument((event) => {
+        vscode.workspace.onDidChangeTextDocument(event => {
             if (event.document.languageId === 'clx') {
                 sendMsg({
                     jsonrpc: '2.0', method: 'textDocument/didChange',
@@ -189,58 +182,35 @@ function activate(context) {
         })
     );
 
-    // Enviar didClose
-    context.subscriptions.push(
-        vscode.workspace.onDidCloseTextDocument((doc) => {
-            if (doc.languageId === 'clx') {
-                sendMsg({
-                    jsonrpc: '2.0', method: 'textDocument/didClose',
-                    params: { textDocument: { uri: doc.uri.toString() } }
-                });
-            }
-        })
-    );
-
-    // Cleanup
     context.subscriptions.push({
-        dispose: () => {
-            serverProcess.kill();
-            diagCollection.clear();
-        }
+        dispose: () => { clearInterval(initTimer); serverProcess.kill(); diagCollection.clear(); }
     });
 
-    console.log('[cls-lsp] Extension activada');
+    console.log('[cls-lsp] Lista');
 }
 
-function snippet(label, body) {
+function snip(label, body) {
     const item = new vscode.CompletionItem(label, vscode.CompletionItemKind.Snippet);
     item.insertText = new vscode.SnippetString(body);
     item.detail = 'snippet';
     return item;
 }
 
+function mapKind(k) {
+    const map = { 1: vscode.CompletionItemKind.Text, 2: vscode.CompletionItemKind.Method, 3: vscode.CompletionItemKind.Function, 4: vscode.CompletionItemKind.Constructor, 5: vscode.CompletionItemKind.Field, 6: vscode.CompletionItemKind.Variable, 7: vscode.CompletionItemKind.Class, 8: vscode.CompletionItemKind.Interface, 9: vscode.CompletionItemKind.Module, 10: vscode.CompletionItemKind.Property, 11: vscode.CompletionItemKind.Unit, 12: vscode.CompletionItemKind.Value, 13: vscode.CompletionItemKind.Enum, 14: vscode.CompletionItemKind.Keyword, 15: vscode.CompletionItemKind.Snippet, 16: vscode.CompletionItemKind.Color, 17: vscode.CompletionItemKind.File, 18: vscode.CompletionItemKind.Reference, 19: vscode.CompletionItemKind.Constant, 20: vscode.CompletionItemKind.Struct, 21: vscode.CompletionItemKind.Event, 22: vscode.CompletionItemKind.Operator, 23: vscode.CompletionItemKind.TypeParameter };
+    return map[k] || vscode.CompletionItemKind.Text;
+}
+
 function findClx() {
     const { execSync } = require('child_process');
-    // 1. Intentar PATH
     try { execSync('clx --version', { stdio: 'pipe' }); return 'clx'; } catch {}
-
-    // 2. Buscar relativo a la extension -> target/debug/clx
-    // __dirname = .vscode/extensions/ccls-lang/client/
-    // ../..      = .vscode/extensions/ccls-lang/
     const extDir = path.resolve(__dirname, '..');
-    const candidates = [
-        path.resolve(extDir, '../../../target/debug/clx'),       // workspace/target/debug/clx
-        path.resolve(extDir, '../../../target/release/clx'),    // workspace/target/release/clx
+    for (const c of [
+        path.resolve(extDir, '../../../target/debug/clx'),
+        path.resolve(extDir, '../../../target/release/clx'),
         path.join(process.env.HOME || process.env.USERPROFILE || '', '.cargo', 'bin', 'clx'),
-    ];
-
-    for (const c of candidates) {
-        try {
-            if (fs.existsSync(c)) {
-                execSync(`"${c}" --version`, { stdio: 'pipe' });
-                return c;
-            }
-        } catch {}
+    ]) {
+        try { if (fs.existsSync(c)) { execSync(`"${c}" --version`, { stdio: 'pipe' }); return c; } } catch {}
     }
     return null;
 }
