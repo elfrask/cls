@@ -603,7 +603,14 @@ impl Interpreter {
             Expression::StringInterpolation(interp) => self.evaluate_string_interpolation(interp),
             Expression::Cmx(cmx) => self.evaluate_cmx(cmx),
             Expression::NamespaceAccess(ns, name, span) => self.evaluate_namespace_access(ns, name, span),
+            Expression::Await(expr, _) => self.evaluate_await(expr),
         }
+    }
+
+    fn evaluate_await(&mut self, expr: &Expression) -> ClsResult<Value> {
+        // Por ahora: await es un passthrough que evalua la expresion y devuelve el valor.
+        // En el futuro: el runtime de corrutinas resolvera promesas.
+        self.evaluate_expression(expr)
     }
 
     fn evaluate_literal(&mut self, lit: &Literal) -> ClsResult<Value> {

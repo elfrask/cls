@@ -1,0 +1,11 @@
+async function fetchData(url: String) -> String {
+    # En el futuro: http.get(url) async real
+    # Por ahora: await es un passthrough
+    return "dato simulado";
+};
+
+function main(args: String[]) -> int {
+    var resultado = await fetchData("https://ejemplo.com");
+    print("Resultado:", resultado);
+    return 0;
+};

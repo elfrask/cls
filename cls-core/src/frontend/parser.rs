@@ -119,6 +119,7 @@ impl Parser {
             | Token::Keyword(Keyword::Export) => {
                 self.parse_visibility_modifier()
             }
+            Token::Keyword(Keyword::Async) => self.parse_async_function(),
 
             // CMX (JSX)
             Token::Cmx(_) => self.parse_cmx(),
@@ -238,6 +239,15 @@ impl Parser {
             modifiers: Vec::new(),
             span: self.span(),
         }))
+    }
+
+    fn parse_async_function(&mut self) -> ClsResult<Statement> {
+        self.advance(); // consume "async"
+        let mut stmt = self.parse_function_decl()?;
+        if let Statement::FunctionDecl(ref mut f) = stmt {
+            f.modifiers.push(FunctionModifier::Async);
+        }
+        Ok(stmt)
     }
 
     fn parse_void_function(&mut self) -> ClsResult<Statement> {
@@ -1077,6 +1087,14 @@ impl Parser {
     }
 
     fn parse_assignment(&mut self) -> ClsResult<Expression> {
+        // await expresion
+        if self.check_keyword(Keyword::Await) {
+            let span = self.span();
+            self.advance();
+            let expr = self.parse_assignment()?;
+            return Ok(Expression::Await(Box::new(expr), span));
+        }
+
         let expr = self.parse_conditional()?;
         
         if let Some(op) = self.check_assignment_operator() {
