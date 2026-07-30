@@ -1,63 +1,41 @@
 # @title core
-# @description Funciones intrinsecas globales de CLS. Disponibles sin importar ningun modulo.
-# @version 1.0.0
+# @description Funciones intrinsecas globales de CLS.
 
-# @description Imprime valores en consola. Acepta multiples argumentos separados por coma.
-# @params ...args Valores a imprimir (Any)
-function print(...args: Any): void;
+# @description Imprime valores en consola
+function print(val: Any) {};
 
-# @description Lee una linea desde la entrada estandar.
-# @return String Texto ingresado por el usuario
-function input(): String;
+# @description Lee una linea desde la entrada estandar
+function input() -> String {};
 
-# @description Convierte cualquier valor a su representacion como string.
-# @params val Valor a convertir
-# @return String Representacion textual
-function toString(val: Any): String;
+# @description Convierte cualquier valor a string
+function toString(val: Any) -> String {};
 
-# @description Convierte un valor a entero. Soporta int, float y strings numericos.
-# @params val Valor a convertir
-# @return int Entero resultante (trunca si es float, parsea si es string)
-function int(val: Any): int;
+# @description Convierte un valor a entero
+function int(val: Any) -> int {};
 
-# @description Convierte un valor a flotante. Soporta float, int y strings numericos.
-# @params val Valor a convertir
-# @return float Flotante resultante
-function float(val: Any): float;
+# @description Convierte un valor a flotante
+function float(val: Any) -> float {};
 
-# @description Convierte cualquier valor a string (equivalente a toString).
-# @params val Valor a convertir
-# @return String Representacion textual
-function str(val: Any): String;
+# @description Convierte cualquier valor a string
+function str(val: Any) -> String {};
 
-# @description Convierte un valor a booleano siguiendo reglas de truthiness.
-# @params val Valor a convertir
-# @return bool Resultado: false para 0, "" vacio, null, void; true para todo lo demas
-function bool(val: Any): bool;
+# @description Convierte un valor a booleano
+function bool(val: Any) -> bool {};
 
-# @description Devuelve la longitud de arrays, strings o records.
-# @params val Array, String o Record
-# @return int Cantidad de elementos/caracteres
-function len(val: Any): int;
+# @description Devuelve la longitud de arrays, strings o records
+function len(val: Any) -> int {};
 
-# @description Devuelve el nombre del tipo de un valor como string.
-# @params val Valor a inspeccionar
-# @return String Nombre del tipo ("Int", "String", "Array", etc.)
-function type(val: Any): String;
+# @description Devuelve el nombre del tipo de un valor
+function type(val: Any) -> String {};
 
-# @description Devuelve el timestamp actual en milisegundos desde UNIX epoch.
-# @return int Timestamp actual
-function now(): int;
+# @description Timestamp actual en ms
+function now() -> int {};
 
-# @description Finaliza la ejecucion del programa con un codigo de salida.
-# @params code Codigo de salida (0 = exito, > 0 = error)
-function exit(code: int);
+# @description Finaliza la ejecucion
+function exit(code: int) {};
 
-# @description Duerme la ejecucion durante una cantidad de milisegundos.
-# @params ms Milisegundos a esperar
-function sleep(ms: int);
+# @description Duerme la ejecucion
+function sleep(ms: int) {};
 
-# @description Lanza un error de runtime intencional con un mensaje.
-# @params msg Mensaje de error (cualquier tipo, se convierte a string)
-# @deprecated Usar throw() en su lugar (esta funcion existe bajo el mismo nombre)
-function throw(msg: Any);
+# @description Lanza un error intencional
+function throw(msg: Any) {};

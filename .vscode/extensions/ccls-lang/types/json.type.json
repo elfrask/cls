@@ -1,7 +1,55 @@
 {
-  "source": "json.clsi",
+  "source": "cls-runtime/clsi\\json.clsi",
   "entries": [
-    {"name":"parse","kind":"function","signature":"parse(text) -> Any","params":[{"name":"text","type_":"String"}],"return_type":"Any","doc":"Parsea un string JSON y devuelve un valor Any"},
-    {"name":"stringify","kind":"function","signature":"stringify(value) -> String","params":[{"name":"value","type_":"Any"}],"return_type":"String","doc":"Convierte un valor Any a su representacion como string JSON"}
+    {
+      "name": "parse",
+      "kind": "function",
+      "line": 8,
+      "col": 1,
+      "end_line": 8,
+      "end_col": 1,
+      "doc": "Parsea un string JSON",
+      "version": null,
+      "deprecated": null,
+      "signature": "parse(text: String) -> Any",
+      "params": [
+        {
+          "name": "text",
+          "type_": "String",
+          "doc": null
+        }
+      ],
+      "return_type": "Any",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "stringify",
+      "kind": "function",
+      "line": 9,
+      "col": 1,
+      "end_line": 9,
+      "end_col": 1,
+      "doc": "Convierte un valor a JSON string",
+      "version": null,
+      "deprecated": null,
+      "signature": "stringify(value: Any) -> String",
+      "params": [
+        {
+          "name": "value",
+          "type_": "Any",
+          "doc": null
+        }
+      ],
+      "return_type": "String",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    }
   ]
 }
