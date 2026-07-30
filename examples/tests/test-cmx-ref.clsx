@@ -1,0 +1,15 @@
+function App(props) {
+    print("App render, title:", props.title);
+};
+
+function main(args: String[]) -> int {
+    # CMX lowercase tag → CmxValue normal
+    var btn = <button label="Click me" />;
+    print("btn:", btn);
+    print("Tag:", btn.tag);
+
+    # CMX uppercase tag = reference lookup + call
+    <App title="Hello from CMX!" />;
+
+    return 0;
+};

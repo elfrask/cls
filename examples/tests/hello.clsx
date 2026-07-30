@@ -1,4 +1,4 @@
-from "math" import math;
+import "math" as math;
 
 function main(args: String[]) -> int {
     print("CLS 2.0 - Hello!");
