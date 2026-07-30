@@ -1,31 +1,76 @@
 const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process');
 
 function activate(context) {
     console.log('[cls] Activando...');
 
-    // Cargar type maps (builtin + workspace)
-    const typeRegistry = loadTypeMaps(context);
+    // Cargar type maps builtins
+    const builtinMaps = loadBuiltinMaps();
+    let maptypeProcess = null;
 
-    // Completion provider con type maps
+    // ─── Lanzar clx maptype --watch en el workspace ─────────────────────
+    const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath;
+    if (wsRoot) {
+        const clxPath = findClx();
+        if (clxPath) {
+            console.log('[cls] Iniciando maptype --watch en:', wsRoot);
+            // Primero generar todos los types
+            spawnSync(clxPath, ['maptype', '.', '-o', '.cls-types'], { cwd: wsRoot });
+            // Luego iniciar watch mode
+            maptypeProcess = spawn(clxPath, ['maptype', '.', '-o', '.cls-types', '--watch'], {
+                cwd: wsRoot,
+                stdio: ['ignore', 'ignore', 'pipe'],
+                windowsHide: true
+            });
+            maptypeProcess.stderr.on('data', d => { /* silenciado */ });
+            maptypeProcess.on('error', err => console.log('[cls] maptype error:', err.message));
+            console.log('[cls] maptype --watch activo');
+        } else {
+            console.log('[cls] clx no encontrado, type maps no se generaran automaticamente');
+        }
+    }
+
+    // ─── Cargar workspace type maps ─────────────────────────────────────
+    reloadWorkspaceMaps();
+
+    // ─── Recargar type maps en eventos ──────────────────────────────────
+    context.subscriptions.push(
+        vscode.workspace.onDidOpenTextDocument(doc => {
+            if (isClsFile(doc)) reloadWorkspaceMaps();
+        })
+    );
+    context.subscriptions.push(
+        vscode.workspace.onDidSaveTextDocument(doc => {
+            if (isClsFile(doc)) {
+                // El watch process regenera automaticamente, solo recargar cache
+                setTimeout(() => reloadWorkspaceMaps(), 500);
+            }
+        })
+    );
+    context.subscriptions.push(
+        vscode.window.onDidChangeActiveTextEditor(() => {
+            reloadWorkspaceMaps();
+        })
+    );
+
+    // ─── Completion provider ────────────────────────────────────────────
     context.subscriptions.push(
         vscode.languages.registerCompletionItemProvider('clx', {
             provideCompletionItems(document, position) {
                 const linePrefix = document.lineAt(position).text.substring(0, position.character);
                 const items = [];
 
-                // Si termina en '.', completar miembros del objeto
+                // Miembros de modulo
                 const dotMatch = linePrefix.match(/([a-zA-Z_][a-zA-Z0-9_]*)\.$/);
                 if (dotMatch) {
-                    const objName = dotMatch[1];
-                    // Buscar en todos los type maps (builtins + workspace)
-                    const allMaps = new Map([...typeRegistry.entries()]);
+                    const allMaps = new Map([...builtinMaps.entries()]);
                     const wsMaps = globalThis._clsWorkspaceMaps || new Map();
                     for (const [modName, data] of wsMaps) {
                         if (!allMaps.has(modName)) allMaps.set(modName, data);
                     }
-                    return completeMembers(objName, allMaps);
+                    return completeMembers(dotMatch[1], allMaps);
                 }
 
                 // Keywords
@@ -36,9 +81,9 @@ function activate(context) {
                     items.push(new vscode.CompletionItem(kw, vscode.CompletionItemKind.Keyword));
                 }
 
-                // Core: funciones globales en top-level (sin import)
-                if (typeRegistry.has('core')) {
-                    for (const entry of typeRegistry.get('core').entries) {
+                // Core intrinsics (top-level siempre)
+                if (builtinMaps.has('core')) {
+                    for (const entry of builtinMaps.get('core').entries) {
                         if (entry.kind === 'variable' || entry.kind === 'function') {
                             const ci = new vscode.CompletionItem(entry.name, kindMap(entry.kind));
                             ci.detail = entry.signature || entry.name;
@@ -48,17 +93,16 @@ function activate(context) {
                     }
                 }
 
-                // Workspace types toplevel: entradas del archivo actual
+                // Workspace types: toplevel del archivo activo
                 const activeUri = document.uri;
                 const activePath = activeUri.fsPath || '';
-                const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath || '';
-                let activeRelPath = '';
-                if (activePath.startsWith(wsRoot)) {
-                    activeRelPath = activePath.substring(wsRoot.length + 1).replace(/\\/g, '/').replace(/\.clsx$/i, '');
+                let activeRel = '';
+                if (activePath.startsWith(wsRoot || '')) {
+                    activeRel = activePath.substring((wsRoot || '').length + 1).replace(/\\/g, '/').replace(/\.clsx$/i, '');
                 }
                 const wsMaps = globalThis._clsWorkspaceMaps || new Map();
-                if (wsMaps.has(activeRelPath)) {
-                    for (const entry of wsMaps.get(activeRelPath).entries) {
+                if (activeRel && wsMaps.has(activeRel)) {
+                    for (const entry of wsMaps.get(activeRel).entries) {
                         if (entry.kind === 'function' || entry.kind === 'variable' || entry.kind === 'structure' || entry.kind === 'interface') {
                             const ci = new vscode.CompletionItem(entry.name, kindMap(entry.kind));
                             ci.detail = entry.signature || entry.name;
@@ -68,13 +112,13 @@ function activate(context) {
                     }
                 }
 
-                // Modulos builtin (math, json, fs...) → solo nombre
-                for (const [moduleName, data] of typeRegistry) {
-                    if (moduleName === 'core') continue;
-                    const modItem = new vscode.CompletionItem(moduleName, vscode.CompletionItemKind.Module);
-                    modItem.detail = `module (${data.entries.length} members)`;
-                    modItem.documentation = `Import: import "${moduleName}" as ${moduleName}`;
-                    items.push(modItem);
+                // Modulos builtin
+                for (const [mName, data] of builtinMaps) {
+                    if (mName === 'core') continue;
+                    const mi = new vscode.CompletionItem(mName, vscode.CompletionItemKind.Module);
+                    mi.detail = `module (${data.entries.length} members)`;
+                    mi.documentation = `Import: import "${mName}" as ${mName}`;
+                    items.push(mi);
                 }
 
                 // Snippets
@@ -92,70 +136,65 @@ function activate(context) {
         }, '.', '"', '/')
     );
 
-    console.log('[cls] Listo. Type maps cargados:', typeRegistry.size);
+    // Cleanup
+    context.subscriptions.push({
+        dispose: () => {
+            if (maptypeProcess) { maptypeProcess.kill(); }
+        }
+    });
+
+    console.log('[cls] Listo. Builtin modules:', builtinMaps.size);
 }
 
-// ─── Type Map Registry ────────────────────────────────────────────────
+// ─── Type Maps ─────────────────────────────────────────────────────────
 
-function loadTypeMaps(context) {
-    const registry = new Map();       // moduleName -> { entries, source }
-    const workspaceMaps = new Map();  // relativePath -> { entries, source }
-
-    // 1. Builtins desde la extension
+function loadBuiltinMaps() {
+    const registry = new Map();
     const typesDir = path.resolve(__dirname, '../types');
-    if (fs.existsSync(typesDir)) {
-        for (const file of fs.readdirSync(typesDir)) {
-            if (file.endsWith('.type.json')) {
-                const moduleName = file.replace('.type.json', '');
-                try {
-                    const data = JSON.parse(fs.readFileSync(path.join(typesDir, file), 'utf8'));
-                    registry.set(moduleName, { entries: data.entries || [], source: data.source || '' });
-                } catch (e) {
-                    console.log('[cls] Error loading type map:', file, e.message);
-                }
-            }
-        }
+    if (!fs.existsSync(typesDir)) return registry;
+    for (const file of fs.readdirSync(typesDir)) {
+        if (!file.endsWith('.type.json')) continue;
+        const moduleName = file.replace('.type.json', '');
+        try {
+            const data = JSON.parse(fs.readFileSync(path.join(typesDir, file), 'utf8'));
+            registry.set(moduleName, { entries: data.entries || [], source: data.source || '' });
+        } catch (e) { /* skip */ }
     }
-
-    // 2. Workspace .cls-types/ (preserva estructura de directorios)
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath;
-    if (workspaceRoot) {
-        const wsTypesDir = path.join(workspaceRoot, '.cls-types');
-        if (fs.existsSync(wsTypesDir)) {
-            loadWorkspaceTypes(wsTypesDir, wsTypesDir, workspaceRoot, workspaceMaps);
-        }
-    }
-
-    // Store workspace maps globally
-    globalThis._clsWorkspaceMaps = workspaceMaps;
     return registry;
 }
 
-function loadWorkspaceTypes(dir, baseDir, workspaceRoot, map) {
+function reloadWorkspaceMaps() {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath;
+    if (!workspaceRoot) return;
+    const wsTypesDir = path.join(workspaceRoot, '.cls-types');
+    if (!fs.existsSync(wsTypesDir)) return;
+
+    const map = new Map();
+    loadRecursive(wsTypesDir, map);
+    globalThis._clsWorkspaceMaps = map;
+}
+
+function loadRecursive(dir, map) {
     for (const file of fs.readdirSync(dir)) {
         const full = path.join(dir, file);
-        const stat = fs.statSync(full);
-        if (stat.isDirectory()) {
-            loadWorkspaceTypes(full, baseDir, workspaceRoot, map);
+        if (fs.statSync(full).isDirectory()) {
+            loadRecursive(full, map);
         } else if (file.endsWith('.type.json')) {
             try {
                 const data = JSON.parse(fs.readFileSync(full, 'utf8'));
-                // source es relativo al workspace root (ej: "examples/tests/hello.clsx")
                 let relPath = (data.source || '').replace(/\\/g, '/').replace(/\.clsx$/i, '').replace(/\.clsi$/i, '');
                 if (relPath.startsWith('./')) relPath = relPath.substring(2);
                 map.set(relPath, { entries: data.entries || [], source: data.source });
-            } catch (e) {
-                console.log('[cls] Error:', e.message);
-            }
+            } catch (e) { /* skip */ }
         }
     }
 }
 
 function completeMembers(objName, registry) {
     const items = [];
-    for (const [moduleName, data] of registry) {
-        const entries = data.entries || data;  // support both formats
-        if (moduleName === objName || objName.startsWith(moduleName + '.')) {
+    for (const [mName, data] of registry) {
+        const entries = data.entries || data;
+        if (mName === objName || objName.startsWith(mName + '.')) {
             for (const entry of entries) {
                 const ci = new vscode.CompletionItem(entry.name, kindMap(entry.kind));
                 ci.detail = entry.signature || entry.name;
@@ -167,9 +206,15 @@ function completeMembers(objName, registry) {
     return items.length > 0 ? items : undefined;
 }
 
+// ─── Helpers ────────────────────────────────────────────────────────────
+
+function isClsFile(doc) {
+    return doc.languageId === 'clx' || doc.fileName.endsWith('.clsx') || doc.fileName.endsWith('.clsi');
+}
+
 function kindMap(kind) {
-    const map = { 'function': vscode.CompletionItemKind.Function, 'variable': vscode.CompletionItemKind.Variable, 'structure': vscode.CompletionItemKind.Struct, 'interface': vscode.CompletionItemKind.Interface, 'class': vscode.CompletionItemKind.Class, 'module': vscode.CompletionItemKind.Module, 'import': vscode.CompletionItemKind.Reference };
-    return map[kind] || vscode.CompletionItemKind.Text;
+    const m = { function: vscode.CompletionItemKind.Function, variable: vscode.CompletionItemKind.Variable, structure: vscode.CompletionItemKind.Struct, interface: vscode.CompletionItemKind.Interface, class: vscode.CompletionItemKind.Class, module: vscode.CompletionItemKind.Module, constant: vscode.CompletionItemKind.Constant, import: vscode.CompletionItemKind.Reference };
+    return m[kind] || vscode.CompletionItemKind.Text;
 }
 
 function snip(label, body) {
@@ -177,6 +222,25 @@ function snip(label, body) {
     item.insertText = new vscode.SnippetString(body);
     item.detail = 'snippet';
     return item;
+}
+
+function findClx() {
+    const { execSync } = require('child_process');
+    try { execSync('clx --version', { stdio: 'pipe' }); return 'clx'; } catch {}
+    const extDir = path.resolve(__dirname, '..');
+    for (const c of [
+        path.resolve(extDir, '../../../target/debug/clx'),
+        path.resolve(extDir, '../../../target/release/clx'),
+        path.join(process.env.HOME || process.env.USERPROFILE || '', '.cargo', 'bin', 'clx'),
+    ]) {
+        try { if (fs.existsSync(c)) { execSync(`"${c}" --version`, { stdio: 'pipe' }); return c; } } catch {}
+    }
+    return null;
+}
+
+function spawnSync(cmd, args, opts) {
+    const { execSync } = require('child_process');
+    try { execSync(`"${cmd}" ${args.join(' ')}`, { ...opts, timeout: 30000 }); } catch {}
 }
 
 function deactivate() {}
