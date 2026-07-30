@@ -274,6 +274,9 @@ impl NameResolver {
                     )));
                 }
             }
+            Expression::Await(expr, _) => {
+                self.resolve_expression(expr)?;
+            }
         }
         Ok(())
     }

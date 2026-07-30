@@ -103,6 +103,7 @@ pub enum Keyword {
 
     // Tipos especiales
     Async,
+    Await,
     Sync,
     Macro,
     Global,
@@ -364,6 +365,7 @@ impl fmt::Display for Keyword {
             Keyword::As => "as",
             Keyword::Include => "include",
             Keyword::Async => "async",
+            Keyword::Await => "await",
             Keyword::Sync => "sync",
             Keyword::Macro => "macro",
             Keyword::Global => "global",

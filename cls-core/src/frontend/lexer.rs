@@ -249,6 +249,7 @@ impl Lexer {
             "as" => Token::Keyword(Keyword::As),
             "include" => Token::Keyword(Keyword::Include),
             "async" => Token::Keyword(Keyword::Async),
+            "await" => Token::Keyword(Keyword::Await),
             "sync" => Token::Keyword(Keyword::Sync),
             "macro" => Token::Keyword(Keyword::Macro),
             "global" => Token::Keyword(Keyword::Global),

@@ -367,6 +367,7 @@ impl TypeChecker {
             Expression::NamespaceAccess(_, _, span) => {
                 self.error("Namespace access sin tipo", span.clone())
             }
+            Expression::Await(expr, _) => self.check_expression(expr),
         }
     }
 

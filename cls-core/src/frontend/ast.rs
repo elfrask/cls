@@ -340,6 +340,9 @@ pub enum Expression {
 
     // Namespace access
     NamespaceAccess(String, String, Span), // name::identifier
+
+    // Await: espera una expresion
+    Await(Box<Expression>, Span),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
