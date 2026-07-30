@@ -1,0 +1,35 @@
+# @title fs
+# @description Modulo para acceso al sistema de archivos. Requiere que el sandbox tenga allowFs = true.
+# @version 1.0.0
+
+# @description Lee el contenido de un archivo como string
+# @params path Ruta del archivo (puede usar protocolos app://, user://, tmp://)
+# @return String Contenido del archivo, o error si no existe
+function readFile(path: String): String;
+
+# @description Escribe contenido a un archivo (sobrescribe si existe)
+# @params path Ruta del archivo
+# @params content Contenido a escribir
+function writeFile(path: String, content: String);
+
+# @description Verifica si un archivo o directorio existe
+# @params path Ruta a verificar
+# @return bool true si existe, false si no
+function exists(path: String): bool;
+
+# @description Elimina un archivo o directorio
+# @params path Ruta a eliminar
+function rm(path: String);
+
+# @description Crea un directorio (recursivo)
+# @params path Ruta del directorio a crear
+function mkdir(path: String);
+
+# @description Lista los archivos en un directorio
+# @params path Ruta del directorio
+# @return Array Array de strings con los nombres
+function listDir(path: String): Array;
+
+# @description Devuelve el directorio de trabajo actual
+# @return String Ruta del CWD
+function cwd(): String;
