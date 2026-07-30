@@ -113,7 +113,22 @@ impl Value {
                 format!("{}({})", def_name, fields.join(", "))
             }
             Value::Unknown => "unknown".to_string(),
-            Value::Cmx(_) => "<cmx>".to_string(),
+            Value::Cmx(cmx) => {
+                let props_str = if cmx.props.is_empty() {
+                    String::new()
+                } else {
+                    let entries: Vec<String> = cmx.props.iter()
+                        .map(|(k, v)| format!("{}=\"{}\"", k, v.to_string()))
+                        .collect();
+                    format!(" {}", entries.join(" "))
+                };
+                let children_str = if cmx.children.is_empty() {
+                    " />".to_string()
+                } else {
+                    format!(">... ({} children)</{}>", cmx.children.len(), cmx.tag)
+                };
+                format!("<{}{}{}", cmx.tag, props_str, children_str)
+            }
         }
     }
 }

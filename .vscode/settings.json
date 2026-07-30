@@ -3,7 +3,12 @@
   "files.associations": {
     "*.clsx": "clx",
     "*.clx": "clx",
-    "*.clsi": "clx",
+    "*.clsi": "clx"
   },
-  "editor.semanticHighlighting.enabled": true
+  "editor.semanticHighlighting.enabled": true,
+  "cls.options.unnestableFeatures": {
+    "lspServer": false,
+    "useStaticTypes": true,
+    "useMapClsi": true
+  }
 }

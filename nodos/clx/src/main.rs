@@ -39,8 +39,9 @@ fn main() {
         // Servidor LSP
         "lsp" => subcommands::lsp::execute(&args[2..]),
 
-        // Inspección
+        // Inspección y tipos
         "ast" => subcommands::ast::execute(&args[2..]),
+        "maptype" => subcommands::maptype::execute(&args[2..]),
         "tree" => { eprintln!("[clx tree] No implementado aún"); 0 }
 
         // Formateo

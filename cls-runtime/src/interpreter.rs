@@ -1026,16 +1026,32 @@ impl Interpreter {
     }
 
     fn evaluate_cmx(&mut self, cmx: &CmxElement) -> ClsResult<Value> {
+        // Si el tag empieza con mayúscula, buscar como referencia
+        let tag = if cmx.tag.starts_with(|c: char| c.is_uppercase()) {
+            if let Some(val) = self.env.get(&cmx.tag) {
+                let result = val.clone();
+                // Si es una función, llamarla con props como argumentos
+                if matches!(result, Value::Fun(_)) {
+                    let mut args = Vec::new();
+                    let mut obj = std::collections::HashMap::new();
+                    for attr in &cmx.attributes {
+                        let val = self.eval_cmx_attr(attr)?;
+                        obj.insert(attr.name.clone(), val);
+                    }
+                    args.push(Value::Record(obj));
+                    self.call_function_value(result, args, &cmx.span)?;
+                    return Ok(Value::Void);
+                }
+                return Ok(result);
+            }
+            cmx.tag.clone()
+        } else {
+            cmx.tag.clone()
+        };
+
         let mut props = std::collections::HashMap::new();
         for attr in &cmx.attributes {
-            let val = match &attr.value {
-                Some(CmxAttributeValue::String(s)) => Value::String(s.clone()),
-                Some(CmxAttributeValue::Expression(expr)) => self.evaluate_expression(expr)?,
-                Some(CmxAttributeValue::Shorthand(name)) => {
-                    self.env.get(name).cloned().unwrap_or(Value::Null)
-                }
-                None => Value::Bool(true),
-            };
+            let val = self.eval_cmx_attr(attr)?;
             props.insert(attr.name.clone(), val);
         }
         let mut children = Vec::new();
@@ -1046,7 +1062,18 @@ impl Interpreter {
                 CmxChild::Element(el) => self.evaluate_cmx(el)?,
             });
         }
-        Ok(Value::Cmx(Box::new(crate::value::CmxValue { tag: cmx.tag.clone(), props, children })))
+        Ok(Value::Cmx(Box::new(crate::value::CmxValue { tag, props, children })))
+    }
+
+    fn eval_cmx_attr(&mut self, attr: &CmxAttribute) -> ClsResult<Value> {
+        match &attr.value {
+            Some(CmxAttributeValue::String(s)) => Ok(Value::String(s.clone())),
+            Some(CmxAttributeValue::Expression(expr)) => self.evaluate_expression(expr),
+            Some(CmxAttributeValue::Shorthand(name)) => {
+                Ok(self.env.get(name).cloned().unwrap_or(Value::Null))
+            }
+            None => Ok(Value::Bool(true)),
+        }
     }
 
     fn evaluate_namespace_access(&mut self, ns: &str, name: &str, span: &Span) -> ClsResult<Value> {
