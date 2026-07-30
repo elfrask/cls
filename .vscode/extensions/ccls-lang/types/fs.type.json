@@ -1,0 +1,12 @@
+{
+  "source": "fs.clsi",
+  "entries": [
+    {"name":"readFile","kind":"function","signature":"readFile(path) -> String","params":[{"name":"path","type_":"String"}],"return_type":"String","doc":"Lee el contenido de un archivo como string"},
+    {"name":"writeFile","kind":"function","signature":"writeFile(path, content)","params":[{"name":"path","type_":"String"},{"name":"content","type_":"String"}],"return_type":"void","doc":"Escribe contenido a un archivo"},
+    {"name":"exists","kind":"function","signature":"exists(path) -> bool","params":[{"name":"path","type_":"String"}],"return_type":"bool","doc":"Verifica si un archivo o directorio existe"},
+    {"name":"rm","kind":"function","signature":"rm(path)","params":[{"name":"path","type_":"String"}],"return_type":"void","doc":"Elimina un archivo o directorio"},
+    {"name":"mkdir","kind":"function","signature":"mkdir(path)","params":[{"name":"path","type_":"String"}],"return_type":"void","doc":"Crea un directorio (recursivo)"},
+    {"name":"listDir","kind":"function","signature":"listDir(path) -> Array","params":[{"name":"path","type_":"String"}],"return_type":"Array","doc":"Lista los archivos en un directorio"},
+    {"name":"cwd","kind":"function","signature":"cwd() -> String","params":[],"return_type":"String","doc":"Devuelve el directorio de trabajo actual"}
+  ]
+}

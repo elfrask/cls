@@ -1,0 +1,21 @@
+{
+  "source": "math.clsi",
+  "entries": [
+    {"name":"PI","kind":"variable","signature":"PI: float","type_":"float","doc":"Valor de PI (3.14159...)"},
+    {"name":"E","kind":"variable","signature":"E: float","type_":"float","doc":"Constante de Euler (2.71828...)"},
+    {"name":"abs","kind":"function","signature":"abs(x) -> number","params":[{"name":"x","type_":"number"}],"return_type":"number","doc":"Calcula el valor absoluto de un numero"},
+    {"name":"sqrt","kind":"function","signature":"sqrt(x) -> float","params":[{"name":"x","type_":"number"}],"return_type":"float","doc":"Raiz cuadrada de un numero"},
+    {"name":"pow","kind":"function","signature":"pow(base, exp) -> float","params":[{"name":"base","type_":"number"},{"name":"exp","type_":"number"}],"return_type":"float","doc":"Eleva una base a una potencia"},
+    {"name":"min","kind":"function","signature":"min(a, b) -> float","params":[{"name":"a","type_":"number"},{"name":"b","type_":"number"}],"return_type":"float","doc":"Devuelve el menor de dos numeros"},
+    {"name":"max","kind":"function","signature":"max(a, b) -> float","params":[{"name":"a","type_":"number"},{"name":"b","type_":"number"}],"return_type":"float","doc":"Devuelve el mayor de dos numeros"},
+    {"name":"floor","kind":"function","signature":"floor(x) -> int","params":[{"name":"x","type_":"number"}],"return_type":"int","doc":"Redondea hacia abajo al entero mas cercano"},
+    {"name":"ceil","kind":"function","signature":"ceil(x) -> int","params":[{"name":"x","type_":"number"}],"return_type":"int","doc":"Redondea hacia arriba al entero mas cercano"},
+    {"name":"round","kind":"function","signature":"round(x) -> int","params":[{"name":"x","type_":"number"}],"return_type":"int","doc":"Redondea al entero mas cercano"},
+    {"name":"random","kind":"function","signature":"random() -> float","params":[],"return_type":"float","doc":"Genera un numero pseudoaleatorio en [0, 1)"},
+    {"name":"sin","kind":"function","signature":"sin(x) -> float","params":[{"name":"x","type_":"number"}],"return_type":"float","doc":"Seno de un angulo en radianes"},
+    {"name":"cos","kind":"function","signature":"cos(x) -> float","params":[{"name":"x","type_":"number"}],"return_type":"float","doc":"Coseno de un angulo en radianes"},
+    {"name":"tan","kind":"function","signature":"tan(x) -> float","params":[{"name":"x","type_":"number"}],"return_type":"float","doc":"Tangente de un angulo en radianes"},
+    {"name":"log","kind":"function","signature":"log(x) -> float","params":[{"name":"x","type_":"number"}],"return_type":"float","doc":"Logaritmo natural (base e)"},
+    {"name":"range","kind":"function","signature":"range(start, end) -> Array","params":[{"name":"start","type_":"int"},{"name":"end","type_":"int"}],"return_type":"Array","doc":"Genera un array de enteros en el rango [start, end)"}
+  ]
+}

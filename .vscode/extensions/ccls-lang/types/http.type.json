@@ -1,0 +1,7 @@
+{
+  "source": "http.clsi",
+  "entries": [
+    {"name":"get","kind":"function","signature":"get(url) -> String","params":[{"name":"url","type_":"String"}],"return_type":"String","doc":"Realiza una peticion HTTP GET"},
+    {"name":"post","kind":"function","signature":"post(url, body) -> String","params":[{"name":"url","type_":"String"},{"name":"body","type_":"String"}],"return_type":"String","doc":"Realiza una peticion HTTP POST con un body"}
+  ]
+}

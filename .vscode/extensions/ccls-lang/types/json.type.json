@@ -1,0 +1,7 @@
+{
+  "source": "json.clsi",
+  "entries": [
+    {"name":"parse","kind":"function","signature":"parse(text) -> Any","params":[{"name":"text","type_":"String"}],"return_type":"Any","doc":"Parsea un string JSON y devuelve un valor Any"},
+    {"name":"stringify","kind":"function","signature":"stringify(value) -> String","params":[{"name":"value","type_":"Any"}],"return_type":"String","doc":"Convierte un valor Any a su representacion como string JSON"}
+  ]
+}

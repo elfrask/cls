@@ -1,0 +1,6 @@
+{
+  "source": "Lib.clsi",
+  "entries": [
+    {"name":"load","kind":"function","signature":"load(name) -> String","params":[{"name":"name","type_":"String"}],"return_type":"String","doc":"Carga una libreria por nombre desde el sistema de busqueda"}
+  ]
+}
