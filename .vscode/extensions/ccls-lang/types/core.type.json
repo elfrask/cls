@@ -1,0 +1,18 @@
+{
+  "source": "core.clsi",
+  "entries": [
+    {"name":"print","kind":"function","signature":"print(...args) -> void","params":[{"name":"...args","type_":"Any"}],"return_type":"void","doc":"Imprime valores en consola. Acepta multiples argumentos separados por coma."},
+    {"name":"input","kind":"function","signature":"input() -> String","params":[],"return_type":"String","doc":"Lee una linea desde la entrada estandar."},
+    {"name":"toString","kind":"function","signature":"toString(val) -> String","params":[{"name":"val","type_":"Any"}],"return_type":"String","doc":"Convierte cualquier valor a su representacion como string."},
+    {"name":"int","kind":"function","signature":"int(val) -> int","params":[{"name":"val","type_":"Any"}],"return_type":"int","doc":"Convierte un valor a entero. Soporta int, float y strings numericos."},
+    {"name":"float","kind":"function","signature":"float(val) -> float","params":[{"name":"val","type_":"Any"}],"return_type":"float","doc":"Convierte un valor a flotante. Soporta float, int y strings numericos."},
+    {"name":"str","kind":"function","signature":"str(val) -> String","params":[{"name":"val","type_":"Any"}],"return_type":"String","doc":"Convierte cualquier valor a string."},
+    {"name":"bool","kind":"function","signature":"bool(val) -> bool","params":[{"name":"val","type_":"Any"}],"return_type":"bool","doc":"Convierte un valor a booleano segun reglas de truthiness."},
+    {"name":"len","kind":"function","signature":"len(val) -> int","params":[{"name":"val","type_":"Any"}],"return_type":"int","doc":"Devuelve la longitud de arrays, strings o records."},
+    {"name":"type","kind":"function","signature":"type(val) -> String","params":[{"name":"val","type_":"Any"}],"return_type":"String","doc":"Devuelve el nombre del tipo de un valor."},
+    {"name":"now","kind":"function","signature":"now() -> int","params":[],"return_type":"int","doc":"Devuelve el timestamp actual en milisegundos desde UNIX epoch."},
+    {"name":"exit","kind":"function","signature":"exit(code)","params":[{"name":"code","type_":"int"}],"return_type":"void","doc":"Finaliza la ejecucion del programa con un codigo de salida."},
+    {"name":"sleep","kind":"function","signature":"sleep(ms)","params":[{"name":"ms","type_":"int"}],"return_type":"void","doc":"Duerme la ejecucion durante una cantidad de milisegundos."},
+    {"name":"throw","kind":"function","signature":"throw(msg)","params":[{"name":"msg","type_":"Any"}],"return_type":"void","doc":"Lanza un error de runtime intencional con un mensaje."}
+  ]
+}
