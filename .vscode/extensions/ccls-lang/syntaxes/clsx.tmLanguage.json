@@ -142,7 +142,7 @@
         },
         {
           "name": "keyword.modifier.ccls",
-          "match": "\\b(public|private|static|global|async|sync|macro)\\b"
+          "match": "\\b(public|private|static|global|async|await|sync|macro)\\b"
         },
         {
           "name": "keyword.self.ccls",

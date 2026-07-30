@@ -38,7 +38,7 @@ pub fn execute(args: &[String]) -> i32 {
     }
 
     // .gitignore
-    fs::write(dir.join(".gitignore"), "modules/\ndist/\n").unwrap();
+    fs::write(dir.join(".gitignore"), "modules/\ndist/\n.cls-types\n").unwrap();
 
     println!("Proyecto '{}' creado", name);
     0

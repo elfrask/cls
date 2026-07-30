@@ -281,14 +281,24 @@ fn process_file(input: &Path, output: &Path) -> bool {
 }
 
 fn process_dir(input_dir: &Path, output_dir: &Path) {
+    let cwd = std::env::current_dir().unwrap_or_default();
     if let Ok(entries) = fs::read_dir(input_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                process_dir(&path, &output_dir.join(path.file_name().unwrap()));
+                let name = path.file_name().unwrap().to_string_lossy();
+                if name.starts_with('.') || name == "modules" || name == "dist" || name == "libs" || name == "target" { continue; }
+                process_dir(&path, output_dir);
             } else if matches!(path.extension().and_then(|e| e.to_str()), Some("clsx" | "clsi")) {
                 let stem = path.file_stem().unwrap().to_string_lossy();
-                process_file(&path, &output_dir.join(format!("{}.type.json", stem)));
+                // Ruta relativa desde CWD para preservar estructura
+                let rel = path.strip_prefix(&cwd).unwrap_or(&path);
+                let parent = rel.parent().unwrap_or(Path::new(""));
+                let full_out = output_dir.join(parent).join(format!("{}.type.json", stem));
+                if !parent.as_os_str().is_empty() {
+                    fs::create_dir_all(output_dir.join(parent)).ok();
+                }
+                process_file(&path, &full_out);
             }
         }
     }
@@ -304,28 +314,42 @@ fn watch_dir(input_dir: &Path, output_dir: &Path) {
     eprintln!("  Watch mode activo (polling cada 2s)...");
     let mut last: HashMap<PathBuf, u64> = HashMap::new();
     loop {
-        if let Ok(entries) = fs::read_dir(input_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() { continue; }
-                if !matches!(path.extension().and_then(|e| e.to_str()), Some("clsx" | "clsi")) { continue; }
+        scan_and_process(input_dir, output_dir, &mut last);
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+}
+
+fn scan_and_process(dir: &Path, out_base: &Path, last: &mut HashMap<PathBuf, u64>) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let rel = path.strip_prefix(std::env::current_dir().unwrap_or_default()).unwrap_or(&path);
+            if path.is_dir() {
+                let name = path.file_name().unwrap();
+                let n = name.to_string_lossy();
+                if n.starts_with('.') || n == "modules" || n == "dist" || n == "libs" { continue; }
+                scan_and_process(&path, out_base, last);
+            } else if matches!(path.extension().and_then(|e| e.to_str()), Some("clsx" | "clsi")) {
                 let mtime = get_mtime(&path);
                 let prev = *last.get(&path).unwrap_or(&0);
                 if mtime > prev {
+                    // Preservar estructura relativa al workspace root
+                    let rel_path = path.strip_prefix(std::env::current_dir().unwrap_or_default())
+                        .unwrap_or(&path).to_path_buf();
+                    let parent = rel_path.parent().unwrap_or(Path::new(""));
                     let stem = path.file_stem().unwrap().to_string_lossy();
-                    let out = output_dir.join(format!("{}.type.json", stem));
+                    let out = out_base.join(parent).join(format!("{}.type.json", stem));
                     process_file(&path, &out);
                     last.insert(path, mtime);
                 }
             }
         }
-        std::thread::sleep(std::time::Duration::from_secs(2));
     }
 }
 
 pub fn execute(args: &[String]) -> i32 {
     let input = args.iter().find(|a| !a.starts_with("-") && *a != "." && !args.iter().position(|x| x == "-o").map_or(false, |i| args.get(i+1).map_or(false, |v| v == a.as_str()))).cloned().unwrap_or_else(|| ".".to_string());
-    let output = args.iter().position(|a| a == "-o" || a == "--out").and_then(|i| args.get(i+1)).cloned().unwrap_or_else(|| "./.clsi-types".to_string());
+    let output = args.iter().position(|a| a == "-o" || a == "--out").and_then(|i| args.get(i+1)).cloned().unwrap_or_else(|| "./.cls-types".to_string());
     let watch = args.iter().any(|a| a == "--watch" || a == "-w");
 
     let input_path = Path::new(&input);
@@ -333,7 +357,7 @@ pub fn execute(args: &[String]) -> i32 {
 
     if input_path.is_dir() {
         eprintln!("Generando type maps desde '{}' -> '{}'...", input, output);
-        let out_dir = if output_path.is_dir() { output_path.to_path_buf() } else { output_path.join(".clsi-types") };
+        let out_dir = output_path.to_path_buf();
         process_dir(input_path, &out_dir);
         if watch { watch_dir(input_path, &out_dir); }
     } else {
