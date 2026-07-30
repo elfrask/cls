@@ -30,21 +30,25 @@ function activate(context) {
                     items.push(new vscode.CompletionItem(kw, vscode.CompletionItemKind.Keyword));
                 }
 
-                // Entradas de type maps (intrinsics + modulos)
+                // Entradas de type maps: core en top-level, modulos solo al importar
                 for (const [moduleName, entries] of typeRegistry) {
-                    for (const entry of entries) {
-                        if (entry.kind === 'variable' || entry.kind === 'function') {
-                            const ci = new vscode.CompletionItem(entry.name, kindMap(entry.kind));
-                            ci.detail = entry.signature || entry.name;
-                            ci.documentation = entry.doc || moduleName;
-                            items.push(ci);
+                    if (moduleName === 'core') {
+                        // Core: funciones globales en top-level (sin import)
+                        for (const entry of entries) {
+                            if (entry.kind === 'variable' || entry.kind === 'function') {
+                                const ci = new vscode.CompletionItem(entry.name, kindMap(entry.kind));
+                                ci.detail = entry.signature || entry.name;
+                                ci.documentation = entry.doc || '';
+                                items.push(ci);
+                            }
                         }
+                    } else {
+                        // Modulos: solo el nombre del modulo aparece en top-level
+                        const modItem = new vscode.CompletionItem(moduleName, vscode.CompletionItemKind.Module);
+                        modItem.detail = `module (${entries.length} members)`;
+                        modItem.documentation = `Import required: import "${moduleName}" as ${moduleName}`;
+                        items.push(modItem);
                     }
-                    // El nombre del modulo como completion
-                    const modItem = new vscode.CompletionItem(moduleName, vscode.CompletionItemKind.Module);
-                    modItem.detail = `module (${entries.length} members)`;
-                    modItem.documentation = `Module: ${moduleName}`;
-                    items.push(modItem);
                 }
 
                 // Snippets
