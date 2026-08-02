@@ -217,6 +217,7 @@ impl Parser {
     fn parse_function_decl(&mut self) -> ClsResult<Statement> {
         self.expect_keyword(Keyword::Function)?;
         let name = self.expect_identifier()?;
+        let type_params = self.parse_type_params()?;
         
         // Parámetros
         self.expect_symbol(Symbol::LParen)?;
@@ -243,7 +244,7 @@ impl Parser {
             visibility: Visibility::Default,
             modifiers: Vec::new(),
             span: self.span(),
-            type_params: Vec::new(),
+            type_params,
         }))
     }
 
@@ -411,6 +412,15 @@ impl Parser {
                 return Ok(TypeKind::Literal(LiteralKind::Bool(v)));
             }
             _ => {}
+        }
+
+        // Phantom: !T — el type param no participa en el tipo (no se unifica)
+        if self.consume_operator(Operator::Not) {
+            let inner = self.parse_base_type()?;
+            return Ok(TypeKind::Phantom(Box::new(TypeAnnotation {
+                kind: inner,
+                span: self.span(),
+            })));
         }
 
         // Paréntesis: (Int) agrupación | (Int, String) tupla
@@ -838,6 +848,7 @@ impl Parser {
     fn parse_class_decl(&mut self) -> ClsResult<Statement> {
         self.expect_keyword(Keyword::Class)?;
         let name = self.expect_identifier()?;
+        let type_params = self.parse_type_params()?;
         
         // Herencia: `class Hijo: Padre` (principal), `extends Base` o `(Base)` (alias)
         let extends = if self.consume_operator(Operator::Colon) {
@@ -876,7 +887,7 @@ impl Parser {
             implements,
             body,
             span: self.span(),
-            type_params: Vec::new(),
+            type_params,
         }))
     }
 

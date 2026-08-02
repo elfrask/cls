@@ -200,7 +200,7 @@ impl TypeChecker {
             .map(|t| self.resolve_type_annotation(t))
             .unwrap_or_else(|| inferred.clone());
 
-        if self.config.strict && !check_type.is_assignable_to(&declared) {
+        if self.config.strict && var.value.is_some() && !check_type.is_assignable_to(&declared) {
             return self.error(
                 &format!("No se puede asignar {} a {}", inferred, declared),
                 var.span.clone(),
@@ -219,6 +219,12 @@ impl TypeChecker {
     }
 
     fn check_function_decl(&mut self, func: &FunctionDecl) -> Type {
+        // Scope con type params como placeholders (Named) para genéricos
+        self.push_scope();
+        for tp in &func.type_params {
+            self.define(&tp.name, Type::Named(tp.name.clone(), vec![]));
+        }
+
         let return_type = func.return_type.as_ref()
             .map(|t| self.resolve_type_annotation(t))
             .unwrap_or(Type::Void);
@@ -237,11 +243,8 @@ impl TypeChecker {
             Box::new(return_type.clone()),
         );
 
-        self.define(&func.name, fn_type);
-
-        // Verificar cuerpo con tipo de retorno esperado
+        // Verificar cuerpo con params y placeholders en scope
         let prev_return = self.current_return_type.replace(return_type.clone());
-        self.push_scope();
         for (name, typ) in &param_types {
             self.define(name, typ.clone());
         }
@@ -249,6 +252,7 @@ impl TypeChecker {
         self.pop_scope();
         self.current_return_type = prev_return;
 
+        self.define(&func.name, fn_type);
         return_type
     }
 
@@ -352,6 +356,10 @@ impl TypeChecker {
         let class_type = Type::Named(c.name.clone(), vec![]);
         self.define(&c.name, class_type.clone());
         self.push_scope();
+        // Type params de la clase como placeholders (para fields/methods genéricos)
+        for tp in &c.type_params {
+            self.define(&tp.name, Type::Named(tp.name.clone(), vec![]));
+        }
         for member in &c.body {
             match member {
                 ClassMember::Method(f) | ClassMember::Constructor(f) => {
@@ -501,34 +509,75 @@ impl TypeChecker {
     fn check_call(&mut self, call: &CallExpr) -> Type {
         let callee_type = self.check_expression(&call.callee);
 
-        // Verificar args
-        for arg in &call.args {
-            self.check_expression(arg);
-        }
+        // Verificar args y recolectar tipos (para inferir genéricos)
+        let arg_types: Vec<Type> = call.args.iter()
+            .map(|a| self.check_expression(a))
+            .collect();
 
         match callee_type {
             Type::Fun(params, ret) => {
                 if self.config.strict && params.len() != call.args.len() {
                     self.warn(
                         &format!(
-                            "FunciÃ³n espera {} args, recibiÃ³ {}",
+                            "Función espera {} args, recibió {}",
                             params.len(),
                             call.args.len()
                         ),
                         call.span.clone(),
                     );
                 }
-                *ret
+                // Inferir genéricos desde los args: param Named("T") → arg
+                let mut bindings = HashMap::new();
+                for (param, arg) in params.iter().zip(arg_types.iter()) {
+                    if let Type::Named(n, ps) = param {
+                        if ps.is_empty() && !matches!(arg, Type::Any) {
+                            bindings.entry(n.clone()).or_insert_with(|| arg.clone());
+                        }
+                    }
+                }
+                self.substitute(&ret, &bindings)
             }
             Type::Named(_, _) => {
-                // Struct constructor â€” devuelve el tipo del struct
+                // Struct/Class constructor — devuelve el tipo
                 callee_type.clone()
             }
             Type::Any => Type::Any,
             _ => self.error(
-                &format!("No se puede llamar como funciÃ³n: {}", callee_type),
+                &format!("No se puede llamar como función: {}", callee_type),
                 call.span.clone(),
             ),
+        }
+    }
+
+    /// Sustituye type params (Named sin args) por sus bindings en un tipo.
+    fn substitute(&self, ty: &Type, bindings: &HashMap<String, Type>) -> Type {
+        match ty {
+            Type::Named(n, params) => {
+                if params.is_empty() {
+                    if let Some(b) = bindings.get(n) {
+                        b.clone()
+                    } else {
+                        ty.clone()
+                    }
+                } else {
+                    Type::Named(
+                        n.clone(),
+                        params.iter().map(|p| self.substitute(p, bindings)).collect(),
+                    )
+                }
+            }
+            Type::Array(inner) => Type::Array(Box::new(self.substitute(inner, bindings))),
+            Type::Tuple(ts) => Type::Tuple(ts.iter().map(|t| self.substitute(t, bindings)).collect()),
+            Type::Union(ts) => Type::Union(ts.iter().map(|t| self.substitute(t, bindings)).collect()),
+            Type::Record(k, v) => Type::Record(
+                Box::new(self.substitute(k, bindings)),
+                Box::new(self.substitute(v, bindings)),
+            ),
+            Type::Fun(ps, r) => Type::Fun(
+                ps.iter().map(|p| self.substitute(p, bindings)).collect(),
+                Box::new(self.substitute(r, bindings)),
+            ),
+            _ => ty.clone(),
         }
     }
 
@@ -690,6 +739,8 @@ impl TypeChecker {
             TypeKind::Access(base, access) => {
                 self.resolve_type_access(base, access, bindings)
             }
+            // Phantom: !T se resuelve SIN sustituir type params (no unifica)
+            TypeKind::Phantom(inner) => self.resolve_annotation_with(inner, &HashMap::new()),
             TypeKind::Record(k, v) => {
                 Type::Record(
                     Box::new(self.resolve_annotation_with(k, bindings)),

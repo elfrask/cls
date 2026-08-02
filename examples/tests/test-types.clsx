@@ -3,10 +3,29 @@ interface Hello<T=Int> {
     greet(name: String): String,
 };
 
+interface Marcador<T> {
+    real: T,
+    fantasma: !T,
+};
+
 alias Vec3 = (Int, Int, Int);
 alias Color = "red" | "green" | "blue";
 alias FnInt = fun(Int) -> Int;
 alias Dict = Record<String, Int>;
+
+function id<T>(x: T) -> T {
+    return x;
+};
+
+class Caja<T> {
+    var contenido: T;
+    function main(contenido: T) {
+        me.contenido = contenido;
+    }
+    function obtener() -> T {
+        return me.contenido;
+    }
+};
 
 function main(args: String[]) -> int {
     var a: (Int, String) = (1, "x");
@@ -18,5 +37,11 @@ function main(args: String[]) -> int {
     var d: Dict = {a: 1};
     var idx = 0;
     var dyn = a[idx];
+    var r: Marcador<String>["real"] = "ok";
+    var f: Marcador<String>["fantasma"];
+    var g: Int = id(5);
+    var h: String = id("hola");
+    var caja = Caja(42);
+    var out: Int = caja.obtener();
     return 0;
 };
