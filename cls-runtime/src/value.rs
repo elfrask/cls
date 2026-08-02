@@ -257,6 +257,7 @@ impl Value {
             }
             Value::Unknown => "unknown".to_string(),
             Value::Cmx(cmx) => {
+                let tag_str = cmx.tag.to_string();
                 let props_str = if cmx.props.is_empty() {
                     String::new()
                 } else {
@@ -268,9 +269,9 @@ impl Value {
                 let children_str = if cmx.children.is_empty() {
                     " />".to_string()
                 } else {
-                    format!(">... ({} children)</{}>", cmx.children.len(), cmx.tag)
+                    format!(">... ({} children)</{}>", cmx.children.len(), tag_str)
                 };
-                format!("<{}{}{}", cmx.tag, props_str, children_str)
+                format!("<{}{}{}", tag_str, props_str, children_str)
             }
         }
     }
@@ -401,7 +402,9 @@ impl FunValue {
 /// Valor CMX (JSX nativo)
 #[derive(Debug, Clone, PartialEq)]
 pub struct CmxValue {
-    pub tag: String,
+    /// El valor del tag: String para minúsculas, o la referencia (función/var/clase/etc)
+    /// para mayúsculas. CMX es agnóstico — no ejecuta la referencia.
+    pub tag: Value,
     pub props: HashMap<String, Value>,
     pub children: Vec<Value>,
 }
@@ -409,7 +412,7 @@ pub struct CmxValue {
 impl CmxValue {
     pub fn new(tag: String) -> Self {
         Self {
-            tag,
+            tag: Value::String(tag),
             props: HashMap::new(),
             children: Vec::new(),
         }

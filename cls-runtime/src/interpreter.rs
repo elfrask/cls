@@ -1131,7 +1131,7 @@ impl Interpreter {
                 Ok(inst.fields[idx].clone())
             }
             Value::Cmx(ref cmx) => match member.member.as_str() {
-                "tag" => Ok(Value::String(cmx.tag.clone())),
+                "tag" => Ok(cmx.tag.clone()),
                 "props" => Ok(Value::Record(cmx.props.clone())),
                 "children" => Ok(Value::Array(cmx.children.clone())),
                 name => cmx.props.get(name).cloned().ok_or_else(|| {
@@ -1292,27 +1292,15 @@ impl Interpreter {
     }
 
     fn evaluate_cmx(&mut self, cmx: &CmxElement) -> ClsResult<Value> {
-        // Si el tag empieza con mayúscula, buscar como referencia
+        // Tag mayúscula → guardar la referencia (función, var, clase, etc) SIN ejecutarla.
+        // Tag minúscula → guardar como String. CMX es agnóstico.
         let tag = if cmx.tag.starts_with(|c: char| c.is_uppercase()) {
-            if let Some(val) = self.env.get(&cmx.tag) {
-                let result = val.clone();
-                // Si es una función, llamarla con props como argumentos
-                if matches!(result, Value::Fun(_)) {
-                    let mut args = Vec::new();
-                    let mut obj = std::collections::HashMap::new();
-                    for attr in &cmx.attributes {
-                        let val = self.eval_cmx_attr(attr)?;
-                        obj.insert(attr.name.clone(), val);
-                    }
-                    args.push(Value::Record(obj));
-                    self.call_function_value(result, args, &cmx.span)?;
-                    return Ok(Value::Void);
-                }
-                return Ok(result);
+            match self.env.get(&cmx.tag) {
+                Some(val) => val.clone(),          // guardar la referencia
+                None => Value::String(cmx.tag.clone()),  // no encontrada → string
             }
-            cmx.tag.clone()
         } else {
-            cmx.tag.clone()
+            Value::String(cmx.tag.clone())
         };
 
         let mut props = std::collections::HashMap::new();
