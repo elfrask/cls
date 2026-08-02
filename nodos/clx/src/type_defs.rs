@@ -16,7 +16,16 @@ pub struct TypeMember {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum MemberKind { Function, Variable, Constant }
+pub enum MemberKind {
+    Function,
+    Variable,
+    Constant,
+    Class,
+    Structure,
+    Interface,
+    Module,
+    Namespace,
+}
 
 /// Representa un módulo de tipos completo
 #[derive(Debug, Clone)]
@@ -72,10 +81,94 @@ fn extract_module(module: &Module, name: &str, source: &str) -> TypeModule {
             Statement::VarDecl(v) | Statement::ConstDecl(v) => {
                 type_mod.members.push(extract_var_member(v, source));
             }
+            Statement::ClassDecl(c) => {
+                type_mod.members.push(extract_class_member(c, source));
+            }
+            Statement::StructureDecl(s) => {
+                type_mod.members.push(extract_structure_member(s, source));
+            }
+            Statement::InterfaceDecl(i) => {
+                type_mod.members.push(extract_interface_member(i, source));
+            }
+            Statement::ModuleDecl(md) => {
+                type_mod.members.push(extract_container_member(&md.name, MemberKind::Module, &md.body, source));
+            }
+            Statement::NamespaceDecl(ns) => {
+                type_mod.members.push(extract_container_member(&ns.name, MemberKind::Namespace, &ns.body, source));
+            }
             _ => { let _ = span; }
         }
     }
     type_mod
+}
+
+fn extract_class_member(c: &ClassDecl, source: &str) -> TypeMember {
+    let mut members: Vec<String> = Vec::new();
+    for member in &c.body {
+        match member {
+            ClassMember::Property(v) => members.push(v.name.clone()),
+            ClassMember::Method(f) | ClassMember::Constructor(f) => members.push(f.name.clone()),
+        }
+    }
+    let extends = c.extends.as_deref().unwrap_or("");
+    let sig = if extends.is_empty() {
+        format!("class {}", c.name)
+    } else {
+        format!("class {} extends {}", c.name, extends)
+    };
+    TypeMember {
+        name: c.name.clone(),
+        kind: MemberKind::Class,
+        signature: sig,
+        return_type: None,
+        params: vec![],
+        doc: format!("{} ({} members)", extract_doc_before(source, c.span.start_line, c.span.start_col), members.len()),
+    }
+}
+
+fn extract_structure_member(s: &StructureDecl, source: &str) -> TypeMember {
+    let fields: Vec<String> = s.fields.iter().map(|f| f.name.clone()).collect();
+    TypeMember {
+        name: s.name.clone(),
+        kind: MemberKind::Structure,
+        signature: format!("structure {}", s.name),
+        return_type: None,
+        params: vec![],
+        doc: format!("{} (fields: {})", extract_doc_before(source, s.span.start_line, s.span.start_col), fields.join(", ")),
+    }
+}
+
+fn extract_interface_member(i: &InterfaceDecl, source: &str) -> TypeMember {
+    let sigs: Vec<String> = i.signatures.iter().map(|s| s.name.clone()).collect();
+    TypeMember {
+        name: i.name.clone(),
+        kind: MemberKind::Interface,
+        signature: format!("interface {}", i.name),
+        return_type: None,
+        params: vec![],
+        doc: format!("{} (methods: {})", extract_doc_before(source, i.span.start_line, i.span.start_col), sigs.join(", ")),
+    }
+}
+
+fn extract_container_member(name: &str, kind: MemberKind, body: &[Statement], source: &str) -> TypeMember {
+    let members: Vec<String> = body.iter().filter_map(|s| match s {
+        Statement::FunctionDecl(f) => Some(f.name.clone()),
+        Statement::VarDecl(v) | Statement::ConstDecl(v) => Some(v.name.clone()),
+        _ => None,
+    }).collect();
+    let kind_str = kind_name(&kind);
+    TypeMember {
+        name: name.to_string(),
+        kind: kind.clone(),
+        signature: format!("{} {}", kind_str, name),
+        return_type: None,
+        params: vec![],
+        doc: format!("{} members: {}", members.len(), members.join(", ")),
+    }
+}
+
+fn kind_name(k: &MemberKind) -> &str {
+    match k { MemberKind::Module => "module", MemberKind::Namespace => "namespace", _ => "container" }
 }
 
 fn statement_span(stmt: &Statement) -> Span {

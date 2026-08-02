@@ -475,7 +475,7 @@ mod tests {
     #[test]
     fn test_cmx_value_new() {
         let mut cmx = CmxValue::new("App".into());
-        assert_eq!(cmx.tag, "App");
+        assert_eq!(cmx.tag, Value::String("App".into()));
         cmx.props.insert("color".into(), Value::String("red".into()));
         assert_eq!(cmx.props.len(), 1);
     }
