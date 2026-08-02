@@ -424,8 +424,21 @@ fn complete_member(source: &str, pos: Position, defs: &HashMap<String, TypeModul
 
 fn add_type_members(items: &mut Vec<CompletionItem>, tm: &TypeModule) {
     for m in &tm.members {
-        let kind = match m.kind { type_defs::MemberKind::Function => CompletionItemKind::FUNCTION, type_defs::MemberKind::Constant => CompletionItemKind::CONSTANT, type_defs::MemberKind::Variable => CompletionItemKind::VARIABLE };
-        items.push(CompletionItem { label: m.name.clone(), kind: Some(kind), detail: Some(m.signature.clone()), documentation: format_doc(&m.doc), ..Default::default() });
+        items.push(CompletionItem { label: m.name.clone(), kind: Some(completion_kind_for(&m.kind)), detail: Some(m.signature.clone()), documentation: format_doc(&m.doc), ..Default::default() });
+    }
+}
+
+fn completion_kind_for(k: &type_defs::MemberKind) -> CompletionItemKind {
+    use type_defs::MemberKind::*;
+    match k {
+        Function => CompletionItemKind::FUNCTION,
+        Variable => CompletionItemKind::VARIABLE,
+        Constant => CompletionItemKind::CONSTANT,
+        Class => CompletionItemKind::CLASS,
+        Structure => CompletionItemKind::STRUCT,
+        Interface => CompletionItemKind::INTERFACE,
+        Module => CompletionItemKind::MODULE,
+        Namespace => CompletionItemKind::MODULE,
     }
 }
 

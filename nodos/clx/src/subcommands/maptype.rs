@@ -244,21 +244,60 @@ fn generate_type_map(source: &str, src_path: &str) -> TypeMap {
             }
             Statement::ClassDecl(c) => {
                 let (raw_doc, version, deprecated) = parse_doc_for(source, &c.name, "class");
+                // Extraer propiedades y métodos de la clase
+                let mut fields: Vec<FieldInfo> = Vec::new();
+                let mut members: Vec<String> = Vec::new();
+                for member in &c.body {
+                    match member {
+                        ClassMember::Property(v) => {
+                            fields.push(FieldInfo { name: v.name.clone(), type_: type_ann_to_string(&v.type_ann) });
+                            members.push(v.name.clone());
+                        }
+                        ClassMember::Method(f) | ClassMember::Constructor(f) => {
+                            members.push(f.name.clone());
+                        }
+                    }
+                }
+                let extends = c.extends.as_ref().map(|e| e.clone()).unwrap_or_default();
                 entries.push(TypeEntry {
                     name: c.name.clone(), kind: "class".to_string(),
                     line: c.span.start_line, col: c.span.start_col, end_line: c.span.end_line, end_col: c.span.end_col,
                     doc: extract_description(&raw_doc), version, deprecated,
-                    signature: None, params: vec![], return_type: None, return_doc: None,
-                    fields: vec![], members: vec![], type_: None, value: None,
+                    signature: if extends.is_empty() { None } else { Some(format!("class {} extends {}", c.name, extends)) },
+                    params: vec![], return_type: None, return_doc: None,
+                    fields, members, type_: None, value: None,
                 });
             }
             Statement::ModuleDecl(md) => {
+                let (raw_doc, version, deprecated) = parse_doc_for(source, &md.name, "module");
+                let members: Vec<String> = md.body.iter()
+                    .filter_map(|s| match s {
+                        Statement::FunctionDecl(f) => Some(f.name.clone()),
+                        Statement::VarDecl(v) | Statement::ConstDecl(v) => Some(v.name.clone()),
+                        _ => None,
+                    }).collect();
                 entries.push(TypeEntry {
                     name: md.name.clone(), kind: "module".to_string(),
                     line: md.span.start_line, col: md.span.start_col, end_line: md.span.end_line, end_col: md.span.end_col,
-                    doc: String::new(), version: None, deprecated: None,
+                    doc: extract_description(&raw_doc), version, deprecated,
                     signature: None, params: vec![], return_type: None, return_doc: None,
-                    fields: vec![], members: vec![], type_: None, value: None,
+                    fields: vec![], members, type_: None, value: None,
+                });
+            }
+            Statement::NamespaceDecl(ns) => {
+                let (raw_doc, version, deprecated) = parse_doc_for(source, &ns.name, "namespace");
+                let members: Vec<String> = ns.body.iter()
+                    .filter_map(|s| match s {
+                        Statement::FunctionDecl(f) => Some(f.name.clone()),
+                        Statement::VarDecl(v) | Statement::ConstDecl(v) => Some(v.name.clone()),
+                        _ => None,
+                    }).collect();
+                entries.push(TypeEntry {
+                    name: ns.name.clone(), kind: "namespace".to_string(),
+                    line: ns.span.start_line, col: ns.span.start_col, end_line: ns.span.end_line, end_col: ns.span.end_col,
+                    doc: extract_description(&raw_doc), version, deprecated,
+                    signature: None, params: vec![], return_type: None, return_doc: None,
+                    fields: vec![], members, type_: None, value: None,
                 });
             }
             _ => {}
