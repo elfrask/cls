@@ -336,7 +336,7 @@ impl Interpreter {
             Statement::Import(import) => self.execute_import(import),
             Statement::FromImport(from_import) => self.execute_from_import(from_import),
             Statement::Include(include) => self.execute_include(include),
-            Statement::Config(_) | Statement::Meta(_) => Ok(Value::Void),
+            Statement::Config(_) | Statement::Meta(_) | Statement::TypeAlias(_) => Ok(Value::Void),
             Statement::Cmx(cmx) => self.evaluate_cmx(cmx),
         }
     }

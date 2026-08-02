@@ -439,6 +439,7 @@ fn completion_kind_for(k: &type_defs::MemberKind) -> CompletionItemKind {
         Interface => CompletionItemKind::INTERFACE,
         Module => CompletionItemKind::MODULE,
         Namespace => CompletionItemKind::MODULE,
+        Type => CompletionItemKind::TYPE_PARAMETER,
     }
 }
 

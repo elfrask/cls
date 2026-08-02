@@ -84,6 +84,9 @@ impl NameResolver {
                 }
                 self.pop_scope();
             }
+            Statement::TypeAlias(t) => {
+                self.define(t.name.clone(), SymbolKind::Type);
+            }
             Statement::Expression(expr) => {
                 self.resolve_expression(expr)?;
             }
@@ -345,4 +348,5 @@ enum SymbolKind {
     Module,
     Namespace,
     Constructor,
+    Type,
 }

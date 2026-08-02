@@ -25,6 +25,7 @@ pub enum MemberKind {
     Interface,
     Module,
     Namespace,
+    Type,
 }
 
 /// Representa un módulo de tipos completo
@@ -90,6 +91,9 @@ fn extract_module(module: &Module, name: &str, source: &str) -> TypeModule {
             Statement::InterfaceDecl(i) => {
                 type_mod.members.push(extract_interface_member(i, source));
             }
+            Statement::TypeAlias(t) => {
+                type_mod.members.push(extract_type_alias_member(t, source));
+            }
             Statement::ModuleDecl(md) => {
                 type_mod.members.push(extract_container_member(&md.name, MemberKind::Module, &md.body, source));
             }
@@ -140,13 +144,27 @@ fn extract_structure_member(s: &StructureDecl, source: &str) -> TypeMember {
 
 fn extract_interface_member(i: &InterfaceDecl, source: &str) -> TypeMember {
     let sigs: Vec<String> = i.signatures.iter().map(|s| s.name.clone()).collect();
+    let fields: Vec<String> = i.fields.iter().map(|f| f.name.clone()).collect();
+    let mut all = fields;
+    all.extend(sigs);
     TypeMember {
         name: i.name.clone(),
         kind: MemberKind::Interface,
         signature: format!("interface {}", i.name),
         return_type: None,
         params: vec![],
-        doc: format!("{} (methods: {})", extract_doc_before(source, i.span.start_line, i.span.start_col), sigs.join(", ")),
+        doc: format!("{} (members: {})", extract_doc_before(source, i.span.start_line, i.span.start_col), all.join(", ")),
+    }
+}
+
+fn extract_type_alias_member(t: &TypeAliasDecl, source: &str) -> TypeMember {
+    TypeMember {
+        name: t.name.clone(),
+        kind: MemberKind::Type,
+        signature: format!("alias {}", t.name),
+        return_type: None,
+        params: vec![],
+        doc: extract_doc_before(source, t.span.start_line, t.span.start_col),
     }
 }
 
@@ -211,6 +229,7 @@ fn statement_span(stmt: &Statement) -> Span {
         Statement::ClassDecl(s) => s.span,
         Statement::StructureDecl(s) => s.span,
         Statement::InterfaceDecl(s) => s.span,
+        Statement::TypeAlias(s) => s.span,
         Statement::ModuleDecl(s) => s.span,
         Statement::NamespaceDecl(s) => s.span,
         Statement::Cmx(s) => s.span,

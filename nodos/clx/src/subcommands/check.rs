@@ -7,7 +7,7 @@ pub fn execute(args: &[String]) -> i32 {
     let path = args.iter().find(|a| !a.starts_with("--")).map(|s| s.as_str()).unwrap_or(".");
 
     // Cargar config para tipos
-    let types_config = ModuleManifest::find_and_load()
+    let mut types_config = ModuleManifest::find_and_load()
         .ok()
         .map(|m| m.compiler.types)
         .unwrap_or_else(|| cls_core::config::types::TypesConfig {
@@ -15,6 +15,9 @@ pub fn execute(args: &[String]) -> i32 {
             strict,
             ..Default::default()
         });
+    if strict {
+        types_config.strict = true;
+    }
 
     let p = Path::new(path);
     if !p.exists() {

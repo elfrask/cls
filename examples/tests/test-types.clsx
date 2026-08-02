@@ -1,16 +1,22 @@
-function add(a: int, b: int) -> int {
-  return a + b
-}
+interface Hello<T=Int> {
+    num: T,
+    greet(name: String): String,
+};
 
-# Error: usando String como suma
-function badAdd(a: int, b: str) -> int {
-  return a + b
-}
+alias Vec3 = (Int, Int, Int);
+alias Color = "red" | "green" | "blue";
+alias FnInt = fun(Int) -> Int;
+alias Dict = Record<String, Int>;
 
-# Debería funcionar
-function main(args) -> int {
-  var x: int = 10
-  var y: str = "hello"
-  var z = add(x, 5)
-  return 0
-}
+function main(args: String[]) -> int {
+    var a: (Int, String) = (1, "x");
+    var b: Vec3 = (1, 2, 3);
+    var n: Hello["num"] = 1;
+    var s: Hello<String>["num"] = "hola";
+    var c: Color = "red";
+    const k = "constante";
+    var d: Dict = {a: 1};
+    var idx = 0;
+    var dyn = a[idx];
+    return 0;
+};
