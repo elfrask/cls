@@ -65,6 +65,7 @@
       "name": "Palabras clave CLS",
       "scope": [
         "keyword.structure.ccls",
+        "keyword.alias.ccls",
         "keyword.declaration.ccls",
         "keyword.import.ccls",
         "keyword.modifier.ccls",
@@ -75,6 +76,27 @@
       "settings": { "foreground": "#c586c0" }
     },
     {
+      "name": "CMX: tags y atributos",
+      "scope": [
+        "entity.name.tag.ccls",
+        "punctuation.definition.tag.begin.ccls",
+        "punctuation.definition.tag.end.ccls",
+        "punctuation.definition.tag.selfclose.ccls",
+        "meta.cmx.ccls"
+      ],
+      "settings": { "foreground": "#e06c75" }
+    },
+    {
+      "name": "CMX: atributos",
+      "scope": [ "entity.other.attribute-name.ccls" ],
+      "settings": { "foreground": "#d19a66", "fontStyle": "italic" }
+    },
+    {
+      "name": "CMX: texto",
+      "scope": [ "text.ccls" ],
+      "settings": { "foreground": "#cdd6f4" }
+    },
+    {
       "name": "Variables CLS",
       "scope": [
         "variable.other.ccls",
@@ -82,6 +104,15 @@
         "variable.parameter.ccls"
       ],
       "settings": { "foreground": "#9cdcfe" }
+    },
+    {
+      "name": "Type params y fun type CLS",
+      "scope": [
+        "variable.parameter.type-param.ccls",
+        "meta.type.fun.ccls",
+        "keyword.operator.fun-type.ccls"
+      ],
+      "settings": { "foreground": "#56b6c2" }
     },
     {
       "name": "Constantes y números CLS",
