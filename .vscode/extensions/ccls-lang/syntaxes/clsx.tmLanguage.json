@@ -3,42 +3,21 @@
   "name": "CLS",
   "scopeName": "source.clsx",
   "patterns": [
-    {
-      "include": "#comments"
-    },
-    {
-      "include": "#strings"
-    },
-    {
-      "include": "#numbers"
-    },
-    {
-      "include": "#keywords"
-    },
-    {
-      "include": "#types"
-    },
-    {
-      "include": "#functions"
-    },
-    {
-      "include": "#operators"
-    },
-    {
-      "include": "#constants"
-    },
-    {
-      "include": "#interpolation"
-    },
-    {
-      "include": "#cmx"
-    },
-    {
-      "include": "#meta-directives"
-    },
-    {
-      "include": "#variables"
-    }
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#type-declarations" },
+    { "include": "#type-annotations" },
+    { "include": "#functions" },
+    { "include": "#methods" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#operators" },
+    { "include": "#constants" },
+    { "include": "#interpolation" },
+    { "include": "#cmx" },
+    { "include": "#meta-directives" },
+    { "include": "#variables" }
   ],
   "repository": {
     "comments": {
@@ -56,13 +35,8 @@
           "begin": "\"",
           "end": "\"",
           "patterns": [
-            {
-              "include": "#interpolation"
-            },
-            {
-              "name": "constant.character.escape.ccls",
-              "match": "\\\\."
-            }
+            { "include": "#interpolation" },
+            { "name": "constant.character.escape.ccls", "match": "\\\\." }
           ]
         },
         {
@@ -70,10 +44,7 @@
           "begin": "'",
           "end": "'",
           "patterns": [
-            {
-              "name": "constant.character.escape.ccls",
-              "match": "\\\\."
-            }
+            { "name": "constant.character.escape.ccls", "match": "\\\\." }
           ]
         },
         {
@@ -81,9 +52,7 @@
           "begin": "`",
           "end": "`",
           "patterns": [
-            {
-              "include": "#interpolation"
-            }
+            { "include": "#interpolation" }
           ]
         }
       ]
@@ -104,29 +73,21 @@
           "endCaptures": {
             "0": { "name": "punctuation.definition.interpolation.end.ccls" }
           },
-          "patterns": [
-            { "include": "$self" }
-          ]
+          "patterns": [{ "include": "$self" }]
         }
       ]
     },
     "numbers": {
       "patterns": [
-        {
-          "name": "constant.numeric.float.ccls",
-          "match": "\\b\\d+\\.\\d+\\b"
-        },
-        {
-          "name": "constant.numeric.integer.ccls",
-          "match": "\\b\\d+\\b"
-        }
+        { "name": "constant.numeric.float.ccls", "match": "\\b\\d+\\.\\d+\\b" },
+        { "name": "constant.numeric.integer.ccls", "match": "\\b\\d+\\b" }
       ]
     },
     "keywords": {
       "patterns": [
         {
           "name": "keyword.control.ccls",
-          "match": "\\b(if|elif|then|else|while|loop|for|switch|case|default|try|catch|finally|throw|return|break|continue|with|each|in|and)\\b"
+          "match": "\\b(if|elif|then|else|while|loop|for|switch|case|default|try|catch|finally|throw|return|break|continue|with|each|in|and|is)\\b"
         },
         {
           "name": "keyword.declaration.ccls",
@@ -142,11 +103,11 @@
         },
         {
           "name": "keyword.modifier.ccls",
-          "match": "\\b(public|private|static|global|async|await|protected|readonly|sync|macro)\\b"
+          "match": "\\b(public|private|protected|static|readonly|global|async|await|sync|macro|extends)\\b"
         },
         {
           "name": "keyword.self.ccls",
-          "match": "\\bme\\b"
+          "match": "\\b(me|super)\\b"
         },
         {
           "name": "keyword.config.ccls",
@@ -158,15 +119,86 @@
       "patterns": [
         {
           "name": "storage.type.primitive.ccls",
-          "match": "\\b(Int|Integer|Float|String|Bool|Boolean|Char|Character|Any|Unknown|Null|Void|Empty|fun|Cmx|cmx|Record)\\b"
+          "match": "\\b(Int|Integer|Float|String|Bool|Boolean|Char|Character|Any|Unknown|Null|Void|Empty|Cmx|cmx)\\b"
         },
         {
           "name": "storage.type.numeric.ccls",
-          "match": "\\b(i8|i16|i32|i64|f32|f64|int|float|str|bool|char|any|array|Array)\\b"
+          "match": "\\b(i8|i16|i32|i64|f32|f64|int|float|str|bool|char|any|array)\\b"
         },
         {
-          "name": "storage.type.function.ccls",
-          "match": "\\bfun\\b"
+          "name": "storage.type.container.ccls",
+          "match": "\\b(Array|Tuple|Record|Fun|fun)\\b"
+        },
+        {
+          "name": "keyword.operator.phantom.ccls",
+          "match": "!(?=[A-Za-z_])"
+        },
+        {
+          "name": "keyword.operator.union.ccls",
+          "match": "\\|"
+        },
+        {
+          "name": "meta.type.generic.ccls",
+          "match": "<[^>]*>"
+        }
+      ]
+    },
+    "type-declarations": {
+      "patterns": [
+        {
+          "name": "meta.type.declaration.ccls",
+          "begin": "\\b(class|structure|interface|alias)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "end": "(?=\\{|;)",
+          "beginCaptures": {
+            "1": { "name": "keyword.structure.ccls" },
+            "2": { "name": "entity.name.type.ccls" }
+          },
+          "patterns": [
+            { "include": "#types" },
+            { "include": "#type-annotations" },
+            { "include": "#keywords" }
+          ]
+        }
+      ]
+    },
+    "type-annotations": {
+      "patterns": [
+        {
+          "name": "meta.type.annotation.ccls",
+          "begin": "(?<=:)\\s*",
+          "end": "(?=\\s*(=|,|\\)|;|\\{|->))",
+          "patterns": [
+            { "include": "#types" },
+            {
+              "name": "entity.name.type.ccls",
+              "match": "\\b([A-Z][A-Za-z0-9_]*)\\b"
+            },
+            {
+              "name": "meta.type.tuple.ccls",
+              "begin": "\\(",
+              "end": "\\)",
+              "patterns": [{ "include": "#type-annotations" }]
+            },
+            {
+              "name": "meta.type.access.ccls",
+              "match": "\\[(\"[^\"]*\"|\\d+)\\]"
+            }
+          ]
+        },
+        {
+          "name": "meta.return-type.ccls",
+          "begin": "(->)\\s*",
+          "end": "(?=\\s*\\{)",
+          "beginCaptures": {
+            "1": { "name": "keyword.operator.arrow.ccls" }
+          },
+          "patterns": [
+            { "include": "#types" },
+            {
+              "name": "entity.name.type.ccls",
+              "match": "\\b([A-Z][A-Za-z0-9_]*)\\b"
+            }
+          ]
         }
       ]
     },
@@ -174,19 +206,18 @@
       "patterns": [
         {
           "name": "meta.function.ccls",
-          "begin": "\\b(function|void|method|fun)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(\\()",
+          "begin": "\\b(function|fun)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(<[^>]*>)?\\s*(\\()",
           "end": "(?<=\\))",
           "beginCaptures": {
             "1": { "name": "keyword.declaration.ccls" },
             "2": { "name": "entity.name.function.ccls" },
-            "3": { "name": "punctuation.section.parens.begin.ccls" }
+            "3": { "name": "meta.type.generic.ccls" },
+            "4": { "name": "punctuation.section.parens.begin.ccls" }
           },
           "patterns": [
-            {
-              "name": "variable.parameter.ccls",
-              "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=[:),])"
-            },
+            { "name": "variable.parameter.ccls", "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=[:),])" },
             { "include": "#types" },
+            { "include": "#type-annotations" },
             { "include": "$self" }
           ]
         },
@@ -196,84 +227,58 @@
         }
       ]
     },
-    "operators": {
+    "methods": {
       "patterns": [
         {
-          "name": "keyword.operator.assignment.compound.ccls",
-          "match": "\\+=|-=|\\*=|/=|\\+\\+|--"
-        },
-        {
-          "name": "keyword.operator.arrow.ccls",
-          "match": "->"
-        },
-        {
-          "name": "keyword.operator.arrow.ccls",
-          "match": "<-"
-        },
-        {
-          "name": "keyword.operator.namespace.ccls",
-          "match": "::"
-        },
-        {
-          "name": "keyword.operator.comparison.ccls",
-          "match": "==|!=|<=|>=|<<|>>"
-        },
-        {
-          "name": "keyword.operator.logical.ccls",
-          "match": "&&|\\|\\|"
-        },
-        {
-          "name": "keyword.operator.power.ccls",
-          "match": "\\*\\*"
-        },
-        {
-          "name": "keyword.operator.range.ccls",
-          "match": "\\.\\."
-        },
-        {
-          "name": "keyword.operator.arithmetic.ccls",
-          "match": "[+\\-*/%]"
-        },
-        {
-          "name": "keyword.operator.logical.single.ccls",
-          "match": "[&|!?~@\\^:]"
-        },
-        {
-          "name": "keyword.operator.assignment.ccls",
-          "match": "="
+          "name": "meta.method.ccls",
+          "begin": "\\b(public|private|protected|static|readonly)\\s+(function|fun|void|method)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(<[^>]*>)?\\s*(\\()",
+          "end": "(?<=\\))",
+          "beginCaptures": {
+            "1": { "name": "keyword.modifier.ccls" },
+            "2": { "name": "keyword.declaration.ccls" },
+            "3": { "name": "entity.name.function.method.ccls" },
+            "4": { "name": "meta.type.generic.ccls" },
+            "5": { "name": "punctuation.section.parens.begin.ccls" }
+          },
+          "patterns": [
+            { "name": "variable.parameter.ccls", "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=[:),])" },
+            { "include": "#types" },
+            { "include": "#type-annotations" },
+            { "include": "$self" }
+          ]
         }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        { "name": "keyword.operator.assignment.compound.ccls", "match": "\\+=|-=|\\*=|/=|\\+\\+|--" },
+        { "name": "keyword.operator.arrow.ccls", "match": "->" },
+        { "name": "keyword.operator.arrow.ccls", "match": "<-" },
+        { "name": "keyword.operator.namespace.ccls", "match": "::" },
+        { "name": "keyword.operator.comparison.ccls", "match": "==|!=|<=|>=|<<|>>" },
+        { "name": "keyword.operator.logical.ccls", "match": "&&|\\|\\|" },
+        { "name": "keyword.operator.power.ccls", "match": "\\*\\*" },
+        { "name": "keyword.operator.range.ccls", "match": "\\.\\." },
+        { "name": "keyword.operator.arithmetic.ccls", "match": "[+\\-*/%]" },
+        { "name": "keyword.operator.logical.single.ccls", "match": "[&|!?~@\\^:]" },
+        { "name": "keyword.operator.assignment.ccls", "match": "=" }
       ]
     },
     "constants": {
       "patterns": [
-        {
-          "name": "constant.language.boolean.ccls",
-          "match": "\\b(true|false)\\b"
-        },
-        {
-          "name": "constant.language.null.ccls",
-          "match": "\\b(null|unknown)\\b"
-        }
+        { "name": "constant.language.boolean.ccls", "match": "\\b(true|false)\\b" },
+        { "name": "constant.language.null.ccls", "match": "\\b(null|unknown)\\b" }
       ]
     },
     "meta-directives": {
       "patterns": [
-        {
-          "name": "meta.directive.ccls",
-          "match": "^#!ccls"
-        },
-        {
-          "name": "meta.directive.config.ccls",
-          "match": "^#config\\([^)]*\\)"
-        }
+        { "name": "meta.directive.ccls", "match": "^#!ccls" },
+        { "name": "meta.directive.config.ccls", "match": "^#config\\([^)]*\\)" }
       ]
     },
     "variables": {
       "patterns": [
-        {
-          "name": "variable.other.constant.ccls",
-          "match": "\\b([A-Z_][A-Z0-9_]*)\\b"
-        },
+        { "name": "variable.other.constant.ccls", "match": "\\b([A-Z_][A-Z0-9_]*)\\b" },
         {
           "name": "variable.other.declaration.ccls",
           "match": "(?<=\\b(var|let|const)\\s+)([a-zA-Z_][a-zA-Z0-9_]*)",
@@ -299,39 +304,22 @@
             "4": { "name": "entity.name.tag.ccls" }
           },
           "patterns": [
-            {
-              "include": "#cmx-attributes"
-            },
-            {
-              "include": "#cmx-expression"
-            },
-            {
-              "include": "#cmx"
-            },
-            {
-              "name": "text.ccls",
-              "match": "[^<{]"
-            }
+            { "include": "#cmx-attributes" },
+            { "include": "#cmx-expression" },
+            { "include": "#cmx" },
+            { "name": "text.ccls", "match": "[^<{]" }
           ]
         }
       ]
     },
     "cmx-attributes": {
       "patterns": [
-        {
-          "name": "entity.other.attribute-name.ccls",
-          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?==)"
-        },
+        { "name": "entity.other.attribute-name.ccls", "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?==)" },
         {
           "name": "string.quoted.double.ccls",
           "begin": "\"",
           "end": "\"",
-          "patterns": [
-            {
-              "name": "constant.character.escape.ccls",
-              "match": "\\\\."
-            }
-          ]
+          "patterns": [{ "name": "constant.character.escape.ccls", "match": "\\\\." }]
         }
       ]
     },
@@ -347,11 +335,7 @@
           "endCaptures": {
             "0": { "name": "punctuation.definition.expression.end.ccls" }
           },
-          "patterns": [
-            {
-              "include": "$self"
-            }
-          ]
+          "patterns": [{ "include": "$self" }]
         }
       ]
     }

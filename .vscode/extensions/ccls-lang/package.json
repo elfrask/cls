@@ -34,8 +34,19 @@
     ],
     "snippets": [
       {
+        "language": "clx",
+        "path": "./snippets/clsx.json"
+      },
+      {
         "language": "json",
         "path": "./snippets/cls.json.json"
+      }
+    ],
+    "themes": [
+      {
+        "label": "CLS Tipos Diferenciados",
+        "uiTheme": "vs-dark",
+        "path": "./themes/cls-color-theme.json"
       }
     ],
     "jsonValidation": [
