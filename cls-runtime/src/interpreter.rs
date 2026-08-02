@@ -42,6 +42,14 @@ impl Pollable for CoroutineTask {
 }
 
 /// Intérprete tree-walker de CLS
+/// Frame de ejecución de método de clase (`me` + clase actual para `super`)
+#[derive(Debug, Clone)]
+pub struct SelfFrame {
+    pub obj: Value,
+    /// Clase cuyo método se está ejecutando (para resolver `super`)
+    pub current_class: Option<String>,
+}
+
 /// Ejecuta el AST directamente, sin compilación intermedia
 pub struct Interpreter {
     env: Environment,
@@ -56,7 +64,7 @@ pub struct Interpreter {
     config: Option<ModuleManifest>,
     structs: HashMap<String, StructDef>,
     classes: HashMap<String, ClassDef>,
-    self_stack: Vec<Value>,
+    self_stack: Vec<SelfFrame>,
 }
 
 /// Frame de importación para trace de errores
@@ -553,12 +561,22 @@ impl Interpreter {
         let mut methods: HashMap<String, FunValue> = HashMap::new();
         let mut field_defaults: HashMap<String, Option<Value>> = HashMap::new();
         let mut ctor: Option<FunctionDecl> = None;
+        let mut private_methods = std::collections::HashSet::new();
+        let mut static_methods = std::collections::HashSet::new();
+        let mut private_fields = std::collections::HashSet::new();
+        let mut static_fields = std::collections::HashSet::new();
 
         for member in &class.body {
             match member {
                 ClassMember::Method(f) => {
                     let fun = FunValue::new_user(&f.name, f.params.clone(), f.body.clone());
                     methods.insert(f.name.clone(), fun);
+                    if f.visibility == Visibility::Private {
+                        private_methods.insert(f.name.clone());
+                    }
+                    if f.modifiers.iter().any(|m| *m == FunctionModifier::Static) {
+                        static_methods.insert(f.name.clone());
+                    }
                 }
                 ClassMember::Property(v) => {
                     let default = if let Some(expr) = &v.value {
@@ -567,6 +585,12 @@ impl Interpreter {
                         None
                     };
                     field_defaults.insert(v.name.clone(), default);
+                    if v.visibility == Visibility::Private {
+                        private_fields.insert(v.name.clone());
+                    }
+                    if v.is_static {
+                        static_fields.insert(v.name.clone());
+                    }
                 }
                 ClassMember::Constructor(f) => {
                     ctor = Some(f.clone());
@@ -577,20 +601,31 @@ impl Interpreter {
         let mut def = ClassDef {
             name: class.name.clone(),
             extends: class.extends.clone(),
+            ancestors: Vec::new(),
             methods,
             field_defaults,
             ctor,
+            private_methods,
+            static_methods,
+            private_fields,
+            static_fields,
         };
 
-        // Herencia: copiar métodos y fields del padre (si ya está registrado)
+        // Herencia: copiar métodos, fields y visibilidad del padre (si ya está registrado)
         if let Some(parent_name) = &class.extends {
             if let Some(parent) = self.classes.get(parent_name) {
+                def.ancestors = parent.ancestors.clone();
+                def.ancestors.push(parent.name.clone());
                 for (k, v) in &parent.methods {
                     def.methods.entry(k.clone()).or_insert_with(|| v.clone());
                 }
                 for (k, v) in &parent.field_defaults {
                     def.field_defaults.entry(k.clone()).or_insert_with(|| v.clone());
                 }
+                def.private_methods.extend(parent.private_methods.iter().cloned());
+                def.static_methods.extend(parent.static_methods.iter().cloned());
+                def.private_fields.extend(parent.private_fields.iter().cloned());
+                def.static_fields.extend(parent.static_fields.iter().cloned());
                 if def.ctor.is_none() {
                     def.ctor = parent.ctor.clone();
                 }
@@ -763,7 +798,12 @@ impl Interpreter {
             Expression::Literal(lit) => self.evaluate_literal(lit),
             Expression::Identifier(name, span) => {
                 if name == "me" {
-                    return Ok(self.self_stack.last().cloned().unwrap_or(Value::Null));
+                    return Ok(self.self_stack.last().map(|f| f.obj.clone()).unwrap_or(Value::Null));
+                }
+                if name == "super" {
+                    // super se resuelve dentro del member access/call (necesita el miembro)
+                    // Aquí devolvemos el objeto actual como marker
+                    return Ok(self.self_stack.last().map(|f| f.obj.clone()).unwrap_or(Value::Null));
                 }
                 self.env.get(name).cloned().ok_or_else(|| {
                     self.err_at(format!("Variable no definida: {}", name), span)
@@ -892,6 +932,19 @@ impl Interpreter {
     }
 
     fn evaluate_call(&mut self, call: &CallExpr) -> ClsResult<Value> {
+        // super.method(args) → método de la clase padre con `me` = objeto actual
+        if let Expression::MemberAccess(member) = &*call.callee {
+            if let Expression::Identifier(obj_name, _) = &*member.object {
+                if obj_name == "super" {
+                    let method = self.evaluate_super_access(&member.member, &call.span)?;
+                    let mut args = Vec::new();
+                    for arg in &call.args {
+                        args.push(self.evaluate_expression(arg)?);
+                    }
+                    return self.call_function_value(method, args, &call.span);
+                }
+            }
+        }
         // Detectar obj.method(args) para pasar `me`
         if let Expression::MemberAccess(member) = &*call.callee {
             let obj = self.evaluate_expression(&member.object)?;
@@ -901,6 +954,10 @@ impl Interpreter {
             }
             match obj {
                 Value::Object(obj_val) => {
+                    let is_internal = matches!(&*member.object, Expression::Identifier(n, _) if n == "me" || n == "super");
+                    if obj_val.private_methods.contains(&member.member) && !is_internal {
+                        return Err(self.err_at(format!("El método '{}' es private y no se puede acceder desde fuera", member.member), &call.span));
+                    }
                     let (result, mutated) = self.call_method(obj_val, &member.member, args, &call.span)?;
                     // Re-insertar el objeto mutado en el env si es una variable
                     if let Expression::Identifier(name, _) = &*member.object {
@@ -909,17 +966,12 @@ impl Interpreter {
                     return Ok(result);
                 }
                 other => {
-                    // Resolver miembro y llamar como función
+                    // Resolver miembro (Clase, Cmx, Struct, etc.) y llamar como función
                     let callee = match other {
                         Value::Record(rec) => rec.get(&member.member).cloned()
                             .ok_or_else(|| self.err_at(format!("Miembro '{}' no encontrado", member.member), &call.span))?,
                         _ => {
-                            let member_access = MemberAccessExpr {
-                                object: Box::new(Expression::Literal(Literal { kind: LiteralKind::Null, span: call.span })),
-                                member: member.member.clone(),
-                                span: member.span,
-                            };
-                            return self.evaluate_member_access(&member_access).and_then(|c| self.call_function_value(c, args, &call.span));
+                            return self.evaluate_member_access(member).and_then(|c| self.call_function_value(c, args, &call.span));
                         }
                     };
                     return self.call_function_value(callee, args, &call.span);
@@ -952,14 +1004,20 @@ impl Interpreter {
             class_name: def.name.clone(),
             fields,
             methods: def.methods.clone(),
+            private_fields: def.private_fields.clone(),
+            private_methods: def.private_methods.clone(),
+            static_methods: def.static_methods.clone(),
         };
 
         if let Some(ctor) = &def.ctor {
-            self.self_stack.push(Value::Object(Box::new(instance.clone())));
+            self.self_stack.push(SelfFrame { obj: Value::Object(Box::new(instance.clone())), current_class: Some(def.name.clone()) });
             let result = self.run_async_body(&ctor.body, &ctor.params, &args);
             // Recuperar la instancia mutada por el constructor
             let instance = match self.self_stack.pop() {
-                Some(Value::Object(mutated)) => *mutated,
+                Some(frame) => match frame.obj {
+                    Value::Object(mutated) => *mutated,
+                    _ => instance,
+                },
                 _ => instance,
             };
             let _ = result?;
@@ -986,9 +1044,13 @@ impl Interpreter {
     /// Llama un método de objeto (ya resuelto como FunValue) con `me` = objeto.
     /// Devuelve el resultado y el objeto tras la llamada (para detectar mutación).
     fn call_method_value(&mut self, obj: Value, method: Value, args: Vec<Value>, span: &Span) -> ClsResult<(Value, Value)> {
-        self.self_stack.push(obj);
+        let current_class = match &obj {
+            Value::Object(o) => Some(o.class_name.clone()),
+            _ => None,
+        };
+        self.self_stack.push(SelfFrame { obj: obj.clone(), current_class });
         let result = self.call_function_value(method, args, span);
-        let obj_after = self.self_stack.pop().unwrap_or(Value::Null);
+        let obj_after = self.self_stack.pop().map(|f| f.obj).unwrap_or(Value::Null);
         result.map(|v| (v, obj_after))
     }
 
@@ -1263,6 +1325,12 @@ impl Interpreter {
     }
 
     fn evaluate_member_access(&mut self, member: &MemberAccessExpr) -> ClsResult<Value> {
+        // super.member → buscar en la clase padre de la clase actual
+        if let Expression::Identifier(obj_name, _) = &*member.object {
+            if obj_name == "super" {
+                return self.evaluate_super_access(&member.member, &member.span);
+            }
+        }
         let object = self.evaluate_expression(&member.object)?;
         match object {
             Value::Record(rec) => {
@@ -1288,25 +1356,74 @@ impl Interpreter {
                 }),
             },
             Value::Object(obj) => {
+                let is_internal = matches!(&*member.object, Expression::Identifier(n, _) if n == "me" || n == "super");
                 // 1. field
                 if let Some(v) = obj.fields.get(&member.member) {
+                    if obj.private_fields.contains(&member.member) && !is_internal {
+                        return Err(self.err_at(format!("El miembro '{}' es private y no se puede acceder desde fuera", member.member), &member.span));
+                    }
                     return Ok(v.clone());
                 }
                 // 2. method
                 if let Some(m) = obj.methods.get(&member.member) {
+                    if obj.private_methods.contains(&member.member) && !is_internal {
+                        return Err(self.err_at(format!("El método '{}' es private y no se puede acceder desde fuera", member.member), &member.span));
+                    }
                     return Ok(Value::Fun(m.clone()));
                 }
                 Err(self.err_at(format!("Miembro '{}' no encontrado en '{}'", member.member, obj.class_name), &member.span))
             }
             Value::Class(class) => {
-                // Acceso a clase: métodos estáticos o constructor name
-                if let Some(m) = class.methods.get(&member.member) {
-                    return Ok(Value::Fun(m.clone()));
+                // Acceso a clase: métodos estáticos o fields estáticos
+                if class.static_methods.contains(&member.member) {
+                    if let Some(m) = class.methods.get(&member.member) {
+                        return Ok(Value::Fun(m.clone()));
+                    }
+                }
+                if class.static_fields.contains(&member.member) {
+                    if let Some(Some(v)) = class.field_defaults.get(&member.member) {
+                        return Ok(v.clone());
+                    }
+                    return Ok(Value::Null);
+                }
+                if class.methods.contains_key(&member.member) {
+                    return Err(self.err_at(format!("El método '{}' no es estático; usa una instancia", member.member), &member.span));
                 }
                 Err(self.err_at(format!("Miembro '{}' no encontrado en clase '{}'", member.member, class.name), &member.span))
             }
             _ => Err(self.err_at(format!("No se puede acceder a miembro en: {:?}", object), &member.span)),
         }
+    }
+
+    /// Resuelve `super.member`: busca el miembro en la clase padre (no el override)
+    fn evaluate_super_access(&mut self, member: &str, span: &Span) -> ClsResult<Value> {
+        let frame = self.self_stack.last().cloned()
+            .ok_or_else(|| self.err_at("'super' usado fuera de un método de clase", span))?;
+        let obj = frame.obj;
+        let obj_class = match &obj {
+            Value::Object(o) => o.class_name.clone(),
+            _ => return Err(self.err_at("'super' requiere un objeto de clase", span)),
+        };
+
+        // Clase padre: ancestors[0] de la clase de la instancia
+        let parent_name = self.classes.get(&obj_class)
+            .and_then(|cd| cd.ancestors.first())
+            .cloned()
+            .ok_or_else(|| self.err_at(format!("La clase '{}' no tiene clase padre", obj_class), span))?;
+        let parent = self.classes.get(&parent_name).cloned()
+            .ok_or_else(|| self.err_at(format!("Clase padre '{}' no encontrada", parent_name), span))?;
+
+        // Método del padre
+        if let Some(m) = parent.methods.get(member) {
+            return Ok(Value::Fun(m.clone()));
+        }
+        // Field del padre (vive en la instancia)
+        if let Value::Object(o) = &obj {
+            if let Some(v) = o.fields.get(member) {
+                return Ok(v.clone());
+            }
+        }
+        Err(self.err_at(format!("Miembro '{}' no encontrado en la clase padre '{}'", member, parent_name), span))
     }
 
     fn evaluate_index(&mut self, idx: &IndexExpr) -> ClsResult<Value> {
@@ -1388,7 +1505,9 @@ impl Interpreter {
         match target {
             Expression::Identifier(name, _) => {
                 if name == "me" {
-                    Ok(self.self_stack.last().cloned().unwrap_or(Value::Null))
+                    Ok(self.self_stack.last().map(|f| f.obj.clone()).unwrap_or(Value::Null))
+                } else if name == "super" {
+                    Ok(self.self_stack.last().map(|f| f.obj.clone()).unwrap_or(Value::Null))
                 } else {
                     self.env.get(name).cloned()
                         .ok_or_else(|| self.err_at(format!("Variable no definida: {}", name), span))
@@ -1414,9 +1533,11 @@ impl Interpreter {
                 // Caso especial: me.field = value → mutar self_stack
                 if let Expression::Identifier(obj_name, _) = &*member.object {
                     if obj_name == "me" {
-                        if let Some(Value::Object(obj)) = self.self_stack.last_mut() {
-                            obj.fields.insert(member.member.clone(), value);
-                            return Ok(());
+                        if let Some(frame) = self.self_stack.last_mut() {
+                            if let Value::Object(obj) = &mut frame.obj {
+                                obj.fields.insert(member.member.clone(), value);
+                                return Ok(());
+                            }
                         }
                     }
                 }
@@ -1561,6 +1682,29 @@ impl Interpreter {
             // Igualdad (no Objects — van al catch-all para __equals)
             (Operator::StrictEqual, a, b) if !is_object(a) && !is_object(b) => Ok(Value::Bool(a == b)),
             (Operator::NotEqual, a, b) if !is_object(a) && !is_object(b) => Ok(Value::Bool(a != b)),
+            // Operador `is`: obj is Clase (instancia directa o por herencia)
+            (Operator::Is, obj, class_val) => {
+                let class_name = match class_val {
+                    Value::Class(def) => def.name.clone(),
+                    _ => return Err(self.err_at("El operador 'is' espera una clase a la derecha", span)),
+                };
+                let result = match obj {
+                    Value::Object(o) => {
+                        let own = o.class_name.clone();
+                        if own == class_name {
+                            true
+                        } else {
+                            // Buscar en la cadena de ancestros de la clase del objeto
+                            self.classes.get(&own)
+                                .map(|cd| cd.ancestors.contains(&class_name))
+                                .unwrap_or(false)
+                        }
+                    }
+                    Value::Struct(s) => s.def_name == class_name,
+                    _ => false,
+                };
+                Ok(Value::Bool(result))
+            }
             _ => {
                 // Magic methods: comparación e igualdad si hay objetos
                 if matches!(&left, Value::Object(_)) || matches!(&right, Value::Object(_)) {

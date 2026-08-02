@@ -1,0 +1,90 @@
+class Animal {
+    var name: String;
+
+    function main(name: String) {
+        me.name = name;
+    }
+
+    function speak() -> String {
+        return me.name + " hace ruido";
+    }
+};
+
+class Dog extends Animal {
+    function speak() -> String {
+        return super.speak() + " y ladra";
+    }
+
+    function nombre() -> String {
+        return super.name;
+    }
+};
+
+class Cuenta {
+    private var saldo: float;
+    public var titular: String;
+    static var tasa: float = 0.05;
+
+    function main(titular: String, saldo: float) {
+        me.titular = titular;
+        me.saldo = saldo;
+    }
+
+    private function auditar() -> bool {
+        return me.saldo >= 0;
+    }
+
+    public function depositar(monto: float) {
+        me.saldo = me.saldo + monto;
+    }
+
+    public function verSaldo() -> float {
+        return me.saldo;
+    }
+
+    static function obtenerTasa() -> float {
+        return Cuenta.tasa;
+    }
+};
+
+function main(args: String[]) -> int {
+    print("=== Herencia extends ===");
+    var d = Dog("Rex");
+    print("d.speak():", d.speak());
+    print("d.nombre():", d.nombre());
+
+    print("=== Operador is ===");
+    print("d is Dog:", d is Dog);
+    print("d is Animal:", d is Animal);
+    print("d is Cuenta:", d is Cuenta);
+    var a = Animal("Generic");
+    print("a is Dog:", a is Dog);
+    print("a is Animal:", a is Animal);
+
+    print("=== super ===");
+    print("super.speak():", d.speak());
+
+    print("=== public/private/static ===");
+    var c = Cuenta("Ana", 100.0);
+    print("titular (public):", c.titular);
+    c.depositar(50.0);
+    print("saldo:", c.verSaldo());
+    print("tasa (static):", Cuenta.tasa);
+    print("obtenerTasa (static):", Cuenta.obtenerTasa());
+
+    print("=== private enforcement ===");
+    try {
+        var x = c.saldo;
+        print("ERROR: c.saldo accesible", x);
+    } catch (e) {
+        print("c.saldo bloqueado (ok):", e);
+    }
+    try {
+        var y = c.auditar();
+        print("ERROR: c.auditar() accesible", y);
+    } catch (e) {
+        print("c.auditar() bloqueado (ok):", e);
+    }
+
+    return 0;
+};

@@ -134,7 +134,7 @@
         },
         {
           "name": "keyword.structure.ccls",
-          "match": "\\b(class|structure|interface|module|namespace)\\b"
+          "match": "\\b(class|structure|interface|module|namespace|extends)\\b"
         },
         {
           "name": "keyword.import.ccls",
@@ -205,6 +205,10 @@
         {
           "name": "keyword.operator.arrow.ccls",
           "match": "->"
+        },
+        {
+          "name": "keyword.operator.arrow.ccls",
+          "match": "<-"
         },
         {
           "name": "keyword.operator.namespace.ccls",

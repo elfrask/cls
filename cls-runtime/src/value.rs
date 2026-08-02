@@ -119,9 +119,19 @@ impl PartialEq for StructInstance {
 pub struct ClassDef {
     pub name: String,
     pub extends: Option<String>,
+    /// Cadena de ancestros: [padre, abuelo, ...] (para `is` y `super`)
+    pub ancestors: Vec<String>,
     pub methods: HashMap<String, FunValue>,
     pub field_defaults: HashMap<String, Option<Value>>,
     pub ctor: Option<cls_core::frontend::ast::FunctionDecl>,
+    /// Métodos marcados private
+    pub private_methods: std::collections::HashSet<String>,
+    /// Métodos marcados static
+    pub static_methods: std::collections::HashSet<String>,
+    /// Fields marcados private
+    pub private_fields: std::collections::HashSet<String>,
+    /// Fields marcados static (viven en el ClassDef, no en la instancia)
+    pub static_fields: std::collections::HashSet<String>,
 }
 
 /// Instancia de una clase en runtime
@@ -130,6 +140,12 @@ pub struct ClassInstance {
     pub class_name: String,
     pub fields: HashMap<String, Value>,
     pub methods: HashMap<String, FunValue>,
+    /// Fields marcados private (desde ClassDef)
+    pub private_fields: std::collections::HashSet<String>,
+    /// Métodos marcados private (desde ClassDef)
+    pub private_methods: std::collections::HashSet<String>,
+    /// Métodos marcados static (desde ClassDef)
+    pub static_methods: std::collections::HashSet<String>,
 }
 
 impl PartialEq for ClassDef {
