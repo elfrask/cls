@@ -520,18 +520,24 @@ impl Parser {
         // For tradicional
         self.expect_symbol(Symbol::LParen)?;
         
-        let init = if self.check_operator(Operator::Equal) {
+        let (init, init_has_semicolon) = if self.check_operator(Operator::Equal) {
             // sin init
-            None
-        } else if self.consume_keyword(Keyword::Var) {
+            (None, false)
+        } else if self.check_keyword(Keyword::Var)
+            || self.check_keyword(Keyword::Let)
+            || self.check_keyword(Keyword::Const)
+        {
+            // parse_var_decl ya consume el ';'
             let stmt = self.parse_var_decl()?;
-            Some(Box::new(stmt))
+            (Some(Box::new(stmt)), true)
         } else {
             let expr = self.parse_expression()?;
-            Some(Box::new(Statement::Expression(expr)))
+            (Some(Box::new(Statement::Expression(expr))), false)
         };
         
-        self.expect_symbol(Symbol::Semicolon)?;
+        if !init_has_semicolon {
+            self.expect_symbol(Symbol::Semicolon)?;
+        }
         
         let condition = if self.consume_symbol(Symbol::Semicolon) {
             None

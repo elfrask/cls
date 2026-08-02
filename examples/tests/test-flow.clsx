@@ -1,28 +1,62 @@
+var arr = [1, 2, 3, 4, 5];
+
+function buscar(n: int) -> int {
+    for each x in (arr) {
+        if (x == n) { return x * 10; }
+    }
+    return -1;
+};
+
 function main(args: String[]) -> int {
-    print("--- Loop con break ---");
+    print("=== break en for each ===");
+    for each x in (arr) {
+        if (x == 3) { break; }
+        print("b:", x);
+    }
+
+    print("=== continue en for each ===");
+    for each x in (arr) {
+        if (x == 2) { continue; }
+        print("c:", x);
+    }
+
+    print("=== for each anidado en while (sin contaminar) ===");
     var i = 0;
-    loop {
+    while (i < 3) {
         i = i + 1;
-        if (i > 3) {
-            break;
-        };
-        print("i =", i);
-    };
-    print("--- While con continue ---");
+        for each x in (arr) {
+            if (x == 2) { break; }
+        }
+        print("while i:", i);
+    }
+
+    print("=== return dentro de for each ===");
+    print("buscar(4):", buscar(4));
+    print("buscar(9):", buscar(9));
+
+    print("=== while con break/continue ===");
     var j = 0;
-    while (j < 5) {
+    while (true) {
         j = j + 1;
-        if (j == 2) {
-            continue;
-        };
-        print("j =", j);
-    };
-    print("--- For con break ---");
-    for (k = 0; k < 10; k = k + 1) {
-        if (k > 3) {
-            break;
-        };
-        print("k =", k);
-    };
+        if (j == 2) { continue; }
+        if (j > 4) { break; }
+        print("j:", j);
+    }
+
+    print("=== for con break/continue ===");
+    for (var k = 0; k < 6; k = k + 1) {
+        if (k == 2) { continue; }
+        if (k > 4) { break; }
+        print("k:", k);
+    }
+
+    print("=== loop con break ===");
+    var n = 0;
+    loop {
+        n = n + 1;
+        if (n >= 3) { break; }
+    }
+    print("n:", n);
+
     return 0;
-}
+};
