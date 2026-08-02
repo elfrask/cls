@@ -65,6 +65,8 @@ pub struct Interpreter {
     structs: HashMap<String, StructDef>,
     classes: HashMap<String, ClassDef>,
     self_stack: Vec<SelfFrame>,
+    /// Métodos de tipos primitivos (String, Array, ...) — sin boxing
+    method_tables: HashMap<crate::stdlib::primitive::PrimitiveType, HashMap<&'static str, crate::stdlib::primitive::PrimitiveMethod>>,
 }
 
 /// Frame de importación para trace de errores
@@ -93,6 +95,7 @@ impl Interpreter {
             structs: HashMap::new(),
             classes: HashMap::new(),
             self_stack: Vec::new(),
+            method_tables: crate::stdlib::primitive::build_method_tables(),
         };
         interpreter.register_intrinsics(intrinsics);
         interpreter
@@ -455,6 +458,21 @@ impl Interpreter {
         match iterable {
             Value::Array(arr) => {
                 for (idx, item) in arr.iter().enumerate() {
+                    self.env.push_scope();
+                    self.env.define(&for_each.item_name, item.clone());
+                    if let Some(idx_name) = &for_each.index_name {
+                        self.env.define(idx_name, Value::Int(idx as i64));
+                    }
+                    self.execute_block(&for_each.block)?;
+                    self.env.pop_scope();
+                    if self.flow_should_exit_loop() {
+                        break;
+                    }
+                }
+                Ok(Value::Void)
+            }
+            Value::Tuple(tup) => {
+                for (idx, item) in tup.iter().enumerate() {
                     self.env.push_scope();
                     self.env.define(&for_each.item_name, item.clone());
                     if let Some(idx_name) = &for_each.index_name {
@@ -851,6 +869,7 @@ impl Interpreter {
             Expression::MemberAccess(member) => self.evaluate_member_access(member),
             Expression::Index(idx) => self.evaluate_index(idx),
             Expression::Array(arr) => self.evaluate_array(arr),
+            Expression::Tuple(tup) => self.evaluate_tuple(tup),
             Expression::Record(rec) => self.evaluate_record(rec),
             Expression::ArrowFunction(arrow) => self.evaluate_arrow_function(arrow),
             Expression::Conditional(cond) => self.evaluate_conditional(cond),
@@ -1025,15 +1044,27 @@ impl Interpreter {
                     return Ok(result);
                 }
                 other => {
-                    // Resolver miembro (Clase, Cmx, Struct, etc.) y llamar como función
+                    // Resolver miembro (Clase, Cmx, Struct, primitivo, etc.) y llamar como función
                     let callee = match other {
-                        Value::Record(rec) => rec.get(&member.member).cloned()
-                            .ok_or_else(|| self.err_at(format!("Miembro '{}' no encontrado", member.member), &call.span))?,
-                        _ => {
-                            return self.evaluate_member_access(member).and_then(|c| self.call_function_value(c, args, &call.span));
+                        Value::Record(ref rec) => {
+                            match rec.get(&member.member) {
+                                Some(v) => v.clone(),
+                                // Fallback: métodos primitivos de Record (keys, values, ...)
+                                None => self.evaluate_member_access(member)?,
+                            }
                         }
+                        _ => self.evaluate_member_access(member)?,
                     };
-                    return self.call_function_value(callee, args, &call.span);
+                    let result = self.call_function_value(callee, args, &call.span)?;
+                    // Write-back: mutadores de Array (devuelven Array) re-escriben la variable
+                    if let Expression::Identifier(name, _) = &*member.object {
+                        if let Value::Array(_) = &result {
+                            if let Some(Value::Array(_)) = self.env.get(name) {
+                                self.env.set(name, result.clone());
+                            }
+                        }
+                    }
+                    return Ok(result);
                 }
             }
         }
@@ -1164,7 +1195,8 @@ impl Interpreter {
         }
         match v {
             Value::Array(arr) => Ok(Value::Int(arr.len() as i64)),
-            Value::String(s) => Ok(Value::Int(s.len() as i64)),
+            Value::Tuple(tup) => Ok(Value::Int(tup.len() as i64)),
+            Value::String(s) => Ok(Value::Int(s.chars().count() as i64)),
             Value::Record(r) => Ok(Value::Int(r.len() as i64)),
             _ => Err(self.err_at(format!("len: no aplicable a {}", v.type_name()), span)),
         }
@@ -1395,10 +1427,15 @@ impl Interpreter {
         }
         let object = self.evaluate_expression(&member.object)?;
         match object {
-            Value::Record(rec) => {
-                rec.get(&member.member).cloned().ok_or_else(|| {
-                    self.err_at(format!("Miembro no encontrado: '{}'", member.member), &member.span)
-                })
+            Value::Record(ref rec) => {
+                if let Some(v) = rec.get(&member.member) {
+                    return Ok(v.clone());
+                }
+                // Fallback: métodos primitivos de Record (length, keys, ...)
+                if let Some(v) = self.resolve_primitive_method(&object, &member.member, &member.span)? {
+                    return Ok(v);
+                }
+                Err(self.err_at(format!("Miembro no encontrado: '{}'", member.member), &member.span))
             }
             Value::Struct(inst) => {
                 let def = self.structs.get(&inst.def_name).ok_or_else(|| {
@@ -1459,7 +1496,47 @@ impl Interpreter {
                 }
                 Err(self.err_at(format!("Miembro '{}' no encontrado en clase '{}'", member.member, class.name), &member.span))
             }
-            _ => Err(self.err_at(format!("No se puede acceder a miembro en: {:?}", object), &member.span)),
+            _ => {
+                // Métodos de tipos primitivos (dispatch table estática, sin boxing)
+                if let Some(v) = self.resolve_primitive_method(&object, &member.member, &member.span)? {
+                    return Ok(v);
+                }
+                Err(self.err_at(format!("No se puede acceder a miembro en: {:?}", object), &member.span))
+            }
+        }
+    }
+
+    /// Resuelve un método/getter de tipo primitivo (String, Array, Tuple, ...).
+    /// Devuelve `None` si el tipo no tiene el miembro (para fallback del caller).
+    fn resolve_primitive_method(&mut self, recv: &Value, member: &str, span: &Span) -> ClsResult<Option<Value>> {
+        use crate::stdlib::primitive::PrimitiveMethod;
+        let ptype = match crate::stdlib::primitive::primitive_type_of(recv) {
+            Some(t) => t,
+            None => return Ok(None),
+        };
+        let table = match self.method_tables.get(&ptype) {
+            Some(t) => t,
+            None => return Ok(None),
+        };
+        let pm = match table.get(member) {
+            Some(pm) => pm,
+            None => return Ok(None),
+        };
+        match pm {
+            PrimitiveMethod::Getter(f) => Ok(Some(f(&[recv.clone()])?)),
+            PrimitiveMethod::Method(f) => {
+                let method_fn = f.clone();
+                let recv_clone = recv.clone();
+                let method_name = member.to_string();
+                let bound = move |args: &[Value]| {
+                    let mut all = Vec::with_capacity(args.len() + 1);
+                    all.push(recv_clone.clone());
+                    all.extend_from_slice(args);
+                    method_fn(&all)
+                };
+                let fv = FunValue::new_native(&format!("__method__.{method_name}"), vec![], bound);
+                Ok(Some(Value::Fun(fv)))
+            }
         }
     }
 
@@ -1524,6 +1601,13 @@ impl Interpreter {
                     Ok(arr[i as usize].clone())
                 }
             }
+            (Value::Tuple(tup), Value::Int(i)) => {
+                if i < 0 || i >= tup.len() as i64 {
+                    Err(self.err_at(format!("Índice fuera de rango: {}", i), &idx.span))
+                } else {
+                    Ok(tup[i as usize].clone())
+                }
+            }
             (Value::Record(rec), Value::String(key)) => {
                 rec.get(&key).cloned().ok_or_else(|| {
                     self.err_at(format!("Key no encontrada: {}", key), &idx.span)
@@ -1546,6 +1630,14 @@ impl Interpreter {
             elements.push(self.evaluate_expression(elem)?);
         }
         Ok(Value::Array(elements))
+    }
+
+    fn evaluate_tuple(&mut self, tup: &TupleExpr) -> ClsResult<Value> {
+        let mut elements = Vec::new();
+        for elem in &tup.elements {
+            elements.push(self.evaluate_expression(elem)?);
+        }
+        Ok(Value::Tuple(elements))
     }
 
     fn evaluate_record(&mut self, rec: &RecordExpr) -> ClsResult<Value> {
@@ -1677,6 +1769,9 @@ impl Interpreter {
                             }
                             Ok(())
                         }
+                    }
+                    (Value::Tuple(_), _) => {
+                        Err(self.err_at("Las tuplas son inmutables: no se puede asignar a un índice", span))
                     }
                     (Value::Record(mut rec), Value::String(key)) => {
                         rec.insert(key, value);

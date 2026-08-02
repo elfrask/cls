@@ -196,6 +196,8 @@ pub enum Value {
 
     // Complejos
     Array(Vec<Value>),
+    /// Tupla: array inmutable (no admite push/pop/set)
+    Tuple(Vec<Value>),
     Record(HashMap<String, Value>),
     Fun(FunValue),
     Struct(Box<StructInstance>),
@@ -221,6 +223,7 @@ impl Value {
             Value::Null => "Null",
             Value::Void => "Void",
             Value::Array(_) => "Array",
+            Value::Tuple(_) => "Tuple",
             Value::Record(_) => "Record",
             Value::Fun(_) => "Fun",
             Value::Struct(_) => "Struct",  // nombre real via to_string()
@@ -240,6 +243,7 @@ impl Value {
             Value::String(v) => !v.is_empty(),
             Value::Null | Value::Void => false,
             Value::Array(v) => !v.is_empty(),
+            Value::Tuple(v) => !v.is_empty(),
             Value::Record(v) => !v.is_empty(),
             Value::Struct(_) => true,
             Value::Promise(_) => true,
@@ -261,6 +265,10 @@ impl Value {
             Value::Array(v) => {
                 let items: Vec<String> = v.iter().map(|x| x.to_string()).collect();
                 format!("[{}]", items.join(", "))
+            }
+            Value::Tuple(v) => {
+                let items: Vec<String> = v.iter().map(|x| x.to_string()).collect();
+                format!("({})", items.join(", "))
             }
             Value::Record(v) => {
                 let entries: Vec<String> = v

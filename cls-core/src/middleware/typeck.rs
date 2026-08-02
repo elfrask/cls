@@ -357,6 +357,7 @@ impl TypeChecker {
             Expression::MemberAccess(m) => self.check_member_access(m),
             Expression::Index(i) => self.check_index(i),
             Expression::Array(a) => self.check_array(a),
+            Expression::Tuple(t) => Type::Array(Box::new(Type::Any)),
             Expression::Record(r) => self.check_record(r),
             Expression::ArrowFunction(a) => self.check_arrow_function(a),
             Expression::Conditional(c) => self.check_conditional(c),

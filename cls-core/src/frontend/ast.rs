@@ -323,6 +323,9 @@ pub enum Expression {
     // Arrays
     Array(ArrayExpr),
 
+    // Tuplas (arrays inmutables)
+    Tuple(TupleExpr),
+
     // Records/Objects
     Record(RecordExpr),
 
@@ -418,6 +421,12 @@ pub struct IndexExpr {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArrayExpr {
+    pub elements: Vec<Expression>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TupleExpr {
     pub elements: Vec<Expression>,
     pub span: Span,
 }
