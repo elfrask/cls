@@ -540,7 +540,7 @@ impl TypeChecker {
         for (param, typ) in arrow.params.iter().zip(param_types.iter()) {
             self.define(&param.name, typ.clone());
         }
-        self.check_statement(&arrow.body);
+        self.check_block(&arrow.body);
         self.pop_scope();
 
         Type::Fun(param_types, Box::new(return_type))

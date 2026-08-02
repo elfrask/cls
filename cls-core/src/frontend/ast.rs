@@ -426,7 +426,7 @@ pub struct RecordExpr {
 pub struct ArrowFunctionExpr {
     pub params: Vec<Parameter>,
     pub return_type: Option<TypeAnnotation>,
-    pub body: Box<Statement>,
+    pub body: Box<Block>,
     pub span: Span,
 }
 

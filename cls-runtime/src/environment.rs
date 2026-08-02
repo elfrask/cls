@@ -1,5 +1,5 @@
 use crate::value::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Entorno de ejecución: scopes anidados con variables
 #[derive(Debug, Clone)]
@@ -28,14 +28,30 @@ impl Environment {
         }
     }
 
+    /// Define una variable inmutable (const)
+    pub fn define_const(&mut self, name: &str, value: Value) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.define_const(name, value);
+        }
+    }
+
     pub fn get(&self, name: &str) -> Option<&Value> {
         self.scopes.iter().rev().find_map(|s| s.get(name))
+    }
+
+    /// Verifica si una variable es const (inmutable)
+    pub fn is_const(&self, name: &str) -> bool {
+        self.scopes.iter().rev().any(|s| s.is_const(name))
     }
 
     pub fn set(&mut self, name: &str, value: Value) -> bool {
         // Buscar en scopes anidados
         for scope in self.scopes.iter_mut().rev() {
             if scope.contains(name) {
+                // No permitir mutar const
+                if scope.is_const(name) {
+                    return false;
+                }
                 scope.set(name, value);
                 return true;
             }
@@ -62,17 +78,24 @@ impl Environment {
 #[derive(Debug, Clone)]
 struct Scope {
     variables: HashMap<String, Value>,
+    consts: HashSet<String>,
 }
 
 impl Scope {
     fn new() -> Self {
         Self {
             variables: HashMap::new(),
+            consts: HashSet::new(),
         }
     }
 
     fn define(&mut self, name: &str, value: Value) {
         self.variables.insert(name.to_string(), value);
+    }
+
+    fn define_const(&mut self, name: &str, value: Value) {
+        self.variables.insert(name.to_string(), value);
+        self.consts.insert(name.to_string());
     }
 
     fn get(&self, name: &str) -> Option<&Value> {
@@ -85,6 +108,10 @@ impl Scope {
 
     fn contains(&self, name: &str) -> bool {
         self.variables.contains_key(name)
+    }
+
+    fn is_const(&self, name: &str) -> bool {
+        self.consts.contains(name)
     }
 
     fn all(&self) -> std::collections::HashMap<String, Value> {

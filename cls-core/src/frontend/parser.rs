@@ -1161,11 +1161,32 @@ impl Parser {
     }
 
     fn parse_equality(&mut self) -> ClsResult<Expression> {
-        let mut expr = self.parse_comparison()?;
+        let mut expr = self.parse_xor()?;
         
         while let Token::Operator(op) = &self.current_token {
             let op = match op {
                 Operator::StrictEqual | Operator::NotEqual => op.clone(),
+                _ => break,
+            };
+            self.advance();
+            let right = self.parse_xor()?;
+            expr = Expression::Binary(BinaryExpr {
+                left: Box::new(expr),
+                op,
+                right: Box::new(right),
+                span: self.span(),
+            });
+        }
+        
+        Ok(expr)
+    }
+
+    fn parse_xor(&mut self) -> ClsResult<Expression> {
+        let mut expr = self.parse_comparison()?;
+        
+        while let Token::Operator(op) = &self.current_token {
+            let op = match op {
+                Operator::Caret => op.clone(),
                 _ => break,
             };
             self.advance();
@@ -1182,7 +1203,7 @@ impl Parser {
     }
 
     fn parse_comparison(&mut self) -> ClsResult<Expression> {
-        let mut expr = self.parse_term()?;
+        let mut expr = self.parse_shift()?;
         
         while let Token::Operator(op) = &self.current_token {
             let op = match op {
@@ -1190,6 +1211,27 @@ impl Parser {
                 | Operator::LessEqual
                 | Operator::GreaterThan
                 | Operator::GreaterEqual => op.clone(),
+                _ => break,
+            };
+            self.advance();
+            let right = self.parse_shift()?;
+            expr = Expression::Binary(BinaryExpr {
+                left: Box::new(expr),
+                op,
+                right: Box::new(right),
+                span: self.span(),
+            });
+        }
+        
+        Ok(expr)
+    }
+
+    fn parse_shift(&mut self) -> ClsResult<Expression> {
+        let mut expr = self.parse_term()?;
+        
+        while let Token::Operator(op) = &self.current_token {
+            let op = match op {
+                Operator::ShiftLeft | Operator::ShiftRight => op.clone(),
                 _ => break,
             };
             self.advance();
@@ -1634,17 +1676,15 @@ impl Parser {
             None
         };
         let body = if matches!(self.current_token, Token::Symbol(Symbol::LBrace)) {
-            let block = self.parse_block()?;
-            let stmt = block.statements.into_iter().next()
-                .unwrap_or(Statement::Expression(Expression::Literal(Literal {
-                    kind: LiteralKind::Null,
-                    span: self.span(),
-                })));
-            stmt
+            self.parse_block()?
         } else {
             let expr = self.parse_expression()?;
             self.consume_symbol(Symbol::Semicolon);
-            Statement::Expression(expr)
+            // (x) -> expr  equivale a  (x) -> { return expr; }
+            Block {
+                statements: vec![Statement::Return(Some(expr))],
+                span: self.span(),
+            }
         };
         Ok(Expression::ArrowFunction(ArrowFunctionExpr {
             params,

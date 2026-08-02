@@ -136,7 +136,9 @@ impl Optimizer {
                 }
             }
             Expression::ArrowFunction(arrow) => {
-                self.optimize_statement(&mut arrow.body);
+                for stmt in &mut arrow.body.statements {
+                    self.optimize_statement(stmt);
+                }
             }
             Expression::Conditional(cond) => {
                 self.optimize_expression(&mut cond.condition);

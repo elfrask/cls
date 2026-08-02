@@ -1,0 +1,43 @@
+function main(args: String[]) -> int {
+    # 1. Operadores compuestos
+    var x = 10;
+    x += 5;
+    print("x += 5:", x);
+    x -= 2;
+    print("x -= 2:", x);
+    x *= 3;
+    print("x *= 3:", x);
+    x /= 4;
+    print("x /= 4:", x);
+
+    # 2. Short-circuit
+    var corto = false && (throw("NO deberia evaluarse") == "x");
+    print("short-circuit &&:", corto);
+    var corto2 = true || (throw("NO deberia evaluarse") == "x");
+    print("short-circuit ||:", corto2);
+
+    # 3. Potencia
+    print("2 ** 8:", 2 ** 8);
+
+    # 4. Bitwise
+    print("5 ^ 3:", 5 ^ 3);
+    print("1 << 4:", 1 << 4);
+    print("16 >> 2:", 16 >> 2);
+
+    # 5. Comparacion de strings
+    print("'abc' < 'abd':", "abc" < "abd");
+    print("'b' > 'a':", "b" > "a");
+
+    # 6. Arrow multi-statement
+    var multi = (a) -> {
+        var doble = a * 2;
+        return doble + 1;
+    };
+    print("arrow multi:", multi(10));
+
+    # 7. Const no se puede reasignar
+    const PI = 3.14;
+    print("const PI:", PI);
+
+    return 0;
+};
