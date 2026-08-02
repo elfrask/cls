@@ -16,11 +16,9 @@ y como lenguaje de propósito general.
 | Componente | Descripción |
 |-----------|-------------|
 | `cls-core` | Compilador: lexer, parser, type checker, backend |
-| `cls-runtime` | Motor de ejecución: intérprete tree-walker, stdlib core |
-| `clx` | CLI principal: `run`, `check`, `build`, `ast` |
-| `ccls-repl` | REPL interactivo (pendiente) |
-| `cpkg` | Gestor de paquetes y proyectos (pendiente) |
-| `clxr` | Ejecutor directo de `.clsapp` (pendiente) |
+| `cls-runtime` | Motor de ejecución: intérprete tree-walker, stdlib core, VFS, async |
+| `clx` | CLI principal: `run`, `check`, `build`, `ast`, `maptype`, `lsp` |
+| `clxr` | Ejecutor directo de `.clsx` / `.clsapp` |
 
 ## Estructura del proyecto
 
@@ -29,14 +27,13 @@ cls/
 ├── cls-core/          # Compilador (librería)
 ├── cls-runtime/       # Motor de ejecución (librería)
 ├── nodos/
-│   ├── ccls/          # CLI principal
-│   ├── ccls-repl/     # REPL interactivo
-│   ├── cpkg/          # Gestor de paquetes
+│   ├── clx/           # CLI principal
 │   └── clxr/          # Ejecutor de apps
 ├── scripts/           # Scripts de ejecución y build
 ├── docs/              # Documentación
-└── host-libs/         # Wrappers para otros lenguajes
-```
+│   └── future/        # Planes futuros (WASM, JIT, nativo, FFI)
+├── examples/tests/    # Scripts de ejemplo y prueba
+└── .vscode/           # Extension VS Code + config
 
 ## Requisitos
 
@@ -51,14 +48,21 @@ cls/
 cargo build
 
 # Solo el CLI
-cargo build --bin ccls
+cargo build --bin clx
 
 # Release
-cargo build --release --bin ccls
+cargo build --release --bin clx
 
 # Ejecutar
 cargo run --bin clx -- run archivo.clsx
 # o directamente
-.\scripts\ccls.cmd run archivo.clsx     # Windows
-./scripts/ccls.sh run archivo.clsx      # Linux/macOS
+.\scripts\clx.cmd run archivo.clsx     # Windows
+./scripts/clx.sh run archivo.clsx      # Linux/macOS
 ```
+
+## Planes futuros
+
+Ver [`docs/future/README.md`](../future/README.md) para la visión de largo plazo:
+compilación WASM (`.clbin`), runtime con JIT (Cranelift), compilación nativa (LLVM AOT)
+y FFI / interoperabilidad nativa. El enfoque actual es **WASM-first**; el resto está
+documentado para preservar el diseño.
