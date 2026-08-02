@@ -1,15 +1,25 @@
 function App(props) {
-    print("App render, title:", props.title);
+    print("Esto NO deberia ejecutarse solo por usar <App />");
 };
 
-function main(args: String[]) -> int {
-    # CMX lowercase tag → CmxValue normal
-    var btn = <button label="Click me" />;
-    print("btn:", btn);
-    print("Tag:", btn.tag);
+var Numero = 42;
 
-    # CMX uppercase tag = reference lookup + call
-    <App title="Hello from CMX!" />;
+function main(args: String[]) -> int {
+    # Minuscula → tag como texto
+    var btn = <button label="Click me" />;
+    print("btn.tag:", btn.tag);
+    print("btn.props.label:", btn.props.label);
+
+    # Mayuscula → guarda la REFERENCIA, no ejecuta
+    var app = <App title="Hello" />;
+    print("app.tag:", app.tag);
+    print("app.tag es funcion:", type(app.tag));
+
+    # Mayuscula con variable numero → guarda el numero
+    var num = <Numero />;
+    print("num.tag (Numero):", num.tag);
+
+    print("App NO fue ejecutada (no hay 'Esto NO deberia')");
 
     return 0;
 };
