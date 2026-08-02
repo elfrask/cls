@@ -462,6 +462,9 @@ impl Interpreter {
                     }
                     self.execute_block(&for_each.block)?;
                     self.env.pop_scope();
+                    if self.flow_should_exit_loop() {
+                        break;
+                    }
                 }
                 Ok(Value::Void)
             }
@@ -481,6 +484,9 @@ impl Interpreter {
                         }
                         self.execute_block(&for_each.block)?;
                         self.env.pop_scope();
+                        if self.flow_should_exit_loop() {
+                            break;
+                        }
                     }
                     return Ok(Value::Void);
                 }
@@ -501,11 +507,25 @@ impl Interpreter {
                     }
                     self.execute_block(&for_each.block)?;
                     self.env.pop_scope();
+                    if self.flow_should_exit_loop() {
+                        break;
+                    }
                     idx += 1;
                 }
                 Ok(Value::Void)
             }
             _ => Err(self.err_at(format!("No se puede iterar sobre: {:?}", iterable), &for_each.span)),
+        }
+    }
+
+    /// Captura el flow tras un bloque dentro de un loop y lo limpia.
+    /// Devuelve `true` si el loop debe terminar (Break o Return).
+    fn flow_should_exit_loop(&mut self) -> bool {
+        match std::mem::replace(&mut self.flow, Flow::Normal) {
+            Flow::Break => true,
+            Flow::Return(v) => { self.flow = Flow::Return(v); true }
+            // Continue o Normal: seguir con la siguiente iteración
+            Flow::Continue | Flow::Normal => false,
         }
     }
 
