@@ -7,6 +7,9 @@ const { LanguageClient, TransportKind } = require('vscode-languageclient/node');
 function activate(context) {
     console.log('[cls] Activando...');
 
+    const flags = getFeatureFlags();
+    console.log('[cls] flags:', flags);
+
     // Cargar type maps builtins
     const builtinMaps = loadBuiltinMaps();
     let maptypeProcess = null;
@@ -14,12 +17,17 @@ function activate(context) {
     // ─── Lanzar clx maptype --watch en el workspace ─────────────────────
     const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath;
     const clxPath = findClx();
-    if (clxPath) {
-        startLanguageServer(clxPath, context);
+    if (flags.lspServer) {
+        if (clxPath) {
+            startLanguageServer(clxPath, context);
+        } else {
+            console.log('[cls] clx no encontrado, el servidor LSP no se iniciará');
+        }
     } else {
-        console.log('[cls] clx no encontrado, el servidor LSP no se iniciará');
+        console.log('[cls] LSP desactivado por cls.options.unnestableFeatures.lspServer=false');
     }
-    if (wsRoot) {
+
+    if (flags.useStaticTypes && wsRoot) {
         if (clxPath) {
             console.log('[cls] Generando type maps iniciales...');
             runSync(clxPath, ['maptype', '.', '-o', '.cls-types'], { cwd: wsRoot });
@@ -39,8 +47,10 @@ function activate(context) {
             statusItem.show();
             context.subscriptions.push(statusItem);
         } else {
-            console.log('[cls] clx no encontrado, type maps no se generaran automaticamente');
+            console.log('[cls] clx no encontrado, type maps no se generaran automáticamente');
         }
+    } else {
+        console.log('[cls] maptypes desactivados por cls.options.unnestableFeatures.useStaticTypes=false');
     }
 
     // ─── Cargar workspace type maps ─────────────────────────────────────
@@ -67,86 +77,88 @@ function activate(context) {
     );
 
     // ─── Completion provider ────────────────────────────────────────────
-    context.subscriptions.push(
-        vscode.languages.registerCompletionItemProvider('clx', {
-            provideCompletionItems(document, position) {
-                const linePrefix = document.lineAt(position).text.substring(0, position.character);
-                const items = [];
+    if (flags.useStaticTypes) {
+        context.subscriptions.push(
+            vscode.languages.registerCompletionItemProvider('clx', {
+                provideCompletionItems(document, position) {
+                    const linePrefix = document.lineAt(position).text.substring(0, position.character);
+                    const items = [];
 
-                // Miembros de modulo
-                const dotMatch = linePrefix.match(/([a-zA-Z_][a-zA-Z0-9_]*)\.$/);
-                if (dotMatch) {
-                    const allMaps = new Map([...builtinMaps.entries()]);
+                    // Miembros de modulo
+                    const dotMatch = linePrefix.match(/([a-zA-Z_][a-zA-Z0-9_]*)\.$/);
+                    if (dotMatch) {
+                        const allMaps = new Map([...builtinMaps.entries()]);
+                        const wsMaps = globalThis._clsWorkspaceMaps || new Map();
+                        for (const [modName, data] of wsMaps) {
+                            if (!allMaps.has(modName)) allMaps.set(modName, data);
+                        }
+                        return completeMembers(dotMatch[1], allMaps);
+                    }
+
+                    // Keywords
+                    for (const kw of ['var','function','if','else','while','for','return',
+                        'import','from','as','export','structure','interface', "static", 
+                        "is", "public", "protected", "private", "let", "const", "namespace",
+                        "module", 'true','false','null','break','continue','loop','switch', "alias",
+                        'async','await', 'readonly']) {
+                        items.push(new vscode.CompletionItem(kw, vscode.CompletionItemKind.Keyword));
+                    }
+
+                    // Core intrinsics (top-level siempre)
+                    if (builtinMaps.has('core')) {
+                        for (const entry of builtinMaps.get('core').entries) {
+                            if (entry.kind === 'variable' || entry.kind === 'function') {
+                                const ci = new vscode.CompletionItem(entry.name, kindMap(entry.kind));
+                                ci.detail = entry.signature || entry.name;
+                                ci.documentation = entry.doc || '';
+                                items.push(ci);
+                            }
+                        }
+                    }
+
+                    // Workspace types: toplevel del archivo activo
+                    const activeUri = document.uri;
+                    const activePath = activeUri.fsPath || '';
+                    let activeRel = '';
+                    if (activePath.startsWith(wsRoot || '')) {
+                        activeRel = activePath.substring((wsRoot || '').length + 1).replace(/\\/g, '/').replace(/\.clsx$/i, '');
+                    }
                     const wsMaps = globalThis._clsWorkspaceMaps || new Map();
-                    for (const [modName, data] of wsMaps) {
-                        if (!allMaps.has(modName)) allMaps.set(modName, data);
-                    }
-                    return completeMembers(dotMatch[1], allMaps);
-                }
-
-                // Keywords
-                for (const kw of ['var','function','if','else','while','for','return',
-                    'import','from','as','export','structure','interface', "static", 
-                    "is", "public", "protected", "private", "let", "const", "namespace",
-                    "module", 'true','false','null','break','continue','loop','switch', "alias",
-                    'async','await', 'readonly']) {
-                    items.push(new vscode.CompletionItem(kw, vscode.CompletionItemKind.Keyword));
-                }
-
-                // Core intrinsics (top-level siempre)
-                if (builtinMaps.has('core')) {
-                    for (const entry of builtinMaps.get('core').entries) {
-                        if (entry.kind === 'variable' || entry.kind === 'function') {
-                            const ci = new vscode.CompletionItem(entry.name, kindMap(entry.kind));
-                            ci.detail = entry.signature || entry.name;
-                            ci.documentation = entry.doc || '';
-                            items.push(ci);
+                    if (activeRel && wsMaps.has(activeRel)) {
+                        for (const entry of wsMaps.get(activeRel).entries) {
+                            if (entry.kind === 'function' || entry.kind === 'variable' || entry.kind === 'structure' || entry.kind === 'interface') {
+                                const ci = new vscode.CompletionItem(entry.name, kindMap(entry.kind));
+                                ci.detail = entry.signature || entry.name;
+                                ci.documentation = entry.doc || '';
+                                items.push(ci);
+                            }
                         }
                     }
-                }
 
-                // Workspace types: toplevel del archivo activo
-                const activeUri = document.uri;
-                const activePath = activeUri.fsPath || '';
-                let activeRel = '';
-                if (activePath.startsWith(wsRoot || '')) {
-                    activeRel = activePath.substring((wsRoot || '').length + 1).replace(/\\/g, '/').replace(/\.clsx$/i, '');
-                }
-                const wsMaps = globalThis._clsWorkspaceMaps || new Map();
-                if (activeRel && wsMaps.has(activeRel)) {
-                    for (const entry of wsMaps.get(activeRel).entries) {
-                        if (entry.kind === 'function' || entry.kind === 'variable' || entry.kind === 'structure' || entry.kind === 'interface') {
-                            const ci = new vscode.CompletionItem(entry.name, kindMap(entry.kind));
-                            ci.detail = entry.signature || entry.name;
-                            ci.documentation = entry.doc || '';
-                            items.push(ci);
-                        }
+                    // Modulos builtin
+                    for (const [mName, data] of builtinMaps) {
+                        if (mName === 'core') continue;
+                        const mi = new vscode.CompletionItem(mName, vscode.CompletionItemKind.Module);
+                        mi.detail = `module (${data.entries.length} members)`;
+                        mi.documentation = `Import: import "${mName}" as ${mName}`;
+                        items.push(mi);
                     }
+
+                    // Snippets
+                    items.push(snip('if', 'if (${1:cond}) {\n\t$0\n}'));
+                    items.push(snip('for', 'for (${1:i}=0; ${1:i}<${2:n}; ${1:i}++) {\n\t$0\n}'));
+                    items.push(snip('while', 'while (${1:cond}) {\n\t$0\n}'));
+                    items.push(snip('function', 'function ${1:name}(${2:params}) -> ${3:void} {\n\t$0\n}'));
+                    items.push(snip('structure', 'structure ${1:Name} {\n\t${2:field}: ${3:type}\n};'));
+                    items.push(snip('import', 'import "${1:module}" as ${2:alias};'));
+                    items.push(snip('from', 'from "${1:module}" import ${2:func};'));
+                    items.push(snip('ternary', '${1:cond} ? ${2:then} : ${3:else}'));
+
+                    return items;
                 }
-
-                // Modulos builtin
-                for (const [mName, data] of builtinMaps) {
-                    if (mName === 'core') continue;
-                    const mi = new vscode.CompletionItem(mName, vscode.CompletionItemKind.Module);
-                    mi.detail = `module (${data.entries.length} members)`;
-                    mi.documentation = `Import: import "${mName}" as ${mName}`;
-                    items.push(mi);
-                }
-
-                // Snippets
-                items.push(snip('if', 'if (${1:cond}) {\n\t$0\n}'));
-                items.push(snip('for', 'for (${1:i}=0; ${1:i}<${2:n}; ${1:i}++) {\n\t$0\n}'));
-                items.push(snip('while', 'while (${1:cond}) {\n\t$0\n}'));
-                items.push(snip('function', 'function ${1:name}(${2:params}) -> ${3:void} {\n\t$0\n}'));
-                items.push(snip('structure', 'structure ${1:Name} {\n\t${2:field}: ${3:type}\n};'));
-                items.push(snip('import', 'import "${1:module}" as ${2:alias};'));
-                items.push(snip('from', 'from "${1:module}" import ${2:func};'));
-                items.push(snip('ternary', '${1:cond} ? ${2:then} : ${3:else}'));
-
-                return items;
-            }
-        }, '.', '"', '/')
-    );
+            }, '.', '"', '/')
+        );
+    }
 
     // Cleanup
     context.subscriptions.push({
@@ -156,6 +168,15 @@ function activate(context) {
     });
 
     console.log('[cls] Listo. Builtin modules:', builtinMaps.size);
+}
+
+function getFeatureFlags() {
+    const config = vscode.workspace.getConfiguration('cls.options.unnestableFeatures');
+    return {
+        lspServer: config.get('lspServer', false),
+        useStaticTypes: config.get('useStaticTypes', true),
+        useMapClsi: config.get('useMapClsi', true),
+    };
 }
 
 // ─── Type Maps ─────────────────────────────────────────────────────────
