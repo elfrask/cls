@@ -1,7 +1,93 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::{Arc, Mutex};
 use cls_core::error::ClsResult;
 use cls_core::frontend::ast::Block;
+
+/// Estado de un poll de corrutina/promise
+#[derive(Debug, Clone, PartialEq)]
+pub enum PollState {
+    Pending,
+    Ready(Value),
+    Rejected(String),
+}
+
+/// Contrato para corrutinas. Tanto el intérprete (scheduler de clxr)
+/// como los state machines WASM (futuro) implementan esto.
+/// Corre en un solo thread (el scheduler de clxr), por eso no requiere Send/Sync.
+pub trait Pollable {
+    fn poll(&mut self, interp: &mut crate::interpreter::Interpreter) -> PollState;
+}
+
+/// Promise — puente entre intérprete y WASM. Compartido vía Arc (como JS).
+#[derive(Clone)]
+pub struct Promise {
+    inner: Arc<Mutex<PromiseInner>>,
+}
+
+struct PromiseInner {
+    pollable: Option<Box<dyn Pollable>>,
+    result: Option<PollState>,
+}
+
+impl Promise {
+    pub fn new(pollable: Box<dyn Pollable>) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(PromiseInner { pollable: Some(pollable), result: None })),
+        }
+    }
+
+    pub fn resolved(value: Value) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(PromiseInner {
+                pollable: None,
+                result: Some(PollState::Ready(value)),
+            })),
+        }
+    }
+
+    pub fn rejected(msg: String) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(PromiseInner {
+                pollable: None,
+                result: Some(PollState::Rejected(msg)),
+            })),
+        }
+    }
+
+    /// Intenta resolver (poll). Devuelve el estado actual.
+    pub fn poll(&mut self, interp: &mut crate::interpreter::Interpreter) -> PollState {
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(ref result) = inner.result {
+            return result.clone();
+        }
+        if let Some(ref mut pollable) = inner.pollable {
+            let state = pollable.poll(interp);
+            match &state {
+                PollState::Ready(_) | PollState::Rejected(_) => {
+                    inner.result = Some(state.clone());
+                    inner.pollable = None;
+                }
+                PollState::Pending => {}
+            }
+            state
+        } else {
+            PollState::Pending
+        }
+    }
+}
+
+impl fmt::Debug for Promise {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Promise").finish()
+    }
+}
+
+impl PartialEq for Promise {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
 
 /// Definición de un struct (almacenada en el intérprete)
 #[derive(Debug, Clone)]
@@ -45,6 +131,7 @@ pub enum Value {
     Record(HashMap<String, Value>),
     Fun(FunValue),
     Struct(Box<StructInstance>),
+    Promise(Promise),
 
     // Tipos especiales
     Unknown,
@@ -67,6 +154,7 @@ impl Value {
             Value::Record(_) => "Record",
             Value::Fun(_) => "Fun",
             Value::Struct(_) => "Struct",  // nombre real via to_string()
+            Value::Promise(_) => "Promise",
             Value::Unknown => "Unknown",
             Value::Cmx(_) => "Cmx",
         }
@@ -82,6 +170,7 @@ impl Value {
             Value::Array(v) => !v.is_empty(),
             Value::Record(v) => !v.is_empty(),
             Value::Struct(_) => true,
+            Value::Promise(_) => true,
             _ => true,
         }
     }
@@ -112,6 +201,7 @@ impl Value {
                 let fields: Vec<String> = s.fields.iter().map(|v| v.to_string()).collect();
                 format!("{}({})", def_name, fields.join(", "))
             }
+            Value::Promise(_) => "<promise>".to_string(),
             Value::Unknown => "unknown".to_string(),
             Value::Cmx(cmx) => {
                 let props_str = if cmx.props.is_empty() {
@@ -146,6 +236,7 @@ pub type NativeFn = Box<dyn Fn(&[Value]) -> ClsResult<Value>>;
 pub struct FunValue {
     pub name: String,
     pub kind: FunKind,
+    pub is_async: bool,
 }
 
 impl fmt::Debug for FunValue {
@@ -211,6 +302,7 @@ impl FunValue {
     {
         Self {
             name: name.to_string(),
+            is_async: false,
             kind: FunKind::Native {
                 params,
                 func: std::sync::Arc::new(func),
@@ -221,6 +313,15 @@ impl FunValue {
     pub fn new_user(name: &str, params: Vec<cls_core::frontend::ast::Parameter>, body: Block) -> Self {
         Self {
             name: name.to_string(),
+            is_async: false,
+            kind: FunKind::User { params, body },
+        }
+    }
+
+    pub fn new_async_user(name: &str, params: Vec<cls_core::frontend::ast::Parameter>, body: Block) -> Self {
+        Self {
+            name: name.to_string(),
+            is_async: true,
             kind: FunKind::User { params, body },
         }
     }

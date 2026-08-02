@@ -1,0 +1,28 @@
+import "async" as asyncLib;
+
+async function fetchData(url: String) -> String {
+    print("inicio de fetchData");
+    await asyncLib.delay(500);
+    print("fin de fetchData");
+    return "dato simulado de " + url;
+};
+
+function main(args: String[]) -> int {
+    print("main arranca");
+
+    var resultado = fetchData("https://ejemplo.com");
+    print("fetchData devolvio:", toString(resultado));
+
+    print("main sigue...");
+
+    var data = await resultado;
+    print("await resultado:", data);
+
+    # Test async.all
+    var p1 = asyncLib.delay(100);
+    var p2 = asyncLib.delay(200);
+    var todos = await asyncLib.all([p1, p2]);
+    print("async.all:", toString(todos));
+
+    return 0;
+};
