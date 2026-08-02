@@ -1,12 +1,13 @@
 use crate::environment::Environment;
 use crate::intrinsics::Intrinsics;
 use crate::resolver::ModuleResolver;
-use crate::value::{FunValue, Value, StructDef, StructField, StructInstance, Pollable, PollState, Promise};
+use crate::value::{FunValue, Value, StructDef, StructField, StructInstance, Pollable, PollState, Promise, ClassDef, ClassInstance};
 use cls_core::config::ModuleManifest;
 use cls_core::error::{ClsError, ClsResult, Diagnostic, Span, StackFrame};
 use cls_core::frontend::ast::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
 enum Flow { Normal, Return(Value), Break, Continue }
@@ -54,6 +55,8 @@ pub struct Interpreter {
     flow: Flow,
     config: Option<ModuleManifest>,
     structs: HashMap<String, StructDef>,
+    classes: HashMap<String, ClassDef>,
+    self_stack: Vec<Value>,
 }
 
 /// Frame de importación para trace de errores
@@ -80,6 +83,8 @@ impl Interpreter {
             flow: Flow::Normal,
             config: None,
             structs: HashMap::new(),
+            classes: HashMap::new(),
+            self_stack: Vec::new(),
         };
         interpreter.register_intrinsics(intrinsics);
         interpreter
@@ -340,11 +345,15 @@ impl Interpreter {
 
     fn execute_function_decl(&mut self, func: &FunctionDecl) -> ClsResult<Value> {
         let is_async = func.modifiers.iter().any(|m| matches!(m, FunctionModifier::Async));
+        // Capturar entorno léxico (closures) para module/namespace/scope
+        let closure = Arc::new(Mutex::new(self.env.clone()));
         let fun_val = if is_async {
-            Value::Fun(FunValue::new_async_user(&func.name, func.params.clone(), func.body.clone()))
+            Value::Fun(FunValue::new_async_user_with_closure(&func.name, func.params.clone(), func.body.clone(), closure.clone()))
         } else {
-            Value::Fun(FunValue::new_user(&func.name, func.params.clone(), func.body.clone()))
+            Value::Fun(FunValue::new_user_with_closure(&func.name, func.params.clone(), func.body.clone(), closure.clone()))
         };
+        // Insertar la función en su propio closure para permitir recursión
+        closure.lock().unwrap().define(&func.name, fun_val.clone());
         self.env.define(&func.name, fun_val);
         if matches!(func.visibility, Visibility::Export) {
             self.exports.insert(func.name.clone());
@@ -487,8 +496,56 @@ impl Interpreter {
         result
     }
 
-    fn execute_class_decl(&mut self, _class: &ClassDecl) -> ClsResult<Value> {
-        // TODO: registrar clase en el entorno
+    fn execute_class_decl(&mut self, class: &ClassDecl) -> ClsResult<Value> {
+        let mut methods: HashMap<String, FunValue> = HashMap::new();
+        let mut field_defaults: HashMap<String, Option<Value>> = HashMap::new();
+        let mut ctor: Option<FunctionDecl> = None;
+
+        for member in &class.body {
+            match member {
+                ClassMember::Method(f) => {
+                    let fun = FunValue::new_user(&f.name, f.params.clone(), f.body.clone());
+                    methods.insert(f.name.clone(), fun);
+                }
+                ClassMember::Property(v) => {
+                    let default = if let Some(expr) = &v.value {
+                        Some(self.evaluate_expression(expr)?)
+                    } else {
+                        None
+                    };
+                    field_defaults.insert(v.name.clone(), default);
+                }
+                ClassMember::Constructor(f) => {
+                    ctor = Some(f.clone());
+                }
+            }
+        }
+
+        let mut def = ClassDef {
+            name: class.name.clone(),
+            extends: class.extends.clone(),
+            methods,
+            field_defaults,
+            ctor,
+        };
+
+        // Herencia: copiar métodos y fields del padre (si ya está registrado)
+        if let Some(parent_name) = &class.extends {
+            if let Some(parent) = self.classes.get(parent_name) {
+                for (k, v) in &parent.methods {
+                    def.methods.entry(k.clone()).or_insert_with(|| v.clone());
+                }
+                for (k, v) in &parent.field_defaults {
+                    def.field_defaults.entry(k.clone()).or_insert_with(|| v.clone());
+                }
+                if def.ctor.is_none() {
+                    def.ctor = parent.ctor.clone();
+                }
+            }
+        }
+
+        self.classes.insert(class.name.clone(), def.clone());
+        self.env.define(&class.name, Value::Class(Box::new(def)));
         Ok(Value::Void)
     }
 
@@ -535,13 +592,28 @@ impl Interpreter {
         Ok(Value::Void)
     }
 
-    fn execute_module_decl(&mut self, _module: &ModuleDecl) -> ClsResult<Value> {
-        // TODO: registrar módulo
+    fn execute_module_decl(&mut self, module: &ModuleDecl) -> ClsResult<Value> {
+        // Ejecutar el body en un entorno aislado
+        let saved_env = std::mem::replace(&mut self.env, Environment::new());
+        for stmt in &module.body {
+            self.execute_statement(stmt)?;
+        }
+        let entries = self.env.all();
+        self.env = saved_env;
+        // Registrar el módulo como Record en el scope actual
+        self.env.define(&module.name, Value::Record(entries));
         Ok(Value::Void)
     }
 
-    fn execute_namespace_decl(&mut self, _ns: &NamespaceDecl) -> ClsResult<Value> {
-        // TODO: registrar namespace
+    fn execute_namespace_decl(&mut self, ns: &NamespaceDecl) -> ClsResult<Value> {
+        // Namespace es igual que module en runtime: un Record aislado
+        let saved_env = std::mem::replace(&mut self.env, Environment::new());
+        for stmt in &ns.body {
+            self.execute_statement(stmt)?;
+        }
+        let entries = self.env.all();
+        self.env = saved_env;
+        self.env.define(&ns.name, Value::Record(entries));
         Ok(Value::Void)
     }
 
@@ -637,6 +709,9 @@ impl Interpreter {
         match expr {
             Expression::Literal(lit) => self.evaluate_literal(lit),
             Expression::Identifier(name, span) => {
+                if name == "me" {
+                    return Ok(self.self_stack.last().cloned().unwrap_or(Value::Null));
+                }
                 self.env.get(name).cloned().ok_or_else(|| {
                     self.err_at(format!("Variable no definida: {}", name), span)
                 })
@@ -801,6 +876,41 @@ impl Interpreter {
     }
 
     fn evaluate_call(&mut self, call: &CallExpr) -> ClsResult<Value> {
+        // Detectar obj.method(args) para pasar `me`
+        if let Expression::MemberAccess(member) = &*call.callee {
+            let obj = self.evaluate_expression(&member.object)?;
+            let mut args = Vec::new();
+            for arg in &call.args {
+                args.push(self.evaluate_expression(arg)?);
+            }
+            match obj {
+                Value::Object(obj_val) => {
+                    let (result, mutated) = self.call_method(obj_val, &member.member, args, &call.span)?;
+                    // Re-insertar el objeto mutado en el env si es una variable
+                    if let Expression::Identifier(name, _) = &*member.object {
+                        self.env.set(name, Value::Object(Box::new(mutated)));
+                    }
+                    return Ok(result);
+                }
+                other => {
+                    // Resolver miembro y llamar como función
+                    let callee = match other {
+                        Value::Record(rec) => rec.get(&member.member).cloned()
+                            .ok_or_else(|| self.err_at(format!("Miembro '{}' no encontrado", member.member), &call.span))?,
+                        _ => {
+                            let member_access = MemberAccessExpr {
+                                object: Box::new(Expression::Literal(Literal { kind: LiteralKind::Null, span: call.span })),
+                                member: member.member.clone(),
+                                span: member.span,
+                            };
+                            return self.evaluate_member_access(&member_access).and_then(|c| self.call_function_value(c, args, &call.span));
+                        }
+                    };
+                    return self.call_function_value(callee, args, &call.span);
+                }
+            }
+        }
+
         let callee = self.evaluate_expression(&call.callee)?;
         let mut args = Vec::new();
         for arg in &call.args {
@@ -814,6 +924,48 @@ impl Interpreter {
     fn evaluate_member_call(&mut self, call: &CallExpr) -> ClsResult<Value> {
         // TODO: método de objeto/clase
         Err(self.err_at("Member call no implementado", &call.span))
+    }
+
+    /// Instancia una clase: crea el objeto, corre el constructor con `me`
+    fn instantiate_class(&mut self, def: Box<ClassDef>, args: Vec<Value>) -> ClsResult<Value> {
+        let mut fields = HashMap::new();
+        for (k, v) in &def.field_defaults {
+            fields.insert(k.clone(), v.clone().unwrap_or(Value::Null));
+        }
+        let instance = ClassInstance {
+            class_name: def.name.clone(),
+            fields,
+            methods: def.methods.clone(),
+        };
+
+        if let Some(ctor) = &def.ctor {
+            self.self_stack.push(Value::Object(Box::new(instance.clone())));
+            let result = self.run_async_body(&ctor.body, &ctor.params, &args);
+            // Recuperar la instancia mutada por el constructor
+            let instance = match self.self_stack.pop() {
+                Some(Value::Object(mutated)) => *mutated,
+                _ => instance,
+            };
+            let _ = result?;
+            return Ok(Value::Object(Box::new(instance)));
+        }
+
+        Ok(Value::Object(Box::new(instance)))
+    }
+
+    /// Llama un método de un objeto con `me` = objeto.
+    /// Devuelve el resultado y el objeto (posiblemente mutado por `me.field = ...`).
+    fn call_method(&mut self, obj: Box<ClassInstance>, name: &str, args: Vec<Value>, span: &Span) -> ClsResult<(Value, ClassInstance)> {
+        let method = obj.methods.get(name).cloned()
+            .ok_or_else(|| self.err_at(format!("Método '{}' no encontrado en '{}'", name, obj.class_name), span))?;
+        let original = obj.clone();
+        self.self_stack.push(Value::Object(obj));
+        let result = self.call_function_value(Value::Fun(method), args, span);
+        let mutated = match self.self_stack.pop() {
+            Some(Value::Object(o)) => *o,
+            _ => *original,
+        };
+        result.map(|v| (v, mutated))
     }
 
     /// Ejecuta un valor de función con argumentos ya evaluados
@@ -834,12 +986,19 @@ impl Interpreter {
                 crate::value::FunKind::Native { params: _, func } => {
                     func(&args)
                 }
-                crate::value::FunKind::User { params, body } => {
+                crate::value::FunKind::User { params, body, closure } => {
                     if is_async {
                         // Función async: crear Promise lazy, NO ejecutar el cuerpo aún
                         let task = CoroutineTask::new(&fun.name, body.clone(), params.clone(), args);
                         Ok(Value::Promise(Promise::new(Box::new(task))))
                     } else {
+                        // Si hay closure (definida en module/namespace), usarlo como base
+                        let saved = if let Some(c) = closure {
+                            let base = c.lock().unwrap().clone();
+                            Some(std::mem::replace(&mut self.env, base))
+                        } else {
+                            None
+                        };
                         self.env.push_scope();
                         for (i, param) in params.iter().enumerate() {
                             let arg_val = if i < args.len() {
@@ -857,10 +1016,12 @@ impl Interpreter {
                             _ => result,
                         };
                         self.env.pop_scope();
+                        if let Some(s) = saved { self.env = s; }
                         result
                     }
                 }
             },
+            Value::Class(def) => self.instantiate_class(def, args),
             _ => Err(self.err_at("No se puede llamar", call_span)),
         };
 
@@ -977,6 +1138,24 @@ impl Interpreter {
                     self.err_at(format!("Propiedad CMX no encontrada: '{}'", name), &member.span)
                 }),
             },
+            Value::Object(obj) => {
+                // 1. field
+                if let Some(v) = obj.fields.get(&member.member) {
+                    return Ok(v.clone());
+                }
+                // 2. method
+                if let Some(m) = obj.methods.get(&member.member) {
+                    return Ok(Value::Fun(m.clone()));
+                }
+                Err(self.err_at(format!("Miembro '{}' no encontrado en '{}'", member.member, obj.class_name), &member.span))
+            }
+            Value::Class(class) => {
+                // Acceso a clase: métodos estáticos o constructor name
+                if let Some(m) = class.methods.get(&member.member) {
+                    return Ok(Value::Fun(m.clone()));
+                }
+                Err(self.err_at(format!("Miembro '{}' no encontrado en clase '{}'", member.member, class.name), &member.span))
+            }
             _ => Err(self.err_at(format!("No se puede acceder a miembro en: {:?}", object), &member.span)),
         }
     }
@@ -1054,6 +1233,15 @@ impl Interpreter {
                 Ok(value)
             }
             Expression::MemberAccess(member) => {
+                // Caso especial: me.field = value → mutar self_stack
+                if let Expression::Identifier(obj_name, _) = &*member.object {
+                    if obj_name == "me" {
+                        if let Some(Value::Object(obj)) = self.self_stack.last_mut() {
+                            obj.fields.insert(member.member.clone(), value.clone());
+                            return Ok(value);
+                        }
+                    }
+                }
                 let mut object = self.evaluate_expression(&member.object)?;
                 match object {
                     Value::Struct(mut inst) => {
@@ -1067,6 +1255,14 @@ impl Interpreter {
                         // Re-insertar el struct modificado
                         if let Expression::Identifier(name, _) = &*member.object {
                             self.env.set(name, Value::Struct(inst));
+                        }
+                        Ok(value)
+                    }
+                    Value::Object(mut obj) => {
+                        obj.fields.insert(member.member.clone(), value.clone());
+                        // Re-insertar en env si es una variable
+                        if let Expression::Identifier(name, _) = &*member.object {
+                            self.env.set(name, Value::Object(obj));
                         }
                         Ok(value)
                     }
@@ -1147,7 +1343,21 @@ impl Interpreter {
     }
 
     fn evaluate_namespace_access(&mut self, ns: &str, name: &str, span: &Span) -> ClsResult<Value> {
-        // TODO: resolver namespace::name
-        Err(self.err_at(format!("Namespace access no implementado: {}::{}", ns, name), span))
+        let ns_val = self.env.get(ns).cloned()
+            .ok_or_else(|| self.err_at(format!("Namespace '{}' no definido", ns), span))?;
+        match ns_val {
+            Value::Record(rec) => rec.get(name).cloned()
+                .ok_or_else(|| self.err_at(format!("'{}' no existe en '{}'", name, ns), span)),
+            Value::Object(obj) => {
+                if let Some(v) = obj.fields.get(name) {
+                    Ok(v.clone())
+                } else if let Some(m) = obj.methods.get(name) {
+                    Ok(Value::Fun(m.clone()))
+                } else {
+                    Err(self.err_at(format!("'{}' no existe en '{}'", name, ns), span))
+                }
+            }
+            other => Err(self.err_at(format!("'{}' no es un namespace/modulo", ns), span)),
+        }
     }
 }
