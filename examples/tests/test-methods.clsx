@@ -1,0 +1,60 @@
+function main(args: String[]) -> int {
+    print("=== String ===");
+    var s = "  Hola Mundo  ";
+    print("upper:", s.upper());
+    print("lower:", s.lower());
+    print("trim:", s.trim());
+    print("contains Mundo:", s.contains("Mundo"));
+    print("startsWith:", s.trim().startsWith("Hola"));
+    print("endsWith:", s.trim().endsWith("Mundo"));
+    print("length:", s.length);
+    print("isEmpty:", s.isEmpty());
+    print("s inmutable:", s.length);
+
+    print("=== Array (mutacion in-place) ===");
+    var arr = [3, 1, 2];
+    arr.push(4);
+    print("push:", arr);
+    arr.unshift(0);
+    print("unshift:", arr);
+    arr.pop();
+    print("pop:", arr);
+    arr.shift();
+    print("shift:", arr);
+    arr.reverse();
+    print("reverse:", arr);
+    print("length:", arr.length);
+    print("indexOf(3):", arr.indexOf(3));
+    print("includes(9):", arr.includes(9));
+    print("join:", arr.join("-"));
+    print("join sep:", arr.join("::"));
+
+    print("=== Tuple (inmutable) ===");
+    var t = (10, 20, 30);
+    print("tuple:", t);
+    print("length:", t.length);
+    print("t[1]:", t[1]);
+    print("join:", t.join("+"));
+    try {
+        t[0] = 99;
+        print("ERROR: tupla mutable");
+    } catch (e) {
+        print("tupla inmutable (ok)");
+    }
+
+    print("=== Record ===");
+    var r = { a: 1, b: 2, c: 3 };
+    print("length:", r.length);
+    print("keys:", r.keys());
+    print("values:", r.values());
+    print("has b:", r.has("b"));
+    print("has z:", r.has("z"));
+
+    print("=== Number ===");
+    print("int toString:", (42).toString());
+    print("float toString:", (3.14).toString());
+    print("abs int:", (-7).abs());
+    print("abs float:", (-2.5).abs());
+
+    return 0;
+};

@@ -192,6 +192,7 @@ fn statement_span(stmt: &Statement) -> Span {
             Expression::MemberAccess(m) => m.span,
             Expression::Index(i) => i.span,
             Expression::Array(a) => a.span,
+            Expression::Tuple(t) => t.span,
             Expression::Record(r) => r.span,
             Expression::ArrowFunction(a) => a.span,
             Expression::Conditional(c) => c.span,

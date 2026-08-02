@@ -233,6 +233,11 @@ impl NameResolver {
                     self.resolve_expression(elem)?;
                 }
             }
+            Expression::Tuple(tup) => {
+                for elem in &tup.elements {
+                    self.resolve_expression(elem)?;
+                }
+            }
             Expression::Record(rec) => {
                 for (_, value) in &rec.entries {
                     self.resolve_expression(value)?;

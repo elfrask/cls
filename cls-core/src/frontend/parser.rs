@@ -1555,10 +1555,32 @@ impl Parser {
                             .map_or(false, |t| matches!(&t.token, Token::Operator(Operator::Arrow)));
                 if is_arrow { return self.parse_arrow_function(); }
                 
-                // Paréntesis
-                let expr = self.parse_expression()?;
-                self.expect_symbol(Symbol::RParen)?;
-                Ok(Expression::Parenthesized(Box::new(expr), self.span()))
+                // Tupla vacía: ()
+                if self.consume_symbol(Symbol::RParen) {
+                    return Ok(Expression::Tuple(TupleExpr {
+                        elements: Vec::new(),
+                        span: self.span(),
+                    }));
+                }
+                // Paréntesis o tupla: (a) | (a, b, c)
+                let first = self.parse_expression()?;
+                if self.consume_symbol(Symbol::Comma) {
+                    let mut elements = vec![first];
+                    loop {
+                        elements.push(self.parse_expression()?);
+                        if !self.consume_symbol(Symbol::Comma) {
+                            break;
+                        }
+                    }
+                    self.expect_symbol(Symbol::RParen)?;
+                    Ok(Expression::Tuple(TupleExpr {
+                        elements,
+                        span: self.span(),
+                    }))
+                } else {
+                    self.expect_symbol(Symbol::RParen)?;
+                    Ok(Expression::Parenthesized(Box::new(first), self.span()))
+                }
             }
             Token::Symbol(Symbol::LBracket) => {
                 self.advance();
