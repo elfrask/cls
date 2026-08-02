@@ -67,6 +67,9 @@ pub struct VarDecl {
     /// Variable estática (miembro de clase static)
     #[serde(default)]
     pub is_static: bool,
+    /// Variable de solo lectura: escritura solo interna (readonly)
+    #[serde(default)]
+    pub is_readonly: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -529,6 +532,7 @@ pub enum TypeKind {
 pub enum Visibility {
     Public,
     Private,
+    Protected,
     Export,
     Default,
 }

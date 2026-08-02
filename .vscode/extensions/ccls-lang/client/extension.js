@@ -80,9 +80,10 @@ function activate(context) {
 
                 // Keywords
                 for (const kw of ['var','function','if','else','while','for','return',
-                    'import','from','as','export','structure','interface',
-                    'true','false','null','break','continue','loop','switch',
-                    'async','await']) {
+                    'import','from','as','export','structure','interface', "static", 
+                    "is", "public", "protected", "private", "let", "const", "namespace",
+                    "module", 'true','false','null','break','continue','loop','switch',
+                    'async','await', 'readonly']) {
                     items.push(new vscode.CompletionItem(kw, vscode.CompletionItemKind.Keyword));
                 }
 

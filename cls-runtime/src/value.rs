@@ -126,12 +126,18 @@ pub struct ClassDef {
     pub ctor: Option<cls_core::frontend::ast::FunctionDecl>,
     /// Métodos marcados private
     pub private_methods: std::collections::HashSet<String>,
+    /// Métodos marcados protected
+    pub protected_methods: std::collections::HashSet<String>,
     /// Métodos marcados static
     pub static_methods: std::collections::HashSet<String>,
     /// Fields marcados private
     pub private_fields: std::collections::HashSet<String>,
+    /// Fields marcados protected
+    pub protected_fields: std::collections::HashSet<String>,
     /// Fields marcados static (viven en el ClassDef, no en la instancia)
     pub static_fields: std::collections::HashSet<String>,
+    /// Fields readonly (escritura solo interna)
+    pub readonly_fields: std::collections::HashSet<String>,
 }
 
 /// Instancia de una clase en runtime
@@ -144,8 +150,14 @@ pub struct ClassInstance {
     pub private_fields: std::collections::HashSet<String>,
     /// Métodos marcados private (desde ClassDef)
     pub private_methods: std::collections::HashSet<String>,
+    /// Fields marcados protected (desde ClassDef)
+    pub protected_fields: std::collections::HashSet<String>,
+    /// Métodos marcados protected (desde ClassDef)
+    pub protected_methods: std::collections::HashSet<String>,
     /// Métodos marcados static (desde ClassDef)
     pub static_methods: std::collections::HashSet<String>,
+    /// Fields readonly (escritura solo interna)
+    pub readonly_fields: std::collections::HashSet<String>,
 }
 
 impl PartialEq for ClassDef {
