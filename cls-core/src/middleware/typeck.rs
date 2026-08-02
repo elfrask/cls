@@ -19,6 +19,7 @@ pub struct TypeChecker {
     scopes: Vec<HashMap<String, Type>>,
     current_return_type: Option<Type>,
     interfaces: HashMap<String, InterfaceInfo>,
+    enums: std::collections::HashSet<String>,
 }
 
 impl TypeChecker {
@@ -29,6 +30,7 @@ impl TypeChecker {
             scopes: vec![HashMap::new()],
             current_return_type: None,
             interfaces: HashMap::new(),
+            enums: std::collections::HashSet::new(),
         };
         // Registrar funciones built-in (core intrinsics)
         tc.define("print", Type::Fun(vec![Type::Any], Box::new(Type::Void)));
@@ -156,6 +158,11 @@ impl TypeChecker {
             }
             Statement::TypeAlias(t) => {
                 self.check_type_alias(t);
+                Type::Void
+            }
+            Statement::EnumDecl(e) => {
+                self.define(&e.name, Type::Named(e.name.clone(), vec![]));
+                self.enums.insert(e.name.clone());
                 Type::Void
             }
             Statement::ModuleDecl(m) => {
@@ -516,7 +523,9 @@ impl TypeChecker {
 
         match callee_type {
             Type::Fun(params, ret) => {
-                if self.config.strict && params.len() != call.args.len() {
+                // print es variádico; no validar arity
+                let is_print = matches!(&*call.callee, Expression::Identifier(n, _) if n == "print");
+                if self.config.strict && !is_print && params.len() != call.args.len() {
                     self.warn(
                         &format!(
                             "Función espera {} args, recibió {}",
@@ -582,8 +591,15 @@ impl TypeChecker {
     }
 
     fn check_member_access(&mut self, member: &MemberAccessExpr) -> Type {
-        self.check_expression(&member.object);
-        Type::Any // No podemos saber el tipo del miembro en tiempo de compilaciÃ³n
+        let obj_type = self.check_expression(&member.object);
+        // Color.Rojo → el tipo del enum (si member.object es un nombre de enum)
+        if let Expression::Identifier(name, _) = &*member.object {
+            if self.enums.contains(name) {
+                return Type::Named(name.clone(), vec![]);
+            }
+        }
+        let _ = obj_type;
+        Type::Any // No podemos saber el tipo del miembro en tiempo de compilación
     }
 
     fn check_index(&mut self, idx: &IndexExpr) -> Type {

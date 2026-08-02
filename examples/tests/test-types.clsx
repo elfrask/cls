@@ -46,5 +46,6 @@ function main(args: String[]) -> int {
     t = (
         <Div title="hola mundo" click={() -> { print("click") }}/>
     );
+    
     return 0;
 };

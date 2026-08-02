@@ -140,6 +140,27 @@ pub struct ClassDef {
     pub readonly_fields: std::collections::HashSet<String>,
 }
 
+/// Definición de un enum (variantes constantes con identidad)
+#[derive(Debug, Clone)]
+pub struct EnumDef {
+    pub name: String,
+    pub variants: Vec<String>,
+}
+
+impl PartialEq for EnumDef {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+/// Valor de una variante de enum (índice = los "1-2 bytes" en nativo)
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumValue {
+    pub def_name: String,
+    pub variant: String,
+    pub index: u16,
+}
+
 /// Instancia de una clase en runtime
 #[derive(Clone)]
 pub struct ClassInstance {
@@ -204,6 +225,8 @@ pub enum Value {
     Promise(Promise),
     Class(Box<ClassDef>),
     Object(Box<ClassInstance>),
+    EnumDef(Box<EnumDef>),
+    Enum(Box<EnumValue>),
 
     // Tipos especiales
     Unknown,
@@ -230,6 +253,8 @@ impl Value {
             Value::Promise(_) => "Promise",
             Value::Class(_) => "Class",
             Value::Object(_) => "Object",  // nombre real via to_string()
+            Value::EnumDef(_) => "Enum",
+            Value::Enum(_) => "Enum",
             Value::Unknown => "Unknown",
             Value::Cmx(_) => "Cmx",
         }
@@ -249,6 +274,8 @@ impl Value {
             Value::Promise(_) => true,
             Value::Class(_) => true,
             Value::Object(_) => true,
+            Value::EnumDef(_) => true,
+            Value::Enum(_) => true,
             _ => true,
         }
     }
@@ -292,6 +319,8 @@ impl Value {
                 format!("<{} {{{}}}>", o.class_name, fields.join(", "))
             }
             Value::Unknown => "unknown".to_string(),
+            Value::EnumDef(e) => format!("<enum {}>", e.name),
+            Value::Enum(e) => e.variant.clone(),
             Value::Cmx(cmx) => {
                 let tag_str = cmx.tag.to_string();
                 let props_str = if cmx.props.is_empty() {

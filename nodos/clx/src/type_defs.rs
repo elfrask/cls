@@ -26,6 +26,7 @@ pub enum MemberKind {
     Module,
     Namespace,
     Type,
+    Enum,
 }
 
 /// Representa un módulo de tipos completo
@@ -93,6 +94,9 @@ fn extract_module(module: &Module, name: &str, source: &str) -> TypeModule {
             }
             Statement::TypeAlias(t) => {
                 type_mod.members.push(extract_type_alias_member(t, source));
+            }
+            Statement::EnumDecl(e) => {
+                type_mod.members.push(extract_enum_member(e, source));
             }
             Statement::ModuleDecl(md) => {
                 type_mod.members.push(extract_container_member(&md.name, MemberKind::Module, &md.body, source));
@@ -168,6 +172,17 @@ fn extract_type_alias_member(t: &TypeAliasDecl, source: &str) -> TypeMember {
     }
 }
 
+fn extract_enum_member(e: &EnumDecl, source: &str) -> TypeMember {
+    TypeMember {
+        name: e.name.clone(),
+        kind: MemberKind::Enum,
+        signature: format!("enum {} (variants: {})", e.name, e.variants.join(", ")),
+        return_type: None,
+        params: vec![],
+        doc: extract_doc_before(source, e.span.start_line, e.span.start_col),
+    }
+}
+
 fn extract_container_member(name: &str, kind: MemberKind, body: &[Statement], source: &str) -> TypeMember {
     let members: Vec<String> = body.iter().filter_map(|s| match s {
         Statement::FunctionDecl(f) => Some(f.name.clone()),
@@ -230,6 +245,7 @@ fn statement_span(stmt: &Statement) -> Span {
         Statement::StructureDecl(s) => s.span,
         Statement::InterfaceDecl(s) => s.span,
         Statement::TypeAlias(s) => s.span,
+        Statement::EnumDecl(s) => s.span,
         Statement::ModuleDecl(s) => s.span,
         Statement::NamespaceDecl(s) => s.span,
         Statement::Cmx(s) => s.span,

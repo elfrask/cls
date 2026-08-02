@@ -440,6 +440,7 @@ fn completion_kind_for(k: &type_defs::MemberKind) -> CompletionItemKind {
         Module => CompletionItemKind::MODULE,
         Namespace => CompletionItemKind::MODULE,
         Type => CompletionItemKind::TYPE_PARAMETER,
+        Enum => CompletionItemKind::ENUM,
     }
 }
 
