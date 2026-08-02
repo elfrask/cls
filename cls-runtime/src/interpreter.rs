@@ -562,17 +562,22 @@ impl Interpreter {
         let mut field_defaults: HashMap<String, Option<Value>> = HashMap::new();
         let mut ctor: Option<FunctionDecl> = None;
         let mut private_methods = std::collections::HashSet::new();
+        let mut protected_methods = std::collections::HashSet::new();
         let mut static_methods = std::collections::HashSet::new();
         let mut private_fields = std::collections::HashSet::new();
+        let mut protected_fields = std::collections::HashSet::new();
         let mut static_fields = std::collections::HashSet::new();
+        let mut readonly_fields = std::collections::HashSet::new();
 
         for member in &class.body {
             match member {
                 ClassMember::Method(f) => {
                     let fun = FunValue::new_user(&f.name, f.params.clone(), f.body.clone());
                     methods.insert(f.name.clone(), fun);
-                    if f.visibility == Visibility::Private {
-                        private_methods.insert(f.name.clone());
+                    match f.visibility {
+                        Visibility::Private => { private_methods.insert(f.name.clone()); }
+                        Visibility::Protected => { protected_methods.insert(f.name.clone()); }
+                        _ => {}
                     }
                     if f.modifiers.iter().any(|m| *m == FunctionModifier::Static) {
                         static_methods.insert(f.name.clone());
@@ -585,11 +590,16 @@ impl Interpreter {
                         None
                     };
                     field_defaults.insert(v.name.clone(), default);
-                    if v.visibility == Visibility::Private {
-                        private_fields.insert(v.name.clone());
+                    match v.visibility {
+                        Visibility::Private => { private_fields.insert(v.name.clone()); }
+                        Visibility::Protected => { protected_fields.insert(v.name.clone()); }
+                        _ => {}
                     }
                     if v.is_static {
                         static_fields.insert(v.name.clone());
+                    }
+                    if v.is_readonly {
+                        readonly_fields.insert(v.name.clone());
                     }
                 }
                 ClassMember::Constructor(f) => {
@@ -606,9 +616,12 @@ impl Interpreter {
             field_defaults,
             ctor,
             private_methods,
+            protected_methods,
             static_methods,
             private_fields,
+            protected_fields,
             static_fields,
+            readonly_fields,
         };
 
         // Herencia: copiar métodos, fields y visibilidad del padre (si ya está registrado)
@@ -623,9 +636,12 @@ impl Interpreter {
                     def.field_defaults.entry(k.clone()).or_insert_with(|| v.clone());
                 }
                 def.private_methods.extend(parent.private_methods.iter().cloned());
+                def.protected_methods.extend(parent.protected_methods.iter().cloned());
                 def.static_methods.extend(parent.static_methods.iter().cloned());
                 def.private_fields.extend(parent.private_fields.iter().cloned());
+                def.protected_fields.extend(parent.protected_fields.iter().cloned());
                 def.static_fields.extend(parent.static_fields.iter().cloned());
+                def.readonly_fields.extend(parent.readonly_fields.iter().cloned());
                 if def.ctor.is_none() {
                     def.ctor = parent.ctor.clone();
                 }
@@ -936,11 +952,31 @@ impl Interpreter {
         if let Expression::MemberAccess(member) = &*call.callee {
             if let Expression::Identifier(obj_name, _) = &*member.object {
                 if obj_name == "super" {
-                    let method = self.evaluate_super_access(&member.member, &call.span)?;
                     let mut args = Vec::new();
                     for arg in &call.args {
                         args.push(self.evaluate_expression(arg)?);
                     }
+                    // super.main(...) → constructor del padre
+                    if member.member == "main" {
+                        let frame = self.self_stack.last().cloned()
+                            .ok_or_else(|| self.err_at("'super.main' usado fuera de un método de clase", &call.span))?;
+                        let obj_class = match &frame.obj {
+                            Value::Object(o) => o.class_name.clone(),
+                            _ => return Err(self.err_at("'super.main' requiere un objeto de clase", &call.span)),
+                        };
+                        let parent_name = self.classes.get(&obj_class)
+                            .and_then(|cd| cd.ancestors.first())
+                            .cloned()
+                            .ok_or_else(|| self.err_at(format!("La clase '{}' no tiene clase padre", obj_class), &call.span))?;
+                        let parent = self.classes.get(&parent_name).cloned()
+                            .ok_or_else(|| self.err_at(format!("Clase padre '{}' no encontrada", parent_name), &call.span))?;
+                        if let Some(ctor) = parent.ctor {
+                            self.run_async_body(&ctor.body, &ctor.params, &args)?;
+                            return Ok(Value::Void);
+                        }
+                        return Err(self.err_at(format!("La clase padre '{}' no tiene constructor", parent_name), &call.span));
+                    }
+                    let method = self.evaluate_super_access(&member.member, &call.span)?;
                     return self.call_function_value(method, args, &call.span);
                 }
             }
@@ -957,6 +993,9 @@ impl Interpreter {
                     let is_internal = matches!(&*member.object, Expression::Identifier(n, _) if n == "me" || n == "super");
                     if obj_val.private_methods.contains(&member.member) && !is_internal {
                         return Err(self.err_at(format!("El método '{}' es private y no se puede acceder desde fuera", member.member), &call.span));
+                    }
+                    if obj_val.protected_methods.contains(&member.member) && !is_internal && !self.can_access_protected(&obj_val.class_name) {
+                        return Err(self.err_at(format!("El método '{}' es protected: solo accesible desde la clase o sus subclases", member.member), &call.span));
                     }
                     let (result, mutated) = self.call_method(obj_val, &member.member, args, &call.span)?;
                     // Re-insertar el objeto mutado en el env si es una variable
@@ -1006,7 +1045,10 @@ impl Interpreter {
             methods: def.methods.clone(),
             private_fields: def.private_fields.clone(),
             private_methods: def.private_methods.clone(),
+            protected_fields: def.protected_fields.clone(),
+            protected_methods: def.protected_methods.clone(),
             static_methods: def.static_methods.clone(),
+            readonly_fields: def.readonly_fields.clone(),
         };
 
         if let Some(ctor) = &def.ctor {
@@ -1362,12 +1404,18 @@ impl Interpreter {
                     if obj.private_fields.contains(&member.member) && !is_internal {
                         return Err(self.err_at(format!("El miembro '{}' es private y no se puede acceder desde fuera", member.member), &member.span));
                     }
+                    if obj.protected_fields.contains(&member.member) && !is_internal && !self.can_access_protected(&obj.class_name) {
+                        return Err(self.err_at(format!("El miembro '{}' es protected: solo accesible desde la clase o sus subclases", member.member), &member.span));
+                    }
                     return Ok(v.clone());
                 }
                 // 2. method
                 if let Some(m) = obj.methods.get(&member.member) {
                     if obj.private_methods.contains(&member.member) && !is_internal {
                         return Err(self.err_at(format!("El método '{}' es private y no se puede acceder desde fuera", member.member), &member.span));
+                    }
+                    if obj.protected_methods.contains(&member.member) && !is_internal && !self.can_access_protected(&obj.class_name) {
+                        return Err(self.err_at(format!("El método '{}' es protected: solo accesible desde la clase o sus subclases", member.member), &member.span));
                     }
                     return Ok(Value::Fun(m.clone()));
                 }
@@ -1424,6 +1472,25 @@ impl Interpreter {
             }
         }
         Err(self.err_at(format!("Miembro '{}' no encontrado en la clase padre '{}'", member, parent_name), span))
+    }
+
+    /// ¿Puede el código actual acceder a miembros protected de `obj_class`?
+    /// Permitido si se ejecuta desde la misma clase o desde una subclase.
+    fn can_access_protected(&self, obj_class: &str) -> bool {
+        let current_class = self.self_stack.last().and_then(|f| f.current_class.clone());
+        match current_class {
+            None => false,
+            Some(cc) => {
+                if cc == obj_class {
+                    true
+                } else {
+                    // ¿cc es subclase de obj_class?
+                    self.classes.get(&cc)
+                        .map(|cd| cd.ancestors.iter().any(|a| a == obj_class))
+                        .unwrap_or(false)
+                }
+            }
+        }
     }
 
     fn evaluate_index(&mut self, idx: &IndexExpr) -> ClsResult<Value> {
@@ -1557,6 +1624,12 @@ impl Interpreter {
                         Ok(())
                     }
                     Value::Object(mut obj) => {
+                        if obj.readonly_fields.contains(&member.member) {
+                            let is_internal = matches!(&*member.object, Expression::Identifier(n, _) if n == "me" || n == "super");
+                            if !is_internal {
+                                return Err(self.err_at(format!("El campo '{}' es readonly: solo se puede escribir desde dentro de la clase", member.member), span));
+                            }
+                        }
                         obj.fields.insert(member.member.clone(), value);
                         if let Expression::Identifier(name, _) = &*member.object {
                             self.env.set(name, Value::Object(obj));

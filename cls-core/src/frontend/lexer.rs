@@ -242,6 +242,8 @@ impl Lexer {
             "namespace" => Token::Keyword(Keyword::Namespace),
             "public" => Token::Keyword(Keyword::Public),
             "private" => Token::Keyword(Keyword::Private),
+            "protected" => Token::Keyword(Keyword::Protected),
+            "readonly" => Token::Keyword(Keyword::Readonly),
             "static" => Token::Keyword(Keyword::Static),
             "extends" => Token::Keyword(Keyword::Extends),
             "is" => Token::Keyword(Keyword::Is),

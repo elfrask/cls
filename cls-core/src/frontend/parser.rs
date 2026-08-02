@@ -180,6 +180,7 @@ impl Parser {
             visibility: Visibility::Default,
             span: self.span(),
             is_static: false,
+            is_readonly: false,
         }))
     }
 
@@ -208,6 +209,7 @@ impl Parser {
             visibility: Visibility::Default,
             span: self.span(),
             is_static: false,
+            is_readonly: false,
         }))
     }
 
@@ -727,8 +729,11 @@ impl Parser {
         self.expect_keyword(Keyword::Class)?;
         let name = self.expect_identifier()?;
         
-        // Herencia: `extends Base` o `(Base)` (alias)
-        let extends = if self.check_keyword(Keyword::Extends) {
+        // Herencia: `class Hijo: Padre` (principal), `extends Base` o `(Base)` (alias)
+        let extends = if self.consume_operator(Operator::Colon) {
+            let parent = self.expect_identifier()?;
+            Some(parent)
+        } else if self.check_keyword(Keyword::Extends) {
             self.advance();
             let parent = self.expect_identifier()?;
             Some(parent)
@@ -765,15 +770,19 @@ impl Parser {
     }
 
     fn parse_class_member(&mut self) -> ClsResult<ClassMember> {
-        // Detectar modificadores: public / private / static
+        // Detectar modificadores: public / private / protected / static / readonly
         let mut is_public = false;
         let mut is_private = false;
+        let mut is_protected = false;
         let mut is_static = false;
+        let mut is_readonly = false;
         loop {
             match self.current_token {
                 Token::Keyword(Keyword::Public) => { self.advance(); is_public = true; }
                 Token::Keyword(Keyword::Private) => { self.advance(); is_private = true; }
+                Token::Keyword(Keyword::Protected) => { self.advance(); is_protected = true; }
                 Token::Keyword(Keyword::Static) => { self.advance(); is_static = true; }
+                Token::Keyword(Keyword::Readonly) => { self.advance(); is_readonly = true; }
                 _ => break,
             }
         }
@@ -786,6 +795,7 @@ impl Parser {
             if let Statement::FunctionDecl(ref mut func) = stmt {
                 if is_public { func.visibility = Visibility::Public; }
                 if is_private { func.visibility = Visibility::Private; }
+                if is_protected { func.visibility = Visibility::Protected; }
                 if is_static { func.modifiers.push(FunctionModifier::Static); }
             }
             match stmt {
@@ -803,7 +813,9 @@ impl Parser {
             if let Statement::VarDecl(ref mut var) = stmt {
                 if is_public { var.visibility = Visibility::Public; }
                 if is_private { var.visibility = Visibility::Private; }
+                if is_protected { var.visibility = Visibility::Protected; }
                 var.is_static = is_static;
+                var.is_readonly = is_readonly;
             }
             match stmt {
                 Statement::VarDecl(var) => Ok(ClassMember::Property(var)),

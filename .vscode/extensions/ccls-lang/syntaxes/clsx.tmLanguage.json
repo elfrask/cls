@@ -134,7 +134,7 @@
         },
         {
           "name": "keyword.structure.ccls",
-          "match": "\\b(class|structure|interface|module|namespace|extends)\\b"
+          "match": "\\b(class|structure|interface|module|namespace)\\b"
         },
         {
           "name": "keyword.import.ccls",
@@ -142,7 +142,7 @@
         },
         {
           "name": "keyword.modifier.ccls",
-          "match": "\\b(public|private|static|global|async|await|sync|macro)\\b"
+          "match": "\\b(public|private|static|global|async|await|protected|readonly|sync|macro)\\b"
         },
         {
           "name": "keyword.self.ccls",
