@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -183,30 +183,49 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
         }
 
         let mut items: Vec<CompletionItem> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
 
-        // Scope symbols: funciones y variables del documento
+        // Scope symbols: funciones y variables del documento actual + otros documentos abiertos
+        let docs = self.documents.lock().await;
+        for (doc_uri, doc_source) in docs.iter() {
+            if doc_uri == &uri { continue; }
+            for (name, kind) in &scope_symbols(doc_source) {
+                if seen.insert(name.clone()) {
+                    let icon = match kind { SymKind::Function => CompletionItemKind::FUNCTION, _ => CompletionItemKind::VARIABLE };
+                    items.push(CompletionItem { label: name.clone(), kind: Some(icon), detail: Some("open-document".into()), ..Default::default() });
+                }
+            }
+        }
         for (name, kind) in &scope_symbols(&source) {
-            let icon = match kind { SymKind::Function => CompletionItemKind::FUNCTION, _ => CompletionItemKind::VARIABLE };
-            items.push(CompletionItem { label: name.clone(), kind: Some(icon), detail: Some("scope".into()), ..Default::default() });
+            if seen.insert(name.clone()) {
+                let icon = match kind { SymKind::Function => CompletionItemKind::FUNCTION, _ => CompletionItemKind::VARIABLE };
+                items.push(CompletionItem { label: name.clone(), kind: Some(icon), detail: Some("scope".into()), ..Default::default() });
+            }
         }
 
         // Keywords
         for kw in &["var", "function", "if", "else", "while", "for", "return", "import", "from", "as", "export", "structure", "interface", "true", "false", "null", "break", "continue", "loop", "switch"] {
-            items.push(CompletionItem { label: kw.to_string(), kind: Some(CompletionItemKind::KEYWORD), ..Default::default() });
+            if seen.insert(kw.to_string()) {
+                items.push(CompletionItem { label: kw.to_string(), kind: Some(CompletionItemKind::KEYWORD), ..Default::default() });
+            }
         }
 
         // Intrinsics desde core.clsi
         if let Some(core) = defs.get("core") {
             for m in &core.members {
                 let kind = match m.kind { type_defs::MemberKind::Function => CompletionItemKind::FUNCTION, _ => CompletionItemKind::VARIABLE };
-                items.push(CompletionItem { label: m.name.clone(), kind: Some(kind), detail: Some(m.signature.clone()), documentation: format_doc(&m.doc), ..Default::default() });
+                if seen.insert(m.name.clone()) {
+                    items.push(CompletionItem { label: m.name.clone(), kind: Some(kind), detail: Some(m.signature.clone()), documentation: format_doc(&m.doc), ..Default::default() });
+                }
             }
         }
 
         // Modulos
         for (name, tm) in &defs {
             if name == "core" { continue; }
-            items.push(CompletionItem { label: name.clone(), kind: Some(CompletionItemKind::MODULE), detail: Some(tm.description.clone()), ..Default::default() });
+            if seen.insert(name.clone()) {
+                items.push(CompletionItem { label: name.clone(), kind: Some(CompletionItemKind::MODULE), detail: Some(tm.description.clone()), ..Default::default() });
+            }
         }
 
         // Workspace files
@@ -214,7 +233,7 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
             for path in Self::scan_workspace_clsx(&root) {
                 let p = Path::new(&path);
                 if let Some(name) = p.file_stem().and_then(|s| s.to_str()) {
-                    if !name.is_empty() {
+                    if !name.is_empty() && seen.insert(name.to_string()) {
                         items.push(CompletionItem { label: name.to_string(), kind: Some(CompletionItemKind::FILE), detail: Some(format!("workspace/{}", path)), ..Default::default() });
                     }
                 }

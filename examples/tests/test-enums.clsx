@@ -33,7 +33,13 @@ function main(args: String[]) -> int {
     print("=== iteracion ===");
     for each v in (Color) {
         print("variante:", v);
-    }
+    };
+    var e = (
+        <Div attr="valor" k={() -> {print("")}}>
+            children
+            <Div />
+        </Div>
+    )
 
     print("=== iteracion con indice ===");
     for each v and i in (Estado) {

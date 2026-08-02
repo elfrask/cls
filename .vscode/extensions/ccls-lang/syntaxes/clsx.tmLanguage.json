@@ -207,8 +207,6 @@
           },
           "patterns": [
             { "include": "#type-annotations" },
-            { "include": "#generic" },
-            { "include": "#types" },
             { "include": "#strings" },
             { "include": "#numbers" },
             { "include": "$self" }
@@ -384,7 +382,7 @@
           "endCaptures": {
             "1": { "name": "punctuation.definition.tag.selfclose.ccls" },
             "2": { "name": "punctuation.definition.tag.end.ccls" },
-            "4": { "name": "entity.name.tag.ccls" }
+            "3": { "name": "entity.name.tag.ccls" }
           },
           "patterns": [
             { "include": "#cmx-attributes" },
