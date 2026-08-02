@@ -82,7 +82,7 @@ function activate(context) {
                 for (const kw of ['var','function','if','else','while','for','return',
                     'import','from','as','export','structure','interface', "static", 
                     "is", "public", "protected", "private", "let", "const", "namespace",
-                    "module", 'true','false','null','break','continue','loop','switch',
+                    "module", 'true','false','null','break','continue','loop','switch', "alias",
                     'async','await', 'readonly']) {
                     items.push(new vscode.CompletionItem(kw, vscode.CompletionItemKind.Keyword));
                 }

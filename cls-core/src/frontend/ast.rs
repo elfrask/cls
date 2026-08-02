@@ -560,6 +560,7 @@ pub enum TypeKind {
     Fun(Vec<TypeAnnotation>, Box<TypeAnnotation>),     // (Int, String) -> Bool
     Literal(LiteralKind),              // "d", 5, true (literal type)
     Access(Box<TypeAnnotation>, TypeAccess), // T["key"] | T[0]
+    Phantom(Box<TypeAnnotation>),      // !T — param que no participa en el tipo
 
     // Tipo nombrado (definido por usuario)
     Named(String, Vec<TypeAnnotation>), // Persona, Array<String>

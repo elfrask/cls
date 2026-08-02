@@ -54,8 +54,29 @@ Rust hace esto (`x86_64`, `arm`, `wasm32` con el mismo frontend). CLS debería i
 | `bool` | `i1` |
 | `String` | `{ i8*, i64 }` (ptr + len) |
 | `Array<T>` | `{ T*, i64, i64 }` (ptr, len, cap) |
+| `Tuple<...>` | `{ ... }` plano (sin mutadores, sin puntero extra) |
 | `structure` | `struct { ... }` (layout plano) |
 | `fn(params) -> ret` | función LLVM |
+
+## Estructuras: layout plano vs punteros
+
+Las `structure` NO usan genéricos ni inferencia (por diseño, para que el layout
+sea predecible y se compile a lo que es: un struct C).
+
+- **Campos de tipo plano** (`Int`, `Float`, `Bool`, `Char`, `String`, otra
+  `structure`, `Tuple`): van **embebidos** en el struct (offsets fijos).
+- **Campos de tipo complejo** (una clase `Object`, un `Array`, un `Record`,
+  una `Promise`): van como **punteros** a heap/arena (como C/Rust
+  `struct Foo { x: i32, obj: Box<dyn Trait> }`). La integridad de memoria se
+  preserva: el campo es una referencia, no el dato embebido.
+
+```rust
+// CLS:  structure Persona { var id: Int; var pet: Mascota; }
+// LLVM: %Persona = type { i64, %Mascota* }   // Mascota* = puntero
+```
+
+Con `--no-gc` + arena/region, los punteros de campos complejos apuntan a la
+región; los planos no requieren gestión.
 
 ## Magic methods en nativo
 
