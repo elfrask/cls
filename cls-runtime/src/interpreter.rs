@@ -457,6 +457,46 @@ impl Interpreter {
                 }
                 Ok(Value::Void)
             }
+            obj @ Value::Object(_) => {
+                // Protocolo de iteración: __iter() → array directo u objeto con __next()
+                let iterator = match self.call_magic(&obj, "__iter", vec![], &for_each.span)? {
+                    Some(it) => it,
+                    None => return Err(self.err_at(format!("Objeto no iterable (falta __iter)"), &for_each.span)),
+                };
+                // Caso 1: __iter devolvió un Array → iterar directamente
+                if let Value::Array(arr) = &iterator {
+                    for (idx, item) in arr.iter().enumerate() {
+                        self.env.push_scope();
+                        self.env.define(&for_each.item_name, item.clone());
+                        if let Some(idx_name) = &for_each.index_name {
+                            self.env.define(idx_name, Value::Int(idx as i64));
+                        }
+                        self.execute_block(&for_each.block)?;
+                        self.env.pop_scope();
+                    }
+                    return Ok(Value::Void);
+                }
+                // Caso 2: objeto iterador → __next() hasta null
+                let mut idx = 0i64;
+                loop {
+                    let next = match self.call_magic(&iterator, "__next", vec![], &for_each.span)? {
+                        Some(n) => n,
+                        None => return Err(self.err_at(format!("Iterador no válido (falta __next)"), &for_each.span)),
+                    };
+                    if matches!(next, Value::Null) {
+                        break;
+                    }
+                    self.env.push_scope();
+                    self.env.define(&for_each.item_name, next);
+                    if let Some(idx_name) = &for_each.index_name {
+                        self.env.define(idx_name, Value::Int(idx));
+                    }
+                    self.execute_block(&for_each.block)?;
+                    self.env.pop_scope();
+                    idx += 1;
+                }
+                Ok(Value::Void)
+            }
             _ => Err(self.err_at(format!("No se puede iterar sobre: {:?}", iterable), &for_each.span)),
         }
     }
@@ -800,14 +840,26 @@ impl Interpreter {
     fn evaluate_unary(&mut self, un: &UnaryExpr) -> ClsResult<Value> {
         let operand = self.evaluate_expression(&un.operand)?;
         match un.op {
-            UnaryOp::Negate => match operand {
+            UnaryOp::Negate => match &operand {
                 Value::Int(v) => Ok(Value::Int(-v)),
                 Value::Float(v) => Ok(Value::Float(-v)),
+                obj @ Value::Object(_) => {
+                    if let Some(r) = self.call_magic(obj, "__neg", vec![], &un.span)? {
+                        Ok(r)
+                    } else {
+                        Err(self.err_at(format!("No se puede negar: {:?}", operand), &un.span))
+                    }
+                }
                 _ => Err(self.err_at(format!("No se puede negar: {:?}", operand), &un.span)),
             },
             UnaryOp::Not => {
-                let val = operand.is_truthy();
-                Ok(Value::Bool(!val))
+                // __not() si el objeto lo implementa; sino truthiness
+                if let Some(r) = self.call_magic(&operand, "__not", vec![], &un.span)? {
+                    Ok(r)
+                } else {
+                    let val = operand.is_truthy();
+                    Ok(Value::Bool(!val))
+                }
             }
             UnaryOp::BitwiseNot => match operand {
                 Value::Int(v) => Ok(Value::Int(!v)),
@@ -922,14 +974,131 @@ impl Interpreter {
     fn call_method(&mut self, obj: Box<ClassInstance>, name: &str, args: Vec<Value>, span: &Span) -> ClsResult<(Value, ClassInstance)> {
         let method = obj.methods.get(name).cloned()
             .ok_or_else(|| self.err_at(format!("Método '{}' no encontrado en '{}'", name, obj.class_name), span))?;
-        let original = obj.clone();
-        self.self_stack.push(Value::Object(obj));
-        let result = self.call_function_value(Value::Fun(method), args, span);
-        let mutated = match self.self_stack.pop() {
-            Some(Value::Object(o)) => *o,
-            _ => *original,
+        let original = *obj;
+        let (result, obj_after) = self.call_method_value(Value::Object(Box::new(original.clone())), Value::Fun(method), args, span)?;
+        let mutated = match obj_after {
+            Value::Object(o) => *o,
+            _ => original,
         };
-        result.map(|v| (v, mutated))
+        Ok((result, mutated))
+    }
+
+    /// Llama un método de objeto (ya resuelto como FunValue) con `me` = objeto.
+    /// Devuelve el resultado y el objeto tras la llamada (para detectar mutación).
+    fn call_method_value(&mut self, obj: Value, method: Value, args: Vec<Value>, span: &Span) -> ClsResult<(Value, Value)> {
+        self.self_stack.push(obj);
+        let result = self.call_function_value(method, args, span);
+        let obj_after = self.self_stack.pop().unwrap_or(Value::Null);
+        result.map(|v| (v, obj_after))
+    }
+
+    /// Invoca un método mágico (`__nombre`) sobre un objeto si existe.
+    /// Devuelve None si el objeto no implementa el método (fallback por defecto).
+    fn call_magic(&mut self, obj: &Value, name: &str, args: Vec<Value>, span: &Span) -> ClsResult<Option<Value>> {
+        if let Value::Object(inst) = obj {
+            if let Some(method) = inst.methods.get(name) {
+                let (result, _) = self.call_method_value(obj.clone(), Value::Fun(method.clone()), args, span)?;
+                return Ok(Some(result));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Invoca un método mágico binario: intenta left.__op(right), luego right.__op(left)
+    fn binary_magic(&mut self, op_name: &str, left: &Value, right: &Value, span: &Span) -> ClsResult<Option<Value>> {
+        if let Some(r) = self.call_magic(left, op_name, vec![right.clone()], span)? {
+            return Ok(Some(r));
+        }
+        if let Some(r) = self.call_magic(right, op_name, vec![left.clone()], span)? {
+            return Ok(Some(r));
+        }
+        Ok(None)
+    }
+
+    /// Convierte un valor a string, invocando `__toString` si es un objeto que lo implementa.
+    fn value_to_string(&mut self, v: &Value, span: &Span) -> ClsResult<String> {
+        if let Some(s) = self.call_magic(v, "__toString", vec![], span)? {
+            return match s {
+                Value::String(s) => Ok(s),
+                other => Ok(other.to_string()),
+            };
+        }
+        Ok(v.to_string())
+    }
+
+    /// Interceptor de `toString(val)` — usa `__toString` si el objeto lo implementa.
+    fn native_to_string(&mut self, args: &[Value], span: &Span) -> ClsResult<Value> {
+        let v = args.first().unwrap_or(&Value::Null);
+        Ok(Value::String(self.value_to_string(v, span)?))
+    }
+
+    /// Interceptor de `len(val)` — usa `__len` si el objeto lo implementa.
+    fn native_len(&mut self, args: &[Value], span: &Span) -> ClsResult<Value> {
+        let v = args.first().unwrap_or(&Value::Null);
+        if let Some(l) = self.call_magic(v, "__len", vec![], span)? {
+            return Ok(l);
+        }
+        match v {
+            Value::Array(arr) => Ok(Value::Int(arr.len() as i64)),
+            Value::String(s) => Ok(Value::Int(s.len() as i64)),
+            Value::Record(r) => Ok(Value::Int(r.len() as i64)),
+            _ => Err(self.err_at(format!("len: no aplicable a {}", v.type_name()), span)),
+        }
+    }
+
+    /// Interceptor de `print(...)` — usa `__toString` por cada argumento.
+    fn native_print(&mut self, args: &[Value], span: &Span) -> ClsResult<Value> {
+        let mut out = Vec::new();
+        for a in args {
+            out.push(self.value_to_string(a, span)?);
+        }
+        println!("{}", out.join(" "));
+        Ok(Value::Void)
+    }
+
+    /// Interceptor de conversiones `int/float/bool` — usa magic methods si existen.
+    fn native_convert(&mut self, name: &str, args: &[Value], span: &Span) -> ClsResult<Value> {
+        let v = args.first().unwrap_or(&Value::Null);
+        let magic = match name {
+            "int" => "__int",
+            "float" => "__float",
+            "bool" => "__bool",
+            _ => "",
+        };
+        if !magic.is_empty() {
+            if let Some(r) = self.call_magic(v, magic, vec![], span)? {
+                return Ok(r);
+            }
+        }
+        // Fallback a comportamiento nativo
+        match name {
+            "int" => self.native_int(v, span),
+            "float" => self.native_float(v, span),
+            "bool" => Ok(Value::Bool(v.is_truthy())),
+            _ => Ok(Value::Null),
+        }
+    }
+
+    fn native_int(&mut self, v: &Value, span: &Span) -> ClsResult<Value> {
+        match v {
+            Value::Int(_) => Ok(v.clone()),
+            Value::Float(f) => Ok(Value::Int(*f as i64)),
+            Value::String(s) => s.parse::<i64>()
+                .map(Value::Int)
+                .map_err(|_| self.err_at(format!("int: no se puede convertir '{}'", s), span)),
+            _ => Err(self.err_at(format!("int: no se puede convertir {}", v.type_name()), span)),
+        }
+    }
+
+    fn native_float(&mut self, v: &Value, span: &Span) -> ClsResult<Value> {
+        match v {
+            Value::Float(_) => Ok(v.clone()),
+            Value::Int(i) => Ok(Value::Float(*i as f64)),
+            Value::String(s) => s.parse::<f64>()
+                .map(Value::Float)
+                .map_err(|_| self.err_at(format!("float: no se puede convertir '{}'", s), span)),
+            _ => Err(self.err_at(format!("float: no se puede convertir {}", v.type_name()), span)),
+        }
     }
 
     /// Ejecuta un valor de función con argumentos ya evaluados
@@ -948,7 +1117,14 @@ impl Interpreter {
         let result = match callee {
             Value::Fun(fun) => match &fun.kind {
                 crate::value::FunKind::Native { params: _, func } => {
-                    func(&args)
+                    // Interceptar intrinsics que necesitan magic methods
+                    match fun.name.as_str() {
+                        "toString" => self.native_to_string(&args, call_span),
+                        "len" => self.native_len(&args, call_span),
+                        "print" => self.native_print(&args, call_span),
+                        "int" | "float" | "bool" => self.native_convert(&fun.name, &args, call_span),
+                        _ => func(&args),
+                    }
                 }
                 crate::value::FunKind::User { params, body, closure } => {
                     if is_async {
@@ -986,6 +1162,15 @@ impl Interpreter {
                 }
             },
             Value::Class(def) => self.instantiate_class(def, args),
+            Value::Object(obj) => {
+                if let Some(method) = obj.methods.get("__call") {
+                    let method_val = Value::Fun(method.clone());
+                    let (result, _) = self.call_method_value(Value::Object(obj), method_val, args, call_span)?;
+                    Ok(result)
+                } else {
+                    Err(self.err_at(format!("El objeto de tipo '{}' no es callable (falta __call)", obj.class_name), call_span))
+                }
+            }
             _ => Err(self.err_at("No se puede llamar", call_span)),
         };
 
@@ -1140,6 +1325,13 @@ impl Interpreter {
                     self.err_at(format!("Key no encontrada: {}", key), &idx.span)
                 })
             }
+            (obj @ Value::Object(_), index) => {
+                // Magic method __get(index)
+                if let Some(r) = self.call_magic(&obj, "__get", vec![index], &idx.span)? {
+                    return Ok(r);
+                }
+                Err(self.err_at("Indexado no soportado en objeto (falta __get)", &idx.span))
+            }
             _ => Err(self.err_at("Indexado no soportado", &idx.span)),
         }
     }
@@ -1279,6 +1471,13 @@ impl Interpreter {
                         }
                         Ok(())
                     }
+                    (obj @ Value::Object(_), index) => {
+                        // Magic method __set(index, value)
+                        if self.call_magic(&obj, "__set", vec![index, value], span)?.is_some() {
+                            return Ok(());
+                        }
+                        Err(self.err_at("Indexado no soportado en objeto (falta __set)", span))
+                    }
                     _ => Err(self.err_at("Indexado no soportado para asignación", span)),
                 }
             }
@@ -1334,6 +1533,14 @@ impl Interpreter {
                 if *b == 0 { Err(self.err_at("Módulo por cero", span)) }
                 else { Ok(Value::Int(a % b)) }
             }
+            // Módulo con float (remanente, no Objects)
+            (Operator::Percent, a, b) if !is_object(a) && !is_object(b) => match (as_f64(a), as_f64(b)) {
+                (Some(x), Some(y)) => {
+                    if y == 0.0 { Err(self.err_at("Módulo por cero", span)) }
+                    else { Ok(Value::Float(x % y)) }
+                }
+                _ => unsupported_span(&op, a, b, span),
+            },
             (Operator::StarStar, a, b) => match (as_f64(a), as_f64(b)) {
                 (Some(x), Some(y)) => Ok(Value::Float(x.powf(y))),
                 _ => unsupported_span(&op, a, b, span),
@@ -1346,14 +1553,56 @@ impl Interpreter {
             (Operator::LessEqual, Value::String(a), Value::String(b)) => Ok(Value::Bool(a <= b)),
             (Operator::GreaterThan, Value::String(a), Value::String(b)) => Ok(Value::Bool(a > b)),
             (Operator::GreaterEqual, Value::String(a), Value::String(b)) => Ok(Value::Bool(a >= b)),
-            // Comparación numérica (Int/Float mixto)
-            (Operator::LessThan, a, b) => cmp_num(a, b, |x, y| x < y),
-            (Operator::LessEqual, a, b) => cmp_num(a, b, |x, y| x <= y),
-            (Operator::GreaterThan, a, b) => cmp_num(a, b, |x, y| x > y),
-            (Operator::GreaterEqual, a, b) => cmp_num(a, b, |x, y| x >= y),
-            (Operator::StrictEqual, a, b) => Ok(Value::Bool(a == b)),
-            (Operator::NotEqual, a, b) => Ok(Value::Bool(a != b)),
-            _ => unsupported_span(&op, &left, &right, span),
+            // Comparación numérica (Int/Float mixto, no Objects)
+            (Operator::LessThan, a, b) if !is_object(a) && !is_object(b) => cmp_num(a, b, |x, y| x < y),
+            (Operator::LessEqual, a, b) if !is_object(a) && !is_object(b) => cmp_num(a, b, |x, y| x <= y),
+            (Operator::GreaterThan, a, b) if !is_object(a) && !is_object(b) => cmp_num(a, b, |x, y| x > y),
+            (Operator::GreaterEqual, a, b) if !is_object(a) && !is_object(b) => cmp_num(a, b, |x, y| x >= y),
+            // Igualdad (no Objects — van al catch-all para __equals)
+            (Operator::StrictEqual, a, b) if !is_object(a) && !is_object(b) => Ok(Value::Bool(a == b)),
+            (Operator::NotEqual, a, b) if !is_object(a) && !is_object(b) => Ok(Value::Bool(a != b)),
+            _ => {
+                // Magic methods: comparación e igualdad si hay objetos
+                if matches!(&left, Value::Object(_)) || matches!(&right, Value::Object(_)) {
+                    match op {
+                        Operator::StrictEqual | Operator::NotEqual => {
+                            if let Some(r) = self.binary_magic("__equals", &left, &right, span)? {
+                                let eq = r.is_truthy();
+                                return Ok(Value::Bool(if op == Operator::StrictEqual { eq } else { !eq }));
+                            }
+                        }
+                        Operator::LessThan | Operator::LessEqual | Operator::GreaterThan | Operator::GreaterEqual => {
+                            if let Some(r) = self.binary_magic("__compare", &left, &right, span)? {
+                                let c = match r { Value::Int(i) => i, _ => 0 };
+                                let res = match op {
+                                    Operator::LessThan => c < 0,
+                                    Operator::LessEqual => c <= 0,
+                                    Operator::GreaterThan => c > 0,
+                                    _ => c >= 0,
+                                };
+                                return Ok(Value::Bool(res));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                // Aritmética mágica
+                let magic_op = match op {
+                    Operator::Plus => "__add",
+                    Operator::Minus => "__sub",
+                    Operator::Star => "__mul",
+                    Operator::Slash => "__div",
+                    Operator::Percent => "__mod",
+                    Operator::StarStar => "__pow",
+                    _ => "",
+                };
+                if !magic_op.is_empty() {
+                    if let Some(r) = self.binary_magic(magic_op, &left, &right, span)? {
+                        return Ok(r);
+                    }
+                }
+                unsupported_span(&op, &left, &right, span)
+            }
         }
     }
 
@@ -1364,7 +1613,7 @@ impl Interpreter {
                 InterpolationPart::Text(s) => result.push_str(s),
                 InterpolationPart::Expr(expr) => {
                     let val = self.evaluate_expression(expr)?;
-                    result.push_str(&val.to_string());
+                    result.push_str(&self.value_to_string(&val, &interp.span)?);
                 }
             }
         }
@@ -1438,6 +1687,10 @@ fn as_f64(v: &Value) -> Option<f64> {
         Value::Float(f) => Some(*f),
         _ => None,
     }
+}
+
+fn is_object(v: &Value) -> bool {
+    matches!(v, Value::Object(_))
 }
 
 /// Operación numérica: Int si ambos Int, Float si hay algún Float
