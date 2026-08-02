@@ -107,6 +107,7 @@ impl Parser {
             Token::Keyword(Keyword::Interface) => self.parse_interface_decl(),
             Token::Keyword(Keyword::Module) => self.parse_module_decl(),
             Token::Keyword(Keyword::Namespace) => self.parse_namespace_decl(),
+            Token::Keyword(Keyword::Alias) => self.parse_alias_decl(),
 
             // Imports
             Token::Keyword(Keyword::Import) => self.parse_import(),
@@ -242,6 +243,7 @@ impl Parser {
             visibility: Visibility::Default,
             modifiers: Vec::new(),
             span: self.span(),
+            type_params: Vec::new(),
         }))
     }
 
@@ -276,6 +278,7 @@ impl Parser {
             visibility: Visibility::Default,
             modifiers: Vec::new(),
             span: self.span(),
+            type_params: Vec::new(),
         }))
     }
 
@@ -322,7 +325,7 @@ impl Parser {
     fn parse_type_annotation(&mut self) -> ClsResult<TypeAnnotation> {
         // Fun types: fun(params...) -> ReturnType
         if let Token::Identifier(ref s) = &self.current_token {
-            if s == "fun" && self.lookahead_is(1, Symbol::LParen) {
+            if s == "fun" && self.lookahead_is(0, Symbol::LParen) {
                 return self.parse_fun_type();
             }
         }
@@ -330,30 +333,102 @@ impl Parser {
         let mut kind = self.parse_base_type()?;
         let span = self.span();
 
-        // Postfix: [] para arrays (sin llaves para evitar ambigüedad con bloques)
+        // Postfix: [] para arrays, ["key"]/[n] para acceso a tipos
         loop {
             if self.consume_symbol(Symbol::LBracket) {
-                if !self.consume_symbol(Symbol::RBracket) {
-                    return Err(ClsError::SyntaxError("Esperaba ']' en tipo array".to_string()));
+                if self.consume_symbol(Symbol::RBracket) {
+                    kind = TypeKind::Array(Box::new(TypeAnnotation {
+                        kind: kind.clone(),
+                        span: span.clone(),
+                    }));
+                } else {
+                    let access = match &self.current_token {
+                        Token::StringLiteral(s) => {
+                            let k = s.clone();
+                            self.advance();
+                            TypeAccess::Key(k)
+                        }
+                        Token::IntLiteral(i) => {
+                            let n = *i as usize;
+                            self.advance();
+                            TypeAccess::Index(n)
+                        }
+                        _ => return Err(ClsError::SyntaxError(
+                            "Esperaba clave \"name\" o índice numérico en acceso a tipo".to_string(),
+                        )),
+                    };
+                    self.expect_symbol(Symbol::RBracket)?;
+                    kind = TypeKind::Access(Box::new(TypeAnnotation {
+                        kind: kind.clone(),
+                        span: span.clone(),
+                    }), access);
                 }
-                kind = TypeKind::Array(Box::new(TypeAnnotation {
-                    kind: kind.clone(),
-                    span: span.clone(),
-                }));
             } else {
                 break;
             }
+        }
+
+        // Unión: tipo | tipo | tipo
+        if self.check_operator(Operator::Or) {
+            let mut members = vec![TypeAnnotation {
+                kind: kind.clone(),
+                span: span.clone(),
+            }];
+            while self.consume_operator(Operator::Or) {
+                let m_kind = self.parse_base_type()?;
+                members.push(TypeAnnotation {
+                    kind: m_kind,
+                    span: self.span(),
+                });
+            }
+            kind = TypeKind::Union(members);
         }
 
         Ok(TypeAnnotation { kind, span })
     }
 
     fn parse_base_type(&mut self) -> ClsResult<TypeKind> {
-        // Paréntesis
+        // Literales de tipo: "d", 5, 1.5, true
+        match &self.current_token {
+            Token::StringLiteral(v) => {
+                let v = v.clone();
+                self.advance();
+                return Ok(TypeKind::Literal(LiteralKind::String(v)));
+            }
+            Token::IntLiteral(v) => {
+                let v = *v;
+                self.advance();
+                return Ok(TypeKind::Literal(LiteralKind::Int(v)));
+            }
+            Token::FloatLiteral(v) => {
+                let v = *v;
+                self.advance();
+                return Ok(TypeKind::Literal(LiteralKind::Float(v)));
+            }
+            Token::BoolLiteral(v) => {
+                let v = *v;
+                self.advance();
+                return Ok(TypeKind::Literal(LiteralKind::Bool(v)));
+            }
+            _ => {}
+        }
+
+        // Paréntesis: (Int) agrupación | (Int, String) tupla
         if self.consume_symbol(Symbol::LParen) {
-            let inner = self.parse_type_annotation()?;
+            let first = self.parse_type_annotation()?;
+            if self.consume_symbol(Symbol::Comma) {
+                let mut elems = vec![first];
+                loop {
+                    elems.push(self.parse_type_annotation()?);
+                    if !self.consume_symbol(Symbol::Comma) {
+                        break;
+                    }
+                }
+                self.expect_symbol(Symbol::RParen)?;
+                return Ok(TypeKind::Tuple(elems));
+            }
             self.expect_symbol(Symbol::RParen)?;
-            return Ok(inner.kind);
+            return Ok(first.kind);
         }
 
         // Identificador o acrónimo
@@ -362,11 +437,11 @@ impl Parser {
 
         // Acrónimos
         match name_str {
-            "int" | "Integer" => return Ok(TypeKind::Int),
+            "int" | "Int" | "Integer" => return Ok(TypeKind::Int),
             "str" | "String" => return Ok(TypeKind::String),
             "float" | "Float" => return Ok(TypeKind::Float),
-            "bool" | "Boolean" => return Ok(TypeKind::Bool),
-            "char" | "Character" => return Ok(TypeKind::Char),
+            "bool" | "Bool" | "Boolean" => return Ok(TypeKind::Bool),
+            "char" | "Char" | "Character" => return Ok(TypeKind::Char),
             "any" | "Any" => return Ok(TypeKind::Any),
             "unknown" => return Ok(TypeKind::Unknown),
             "null" => return Ok(TypeKind::Null),
@@ -383,7 +458,13 @@ impl Parser {
 
         // Tipo nombrado (puede tener parámetros genéricos <T, U>)
         let mut type_params = Vec::new();
-        if !self.is_eof() && matches!(self.current_token, Token::Operator(Operator::LessThan)) {
+        // `<T>` simple tokenizado como CMX: reinterpretarlo como un arg genérico
+        if let Some(tag) = self.consume_cmx_simple_tag() {
+            type_params.push(TypeAnnotation {
+                kind: TypeKind::Named(tag, vec![]),
+                span: self.span(),
+            });
+        } else if !self.is_eof() && matches!(self.current_token, Token::Operator(Operator::LessThan)) {
             // Consumir '<'
             self.advance(); // consume '<'
             loop {
@@ -425,7 +506,8 @@ impl Parser {
         }
         self.expect_symbol(Symbol::RParen)?;
 
-        self.expect_operator(Operator::Colon)?;
+        self.consume_operator(Operator::Colon);
+        self.expect_operator(Operator::Arrow)?;
         let return_type = self.parse_type_annotation()?;
 
         Ok(TypeAnnotation {
@@ -435,10 +517,32 @@ impl Parser {
     }
 
     fn lookahead_is(&self, offset: usize, expected: Symbol) -> bool {
-        // Lookahead básico: verificar si el token a N posiciones es el símbolo esperado
-        // Por ahora esto es una aproximación simple
-        // TODO: implementar lookahead real con peekable tokens
-        false
+        self.tokens.clone().nth(offset)
+            .map_or(false, |t| matches!(&t.token, Token::Symbol(s) if *s == expected))
+    }
+
+    /// Si el token actual es un `OpenTag` CMX no-self-closing (`<T`), devuelve el
+    /// tag. Se usa para reinterpretar genéricos de tipo que el lexer tokenizó
+    /// como CMX (ambiguos con tags).
+    fn cmx_as_simple_tag(&self) -> Option<String> {
+        if let Token::Cmx(CmxToken::OpenTag { name, is_self_closing }) = &self.current_token {
+            if !*is_self_closing {
+                return Some(name.clone());
+            }
+        }
+        None
+    }
+
+    /// Consume `<T>` simple (OpenTag + CloseTag) como un tag de genérico.
+    fn consume_cmx_simple_tag(&mut self) -> Option<String> {
+        let name = self.cmx_as_simple_tag()?;
+        self.advance();
+        if let Token::Cmx(CmxToken::CloseTag { name: close }) = &self.current_token {
+            if close == &name {
+                self.advance();
+            }
+        }
+        Some(name)
     }
 
     fn parse_if_statement(&mut self) -> ClsResult<Statement> {
@@ -772,6 +876,7 @@ impl Parser {
             implements,
             body,
             span: self.span(),
+            type_params: Vec::new(),
         }))
     }
 
@@ -873,32 +978,47 @@ impl Parser {
     fn parse_interface_decl(&mut self) -> ClsResult<Statement> {
         self.expect_keyword(Keyword::Interface)?;
         let name = self.expect_identifier()?;
-        self.expect_symbol(Symbol::LParen)?;
-        self.expect_symbol(Symbol::RParen)?;
+        let type_params = self.parse_type_params()?;
+
+        // Compatibilidad: interface Name () { ... } (el () vacío del formato clsi)
+        if self.check_symbol(Symbol::LParen) {
+            self.advance();
+            self.expect_symbol(Symbol::RParen)?;
+        }
         
         self.expect_symbol(Symbol::LBrace)?;
         
+        let mut fields = Vec::new();
         let mut signatures = Vec::new();
         while !self.check_symbol(Symbol::RBrace) && !self.is_eof() {
             self.skip_newlines();
             
-            let sig_name = self.expect_identifier()?;
-            self.expect_symbol(Symbol::LParen)?;
-            let params = self.parse_parameters()?;
-            self.expect_symbol(Symbol::RParen)?;
-            
-            let return_type = if self.consume_operator(Operator::Colon) {
-                Some(self.parse_type_annotation()?)
+            let member_name = self.expect_identifier()?;
+            if self.consume_symbol(Symbol::LParen) {
+                // Método: nombre(params) : Tipo
+                let params = self.parse_parameters()?;
+                self.expect_symbol(Symbol::RParen)?;
+                let return_type = if self.consume_operator(Operator::Colon) {
+                    Some(self.parse_type_annotation()?)
+                } else {
+                    None
+                };
+                signatures.push(SignatureDecl {
+                    name: member_name,
+                    params,
+                    return_type,
+                    span: self.span(),
+                });
             } else {
-                None
-            };
-            
-            signatures.push(SignatureDecl {
-                name: sig_name,
-                params,
-                return_type,
-                span: self.span(),
-            });
+                // Campo (shape): nombre : Tipo
+                self.expect_operator(Operator::Colon)?;
+                let type_ann = self.parse_type_annotation()?;
+                fields.push(InterfaceField {
+                    name: member_name,
+                    type_ann,
+                    span: self.span(),
+                });
+            }
             
             self.consume_symbol(Symbol::Comma);
         }
@@ -908,7 +1028,66 @@ impl Parser {
         
         Ok(Statement::InterfaceDecl(InterfaceDecl {
             name,
+            type_params,
+            fields,
             signatures,
+            span: self.span(),
+        }))
+    }
+
+    /// Parsea parámetros de tipo `<T=Int, U>` (genéricos de tipo, compile-time).
+    fn parse_type_params(&mut self) -> ClsResult<Vec<TypeParam>> {
+        // `<T>` simple puede tokenizarse como CMX: reinterpretarlo
+        if let Some(tag) = self.consume_cmx_simple_tag() {
+            return Ok(vec![TypeParam {
+                name: tag,
+                default: None,
+                span: self.span(),
+            }]);
+        }
+        let mut params = Vec::new();
+        if !matches!(self.current_token, Token::Operator(Operator::LessThan)) {
+            return Ok(params);
+        }
+        self.advance(); // '<'
+        loop {
+            let name = self.expect_identifier()?;
+            let default = if self.consume_operator(Operator::Equal) {
+                Some(self.parse_type_annotation()?)
+            } else {
+                None
+            };
+            params.push(TypeParam {
+                name,
+                default,
+                span: self.span(),
+            });
+            if !self.consume_symbol(Symbol::Comma) {
+                break;
+            }
+        }
+        if matches!(self.current_token, Token::Operator(Operator::GreaterThan)
+            | Token::Operator(Operator::ShiftRight))
+        {
+            self.advance();
+        } else {
+            return Err(ClsError::SyntaxError("Esperaba '>' en parámetros de tipo".to_string()));
+        }
+        Ok(params)
+    }
+
+    /// `alias <Name>[<T=Int>] = <tipo>;` — alias de tipos (compile-time).
+    fn parse_alias_decl(&mut self) -> ClsResult<Statement> {
+        self.expect_keyword(Keyword::Alias)?;
+        let name = self.expect_identifier()?;
+        let type_params = self.parse_type_params()?;
+        self.expect_operator(Operator::Equal)?;
+        let type_ann = self.parse_type_annotation()?;
+        self.consume_symbol(Symbol::Semicolon);
+        Ok(Statement::TypeAlias(TypeAliasDecl {
+            name,
+            type_params,
+            type_ann,
             span: self.span(),
         }))
     }

@@ -1,8 +1,16 @@
-use crate::error::{ClsResult, Diagnostic, Span};
+﻿use crate::error::{ClsResult, Diagnostic, Span};
 use crate::frontend::ast::*;
-use crate::middleware::types::Type;
+use crate::middleware::types::{Type, LitVal};
 use crate::config::types::TypesConfig;
 use std::collections::HashMap;
+
+/// DefiniciÃ³n compile-time de una interface (shapes con genÃ©ricos).
+#[derive(Clone)]
+struct InterfaceInfo {
+    type_params: Vec<TypeParam>,
+    fields: HashMap<String, TypeAnnotation>,
+    signatures: HashMap<String, SignatureDecl>,
+}
 
 /// Type checker configurable de CLS
 pub struct TypeChecker {
@@ -10,6 +18,7 @@ pub struct TypeChecker {
     diagnostics: Vec<Diagnostic>,
     scopes: Vec<HashMap<String, Type>>,
     current_return_type: Option<Type>,
+    interfaces: HashMap<String, InterfaceInfo>,
 }
 
 impl TypeChecker {
@@ -19,6 +28,7 @@ impl TypeChecker {
             diagnostics: Vec::new(),
             scopes: vec![HashMap::new()],
             current_return_type: None,
+            interfaces: HashMap::new(),
         };
         // Registrar funciones built-in (core intrinsics)
         tc.define("print", Type::Fun(vec![Type::Any], Box::new(Type::Void)));
@@ -49,7 +59,7 @@ impl TypeChecker {
         for stmt in &module.statements {
             self.check_statement(stmt);
         }
-        // No fallar si hay errores; reportar como diagnóstico
+        // No fallar si hay errores; reportar como diagnÃ³stico
         Ok(())
     }
 
@@ -80,14 +90,14 @@ impl TypeChecker {
         self.scopes.pop();
     }
 
-    // ═══════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // Statements
-    // ═══════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     fn check_statement(&mut self, stmt: &Statement) -> Type {
         match stmt {
-            Statement::VarDecl(v) => self.check_var_decl(v),
-            Statement::ConstDecl(v) => self.check_var_decl(v),
+            Statement::VarDecl(v) => self.check_var_decl(v, false),
+            Statement::ConstDecl(v) => self.check_var_decl(v, true),
             Statement::FunctionDecl(f) => self.check_function_decl(f),
             Statement::If(i) => self.check_if(i),
             Statement::While(w) => self.check_while(w),
@@ -128,9 +138,24 @@ impl TypeChecker {
             }
             Statement::InterfaceDecl(i) => {
                 self.define(&i.name, Type::Named(i.name.clone(), vec![]));
+                let fields: HashMap<String, TypeAnnotation> = i.fields.iter()
+                    .map(|f| (f.name.clone(), f.type_ann.clone()))
+                    .collect();
+                let signatures: HashMap<String, SignatureDecl> = i.signatures.iter()
+                    .map(|s| (s.name.clone(), s.clone()))
+                    .collect();
+                self.interfaces.insert(i.name.clone(), InterfaceInfo {
+                    type_params: i.type_params.clone(),
+                    fields,
+                    signatures,
+                });
                 if !self.config.strict {
-                    self.warn(&format!("interface '{}' solo tiene efecto en type-checker (stub)", i.name), i.span);
+                    self.warn(&format!("interface '{}' solo tiene efecto en type-checker", i.name), i.span);
                 }
+                Type::Void
+            }
+            Statement::TypeAlias(t) => {
+                self.check_type_alias(t);
                 Type::Void
             }
             Statement::ModuleDecl(m) => {
@@ -152,16 +177,30 @@ impl TypeChecker {
         }
     }
 
-    fn check_var_decl(&mut self, var: &VarDecl) -> Type {
-        let inferred = var.value.as_ref()
+    fn check_var_decl(&mut self, var: &VarDecl, is_const: bool) -> Type {
+        let mut inferred = var.value.as_ref()
             .map(|e| self.check_expression(e))
             .unwrap_or(Type::Null);
+
+        // const infiere literal type para literales (nunca muta)
+        if is_const {
+            if let Some(Expression::Literal(lit)) = &var.value {
+                inferred = self.literal_type(&lit.kind);
+            }
+        }
+
+        // Para verificar assignability, usar el literal type si el valor es un literal
+        let check_type = if let Some(Expression::Literal(lit)) = &var.value {
+            self.literal_type(&lit.kind)
+        } else {
+            inferred.clone()
+        };
 
         let declared = var.type_ann.as_ref()
             .map(|t| self.resolve_type_annotation(t))
             .unwrap_or_else(|| inferred.clone());
 
-        if self.config.strict && !inferred.is_assignable_to(&declared) {
+        if self.config.strict && !check_type.is_assignable_to(&declared) {
             return self.error(
                 &format!("No se puede asignar {} a {}", inferred, declared),
                 var.span.clone(),
@@ -217,7 +256,7 @@ impl TypeChecker {
         let cond = self.check_expression(&i.condition);
         if !cond.is_assignable_to(&Type::Bool) {
             self.warn(
-                &format!("Condición if debe ser Bool, encontró {}", cond),
+                &format!("CondiciÃ³n if debe ser Bool, encontrÃ³ {}", cond),
                 i.span.clone(),
             );
         }
@@ -236,7 +275,7 @@ impl TypeChecker {
         let cond = self.check_expression(&w.condition);
         if !cond.is_assignable_to(&Type::Bool) {
             self.warn(
-                &format!("Condición while debe ser Bool, encontró {}", cond),
+                &format!("CondiciÃ³n while debe ser Bool, encontrÃ³ {}", cond),
                 w.span.clone(),
             );
         }
@@ -319,7 +358,7 @@ impl TypeChecker {
                     self.check_function_decl(f);
                 }
                 ClassMember::Property(v) => {
-                    self.check_var_decl(v);
+                    self.check_var_decl(v, false);
                 }
             }
         }
@@ -333,9 +372,9 @@ impl TypeChecker {
         }
     }
 
-    // ═══════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // Expressions
-    // ═══════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     fn check_expression(&mut self, expr: &Expression) -> Type {
         match expr {
@@ -357,7 +396,7 @@ impl TypeChecker {
             Expression::MemberAccess(m) => self.check_member_access(m),
             Expression::Index(i) => self.check_index(i),
             Expression::Array(a) => self.check_array(a),
-            Expression::Tuple(t) => Type::Array(Box::new(Type::Any)),
+            Expression::Tuple(t) => self.check_tuple(t),
             Expression::Record(r) => self.check_record(r),
             Expression::ArrowFunction(a) => self.check_arrow_function(a),
             Expression::Conditional(c) => self.check_conditional(c),
@@ -406,7 +445,7 @@ impl TypeChecker {
                     }
                     return Type::Int;
                 }
-                // Int + Float → Float
+                // Int + Float â†’ Float
                 if is_num_l && matches!(right, Type::Float) {
                     return Type::Float;
                 }
@@ -428,7 +467,7 @@ impl TypeChecker {
                     return Type::Int;
                 }
                 self.error(
-                    &format!("Operador requiere tipos numéricos, encontró {} y {}", left, right),
+                    &format!("Operador requiere tipos numÃ©ricos, encontrÃ³ {} y {}", left, right),
                     bin.span.clone(),
                 )
             }
@@ -439,7 +478,7 @@ impl TypeChecker {
             }
             Operator::And | Operator::Or => {
                 if !left.is_assignable_to(&Type::Bool) || !right.is_assignable_to(&Type::Bool) {
-                    self.warn("Operador lógico requiere Bool", bin.span.clone());
+                    self.warn("Operador lÃ³gico requiere Bool", bin.span.clone());
                 }
                 Type::Bool
             }
@@ -472,7 +511,7 @@ impl TypeChecker {
                 if self.config.strict && params.len() != call.args.len() {
                     self.warn(
                         &format!(
-                            "Función espera {} args, recibió {}",
+                            "FunciÃ³n espera {} args, recibiÃ³ {}",
                             params.len(),
                             call.args.len()
                         ),
@@ -482,12 +521,12 @@ impl TypeChecker {
                 *ret
             }
             Type::Named(_, _) => {
-                // Struct constructor — devuelve el tipo del struct
+                // Struct constructor â€” devuelve el tipo del struct
                 callee_type.clone()
             }
             Type::Any => Type::Any,
             _ => self.error(
-                &format!("No se puede llamar como función: {}", callee_type),
+                &format!("No se puede llamar como funciÃ³n: {}", callee_type),
                 call.span.clone(),
             ),
         }
@@ -495,16 +534,39 @@ impl TypeChecker {
 
     fn check_member_access(&mut self, member: &MemberAccessExpr) -> Type {
         self.check_expression(&member.object);
-        Type::Any // No podemos saber el tipo del miembro en tiempo de compilación
+        Type::Any // No podemos saber el tipo del miembro en tiempo de compilaciÃ³n
     }
 
     fn check_index(&mut self, idx: &IndexExpr) -> Type {
         let obj = self.check_expression(&idx.object);
-        self.check_expression(&idx.index);
+        let index_type = self.check_expression(&idx.index);
         match obj {
             Type::Array(inner) => *inner,
             Type::Record(k, v) => *v,
-            _ => Type::Any,
+            // Tupla: Ã­ndice literal â†’ slot exacto; dinÃ¡mico â†’ uniÃ³n de slots
+            Type::Tuple(ts) => {
+                match idx.index.as_ref() {
+                    Expression::Literal(l) if matches!(l.kind, LiteralKind::Int(_)) => {
+                        let i = match &l.kind { LiteralKind::Int(n) => *n as usize, _ => 0 };
+                        ts.get(i).cloned().unwrap_or(Type::Any)
+                    }
+                    _ => {
+                        if ts.is_empty() { Type::Any }
+                        else { Type::Union(ts.clone()) }
+                    }
+                }
+            }
+            Type::Union(us) => Type::Union(
+                us.iter().map(|u| match u {
+                    Type::Array(inner) => (**inner).clone(),
+                    Type::Tuple(ts) => ts.first().cloned().unwrap_or(Type::Any),
+                    _ => Type::Any,
+                }).collect(),
+            ),
+            _ => {
+                let _ = index_type;
+                Type::Any
+            }
         }
     }
 
@@ -519,11 +581,22 @@ impl TypeChecker {
         Type::Array(Box::new(elem_type))
     }
 
+    fn check_tuple(&mut self, tup: &TupleExpr) -> Type {
+        let types: Vec<Type> = tup.elements.iter()
+            .map(|e| self.check_expression(e))
+            .collect();
+        Type::Tuple(types)
+    }
+
     fn check_record(&mut self, rec: &RecordExpr) -> Type {
+        let mut value_type = Type::Any;
         for (_, expr) in &rec.entries {
-            self.check_expression(expr);
+            let t = self.check_expression(expr);
+            if matches!(value_type, Type::Any) {
+                value_type = t;
+            }
         }
-        Type::Any // Los records literales no tienen tipo estático concreto
+        Type::Record(Box::new(Type::String), Box::new(value_type))
     }
 
     fn check_arrow_function(&mut self, arrow: &ArrowFunctionExpr) -> Type {
@@ -575,11 +648,20 @@ impl TypeChecker {
         left
     }
 
-    // ═══════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // Type resolution
-    // ═══════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-    pub fn resolve_type_annotation(&self, ann: &TypeAnnotation) -> Type {
+    pub fn resolve_type_annotation(&mut self, ann: &TypeAnnotation) -> Type {
+        self.resolve_annotation_with(ann, &HashMap::new())
+    }
+
+    /// Resuelve una anotaciÃ³n bajo un contexto de type params (bindings Tâ†’tipo).
+    fn resolve_annotation_with(
+        &mut self,
+        ann: &TypeAnnotation,
+        bindings: &HashMap<String, Type>,
+    ) -> Type {
         match &ann.kind {
             TypeKind::Int => Type::Int,
             TypeKind::Float => Type::Float,
@@ -592,19 +674,33 @@ impl TypeChecker {
             TypeKind::Void => Type::Void,
             TypeKind::Empty => Type::Empty,
             TypeKind::Array(inner) => {
-                Type::Array(Box::new(self.resolve_type_annotation(inner)))
+                Type::Array(Box::new(self.resolve_annotation_with(inner, bindings)))
+            }
+            TypeKind::Tuple(types) => Type::Tuple(
+                types.iter()
+                    .map(|t| self.resolve_annotation_with(t, bindings))
+                    .collect(),
+            ),
+            TypeKind::Union(types) => Type::Union(
+                types.iter()
+                    .map(|t| self.resolve_annotation_with(t, bindings))
+                    .collect(),
+            ),
+            TypeKind::Literal(lit) => self.literal_type(lit),
+            TypeKind::Access(base, access) => {
+                self.resolve_type_access(base, access, bindings)
             }
             TypeKind::Record(k, v) => {
                 Type::Record(
-                    Box::new(self.resolve_type_annotation(k)),
-                    Box::new(self.resolve_type_annotation(v)),
+                    Box::new(self.resolve_annotation_with(k, bindings)),
+                    Box::new(self.resolve_annotation_with(v, bindings)),
                 )
             }
             TypeKind::Fun(params, ret) => {
                 let param_types: Vec<Type> = params.iter()
-                    .map(|p| self.resolve_type_annotation(p))
+                    .map(|p| self.resolve_annotation_with(p, bindings))
                     .collect();
-                Type::Fun(param_types, Box::new(self.resolve_type_annotation(ret)))
+                Type::Fun(param_types, Box::new(self.resolve_annotation_with(ret, bindings)))
             }
             TypeKind::I32 => Type::I32,
             TypeKind::I64 => Type::I64,
@@ -614,8 +710,12 @@ impl TypeChecker {
             TypeKind::F64 => Type::F64,
             TypeKind::Cmx => Type::Cmx,
             TypeKind::Named(name, params) => {
+                // Type param (T, U) del contexto genÃ©rico
+                if let Some(t) = bindings.get(name) {
+                    return t.clone();
+                }
                 let param_types: Vec<Type> = params.iter()
-                    .map(|p| self.resolve_type_annotation(p))
+                    .map(|p| self.resolve_annotation_with(p, bindings))
                     .collect();
                 // Si es un nombre conocido, mapearlo
                 match name.as_str() {
@@ -623,6 +723,11 @@ impl TypeChecker {
                     "Float" => Type::Float,
                     "Character" => Type::Char,
                     "Boolean" => Type::Bool,
+                    // Record<K, V> â†’ diccionario tipado
+                    "Record" if param_types.len() == 2 => Type::Record(
+                        Box::new(param_types[0].clone()),
+                        Box::new(param_types[1].clone()),
+                    ),
                     _ => {
                         self.lookup(name)
                             .cloned()
@@ -632,4 +737,119 @@ impl TypeChecker {
             }
         }
     }
+
+    /// Convierte un literal AST a un literal type (o su tipo base).
+    fn literal_type(&self, lit: &LiteralKind) -> Type {
+        match lit {
+            LiteralKind::String(s) => Type::Literal(LitVal::Str(s.clone())),
+            LiteralKind::Int(i) => Type::Literal(LitVal::Int(*i)),
+            LiteralKind::Float(f) => Type::Literal(LitVal::Float(f.to_bits())),
+            LiteralKind::Bool(b) => Type::Literal(LitVal::Bool(*b)),
+            _ => Type::Any,
+        }
+    }
+
+    /// Resuelve un acceso a tipo: `T["field"]` o `T[0]`.
+    fn resolve_type_access(
+        &mut self,
+        base: &TypeAnnotation,
+        access: &TypeAccess,
+        bindings: &HashMap<String, Type>,
+    ) -> Type {
+        // Caso interface nombrada (con args opcionales): resolver miembros con genÃ©ricos
+        if let TypeKind::Named(name, arg_anns) = &base.kind {
+            if let Some(info) = self.interfaces.get(name).cloned() {
+                let arg_types: Vec<Type> = arg_anns.iter()
+                    .map(|a| self.resolve_annotation_with(a, bindings))
+                    .collect();
+                let b = self.interface_bindings(&info, &arg_types);
+                match access {
+                    TypeAccess::Key(key) => {
+                        if let Some(ta) = info.fields.get(key) {
+                            return self.resolve_annotation_with(ta, &b);
+                        }
+                        if let Some(sig) = info.signatures.get(key) {
+                            return self.signature_type(sig, &b);
+                        }
+                        return self.error(
+                            &format!("Interface '{}' no tiene miembro '{}'", name, key),
+                            base.span.clone(),
+                        );
+                    }
+                    TypeAccess::Index(i) => {
+                        let order = self.interface_member_types(&info, &b);
+                        return order.get(*i).cloned().unwrap_or_else(|| self.error(
+                            &format!("Index '{}' fuera de rango en interface '{}'", i, name),
+                            base.span.clone(),
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Fallback: resolver el tipo base y aplicar sobre tipos compuestos
+        let base_type = self.resolve_annotation_with(base, bindings);
+        match access {
+            TypeAccess::Key(key) => match base_type {
+                Type::Record(_, v) => *v,
+                _ => Type::Any,
+            },
+            TypeAccess::Index(i) => match base_type {
+                Type::Tuple(ts) => ts.get(*i).cloned().unwrap_or(Type::Any),
+                Type::Array(inner) => *inner,
+                Type::Union(ts) => ts.get(*i).cloned().unwrap_or(Type::Any),
+                _ => Type::Any,
+            },
+        }
+    }
+
+    /// Construye bindings Tâ†’tipo para los type params de una interface.
+    fn interface_bindings(&mut self, info: &InterfaceInfo, args: &[Type]) -> HashMap<String, Type> {
+        let mut bindings = HashMap::new();
+        for (i, tp) in info.type_params.iter().enumerate() {
+            if let Some(arg) = args.get(i) {
+                bindings.insert(tp.name.clone(), arg.clone());
+            } else if let Some(default) = &tp.default {
+                let resolved = self.resolve_annotation_with(default, &bindings);
+                bindings.insert(tp.name.clone(), resolved);
+            } else {
+                bindings.insert(tp.name.clone(), Type::Any);
+            }
+        }
+        bindings
+    }
+
+    /// Tipos de los campos de una interface en orden (para acceso por Ã­ndice).
+    fn interface_member_types(&mut self, info: &InterfaceInfo, bindings: &HashMap<String, Type>) -> Vec<Type> {
+        info.fields.iter()
+            .map(|(name, ta)| {
+                let t = self.resolve_annotation_with(ta, bindings);
+                (name.clone(), t)
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|(_, t)| t)
+            .collect()
+    }
+
+    /// Tipo `fun(params) -> ret` de una signature, con genÃ©ricos aplicados.
+    fn signature_type(&mut self, sig: &SignatureDecl, bindings: &HashMap<String, Type>) -> Type {
+        let params: Vec<Type> = sig.params.iter()
+            .map(|p| p.type_ann.as_ref()
+                .map(|ta| self.resolve_annotation_with(ta, bindings))
+                .unwrap_or(Type::Any))
+            .collect();
+        let ret = sig.return_type.as_ref()
+            .map(|ta| self.resolve_annotation_with(ta, bindings))
+            .unwrap_or(Type::Void);
+        Type::Fun(params, Box::new(ret))
+    }
+
+    /// Registra y define un alias de tipo (compile-time).
+    fn check_type_alias(&mut self, alias: &TypeAliasDecl) {
+        let type_ann = alias.type_ann.clone();
+        let resolved = self.resolve_annotation_with(&type_ann, &HashMap::new());
+        self.define(&alias.name, resolved);
+    }
 }
+

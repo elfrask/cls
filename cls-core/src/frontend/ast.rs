@@ -39,6 +39,9 @@ pub enum Statement {
     ModuleDecl(ModuleDecl),
     NamespaceDecl(NamespaceDecl),
 
+    // Alias de tipos (compile-time)
+    TypeAlias(TypeAliasDecl),
+
     // Imports
     Import(ImportStatement),
     FromImport(FromImportStatement),
@@ -81,6 +84,9 @@ pub struct FunctionDecl {
     pub visibility: Visibility,
     pub modifiers: Vec<FunctionModifier>,
     pub span: Span,
+    /// Parámetros de tipo genérico `<T, U>` (compile-time)
+    #[serde(default)]
+    pub type_params: Vec<TypeParam>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -196,6 +202,9 @@ pub struct ClassDecl {
     pub implements: Vec<String>,
     pub body: Vec<ClassMember>,
     pub span: Span,
+    /// Parámetros de tipo genérico `<T>` (compile-time)
+    #[serde(default)]
+    pub type_params: Vec<TypeParam>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -223,7 +232,26 @@ pub struct FieldDecl {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InterfaceDecl {
     pub name: String,
+    pub type_params: Vec<TypeParam>,
+    pub fields: Vec<InterfaceField>,
     pub signatures: Vec<SignatureDecl>,
+    pub span: Span,
+}
+
+/// Campo tipado de una interface (shape): `nombre: tipo`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InterfaceField {
+    pub name: String,
+    pub type_ann: TypeAnnotation,
+    pub span: Span,
+}
+
+/// Alias de tipo (compile-time): `alias Vec3 = (Int, Int, Int);`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TypeAliasDecl {
+    pub name: String,
+    pub type_params: Vec<TypeParam>,
+    pub type_ann: TypeAnnotation,
     pub span: Span,
 }
 
@@ -526,14 +554,33 @@ pub enum TypeKind {
 
     // Tipos con parámetros
     Array(Box<TypeAnnotation>),
+    Tuple(Vec<TypeAnnotation>),        // (Int, String) heterogéneo
+    Union(Vec<TypeAnnotation>),        // "a" | "b" | 5
     Record(Box<TypeAnnotation>, Box<TypeAnnotation>), // String{Integer}
     Fun(Vec<TypeAnnotation>, Box<TypeAnnotation>),     // (Int, String) -> Bool
+    Literal(LiteralKind),              // "d", 5, true (literal type)
+    Access(Box<TypeAnnotation>, TypeAccess), // T["key"] | T[0]
 
     // Tipo nombrado (definido por usuario)
     Named(String, Vec<TypeAnnotation>), // Persona, Array<String>
 
     // Tipos acrónimos
     I32, I64, I16, I8, F32, F64, Cmx,
+}
+
+/// Acceso a un miembro/posición de un tipo (compile-time)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TypeAccess {
+    Key(String),  // T["field"]
+    Index(usize), // T[0]
+}
+
+/// Parámetro de tipo genérico (con default opcional)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TypeParam {
+    pub name: String,
+    pub default: Option<TypeAnnotation>,
+    pub span: Span,
 }
 
 /// Visibilidad de miembros
@@ -568,6 +615,7 @@ impl fmt::Display for Statement {
             Statement::InterfaceDecl(i) => f.write_fmt(format_args!("interface {}", i.name)),
             Statement::ModuleDecl(m) => f.write_fmt(format_args!("module {}", m.name)),
             Statement::NamespaceDecl(n) => f.write_fmt(format_args!("namespace {}", n.name)),
+            Statement::TypeAlias(t) => f.write_fmt(format_args!("alias {} = ...", t.name)),
             Statement::Import(i) => f.write_fmt(format_args!("import \"{}\"", i.path)),
             Statement::FromImport(fi) => f.write_fmt(format_args!("from \"{}\" import ...", fi.path)),
             Statement::Include(i) => f.write_fmt(format_args!("include \"{}\"", i.path)),

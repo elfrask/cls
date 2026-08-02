@@ -240,6 +240,7 @@ impl Lexer {
             "interface" => Token::Keyword(Keyword::Interface),
             "module" => Token::Keyword(Keyword::Module),
             "namespace" => Token::Keyword(Keyword::Namespace),
+            "alias" => Token::Keyword(Keyword::Alias),
             "public" => Token::Keyword(Keyword::Public),
             "private" => Token::Keyword(Keyword::Private),
             "protected" => Token::Keyword(Keyword::Protected),
@@ -268,14 +269,33 @@ impl Lexer {
     }
 
     fn lex_cmx(&mut self) -> ClsResult<Token> {
+        // Backtracking: si el `<` no es un tag CMX válido (p.ej. genérico `<T>`),
+        // restaurar posición y emitirlo como operador LessThan.
+        let save_pos = self.pos;
+        let save_line = self.line;
+        let save_col = self.col;
+        let save_buffer = self.cmx_buffer.clone();
+
         self.advance(); // consume '<'
-        let (_, all_tokens) = self.lex_cmx_element_tokens()?;
-        // Push all tokens except the first (OpenTag) to global buffer
-        let first = all_tokens[0].token.clone();
-        for tok in all_tokens.iter().skip(1) {
-            self.cmx_buffer.push_back(tok.clone());
+        match self.lex_cmx_element_tokens() {
+            Ok((_, all_tokens)) => {
+                let first = all_tokens[0].token.clone();
+                for tok in all_tokens.iter().skip(1) {
+                    self.cmx_buffer.push_back(tok.clone());
+                }
+                Ok(first)
+            }
+            Err(e) => {
+                // Restaurar estado y tratar '<' como operador (genérico/comparación)
+                self.pos = save_pos;
+                self.line = save_line;
+                self.col = save_col;
+                self.cmx_buffer = save_buffer;
+                self.advance(); // consumir '<'
+                let _ = e;
+                Ok(Token::Operator(Operator::LessThan))
+            }
         }
-        Ok(first)
     }
 
     /// Parsea un elemento CMX completo → Vec de tokens en orden
@@ -480,7 +500,23 @@ impl Lexer {
         if self.in_cmx_expr { return false; }
         if self.pos + 1 >= self.source.len() { return false; }
         let next = self.source[self.pos + 1];
-        next.is_alphabetic() || next == '>'
+        if !(next.is_alphabetic() || next == '>') { return false; }
+
+        // Desambiguar genéricos de tipo vs CMX: si tras el tag name viene
+        // '=' | ',' | '<' | ':' es un type-param (`<T=Int>`, `<T, U>`, `<Hello<String>>`).
+        let mut i = self.pos + 1;
+        while i < self.source.len()
+            && (self.source[i].is_alphabetic() || self.source[i] == '_' || self.source[i].is_ascii_digit())
+        {
+            i += 1;
+        }
+        if i < self.source.len() {
+            match self.source[i] {
+                '=' | ',' | '<' | ':' => return false,
+                _ => {}
+            }
+        }
+        true
     }
 
     fn peek_char_is_digit(&self, offset: usize) -> bool {

@@ -1,4 +1,4 @@
-/// Sistema de tipos de CLS
+﻿/// Sistema de tipos de CLS
 use std::fmt;
 
 /// Representa un tipo en el sistema de tipos CLS
@@ -18,8 +18,11 @@ pub enum Type {
 
     // Con parámetros
     Array(Box<Type>),                    // type[]
+    Tuple(Vec<Type>),                    // (Int, String) heterogéneo por posición
     Record(Box<Type>, Box<Type>),       // String{Integer}
     Fun(Vec<Type>, Box<Type>),          // (Int, String) -> Bool
+    Union(Vec<Type>),                   // "a" | "b" | 5
+    Literal(LitVal),                    // "d", 5, 1.5 (literal type)
 
     // Tipos acrónimos (alias)
     I32, I64, I16, I8, F32, F64, Cmx,
@@ -29,6 +32,27 @@ pub enum Type {
 
     // Inferencia (para type checking)
     Infer(usize), // Variable de tipo inferido
+}
+
+/// Valor de un literal type (anotación o const)
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum LitVal {
+    Str(String),
+    Int(i64),
+    Float(u64), // bits de f64 (f64 no es Eq/Hash)
+    Bool(bool),
+}
+
+impl LitVal {
+    /// El tipo base del literal (sin el valor exacto)
+    pub fn base_type(&self) -> Type {
+        match self {
+            LitVal::Str(_) => Type::String,
+            LitVal::Int(_) => Type::Int,
+            LitVal::Float(_) => Type::Float,
+            LitVal::Bool(_) => Type::Bool,
+        }
+    }
 }
 
 impl Type {
@@ -51,6 +75,20 @@ impl Type {
 
             // Arrays
             (Type::Array(a), Type::Array(b)) => a.is_assignable_to(b),
+
+            // Tuplas: mismo largo y cada slot assignable (posición a posición)
+            (Type::Tuple(a), Type::Tuple(b)) => {
+                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.is_assignable_to(y))
+            }
+
+            // Uniones: assignable si algún miembro del objetivo lo acepta
+            (_, Type::Union(members)) => members.iter().any(|m| self.is_assignable_to(m)),
+            (Type::Union(members), _) => members.iter().all(|m| m.is_assignable_to(self)),
+
+            // Literal: assignable a otro literal idéntico, o a su tipo base
+            (Type::Literal(a), Type::Literal(b)) => a == b,
+            (Type::Literal(v), _) => v.base_type().is_assignable_to(other),
+            (_, Type::Literal(_)) => false,
 
             // Records
             (Type::Record(a1, b1), Type::Record(a2, b2)) => {
@@ -96,6 +134,17 @@ impl Type {
             Type::Void => "Void".to_string(),
             Type::Empty => "Empty".to_string(),
             Type::Array(inner) => format!("{}[]", inner.to_string()),
+            Type::Tuple(ts) => format!(
+                "({})",
+                ts.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ")
+            ),
+            Type::Union(ts) => ts.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(" | "),
+            Type::Literal(v) => match v {
+                LitVal::Str(s) => format!("\"{}\"", s),
+                LitVal::Int(i) => i.to_string(),
+                LitVal::Float(bits) => format!("{}", f64::from_bits(*bits)),
+                LitVal::Bool(b) => b.to_string(),
+            },
             Type::Record(k, v) => format!("{}{{{}}}", k.to_string(), v.to_string()),
             Type::Fun(params, ret) => {
                 let params_str = params
@@ -132,5 +181,46 @@ impl Type {
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tuple_identity() {
+        let a = Type::Tuple(vec![Type::Int, Type::String]);
+        let b = Type::Tuple(vec![Type::Int, Type::String]);
+        assert_eq!(a, b, "PartialEq falló para tuplas idénticas");
+        assert!(a.is_assignable_to(&b), "Tuple idéntica no assignable");
+    }
+
+    #[test]
+    fn literal_to_base() {
+        let l = Type::Literal(LitVal::Int(1));
+        assert_eq!(l, Type::Literal(LitVal::Int(1)));
+        assert!(l.is_assignable_to(&Type::Int), "Literal(1) no assignable a Int");
+    }
+
+    #[test]
+    fn literal_identity() {
+        let a = Type::Literal(LitVal::Str("red".to_string()));
+        let b = Type::Literal(LitVal::Str("red".to_string()));
+        let c = Type::Literal(LitVal::Str("blue".to_string()));
+        assert!(a.is_assignable_to(&b));
+        assert!(!c.is_assignable_to(&b));
+    }
+
+    #[test]
+    fn union_literal() {
+        let u = Type::Union(vec![
+            Type::Literal(LitVal::Str("red".to_string())),
+            Type::Literal(LitVal::Str("blue".to_string())),
+        ]);
+        let red = Type::Literal(LitVal::Str("red".to_string()));
+        let other = Type::Literal(LitVal::Str("green".to_string()));
+        assert!(red.is_assignable_to(&u));
+        assert!(!other.is_assignable_to(&u));
     }
 }
