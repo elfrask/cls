@@ -243,7 +243,7 @@ impl NameResolver {
                 for param in &arrow.params {
                     self.define(param.name.clone(), SymbolKind::Parameter);
                 }
-                self.resolve_statement(&arrow.body)?;
+                self.resolve_block(&arrow.body)?;
                 self.pop_scope();
             }
             Expression::Conditional(cond) => {

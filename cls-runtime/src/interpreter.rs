@@ -289,7 +289,7 @@ impl Interpreter {
     fn execute_statement(&mut self, stmt: &Statement) -> ClsResult<Value> {
         match stmt {
             Statement::VarDecl(var) => self.execute_var_decl(var),
-            Statement::ConstDecl(var) => self.execute_var_decl(var),
+            Statement::ConstDecl(var) => self.execute_const_decl(var),
             Statement::FunctionDecl(func) => self.execute_function_decl(func),
             Statement::If(if_stmt) => self.execute_if(if_stmt),
             Statement::While(while_stmt) => self.execute_while(while_stmt),
@@ -337,6 +337,19 @@ impl Interpreter {
             Value::Null
         };
         self.env.define(&var.name, value.clone());
+        if matches!(var.visibility, Visibility::Export) {
+            self.exports.insert(var.name.clone());
+        }
+        Ok(value)
+    }
+
+    fn execute_const_decl(&mut self, var: &VarDecl) -> ClsResult<Value> {
+        let value = if let Some(expr) = &var.value {
+            self.evaluate_expression(expr)?
+        } else {
+            Value::Null
+        };
+        self.env.define_const(&var.name, value.clone());
         if matches!(var.visibility, Visibility::Export) {
             self.exports.insert(var.name.clone());
         }
@@ -764,76 +777,24 @@ impl Interpreter {
         use cls_core::frontend::token::Operator;
 
         let left = self.evaluate_expression(&bin.left)?;
-        let right = self.evaluate_expression(&bin.right)?;
 
-        match (&bin.op, &left, &right) {
-            // Aritméticos
-            (Operator::Plus, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
-            (Operator::Plus, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
-            (Operator::Plus, Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 + b)),
-            (Operator::Plus, Value::Float(a), Value::Int(b)) => Ok(Value::Float(a + *b as f64)),
-            (Operator::Plus, Value::String(a), Value::String(b)) => {
-                Ok(Value::String(format!("{}{}", a, b)))
+        // Short-circuit para lógicos: evaluar right solo si hace falta
+        match bin.op {
+            Operator::And => {
+                if !left.is_truthy() { return Ok(Value::Bool(false)); }
+                let right = self.evaluate_expression(&bin.right)?;
+                return Ok(Value::Bool(right.is_truthy()));
             }
-            (Operator::Minus, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
-            (Operator::Minus, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
-            (Operator::Minus, Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 - b)),
-            (Operator::Minus, Value::Float(a), Value::Int(b)) => Ok(Value::Float(a - *b as f64)),
-            (Operator::Star, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a * b)),
-            (Operator::Star, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
-            (Operator::Star, Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 * b)),
-            (Operator::Star, Value::Float(a), Value::Int(b)) => Ok(Value::Float(a * *b as f64)),
-            (Operator::Slash, Value::Int(a), Value::Int(b)) => {
-                if *b == 0 { Err(self.err_at("División por cero", &bin.span)) }
-                else { Ok(Value::Int(a / b)) }
+            Operator::Or => {
+                if left.is_truthy() { return Ok(Value::Bool(true)); }
+                let right = self.evaluate_expression(&bin.right)?;
+                return Ok(Value::Bool(right.is_truthy()));
             }
-            (Operator::Slash, Value::Float(a), Value::Float(b)) => {
-                if *b == 0.0 { Err(self.err_at("División por cero", &bin.span)) }
-                else { Ok(Value::Float(a / b)) }
-            }
-            (Operator::Slash, Value::Int(a), Value::Float(b)) => {
-                if *b == 0.0 { Err(self.err_at("División por cero", &bin.span)) }
-                else { Ok(Value::Float(*a as f64 / b)) }
-            }
-            (Operator::Slash, Value::Float(a), Value::Int(b)) => {
-                if *b == 0 { Err(self.err_at("División por cero", &bin.span)) }
-                else { Ok(Value::Float(a / *b as f64)) }
-            }
-            (Operator::Percent, Value::Int(a), Value::Int(b)) => {
-                if *b == 0 { Err(self.err_at("Módulo por cero", &bin.span)) }
-                else { Ok(Value::Int(a % b)) }
-            }
-
-            // Comparación
-            (Operator::StrictEqual, a, b) => Ok(Value::Bool(a == b)),
-            (Operator::NotEqual, a, b) => Ok(Value::Bool(a != b)),
-            (Operator::LessThan, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a < b)),
-            (Operator::LessThan, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a < b)),
-            (Operator::LessEqual, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a <= b)),
-            (Operator::LessEqual, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a <= b)),
-            (Operator::GreaterThan, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a > b)),
-            (Operator::GreaterThan, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a > b)),
-            (Operator::GreaterEqual, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a >= b)),
-            (Operator::GreaterEqual, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a >= b)),
-
-            // Lógicos
-            (Operator::And, a, b) => {
-                let a_val = a.is_truthy();
-                let b_val = b.is_truthy();
-                Ok(Value::Bool(a_val && b_val))
-            }
-            (Operator::Or, a, b) => {
-                let a_val = a.is_truthy();
-                let b_val = b.is_truthy();
-                Ok(Value::Bool(a_val || b_val))
-            }
-
-            _ => Err(ClsError::RuntimeError(format!(
-                "Operación no soportada: {} {} {} (línea {}, columna {})",
-                left.type_name(), bin.op, right.type_name(),
-                bin.span.start_line, bin.span.start_col
-            ))),
+            _ => {}
         }
+
+        let right = self.evaluate_expression(&bin.right)?;
+        self.evaluate_binary_values(left, bin.op, right, &bin.span)
     }
 
     fn evaluate_unary(&mut self, un: &UnaryExpr) -> ClsResult<Value> {
@@ -859,6 +820,9 @@ impl Interpreter {
                     _ => return Err(self.err_at("++/-- requiere identificador", &un.span)),
                 };
                 let delta: i64 = match un.op { UnaryOp::PostInc | UnaryOp::PreInc => 1, _ => -1 };
+                if self.env.is_const(&name) {
+                    return Err(self.err_at(format!("No se puede modificar la constante '{}'", name), &un.span));
+                }
                 let new_val = match &operand {
                     Value::Int(v) => Value::Int(v + delta),
                     Value::Float(f) => Value::Float(f + delta as f64),
@@ -1197,23 +1161,8 @@ impl Interpreter {
     }
 
     fn evaluate_arrow_function(&mut self, arrow: &ArrowFunctionExpr) -> ClsResult<Value> {
-        let block = match &*arrow.body {
-            Statement::Expression(expr) => {
-                let stmt = Statement::Return(Some(expr.clone()));
-                Block {
-                    statements: vec![stmt],
-                    span: arrow.span.clone(),
-                }
-            }
-            stmt => {
-                // Si es otro tipo de statement, lo envolvemos en un bloque
-                Block {
-                    statements: vec![stmt.clone()],
-                    span: arrow.span.clone(),
-                }
-            }
-        };
-        Ok(Value::Fun(FunValue::new_user("<anonymous>", arrow.params.clone(), block)))
+        // body ya es un Block (multi-statement o Return implícito del parser)
+        Ok(Value::Fun(FunValue::new_user("<anonymous>", arrow.params.clone(), *arrow.body.clone())))
     }
 
     fn evaluate_conditional(&mut self, cond: &ConditionalExpr) -> ClsResult<Value> {
@@ -1226,19 +1175,56 @@ impl Interpreter {
     }
 
     fn evaluate_assignment(&mut self, assign: &AssignmentExpr) -> ClsResult<Value> {
+        use cls_core::frontend::token::Operator;
+
         let value = self.evaluate_expression(&assign.value)?;
-        match &*assign.target {
+
+        // Operadores compuestos: target += val  →  target = target + val
+        let new_value = if assign.op != Operator::Equal {
+            let current = self.read_target(&assign.target, &assign.span)?;
+            self.apply_compound(current, assign.op, value, &assign.span)?
+        } else {
+            value
+        };
+
+        self.write_target(&assign.target, new_value.clone(), &assign.span)?;
+        Ok(new_value)
+    }
+
+    /// Lee el valor actual de un target (Identifier | MemberAccess | Index)
+    fn read_target(&mut self, target: &Expression, span: &Span) -> ClsResult<Value> {
+        match target {
             Expression::Identifier(name, _) => {
-                self.env.set(name, value.clone());
-                Ok(value)
+                if name == "me" {
+                    Ok(self.self_stack.last().cloned().unwrap_or(Value::Null))
+                } else {
+                    self.env.get(name).cloned()
+                        .ok_or_else(|| self.err_at(format!("Variable no definida: {}", name), span))
+                }
+            }
+            Expression::MemberAccess(member) => self.evaluate_member_access(member),
+            Expression::Index(idx) => self.evaluate_index(idx),
+            _ => Err(self.err_at("Target de asignación no soportado", span)),
+        }
+    }
+
+    /// Escribe un valor en un target (Identifier | MemberAccess | Index)
+    fn write_target(&mut self, target: &Expression, value: Value, span: &Span) -> ClsResult<()> {
+        match target {
+            Expression::Identifier(name, span) => {
+                if self.env.is_const(name) {
+                    return Err(self.err_at(format!("No se puede reasignar la constante '{}'", name), span));
+                }
+                self.env.set(name, value);
+                Ok(())
             }
             Expression::MemberAccess(member) => {
                 // Caso especial: me.field = value → mutar self_stack
                 if let Expression::Identifier(obj_name, _) = &*member.object {
                     if obj_name == "me" {
                         if let Some(Value::Object(obj)) = self.self_stack.last_mut() {
-                            obj.fields.insert(member.member.clone(), value.clone());
-                            return Ok(value);
+                            obj.fields.insert(member.member.clone(), value);
+                            return Ok(());
                         }
                     }
                 }
@@ -1246,34 +1232,128 @@ impl Interpreter {
                 match object {
                     Value::Struct(mut inst) => {
                         let def = self.structs.get(&inst.def_name).ok_or_else(|| {
-                            self.err_at(format!("Struct '{}' no definido", inst.def_name), &assign.span)
+                            self.err_at(format!("Struct '{}' no definido", inst.def_name), span)
                         })?;
                         let idx = def.fields.iter().position(|f| f.name == member.member).ok_or_else(|| {
-                            self.err_at(format!("Campo '{}' no encontrado", member.member), &assign.span)
+                            self.err_at(format!("Campo '{}' no encontrado", member.member), span)
                         })?;
-                        inst.fields[idx] = value.clone();
-                        // Re-insertar el struct modificado
+                        inst.fields[idx] = value;
                         if let Expression::Identifier(name, _) = &*member.object {
                             self.env.set(name, Value::Struct(inst));
                         }
-                        Ok(value)
+                        Ok(())
                     }
                     Value::Object(mut obj) => {
-                        obj.fields.insert(member.member.clone(), value.clone());
-                        // Re-insertar en env si es una variable
+                        obj.fields.insert(member.member.clone(), value);
                         if let Expression::Identifier(name, _) = &*member.object {
                             self.env.set(name, Value::Object(obj));
                         }
-                        Ok(value)
+                        Ok(())
                     }
                     Value::Record(ref mut rec) => {
-                        rec.insert(member.member.clone(), value.clone());
-                        Ok(value)
+                        rec.insert(member.member.clone(), value);
+                        Ok(())
                     }
-                    _ => Err(self.err_at("No se puede asignar a este miembro", &assign.span)),
+                    _ => Err(self.err_at("No se puede asignar a este miembro", span)),
                 }
             }
-            _ => Err(self.err_at("Target de asignación no soportado", &assign.span)),
+            Expression::Index(idx) => {
+                let object = self.evaluate_expression(&idx.object)?;
+                let index = self.evaluate_expression(&idx.index)?;
+                match (object, index) {
+                    (Value::Array(mut arr), Value::Int(i)) => {
+                        if i < 0 || i >= arr.len() as i64 {
+                            Err(self.err_at(format!("Índice fuera de rango: {}", i), span))
+                        } else {
+                            arr[i as usize] = value;
+                            if let Expression::Identifier(name, _) = &*idx.object {
+                                self.env.set(name, Value::Array(arr));
+                            }
+                            Ok(())
+                        }
+                    }
+                    (Value::Record(mut rec), Value::String(key)) => {
+                        rec.insert(key, value);
+                        if let Expression::Identifier(name, _) = &*idx.object {
+                            self.env.set(name, Value::Record(rec));
+                        }
+                        Ok(())
+                    }
+                    _ => Err(self.err_at("Indexado no soportado para asignación", span)),
+                }
+            }
+            _ => Err(self.err_at("Target de asignación no soportado", span)),
+        }
+    }
+
+    /// Aplica un operador compuesto: current OP value
+    fn apply_compound(&mut self, current: Value, op: cls_core::frontend::token::Operator, value: Value, span: &Span) -> ClsResult<Value> {
+        use cls_core::frontend::token::Operator;
+        // Convertir operador compuesto a su base: += → +, -= → -, etc.
+        let base_op = match op {
+            Operator::PlusEqual => Operator::Plus,
+            Operator::MinusEqual => Operator::Minus,
+            Operator::StarEqual => Operator::Star,
+            Operator::SlashEqual => Operator::Slash,
+            _ => op,
+        };
+        self.evaluate_binary_values(current, base_op, value, span)
+    }
+
+    /// Evalúa un binario con valores ya resueltos (para operadores compuestos)
+    fn evaluate_binary_values(&mut self, left: Value, op: cls_core::frontend::token::Operator, right: Value, span: &Span) -> ClsResult<Value> {
+        use cls_core::frontend::token::Operator;
+
+        // Short-circuit para lógicos
+        match op {
+            Operator::And => return Ok(Value::Bool(left.is_truthy() && right.is_truthy())),
+            Operator::Or => return Ok(Value::Bool(left.is_truthy() || right.is_truthy())),
+            _ => {}
+        }
+
+        match (&op, &left, &right) {
+            (Operator::Plus, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
+            (Operator::Plus, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
+            (Operator::Plus, Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 + b)),
+            (Operator::Plus, Value::Float(a), Value::Int(b)) => Ok(Value::Float(a + *b as f64)),
+            (Operator::Plus, Value::String(a), Value::String(b)) => Ok(Value::String(format!("{}{}", a, b))),
+            (Operator::Minus, a, b) => num_op(a, b, |x, y| x - y, |x, y| x - y),
+            (Operator::Star, a, b) => num_op(a, b, |x, y| x * y, |x, y| x * y),
+            (Operator::Slash, Value::Int(x), Value::Int(y)) => {
+                if *y == 0 { Err(self.err_at("División por cero", span)) }
+                else { Ok(Value::Int(x / y)) }
+            }
+            (Operator::Slash, a, b) => match (as_f64(a), as_f64(b)) {
+                (Some(m), Some(n)) => {
+                    if n == 0.0 { Err(self.err_at("División por cero", span)) }
+                    else { Ok(Value::Float(m / n)) }
+                }
+                _ => unsupported_span(&op, a, b, span),
+            },
+            (Operator::Percent, Value::Int(a), Value::Int(b)) => {
+                if *b == 0 { Err(self.err_at("Módulo por cero", span)) }
+                else { Ok(Value::Int(a % b)) }
+            }
+            (Operator::StarStar, a, b) => match (as_f64(a), as_f64(b)) {
+                (Some(x), Some(y)) => Ok(Value::Float(x.powf(y))),
+                _ => unsupported_span(&op, a, b, span),
+            },
+            (Operator::Caret, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a ^ b)),
+            (Operator::ShiftLeft, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a.wrapping_shl(*b as u32))),
+            (Operator::ShiftRight, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a.wrapping_shr(*b as u32))),
+            // Comparación de strings (antes de la numérica genérica)
+            (Operator::LessThan, Value::String(a), Value::String(b)) => Ok(Value::Bool(a < b)),
+            (Operator::LessEqual, Value::String(a), Value::String(b)) => Ok(Value::Bool(a <= b)),
+            (Operator::GreaterThan, Value::String(a), Value::String(b)) => Ok(Value::Bool(a > b)),
+            (Operator::GreaterEqual, Value::String(a), Value::String(b)) => Ok(Value::Bool(a >= b)),
+            // Comparación numérica (Int/Float mixto)
+            (Operator::LessThan, a, b) => cmp_num(a, b, |x, y| x < y),
+            (Operator::LessEqual, a, b) => cmp_num(a, b, |x, y| x <= y),
+            (Operator::GreaterThan, a, b) => cmp_num(a, b, |x, y| x > y),
+            (Operator::GreaterEqual, a, b) => cmp_num(a, b, |x, y| x >= y),
+            (Operator::StrictEqual, a, b) => Ok(Value::Bool(a == b)),
+            (Operator::NotEqual, a, b) => Ok(Value::Bool(a != b)),
+            _ => unsupported_span(&op, &left, &right, span),
         }
     }
 
@@ -1348,4 +1428,49 @@ impl Interpreter {
             other => Err(self.err_at(format!("'{}' no es un namespace/modulo", ns), span)),
         }
     }
+}
+
+// ─── Helpers de operaciones binarias ─────────────────────────────────────
+
+fn as_f64(v: &Value) -> Option<f64> {
+    match v {
+        Value::Int(i) => Some(*i as f64),
+        Value::Float(f) => Some(*f),
+        _ => None,
+    }
+}
+
+/// Operación numérica: Int si ambos Int, Float si hay algún Float
+fn num_op<F, G>(a: &Value, b: &Value, int_fn: F, float_fn: G) -> ClsResult<Value>
+where F: Fn(i64, i64) -> i64, G: Fn(f64, f64) -> f64
+{
+    match (a, b) {
+        (Value::Int(x), Value::Int(y)) => Ok(Value::Int(int_fn(*x, *y))),
+        (x, y) => match (as_f64(x), as_f64(y)) {
+            (Some(m), Some(n)) => Ok(Value::Float(float_fn(m, n))),
+            _ => Err(ClsError::RuntimeError(format!(
+                "Operación no soportada: {} y {}", a.type_name(), b.type_name()
+            ))),
+        }
+    }
+}
+
+/// Comparación numérica mixta (Int/Float)
+fn cmp_num<F>(a: &Value, b: &Value, cmp: F) -> ClsResult<Value>
+where F: Fn(f64, f64) -> bool
+{
+    match (as_f64(a), as_f64(b)) {
+        (Some(x), Some(y)) => Ok(Value::Bool(cmp(x, y))),
+        _ => Err(ClsError::RuntimeError(format!(
+            "Comparación no soportada: {} y {}", a.type_name(), b.type_name()
+        ))),
+    }
+}
+
+fn unsupported_span(op: &cls_core::frontend::token::Operator, a: &Value, b: &Value, span: &Span) -> ClsResult<Value> {
+    Err(ClsError::RuntimeError(format!(
+        "Operación no soportada: {} {} {} (línea {}, columna {})",
+        a.type_name(), op, b.type_name(),
+        span.start_line, span.start_col
+    )))
 }
