@@ -3,7 +3,7 @@ async function fetchData(url: String) -> String {
     # En el futuro: http.get(url) async real
     # Por ahora: await es un passthrough
     print("inicio")
-    sleep(1000)
+    sleep(1000) # uso incorrecto de sleep; usar asyncLib.sleep
     print("fin")
 
     return "dato simulado";
