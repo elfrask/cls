@@ -2,6 +2,7 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { LanguageClient, TransportKind } = require('vscode-languageclient/node');
 
 function activate(context) {
     console.log('[cls] Activando...');
@@ -12,8 +13,13 @@ function activate(context) {
 
     // ─── Lanzar clx maptype --watch en el workspace ─────────────────────
     const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath;
+    const clxPath = findClx();
+    if (clxPath) {
+        startLanguageServer(clxPath, context);
+    } else {
+        console.log('[cls] clx no encontrado, el servidor LSP no se iniciará');
+    }
     if (wsRoot) {
-        const clxPath = findClx();
         if (clxPath) {
             console.log('[cls] Generando type maps iniciales...');
             runSync(clxPath, ['maptype', '.', '-o', '.cls-types'], { cwd: wsRoot });
@@ -253,6 +259,35 @@ function findClx() {
         try { execSync(`"${bin}" --version`, { stdio: 'pipe' }); return bin; } catch {}
     }
     return null;
+}
+
+function startLanguageServer(clxPath, context) {
+    const serverOptions = {
+        command: clxPath,
+        args: ['lsp', '--silent'],
+        transport: TransportKind.stdio,
+    };
+
+    const clientOptions = {
+        documentSelector: [{ scheme: 'file', language: 'clx' }],
+        synchronize: {
+            fileEvents: vscode.workspace.createFileSystemWatcher('**/*.clsx'),
+        },
+    };
+
+    const client = new LanguageClient(
+        'clsLanguageServer',
+        'CLS Language Server',
+        serverOptions,
+        clientOptions
+    );
+
+    context.subscriptions.push(client.start());
+    client.onReady().then(() => {
+        console.log('[cls] LSP cliente conectado');
+    }).catch(err => {
+        console.error('[cls] Error al iniciar LSP:', err);
+    });
 }
 
 function runSync(cmd, args, opts) {

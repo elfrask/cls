@@ -96,7 +96,7 @@
         },
         {
           "name": "keyword.structure.ccls",
-          "match": "\\b(class|structure|interface|module|namespace)\\b"
+          "match": "\\b(class|structure|interface|module|namespace|enum)\\b"
         },
         {
           "name": "keyword.alias.ccls",
@@ -177,7 +177,7 @@
       "patterns": [
         {
           "name": "meta.type.declaration.ccls",
-          "begin": "\\b(class|structure|interface|alias)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "begin": "\\b(class|structure|interface|alias|enum)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
           "end": "(?=\\{|;)",
           "beginCaptures": {
             "1": { "name": "keyword.structure.ccls" },

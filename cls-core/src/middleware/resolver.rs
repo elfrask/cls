@@ -87,6 +87,9 @@ impl NameResolver {
             Statement::TypeAlias(t) => {
                 self.define(t.name.clone(), SymbolKind::Type);
             }
+            Statement::EnumDecl(e) => {
+                self.define(e.name.clone(), SymbolKind::Enum);
+            }
             Statement::Expression(expr) => {
                 self.resolve_expression(expr)?;
             }
@@ -349,4 +352,5 @@ enum SymbolKind {
     Namespace,
     Constructor,
     Type,
+    Enum,
 }

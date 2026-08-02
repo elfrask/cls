@@ -1,7 +1,7 @@
 use crate::environment::Environment;
 use crate::intrinsics::Intrinsics;
 use crate::resolver::ModuleResolver;
-use crate::value::{FunValue, Value, StructDef, StructField, StructInstance, Pollable, PollState, Promise, ClassDef, ClassInstance};
+use crate::value::{FunValue, Value, StructDef, StructField, StructInstance, Pollable, PollState, Promise, ClassDef, ClassInstance, EnumDef, EnumValue};
 use cls_core::config::ModuleManifest;
 use cls_core::error::{ClsError, ClsResult, Diagnostic, Span, StackFrame};
 use cls_core::frontend::ast::*;
@@ -338,6 +338,7 @@ impl Interpreter {
             Statement::Include(include) => self.execute_include(include),
             Statement::Config(_) | Statement::Meta(_) | Statement::TypeAlias(_) => Ok(Value::Void),
             Statement::Cmx(cmx) => self.evaluate_cmx(cmx),
+            Statement::EnumDecl(enum_decl) => self.execute_enum_decl(enum_decl),
         }
     }
 
@@ -475,6 +476,27 @@ impl Interpreter {
                 for (idx, item) in tup.iter().enumerate() {
                     self.env.push_scope();
                     self.env.define(&for_each.item_name, item.clone());
+                    if let Some(idx_name) = &for_each.index_name {
+                        self.env.define(idx_name, Value::Int(idx as i64));
+                    }
+                    self.execute_block(&for_each.block)?;
+                    self.env.pop_scope();
+                    if self.flow_should_exit_loop() {
+                        break;
+                    }
+                }
+                Ok(Value::Void)
+            }
+            Value::EnumDef(enum_def) => {
+                // Iterar las variantes del enum: for each v in (Color)
+                for (idx, variant) in enum_def.variants.iter().enumerate() {
+                    self.env.push_scope();
+                    let v = Value::Enum(Box::new(EnumValue {
+                        def_name: enum_def.name.clone(),
+                        variant: variant.clone(),
+                        index: idx as u16,
+                    }));
+                    self.env.define(&for_each.item_name, v);
                     if let Some(idx_name) = &for_each.index_name {
                         self.env.define(idx_name, Value::Int(idx as i64));
                     }
@@ -688,6 +710,15 @@ impl Interpreter {
 
         self.classes.insert(class.name.clone(), def.clone());
         self.env.define(&class.name, Value::Class(Box::new(def)));
+        Ok(Value::Void)
+    }
+
+    fn execute_enum_decl(&mut self, enum_decl: &EnumDecl) -> ClsResult<Value> {
+        let def = EnumDef {
+            name: enum_decl.name.clone(),
+            variants: enum_decl.variants.clone(),
+        };
+        self.env.define(&enum_decl.name, Value::EnumDef(Box::new(def)));
         Ok(Value::Void)
     }
 
@@ -938,7 +969,7 @@ impl Interpreter {
             UnaryOp::Negate => match &operand {
                 Value::Int(v) => Ok(Value::Int(-v)),
                 Value::Float(v) => Ok(Value::Float(-v)),
-                obj @ Value::Object(_) => {
+            obj @ Value::Object(_) => {
                     if let Some(r) = self.call_magic(obj, "__neg", vec![], &un.span)? {
                         Ok(r)
                     } else {
@@ -1478,6 +1509,21 @@ impl Interpreter {
                 }
                 Err(self.err_at(format!("Miembro '{}' no encontrado en '{}'", member.member, obj.class_name), &member.span))
             }
+            Value::EnumDef(enum_def) => {
+                // Color.Rojo → Value::Enum (índice de la variante)
+                let idx = enum_def.variants.iter().position(|v| v == &member.member);
+                match idx {
+                    Some(i) => Ok(Value::Enum(Box::new(EnumValue {
+                        def_name: enum_def.name.clone(),
+                        variant: member.member.clone(),
+                        index: i as u16,
+                    }))),
+                    None => Err(self.err_at(
+                        format!("Variante '{}' no encontrada en enum '{}'", member.member, enum_def.name),
+                        &member.span,
+                    )),
+                }
+            }
             Value::Class(class) => {
                 // Acceso a clase: métodos estáticos o fields estáticos
                 if class.static_methods.contains(&member.member) {
@@ -1874,7 +1920,8 @@ impl Interpreter {
             (Operator::Is, obj, class_val) => {
                 let class_name = match class_val {
                     Value::Class(def) => def.name.clone(),
-                    _ => return Err(self.err_at("El operador 'is' espera una clase a la derecha", span)),
+                    Value::EnumDef(def) => def.name.clone(),
+                    _ => return Err(self.err_at("El operador 'is' espera una clase o enum a la derecha", span)),
                 };
                 let result = match obj {
                     Value::Object(o) => {
@@ -1884,11 +1931,12 @@ impl Interpreter {
                         } else {
                             // Buscar en la cadena de ancestros de la clase del objeto
                             self.classes.get(&own)
-                                .map(|cd| cd.ancestors.contains(&class_name))
+                                .map(|cd| cd.ancestors.iter().any(|a| a == &class_name))
                                 .unwrap_or(false)
                         }
                     }
                     Value::Struct(s) => s.def_name == class_name,
+                    Value::Enum(e) => e.def_name == class_name,
                     _ => false,
                 };
                 Ok(Value::Bool(result))

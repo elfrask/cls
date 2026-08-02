@@ -108,6 +108,7 @@ impl Parser {
             Token::Keyword(Keyword::Module) => self.parse_module_decl(),
             Token::Keyword(Keyword::Namespace) => self.parse_namespace_decl(),
             Token::Keyword(Keyword::Alias) => self.parse_alias_decl(),
+            Token::Keyword(Keyword::Enum) => self.parse_enum_decl(),
 
             // Imports
             Token::Keyword(Keyword::Import) => self.parse_import(),
@@ -1099,6 +1100,28 @@ impl Parser {
             name,
             type_params,
             type_ann,
+            span: self.span(),
+        }))
+    }
+
+    /// `enum Nombre { Var1, Var2, Var3, };` — variantes constantes con identidad.
+    fn parse_enum_decl(&mut self) -> ClsResult<Statement> {
+        self.expect_keyword(Keyword::Enum)?;
+        let name = self.expect_identifier()?;
+        self.expect_symbol(Symbol::LBrace)?;
+
+        let mut variants = Vec::new();
+        while !self.check_symbol(Symbol::RBrace) && !self.is_eof() {
+            self.skip_newlines();
+            variants.push(self.expect_identifier()?);
+            self.consume_symbol(Symbol::Comma);
+        }
+        self.expect_symbol(Symbol::RBrace)?;
+        self.consume_symbol(Symbol::Semicolon);
+
+        Ok(Statement::EnumDecl(EnumDecl {
+            name,
+            variants,
             span: self.span(),
         }))
     }

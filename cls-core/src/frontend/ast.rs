@@ -42,6 +42,9 @@ pub enum Statement {
     // Alias de tipos (compile-time)
     TypeAlias(TypeAliasDecl),
 
+    // Enums (variantes constantes con identidad)
+    EnumDecl(EnumDecl),
+
     // Imports
     Import(ImportStatement),
     FromImport(FromImportStatement),
@@ -252,6 +255,15 @@ pub struct TypeAliasDecl {
     pub name: String,
     pub type_params: Vec<TypeParam>,
     pub type_ann: TypeAnnotation,
+    pub span: Span,
+}
+
+/// Declaración de enum: `enum Color { Rojo, Verde, Azul };`
+/// Las variantes son constantes con identidad única (índice dentro del enum).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnumDecl {
+    pub name: String,
+    pub variants: Vec<String>,
     pub span: Span,
 }
 
@@ -617,6 +629,7 @@ impl fmt::Display for Statement {
             Statement::ModuleDecl(m) => f.write_fmt(format_args!("module {}", m.name)),
             Statement::NamespaceDecl(n) => f.write_fmt(format_args!("namespace {}", n.name)),
             Statement::TypeAlias(t) => f.write_fmt(format_args!("alias {} = ...", t.name)),
+            Statement::EnumDecl(e) => f.write_fmt(format_args!("enum {}", e.name)),
             Statement::Import(i) => f.write_fmt(format_args!("import \"{}\"", i.path)),
             Statement::FromImport(fi) => f.write_fmt(format_args!("from \"{}\" import ...", fi.path)),
             Statement::Include(i) => f.write_fmt(format_args!("include \"{}\"", i.path)),

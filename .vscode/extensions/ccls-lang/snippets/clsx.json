@@ -1,33 +1,33 @@
 {
-  "Función": {
+  "FunciÃ³n": {
     "prefix": "fn",
     "body": [
       "function ${1:nombre}(${2:param}: ${3:Tipo}) -> ${4:Tipo} {",
-      "    ${5:// cuerpo}",
+      "    ${5:# cuerpo}",
       "    return ${6:valor};",
       "};"
     ],
-    "description": "Función con tipo de retorno"
+    "description": "FunciÃ³n con tipo de retorno"
   },
-  "Función void": {
+  "FunciÃ³n void": {
     "prefix": "fnv",
     "body": [
       "function ${1:nombre}(${2:param}: ${3:Tipo}) {",
-      "    ${4:// cuerpo}",
+      "    ${4:# cuerpo}",
       "};"
     ],
-    "description": "Función sin retorno"
+    "description": "FunciÃ³n sin retorno"
   },
-  "Función genérica": {
+  "FunciÃ³n genÃ©rica": {
     "prefix": "fng",
     "body": [
       "function ${1:nombre}<T>(${2:x}: T) -> T {",
       "    return ${2:x};",
       "};"
     ],
-    "description": "Función genérica (compile-time)"
+    "description": "FunciÃ³n genÃ©rica (compile-time)"
   },
-  "Función async": {
+  "FunciÃ³n async": {
     "prefix": "fna",
     "body": [
       "async function ${1:nombre}(${2:param}: ${3:Tipo}) -> ${4:Tipo} {",
@@ -35,7 +35,7 @@
       "    return res;",
       "};"
     ],
-    "description": "Función asíncrona con await"
+    "description": "FunciÃ³n asÃ­ncrona con await"
   },
   "Clase": {
     "prefix": "cls",
@@ -52,9 +52,9 @@
       "    }",
       "};"
     ],
-    "description": "Clase con constructor y método"
+    "description": "Clase con constructor y mÃ©todo"
   },
-  "Clase genérica": {
+  "Clase genÃ©rica": {
     "prefix": "clsg",
     "body": [
       "class ${1:Caja}<T> {",
@@ -69,13 +69,13 @@
       "    }",
       "};"
     ],
-    "description": "Clase genérica con type param"
+    "description": "Clase genÃ©rica con type param"
   },
   "Clase con herencia": {
     "prefix": "clsh",
     "body": [
       "class ${1:Padre} {",
-      "    ${2:// members}",
+      "    ${2:# members}",
       "};",
       "",
       "class ${3:Hijo}: ${1:Padre} {",
@@ -112,9 +112,9 @@
       "    ${4:metodo}(${5:param}: ${6:Tipo}): ${7:Tipo},",
       "};"
     ],
-    "description": "Interface con campos y métodos (compile-time)"
+    "description": "Interface con campos y mÃ©todos (compile-time)"
   },
-  "Interface genérica": {
+  "Interface genÃ©rica": {
     "prefix": "intfg",
     "body": [
       "interface ${1:Hello}<T=${2:Int}> {",
@@ -122,9 +122,9 @@
       "    ${4:metodo}(${5:x}: T): ${6:Tipo},",
       "};"
     ],
-    "description": "Interface genérica con default"
+    "description": "Interface genÃ©rica con default"
   },
-  "Extracción de tipo": {
+  "ExtracciÃ³n de tipo": {
     "prefix": "ext",
     "body": [
       "var ${1:valor}: ${2:Interface}[\"${3:campo}\"] = ${4:valor};"
@@ -138,19 +138,19 @@
     ],
     "description": "Alias de tipo tupla"
   },
-  "Alias de unión": {
+  "Alias de uniÃ³n": {
     "prefix": "aliu",
     "body": [
       "alias ${1:Color} = \"${2:red}\" | \"${3:green}\" | \"${4:blue}\";"
     ],
-    "description": "Alias de unión de literales"
+    "description": "Alias de uniÃ³n de literales"
   },
-  "Alias de función": {
+  "Alias de funciÃ³n": {
     "prefix": "alif",
     "body": [
       "alias ${1:FnInt} = fun(${2:Int}) -> ${3:Int};"
     ],
-    "description": "Alias de tipo función"
+    "description": "Alias de tipo funciÃ³n"
   },
   "Alias de record": {
     "prefix": "alir",
@@ -174,17 +174,17 @@
     "body": [
       "module ${1:nombre} {",
       "    export function ${2:funcion}() -> ${3:Tipo} {",
-      "        ${4:// cuerpo}",
+      "        ${4:# cuerpo}",
       "    }",
       "};"
     ],
-    "description": "Módulo con export"
+    "description": "MÃ³dulo con export"
   },
   "Namespace": {
     "prefix": "ns",
     "body": [
       "namespace ${1:nombre} {",
-      "    ${2:// members}",
+      "    ${2:# members}",
       "};"
     ],
     "description": "Namespace"
@@ -194,22 +194,22 @@
     "body": [
       "import \"${1:modulo}\" as ${2:alias};"
     ],
-    "description": "Importar módulo"
+    "description": "Importar mÃ³dulo"
   },
   "From import": {
     "prefix": "impf",
     "body": [
-      "from \"${1:modulo}\" import ${2:símbolo};"
+      "from \"${1:modulo}\" import ${2:sÃ­mbolo};"
     ],
-    "description": "Importar símbolos específicos"
+    "description": "Importar sÃ­mbolos especÃ­ficos"
   },
   "If / else": {
     "prefix": "if",
     "body": [
       "if (${1:condicion}) {",
-      "    ${2:// entonces}",
+      "    ${2:# entonces}",
       "} else {",
-      "    ${3:// sino}",
+      "    ${3:# sino}",
       "}"
     ],
     "description": "Condicional if/else"
@@ -218,7 +218,7 @@
     "prefix": "wh",
     "body": [
       "while (${1:condicion}) {",
-      "    ${2:// cuerpo}",
+      "    ${2:# cuerpo}",
       "}"
     ],
     "description": "Bucle while"
@@ -227,7 +227,7 @@
     "prefix": "lp",
     "body": [
       "loop {",
-      "    ${1:// cuerpo}",
+      "    ${1:# cuerpo}",
       "    if (${2:condicion}) { break; }",
       "}"
     ],
@@ -237,7 +237,7 @@
     "prefix": "for",
     "body": [
       "for (var ${1:i} = ${2:0}; ${1:i} < ${3:limite}; ${1:i} = ${1:i} + 1) {",
-      "    ${4:// cuerpo}",
+      "    ${4:# cuerpo}",
       "}"
     ],
     "description": "Bucle for tradicional"
@@ -246,29 +246,29 @@
     "prefix": "fe",
     "body": [
       "for each ${1:item} in (${2:coleccion}) {",
-      "    ${3:// cuerpo}",
+      "    ${3:# cuerpo}",
       "}"
     ],
-    "description": "Iterar colección"
+    "description": "Iterar colecciÃ³n"
   },
-  "For each con índice": {
+  "For each con Ã­ndice": {
     "prefix": "fei",
     "body": [
       "for each ${1:item} (${2:i}) in (${3:coleccion}) {",
-      "    ${4:// item y ${2:i}}",
+      "    ${4:# item y ${2:i}}",
       "}"
     ],
-    "description": "Iterar con índice"
+    "description": "Iterar con Ã­ndice"
   },
   "Switch": {
     "prefix": "sw",
     "body": [
       "switch (${1:valor}) {",
       "    case (${2:patron}) {",
-      "        ${3:// caso}",
+      "        ${3:# caso}",
       "    }",
       "    default {",
-      "        ${4:// por defecto}",
+      "        ${4:# por defecto}",
       "    }",
       "}"
     ],
@@ -278,9 +278,9 @@
     "prefix": "try",
     "body": [
       "try {",
-      "    ${1:// código que puede fallar}",
+      "    ${1:# cÃ³digo que puede fallar}",
       "} catch (${2:e}) {",
-      "    ${3:// manejo del error}",
+      "    ${3:# manejo del error}",
       "}"
     ],
     "description": "Manejo de errores"
@@ -290,7 +290,7 @@
     "body": [
       "var ${1:par}: (${2:Int}, ${3:String}) = (${4:1}, \"${5:x}\");"
     ],
-    "description": "Tupla heterogénea"
+    "description": "Tupla heterogÃ©nea"
   },
   "Array tipado": {
     "prefix": "arr",
@@ -318,7 +318,7 @@
     "body": [
       "var ${1:fn} = (${2:x}: ${3:Tipo}) => ${4:expresion};"
     ],
-    "description": "Función flecha"
+    "description": "FunciÃ³n flecha"
   },
   "CMX elemento": {
     "prefix": "cmx",
@@ -336,7 +336,7 @@
       "    return \"${1:...}\";",
       "}"
     ],
-    "description": "Método mágico __toString"
+    "description": "MÃ©todo mÃ¡gico __toString"
   },
   "Operador is": {
     "prefix": "isop",
@@ -350,9 +350,9 @@
     "body": [
       "super.${1:metodo}(${2:args})"
     ],
-    "description": "Acceso al método del padre"
+    "description": "Acceso al mÃ©todo del padre"
   },
-  "Método main": {
+  "MÃ©todo main": {
     "prefix": "main",
     "body": [
       "function main(args: String[]) -> int {",
@@ -361,5 +361,35 @@
       "};"
     ],
     "description": "Punto de entrada main"
+  },
+  "Enum": {
+    "prefix": "enum",
+    "body": [
+      "enum ${1:Nombre} {",
+      "    ${2:Variante1},",
+      "    ${3:Variante2},",
+      "    ${4:Variante3},",
+      "};"
+    ],
+    "description": "Enum con variantes constantes (Ã­ndice 1-2 bytes)"
+  },
+  "Enum uso": {
+    "prefix": "enumus",
+    "body": [
+      "var ${1:estado} = ${2:Enum}.${3:Variante};",
+      "if (${1:estado} == ${2:Enum}.${3:Variante}) {",
+      "    ${4:// ...}",
+      "}"
+    ],
+    "description": "Usar un enum (acceso + comparaciÃ³n)"
+  },
+  "Enum iterar": {
+    "prefix": "enumi",
+    "body": [
+      "for each ${1:estado} in (${2:Enum}) {",
+      "    ${3:// ...}",
+      "}"
+    ],
+    "description": "Iterar las variantes de un enum"
   }
 }
