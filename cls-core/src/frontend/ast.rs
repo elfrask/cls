@@ -64,6 +64,9 @@ pub struct VarDecl {
     pub value: Option<Expression>,
     pub visibility: Visibility,
     pub span: Span,
+    /// Variable estática (miembro de clase static)
+    #[serde(default)]
+    pub is_static: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

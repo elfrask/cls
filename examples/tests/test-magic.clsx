@@ -1,6 +1,6 @@
-class Number {
+class Number: Value {
     var value: int;
-
+    
     function main(value: int) {
         me.value = value;
     }

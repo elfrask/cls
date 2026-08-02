@@ -93,6 +93,9 @@ pub enum Keyword {
     Public,
     Private,
     Static,
+    Extends,
+    Is,
+    Super,
     Me,
 
     // Imports
@@ -134,6 +137,7 @@ pub enum Operator {
     LessEqual,      // <=
     GreaterEqual,   // >=
     StrictEqual,    // ==
+    Is,             // is (instancia de)
 
     // Lógicos
     And,        // &
@@ -361,6 +365,9 @@ impl fmt::Display for Keyword {
             Keyword::Public => "public",
             Keyword::Private => "private",
             Keyword::Static => "static",
+            Keyword::Extends => "extends",
+            Keyword::Is => "is",
+            Keyword::Super => "super",
             Keyword::Me => "me",
             Keyword::Import => "import",
             Keyword::From => "from",
@@ -396,6 +403,7 @@ impl fmt::Display for Operator {
             Operator::LessEqual => "<=",
             Operator::GreaterEqual => ">=",
             Operator::StrictEqual => "==",
+            Operator::Is => "is",
             Operator::And => "&",
             Operator::Or => "|",
             Operator::Not => "!",

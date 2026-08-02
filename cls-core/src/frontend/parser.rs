@@ -179,6 +179,7 @@ impl Parser {
             value,
             visibility: Visibility::Default,
             span: self.span(),
+            is_static: false,
         }))
     }
 
@@ -206,6 +207,7 @@ impl Parser {
             value,
             visibility: Visibility::Default,
             span: self.span(),
+            is_static: false,
         }))
     }
 
@@ -725,8 +727,12 @@ impl Parser {
         self.expect_keyword(Keyword::Class)?;
         let name = self.expect_identifier()?;
         
-        // Herencia
-        let extends = if self.consume_symbol(Symbol::LParen) {
+        // Herencia: `extends Base` o `(Base)` (alias)
+        let extends = if self.check_keyword(Keyword::Extends) {
+            self.advance();
+            let parent = self.expect_identifier()?;
+            Some(parent)
+        } else if self.consume_symbol(Symbol::LParen) {
             let parent = self.expect_identifier()?;
             self.expect_symbol(Symbol::RParen)?;
             Some(parent)
@@ -759,11 +765,29 @@ impl Parser {
     }
 
     fn parse_class_member(&mut self) -> ClsResult<ClassMember> {
+        // Detectar modificadores: public / private / static
+        let mut is_public = false;
+        let mut is_private = false;
+        let mut is_static = false;
+        loop {
+            match self.current_token {
+                Token::Keyword(Keyword::Public) => { self.advance(); is_public = true; }
+                Token::Keyword(Keyword::Private) => { self.advance(); is_private = true; }
+                Token::Keyword(Keyword::Static) => { self.advance(); is_static = true; }
+                _ => break,
+            }
+        }
+
         // Verificar si es un método o una propiedad
         let is_method = self.check_keyword(Keyword::Function) || self.check_keyword(Keyword::Void);
         
         if is_method {
-            let stmt = self.parse_function_decl()?;
+            let mut stmt = self.parse_function_decl()?;
+            if let Statement::FunctionDecl(ref mut func) = stmt {
+                if is_public { func.visibility = Visibility::Public; }
+                if is_private { func.visibility = Visibility::Private; }
+                if is_static { func.modifiers.push(FunctionModifier::Static); }
+            }
             match stmt {
                 Statement::FunctionDecl(func) => {
                     if func.name == "main" {
@@ -775,8 +799,12 @@ impl Parser {
                 _ => unreachable!(),
             }
         } else {
-            // Es una propiedad
-            let stmt = self.parse_var_decl()?;
+            let mut stmt = self.parse_var_decl()?;
+            if let Statement::VarDecl(ref mut var) = stmt {
+                if is_public { var.visibility = Visibility::Public; }
+                if is_private { var.visibility = Visibility::Private; }
+                var.is_static = is_static;
+            }
             match stmt {
                 Statement::VarDecl(var) => Ok(ClassMember::Property(var)),
                 _ => unreachable!(),
@@ -1163,19 +1191,38 @@ impl Parser {
     fn parse_equality(&mut self) -> ClsResult<Expression> {
         let mut expr = self.parse_xor()?;
         
-        while let Token::Operator(op) = &self.current_token {
-            let op = match op {
-                Operator::StrictEqual | Operator::NotEqual => op.clone(),
-                _ => break,
-            };
-            self.advance();
-            let right = self.parse_xor()?;
-            expr = Expression::Binary(BinaryExpr {
-                left: Box::new(expr),
-                op,
-                right: Box::new(right),
-                span: self.span(),
-            });
+        loop {
+            // '==' y '!='
+            if let Token::Operator(op) = &self.current_token {
+                match op {
+                    Operator::StrictEqual | Operator::NotEqual => {
+                        let op = op.clone();
+                        self.advance();
+                        let right = self.parse_xor()?;
+                        expr = Expression::Binary(BinaryExpr {
+                            left: Box::new(expr),
+                            op,
+                            right: Box::new(right),
+                            span: self.span(),
+                        });
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+            // 'is' keyword: obj is Clase
+            if self.check_keyword(Keyword::Is) {
+                self.advance();
+                let right = self.parse_xor()?;
+                expr = Expression::Binary(BinaryExpr {
+                    left: Box::new(expr),
+                    op: Operator::Is,
+                    right: Box::new(right),
+                    span: self.span(),
+                });
+                continue;
+            }
+            break;
         }
         
         Ok(expr)
@@ -1463,6 +1510,10 @@ impl Parser {
             Token::Keyword(Keyword::Me) => {
                 self.advance();
                 Ok(Expression::Identifier("me".to_string(), self.span()))
+            }
+            Token::Keyword(Keyword::Super) => {
+                self.advance();
+                Ok(Expression::Identifier("super".to_string(), self.span()))
             }
             Token::Keyword(Keyword::True) => {
                 self.advance();
