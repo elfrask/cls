@@ -14,7 +14,7 @@ pub mod host_api;
 pub mod ffi;
 pub mod error;
 
-pub use value::Value;
+pub use value::{Value, Promise, Pollable, PollState};
 pub use environment::Environment;
 pub use interpreter::{Interpreter, ImportFrame};
 pub use intrinsics::Intrinsics;

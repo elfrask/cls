@@ -1,7 +1,7 @@
 use crate::environment::Environment;
 use crate::intrinsics::Intrinsics;
 use crate::resolver::ModuleResolver;
-use crate::value::{FunValue, Value, StructDef, StructField, StructInstance};
+use crate::value::{FunValue, Value, StructDef, StructField, StructInstance, Pollable, PollState, Promise};
 use cls_core::config::ModuleManifest;
 use cls_core::error::{ClsError, ClsResult, Diagnostic, Span, StackFrame};
 use cls_core::frontend::ast::*;
@@ -10,6 +10,35 @@ use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 enum Flow { Normal, Return(Value), Break, Continue }
+
+/// Corrutina de una función async. Guarda el cuerpo y params para ejecutarlos
+/// en el poll (por ahora síncrono hasta el primer await; luego suspensible).
+pub struct CoroutineTask {
+    name: String,
+    body: Block,
+    params: Vec<cls_core::frontend::ast::Parameter>,
+    args: Vec<Value>,
+}
+
+impl CoroutineTask {
+    pub fn new(
+        name: &str,
+        body: Block,
+        params: Vec<cls_core::frontend::ast::Parameter>,
+        args: Vec<Value>,
+    ) -> Self {
+        Self { name: name.to_string(), body, params, args }
+    }
+}
+
+impl Pollable for CoroutineTask {
+    fn poll(&mut self, interp: &mut Interpreter) -> PollState {
+        match interp.run_async_body(&self.body, &self.params, &self.args) {
+            Ok(v) => PollState::Ready(v),
+            Err(e) => PollState::Rejected(e.to_string()),
+        }
+    }
+}
 
 /// Intérprete tree-walker de CLS
 /// Ejecuta el AST directamente, sin compilación intermedia
@@ -310,11 +339,12 @@ impl Interpreter {
     }
 
     fn execute_function_decl(&mut self, func: &FunctionDecl) -> ClsResult<Value> {
-        let fun_val = Value::Fun(FunValue::new_user(
-            &func.name,
-            func.params.clone(),
-            func.body.clone(),
-        ));
+        let is_async = func.modifiers.iter().any(|m| matches!(m, FunctionModifier::Async));
+        let fun_val = if is_async {
+            Value::Fun(FunValue::new_async_user(&func.name, func.params.clone(), func.body.clone()))
+        } else {
+            Value::Fun(FunValue::new_user(&func.name, func.params.clone(), func.body.clone()))
+        };
         self.env.define(&func.name, fun_val);
         if matches!(func.visibility, Visibility::Export) {
             self.exports.insert(func.name.clone());
@@ -581,6 +611,28 @@ impl Interpreter {
         Ok(result)
     }
 
+    /// Ejecuta el cuerpo de una corrutina (async fn) con params bindeados.
+    fn run_async_body(&mut self, body: &Block, params: &[cls_core::frontend::ast::Parameter], args: &[Value]) -> ClsResult<Value> {
+        self.env.push_scope();
+        for (i, param) in params.iter().enumerate() {
+            let arg_val = if i < args.len() {
+                args[i].clone()
+            } else if let Some(default) = &param.default_value {
+                self.evaluate_expression(default)?
+            } else {
+                Value::Null
+            };
+            self.env.define(&param.name, arg_val);
+        }
+        let result = self.execute_block(body);
+        let result = match std::mem::replace(&mut self.flow, Flow::Normal) {
+            Flow::Return(val) => Ok(val),
+            _ => result,
+        };
+        self.env.pop_scope();
+        result
+    }
+
     fn evaluate_expression(&mut self, expr: &Expression) -> ClsResult<Value> {
         match expr {
             Expression::Literal(lit) => self.evaluate_literal(lit),
@@ -608,9 +660,17 @@ impl Interpreter {
     }
 
     fn evaluate_await(&mut self, expr: &Expression) -> ClsResult<Value> {
-        // Por ahora: await es un passthrough que evalua la expresion y devuelve el valor.
-        // En el futuro: el runtime de corrutinas resolvera promesas.
-        self.evaluate_expression(expr)
+        let value = self.evaluate_expression(expr)?;
+        match value {
+            Value::Promise(mut p) => {
+                match p.poll(self) {
+                    PollState::Ready(v) => Ok(v),
+                    PollState::Rejected(e) => Err(ClsError::RuntimeError(e)),
+                    PollState::Pending => Ok(Value::Void),
+                }
+            }
+            other => Ok(other),
+        }
     }
 
     fn evaluate_literal(&mut self, lit: &Literal) -> ClsResult<Value> {
@@ -762,6 +822,10 @@ impl Interpreter {
             Value::Fun(f) => f.name.clone(),
             _ => "<unknown>".to_string(),
         };
+        let is_async = match &callee {
+            Value::Fun(f) => f.is_async,
+            _ => false,
+        };
         let current_frame = StackFrame::new(&fn_name, Some(*call_span), &self.source_file);
         self.call_stack.push(current_frame.clone());
 
@@ -771,24 +835,30 @@ impl Interpreter {
                     func(&args)
                 }
                 crate::value::FunKind::User { params, body } => {
-                    self.env.push_scope();
-                    for (i, param) in params.iter().enumerate() {
-                        let arg_val = if i < args.len() {
-                            args[i].clone()
-                        } else if let Some(default) = &param.default_value {
-                            self.evaluate_expression(default)?
-                        } else {
-                            Value::Null
+                    if is_async {
+                        // Función async: crear Promise lazy, NO ejecutar el cuerpo aún
+                        let task = CoroutineTask::new(&fun.name, body.clone(), params.clone(), args);
+                        Ok(Value::Promise(Promise::new(Box::new(task))))
+                    } else {
+                        self.env.push_scope();
+                        for (i, param) in params.iter().enumerate() {
+                            let arg_val = if i < args.len() {
+                                args[i].clone()
+                            } else if let Some(default) = &param.default_value {
+                                self.evaluate_expression(default)?
+                            } else {
+                                Value::Null
+                            };
+                            self.env.define(&param.name, arg_val);
+                        }
+                        let result = self.execute_block(body);
+                        let result = match std::mem::replace(&mut self.flow, Flow::Normal) {
+                            Flow::Return(val) => Ok(val),
+                            _ => result,
                         };
-                        self.env.define(&param.name, arg_val);
+                        self.env.pop_scope();
+                        result
                     }
-                    let result = self.execute_block(body);
-                    let result = match std::mem::replace(&mut self.flow, Flow::Normal) {
-                        Flow::Return(val) => Ok(val),
-                        _ => result,
-                    };
-                    self.env.pop_scope();
-                    result
                 }
             },
             _ => Err(self.err_at("No se puede llamar", call_span)),

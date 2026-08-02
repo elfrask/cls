@@ -27,6 +27,7 @@ impl ModuleResolver {
     pub fn with_core_stdlib(mut self) -> Self {
         self.internals.insert("math".into(), crate::stdlib::math::module());
         self.internals.insert("json".into(), crate::stdlib::json::module());
+        self.internals.insert("async".into(), crate::stdlib::async_::module());
         self
     }
 
