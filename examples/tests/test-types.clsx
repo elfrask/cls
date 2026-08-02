@@ -43,5 +43,8 @@ function main(args: String[]) -> int {
     var h: String = id("hola");
     var caja = Caja(42);
     var out: Int = caja.obtener();
+    t = (
+        <Div />
+    );
     return 0;
 };

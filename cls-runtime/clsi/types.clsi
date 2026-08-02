@@ -2,7 +2,7 @@
 # @description Interfaces de los tipos de datos estandar de CLS y sus metodos.
 # Los primitivos NO se envuelven en objetos: los metodos se resuelven por
 # dispatch tables estaticas (cls-runtime/src/stdlib/primitive.rs).
-# Convenciones:
+# Convenciones
 #   @kind getter  -> propiedad computada ("hola".length), sin parentesis
 #   (metodo)      -> invocable con parentesis ("hola".upper())
 #   @mutable      -> muta el valor in-place (arrays) via write-back automatico
