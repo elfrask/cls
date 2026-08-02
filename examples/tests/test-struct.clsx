@@ -12,6 +12,7 @@ function main(args: String[]) -> int {
     # Mutar campo
     p.name = "Bob";
     print("Nombre cambiado:", p.name);
+    print("all structure:", p);
 
     return 0;
 };

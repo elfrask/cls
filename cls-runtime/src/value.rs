@@ -114,6 +114,46 @@ impl PartialEq for StructInstance {
     }
 }
 
+/// Definición de una clase (el valor `Class` es callable: construye instancias)
+#[derive(Clone)]
+pub struct ClassDef {
+    pub name: String,
+    pub extends: Option<String>,
+    pub methods: HashMap<String, FunValue>,
+    pub field_defaults: HashMap<String, Option<Value>>,
+    pub ctor: Option<cls_core::frontend::ast::FunctionDecl>,
+}
+
+/// Instancia de una clase en runtime
+#[derive(Clone)]
+pub struct ClassInstance {
+    pub class_name: String,
+    pub fields: HashMap<String, Value>,
+    pub methods: HashMap<String, FunValue>,
+}
+
+impl PartialEq for ClassDef {
+    fn eq(&self, other: &Self) -> bool { self.name == other.name }
+}
+
+impl PartialEq for ClassInstance {
+    fn eq(&self, other: &Self) -> bool {
+        self.class_name == other.class_name && self.fields == other.fields
+    }
+}
+
+impl fmt::Debug for ClassDef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ClassDef").field("name", &self.name).finish()
+    }
+}
+
+impl fmt::Debug for ClassInstance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ClassInstance").field("name", &self.class_name).finish()
+    }
+}
+
 /// Valores runtime de CLS
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -132,6 +172,8 @@ pub enum Value {
     Fun(FunValue),
     Struct(Box<StructInstance>),
     Promise(Promise),
+    Class(Box<ClassDef>),
+    Object(Box<ClassInstance>),
 
     // Tipos especiales
     Unknown,
@@ -155,6 +197,8 @@ impl Value {
             Value::Fun(_) => "Fun",
             Value::Struct(_) => "Struct",  // nombre real via to_string()
             Value::Promise(_) => "Promise",
+            Value::Class(_) => "Class",
+            Value::Object(_) => "Object",  // nombre real via to_string()
             Value::Unknown => "Unknown",
             Value::Cmx(_) => "Cmx",
         }
@@ -171,6 +215,8 @@ impl Value {
             Value::Record(v) => !v.is_empty(),
             Value::Struct(_) => true,
             Value::Promise(_) => true,
+            Value::Class(_) => true,
+            Value::Object(_) => true,
             _ => true,
         }
     }
@@ -202,6 +248,13 @@ impl Value {
                 format!("{}({})", def_name, fields.join(", "))
             }
             Value::Promise(_) => "<promise>".to_string(),
+            Value::Class(c) => format!("<class {}>", c.name),
+            Value::Object(o) => {
+                let fields: Vec<String> = o.fields.iter()
+                    .map(|(k, v)| format!("{}: {}", k, v.to_string()))
+                    .collect();
+                format!("<{} {{{}}}>", o.class_name, fields.join(", "))
+            }
             Value::Unknown => "unknown".to_string(),
             Value::Cmx(cmx) => {
                 let props_str = if cmx.props.is_empty() {
@@ -259,6 +312,8 @@ pub enum FunKind {
     User {
         params: Vec<cls_core::frontend::ast::Parameter>,
         body: Block,
+        /// Entorno léxico capturado (closures). None = usa el env global actual.
+        closure: Option<std::sync::Arc<std::sync::Mutex<crate::environment::Environment>>>,
     },
 }
 
@@ -286,7 +341,7 @@ impl fmt::Debug for FunKind {
                 .field("params", params)
                 .field("func", &"<native>")
                 .finish(),
-            FunKind::User { params, body } => f
+            FunKind::User { params, body, .. } => f
                 .debug_struct("User")
                 .field("params", params)
                 .field("body", body)
@@ -314,7 +369,15 @@ impl FunValue {
         Self {
             name: name.to_string(),
             is_async: false,
-            kind: FunKind::User { params, body },
+            kind: FunKind::User { params, body, closure: None },
+        }
+    }
+
+    pub fn new_user_with_closure(name: &str, params: Vec<cls_core::frontend::ast::Parameter>, body: Block, closure: std::sync::Arc<std::sync::Mutex<crate::environment::Environment>>) -> Self {
+        Self {
+            name: name.to_string(),
+            is_async: false,
+            kind: FunKind::User { params, body, closure: Some(closure) },
         }
     }
 
@@ -322,7 +385,15 @@ impl FunValue {
         Self {
             name: name.to_string(),
             is_async: true,
-            kind: FunKind::User { params, body },
+            kind: FunKind::User { params, body, closure: None },
+        }
+    }
+
+    pub fn new_async_user_with_closure(name: &str, params: Vec<cls_core::frontend::ast::Parameter>, body: Block, closure: std::sync::Arc<std::sync::Mutex<crate::environment::Environment>>) -> Self {
+        Self {
+            name: name.to_string(),
+            is_async: true,
+            kind: FunKind::User { params, body, closure: Some(closure) },
         }
     }
 }
