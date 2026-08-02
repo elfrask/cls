@@ -43,6 +43,7 @@ fn builtin_type_definitions() -> Vec<(&'static str, &'static str)> {
         ("fs", include_str!("../../../cls-runtime/clsi/fs.clsi")),
         ("http", include_str!("../../../cls-runtime/clsi/http.clsi")),
         ("Lib", include_str!("../../../cls-runtime/clsi/Lib.clsi")),
+        ("async", include_str!("../../../cls-runtime/clsi/async.clsi")),
     ]
 }
 

@@ -1,0 +1,17 @@
+# @title async
+# @description Modulo de corrutinas y utilidades para promesas.
+
+# @description Crea una promesa que resuelve despues de X milisegundos
+# @params ms Milisegundos de espera
+# @return Promise Promesa que resuelve a void
+function delay(ms: int) -> Promise {};
+
+# @description Resuelve cuando TODAS las promesas del array resuelven
+# @params promises Array de promesas
+# @return Promise Promesa que resuelve a Array con todos los resultados
+function all(promises: Array) -> Promise {};
+
+# @description Resuelve con la PRIMERA promesa que resuelva
+# @params promises Array de promesas
+# @return Promise Promesa que resuelve con el primer resultado
+function race(promises: Array) -> Promise {};
