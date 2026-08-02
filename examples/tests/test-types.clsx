@@ -44,7 +44,7 @@ function main(args: String[]) -> int {
     var caja = Caja(42);
     var out: Int = caja.obtener();
     t = (
-        <Div />
+        <Div title="hola mundo" click={() -> { print("click") }}/>
     );
     return 0;
 };

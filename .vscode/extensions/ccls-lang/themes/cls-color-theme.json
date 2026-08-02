@@ -57,6 +57,15 @@
       "settings": { "foreground": "#c678dd", "fontStyle": "bold" }
     },
     {
+      "name": "Separadores y puntuación de tipos CLS",
+      "scope": [
+        "punctuation.separator.ccls",
+        "punctuation.section.brackets.ccls",
+        "punctuation.section.parens.begin.ccls"
+      ],
+      "settings": { "foreground": "#e0af68" }
+    },
+    {
       "name": "Unión de tipos | CLS",
       "scope": [ "keyword.operator.union.ccls" ],
       "settings": { "foreground": "#d19a66" }
