@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::Path;
+use std::collections::HashSet;
 use cls_core::config::ModuleManifest;
+use cls_core::frontend::ast::{Module, Statement};
 
 pub fn execute(args: &[String]) -> i32 {
     let strict = args.iter().any(|a| a == "--strict");
@@ -58,7 +60,13 @@ pub fn execute(args: &[String]) -> i32 {
         };
 
         let mut checker = cls_core::middleware::TypeChecker::new(types_config.clone());
-        if let Err(e) = checker.check(&module) {
+        // El nodo resuelve los imports (lee los archivos) y los pasa como prelude;
+        // el core registra los tipos del prelude antes de chequear el módulo principal.
+        let base_dir = Path::new(file).parent().unwrap_or(Path::new(".")).to_path_buf();
+        let mut seen = HashSet::new();
+        let mut imports: Vec<Module> = Vec::new();
+        load_import_modules(&module, &base_dir, &mut seen, &mut imports);
+        if let Err(e) = checker.check_with_prelude(&module, &imports) {
             eprintln!("Error interno en '{}': {}", file, e);
             total_errors += 1;
             continue;
@@ -100,6 +108,32 @@ pub fn execute(args: &[String]) -> i32 {
     }
 
     if total_errors > 0 { 1 } else { 0 }
+}
+
+/// Resuelve los imports de un módulo (recursivamente) y los carga como AST.
+/// El nodo consigue los archivos; el core los verifica.
+fn load_import_modules(
+    module: &Module,
+    base_dir: &Path,
+    seen: &mut HashSet<String>,
+    out: &mut Vec<Module>,
+) {
+    for stmt in &module.statements {
+        if let Statement::Import(i) = stmt {
+            let candidate = base_dir.join(format!("{}.clsx", i.path));
+            let key = candidate.to_string_lossy().to_string();
+            if seen.insert(key) {
+                if let Ok(source) = fs::read_to_string(&candidate) {
+                    if let Ok(toks) = cls_core::frontend::Lexer::new(&source).tokenize() {
+                        if let Ok(m) = cls_core::frontend::Parser::new(toks).parse() {
+                            load_import_modules(&m, base_dir, seen, out);
+                            out.push(m);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn scan_clsx_files(dir: &Path) -> Vec<String> {

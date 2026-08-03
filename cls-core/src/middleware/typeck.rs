@@ -61,7 +61,25 @@ impl TypeChecker {
         for stmt in &module.statements {
             self.check_statement(stmt);
         }
-        // No fallar si hay errores; reportar como diagnÃ³stico
+        // No fallar si hay errores; reportar como diagnóstico
+        Ok(())
+    }
+
+    /// Chequea un módulo con un prelude de módulos importados.
+    /// Los tipos (enum/class/alias/interface) del prelude se registran primero,
+    /// para que el módulo principal pueda usarlos en anotaciones.
+    pub fn check_with_prelude(&mut self, module: &Module, prelude: &[Module]) -> ClsResult<()> {
+        if !self.config.check {
+            return Ok(());
+        }
+        for m in prelude {
+            for stmt in &m.statements {
+                self.check_statement(stmt);
+            }
+        }
+        for stmt in &module.statements {
+            self.check_statement(stmt);
+        }
         Ok(())
     }
 
