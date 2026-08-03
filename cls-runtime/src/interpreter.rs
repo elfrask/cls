@@ -588,9 +588,13 @@ impl Interpreter {
     }
 
     fn execute_try(&mut self, try_stmt: &TryStatement) -> ClsResult<Value> {
+        let stack_len = self.call_stack.len();
         match self.execute_block(&try_stmt.try_block) {
             Ok(v) => Ok(v),
             Err(e) => {
+                // El error capturado deja frames fantasma en el call stack (no se popean);
+                // restaurar la profundidad previa al try.
+                self.call_stack.truncate(stack_len);
                 for catch in &try_stmt.catch_clauses {
                     self.env.push_scope();
                     // TODO: crear objeto de error
@@ -1370,7 +1374,11 @@ impl Interpreter {
             _ => Err(self.err_at("No se puede llamar", call_span)),
         };
 
-        self.call_stack.pop();
+        // No popear el frame si hubo error: se conserva para que el reporte
+        // muestre el trazo completo (call stack con código).
+        if result.is_ok() {
+            self.call_stack.pop();
+        }
         result.map_err(|e| {
             let err_msg = e.to_string();
             // Si el error ya tiene call stack, no duplicar

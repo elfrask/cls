@@ -25,13 +25,13 @@ fn main() {
     let mut lexer = cls_core::frontend::Lexer::new(&source);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
-        Err(e) => { show_error(&source, &e.to_string(), path); process::exit(1); }
+        Err(e) => { cls_runtime::show_syntax_error(&e, &source, path); process::exit(1); }
     };
 
     let mut parser = cls_core::frontend::Parser::new(tokens);
     let module = match parser.parse() {
         Ok(m) => m,
-        Err(e) => { show_error(&source, &e.to_string(), path); process::exit(1); }
+        Err(e) => { cls_runtime::show_syntax_error(&e, &source, path); process::exit(1); }
     };
 
     let resolver = cls_runtime::ModuleResolver::new().with_core_stdlib();
@@ -42,12 +42,17 @@ fn main() {
     interpreter.set_source_file(path.to_string());
 
     if let Err(e) = interpreter.execute(&module) {
-        eprintln!("{}", e);
+        let report = interpreter.build_error_report(e);
+        cls_runtime::show_runtime_error(&report);
         process::exit(1);
     }
     match interpreter.call_main() {
         Ok(code) => process::exit(code),
-        Err(e) => { eprintln!("{}", e); process::exit(1); }
+        Err(e) => {
+            let report = interpreter.build_error_report(e);
+            cls_runtime::show_runtime_error(&report);
+            process::exit(1);
+        }
     }
 }
 
@@ -116,32 +121,4 @@ fn open_clsapp_vfs(path: &str, vfs: &mut VfsResolver) -> Result<String, String> 
         .map_err(|e| format!("Error leyendo '{}': {}", entry, e))?;
 
     Ok(source)
-}
-
-fn show_error(source: &str, error_msg: &str, path: &str) {
-    eprintln!("Error en '{}':", path);
-    eprintln!("  {}", error_msg);
-    if source.is_empty() { return; }
-    let line_col = error_msg.split("linea").nth(1).and_then(|s| {
-        let parts: Vec<&str> = s.splitn(2, ',').collect();
-        let line = parts.first()?.trim().parse::<usize>().ok()?;
-        let col = parts.get(1).and_then(|c|
-            c.split("columna").nth(1).and_then(|c2|
-                c2.trim().trim_matches(|p| p == ')' || p == '(').parse::<usize>().ok()
-            )
-        ).unwrap_or(1);
-        Some((line, col))
-    });
-    if let Some((line, col)) = line_col {
-        if let Some(src_line) = source.lines().nth(line.saturating_sub(1)) {
-            eprintln!("");
-            eprintln!("  {} | {}", line, src_line);
-            let pad = " ".repeat(line.to_string().len());
-            if col > 1 {
-                eprintln!("  {} | {}{}", pad, " ".repeat(col.saturating_sub(1)), "^");
-            } else {
-                eprintln!("  {} | ^", pad);
-            }
-        }
-    }
 }
