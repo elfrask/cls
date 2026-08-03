@@ -932,3 +932,123 @@ impl TypeChecker {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frontend::{Lexer, Parser};
+    use crate::error::Diagnostic;
+    use crate::error::diagnostic::Severity;
+
+    /// Parsea y chequea un source, devolviendo los diagnostics.
+    fn check_source(src: &str, strict: bool) -> Vec<Diagnostic> {
+        let toks = Lexer::new(src).tokenize().expect("tokenize");
+        let module = Parser::new(toks).parse().expect("parse");
+        let config = TypesConfig { check: true, strict, ..Default::default() };
+        let mut tc = TypeChecker::new(config);
+        tc.check(&module).expect("check no debe fallar");
+        tc.diagnostics().to_vec()
+    }
+
+    fn count_errors(diags: &[Diagnostic]) -> usize {
+        diags.iter().filter(|d| matches!(d.severity, Severity::Error)).count()
+    }
+
+    #[test]
+    fn tuple_valid() {
+        let d = check_source("function f() { var a: (Int, String) = (1, \"x\"); };", true);
+        assert_eq!(count_errors(&d), 0, "tupla valida: {:?}", d);
+    }
+
+    #[test]
+    fn tuple_invalid_slot() {
+        let d = check_source("function f() { var a: (Int, String) = (1, 2); };", true);
+        assert_eq!(count_errors(&d), 1, "slot 2 es Int no String: {:?}", d);
+    }
+
+    #[test]
+    fn union_literal_valid() {
+        let src = "alias Color = \"red\" | \"green\"; function f() { var c: Color = \"red\"; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "{:?}", d);
+    }
+
+    #[test]
+    fn union_literal_invalid() {
+        let src = "alias Color = \"red\" | \"green\"; function f() { var c: Color = \"purple\"; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 1, "purple no esta en la union: {:?}", d);
+    }
+
+    #[test]
+    fn alias_function_type() {
+        let src = "alias Fn = (Int) -> Int; function f() { };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "alias de funcion: {:?}", d);
+    }
+
+    #[test]
+    fn interface_extract_default() {
+        let src = "interface H<T=Int> { num: T, }; function f() { var n: H[\"num\"] = 1; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "H[\"num\"] con default Int: {:?}", d);
+    }
+
+    #[test]
+    fn interface_extract_with_arg() {
+        let src = "interface H<T=Int> { num: T, }; function f() { var s: H<String>[\"num\"] = \"x\"; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "H<String>[\"num\"] es String: {:?}", d);
+    }
+
+    #[test]
+    fn generic_function() {
+        let src = "function id<T>(x: T) -> T { return x; }; function f() { var g: Int = id(5); var h: String = id(\"a\"); };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "genericos: {:?}", d);
+    }
+
+    #[test]
+    fn phantom_not_substituted() {
+        let src = "interface M<T> { real: T, ghost: !T, }; function f() { var r: M<String>[\"real\"] = \"ok\"; var g: M<String>[\"ghost\"]; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "phantom: {:?}", d);
+    }
+
+    #[test]
+    fn enum_typed_ok() {
+        let src = "enum Color { Rojo, Verde, }; function f() { var c: Color = Color.Rojo; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "enum: {:?}", d);
+    }
+
+    #[test]
+    fn enum_typed_wrong() {
+        let src = "enum Color { Rojo, Verde, }; function f() { var c: Color = 5; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 1, "Int no es Color: {:?}", d);
+    }
+
+    #[test]
+    fn record_typed() {
+        let src = "function f() { var d: Record<String, Int> = {a: 1}; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "record: {:?}", d);
+    }
+
+    #[test]
+    fn tuple_dynamic_index_union() {
+        // índice dinámico sobre tupla → unión; no debe dar error en estricto
+        let src = "function f() { var a: (Int, String) = (1, \"x\"); var i = 0; var v = a[i]; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "indice dinamico: {:?}", d);
+    }
+
+    #[test]
+    fn tuple_access_by_literal() {
+        // t[1] con índice literal → slot exacto
+        let src = "function f() { var a: (Int, String) = (1, \"x\"); var n: Int = a[0]; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "indice literal: {:?}", d);
+    }
+}
+

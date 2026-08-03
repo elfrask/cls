@@ -544,4 +544,46 @@ mod tests {
         cmx.props.insert("color".into(), Value::String("red".into()));
         assert_eq!(cmx.props.len(), 1);
     }
+
+    #[test]
+    fn tuple_type_name_truthy_display() {
+        let t = Value::Tuple(vec![Value::Int(10), Value::Int(20)]);
+        assert_eq!(t.type_name(), "Tuple");
+        assert!(t.is_truthy());
+        assert_eq!(t.to_string(), "(10, 20)");
+        assert_eq!(Value::Tuple(vec![]).is_truthy(), false);
+    }
+
+    #[test]
+    fn tuple_partial_eq() {
+        let a = Value::Tuple(vec![Value::Int(1), Value::String("x".into())]);
+        let b = Value::Tuple(vec![Value::Int(1), Value::String("x".into())]);
+        let c = Value::Tuple(vec![Value::Int(1), Value::String("y".into())]);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn enum_value_display_and_eq() {
+        let e1 = Value::Enum(Box::new(EnumValue { def_name: "Color".into(), variant: "Rojo".into(), index: 0 }));
+        let e2 = Value::Enum(Box::new(EnumValue { def_name: "Color".into(), variant: "Rojo".into(), index: 0 }));
+        let e3 = Value::Enum(Box::new(EnumValue { def_name: "Color".into(), variant: "Verde".into(), index: 1 }));
+        let e4 = Value::Enum(Box::new(EnumValue { def_name: "Otro".into(), variant: "Rojo".into(), index: 0 }));
+        assert_eq!(e1.type_name(), "Enum");
+        assert!(e1.is_truthy());
+        assert_eq!(e1.to_string(), "Rojo");
+        assert_eq!(e1, e2);
+        assert_ne!(e1, e3);
+        assert_ne!(e1, e4); // distinto enum, misma variante
+    }
+
+    #[test]
+    fn enum_def_partial_eq() {
+        let a = Value::EnumDef(Box::new(EnumDef { name: "Color".into(), variants: vec!["R".into()] }));
+        let b = Value::EnumDef(Box::new(EnumDef { name: "Color".into(), variants: vec!["R".into()] }));
+        let c = Value::EnumDef(Box::new(EnumDef { name: "Otro".into(), variants: vec!["R".into()] }));
+        assert_eq!(a.to_string(), "<enum Color>");
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
 }

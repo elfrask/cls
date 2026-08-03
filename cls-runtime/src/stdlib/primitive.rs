@@ -302,3 +302,116 @@ pub fn primitive_type_of(v: &Value) -> Option<PrimitiveType> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn method_for(t: PrimitiveType, name: &str) -> MethodFn {
+        let tables = build_method_tables();
+        match tables.get(&t).and_then(|m| m.get(name)) {
+            Some(PrimitiveMethod::Method(f)) => f.clone(),
+            _ => panic!("method '{}' no encontrado en {:?}", name, t),
+        }
+    }
+
+    fn getter_for(t: PrimitiveType, name: &str) -> MethodFn {
+        let tables = build_method_tables();
+        match tables.get(&t).and_then(|m| m.get(name)) {
+            Some(PrimitiveMethod::Getter(f)) => f.clone(),
+            _ => panic!("getter '{}' no encontrado en {:?}", name, t),
+        }
+    }
+
+    fn call(f: &MethodFn, args: Vec<Value>) -> Value {
+        f(&args).expect("metodo no debe fallar")
+    }
+
+    #[test]
+    fn string_upper() {
+        let f = method_for(PrimitiveType::String, "upper");
+        assert_eq!(call(&f, vec![Value::String("hola".into())]), Value::String("HOLA".into()));
+    }
+
+    #[test]
+    fn string_lower_trim() {
+        let f = method_for(PrimitiveType::String, "lower");
+        assert_eq!(call(&f, vec![Value::String("HOLA".into())]), Value::String("hola".into()));
+        let t = method_for(PrimitiveType::String, "trim");
+        assert_eq!(call(&t, vec![Value::String("  x  ".into())]), Value::String("x".into()));
+    }
+
+    #[test]
+    fn string_contains() {
+        let f = method_for(PrimitiveType::String, "contains");
+        assert_eq!(call(&f, vec![Value::String("hola mundo".into()), Value::String("mundo".into())]), Value::Bool(true));
+        assert_eq!(call(&f, vec![Value::String("hola".into()), Value::String("zzz".into())]), Value::Bool(false));
+    }
+
+    #[test]
+    fn string_length_getter() {
+        let f = getter_for(PrimitiveType::String, "length");
+        assert_eq!(call(&f, vec![Value::String("abcd".into())]), Value::Int(4));
+    }
+
+    #[test]
+    fn array_push_mutates() {
+        let f = method_for(PrimitiveType::Array, "push");
+        let result = call(&f, vec![Value::Array(vec![Value::Int(1)]), Value::Int(2)]);
+        match result {
+            Value::Array(a) => assert_eq!(a.len(), 2),
+            other => panic!("esperaba array: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn array_indexof_join() {
+        let i = method_for(PrimitiveType::Array, "indexOf");
+        let arr = Value::Array(vec![Value::Int(1), Value::Int(2), Value::Int(3)]);
+        assert_eq!(call(&i, vec![arr.clone(), Value::Int(2)]), Value::Int(1));
+        let j = method_for(PrimitiveType::Array, "join");
+        assert_eq!(call(&j, vec![arr, Value::String("-".into())]), Value::String("1-2-3".into()));
+    }
+
+    #[test]
+    fn tuple_length_join() {
+        let l = getter_for(PrimitiveType::Tuple, "length");
+        let tup = Value::Tuple(vec![Value::Int(1), Value::Int(2)]);
+        assert_eq!(call(&l, vec![tup.clone()]), Value::Int(2));
+        let j = method_for(PrimitiveType::Tuple, "join");
+        assert_eq!(call(&j, vec![tup, Value::String("+".into())]), Value::String("1+2".into()));
+    }
+
+    #[test]
+    fn record_keys_has() {
+        let k = method_for(PrimitiveType::Record, "keys");
+        let rec = Value::Record([("a".to_string(), Value::Int(1)), ("b".to_string(), Value::Int(2))].into());
+        let keys = call(&k, vec![rec.clone()]);
+        match keys {
+            Value::Array(a) => assert_eq!(a.len(), 2),
+            other => panic!("keys: {:?}", other),
+        }
+        let h = method_for(PrimitiveType::Record, "has");
+        assert_eq!(call(&h, vec![rec.clone(), Value::String("a".into())]), Value::Bool(true));
+        assert_eq!(call(&h, vec![rec, Value::String("z".into())]), Value::Bool(false));
+    }
+
+    #[test]
+    fn int_tostring_abs() {
+        let s = method_for(PrimitiveType::Int, "toString");
+        assert_eq!(call(&s, vec![Value::Int(42)]), Value::String("42".into()));
+        let a = method_for(PrimitiveType::Int, "abs");
+        assert_eq!(call(&a, vec![Value::Int(-7)]), Value::Int(7));
+    }
+
+    #[test]
+    fn primitive_type_of_mapping() {
+        assert_eq!(primitive_type_of(&Value::String("x".into())), Some(PrimitiveType::String));
+        assert_eq!(primitive_type_of(&Value::Int(1)), Some(PrimitiveType::Int));
+        assert_eq!(primitive_type_of(&Value::Float(1.0)), Some(PrimitiveType::Float));
+        assert_eq!(primitive_type_of(&Value::Array(vec![])), Some(PrimitiveType::Array));
+        assert_eq!(primitive_type_of(&Value::Tuple(vec![])), Some(PrimitiveType::Tuple));
+        assert_eq!(primitive_type_of(&Value::Record([].into())), Some(PrimitiveType::Record));
+        assert_eq!(primitive_type_of(&Value::Null), None);
+    }
+}

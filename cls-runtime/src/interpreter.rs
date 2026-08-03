@@ -2125,3 +2125,125 @@ fn unsupported_span(op: &cls_core::frontend::token::Operator, a: &Value, b: &Val
         span.start_line, span.start_col
     )))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cls_core::frontend::{Lexer, Parser};
+
+    /// Parsea y ejecuta un source; devuelve el valor de la última sentencia.
+    fn run(src: &str) -> ClsResult<Value> {
+        let toks = Lexer::new(src).tokenize().expect("tokenize");
+        let module = Parser::new(toks).parse().expect("parse");
+        let mut interp = Interpreter::new(Intrinsics::empty(), ModuleResolver::new().with_core_stdlib());
+        interp.execute(&module)
+    }
+
+    fn run_ok(src: &str) -> Value {
+        run(src).expect("ejecucion ok")
+    }
+
+    #[test]
+    fn enum_member_value() {
+        let v = run_ok("enum Color { Rojo, Verde, }; Color.Verde");
+        match v {
+            Value::Enum(e) => { assert_eq!(e.def_name, "Color"); assert_eq!(e.variant, "Verde"); assert_eq!(e.index, 1); }
+            other => panic!("esperaba enum, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn enum_equality() {
+        let v = run_ok("enum Color { Rojo, Verde, }; Color.Rojo == Color.Rojo");
+        assert_eq!(v, Value::Bool(true));
+        let v2 = run_ok("enum Color { Rojo, Verde, }; Color.Rojo == Color.Verde");
+        assert_eq!(v2, Value::Bool(false));
+    }
+
+    #[test]
+    fn enum_is() {
+        let v = run_ok("enum Color { Rojo, }; Color.Rojo is Color");
+        assert_eq!(v, Value::Bool(true));
+    }
+
+    #[test]
+    fn enum_iterate() {
+        let v = run_ok("enum Color { A, B, C, }; var n = 0; for each x in (Color) { n = n + 1; } n");
+        assert_eq!(v, Value::Int(3));
+    }
+
+    #[test]
+    fn tuple_literal() {
+        let v = run_ok("(10, \"x\")");
+        match v {
+            Value::Tuple(t) => { assert_eq!(t.len(), 2); }
+            other => panic!("esperaba tuple: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn tuple_index() {
+        let v = run_ok("(10, 20, 30)[1]");
+        assert_eq!(v, Value::Int(20));
+    }
+
+    #[test]
+    fn tuple_immutable() {
+        assert!(run("var t = (1, 2); t[0] = 9;").is_err(), "las tuplas no se pueden mutar");
+    }
+
+    #[test]
+    fn break_for_each() {
+        let v = run_ok("var n = 0; for each x in ([1,2,3,4]) { if (x == 3) { break; } n = n + 1; } n");
+        assert_eq!(v, Value::Int(2));
+    }
+
+    #[test]
+    fn continue_for_each() {
+        let v = run_ok("var n = 0; for each x in ([1,2,3]) { if (x == 2) { continue; } n = n + 1; } n");
+        assert_eq!(v, Value::Int(2));
+    }
+
+    #[test]
+    fn magic_tostring() {
+        let v = run_ok("class N { function __toString() -> String { return \"hola\"; } }; toString(N())");
+        assert_eq!(v, Value::String("hola".to_string()));
+    }
+
+    #[test]
+    fn magic_call() {
+        let v = run_ok("class A { function __call(x: int) -> int { return x * 2; } }; A()(5)");
+        assert_eq!(v, Value::Int(10));
+    }
+
+    #[test]
+    fn magic_len() {
+        let v = run_ok("class L { function __len() -> int { return 42; } }; len(L())");
+        assert_eq!(v, Value::Int(42));
+    }
+
+    #[test]
+    fn oop_super() {
+        let src = "class Animal { function speak() -> String { return \"ruido\"; } }; class Dog: Animal { function speak() -> String { return super.speak() + \" ladra\"; } }; Dog().speak()";
+        let v = run_ok(src);
+        assert_eq!(v, Value::String("ruido ladra".to_string()));
+    }
+
+    #[test]
+    fn primitive_string_method() {
+        let v = run_ok("\"hola\".upper()");
+        assert_eq!(v, Value::String("HOLA".to_string()));
+    }
+
+    #[test]
+    fn primitive_array_push_writeback() {
+        let v = run_ok("var a = [1, 2]; a.push(3); a.length");
+        assert_eq!(v, Value::Int(3));
+    }
+
+    #[test]
+    fn primitive_tuple_length() {
+        let v = run_ok("(1, 2, 3).length");
+        assert_eq!(v, Value::Int(3));
+    }
+}
