@@ -21,7 +21,7 @@ pub use intrinsics::Intrinsics;
 pub use resolver::ModuleResolver;
 pub use vfs::{VfsResolver, VfsProtocol, LocalFs, ZipFs, resolve_safe};
 pub use clslib::{ClsLibIndex, ClsLibEntry, ClsLibResolver, compute_hash_bytes};
-pub use error_report::{ErrorReport, show_runtime_error, show_syntax_error, show_config_error};
+pub use error_report::{ErrorReport, ErrorFormat, ErrorFormatter, format_error, format_runtime_error, format_syntax_error, show_runtime_error, show_syntax_error, show_config_error};
 pub use gc::GarbageCollector;
 pub use sandbox::Sandbox;
 pub use error::{ClsError, ClsResult};

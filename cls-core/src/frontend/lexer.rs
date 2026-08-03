@@ -128,9 +128,7 @@ impl Lexer {
             if self.current_char() == '\\' {
                 self.advance();
                 if self.is_eof() {
-                    return Err(ClsError::SyntaxError(
-                        "String sin cerrar".to_string(),
-                    ));
+                    return Err(self.syntax_err("String sin cerrar"));
                 }
                 let escaped = self.current_char();
                 let escaped_char = match escaped {
@@ -151,9 +149,7 @@ impl Lexer {
         }
 
         if self.is_eof() {
-            return Err(ClsError::SyntaxError(
-                "String sin cerrar".to_string(),
-            ));
+            return Err(self.syntax_err("String sin cerrar"));
         }
 
         self.advance(); // Consume el delimiter final
@@ -181,7 +177,7 @@ impl Lexer {
         if has_dot {
             match num_str.parse::<f64>() {
                 Ok(v) => Ok(Token::FloatLiteral(v)),
-                Err(_) => Err(ClsError::SyntaxError(format!(
+                Err(_) =>                 Err(self.syntax_err(format!(
                     "Número inválido: {}",
                     num_str
                 ))),
@@ -189,7 +185,7 @@ impl Lexer {
         } else {
             match num_str.parse::<i64>() {
                 Ok(v) => Ok(Token::IntLiteral(v)),
-                Err(_) => Err(ClsError::SyntaxError(format!(
+                Err(_) =>                 Err(self.syntax_err(format!(
                     "Número inválido: {}",
                     num_str
                 ))),
@@ -321,7 +317,7 @@ impl Lexer {
     fn lex_cmx_attrs_into(&mut self, tokens: &mut Vec<SpannedToken>) -> ClsResult<bool> {
         loop {
             self.skip_cmx_whitespace();
-            if self.is_eof() { return Err(ClsError::SyntaxError("Tag CMX sin cerrar".into())); }
+            if self.is_eof() { return Err(self.syntax_err("Tag CMX sin cerrar")); }
             let ch = self.current_char();
             if ch == '>' { self.advance(); return Ok(false); }
             if ch == '/' && self.pos+1 < self.source.len() && self.source[self.pos+1] == '>' {
@@ -355,7 +351,7 @@ impl Lexer {
                         tokens.push(t);
                     }
                     self.in_cmx_expr = false;
-                } else { return Err(ClsError::SyntaxError("Valor attr CMX inválido".into())); }
+                } else { return Err(self.syntax_err("Valor attr CMX inválido")); }
             }
         }
     }
@@ -364,14 +360,14 @@ impl Lexer {
     fn lex_cmx_children_into(&mut self, close_tag: &str, tokens: &mut Vec<SpannedToken>) -> ClsResult<()> {
         loop {
             self.skip_cmx_whitespace();
-            if self.is_eof() { return Err(ClsError::SyntaxError(format!("Tag '{}' sin cerrar", close_tag))); }
+            if self.is_eof() { return Err(self.syntax_err(format!("Tag '{}' sin cerrar", close_tag))); }
             let ch = self.current_char();
             if ch == '<' {
                 if self.pos+1 < self.source.len() && self.source[self.pos+1] == '/' {
                     self.advance(); self.advance();
                     let name = self.read_cmx_identifier()?;
                     self.skip_cmx_whitespace();
-                    if self.current_char() != '>' { return Err(ClsError::SyntaxError("Tag cierre inválido".into())); }
+                    if self.current_char() != '>' { return Err(self.syntax_err("Tag cierre inválido")); }
                     self.advance();
                     tokens.push(SpannedToken::new(Token::Cmx(CmxToken::CloseTag { name }), self.current_span()));
                     return Ok(());
@@ -417,7 +413,7 @@ impl Lexer {
             name.push(self.current_char());
             self.advance();
         }
-        if name.is_empty() { Err(ClsError::SyntaxError("Esperaba nombre de tag CMX".into())) } else { Ok(name) }
+        if name.is_empty() { Err(self.syntax_err("Esperaba nombre de tag CMX")) } else { Ok(name) }
     }
 
     /// Salta espacios CMX
@@ -434,7 +430,7 @@ impl Lexer {
             else { s.push(self.current_char()); }
             self.advance();
         }
-        if self.is_eof() { return Err(ClsError::SyntaxError("String CMX sin cerrar".into())); }
+        if self.is_eof() { return Err(self.syntax_err("String CMX sin cerrar")); }
         self.advance();
         Ok(s)
     }
@@ -466,9 +462,9 @@ impl Lexer {
         }
 
         // Carácter desconocido
-        Err(ClsError::SyntaxError(format!(
-            "Carácter inesperado: '{}' en línea {}, columna {}",
-            ch, self.line, self.col
+        Err(self.syntax_err(format!(
+            "Carácter inesperado: '{}'",
+            ch
         )))
     }
 
@@ -525,6 +521,12 @@ impl Lexer {
             return false;
         }
         self.source[self.pos + offset].is_ascii_digit()
+    }
+
+    /// Fábrica centralizada: error de sintaxis con span de la posición actual.
+    fn syntax_err(&self, msg: impl Into<String>) -> ClsError {
+        let s = self.current_span();
+        ClsError::syntax_at(&msg.into(), &s)
     }
 
     fn current_span(&self) -> Span {

@@ -66,7 +66,7 @@ impl Parser {
         }
 
         if self.is_eof() {
-            return Err(ClsError::SyntaxError("EOF inesperado".to_string()));
+            return Err(self.syntax_err("EOF inesperado"));
         }
 
         // #config directive
@@ -142,12 +142,12 @@ impl Parser {
 
     fn parse_config_directive(&mut self) -> ClsResult<Statement> {
         // TODO: implementar #config(...)
-        Err(ClsError::SyntaxError("Config directives no implementados aún".to_string()))
+        Err(self.syntax_err("Config directives no implementados aún".to_string()))
     }
 
     fn parse_config(&mut self) -> ClsResult<Statement> {
         // TODO: implementar
-        Err(ClsError::SyntaxError("Config no implementado aún".to_string()))
+        Err(self.syntax_err("Config no implementado aún".to_string()))
     }
 
     fn parse_var_decl(&mut self) -> ClsResult<Statement> {
@@ -156,7 +156,7 @@ impl Parser {
             || self.consume_keyword(Keyword::Let)
             || self.consume_keyword(Keyword::Const))
         {
-            return Err(ClsError::SyntaxError("Esperaba 'var', 'let' o 'const'".to_string()));
+            return Err(self.syntax_err("Esperaba 'var', 'let' o 'const'"));
         }
         let is_const = matches!(self.current_token, _); // TODO: track const vs var
         let name = self.expect_identifier()?;
@@ -355,8 +355,8 @@ impl Parser {
                             self.advance();
                             TypeAccess::Index(n)
                         }
-                        _ => return Err(ClsError::SyntaxError(
-                            "Esperaba clave \"name\" o índice numérico en acceso a tipo".to_string(),
+                        _ => return Err(self.syntax_err(
+                            "Esperaba clave \"name\" o índice numérico en acceso a tipo",
                         )),
                     };
                     self.expect_symbol(Symbol::RBracket)?;
@@ -415,7 +415,7 @@ impl Parser {
             _ => {}
         }
 
-        // Phantom: !T — el type param no participa en el tipo (no se unifica)
+        // Phantom: !T �?" el type param no participa en el tipo (no se unifica)
         if self.consume_operator(Operator::Not) {
             let inner = self.parse_base_type()?;
             return Ok(TypeKind::Phantom(Box::new(TypeAnnotation {
@@ -498,8 +498,8 @@ impl Parser {
             {
                 self.advance();
             } else {
-                return Err(ClsError::SyntaxError(
-                    "Esperaba '>' para cerrar parámetros genéricos".to_string(),
+                return Err(self.syntax_err(
+                    "Esperaba '>' para cerrar parámetros genéricos",
                 ));
             }
         }
@@ -766,7 +766,7 @@ impl Parser {
         match expr {
             Expression::Literal(lit) => Ok(CasePattern::Literal(lit)),
             Expression::Identifier(name, _) => Ok(CasePattern::Identifier(name)),
-            _ => Err(ClsError::SyntaxError("Pattern de case inválido".to_string())),
+            _ => Err(self.syntax_err("Pattern de case inválido".to_string())),
         }
     }
 
@@ -1093,12 +1093,12 @@ impl Parser {
         {
             self.advance();
         } else {
-            return Err(ClsError::SyntaxError("Esperaba '>' en parámetros de tipo".to_string()));
+            return Err(self.syntax_err("Esperaba '>' en parámetros de tipo".to_string()));
         }
         Ok(params)
     }
 
-    /// `alias <Name>[<T=Int>] = <tipo>;` — alias de tipos (compile-time).
+    /// `alias <Name>[<T=Int>] = <tipo>;` �?" alias de tipos (compile-time).
     fn parse_alias_decl(&mut self) -> ClsResult<Statement> {
         self.expect_keyword(Keyword::Alias)?;
         let name = self.expect_identifier()?;
@@ -1114,7 +1114,7 @@ impl Parser {
         }))
     }
 
-    /// `enum Nombre { Var1, Var2, Var3, };` — variantes constantes con identidad.
+    /// `enum Nombre { Var1, Var2, Var3, };` �?" variantes constantes con identidad.
     fn parse_enum_decl(&mut self) -> ClsResult<Statement> {
         self.expect_keyword(Keyword::Enum)?;
         let name = self.expect_identifier()?;
@@ -1278,7 +1278,7 @@ impl Parser {
     fn parse_cmx_element(&mut self) -> ClsResult<CmxElement> {
         let (tag_name, is_self_closing) = match &self.current_token {
             Token::Cmx(CmxToken::OpenTag { name, is_self_closing }) => (name.clone(), *is_self_closing),
-            _ => return Err(ClsError::SyntaxError("Se esperaba OpenTag CMX".to_string())),
+            _ => return Err(self.syntax_err("Se esperaba OpenTag CMX")),
         };
         let tag_span = self.span();
         self.advance();
@@ -1351,9 +1351,9 @@ impl Parser {
         })
     }
 
-    // ═══════════════════════════════════════════
+    // �.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.�
     // PARSER DE EXPRESIONES (recursive descent con precedencia)
-    // ═══════════════════════════════════════════
+    // �.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.�
 
     fn parse_expression(&mut self) -> ClsResult<Expression> {
         self.parse_assignment()
@@ -1637,7 +1637,7 @@ impl Parser {
                     expr = Expression::NamespaceAccess(
                         match expr {
                             Expression::Identifier(name, _) => name,
-                            _ => return Err(ClsError::SyntaxError("Esperaba identificador".to_string())),
+                            _ => return Err(self.syntax_err("Esperaba identificador")),
                         },
                         member,
                         self.span(),
@@ -1834,7 +1834,7 @@ impl Parser {
                         let key = match &self.current_token {
                             Token::Identifier(name) => name.clone(),
                             Token::StringLiteral(s) => s.clone(),
-                            _ => return Err(ClsError::SyntaxError("Key de record inválida".to_string())),
+                            _ => return Err(self.syntax_err("Key de record inválida")),
                         };
                         self.advance();
                         self.expect_operator(Operator::Colon)?;
@@ -1877,13 +1877,10 @@ impl Parser {
                 let element = self.parse_cmx_element()?;
                 Ok(Expression::Cmx(element))
             }
-            _ => {
-                let s = self.span();
-                Err(ClsError::SyntaxError(format!(
-                    "Token inesperado: {:?} (línea {}, columna {})",
-                    self.current_token, s.start_line, s.start_col
-                )))
-            }
+            _ => Err(self.syntax_err(format!(
+                "Token inesperado: {:?}",
+                self.current_token
+            )))
         }
     }
 
@@ -1923,7 +1920,7 @@ impl Parser {
         while i < chars.len() {
             if chars[i] == '$' && i + 1 < chars.len() {
                 if chars[i + 1] == '{' {
-                    // ${expr} — parsear expresión
+                    // ${expr} �?" parsear expresión
                     let mut depth = 1;
                     let mut expr_str = String::new();
                     let mut j = i + 2;
@@ -1939,8 +1936,8 @@ impl Parser {
                         j += 1;
                     }
                     if depth != 0 {
-                        return Err(ClsError::SyntaxError(
-                            "${} sin cerrar".to_string(),
+                        return Err(self.syntax_err(
+                            "${} sin cerrar",
                         ));
                     }
                     // Parsear la expresión interna
@@ -1948,7 +1945,7 @@ impl Parser {
                     parts.push(InterpolationPart::Expr(expr));
                     i = j; // saltar }
                 } else if chars[i + 1].is_alphabetic() || chars[i + 1] == '_' {
-                    // $var — variable lookup
+                    // $var �?" variable lookup
                     let mut var_name = String::new();
                     let mut j = i + 1;
                     while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_') {
@@ -2015,9 +2012,9 @@ impl Parser {
         }))
     }
 
-    // ═══════════════════════════════════════════
+    // �.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.�
     // HELPERS
-    // ═══════════════════════════════════════════
+    // �.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.�
 
     fn advance(&mut self) {
         if let Some(next) = self.tokens.next() {
@@ -2072,14 +2069,19 @@ impl Parser {
         }
     }
 
+    /// Fábrica centralizada: error de sintaxis con span del token actual.
+    fn syntax_err(&self, msg: impl Into<String>) -> ClsError {
+        let s = self.span();
+        ClsError::syntax_at(&msg.into(), &s)
+    }
+
     fn expect_symbol(&mut self, symbol: Symbol) -> ClsResult<()> {
         if self.consume_symbol(symbol) {
             Ok(())
         } else {
-            let s = self.span();
-            Err(ClsError::SyntaxError(format!(
-                "Esperaba símbolo {}, encontró {} (línea {}, columna {})",
-                symbol, self.current_token, s.start_line, s.start_col
+            Err(self.syntax_err(format!(
+                "Esperaba símbolo {}, encontró {}",
+                symbol, self.current_token
             )))
         }
     }
@@ -2088,10 +2090,9 @@ impl Parser {
         if self.consume_keyword(keyword) {
             Ok(())
         } else {
-            let s = self.span();
-            Err(ClsError::SyntaxError(format!(
-                "Esperaba keyword {}, encontró {} (línea {}, columna {})",
-                keyword, self.current_token, s.start_line, s.start_col
+            Err(self.syntax_err(format!(
+                "Esperaba keyword {}, encontró {}",
+                keyword, self.current_token
             )))
         }
     }
@@ -2100,10 +2101,9 @@ impl Parser {
         if self.consume_operator(op) {
             Ok(())
         } else {
-            let s = self.span();
-            Err(ClsError::SyntaxError(format!(
-                "Esperaba operador {}, encontró {} (línea {}, columna {})",
-                op, self.current_token, s.start_line, s.start_col
+            Err(self.syntax_err(format!(
+                "Esperaba operador {}, encontró {}",
+                op, self.current_token
             )))
         }
     }
@@ -2115,13 +2115,10 @@ impl Parser {
                 self.advance();
                 Ok(name)
             }
-            _ => {
-                let s = self.span();
-                Err(ClsError::SyntaxError(format!(
-                    "Esperaba identificador, encontró {} (línea {}, columna {})",
-                    self.current_token, s.start_line, s.start_col
-                )))
-            }
+            _ => Err(self.syntax_err(format!(
+                "Esperaba identificador, encontró {}",
+                self.current_token
+            )))
         }
     }
 
@@ -2132,7 +2129,7 @@ impl Parser {
                 self.advance();
                 Ok(s)
             }
-            _ => Err(ClsError::SyntaxError(format!(
+            _ => Err(self.syntax_err(format!(
                 "Esperaba string, encontró {}",
                 self.current_token
             ))),

@@ -8,6 +8,7 @@ pub mod frontend;
 pub mod middleware;
 pub mod backend;
 pub mod error;
+pub mod ansi;
 
 /// Punto de entrada principal de la librería
 pub use error::{ClsError, ClsResult, StackFrame, Span};

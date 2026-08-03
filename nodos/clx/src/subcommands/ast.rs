@@ -13,13 +13,13 @@ pub fn execute(args: &[String]) -> i32 {
     let mut lexer = cls_core::frontend::Lexer::new(&source);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
-        Err(e) => { super::util::show_error(&source, &e.to_string(), &args[0]); return 1; }
+        Err(e) => { cls_runtime::show_syntax_error(e, &source, &args[0]); return 1; }
     };
 
     let mut parser = cls_core::frontend::Parser::new(tokens);
     let module = match parser.parse() {
         Ok(m) => m,
-        Err(e) => { super::util::show_error(&source, &e.to_string(), &args[0]); return 1; }
+        Err(e) => { cls_runtime::show_syntax_error(e, &source, &args[0]); return 1; }
     };
 
     if args.iter().any(|a| a == "--json") {

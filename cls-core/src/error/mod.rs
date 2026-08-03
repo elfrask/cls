@@ -38,6 +38,10 @@ pub enum ClsError {
     #[error("Error de sintaxis: {0}")]
     SyntaxError(String),
 
+    /// Error de sintaxis con span estructurado (no incrustado en el texto).
+    #[error("Error de sintaxis: {0}")]
+    SyntaxErrorAt(String, Span),
+
     #[error("Error de IO: {0}")]
     IoError(#[from] std::io::Error),
 
@@ -46,21 +50,19 @@ pub enum ClsError {
 }
 
 impl ClsError {
+    /// Fábrica centralizada: error de sintaxis con span estructurado.
+    /// El mensaje queda limpio (sin "(línea N, columna M)" incrustado);
+    /// la ubicación vive en el `Span` para que el formateador la use directa.
     pub fn syntax_at(msg: &str, span: &Span) -> Self {
-        ClsError::SyntaxError(format!(
-            "{} (línea {}, columna {})",
-            msg, span.start_line, span.start_col
-        ))
+        ClsError::SyntaxErrorAt(msg.to_string(), span.clone())
     }
 
+    /// Alias de `syntax_at` (mensaje limpio + span).
     pub fn with_span(msg: &str, span: &Span) -> Self {
-        ClsError::SyntaxError(format!(
-            "{} en línea {}, columna {}",
-            msg, span.start_line, span.start_col
-        ))
+        ClsError::SyntaxErrorAt(msg.to_string(), span.clone())
     }
 
-    /// Extrae línea/columna del mensaje (para variantes viejas que incrustan span en el string)
+    /// Extrae línea/columna del mensaje (para variantes legacy que incrustan span en el string)
     pub fn extract_line_col(msg: &str) -> Option<(usize, usize)> {
         let rest = msg.split("línea").nth(1)?;
         let line_str: String = rest.chars().take_while(|c| c.is_ascii_digit() || c.is_whitespace()).collect();
@@ -129,9 +131,14 @@ mod tests {
     fn test_syntax_at() {
         let span = Span::new(3, 7, 3, 7);
         let err = ClsError::syntax_at("error", &span);
-        let msg = err.to_string();
-        assert!(msg.contains("línea 3"));
-        assert!(msg.contains("columna 7"));
+        match &err {
+            ClsError::SyntaxErrorAt(msg, s) => {
+                assert_eq!(msg, "error");
+                assert_eq!(s.start_line, 3);
+                assert_eq!(s.start_col, 7);
+            }
+            _ => panic!("esperaba SyntaxErrorAt"),
+        }
     }
 
     #[test]
