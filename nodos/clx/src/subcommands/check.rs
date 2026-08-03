@@ -90,6 +90,19 @@ pub fn execute(args: &[String]) -> i32 {
                 format!("{}:{}", diag.span.start_line, diag.span.start_col)
             };
             eprintln!("[{}] {} ({})", severity, diag.message, name);
+            // Contexto de código: mostrar la línea fuente y el caret en la posición
+            let line = diag.span.start_line as usize;
+            let col = diag.span.start_col as usize;
+            if let Some(src_line) = source.lines().nth(line.saturating_sub(1)) {
+                let pad = " ".repeat(line.to_string().len());
+                eprintln!("  {} | {}", line, src_line);
+                let width = if diag.span.end_line == diag.span.start_line && diag.span.end_col > diag.span.start_col {
+                    (diag.span.end_col - diag.span.start_col) as usize
+                } else {
+                    1
+                };
+                eprintln!("  {} | {}{}", pad, " ".repeat(col.saturating_sub(1)), "^".repeat(width));
+            }
         }
 
         let errs = diagnostics.iter().filter(|d| matches!(d.severity, cls_core::error::diagnostic::Severity::Error)).count();

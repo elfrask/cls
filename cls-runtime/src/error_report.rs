@@ -59,9 +59,10 @@ fn source_pad(_source: &str, line: usize) -> String {
 pub fn show_runtime_error(report: &ErrorReport) {
     eprintln!("Error de ejecución:\n");
 
+    let mut num = 1;
+
     // 1. Import trace (módulos cargados con su contexto)
-    for (i, frame) in report.import_trace.iter().enumerate() {
-        let num = i + 1;
+    for frame in &report.import_trace {
         eprintln!("{}. En {}:{}:{}", num, frame.source_file, frame.line, frame.col);
         if let Ok(source) = std::fs::read_to_string(&frame.source_file) {
             let pad = source_pad(&source, frame.line as usize);
@@ -69,10 +70,29 @@ pub fn show_runtime_error(report: &ErrorReport) {
         } else {
             eprintln!("  import '{}' desde {}:{}:{}", frame.module_name, frame.source_file, frame.line, frame.col);
         }
+        num += 1;
     }
 
-    // 2. El error mismo (ubicación + contexto)
-    let step = report.import_trace.len() + 1;
+    // 2. Call stack: cada llamada con su ubicación y código fuente
+    for frame in &report.stack {
+        if let Some(s) = &frame.span {
+            if s.start_line == 0 {
+                // Entry point sin ubicación real: solo la función
+                eprintln!("{}. → {} ({})", num, frame.function, frame.source_file);
+            } else {
+                eprintln!("{}. En {}:{}:{} → {}", num, frame.source_file, s.start_line, s.start_col, frame.function);
+                if let Ok(source) = std::fs::read_to_string(&frame.source_file) {
+                    let pad = source_pad(&source, s.start_line as usize);
+                    show_source_line(&source, s.start_line as usize, s.start_col as usize, &pad);
+                }
+            }
+        } else {
+            eprintln!("{}. → {} ({})", num, frame.function, frame.source_file);
+        }
+        num += 1;
+    }
+
+    // 3. El error mismo (ubicación + contexto)
     if let Some(span) = &report.span {
         let label = match &report.error {
             ClsError::SyntaxError(_) => "[Error de Sintaxis]",
@@ -81,14 +101,14 @@ pub fn show_runtime_error(report: &ErrorReport) {
             ClsError::CompileError(_) => "[Error de Compilación]",
             _ => "",
         };
-        eprintln!("{}. En {}:{}:{} {}", step, report.source_file, span.start_line, span.start_col, label);
+        eprintln!("{}. En {}:{}:{} {}", num, report.source_file, span.start_line, span.start_col, label);
         if let Ok(source) = std::fs::read_to_string(&report.source_file) {
             let pad = source_pad(&source, span.start_line as usize);
             show_source_line(&source, span.start_line as usize, span.start_col as usize, &pad);
         }
     }
 
-    // 3. Mensaje de error (limpio, sin prefijo "Error de runtime: ")
+    // 4. Mensaje de error (limpio, sin prefijo ni call stack embebido)
     let error_str = report.error.to_string();
     let desc = clean_error_msg(&error_str);
     eprintln!("  Error: {}", desc);
@@ -116,8 +136,14 @@ pub fn show_config_error(error: &ClsError) {
 
 // ─── Limpieza de mensajes ────────────────────────────────────────────────────
 
-/// Quita el prefijo "Error de X: " pero conserva el "Call stack:" embebido
+/// Quita el prefijo "Error de X: " y el "Call stack:" embebido
 fn clean_error_msg(msg: &str) -> String {
+    // El call stack ya se muestra estructurado por show_runtime_error
+    let msg = if let Some(pos) = msg.find("\n  Call stack:") {
+        &msg[..pos]
+    } else {
+        msg
+    };
     if let Some(pos) = msg.find(": ") {
         let rest = &msg[pos + 2..];
         if rest.starts_with("Error") || rest.starts_with("error") {
