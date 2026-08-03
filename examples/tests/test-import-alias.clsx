@@ -1,0 +1,9 @@
+import "modules/lib" as l;
+
+function main(args: String[]) -> int {
+    print("alias l.suma(10, 5):", l.suma(10, 5));
+    print("alias l.Nivel.Alto:", l.Nivel.Alto);
+    var c = l.Contador(1);
+    print("alias c.obtener():", c.obtener());
+    return 0;
+};

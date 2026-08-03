@@ -1,0 +1,6 @@
+import "modules/noexiste" as fantasma;
+
+function main(args: String[]) -> int {
+    print(fantasma.algo);
+    return 0;
+};

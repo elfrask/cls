@@ -1,0 +1,7 @@
+import "modules/lib" as lib;
+
+function main(args: String[]) -> int {
+    var x = lib.privada();
+    print(x);
+    return 0;
+};
