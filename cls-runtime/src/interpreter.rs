@@ -1280,6 +1280,23 @@ impl Interpreter {
         }
     }
 
+    fn native_type(&mut self, args: &[Value], span: &Span) -> ClsResult<Value> {
+        let v = args.first().unwrap_or(&Value::Null);
+        if let Some(r) = self.call_magic(v, "__type", vec![], span)? {
+            return Ok(r);
+        }
+        Ok(Value::String(v.type_name().to_string()))
+    }
+
+    /// `json.stringify(x)` — usa `__toJson` si el objeto lo define; si no, el nativo.
+    fn native_stringify(&mut self, args: &[Value], span: &Span, fallback: &dyn Fn(&[Value]) -> ClsResult<Value>) -> ClsResult<Value> {
+        let v = args.first().unwrap_or(&Value::Null);
+        if let Some(r) = self.call_magic(v, "__toJson", vec![], span)? {
+            return Ok(r);
+        }
+        fallback(args)
+    }
+
     fn native_int(&mut self, v: &Value, span: &Span) -> ClsResult<Value> {
         match v {
             Value::Int(_) => Ok(v.clone()),
@@ -1324,6 +1341,8 @@ impl Interpreter {
                         "len" => self.native_len(&args, call_span),
                         "print" => self.native_print(&args, call_span),
                         "int" | "float" | "bool" => self.native_convert(&fun.name, &args, call_span),
+                        "type" => self.native_type(&args, call_span),
+                        "stringify" => self.native_stringify(&args, call_span, &**func),
                         _ => func(&args),
                     }
                 }
@@ -1956,6 +1975,29 @@ impl Interpreter {
                     Value::Struct(s) => s.def_name == class_name,
                     Value::Enum(e) => e.def_name == class_name,
                     _ => false,
+                };
+                Ok(Value::Bool(result))
+            }
+            // Operador `in`: needle in coleccion | obj
+            (Operator::In, needle, container) => {
+                let result = match container {
+                    Value::Array(arr) => arr.iter().any(|x| x == needle),
+                    Value::Tuple(tup) => tup.iter().any(|x| x == needle),
+                    Value::Record(rec) => match needle {
+                        Value::String(k) => rec.contains_key(k),
+                        _ => false,
+                    },
+                    Value::Object(_) => {
+                        if let Some(r) = self.call_magic(container, "__contains", vec![needle.clone()], span)? {
+                            return Ok(r);
+                        }
+                        return Err(self.err_at("El objeto no soporta 'in' (falta __contains)", span));
+                    }
+                    Value::String(s) => match needle {
+                        Value::String(sub) => s.contains(sub),
+                        _ => false,
+                    },
+                    _ => return Err(self.err_at(format!("'in' no soportado sobre {}", container.type_name()), span)),
                 };
                 Ok(Value::Bool(result))
             }

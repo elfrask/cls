@@ -1467,6 +1467,18 @@ impl Parser {
                 });
                 continue;
             }
+            // 'in' keyword: x in coleccion
+            if self.check_keyword(Keyword::In) {
+                self.advance();
+                let right = self.parse_xor()?;
+                expr = Expression::Binary(BinaryExpr {
+                    left: Box::new(expr),
+                    op: Operator::In,
+                    right: Box::new(right),
+                    span: self.span(),
+                });
+                continue;
+            }
             break;
         }
         

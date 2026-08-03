@@ -142,6 +142,7 @@ pub enum Operator {
     GreaterEqual,   // >=
     StrictEqual,    // ==
     Is,             // is (instancia de)
+    In,             // in (contiene)
 
     // Lógicos
     And,        // &
@@ -412,6 +413,7 @@ impl fmt::Display for Operator {
             Operator::GreaterEqual => ">=",
             Operator::StrictEqual => "==",
             Operator::Is => "is",
+            Operator::In => "in",
             Operator::And => "&",
             Operator::Or => "|",
             Operator::Not => "!",

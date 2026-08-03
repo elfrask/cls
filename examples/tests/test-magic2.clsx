@@ -1,0 +1,33 @@
+import "json";
+class Caja {
+    var items: Array;
+    function main() {
+        me.items = [1, 2, 3];
+    }
+    function __type() -> String {
+        return "Caja";
+    }
+    function __toJson() -> String {
+        return "{\"caja\":true}";
+    }
+    function __contains(x) -> bool {
+        return x in me.items;
+    }
+    function __clone() -> Caja {
+        var c = Caja();
+        c.items = me.items;
+        return c;
+    }
+};
+
+function main(args: String[]) -> int {
+    var c = Caja();
+    print("type(c):", type(c));
+    print("stringify(c):", json.stringify(c));
+    print("2 in c:", 2 in c);
+    print("9 in c:", 9 in c);
+    print("2 in [1,2]:", 2 in [1,2]);
+    print("a in {a:1}:", "a" in {a:1});
+    print("clone.items:", c.__clone().items);
+    return 0;
+};
