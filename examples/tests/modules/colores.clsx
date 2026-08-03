@@ -1,0 +1,11 @@
+export enum Color {
+    Rojo,
+    Verde,
+    Azul,
+};
+
+export function complementario(c: Color) -> Color {
+    if (c == Color.Rojo) { return Color.Verde; }
+    if (c == Color.Verde) { return Color.Rojo; }
+    return Color.Azul;
+};

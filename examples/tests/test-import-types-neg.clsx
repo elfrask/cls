@@ -1,0 +1,7 @@
+import "modules/lib" as lib;
+import "modules/colores" as colores;
+
+function main(args: String[]) -> int {
+    var mal: Color = 42;
+    return 0;
+};

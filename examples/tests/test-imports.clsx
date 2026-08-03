@@ -1,19 +1,38 @@
-from "math" import abs, PI;
-from "json" import parse, stringify;
-import "math" as math;
+import "modules/lib" as lib;
+import "modules/colores" as colores;
 
 function main(args: String[]) -> int {
-    print("from import test:");
-    print("  abs(-10):", abs(-10));
-    print("  PI:", PI);
+    print("=== enum importado ===");
+    print("lib.Nivel.Alto:", lib.Nivel.Alto);
+    print("Medio == Medio:", lib.Nivel.Medio == lib.Nivel.Medio);
+    print("Bajo == Alto:", lib.Nivel.Bajo == lib.Nivel.Alto);
+    print("Bajo is lib.Nivel:", lib.Nivel.Bajo is lib.Nivel);
 
-    print("json test:");
-    var obj = parse('{"hello": "world"}');
-    print("  parse:", obj);
-    print("  stringify:", stringify(obj));
+    print("=== iterar enum importado ===");
+    for each n in (lib.Nivel) {
+        print("nivel:", n);
+    }
 
-    print("import as test:");
-    print("  math.sqrt(25):", math.sqrt(25));
+    print("=== clase importada ===");
+    var c = lib.Contador(5);
+    print("obtener:", c.obtener());
+
+    print("=== structure importada ===");
+    var p = lib.Par(1, 2);
+    print("par:", p);
+
+    print("=== funcion importada ===");
+    print("suma(3, 4):", lib.suma(3, 4));
+
+    print("=== var exportada ===");
+    print("VERSION:", lib.VERSION);
+
+    print("=== otro modulo (colores) ===");
+    print("complementario(Rojo):", colores.complementario(colores.Color.Rojo));
+    print("Rojo is Color:", colores.Color.Rojo is colores.Color);
+    for each c2 in (colores.Color) {
+        print("color:", c2);
+    }
 
     return 0;
-}
+};
