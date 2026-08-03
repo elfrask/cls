@@ -427,19 +427,27 @@ impl Parser {
         // Paréntesis: (Int) agrupación | (Int, String) tupla
         if self.consume_symbol(Symbol::LParen) {
             let first = self.parse_type_annotation()?;
+            let mut elems = vec![first];
+            let mut is_tuple = false;
             if self.consume_symbol(Symbol::Comma) {
-                let mut elems = vec![first];
+                is_tuple = true;
                 loop {
                     elems.push(self.parse_type_annotation()?);
                     if !self.consume_symbol(Symbol::Comma) {
                         break;
                     }
                 }
-                self.expect_symbol(Symbol::RParen)?;
-                return Ok(TypeKind::Tuple(elems));
             }
             self.expect_symbol(Symbol::RParen)?;
-            return Ok(first.kind);
+            // (Int) -> Int | (Int, String) -> Bool -> tipo funcion
+            if self.consume_operator(Operator::Arrow) {
+                let ret = self.parse_type_annotation()?;
+                return Ok(TypeKind::Fun(elems, Box::new(ret)));
+            }
+            if is_tuple {
+                return Ok(TypeKind::Tuple(elems));
+            }
+            return Ok(elems.remove(0).kind);
         }
 
         // Identificador o acrónimo
@@ -1869,10 +1877,13 @@ impl Parser {
                 let element = self.parse_cmx_element()?;
                 Ok(Expression::Cmx(element))
             }
-            _ => Err(ClsError::SyntaxError(format!(
-                "Token inesperado: {:?}",
-                self.current_token
-            ))),
+            _ => {
+                let s = self.span();
+                Err(ClsError::SyntaxError(format!(
+                    "Token inesperado: {:?} (línea {}, columna {})",
+                    self.current_token, s.start_line, s.start_col
+                )))
+            }
         }
     }
 
@@ -2104,10 +2115,13 @@ impl Parser {
                 self.advance();
                 Ok(name)
             }
-            _ => Err(ClsError::SyntaxError(format!(
-                "Esperaba identificador, encontró {}",
-                self.current_token
-            ))),
+            _ => {
+                let s = self.span();
+                Err(ClsError::SyntaxError(format!(
+                    "Esperaba identificador, encontró {} (línea {}, columna {})",
+                    self.current_token, s.start_line, s.start_col
+                )))
+            }
         }
     }
 
