@@ -1,7 +1,6 @@
 use cls_runtime::{Intrinsics, Interpreter};
 use cls_runtime::{VfsResolver, LocalFs, ClsLibResolver};
 use cls_core::config::ModuleManifest;
-use crate::module_loader;
 use std::sync::Arc;
 use std::path::Path;
 
@@ -130,7 +129,14 @@ fn make_desktop_resolver(vfs: Arc<VfsResolver>, lib_resolver: Arc<dyn ClsLibReso
     resolver.set_external(|path: String, _env: &mut cls_runtime::Environment| -> cls_core::error::ClsResult<Option<cls_runtime::Value>> {
         let candidate = format!("{}.clsx", path);
         match std::fs::read_to_string(&candidate) {
-            Ok(source) => Ok(Some(module_loader::load_module(&source)?)),
+            Ok(source) => {
+                // El nodo consigue el source; el runtime (centralizado) lo carga y recolecta exports
+                let mut interp = Interpreter::new(
+                    Intrinsics::empty(),
+                    cls_runtime::ModuleResolver::new().with_core_stdlib(),
+                );
+                Ok(Some(interp.load_module_source(&path, &source)?))
+            }
             Err(_) => Ok(None),
         }
     });

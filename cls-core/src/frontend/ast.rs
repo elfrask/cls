@@ -208,6 +208,8 @@ pub struct ClassDecl {
     /// Parámetros de tipo genérico `<T>` (compile-time)
     #[serde(default)]
     pub type_params: Vec<TypeParam>,
+    /// Visibilidad (export → disponible en módulos importados)
+    pub visibility: Visibility,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -222,6 +224,8 @@ pub struct StructureDecl {
     pub name: String,
     pub fields: Vec<FieldDecl>,
     pub span: Span,
+    /// Visibilidad (export → disponible en módulos importados)
+    pub visibility: Visibility,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -265,6 +269,8 @@ pub struct EnumDecl {
     pub name: String,
     pub variants: Vec<String>,
     pub span: Span,
+    /// Visibilidad (export → disponible en módulos importados)
+    pub visibility: Visibility,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

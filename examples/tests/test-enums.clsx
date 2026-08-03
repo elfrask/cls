@@ -35,7 +35,7 @@ function main(args: String[]) -> int {
         print("variante:", v);
     };
     var e = (
-        <Div attr="valor" k={() -> {print("")}}>
+        <Div attr="valor" k={(e) -> {print("")}}>
             children
             <Div />
         </Div>

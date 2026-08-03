@@ -710,6 +710,9 @@ impl Interpreter {
 
         self.classes.insert(class.name.clone(), def.clone());
         self.env.define(&class.name, Value::Class(Box::new(def)));
+        if class.visibility == Visibility::Export {
+            self.exports.insert(class.name.clone());
+        }
         Ok(Value::Void)
     }
 
@@ -719,6 +722,9 @@ impl Interpreter {
             variants: enum_decl.variants.clone(),
         };
         self.env.define(&enum_decl.name, Value::EnumDef(Box::new(def)));
+        if enum_decl.visibility == Visibility::Export {
+            self.exports.insert(enum_decl.name.clone());
+        }
         Ok(Value::Void)
     }
 
@@ -756,6 +762,9 @@ impl Interpreter {
             },
         );
         self.env.define(&struct_name, Value::Fun(constructor));
+        if structure.visibility == Visibility::Export {
+            self.exports.insert(struct_name);
+        }
 
         Ok(Value::Void)
     }
