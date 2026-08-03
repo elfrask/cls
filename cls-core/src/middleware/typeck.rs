@@ -619,7 +619,7 @@ impl TypeChecker {
         let index_type = self.check_expression(&idx.index);
         match obj {
             Type::Array(inner) => *inner,
-            Type::Record(k, v) => *v,
+            Type::Record(_k, v) => *v,
             // Tupla: índice literal â†’ slot exacto; dinámico â†’ unión de slots
             Type::Tuple(ts) => {
                 match idx.index.as_ref() {
@@ -869,7 +869,7 @@ impl TypeChecker {
         // Fallback: resolver el tipo base y aplicar sobre tipos compuestos
         let base_type = self.resolve_annotation_with(base, bindings);
         match access {
-            TypeAccess::Key(key) => match base_type {
+            TypeAccess::Key(_key) => match base_type {
                 Type::Record(_, v) => *v,
                 _ => Type::Any,
             },

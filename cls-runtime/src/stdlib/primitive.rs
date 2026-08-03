@@ -60,10 +60,6 @@ pub fn build_method_tables() -> HashMap<PrimitiveType, Table> {
 }
 
 /// Convierte un `Value` al tipo esperado, o error de tipo.
-fn expect<'a>(args: &'a [Value], i: usize, expected: &str) -> ClsResult<&'a Value> {
-    args.get(i).ok_or_else(|| ClsError::RuntimeError(format!("Método: faltan argumentos")))
-}
-
 fn expect_string(args: &[Value]) -> ClsResult<&str> {
     match args.first().unwrap_or(&Value::Null) {
         Value::String(s) => Ok(s),

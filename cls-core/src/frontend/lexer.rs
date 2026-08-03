@@ -7,6 +7,7 @@ use std::collections::VecDeque;
 /// Convierte código fuente en una lista de tokens con información de posición
 pub struct Lexer {
     source: Vec<char>,
+    #[allow(dead_code)]
     source_str: String,
     pos: usize,
     line: u32,

@@ -6,6 +6,7 @@ use cls_core::frontend::ast::*;
 
 /// Representa una declaración de tipo desde un archivo .clsi
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct TypeMember {
     pub name: String,
     pub kind: MemberKind,
@@ -16,6 +17,7 @@ pub struct TypeMember {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum MemberKind {
     Function,
     Variable,
@@ -31,17 +33,12 @@ pub enum MemberKind {
 
 /// Representa un módulo de tipos completo
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct TypeModule {
     pub name: String,
     pub description: String,
     pub version: String,
     pub members: Vec<TypeMember>,
-}
-
-impl TypeModule {
-    pub fn member_names(&self) -> Vec<&str> {
-        self.members.iter().map(|m| m.name.as_str()).collect()
-    }
 }
 
 /// Built-in type definitions embebidos en el binario
@@ -183,7 +180,7 @@ fn extract_enum_member(e: &EnumDecl, source: &str) -> TypeMember {
     }
 }
 
-fn extract_container_member(name: &str, kind: MemberKind, body: &[Statement], source: &str) -> TypeMember {
+fn extract_container_member(name: &str, kind: MemberKind, body: &[Statement], _source: &str) -> TypeMember {
     let members: Vec<String> = body.iter().filter_map(|s| match s {
         Statement::FunctionDecl(f) => Some(f.name.clone()),
         Statement::VarDecl(v) | Statement::ConstDecl(v) => Some(v.name.clone()),
@@ -313,7 +310,7 @@ fn type_ann_to_string(ann: &TypeAnnotation) -> String {
 }
 
 /// Extrae comentarios `# @description ...` antes de una declaración
-fn extract_doc_before(source: &str, decl_line: u32, decl_col: u32) -> String {
+fn extract_doc_before(source: &str, decl_line: u32, _decl_col: u32) -> String {
     let lines: Vec<&str> = source.lines().collect();
     if decl_line == 0 { return String::new(); }
     let idx = (decl_line as usize).saturating_sub(1);
@@ -385,6 +382,7 @@ pub fn load_all_type_definitions(workspace_root: Option<&str>) -> HashMap<String
 }
 
 /// Busca un módulo de tipos por nombre
+#[allow(dead_code)]
 pub fn get_type_module<'a>(defs: &'a HashMap<String, TypeModule>, name: &str) -> Option<&'a TypeModule> {
     defs.get(name)
 }

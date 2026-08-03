@@ -179,7 +179,7 @@ impl NameResolver {
                     self.define(alias.clone(), SymbolKind::Variable);
                 }
             }
-            Statement::Include(include) => {
+            Statement::Include(_include) => {
                 // TODO: procesar include
             }
             Statement::StructureDecl(structure) => {
@@ -277,7 +277,7 @@ impl NameResolver {
                 }
             }
             Expression::Cmx(_) => {}
-            Expression::NamespaceAccess(ns, name, _) => {
+            Expression::NamespaceAccess(ns, _name, _) => {
                 if !self.lookup(ns) {
                     return Err(ClsError::SyntaxError(format!(
                         "Namespace no definido: {}",

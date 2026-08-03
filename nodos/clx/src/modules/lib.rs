@@ -1,6 +1,6 @@
 use cls_runtime::ClsLibResolver;
 use cls_runtime::value::{FunValue, Value};
-use cls_core::error::{ClsError, ClsResult};
+use cls_core::error::ClsError;
 use std::collections::HashMap;
 use std::sync::Arc;
 

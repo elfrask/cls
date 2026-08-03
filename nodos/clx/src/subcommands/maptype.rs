@@ -362,7 +362,7 @@ fn scan_and_process(dir: &Path, out_base: &Path, last: &mut HashMap<PathBuf, u64
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            let rel = path.strip_prefix(std::env::current_dir().unwrap_or_default()).unwrap_or(&path);
+            let _rel = path.strip_prefix(std::env::current_dir().unwrap_or_default()).unwrap_or(&path);
             if path.is_dir() {
                 let name = path.file_name().unwrap();
                 let n = name.to_string_lossy();
