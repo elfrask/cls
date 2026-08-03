@@ -10,7 +10,7 @@ interface Marcador<T> {
 
 alias Vec3 = (Int, Int, Int);
 alias Color = "red" | "green" | "blue";
-alias FnInt = fun(Int) -> Int;
+alias FnInt = (Int) -> Int;
 alias Dict = Record<String, Int>;
 
 function id<T>(x: T) -> T {
