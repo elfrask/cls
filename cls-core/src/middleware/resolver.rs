@@ -354,3 +354,51 @@ enum SymbolKind {
     Type,
     Enum,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frontend::{Lexer, Parser};
+
+    fn resolve(src: &str) -> Vec<Diagnostic> {
+        let toks = Lexer::new(src).tokenize().expect("tokenize");
+        let module = Parser::new(toks).parse().expect("parse");
+        let mut r = NameResolver::new();
+        r.resolve(&module).expect("resolve");
+        r.diagnostics().to_vec()
+    }
+
+    /// Cuenta errores: el resolver devuelve Err (SyntaxError) o registra diagnostics.
+    fn error_count(src: &str) -> usize {
+        let toks = Lexer::new(src).tokenize().expect("tokenize");
+        let module = Parser::new(toks).parse().expect("parse");
+        let mut r = NameResolver::new();
+        match r.resolve(&module) {
+            Ok(()) => r.diagnostics().len(),
+            Err(_) => 1,
+        }
+    }
+
+    #[test]
+    fn defined_variables_resolve() {
+        let d = resolve("function f() { var x = 1; return x; };");
+        assert!(d.is_empty(), "x definida: {:?}", d);
+    }
+
+    #[test]
+    fn undefined_variable_errors() {
+        assert_eq!(error_count("function f() { return y; };"), 1);
+    }
+
+    #[test]
+    fn params_are_in_scope() {
+        let d = resolve("function f(a: int, b: int) -> int { return a + b; };");
+        assert!(d.is_empty(), "params en scope: {:?}", d);
+    }
+
+    #[test]
+    fn class_and_enum_definitions() {
+        let d = resolve("class A { var f: int; }; enum E { X, Y, };");
+        assert!(d.is_empty(), "clase y enum definidos: {:?}", d);
+    }
+}
