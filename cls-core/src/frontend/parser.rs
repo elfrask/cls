@@ -889,6 +889,7 @@ impl Parser {
             body,
             span: self.span(),
             type_params,
+            visibility: Visibility::Default,
         }))
     }
 
@@ -984,6 +985,7 @@ impl Parser {
             name,
             fields,
             span: self.span(),
+            visibility: Visibility::Default,
         }))
     }
 
@@ -1123,6 +1125,7 @@ impl Parser {
             name,
             variants,
             span: self.span(),
+            visibility: Visibility::Default,
         }))
     }
 
@@ -1247,10 +1250,13 @@ impl Parser {
         let mut stmt = self.parse_statement()?;
         
         // Aplicar visibilidad
-        if let Statement::FunctionDecl(ref mut f) = stmt {
-            f.visibility = visibility;
-        } else if let Statement::VarDecl(ref mut v) = stmt {
-            v.visibility = visibility;
+        match &mut stmt {
+            Statement::FunctionDecl(ref mut f) => f.visibility = visibility,
+            Statement::VarDecl(ref mut v) | Statement::ConstDecl(ref mut v) => v.visibility = visibility,
+            Statement::ClassDecl(ref mut c) => c.visibility = visibility,
+            Statement::EnumDecl(ref mut e) => e.visibility = visibility,
+            Statement::StructureDecl(ref mut s) => s.visibility = visibility,
+            _ => {}
         }
         
         Ok(stmt)

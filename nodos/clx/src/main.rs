@@ -1,7 +1,6 @@
 //! clx — CLS Toolchain
 //! CLI de desarrollo para el lenguaje CLS.
 mod modules;
-mod module_loader;
 mod lsp;
 mod type_defs;
 mod subcommands;
