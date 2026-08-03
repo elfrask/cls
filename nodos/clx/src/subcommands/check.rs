@@ -137,8 +137,13 @@ fn load_import_modules(
     out: &mut Vec<Module>,
 ) {
     for stmt in &module.statements {
-        if let Statement::Import(i) = stmt {
-            let candidate = base_dir.join(format!("{}.clsx", i.path));
+        let import_path = match stmt {
+            Statement::Import(i) => Some(i.path.clone()),
+            Statement::FromImport(fi) => Some(fi.path.clone()),
+            _ => None,
+        };
+        if let Some(path) = import_path {
+            let candidate = base_dir.join(format!("{}.clsx", path));
             let key = candidate.to_string_lossy().to_string();
             if seen.insert(key) {
                 if let Ok(source) = fs::read_to_string(&candidate) {
