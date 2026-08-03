@@ -1,5 +1,5 @@
 {
-  "FunciÃ³n": {
+  "Función": {
     "prefix": "fn",
     "body": [
       "function ${1:nombre}(${2:param}: ${3:Tipo}) -> ${4:Tipo} {",
@@ -7,27 +7,27 @@
       "    return ${6:valor};",
       "};"
     ],
-    "description": "FunciÃ³n con tipo de retorno"
+    "description": "Función con tipo de retorno"
   },
-  "FunciÃ³n void": {
+  "Función void": {
     "prefix": "fnv",
     "body": [
       "function ${1:nombre}(${2:param}: ${3:Tipo}) {",
       "    ${4:# cuerpo}",
       "};"
     ],
-    "description": "FunciÃ³n sin retorno"
+    "description": "Función sin retorno"
   },
-  "FunciÃ³n genÃ©rica": {
+  "Función genérica": {
     "prefix": "fng",
     "body": [
       "function ${1:nombre}<T>(${2:x}: T) -> T {",
       "    return ${2:x};",
       "};"
     ],
-    "description": "FunciÃ³n genÃ©rica (compile-time)"
+    "description": "Función genérica (compile-time)"
   },
-  "FunciÃ³n async": {
+  "Función async": {
     "prefix": "fna",
     "body": [
       "async function ${1:nombre}(${2:param}: ${3:Tipo}) -> ${4:Tipo} {",
@@ -35,7 +35,7 @@
       "    return res;",
       "};"
     ],
-    "description": "FunciÃ³n asÃ­ncrona con await"
+    "description": "Función asíncrona con await"
   },
   "Clase": {
     "prefix": "cls",
@@ -52,9 +52,9 @@
       "    }",
       "};"
     ],
-    "description": "Clase con constructor y mÃ©todo"
+    "description": "Clase con constructor y método"
   },
-  "Clase genÃ©rica": {
+  "Clase genérica": {
     "prefix": "clsg",
     "body": [
       "class ${1:Caja}<T> {",
@@ -69,7 +69,7 @@
       "    }",
       "};"
     ],
-    "description": "Clase genÃ©rica con type param"
+    "description": "Clase genérica con type param"
   },
   "Clase con herencia": {
     "prefix": "clsh",
@@ -112,9 +112,9 @@
       "    ${4:metodo}(${5:param}: ${6:Tipo}): ${7:Tipo},",
       "};"
     ],
-    "description": "Interface con campos y mÃ©todos (compile-time)"
+    "description": "Interface con campos y métodos (compile-time)"
   },
-  "Interface genÃ©rica": {
+  "Interface genérica": {
     "prefix": "intfg",
     "body": [
       "interface ${1:Hello}<T=${2:Int}> {",
@@ -122,9 +122,9 @@
       "    ${4:metodo}(${5:x}: T): ${6:Tipo},",
       "};"
     ],
-    "description": "Interface genÃ©rica con default"
+    "description": "Interface genérica con default"
   },
-  "ExtracciÃ³n de tipo": {
+  "Extracción de tipo": {
     "prefix": "ext",
     "body": [
       "var ${1:valor}: ${2:Interface}[\"${3:campo}\"] = ${4:valor};"
@@ -138,19 +138,19 @@
     ],
     "description": "Alias de tipo tupla"
   },
-  "Alias de uniÃ³n": {
+  "Alias de unión": {
     "prefix": "aliu",
     "body": [
       "alias ${1:Color} = \"${2:red}\" | \"${3:green}\" | \"${4:blue}\";"
     ],
-    "description": "Alias de uniÃ³n de literales"
+    "description": "Alias de unión de literales"
   },
-  "Alias de funciÃ³n": {
+  "Alias de función": {
     "prefix": "alif",
     "body": [
       "alias ${1:FnInt} = fun(${2:Int}) -> ${3:Int};"
     ],
-    "description": "Alias de tipo funciÃ³n"
+    "description": "Alias de tipo función"
   },
   "Alias de record": {
     "prefix": "alir",
@@ -178,7 +178,7 @@
       "    }",
       "};"
     ],
-    "description": "MÃ³dulo con export"
+    "description": "Módulo con export"
   },
   "Namespace": {
     "prefix": "ns",
@@ -194,14 +194,14 @@
     "body": [
       "import \"${1:modulo}\" as ${2:alias};"
     ],
-    "description": "Importar mÃ³dulo"
+    "description": "Importar módulo"
   },
   "From import": {
     "prefix": "impf",
     "body": [
-      "from \"${1:modulo}\" import ${2:sÃ­mbolo};"
+      "from \"${1:modulo}\" import ${2:símbolo};"
     ],
-    "description": "Importar sÃ­mbolos especÃ­ficos"
+    "description": "Importar símbolos específicos"
   },
   "If / else": {
     "prefix": "if",
@@ -249,16 +249,16 @@
       "    ${3:# cuerpo}",
       "}"
     ],
-    "description": "Iterar colecciÃ³n"
+    "description": "Iterar colección"
   },
-  "For each con Ã­ndice": {
+  "For each con índice": {
     "prefix": "fei",
     "body": [
       "for each ${1:item} (${2:i}) in (${3:coleccion}) {",
       "    ${4:# item y ${2:i}}",
       "}"
     ],
-    "description": "Iterar con Ã­ndice"
+    "description": "Iterar con índice"
   },
   "Switch": {
     "prefix": "sw",
@@ -278,7 +278,7 @@
     "prefix": "try",
     "body": [
       "try {",
-      "    ${1:# cÃ³digo que puede fallar}",
+      "    ${1:# código que puede fallar}",
       "} catch (${2:e}) {",
       "    ${3:# manejo del error}",
       "}"
@@ -290,7 +290,7 @@
     "body": [
       "var ${1:par}: (${2:Int}, ${3:String}) = (${4:1}, \"${5:x}\");"
     ],
-    "description": "Tupla heterogÃ©nea"
+    "description": "Tupla heterogénea"
   },
   "Array tipado": {
     "prefix": "arr",
@@ -318,7 +318,7 @@
     "body": [
       "var ${1:fn} = (${2:x}: ${3:Tipo}) => ${4:expresion};"
     ],
-    "description": "FunciÃ³n flecha"
+    "description": "Función flecha"
   },
   "CMX elemento": {
     "prefix": "cmx",
@@ -336,7 +336,7 @@
       "    return \"${1:...}\";",
       "}"
     ],
-    "description": "MÃ©todo mÃ¡gico __toString"
+    "description": "Método mágico __toString"
   },
   "Operador is": {
     "prefix": "isop",
@@ -350,9 +350,9 @@
     "body": [
       "super.${1:metodo}(${2:args})"
     ],
-    "description": "Acceso al mÃ©todo del padre"
+    "description": "Acceso al método del padre"
   },
-  "MÃ©todo main": {
+  "Método main": {
     "prefix": "main",
     "body": [
       "function main(args: String[]) -> int {",
@@ -371,7 +371,7 @@
       "    ${4:Variante3},",
       "};"
     ],
-    "description": "Enum con variantes constantes (Ã­ndice 1-2 bytes)"
+    "description": "Enum con variantes constantes (índice 1-2 bytes)"
   },
   "Enum uso": {
     "prefix": "enumus",
@@ -381,7 +381,7 @@
       "    ${4:// ...}",
       "}"
     ],
-    "description": "Usar un enum (acceso + comparaciÃ³n)"
+    "description": "Usar un enum (acceso + comparación)"
   },
   "Enum iterar": {
     "prefix": "enumi",

@@ -4,7 +4,7 @@ use crate::middleware::types::{Type, LitVal};
 use crate::config::types::TypesConfig;
 use std::collections::HashMap;
 
-/// DefiniciÃ³n compile-time de una interface (shapes con genÃ©ricos).
+/// Definición compile-time de una interface (shapes con genéricos).
 #[derive(Clone)]
 struct InterfaceInfo {
     type_params: Vec<TypeParam>,
@@ -110,9 +110,6 @@ impl TypeChecker {
         self.scopes.pop();
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    // Statements
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     fn check_statement(&mut self, stmt: &Statement) -> Type {
         match stmt {
@@ -285,7 +282,7 @@ impl TypeChecker {
         let cond = self.check_expression(&i.condition);
         if !cond.is_assignable_to(&Type::Bool) {
             self.warn(
-                &format!("CondiciÃ³n if debe ser Bool, encontrÃ³ {}", cond),
+                &format!("Condición if debe ser Bool, encontró {}", cond),
                 i.span.clone(),
             );
         }
@@ -304,7 +301,7 @@ impl TypeChecker {
         let cond = self.check_expression(&w.condition);
         if !cond.is_assignable_to(&Type::Bool) {
             self.warn(
-                &format!("CondiciÃ³n while debe ser Bool, encontrÃ³ {}", cond),
+                &format!("Condición while debe ser Bool, encontró {}", cond),
                 w.span.clone(),
             );
         }
@@ -405,9 +402,6 @@ impl TypeChecker {
         }
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    // Expressions
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     fn check_expression(&mut self, expr: &Expression) -> Type {
         match expr {
@@ -500,7 +494,7 @@ impl TypeChecker {
                     return Type::Int;
                 }
                 self.error(
-                    &format!("Operador requiere tipos numÃ©ricos, encontrÃ³ {} y {}", left, right),
+                    &format!("Operador requiere tipos numéricos, encontró {} y {}", left, right),
                     bin.span.clone(),
                 )
             }
@@ -511,7 +505,7 @@ impl TypeChecker {
             }
             Operator::And | Operator::Or => {
                 if !left.is_assignable_to(&Type::Bool) || !right.is_assignable_to(&Type::Bool) {
-                    self.warn("Operador lÃ³gico requiere Bool", bin.span.clone());
+                    self.warn("Operador lógico requiere Bool", bin.span.clone());
                 }
                 Type::Bool
             }
@@ -626,7 +620,7 @@ impl TypeChecker {
         match obj {
             Type::Array(inner) => *inner,
             Type::Record(k, v) => *v,
-            // Tupla: Ã­ndice literal â†’ slot exacto; dinÃ¡mico â†’ uniÃ³n de slots
+            // Tupla: índice literal â†’ slot exacto; dinámico â†’ unión de slots
             Type::Tuple(ts) => {
                 match idx.index.as_ref() {
                     Expression::Literal(l) if matches!(l.kind, LiteralKind::Int(_)) => {
@@ -739,7 +733,7 @@ impl TypeChecker {
         self.resolve_annotation_with(ann, &HashMap::new())
     }
 
-    /// Resuelve una anotaciÃ³n bajo un contexto de type params (bindings Tâ†’tipo).
+    /// Resuelve una anotación bajo un contexto de type params (bindings Tâ†’tipo).
     fn resolve_annotation_with(
         &mut self,
         ann: &TypeAnnotation,
@@ -795,7 +789,7 @@ impl TypeChecker {
             TypeKind::F64 => Type::F64,
             TypeKind::Cmx => Type::Cmx,
             TypeKind::Named(name, params) => {
-                // Type param (T, U) del contexto genÃ©rico
+                // Type param (T, U) del contexto genérico
                 if let Some(t) = bindings.get(name) {
                     return t.clone();
                 }
@@ -841,7 +835,7 @@ impl TypeChecker {
         access: &TypeAccess,
         bindings: &HashMap<String, Type>,
     ) -> Type {
-        // Caso interface nombrada (con args opcionales): resolver miembros con genÃ©ricos
+        // Caso interface nombrada (con args opcionales): resolver miembros con genéricos
         if let TypeKind::Named(name, arg_anns) = &base.kind {
             if let Some(info) = self.interfaces.get(name).cloned() {
                 let arg_types: Vec<Type> = arg_anns.iter()
@@ -904,7 +898,7 @@ impl TypeChecker {
         bindings
     }
 
-    /// Tipos de los campos de una interface en orden (para acceso por Ã­ndice).
+    /// Tipos de los campos de una interface en orden (para acceso por índice).
     fn interface_member_types(&mut self, info: &InterfaceInfo, bindings: &HashMap<String, Type>) -> Vec<Type> {
         info.fields.iter()
             .map(|(name, ta)| {
@@ -917,7 +911,7 @@ impl TypeChecker {
             .collect()
     }
 
-    /// Tipo `fun(params) -> ret` de una signature, con genÃ©ricos aplicados.
+    /// Tipo `fun(params) -> ret` de una signature, con genéricos aplicados.
     fn signature_type(&mut self, sig: &SignatureDecl, bindings: &HashMap<String, Type>) -> Type {
         let params: Vec<Type> = sig.params.iter()
             .map(|p| p.type_ann.as_ref()
