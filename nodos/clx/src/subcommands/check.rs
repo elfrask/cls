@@ -74,22 +74,25 @@ pub fn execute(args: &[String]) -> i32 {
         let diagnostics = checker.diagnostics();
 
         if diagnostics.is_empty() && files.len() == 1 {
-            println!("No se encontraron errores de tipo.");
+            println!("{}", cls_core::ansi::fg(true, cls_core::ansi::codes::GREEN, "No se encontraron errores de tipo."));
             return 0;
         }
 
         for diag in diagnostics {
-            let severity = match diag.severity {
-                cls_core::error::diagnostic::Severity::Error => "ERROR",
-                cls_core::error::diagnostic::Severity::Warning => "WARN",
-                _ => "INFO",
+            use cls_core::ansi;
+            let (severity, color) = match diag.severity {
+                cls_core::error::diagnostic::Severity::Error => ("ERROR", ansi::codes::BRIGHT_RED),
+                cls_core::error::diagnostic::Severity::Warning => ("WARN", ansi::codes::BRIGHT_YELLOW),
+                _ => ("INFO", ansi::codes::BRIGHT_CYAN),
             };
             let name = if files.len() > 1 {
                 format!("{}:{}", file, diag.span)
             } else {
                 format!("{}:{}", diag.span.start_line, diag.span.start_col)
             };
-            eprintln!("[{}] {} ({})", severity, diag.message, name);
+            let sev = ansi::bold(true, ansi::fg(true, color, severity));
+            let msg = ansi::fg(true, color, &diag.message);
+            eprintln!("[{}] {} ({})", sev, msg, ansi::fg(true, ansi::codes::GRAY, &name));
             // Contexto de código: mostrar la línea fuente y el caret en la posición
             let line = diag.span.start_line as usize;
             let col = diag.span.start_col as usize;
@@ -101,7 +104,8 @@ pub fn execute(args: &[String]) -> i32 {
                 } else {
                     1
                 };
-                eprintln!("  {} | {}{}", pad, " ".repeat(col.saturating_sub(1)), "^".repeat(width));
+                let caret = "^".repeat(width);
+                eprintln!("  {} | {}{}", pad, " ".repeat(col.saturating_sub(1)), ansi::fg(true, color, &caret));
             }
         }
 
@@ -113,9 +117,10 @@ pub fn execute(args: &[String]) -> i32 {
 
     if files.len() > 1 {
         let summary = if total_errors > 0 || total_warnings > 0 {
-            format!("{} errores, {} advertencias en {} archivos", total_errors, total_warnings, files.len())
+            let color = if total_errors > 0 { cls_core::ansi::codes::BRIGHT_RED } else { cls_core::ansi::codes::BRIGHT_YELLOW };
+            format!("{}", cls_core::ansi::fg(true, color, &format!("{} errores, {} advertencias en {} archivos", total_errors, total_warnings, files.len())))
         } else {
-            format!("Sin errores en {} archivos", files.len())
+            format!("{}", cls_core::ansi::fg(true, cls_core::ansi::codes::GREEN, &format!("Sin errores en {} archivos", files.len())))
         };
         eprintln!("{}", summary);
     }
