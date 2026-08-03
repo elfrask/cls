@@ -1,5 +1,4 @@
 use crate::value::{FunValue, Value, Promise, Pollable, PollState};
-use cls_core::error::ClsResult;
 use std::collections::HashMap;
 
 /// Pollable que resuelve después de un delay (thread separado).

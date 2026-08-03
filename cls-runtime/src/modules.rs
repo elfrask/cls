@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 /// Gestor de módulos WASM y .clsapp
 pub struct ModuleManager {
+    #[allow(dead_code)]
     loaded: HashMap<String, Value>,
 }
 

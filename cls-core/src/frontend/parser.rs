@@ -158,7 +158,7 @@ impl Parser {
         {
             return Err(self.syntax_err("Esperaba 'var', 'let' o 'const'"));
         }
-        let is_const = matches!(self.current_token, _); // TODO: track const vs var
+        let _is_const = matches!(self.current_token, _); // TODO: track const vs var
         let name = self.expect_identifier()?;
 
         let type_ann = if self.consume_operator(Operator::Colon) {

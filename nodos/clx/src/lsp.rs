@@ -304,7 +304,7 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
                 name: s.name.clone(),
                 kind: match s.kind { SymKind::Function => SymbolKind::FUNCTION, _ => SymbolKind::VARIABLE },
                 location: Location { uri: params.text_document.uri.clone(), range: Range { start: Position { line: s.span.start_line.saturating_sub(1), character: s.span.start_col.saturating_sub(1) }, end: Position { line: s.span.end_line.saturating_sub(1), character: s.span.end_col.saturating_sub(1) } } },
-                container_name: None, tags: None, deprecated: None,
+                container_name: None, tags: None, #[allow(deprecated)] deprecated: None,
             }
         }).collect();
         Ok(Some(DocumentSymbolResponse::Flat(info)))

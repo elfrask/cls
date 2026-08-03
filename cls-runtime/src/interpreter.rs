@@ -15,6 +15,7 @@ enum Flow { Normal, Return(Value), Break, Continue }
 /// Corrutina de una función async. Guarda el cuerpo y params para ejecutarlos
 /// en el poll (por ahora síncrono hasta el primer await; luego suspensible).
 pub struct CoroutineTask {
+    #[allow(dead_code)]
     name: String,
     body: Block,
     params: Vec<cls_core::frontend::ast::Parameter>,
@@ -1571,7 +1572,7 @@ impl Interpreter {
 
     /// Resuelve un método/getter de tipo primitivo (String, Array, Tuple, ...).
     /// Devuelve `None` si el tipo no tiene el miembro (para fallback del caller).
-    fn resolve_primitive_method(&mut self, recv: &Value, member: &str, span: &Span) -> ClsResult<Option<Value>> {
+    fn resolve_primitive_method(&mut self, recv: &Value, member: &str, _span: &Span) -> ClsResult<Option<Value>> {
         use crate::stdlib::primitive::PrimitiveMethod;
         let ptype = match crate::stdlib::primitive::primitive_type_of(recv) {
             Some(t) => t,
@@ -2071,7 +2072,7 @@ impl Interpreter {
                     Err(self.err_at(format!("'{}' no existe en '{}'", name, ns), span))
                 }
             }
-            other => Err(self.err_at(format!("'{}' no es un namespace/modulo", ns), span)),
+            _other => Err(self.err_at(format!("'{}' no es un namespace/modulo", ns), span)),
         }
     }
 }
