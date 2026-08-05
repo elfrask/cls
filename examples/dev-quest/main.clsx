@@ -1,0 +1,636 @@
+# main.clsx — El orquestador de dev-quest.
+# Como semi-senior, separé responsabilidades en módulos y aquí solo queda lo
+# que DEBE estar en el archivo de entrada: comandos, persistencia e interfaz.
+#
+# ARQUITECTURA:
+#   main.clsx         → orquestación: dispatch de comandos, disco (fs), interfaz
+#   modelo.clsx       → dominio puro: enums + clases (Tarea, Habilidad, ...)
+#   estadisticas.clsx → lógica pura: niveles, porcentajes, racha
+#   frases.clsx       → frases motivacionales con fallback local
+#
+# POR QUÉ main aún es grande (ADR):
+#   - Los módulos NO tienen acceso a los intrinsics del runtime (print, input,
+#     len, int, str, now...) ni a los internos del nodo (fs, http). Los
+#     comandos, la persistencia y la interfaz dependen de ellos, así que viven
+#     aquí. Lo puro (dominio + cálculo) sí pudo modularizarse.
+#   - `main` resuelve los imports de módulos de usuario "hoja" (que solo
+#     dependen de core math/json); los módulos anidados (que importan otros
+#     módulos de usuario) aún no resuelven en el runtime.
+#
+# LECCIONES DEL RUNTIME (memoria de cuando era junior):
+#   - CLS pasa instancias POR VALOR a las funciones: mutar un parámetro no
+#     cambia el objeto del llamador. Los comandos DEVUELVEN el estado nuevo y
+#     `main`/`menuInteractivo` lo reasignan.
+#   - Los mutadores de array (push/pop) solo escriben de vuelta si el receptor
+#     es una variable simple. Con miembros (`estado.tareas.push(...)`) la
+#     mutación se pierde. Patrón salvador: leer a un buffer tipado, mutarlo, y
+#     asignarlo de vuelta.
+#   - Mutar un ELEMENTO de array también requiere el mismo patrón de vuelta.
+#   - Las clases importadas se construyen con `modelo.Tarea(...)` y sus enums
+#     con `modelo.EstadoTarea.Pendiente`. Las anotaciones usan el nombre sin
+#     prefijo (el checker las importa como prelude).
+
+import "modelo" as modelo;
+import "fs" as fs;
+import "http" as http;
+import "json" as json;
+import "estadisticas" as estadisticas;
+import "frases" as frases;
+
+# ========================= PERSISTENCIA =========================
+
+function rutaDir() -> String {
+    var cwd: String = fs.cwd();
+    return cwd + "/data";
+}
+
+function rutaArchivo() -> String {
+    var dir: String = rutaDir();
+    return dir + "/dev-quest.json";
+}
+
+# --- Serialización: de JSON a clases vivas ---
+
+function estadoDesdeNombre(nombre: Any) -> EstadoTarea {
+    var texto: String = str(nombre);
+    if (texto == "EnProgreso") { return modelo.EstadoTarea.EnProgreso; }
+    if (texto == "Completada") { return modelo.EstadoTarea.Completada; }
+    return modelo.EstadoTarea.Pendiente;
+}
+
+function categoriaDesdeNombre(nombre: Any) -> Categoria {
+    var texto: String = str(nombre);
+    if (texto == "Practica") { return modelo.Categoria.Practica; }
+    if (texto == "Proyecto") { return modelo.Categoria.Proyecto; }
+    if (texto == "Otro") { return modelo.Categoria.Otro; }
+    return modelo.Categoria.Aprendizaje;
+}
+
+function rehidratarTareas(lista: Any) -> Tarea[] {
+    var resultado: Tarea[] = [];
+    for each item in (lista) {
+        var id: int = int(item.id);
+        var titulo: String = str(item.titulo);
+        var categoria: Categoria = categoriaDesdeNombre(item.categoria);
+        var tarea: Tarea = modelo.Tarea(id, titulo, categoria);
+        tarea.estado = estadoDesdeNombre(item.estado);
+        tarea.xp = int(item.xp);
+        resultado.push(tarea);
+    }
+    return resultado;
+}
+
+function rehidratarHabilidades(lista: Any) -> Habilidad[] {
+    var resultado: Habilidad[] = [];
+    for each item in (lista) {
+        var id: int = int(item.id);
+        var nombre: String = str(item.nombre);
+        var habilidad: Habilidad = modelo.Habilidad(id, nombre);
+        habilidad.nivel = int(item.nivel);
+        habilidad.practicas = int(item.practicas);
+        resultado.push(habilidad);
+    }
+    return resultado;
+}
+
+function rehidratarLogs(lista: Any) -> LogDia[] {
+    var resultado: LogDia[] = [];
+    for each item in (lista) {
+        var fecha: String = str(item.fecha);
+        var mensaje: String = str(item.mensaje);
+        var log: LogDia = modelo.LogDia(fecha, mensaje);
+        resultado.push(log);
+    }
+    return resultado;
+}
+
+function jsonAEstado(texto: String) -> EstadoJuego {
+    var datos: Any = json.parse(texto);
+    var estado: EstadoJuego = modelo.EstadoJuego();
+    estado.siguienteId = int(datos.siguienteId);
+    estado.xpTotal = int(datos.xpTotal);
+    estado.racha = int(datos.racha);
+    estado.ultimoDia = int(datos.ultimoDia);
+    estado.tareas = rehidratarTareas(datos.tareas);
+    estado.habilidades = rehidratarHabilidades(datos.habilidades);
+    estado.logs = rehidratarLogs(datos.logs);
+    return estado;
+}
+
+# --- Serialización: de clases vivas a JSON ---
+
+function nombreDeEstado(estado: EstadoTarea) -> String {
+    if (estado == modelo.EstadoTarea.EnProgreso) { return "EnProgreso"; }
+    if (estado == modelo.EstadoTarea.Completada) { return "Completada"; }
+    return "Pendiente";
+}
+
+function nombreDeCategoria(categoria: Categoria) -> String {
+    if (categoria == modelo.Categoria.Practica) { return "Practica"; }
+    if (categoria == modelo.Categoria.Proyecto) { return "Proyecto"; }
+    if (categoria == modelo.Categoria.Otro) { return "Otro"; }
+    return "Aprendizaje";
+}
+
+function serializarTareas(tareas: Tarea[]) -> Any[] {
+    var resultado: Any[] = [];
+    for each tarea in (tareas) {
+        var obj: Any = {
+            id: tarea.id,
+            titulo: tarea.titulo,
+            estado: nombreDeEstado(tarea.estado),
+            categoria: nombreDeCategoria(tarea.categoria),
+            xp: tarea.xp
+        };
+        resultado.push(obj);
+    }
+    return resultado;
+}
+
+function serializarHabilidades(habilidades: Habilidad[]) -> Any[] {
+    var resultado: Any[] = [];
+    for each habilidad in (habilidades) {
+        var obj: Any = {
+            id: habilidad.id,
+            nombre: habilidad.nombre,
+            nivel: habilidad.nivel,
+            practicas: habilidad.practicas
+        };
+        resultado.push(obj);
+    }
+    return resultado;
+}
+
+function serializarLogs(logs: LogDia[]) -> Any[] {
+    var resultado: Any[] = [];
+    for each log in (logs) {
+        var obj: Any = {
+            fecha: log.fecha,
+            mensaje: log.mensaje
+        };
+        resultado.push(obj);
+    }
+    return resultado;
+}
+
+function estadoAJson(estado: EstadoJuego) -> String {
+    var objeto: Any = {
+        siguienteId: estado.siguienteId,
+        xpTotal: estado.xpTotal,
+        racha: estado.racha,
+        ultimoDia: estado.ultimoDia,
+        tareas: serializarTareas(estado.tareas),
+        habilidades: serializarHabilidades(estado.habilidades),
+        logs: serializarLogs(estado.logs)
+    };
+    return json.stringify(objeto);
+}
+
+# --- Acceso al disco ---
+
+# Lee mi progreso. Si no existe o está corrupto, empiezo de cero.
+function cargarJuego() -> EstadoJuego {
+    var estado: EstadoJuego = modelo.EstadoJuego();
+    if (!fs.exists(rutaArchivo())) { return estado; }
+    try {
+        var contenido: String = fs.readFile(rutaArchivo());
+        return jsonAEstado(contenido);
+    } catch (e) {
+        print("No pude leer el guardado (", e, "). Empiezo de cero.");
+        return estado;
+    }
+}
+
+# Escribe mi progreso en el disco después de cada acción.
+function guardarJuego(estado: EstadoJuego) {
+    if (!fs.exists(rutaDir())) { fs.mkdir(rutaDir()); }
+    fs.writeFile(rutaArchivo(), estadoAJson(estado));
+}
+
+# ============================ COMANDOS ============================
+
+# Cada categoría vale un XP distinto al completar.
+function darXp(categoria: Categoria) -> int {
+    if (categoria == modelo.Categoria.Practica) { return 15; }
+    if (categoria == modelo.Categoria.Proyecto) { return 25; }
+    if (categoria == modelo.Categoria.Otro) { return 5; }
+    return 10;
+}
+
+# Cada vez que hago algo productivo, mi racha se actualiza.
+function registrarActividad(estado: EstadoJuego) -> EstadoJuego {
+    var hoy: int = estadisticas.diaHoy(now());
+    var resultado: (int, int) = estadisticas.actualizarRacha(estado.racha, estado.ultimoDia, hoy);
+    estado.racha = resultado[0];
+    estado.ultimoDia = resultado[1];
+    return estado;
+}
+
+function categoriaDesdeTexto(texto: String) -> Categoria {
+    var clave: String = texto.lower();
+    if (clave == "practica") { return modelo.Categoria.Practica; }
+    if (clave == "proyecto") { return modelo.Categoria.Proyecto; }
+    if (clave == "otro") { return modelo.Categoria.Otro; }
+    return modelo.Categoria.Aprendizaje;
+}
+
+function estadoDesdeTexto(texto: String) -> EstadoTarea {
+    var clave: String = texto.lower();
+    if (clave == "enprogreso" || clave == "progreso") { return modelo.EstadoTarea.EnProgreso; }
+    if (clave == "completada" || clave == "done") { return modelo.EstadoTarea.Completada; }
+    return modelo.EstadoTarea.Pendiente;
+}
+
+function buscarIndiceTarea(estado: EstadoJuego, idTexto: String) -> int {
+    var id: int = 0;
+    try {
+        id = int(idTexto);
+    } catch (e) {
+        return -1;
+    }
+    for each tarea and i in (estado.tareas) {
+        if (tarea.id == id) { return i; }
+    }
+    return -1;
+}
+
+function buscarIndiceHabilidad(estado: EstadoJuego, idTexto: String) -> int {
+    var id: int = 0;
+    try {
+        id = int(idTexto);
+    } catch (e) {
+        return -1;
+    }
+    for each habilidad and i in (estado.habilidades) {
+        if (habilidad.id == id) { return i; }
+    }
+    return -1;
+}
+
+# --- Misiones ---
+
+function cmdTareaAdd(estado: EstadoJuego, args: String[]) -> EstadoJuego {
+    var titulo: String = "";
+    if (len(args) >= 3) { titulo = args[2]; }
+    var categoria: Categoria = modelo.Categoria.Aprendizaje;
+    if (len(args) >= 4) { categoria = categoriaDesdeTexto(args[3]); }
+
+    if (titulo.isEmpty()) {
+        titulo = input("Título de la misión: ");
+    }
+    if (titulo.isEmpty()) {
+        print("Título vacío, no creo la misión.");
+        return estado;
+    }
+
+    var tarea: Tarea = modelo.Tarea(estado.siguienteId, titulo, categoria);
+    var siguienteId: int = estado.siguienteId;
+    estado.siguienteId = siguienteId + 1;
+    var tareas: Tarea[] = estado.tareas;
+    tareas.push(tarea);
+    estado.tareas = tareas;
+    print("Misión añadida: $tarea");
+    print("¡Sigue así, futuro Mago!");
+    return estado;
+}
+
+function cmdTareaList(estado: EstadoJuego, args: String[]) -> EstadoJuego {
+    if (len(estado.tareas) == 0) {
+        print("No tienes misiones. Crea una con: tarea add <título>");
+        return estado;
+    }
+    var filtro: String = "";
+    if (len(args) >= 3) { filtro = args[2]; }
+    print("=== MIS MISIONES ===");
+    for each tarea in (estado.tareas) {
+        if (filtro == "" || estadoDesdeTexto(filtro) == tarea.estado) {
+            print("  $tarea");
+        }
+    }
+    return estado;
+}
+
+function cmdTareaProg(estado: EstadoJuego, args: String[]) -> EstadoJuego {
+    if (len(args) < 3) {
+        print("Uso: tarea prog <id>");
+        return estado;
+    }
+    var indice: int = buscarIndiceTarea(estado, args[2]);
+    if (indice < 0) {
+        print("No encontré una misión con ese id.");
+        return estado;
+    }
+    var tarea: Tarea = estado.tareas[indice];
+    tarea.estado = modelo.EstadoTarea.EnProgreso;
+    var tareas: Tarea[] = estado.tareas;
+    tareas[indice] = tarea;
+    estado.tareas = tareas;
+    print("Misión en progreso: $tarea");
+    return estado;
+}
+
+function cmdTareaDone(estado: EstadoJuego, args: String[]) -> EstadoJuego {
+    if (len(args) < 3) {
+        print("Uso: tarea done <id>");
+        return estado;
+    }
+    var indice: int = buscarIndiceTarea(estado, args[2]);
+    if (indice < 0) {
+        print("No encontré una misión con ese id.");
+        return estado;
+    }
+    var tarea: Tarea = estado.tareas[indice];
+    if (tarea.estado == modelo.EstadoTarea.Completada) {
+        print("Esa misión ya estaba completada. ¡Doble XP no, eh!");
+        return estado;
+    }
+    tarea.estado = modelo.EstadoTarea.Completada;
+    tarea.xp = darXp(tarea.categoria);
+    var tareas: Tarea[] = estado.tareas;
+    tareas[indice] = tarea;
+    estado.tareas = tareas;
+    var totalXp: int = estado.xpTotal;
+    var xpMision: int = tarea.xp;
+    estado.xpTotal = totalXp + xpMision;
+    estado = registrarActividad(estado);
+    print("¡MISIÓN COMPLETADA! +${tarea.xp} XP");
+    print("Tienes", estado.xpTotal, "XP. Nivel:", estadisticas.nivelDesdeXp(estado.xpTotal));
+    return estado;
+}
+
+function cmdTarea(estado: EstadoJuego, args: String[]) -> EstadoJuego {
+    var sub: String = "";
+    if (len(args) >= 2) { sub = args[1]; }
+    switch (sub) {
+        case ("add") { return cmdTareaAdd(estado, args); }
+        case ("list") { return cmdTareaList(estado, args); }
+        case ("prog") { return cmdTareaProg(estado, args); }
+        case ("done") { return cmdTareaDone(estado, args); }
+    }
+    print("Uso: tarea add|list|prog|done");
+    return estado;
+}
+
+# --- Habilidades ---
+
+function cmdHabilidadAdd(estado: EstadoJuego, args: String[]) -> EstadoJuego {
+    var nombre: String = "";
+    if (len(args) >= 3) { nombre = args[2]; }
+    if (nombre.isEmpty()) {
+        nombre = input("Nombre de la habilidad: ");
+    }
+    if (nombre.isEmpty()) {
+        print("Nombre vacío, no la creo.");
+        return estado;
+    }
+    var habilidad: Habilidad = modelo.Habilidad(estado.siguienteId, nombre);
+    var siguienteId: int = estado.siguienteId;
+    estado.siguienteId = siguienteId + 1;
+    var habilidades: Habilidad[] = estado.habilidades;
+    habilidades.push(habilidad);
+    estado.habilidades = habilidades;
+    print("Habilidad registrada: $habilidad");
+    return estado;
+}
+
+function cmdHabilidadList(estado: EstadoJuego) -> EstadoJuego {
+    if (len(estado.habilidades) == 0) {
+        print("Aún no dominas ninguna habilidad. ¡Añade una!");
+        return estado;
+    }
+    print("=== MIS HABILIDADES ===");
+    for each habilidad in (estado.habilidades) {
+        print("  $habilidad");
+    }
+    return estado;
+}
+
+function cmdHabilidadPractica(estado: EstadoJuego, args: String[]) -> EstadoJuego {
+    if (len(args) < 3) {
+        print("Uso: habilidad practica <id>");
+        return estado;
+    }
+    var indice: int = buscarIndiceHabilidad(estado, args[2]);
+    if (indice < 0) {
+        print("No encontré esa habilidad.");
+        return estado;
+    }
+    var habilidad: Habilidad = estado.habilidades[indice];
+    var nivelAntes: int = habilidad.nivel;
+    habilidad.practicar();
+    var subio: bool = habilidad.nivel > nivelAntes;
+    var habilidades: Habilidad[] = estado.habilidades;
+    habilidades[indice] = habilidad;
+    estado.habilidades = habilidades;
+    var totalXp: int = estado.xpTotal;
+    estado.xpTotal = totalXp + 5;
+    estado = registrarActividad(estado);
+    print("Practicaste: $habilidad");
+    if (subio) {
+        print("¡NIVEL UP! Ahora eres nivel ${habilidad.nivel} en ${habilidad.nombre}");
+    }
+    return estado;
+}
+
+function cmdHabilidad(estado: EstadoJuego, args: String[]) -> EstadoJuego {
+    var sub: String = "";
+    if (len(args) >= 2) { sub = args[1]; }
+    switch (sub) {
+        case ("add") { return cmdHabilidadAdd(estado, args); }
+        case ("list") { return cmdHabilidadList(estado); }
+        case ("practica") { return cmdHabilidadPractica(estado, args); }
+    }
+    print("Uso: habilidad add|list|practica");
+    return estado;
+}
+
+# --- Diario ---
+
+function cmdLogAdd(estado: EstadoJuego, args: String[]) -> EstadoJuego {
+    var mensaje: String = "";
+    if (len(args) >= 3) { mensaje = args[2]; }
+    if (mensaje.isEmpty()) {
+        mensaje = input("¿Qué aprendiste hoy? ");
+    }
+    if (mensaje.isEmpty()) {
+        print("Sin mensaje, sin log.");
+        return estado;
+    }
+    var fecha: String = estadisticas.fechaHoy(now());
+    var log: LogDia = modelo.LogDia(fecha, mensaje);
+    var logs: LogDia[] = estado.logs;
+    logs.push(log);
+    estado.logs = logs;
+    estado = registrarActividad(estado);
+    print("Registrado en tu diario: $fecha");
+    print("Racha actual:", estado.racha, "días. ¡A no cortarla!");
+    return estado;
+}
+
+function cmdLogList(estado: EstadoJuego) -> EstadoJuego {
+    if (len(estado.logs) == 0) {
+        print("Tu diario está vacío.");
+        return estado;
+    }
+    print("=== MI DIARIO ===");
+    for each log in (estado.logs) {
+        print("  $log");
+    }
+    return estado;
+}
+
+function cmdLog(estado: EstadoJuego, args: String[]) -> EstadoJuego {
+    var sub: String = "";
+    if (len(args) >= 2) { sub = args[1]; }
+    if (sub == "list") { return cmdLogList(estado); }
+    if (sub == "add" || sub == "") { return cmdLogAdd(estado, args); }
+    print("Uso: log add <mensaje> | log list");
+    return estado;
+}
+
+# --- El resto ---
+
+function cmdStats(estado: EstadoJuego) -> EstadoJuego {
+    var completadas: int = 0;
+    for each tarea in (estado.tareas) {
+        if (tarea.estado == modelo.EstadoTarea.Completada) { completadas = completadas + 1; }
+    }
+    var total: int = len(estado.tareas);
+    var nivel: String = estadisticas.nivelDesdeXp(estado.xpTotal);
+    print("=== MIS ESTADÍSTICAS ===");
+    print("Nivel:", nivel);
+    print("XP total:", estado.xpTotal);
+    print("Progreso al siguiente nivel:", estadisticas.porcentajeSiguienteNivel(estado.xpTotal), "%");
+    print("Misiones:", completadas, "de", total, "completadas (", estadisticas.porcentaje(completadas, total), "% )");
+    print("Racha:", estado.racha, "días");
+    print("Habilidades:", len(estado.habilidades));
+    print("Registros de diario:", len(estado.logs));
+    if (nivel == "Mago") {
+        print("¡Eres un MAGO de CLS! El mundo es tuyo.");
+    } elif (estado.xpTotal >= 350) {
+        print("Casi mago. Un poco más de constancia.");
+    } else {
+        print("Cada XP cuenta. Sigue adelante!");
+    }
+    return estado;
+}
+
+function cmdFrase(httpMod: Any) -> int {
+    print("Frase del día:");
+    print("  ", frases.fraseDelDia(httpMod));
+    return 0;
+}
+
+function cmdReset(estado: EstadoJuego) -> EstadoJuego {
+    var respuesta: String = input("Esto borrará TODO tu progreso. ¿Seguro? (si/no): ");
+    if (respuesta.lower() == "si" || respuesta.lower() == "s") {
+        estado.limpiar();
+        print("Listo. Nuevo comienzo. ¡A brillar!");
+        return estado;
+    }
+    print("Menos mal, aquí seguimos.");
+    return estado;
+}
+
+function mostrarAyuda() -> int {
+    print("=== DEV QUEST — Ayuda ===");
+    print("tarea add <título> [categoria]   Añade una misión");
+    print("tarea list [estado]              Lista tus misiones");
+    print("tarea prog <id>                  Pasa una misión a 'En progreso'");
+    print("tarea done <id>                  Completa una misión y gana XP");
+    print("habilidad add <nombre>           Registra una habilidad a dominar");
+    print("habilidad list                   Tus habilidades");
+    print("habilidad practica <id>          Practica (+5 XP, nivel up cada 3)");
+    print("log add <mensaje>                Escribe en tu diario");
+    print("log list                         Tu diario");
+    print("stats                            Tu progreso, nivel y racha");
+    print("frase                            Una dosis de motivación");
+    print("reset                            Borra todo el progreso");
+    print("help / version                   Esto o la versión");
+    return 0;
+}
+
+function mostrarVersion() -> int {
+    print("dev-quest 0.1.0 — hecho con CLS por un semi-senior que no se rinde");
+    return 0;
+}
+
+function ejecutar(estado: EstadoJuego, args: String[], httpMod: Any) -> EstadoJuego {
+    if (len(args) < 1) { mostrarAyuda(); return estado; }
+    var comando: String = args[0];
+    switch (comando) {
+        case ("tarea") { return cmdTarea(estado, args); }
+        case ("habilidad") { return cmdHabilidad(estado, args); }
+        case ("log") { return cmdLog(estado, args); }
+        case ("stats") { return cmdStats(estado); }
+        case ("frase") { cmdFrase(httpMod); return estado; }
+        case ("reset") { return cmdReset(estado); }
+        case ("help") { mostrarAyuda(); return estado; }
+        case ("version") { mostrarVersion(); return estado; }
+    }
+    print("No conozco ese comando: $comando");
+    mostrarAyuda();
+    return estado;
+}
+
+# =========================== INTERFAZ ===========================
+
+function banner() {
+    print("============================================");
+    print("  DEV QUEST — camino al mejor dev del mundo");
+    print("  (hecho por un semi-senior que no se rinde)");
+    print("============================================");
+}
+
+function menuInteractivo(estado: EstadoJuego) -> int {
+    var salir: bool = false;
+    while (!salir) {
+        print("");
+        print("=== DEV QUEST — Menú ===");
+        print(" 1. Nueva misión");
+        print(" 2. Listar misiones");
+        print(" 3. Completar misión");
+        print(" 4. Marcar misión en progreso");
+        print(" 5. Nueva habilidad");
+        print(" 6. Listar habilidades");
+        print(" 7. Practicar habilidad");
+        print(" 8. Escribir en el diario");
+        print(" 9. Ver diario");
+        print("10. Estadísticas");
+        print("11. Frase del día");
+        print("12. Ayuda");
+        print(" 0. Salir");
+        var opcion: String = input("Elige una opción: ");
+        var valida: bool = false;
+        switch (opcion) {
+            case ("1") { estado = ejecutar(estado, ["tarea", "add"], http); valida = true; }
+            case ("2") { estado = ejecutar(estado, ["tarea", "list"], http); valida = true; }
+            case ("3") { estado = ejecutar(estado, ["tarea", "done", input("Id de la misión: ")], http); valida = true; }
+            case ("4") { estado = ejecutar(estado, ["tarea", "prog", input("Id de la misión: ")], http); valida = true; }
+            case ("5") { estado = ejecutar(estado, ["habilidad", "add"], http); valida = true; }
+            case ("6") { estado = ejecutar(estado, ["habilidad", "list"], http); valida = true; }
+            case ("7") { estado = ejecutar(estado, ["habilidad", "practica", input("Id de la habilidad: ")], http); valida = true; }
+            case ("8") { estado = ejecutar(estado, ["log", "add"], http); valida = true; }
+            case ("9") { estado = ejecutar(estado, ["log", "list"], http); valida = true; }
+            case ("10") { estado = ejecutar(estado, ["stats"], http); valida = true; }
+            case ("11") { estado = ejecutar(estado, ["frase"], http); valida = true; }
+            case ("12") { estado = ejecutar(estado, ["help"], http); valida = true; }
+            case ("0") { salir = true; valida = true; }
+        }
+        if (!valida) { print("Opción no válida: $opcion"); }
+        guardarJuego(estado);
+    }
+    print("Gracias por jugar. Nos vemos en la cima!");
+    return 0;
+}
+
+function main(args: String[]) -> int {
+    banner();
+    var estado: EstadoJuego = cargarJuego();
+    if (len(args) < 1) {
+        return menuInteractivo(estado);
+    }
+    estado = ejecutar(estado, args, http);
+    guardarJuego(estado);
+    return 0;
+}

@@ -218,7 +218,7 @@
       "patterns": [
         {
           "name": "meta.type.annotation.ccls",
-          "begin": "(?<=:)\\s*",
+          "begin": "(?<=:)(?=[^\\S\\n]*[A-Za-z_(])",
           "end": "(?=\\s*(=|,|\\)|;|\\{|->))",
           "patterns": [
             { "include": "#types" },

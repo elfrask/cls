@@ -5,7 +5,7 @@
 function print(val: Any) {};
 
 # @description Lee una linea desde la entrada estandar
-function input() -> String {};
+function input(prompt: String) -> String {};
 
 # @description Convierte cualquier valor a string
 function toString(val: Any) -> String {};
