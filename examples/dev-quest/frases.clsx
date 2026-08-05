@@ -1,0 +1,43 @@
+# frases.clsx — Mi dosis diaria de motivación.
+# Intenta traer una frase real desde internet y, si la red falla,
+# usa mis frases favoritas guardadas aquí. Nunca me quedo sin ánimos.
+# El módulo http NO se puede importar aquí (los internos del nodo solo
+# resuelven en el archivo principal), así que main me lo pasa como parámetro.
+#
+# Otra lección del runtime: sin intrinsics en módulos. Por eso el índice
+# aleatorio sale de math.floor y math.random (módulo core), no de int/len.
+# Si añades frases, actualiza TOTAL_FRASES. ¡No tengo len aquí dentro!
+
+import "json" as json;
+import "math" as math;
+
+var TOTAL_FRASES: int = 8;
+
+var FRASES_LOCALES: String[] = [
+    "El mejor momento para aprender fue ayer. El segundo mejor es hoy.",
+    "Cada bug que arreglo me hace 1% mejor.",
+    "Los magos de CLS también empezaron con print('hola').",
+    "No es talento, es constancia. Otra hora de práctica.",
+    "Si puedes imaginarlo, puedes programarlo.",
+    "El código de hoy es el cimiento del proyecto del mañana.",
+    "Un junior curioso vale más que un senior que se aburre.",
+    "Falla rápido, aprende más rápido."
+];
+
+function fraseLocal() -> String {
+    var aleatorio: float = math.random();
+    var indice: int = math.floor(aleatorio * TOTAL_FRASES);
+    return FRASES_LOCALES[indice];
+}
+
+export function fraseDelDia(httpMod: Any) -> String {
+    try {
+        var respuesta: String = httpMod.get("https://api.quotable.io/random");
+        var objeto: Any = json.parse(respuesta);
+        var texto: Any = objeto.content;
+        var autor: Any = objeto.author;
+        return "\"$texto\" — $autor";
+    } catch (e) {
+        return fraseLocal();
+    }
+}

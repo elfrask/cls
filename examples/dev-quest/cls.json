@@ -1,0 +1,45 @@
+{
+  "name": "dev-quest",
+  "version": "0.1.0",
+  "description": "CLI gamificado: mi camino para convertirme en el mejor desarrollador del mundo",
+  "authors": ["Dev Junior <junior@dev-quest.local>"],
+  "license": "MIT",
+  "registry": "https://registry.cls-lang.org",
+  "entry": "main.clsx",
+
+  "project": {
+    "sourceDir": ".",
+    "outDir": "dist",
+    "target": "executable"
+  },
+
+  "compiler": {
+    "targetArchitecture": "wasm",
+    "optimizationLevel": "O2",
+    "sourceMaps": true,
+    "types": {
+      "check": true,
+      "strict": true,
+      "noImplicitAny": false,
+      "nullSafety": true
+    },
+    "warnings": {
+      "unusedVariables": "warn",
+      "deadCode": "warn",
+      "treatWarningsAsErrors": false
+    }
+  },
+
+  "interpreter": {
+    "optimization": false,
+    "mode": "pure-ast",
+    "sandbox": {
+      "allowFs": true,
+      "allowNet": true,
+      "maxExecutionTime": 15000
+    }
+  },
+
+  "dependencies": {},
+  "devDependencies": {}
+}
