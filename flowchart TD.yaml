@@ -1,0 +1,84 @@
+flowchart TD
+
+subgraph group_core["Language Core"]
+  node_manifest["Project manifest<br/>configuration parser<br/>[manifest.rs]"]
+  node_frontend["Lexer, parser &amp; AST<br/>frontend<br/>[parser.rs]"]
+  node_diagnostics["Diagnostics<br/>error reporting<br/>[diagnostic.rs]"]
+  node_semantic["Semantic pipeline<br/>[resolver.rs]"]
+  node_json_backend["JSON backend<br/>AST serializer<br/>[json.rs]"]
+  node_wasm_backend["WASM backend<br/>planned compiler target<br/>[wasm.rs]"]
+end
+
+subgraph group_runtime["Runtime"]
+  node_interpreter["Tree-walking interpreter<br/>AST executor<br/>[interpreter.rs]"]
+  node_runtime_state["Values &amp; environments<br/>runtime state<br/>[environment.rs]"]
+  node_host_boundary["Host API &amp; FFI<br/>capability boundary<br/>[host_api.rs]"]
+  node_module_system["Modules &amp; CLS interfaces<br/>module resolution<br/>[resolver.rs]"]
+  node_stdlib["Standard library<br/>built-ins"]
+  node_sandbox["Sandboxed VFS<br/>security boundary<br/>[sandbox.rs]"]
+end
+
+subgraph group_hosts["Host Nodes"]
+  node_clx{{"clx development CLI<br/>user-facing binary<br/>[main.rs]"}}
+  node_run_command["Run command<br/>CLI subcommand<br/>[run.rs]"]
+  node_build_command["Build command<br/>CLI subcommand<br/>[build.rs]"]
+  node_host_modules["Filesystem &amp; HTTP modules<br/>desktop integrations<br/>[fs.rs]"]
+  node_lsp["Language server<br/>editor integration<br/>[lsp.rs]"]
+  node_clxr{{"clxr runtime executor<br/>user-facing binary<br/>[main.rs]"}}
+end
+
+node_source[".clsx source<br/>language input"]
+
+node_source -->|"tokenize / parse"| node_frontend
+node_frontend -->|"source errors"| node_diagnostics
+node_frontend -->|"AST"| node_semantic
+node_semantic -->|"semantic errors"| node_diagnostics
+node_semantic -->|"checked AST"| node_interpreter
+node_semantic -->|"serialize"| node_json_backend
+node_semantic -.->|"compile target"| node_wasm_backend
+node_interpreter -->|"evaluates with"| node_runtime_state
+node_interpreter -->|"resolves imports"| node_module_system
+node_module_system -->|"loads built-ins"| node_stdlib
+node_interpreter -->|"requests capabilities"| node_host_boundary
+node_host_boundary -->|"permission-controlled access"| node_sandbox
+node_clx -->|"dispatches"| node_run_command
+node_clx -->|"dispatches"| node_build_command
+node_clx -->|"serves"| node_lsp
+node_run_command -->|"loads source"| node_frontend
+node_run_command -->|"runs"| node_interpreter
+node_build_command -->|"emits"| node_json_backend
+node_build_command -.->|"future output"| node_wasm_backend
+node_host_modules -->|"implements host API"| node_host_boundary
+node_clx -->|"provides"| node_host_modules
+node_clxr -->|"executes"| node_interpreter
+node_manifest -->|"project configuration"| node_clx
+
+click node_manifest "https://github.com/elfrask/cls/blob/master/cls-core/src/config/manifest.rs"
+click node_frontend "https://github.com/elfrask/cls/blob/master/cls-core/src/frontend/parser.rs"
+click node_diagnostics "https://github.com/elfrask/cls/blob/master/cls-core/src/error/diagnostic.rs"
+click node_semantic "https://github.com/elfrask/cls/blob/master/cls-core/src/middleware/resolver.rs"
+click node_json_backend "https://github.com/elfrask/cls/blob/master/cls-core/src/backend/json.rs"
+click node_wasm_backend "https://github.com/elfrask/cls/blob/master/cls-core/src/backend/wasm.rs"
+click node_interpreter "https://github.com/elfrask/cls/blob/master/cls-runtime/src/interpreter.rs"
+click node_runtime_state "https://github.com/elfrask/cls/blob/master/cls-runtime/src/environment.rs"
+click node_host_boundary "https://github.com/elfrask/cls/blob/master/cls-runtime/src/host_api.rs"
+click node_module_system "https://github.com/elfrask/cls/blob/master/cls-runtime/src/resolver.rs"
+click node_sandbox "https://github.com/elfrask/cls/blob/master/cls-runtime/src/sandbox.rs"
+click node_clx "https://github.com/elfrask/cls/blob/master/nodos/clx/src/main.rs"
+click node_run_command "https://github.com/elfrask/cls/blob/master/nodos/clx/src/subcommands/run.rs"
+click node_build_command "https://github.com/elfrask/cls/blob/master/nodos/clx/src/subcommands/build.rs"
+click node_host_modules "https://github.com/elfrask/cls/blob/master/nodos/clx/src/modules/fs.rs"
+click node_lsp "https://github.com/elfrask/cls/blob/master/nodos/clx/src/lsp.rs"
+click node_clxr "https://github.com/elfrask/cls/blob/master/nodos/clxr/src/main.rs"
+
+classDef toneNeutral fill:#f8fafc,stroke:#334155,stroke-width:1.5px,color:#0f172a
+classDef toneBlue fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#172554
+classDef toneAmber fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#78350f
+classDef toneMint fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px,color:#14532d
+classDef toneRose fill:#ffe4e6,stroke:#e11d48,stroke-width:1.5px,color:#881337
+classDef toneIndigo fill:#e0e7ff,stroke:#4f46e5,stroke-width:1.5px,color:#312e81
+classDef toneTeal fill:#ccfbf1,stroke:#0f766e,stroke-width:1.5px,color:#134e4a
+class node_manifest,node_frontend,node_diagnostics,node_semantic,node_json_backend,node_wasm_backend toneBlue
+class node_interpreter,node_runtime_state,node_host_boundary,node_module_system,node_stdlib,node_sandbox toneAmber
+class node_clx,node_run_command,node_build_command,node_host_modules,node_lsp,node_clxr toneMint
+class node_source toneNeutral
