@@ -1,0 +1,94 @@
+# benchmark.clsx — Micro-benchmark de CLS.
+# Mide 5 cargas de trabajo típicas con los MISMOS parámetros que benchmark.js
+# y benchmark.py, para comparar velocidades de forma justa.
+#
+# Cómo correr:
+#   clx run benchmark.clsx
+#
+# Los tamaños (N_*) están pensados para que CLS (intérprete tree-walker)
+# termine en un tiempo razonable. En node/python los mismos números se
+# resuelven en milisegundos; esa diferencia ES el punto de la comparación.
+
+# --- Cargas de trabajo idénticas en los tres lenguajes ---
+
+function fib(n: int) -> int {
+    if (n < 2) { return n; }
+    return fib(n - 1) + fib(n - 2);
+}
+
+function esPrimo(n: int) -> bool {
+    if (n < 2) { return false; }
+    var d: int = 2;
+    while (d * d <= n) {
+        if (n % d == 0) { return false; }
+        d = d + 1;
+    }
+    return true;
+}
+
+# La secuencia de Collatz siempre llega a 1; cuento cuántos pasos cuesta.
+function collatzPasos(n: int) -> int {
+    var pasos: int = 0;
+    while (n > 1) {
+        if (n % 2 == 0) {
+            n = n / 2;
+        } else {
+            n = 3 * n + 1;
+        }
+        pasos = pasos + 1;
+    }
+    return pasos;
+}
+
+# --- Parámetros (iguales en los tres scripts) ---
+
+var N_FIB: int = 26;
+var N_PRIMOS: int = 10000;
+var N_COLLATZ: int = 5000;
+var N_ARRAY: int = 5000;
+var N_STRING: int = 5000;
+
+function main() -> int {
+    print("=== Benchmark CLS ===");
+
+    var inicio: int = now();
+    var r: int = fib(N_FIB);
+    print("fib(", N_FIB, ") =", r, " ms:", now() - inicio);
+
+    inicio = now();
+    var primos: int = 0;
+    for (var i: int = 2; i <= N_PRIMOS; i = i + 1) {
+        if (esPrimo(i)) { primos = primos + 1; }
+    }
+    print("primos(", N_PRIMOS, ") =", primos, " ms:", now() - inicio);
+
+    inicio = now();
+    var mejor: int = 0;
+    var mejorN: int = 0;
+    for (var j: int = 1; j <= N_COLLATZ; j = j + 1) {
+        var p: int = collatzPasos(j);
+        if (p > mejor) { mejor = p; mejorN = j; }
+    }
+    print("collatz(", N_COLLATZ, ") mejor=", mejorN, " pasos=", mejor, " ms:", now() - inicio);
+
+    inicio = now();
+    var arr: int[] = [];
+    for (var k: int = 0; k < N_ARRAY; k = k + 1) {
+        arr.push(k);
+    }
+    var suma: int = 0;
+    for each v in (arr) {
+        suma = suma + v;
+    }
+    print("array(", N_ARRAY, ") suma =", suma, " ms:", now() - inicio);
+
+    inicio = now();
+    var s: String = "";
+    for (var m: int = 0; m < N_STRING; m = m + 1) {
+        s = s + "a";
+    }
+    print("string(", N_STRING, ") len =", len(s), " ms:", now() - inicio);
+
+    print("=== Fin benchmark CLS ===");
+    return 0;
+}
