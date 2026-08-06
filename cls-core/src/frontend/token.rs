@@ -73,6 +73,9 @@ pub enum Keyword {
     Each,
     In,
     And,      // para "for each x and i in"
+    Or,
+    Not,
+    When,
     Switch,
     Case,
     Default,
@@ -107,6 +110,9 @@ pub enum Keyword {
     From,
     As,
     Include,
+
+    // Nativo (FFI a librerías del sistema)
+    Extension,
 
     // Tipos especiales
     Async,
@@ -352,6 +358,9 @@ impl fmt::Display for Keyword {
             Keyword::Each => "each",
             Keyword::In => "in",
             Keyword::And => "and",
+            Keyword::Or => "or",
+            Keyword::Not => "not",
+            Keyword::When => "when",
             Keyword::Switch => "switch",
             Keyword::Case => "case",
             Keyword::Default => "default",
@@ -382,6 +391,7 @@ impl fmt::Display for Keyword {
             Keyword::From => "from",
             Keyword::As => "as",
             Keyword::Include => "include",
+            Keyword::Extension => "extension",
             Keyword::Async => "async",
             Keyword::Await => "await",
             Keyword::Sync => "sync",
