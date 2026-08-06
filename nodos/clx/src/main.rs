@@ -5,6 +5,7 @@ mod lsp;
 mod type_defs;
 mod subcommands;
 mod jit;
+mod native;
 
 use std::env;
 use std::process;
