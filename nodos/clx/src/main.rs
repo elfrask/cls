@@ -4,6 +4,7 @@ mod modules;
 mod lsp;
 mod type_defs;
 mod subcommands;
+mod jit;
 
 use std::env;
 use std::process;

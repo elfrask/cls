@@ -615,7 +615,10 @@ function menuInteractivo(estado: EstadoJuego) -> int {
             case ("10") { estado = ejecutar(estado, ["stats"], http); valida = true; }
             case ("11") { estado = ejecutar(estado, ["frase"], http); valida = true; }
             case ("12") { estado = ejecutar(estado, ["help"], http); valida = true; }
-            case ("0") { salir = true; valida = true; }
+            case ("0") { 
+                salir = true; valida = true;
+                # break;
+            }
         }
         if (!valida) { print("Opción no válida: $opcion"); }
         guardarJuego(estado);

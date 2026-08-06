@@ -5,10 +5,8 @@ use std::sync::Arc;
 use std::path::Path;
 
 pub fn execute(args: &[String]) -> i32 {
-    let config = load_config();
-
-    // Resolver entry point: arg > config > default
-    let entry = resolve_entry(args, config.as_ref());
+    // `clx run --jit <archivo> [-- args...]` → compilación JIT
+    let jit = args.iter().take_while(|a| *a != "--").any(|a| a == "--jit" || a == "-j");
 
     // Separar args de la app (todo después de --)
     let app_args: Vec<String> = args.iter()
@@ -16,6 +14,21 @@ pub fn execute(args: &[String]) -> i32 {
         .skip(1)
         .map(|s| s.to_string())
         .collect();
+
+    // Entry: ignorar el flag --jit al resolver el archivo
+    let cli_args: Vec<String> = args.iter()
+        .take_while(|a| *a != "--")
+        .filter(|a| *a != "--jit" && *a != "-j")
+        .map(|s| s.to_string())
+        .collect();
+
+    let config = load_config();
+
+    let entry = resolve_entry(&cli_args, config.as_ref());
+
+    if jit {
+        return crate::jit::run_jit(&entry, &app_args);
+    }
 
     let source = match std::fs::read_to_string(&entry) {
         Ok(s) => s,

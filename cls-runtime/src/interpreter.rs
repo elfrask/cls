@@ -1813,9 +1813,7 @@ impl Interpreter {
                             self.err_at(format!("Campo '{}' no encontrado", member.member), span)
                         })?;
                         inst.fields[idx] = value;
-                        if let Expression::Identifier(name, _) = &*member.object {
-                            self.env.set(name, Value::Struct(inst));
-                        }
+                        self.write_target(&member.object, Value::Struct(inst), span)?;
                         Ok(())
                     }
                     Value::Object(mut obj) => {
@@ -1826,13 +1824,12 @@ impl Interpreter {
                             }
                         }
                         obj.fields.insert(member.member.clone(), value);
-                        if let Expression::Identifier(name, _) = &*member.object {
-                            self.env.set(name, Value::Object(obj));
-                        }
+                        self.write_target(&member.object, Value::Object(obj), span)?;
                         Ok(())
                     }
                     Value::Record(ref mut rec) => {
                         rec.insert(member.member.clone(), value);
+                        self.write_target(&member.object, Value::Record(rec.clone()), span)?;
                         Ok(())
                     }
                     _ => Err(self.err_at("No se puede asignar a este miembro", span)),
@@ -1847,9 +1844,7 @@ impl Interpreter {
                             Err(self.err_at(format!("Índice fuera de rango: {}", i), span))
                         } else {
                             arr[i as usize] = value;
-                            if let Expression::Identifier(name, _) = &*idx.object {
-                                self.env.set(name, Value::Array(arr));
-                            }
+                            self.write_target(&idx.object, Value::Array(arr), span)?;
                             Ok(())
                         }
                     }
@@ -1858,15 +1853,17 @@ impl Interpreter {
                     }
                     (Value::Record(mut rec), Value::String(key)) => {
                         rec.insert(key, value);
-                        if let Expression::Identifier(name, _) = &*idx.object {
-                            self.env.set(name, Value::Record(rec));
-                        }
+                        self.write_target(&idx.object, Value::Record(rec), span)?;
                         Ok(())
                     }
                     (obj @ Value::Object(_), index) => {
-                        // Magic method __set(index, value)
-                        if self.call_magic(&obj, "__set", vec![index, value], span)?.is_some() {
-                            return Ok(());
+                        // Magic method __set(index, value) con write-back del objeto mutado
+                        if let Value::Object(inst) = &obj {
+                            if let Some(method) = inst.methods.get("__set").cloned() {
+                                let (_, obj_after) = self.call_method_value(obj, Value::Fun(method), vec![index, value], span)?;
+                                self.write_target(&idx.object, obj_after, span)?;
+                                return Ok(());
+                            }
                         }
                         Err(self.err_at("Indexado no soportado en objeto (falta __set)", span))
                     }
@@ -1958,6 +1955,7 @@ impl Interpreter {
                 let class_name = match class_val {
                     Value::Class(def) => def.name.clone(),
                     Value::EnumDef(def) => def.name.clone(),
+                    Value::Fun(f) if self.structs.contains_key(&f.name) => f.name.clone(),
                     _ => return Err(self.err_at("El operador 'is' espera una clase o enum a la derecha", span)),
                 };
                 let result = match obj {
