@@ -12,6 +12,8 @@
     { "include": "#functions" },
     { "include": "#methods" },
     { "include": "#type-annotations" },
+    { "include": "#extension" },
+    { "include": "#when" },
     { "include": "#keywords" },
     { "include": "#types" },
     { "include": "#operators" },
@@ -88,7 +90,7 @@
       "patterns": [
         {
           "name": "keyword.control.ccls",
-          "match": "\\b(if|elif|then|else|while|loop|for|switch|case|default|try|catch|finally|throw|return|break|continue|with|each|in|and|is)\\b"
+          "match": "\\b(if|elif|then|else|while|loop|for|switch|case|default|try|extension|when|catch|finally|throw|return|break|continue|with|each|in|and|or|not|is)\\b"
         },
         {
           "name": "keyword.declaration.ccls",
@@ -133,6 +135,10 @@
         {
           "name": "storage.type.container.ccls",
           "match": "\\b(Array|Tuple|Record)\\b"
+        },
+        {
+          "name": "storage.type.native.ccls",
+          "match": "\\b(CString|CPtr|CInt|CUInt|CShort|CUShort|CLong|CULong|CChar|CUChar|CFloat|CDouble)\\b"
         },
         {
           "name": "keyword.operator.phantom.ccls",
@@ -311,7 +317,7 @@
         },
         {
           "name": "entity.name.function.call.ccls",
-          "match": "\\b(?!(fun|void|method|if|case|while|for|return|switch|catch|import|from|as|include|new|with|in)\\b)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
+          "match": "\\b(?!(fun|void|method|if|case|while|for|return|switch|catch|import|from|as|include|new|with|in|when|default|extension|or|not)\\b)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
         }
       ]
     },
@@ -362,6 +368,57 @@
       "patterns": [
         { "name": "meta.directive.ccls", "match": "^#!ccls" },
         { "name": "meta.directive.config.ccls", "match": "^#config\\([^)]*\\)" }
+      ]
+    },
+    "extension": {
+      "patterns": [
+        {
+          "name": "meta.extension.ccls",
+          "match": "\\b(extension)\\s+(\"[^\"]*\")(\\s+as\\s+)?([a-zA-Z_][a-zA-Z0-9_]*)?\\s*\\{",
+          "captures": {
+            "1": { "name": "keyword.control.ccls" },
+            "2": { "name": "string.quoted.double.ccls" },
+            "3": { "name": "keyword.import.ccls" },
+            "4": { "name": "storage.type.native.ccls" }
+          }
+        }
+      ]
+    },
+    "when": {
+      "patterns": [
+        {
+          "name": "meta.when.ccls",
+          "begin": "\\b(when)\\s+",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.ccls" }
+          },
+          "end": "(?=\\{)",
+          "patterns": [{ "include": "#target-condition" }]
+        }
+      ]
+    },
+    "target-condition": {
+      "patterns": [
+        {
+          "name": "keyword.operator.selector.ccls",
+          "match": "\\b(os|arch|abi|platform|target)\\s*:"
+        },
+        {
+          "name": "keyword.control.platform.ccls",
+          "match": "\\b(windows|linux|macos|none|bare-metal|freebsd|cls-arch|x86_64|arm64|aarch64|arm|riscv32|riscv64|avr)\\b"
+        },
+        {
+          "name": "keyword.operator.logical.ccls",
+          "match": "\\b(and|or|not)\\b"
+        },
+        {
+          "name": "string.quoted.double.ccls",
+          "match": "\"[^\"]*\""
+        },
+        {
+          "name": "punctuation.section.parens.ccls",
+          "match": "[()!]"
+        }
       ]
     },
     "variables": {
