@@ -29,6 +29,9 @@ diseño.
 - `lenguaje/oop.md` — clases, herencia, visibilidad, super, magic methods.
 - `lenguaje/modulos.md` — el sistema de módulos, imports, exports.
 - `lenguaje/cmx.md` — el lenguaje de marcado CMX (JSX-like).
+- `lenguaje/extension.md` — FFI a librerías nativas del sistema (`extension`).
+- `lenguaje/multi-entorno.md` — directiva `when` (implementaciones por SO/arquitectura).
+- `lenguaje/cmx.md` — el lenguaje de marcado CMX (JSX-like).
 
 ### Runtime y ejecución
 
