@@ -182,8 +182,22 @@ impl NameResolver {
             Statement::Include(_include) => {
                 // TODO: procesar include
             }
+            Statement::When(w) => {
+                for branch in &w.branches {
+                    self.resolve_block(&branch.block)?;
+                }
+            }
             Statement::StructureDecl(structure) => {
                 self.define(structure.name.clone(), SymbolKind::Structure);
+            }
+            Statement::Extension(ext) => {
+                for decl in &ext.declarations {
+                    match decl {
+                        NativeDecl::Function(f) => self.define(f.name.clone(), SymbolKind::Function),
+                        NativeDecl::Structure(s) => self.define(s.name.clone(), SymbolKind::Structure),
+                        NativeDecl::Var(v) => self.define(v.name.clone(), SymbolKind::Variable),
+                    }
+                }
             }
             Statement::InterfaceDecl(interface) => {
                 self.define(interface.name.clone(), SymbolKind::Interface);

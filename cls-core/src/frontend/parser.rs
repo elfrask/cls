@@ -2,6 +2,7 @@ use crate::error::{ClsError, ClsResult, Diagnostic};
 use crate::error::diagnostic::Span;
 use crate::frontend::ast::*;
 use crate::frontend::token::{CmxToken, Keyword, Operator, Symbol, Token, SpannedToken};
+use crate::middleware::typeck::expr_span;
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
@@ -114,6 +115,13 @@ impl Parser {
             Token::Keyword(Keyword::Import) => self.parse_import(),
             Token::Keyword(Keyword::From) => self.parse_from_import(),
             Token::Keyword(Keyword::Include) => self.parse_include(),
+
+            // Nativo (FFI)
+            Token::Keyword(Keyword::Extension) => self.parse_extension_decl(),
+
+            // Directiva multi-entorno
+            Token::Keyword(Keyword::When) => self.parse_when(),
+            Token::Keyword(Keyword::Default) => self.parse_default_when(),
 
             // Modifiers
             Token::Keyword(Keyword::Public)
@@ -232,8 +240,13 @@ impl Parser {
             None
         };
 
-        // Body
-        let body = self.parse_block()?;
+        // Body (o declaración nativa si hay ';' sin '{')
+        let (body, is_native) = if self.check_symbol(Symbol::Semicolon) {
+            self.advance(); // consume ';'
+            (Block { statements: Vec::new(), span: self.span() }, true)
+        } else {
+            (self.parse_block()?, false)
+        };
 
         self.consume_symbol(Symbol::Semicolon);
 
@@ -246,6 +259,7 @@ impl Parser {
             modifiers: Vec::new(),
             span: self.span(),
             type_params,
+            is_native,
         }))
     }
 
@@ -281,6 +295,7 @@ impl Parser {
             modifiers: Vec::new(),
             span: self.span(),
             type_params: Vec::new(),
+            is_native: false,
         }))
     }
 
@@ -1243,6 +1258,185 @@ impl Parser {
         }))
     }
 
+    /// `extension "<lib>" [as <Tipo>] { function ...; structure ...; var ...; }` — FFI nativo.
+    fn parse_extension_decl(&mut self) -> ClsResult<Statement> {
+        self.expect_keyword(Keyword::Extension)?;
+        let library = self.expect_string()?;
+        let kind = if self.consume_keyword(Keyword::As) {
+            let name = self.expect_identifier()?;
+            ExtensionKind::from_name(&name)
+        } else {
+            ExtensionKind::C
+        };
+        self.expect_symbol(Symbol::LBrace)?;
+        let mut declarations = Vec::new();
+        self.skip_newlines();
+        while !self.check_symbol(Symbol::RBrace) && !self.is_eof() {
+            self.skip_newlines();
+            let mut is_export = false;
+            if self.consume_keyword(Keyword::Export) {
+                is_export = true;
+            }
+            match self.current_token {
+                Token::Keyword(Keyword::Function) => {
+                    let stmt = self.parse_function_decl()?;
+                    if let Statement::FunctionDecl(mut f) = stmt {
+                        if is_export { f.visibility = Visibility::Export; }
+                        declarations.push(NativeDecl::Function(f));
+                    }
+                }
+                Token::Keyword(Keyword::Structure) => {
+                    let stmt = self.parse_structure_decl()?;
+                    if let Statement::StructureDecl(mut s) = stmt {
+                        if is_export { s.visibility = Visibility::Export; }
+                        declarations.push(NativeDecl::Structure(s));
+                    }
+                }
+                Token::Keyword(Keyword::Var) | Token::Keyword(Keyword::Let) => {
+                    let stmt = self.parse_var_decl()?;
+                    if let Statement::VarDecl(mut v) = stmt {
+                        if is_export { v.visibility = Visibility::Export; }
+                        declarations.push(NativeDecl::Var(v));
+                    }
+                }
+                _ => {
+                    return Err(self.syntax_err(
+                        "En extension solo se permiten declaraciones function, structure o var",
+                    ))
+                }
+            }
+            self.skip_newlines();
+        }
+        self.expect_symbol(Symbol::RBrace)?;
+        self.consume_symbol(Symbol::Semicolon);
+        Ok(Statement::Extension(ExtensionDecl {
+            library,
+            kind,
+            declarations,
+            span: self.span(),
+        }))
+    }
+
+    /// Directiva multi-entorno: `when <cond> { declaraciones }`.
+    fn parse_when(&mut self) -> ClsResult<Statement> {
+        self.expect_keyword(Keyword::When)?;
+        let cond = self.parse_target_cond()?;
+        let block = self.parse_block()?;
+        self.consume_symbol(Symbol::Semicolon);
+        Ok(Statement::When(WhenBlock {
+            branches: vec![WhenBranch { cond, block }],
+            span: self.span(),
+        }))
+    }
+
+    /// `default { declaraciones }` = rama que siempre matchea.
+    fn parse_default_when(&mut self) -> ClsResult<Statement> {
+        self.expect_keyword(Keyword::Default)?;
+        let block = self.parse_block()?;
+        self.consume_symbol(Symbol::Semicolon);
+        Ok(Statement::When(WhenBlock {
+            branches: vec![WhenBranch { cond: TargetCond::Any, block }],
+            span: self.span(),
+        }))
+    }
+
+    // ── Condiciones de target (precedencia: or < and < not < átomo) ─────────
+
+    fn parse_target_cond(&mut self) -> ClsResult<TargetCond> {
+        self.parse_target_or()
+    }
+
+    fn parse_target_or(&mut self) -> ClsResult<TargetCond> {
+        let mut left = self.parse_target_and()?;
+        while self.consume_keyword(Keyword::Or) {
+            let right = self.parse_target_and()?;
+            left = TargetCond::Or(Box::new(left), Box::new(right));
+        }
+        Ok(left)
+    }
+
+    fn parse_target_and(&mut self) -> ClsResult<TargetCond> {
+        let mut left = self.parse_target_not()?;
+        while self.consume_keyword(Keyword::And) {
+            let right = self.parse_target_not()?;
+            left = TargetCond::And(Box::new(left), Box::new(right));
+        }
+        Ok(left)
+    }
+
+    fn parse_target_not(&mut self) -> ClsResult<TargetCond> {
+        if self.consume_keyword(Keyword::Not) || self.consume_operator(Operator::Not) {
+            let inner = self.parse_target_not()?;
+            return Ok(TargetCond::Not(Box::new(inner)));
+        }
+        self.parse_target_atom()
+    }
+
+    fn parse_target_atom(&mut self) -> ClsResult<TargetCond> {
+        if self.consume_symbol(Symbol::LParen) {
+            let inner = self.parse_target_cond()?;
+            self.expect_symbol(Symbol::RParen)?;
+            return Ok(inner);
+        }
+        // Prefijos: os: / arch: / abi: / platform: / target:
+        if let Token::Identifier(name) = &self.current_token {
+            let field = name.clone();
+            if matches!(field.as_str(), "os" | "arch" | "abi" | "platform" | "target") {
+                self.advance();
+                if !self.consume_operator(Operator::Colon) {
+                    return Err(self.syntax_err(format!("Esperaba ':' tras '{}' en la condición de 'when'", field)));
+                }
+                if field == "target" {
+                    return Ok(TargetCond::Target(self.expect_string()?));
+                }
+                let v = self.expect_target_name()?;
+                return Ok(match field.as_str() {
+                    "os" => TargetCond::Os(v),
+                    "arch" => TargetCond::Arch(v),
+                    "abi" => TargetCond::Abi(v),
+                    "platform" => TargetCond::Platform(v),
+                    _ => TargetCond::Any,
+                });
+            }
+        }
+        // Nombre simple: SO conocido → Os; tripla (contiene '-') → Target; arch → Arch.
+        if let Token::Identifier(name) = &self.current_token {
+            let name = name.clone();
+            self.advance();
+            let lower = name.to_lowercase();
+            const OSES: &[&str] = &["windows", "linux", "macos", "none", "bare-metal", "freebsd"];
+            const ARCHES: &[&str] = &["x86_64", "arm64", "aarch64", "arm", "riscv32", "riscv64", "avr"];
+            if OSES.contains(&lower.as_str()) {
+                return Ok(TargetCond::Os(lower));
+            }
+            if name.contains('-') {
+                if lower == "cls-arch" {
+                    return Ok(TargetCond::Arch("cls-arch".to_string()));
+                }
+                return Ok(TargetCond::Target(name));
+            }
+            if ARCHES.contains(&lower.as_str()) {
+                return Ok(TargetCond::Arch(if lower == "aarch64" { "arm64".to_string() } else { lower }));
+            }
+            return Err(self.syntax_err(format!(
+                "Condición de 'when' inválida: '{}' (usa os:, arch:, abi:, platform:, target: o una tripla)",
+                name
+            )));
+        }
+        Err(self.syntax_err("Condición de 'when' inválida"))
+    }
+
+    /// Lee un identificador que puede contener guiones (`cls-arch`, `bare-metal`).
+    fn expect_target_name(&mut self) -> ClsResult<String> {
+        let mut name = self.expect_identifier()?;
+        while self.consume_operator(Operator::Minus) {
+            let part = self.expect_identifier()?;
+            name.push('-');
+            name.push_str(&part);
+        }
+        Ok(name)
+    }
+
     fn parse_visibility_modifier(&mut self) -> ClsResult<Statement> {
         // public/private/export/static func/var/etc
         let visibility = match self.current_token {
@@ -1405,11 +1599,12 @@ impl Parser {
         while self.check_operator(Operator::Or) {
             self.advance();
             let right = self.parse_logical_and()?;
+            let bin_span = expr_span(&expr).merge(&expr_span(&right));
             expr = Expression::Binary(BinaryExpr {
                 left: Box::new(expr),
                 op: Operator::Or,
                 right: Box::new(right),
-                span: self.span(),
+                span: bin_span,
             });
         }
         
@@ -1422,11 +1617,12 @@ impl Parser {
         while self.check_operator(Operator::And) {
             self.advance();
             let right = self.parse_equality()?;
+            let bin_span = expr_span(&expr).merge(&expr_span(&right));
             expr = Expression::Binary(BinaryExpr {
                 left: Box::new(expr),
                 op: Operator::And,
                 right: Box::new(right),
-                span: self.span(),
+                span: bin_span,
             });
         }
         
@@ -1471,11 +1667,12 @@ impl Parser {
             if self.check_keyword(Keyword::In) {
                 self.advance();
                 let right = self.parse_xor()?;
+                let bin_span = expr_span(&expr).merge(&expr_span(&right));
                 expr = Expression::Binary(BinaryExpr {
                     left: Box::new(expr),
                     op: Operator::In,
                     right: Box::new(right),
-                    span: self.span(),
+                    span: bin_span,
                 });
                 continue;
             }
@@ -1495,11 +1692,12 @@ impl Parser {
             };
             self.advance();
             let right = self.parse_comparison()?;
+            let bin_span = expr_span(&expr).merge(&expr_span(&right));
             expr = Expression::Binary(BinaryExpr {
                 left: Box::new(expr),
                 op,
                 right: Box::new(right),
-                span: self.span(),
+                span: bin_span,
             });
         }
         
@@ -1519,11 +1717,12 @@ impl Parser {
             };
             self.advance();
             let right = self.parse_shift()?;
+            let bin_span = expr_span(&expr).merge(&expr_span(&right));
             expr = Expression::Binary(BinaryExpr {
                 left: Box::new(expr),
                 op,
                 right: Box::new(right),
-                span: self.span(),
+                span: bin_span,
             });
         }
         
@@ -1540,11 +1739,12 @@ impl Parser {
             };
             self.advance();
             let right = self.parse_term()?;
+            let bin_span = expr_span(&expr).merge(&expr_span(&right));
             expr = Expression::Binary(BinaryExpr {
                 left: Box::new(expr),
                 op,
                 right: Box::new(right),
-                span: self.span(),
+                span: bin_span,
             });
         }
         
@@ -1561,11 +1761,12 @@ impl Parser {
             };
             self.advance();
             let right = self.parse_factor()?;
+            let bin_span = expr_span(&expr).merge(&expr_span(&right));
             expr = Expression::Binary(BinaryExpr {
                 left: Box::new(expr),
                 op,
                 right: Box::new(right),
-                span: self.span(),
+                span: bin_span,
             });
         }
         
@@ -1585,11 +1786,12 @@ impl Parser {
             };
             self.advance();
             let right = self.parse_unary()?;
+            let bin_span = expr_span(&expr).merge(&expr_span(&right));
             expr = Expression::Binary(BinaryExpr {
                 left: Box::new(expr),
                 op,
                 right: Box::new(right),
-                span: self.span(),
+                span: bin_span,
             });
         }
         

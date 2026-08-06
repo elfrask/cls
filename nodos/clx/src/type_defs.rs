@@ -245,6 +245,8 @@ fn statement_span(stmt: &Statement) -> Span {
         Statement::EnumDecl(s) => s.span,
         Statement::ModuleDecl(s) => s.span,
         Statement::NamespaceDecl(s) => s.span,
+        Statement::Extension(s) => s.span,
+        Statement::When(s) => s.span,
         Statement::Cmx(s) => s.span,
         Statement::Config(s) => s.span,
         Statement::Meta(s) => s.span,

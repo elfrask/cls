@@ -1,4 +1,5 @@
 use crate::environment::Environment;
+use crate::ffi::{NativeBackend, NativeType};
 use crate::intrinsics::Intrinsics;
 use crate::resolver::ModuleResolver;
 use crate::value::{FunValue, Value, StructDef, StructField, StructInstance, Pollable, PollState, Promise, ClassDef, ClassInstance, EnumDef, EnumValue};
@@ -68,6 +69,13 @@ pub struct Interpreter {
     self_stack: Vec<SelfFrame>,
     /// Métodos de tipos primitivos (String, Array, ...) — sin boxing
     method_tables: HashMap<crate::stdlib::primitive::PrimitiveType, HashMap<&'static str, crate::stdlib::primitive::PrimitiveMethod>>,
+    /// Backends nativos por tipo de extensión (`extension "lib" as <kind>`).
+    /// El nodo registra cada backend (C hoy; Python, Wasm... en el futuro).
+    native_backends: HashMap<String, Arc<dyn NativeBackend>>,
+    /// Entorno de ejecución actual (para la directiva `when`). Default: host.
+    target: Target,
+    /// Símbolos declarados en ramas `when` inactivas (materializar fantasmas al final).
+    when_declared: HashSet<String>,
 }
 
 /// Frame de importación para trace de errores
@@ -97,6 +105,9 @@ impl Interpreter {
             classes: HashMap::new(),
             self_stack: Vec::new(),
             method_tables: crate::stdlib::primitive::build_method_tables(),
+            native_backends: HashMap::new(),
+            target: Target::host(),
+            when_declared: HashSet::new(),
         };
         interpreter.register_intrinsics(intrinsics);
         interpreter
@@ -104,6 +115,36 @@ impl Interpreter {
 
     pub fn set_config(&mut self, config: Option<ModuleManifest>) {
         self.config = config;
+    }
+
+    /// Inyecta el backend nativo por defecto (`extension` tipo C) proveído por el nodo.
+    pub fn set_native_backend(&mut self, backend: Arc<dyn NativeBackend>) {
+        self.native_backends.insert("C".to_string(), backend);
+    }
+
+    /// Registra un backend para un tipo de extensión (`extension "lib" as <kind>`).
+    pub fn register_native_backend(&mut self, kind: &str, backend: Arc<dyn NativeBackend>) {
+        self.native_backends.insert(kind.to_string(), backend);
+    }
+
+    /// Backend nativo para un tipo de extensión, si está registrado.
+    pub fn native_backend_for(&self, kind: &str) -> Option<Arc<dyn NativeBackend>> {
+        self.native_backends.get(kind).cloned()
+    }
+
+    /// Entorno actual (para `when`).
+    pub fn target(&self) -> &Target {
+        &self.target
+    }
+
+    /// Fija el entorno actual (simulación).
+    pub fn set_target(&mut self, target: Target) {
+        self.target = target;
+    }
+
+    /// Fija el entorno por tripla (`x86_64-linux-gnu`, `riscv32-none-elf`, ...).
+    pub fn set_target_str(&mut self, s: &str) {
+        self.target = Target::parse(s);
     }
 
     pub fn diagnostics(&self) -> &[Diagnostic] {
@@ -295,6 +336,7 @@ impl Interpreter {
         for stmt in &module.statements {
             result = self.execute_statement(stmt)?;
         }
+        self.materialize_when_ghosts();
         Ok(result)
     }
 
@@ -337,6 +379,8 @@ impl Interpreter {
             Statement::Import(import) => self.execute_import(import),
             Statement::FromImport(from_import) => self.execute_from_import(from_import),
             Statement::Include(include) => self.execute_include(include),
+            Statement::Extension(ext) => self.execute_extension(ext),
+            Statement::When(w) => self.execute_when(w),
             Statement::Config(_) | Statement::Meta(_) | Statement::TypeAlias(_) => Ok(Value::Void),
             Statement::Cmx(cmx) => self.evaluate_cmx(cmx),
             Statement::EnumDecl(enum_decl) => self.execute_enum_decl(enum_decl),
@@ -369,7 +413,145 @@ impl Interpreter {
         Ok(value)
     }
 
+    /// Procesa `when <cond> { ... }` / `default { ... }`: ejecuta las ramas que
+    /// coinciden con el target actual. Los símbolos declarados en ramas inactivas
+    /// se registran como pendientes; al final del módulo se materializan como
+    /// "fantasmas" (el contrato existe; llamarlos sin implementación para el
+    /// entorno da error claro).
+    fn execute_when(&mut self, w: &WhenBlock) -> ClsResult<Value> {
+        for branch in &w.branches {
+            if self.target.matches(&branch.cond) {
+                // Ejecutar en el scope actual (sin push_scope) para que las
+                // declaraciones de la rama persistan.
+                for stmt in &branch.block.statements {
+                    self.execute_statement(stmt)?;
+                }
+            } else {
+                let mut names = Vec::new();
+                collect_decl_names(&branch.block, &mut names);
+                for n in names {
+                    self.when_declared.insert(n);
+                }
+            }
+        }
+        // Materializar fantasmas tras cada `when`: los closures de funciones
+        // definidas después deben ver el contrato (o su implementación real,
+        // que sobrescribe el fantasma por `define`).
+        self.materialize_when_ghosts();
+        Ok(Value::Void)
+    }
+
+    /// Al final de la ejecución: los símbolos declarados en ramas `when` inactivas
+    /// que no quedaron definidos por ninguna rama activa se convierten en
+    /// "fantasmas" (función que lanza error claro al llamarse).
+    fn materialize_when_ghosts(&mut self) {
+        let target_desc = format!("{}-{}-{}", self.target.arch, self.target.os, self.target.abi);
+        let names: Vec<String> = self.when_declared.drain().collect();
+        for name in names {
+            if self.env.get(&name).is_some() {
+                continue;
+            }
+            let n = name.clone();
+            let td = target_desc.clone();
+            let ghost = FunValue::new_native(&name, vec![], move |_args: &[Value]| {
+                Err(ClsError::RuntimeError(format!(
+                    "No hay implementación de '{}' para el entorno actual ({})",
+                    n, td
+                )))
+            });
+            self.env.define(&name, Value::Fun(ghost));
+        }
+    }
+
+    /// Procesa `extension "lib" as <kind> { ... }` — registra símbolos nativos
+    /// (funciones, estructuras, variables) delegando al backend del tipo declarado.
+    fn execute_extension(&mut self, ext: &ExtensionDecl) -> ClsResult<Value> {
+        let kind_name = ext.kind.name();
+        let backend_opt = self.native_backends.get(&kind_name).cloned();
+        let library_base = ext.library.clone();
+        let missing = |symbol: &str, kind: String, library: String| {
+            ClsError::RuntimeError(format!(
+                "Función nativa '{}' de '{}' no disponible: el nodo no registró un backend para el tipo de extensión '{}'",
+                symbol, library, kind
+            ))
+        };
+        for decl in &ext.declarations {
+            match decl {
+                NativeDecl::Function(f) => {
+                    let param_types: Vec<NativeType> = f.params.iter()
+                        .map(|p| native_type_from_ann(p.type_ann.as_ref()))
+                        .collect();
+                    let ret = native_type_from_ann(f.return_type.as_ref());
+                    let library = library_base.clone();
+                    let kind = kind_name.clone();
+                    let symbol = f.name.clone();
+                    let sym_inner = symbol.clone();
+                    let params_names: Vec<String> = f.params.iter().map(|p| p.name.clone()).collect();
+                    let backend = backend_opt.clone();
+                    let fun = FunValue::new_native(&symbol, params_names, move |args: &[Value]| {
+                        match &backend {
+                            Some(b) => b.call_function(&library, &sym_inner, args, &param_types, ret.clone()),
+                            None => Err(missing(&sym_inner, kind.clone(), library.clone())),
+                        }
+                    });
+                    self.env.define(&f.name, Value::Fun(fun));
+                    if matches!(f.visibility, Visibility::Export) {
+                        self.exports.insert(f.name.clone());
+                    }
+                }
+                NativeDecl::Structure(s) => {
+                    self.execute_structure_decl(s)?;
+                }
+                NativeDecl::Var(v) => {
+                    let ty = native_type_from_ann(v.type_ann.as_ref());
+                    let library = library_base.clone();
+                    let kind = kind_name.clone();
+                    let name = v.name.clone();
+                    let backend = backend_opt.clone();
+                    let gname = format!("get_{}", name);
+                    let g_name = name.clone();
+                    let g_lib = library.clone();
+                    let g_backend = backend.clone();
+                    let g_kind = kind.clone();
+                    let g_ty = ty.clone();
+                    let getter = FunValue::new_native(&gname, vec![], move |_: &[Value]| {
+                        match &g_backend {
+                            Some(b) => b.get_variable(&g_lib, &g_name, g_ty.clone()),
+                            None => Err(missing(&g_name, g_kind.clone(), g_lib.clone())),
+                        }
+                    });
+                    let sname = format!("set_{}", name);
+                    let s_name = name.clone();
+                    let s_lib = library.clone();
+                    let s_backend = backend.clone();
+                    let s_kind = kind.clone();
+                    let s_ty = ty.clone();
+                    let setter = FunValue::new_native(&sname, vec!["value".to_string()], move |args: &[Value]| {
+                        match &s_backend {
+                            Some(b) => b.set_variable(&s_lib, &s_name, s_ty.clone(), args.first().unwrap_or(&Value::Null))
+                                .map(|()| Value::Void),
+                            None => Err(missing(&s_name, s_kind.clone(), s_lib.clone())),
+                        }
+                    });
+                    self.env.define(&gname, Value::Fun(getter));
+                    self.env.define(&sname, Value::Fun(setter));
+                    if matches!(v.visibility, Visibility::Export) {
+                        self.exports.insert(format!("get_{}", name));
+                        self.exports.insert(format!("set_{}", name));
+                    }
+                }
+            }
+        }
+        Ok(Value::Void)
+    }
+
     fn execute_function_decl(&mut self, func: &FunctionDecl) -> ClsResult<Value> {
+        if func.is_native {
+            return Err(ClsError::RuntimeError(format!(
+                "La función nativa '{}' debe declararse dentro de un bloque 'extension'",
+                func.name
+            )));
+        }
         let is_async = func.modifiers.iter().any(|m| matches!(m, FunctionModifier::Async));
         // Capturar entorno léxico (closures) para module/namespace/scope
         let closure = Arc::new(Mutex::new(self.env.clone()));
@@ -1451,6 +1633,8 @@ impl Interpreter {
         for stmt in &module.statements {
             self.execute_statement(stmt)?;
         }
+        // Materializar fantasmas de `when` antes de recolectar exports
+        self.materialize_when_ghosts();
 
         // Recolectar solo exportados
         let mut entries = std::collections::HashMap::new();
@@ -2285,5 +2469,152 @@ mod tests {
     fn primitive_tuple_length() {
         let v = run_ok("(1, 2, 3).length");
         assert_eq!(v, Value::Int(3));
+    }
+
+    /// Backend falso para probar la llamada a funciones nativas.
+    struct FakeBackend;
+    impl NativeBackend for FakeBackend {
+        fn call_function(
+            &self,
+            _library: &str,
+            symbol: &str,
+            args: &[Value],
+            _param_types: &[NativeType],
+            _ret: NativeType,
+        ) -> ClsResult<Value> {
+            if symbol == "doble" {
+                if let Value::Int(v) = args.first().unwrap_or(&Value::Null) {
+                    return Ok(Value::Int(v * 2));
+                }
+            }
+            Ok(Value::Null)
+        }
+        fn get_variable(&self, _l: &str, _n: &str, _t: NativeType) -> ClsResult<Value> {
+            Ok(Value::Null)
+        }
+        fn set_variable(&self, _l: &str, _n: &str, _t: NativeType, _v: &Value) -> ClsResult<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn extension_llama_backend_nativo() {
+        let toks = Lexer::new("extension \"libc\" { function doble(x: int) -> int; }; doble(21)")
+            .tokenize()
+            .unwrap();
+        let module = Parser::new(toks).parse().unwrap();
+        let mut interp = Interpreter::new(Intrinsics::empty(), ModuleResolver::new().with_core_stdlib());
+        interp.set_native_backend(std::sync::Arc::new(FakeBackend));
+        let v = interp.execute(&module).unwrap();
+        assert_eq!(v, Value::Int(42));
+    }
+
+    #[test]
+    fn extension_sin_backend_error_claro() {
+        let err = run("extension \"libc\" { function strlen(s: CString) -> int; }; strlen(\"x\")")
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("no registró un backend"), "err: {}", err);
+    }
+
+    #[test]
+    fn extension_export_registra_simbolo() {
+        let toks = Lexer::new("extension \"libc\" { export function doble(x: int) -> int; };")
+            .tokenize()
+            .unwrap();
+        let module = Parser::new(toks).parse().unwrap();
+        let mut interp = Interpreter::new(Intrinsics::empty(), ModuleResolver::new().with_core_stdlib());
+        interp.set_native_backend(std::sync::Arc::new(FakeBackend));
+        interp.execute(&module).unwrap();
+        assert!(interp.exports.contains("doble"), "exports: {:?}", interp.exports);
+    }
+
+    fn run_with_target(src: &str, target: &str) -> ClsResult<Value> {
+        let toks = Lexer::new(src).tokenize().expect("tokenize");
+        let module = Parser::new(toks).parse().expect("parse");
+        let mut interp = Interpreter::new(Intrinsics::empty(), ModuleResolver::new().with_core_stdlib());
+        interp.set_target_str(target);
+        interp.execute(&module)
+    }
+
+    #[test]
+    fn when_selecciona_rama_por_os() {
+        let src = "when os: linux { function f() -> String { return \"l\"; } } when os: windows { function f() -> String { return \"w\"; } } f()";
+        assert_eq!(run_with_target(src, "linux").unwrap(), Value::String("l".into()));
+        assert_eq!(run_with_target(src, "windows").unwrap(), Value::String("w".into()));
+    }
+
+    #[test]
+    fn when_simbolo_sin_implementacion_fantasma() {
+        let src = "when os: windows { function ventana() -> int { return 1; } } ventana()";
+        let err = run_with_target(src, "linux")
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("No hay implementación de 'ventana'"), "err: {}", err);
+    }
+
+    #[test]
+    fn when_default_siempre_matchea() {
+        let src = "default { function f() -> int { return 42; } } f()";
+        assert_eq!(run_with_target(src, "linux").unwrap(), Value::Int(42));
+    }
+}
+
+/// Recolecta los nombres de las declaraciones de un bloque (contrato de `when`).
+fn collect_decl_names(block: &Block, out: &mut Vec<String>) {
+    for stmt in &block.statements {
+        match stmt {
+            Statement::FunctionDecl(f) => out.push(f.name.clone()),
+            Statement::VarDecl(v) | Statement::ConstDecl(v) => out.push(v.name.clone()),
+            Statement::EnumDecl(e) => out.push(e.name.clone()),
+            Statement::StructureDecl(s) => out.push(s.name.clone()),
+            Statement::ClassDecl(c) => out.push(c.name.clone()),
+            Statement::Extension(ext) => {
+                for d in &ext.declarations {
+                    match d {
+                        NativeDecl::Function(f) => out.push(f.name.clone()),
+                        NativeDecl::Var(v) => out.push(v.name.clone()),
+                        NativeDecl::Structure(s) => out.push(s.name.clone()),
+                    }
+                }
+            }
+            Statement::When(inner) => {
+                for b in &inner.branches {
+                    collect_decl_names(&b.block, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Convierte la anotación de tipo de un símbolo nativo a su `NativeType` (ABI C).
+fn native_type_from_ann(ann: Option<&TypeAnnotation>) -> NativeType {
+    use cls_core::frontend::ast::TypeKind;
+    let Some(ann) = ann else { return NativeType::Any };
+    match &ann.kind {
+        TypeKind::Int | TypeKind::I32 | TypeKind::I64 => NativeType::Int,
+        TypeKind::Float | TypeKind::F32 | TypeKind::F64 => NativeType::Float,
+        TypeKind::Bool => NativeType::Bool,
+        TypeKind::Void | TypeKind::Empty => NativeType::Void,
+        TypeKind::String => NativeType::CString,
+        TypeKind::Named(n, _) => match n.as_str() {
+            "CString" => NativeType::CString,
+            "CPtr" => NativeType::CPtr,
+            "CInt" => NativeType::CInt,
+            "CUInt" => NativeType::CUInt,
+            "CShort" => NativeType::CShort,
+            "CUShort" => NativeType::CUShort,
+            "CLong" => NativeType::CLong,
+            "CULong" => NativeType::CULong,
+            "CChar" => NativeType::CChar,
+            "CUChar" => NativeType::CUChar,
+            "CFloat" => NativeType::CFloat,
+            "CDouble" => NativeType::CDouble,
+            other => NativeType::Struct(other.to_string()),
+        },
+        _ => NativeType::Any,
     }
 }

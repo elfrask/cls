@@ -50,6 +50,12 @@ pub enum Statement {
     FromImport(FromImportStatement),
     Include(IncludeStatement),
 
+    // Nativo (FFI a librerías del sistema)
+    Extension(ExtensionDecl),
+
+    // Directiva multi-entorno (implementaciones por plataforma/arquitectura)
+    When(WhenBlock),
+
     // Expresiones
     Expression(Expression),
 
@@ -90,6 +96,179 @@ pub struct FunctionDecl {
     /// Parámetros de tipo genérico `<T, U>` (compile-time)
     #[serde(default)]
     pub type_params: Vec<TypeParam>,
+    /// Función nativa (sin cuerpo, declarada en `extension` o como símbolo del SO)
+    #[serde(default)]
+    pub is_native: bool,
+}
+
+/// Declaración nativa (`extension "lib" { ... }`) — símbolos de librerías del SO.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtensionDecl {
+    pub library: String,
+    /// Tipo de extensión: `extension "lib" as <kind>` (default `C`).
+    pub kind: ExtensionKind,
+    pub declarations: Vec<NativeDecl>,
+    pub span: Span,
+}
+
+/// Tipo de extensión (backend nativo). Enum fijo para los conocidos (rendimiento)
+/// + `Custom` para tipos futuros sin tocar el core.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExtensionKind {
+    C,
+    Python,
+    Wasm,
+    Js,
+    Wasi,
+    Custom(String),
+}
+
+impl ExtensionKind {
+    pub fn from_name(s: &str) -> Self {
+        match s {
+            "C" | "c" => ExtensionKind::C,
+            "Python" | "python" => ExtensionKind::Python,
+            "Wasm" | "wasm" => ExtensionKind::Wasm,
+            "Js" | "js" | "JS" => ExtensionKind::Js,
+            "Wasi" | "wasi" => ExtensionKind::Wasi,
+            other => ExtensionKind::Custom(other.to_string()),
+        }
+    }
+
+    pub fn name(&self) -> String {
+        match self {
+            ExtensionKind::C => "C".to_string(),
+            ExtensionKind::Python => "Python".to_string(),
+            ExtensionKind::Wasm => "Wasm".to_string(),
+            ExtensionKind::Js => "Js".to_string(),
+            ExtensionKind::Wasi => "Wasi".to_string(),
+            ExtensionKind::Custom(s) => s.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum NativeDecl {
+    Function(FunctionDecl),
+    Structure(StructureDecl),
+    Var(VarDecl),
+}
+
+/// Entorno de ejecución (SO, arquitectura, ABI, plataforma/HAL).
+/// Para el binario portable se selecciona en runtime; para AOT embebido se fija
+/// en build (`clx build --target <tripla>`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Target {
+    pub os: String,
+    pub arch: String,
+    pub abi: String,
+    pub platform: String,
+}
+
+impl Target {
+    /// Target del proceso actual (host del nodo). La arquitectura nativa de CLS
+    /// es **`cls-arch`** (no la del hardware); `wasm` queda reservado.
+    pub fn host() -> Self {
+        let os = if cfg!(target_os = "windows") { "windows" }
+        else if cfg!(target_os = "macos") { "macos" }
+        else if cfg!(target_os = "linux") { "linux" }
+        else { "none" };
+        let abi = if cfg!(target_env = "msvc") { "msvc" }
+        else if cfg!(target_env = "gnu") { "gnu" }
+        else if cfg!(target_abi = "eabi") { "eabi" }
+        else if cfg!(target_abi = "elf") { "elf" }
+        else { "" };
+        Self {
+            os: os.to_string(),
+            arch: "cls-arch".to_string(),
+            abi: abi.to_string(),
+            platform: if os == "pc" || os != "none" { "pc".to_string() } else { "none".to_string() },
+        }
+    }
+
+    /// Parsea un target: tripla `arch-os-abi` (o `arch-vendor-os-abi`) o un
+    /// nombre simple (SO conocido → os; arch conocido → arch).
+    pub fn parse(s: &str) -> Self {
+        if s == "cls-arch" {
+            return Self {
+                arch: "cls-arch".to_string(),
+                os: String::new(),
+                abi: String::new(),
+                platform: "none".to_string(),
+            };
+        }
+        let parts: Vec<&str> = s.split('-').collect();
+        let (arch, os, abi) = match parts.as_slice() {
+            [a, o] => (*a, *o, ""),
+            [a, o, ab] => (*a, *o, *ab),
+            [a, _vendor, o, ab] => (*a, *o, *ab),
+            [one] => {
+                const OSES: &[&str] = &["windows", "linux", "macos", "none", "bare-metal", "freebsd"];
+                const ARCHES: &[&str] = &["cls-arch", "x86_64", "arm64", "aarch64", "arm", "riscv32", "riscv64", "avr"];
+                if OSES.contains(one) {
+                    ("", *one, "")
+                } else if ARCHES.contains(one) {
+                    (*one, "", "")
+                } else {
+                    (*one, "", "")
+                }
+            }
+            _ => (s, "", ""),
+        };
+        Self {
+            arch: arch.to_string(),
+            os: os.to_string(),
+            abi: abi.to_string(),
+            platform: "none".to_string(),
+        }
+    }
+
+    pub fn matches(&self, cond: &TargetCond) -> bool {
+        match cond {
+            TargetCond::Any => true,
+            TargetCond::Os(s) => self.os == *s,
+            TargetCond::Arch(s) => self.arch == *s,
+            TargetCond::Abi(s) => self.abi == *s,
+            TargetCond::Platform(s) => self.platform == *s,
+            TargetCond::Target(s) => {
+                let t = Target::parse(s);
+                self.arch == t.arch
+                    && self.os == t.os
+                    && (t.abi.is_empty() || self.abi == t.abi)
+            }
+            TargetCond::Not(c) => !self.matches(c),
+            TargetCond::And(a, b) => self.matches(a) && self.matches(b),
+            TargetCond::Or(a, b) => self.matches(a) || self.matches(b),
+        }
+    }
+}
+
+/// Condición de la directiva `when` (selección por entorno).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TargetCond {
+    Any,
+    Os(String),
+    Arch(String),
+    Abi(String),
+    Platform(String),
+    Target(String),
+    Not(Box<TargetCond>),
+    And(Box<TargetCond>, Box<TargetCond>),
+    Or(Box<TargetCond>, Box<TargetCond>),
+}
+
+/// Directiva multi-entorno: todas las ramas se compilan; en runtime (o en build
+/// para AOT) se selecciona la que coincide con el target del entorno actual.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhenBlock {
+    pub branches: Vec<WhenBranch>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhenBranch {
+    pub cond: TargetCond,
+    pub block: Block,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -639,6 +818,8 @@ impl fmt::Display for Statement {
             Statement::Import(i) => f.write_fmt(format_args!("import \"{}\"", i.path)),
             Statement::FromImport(fi) => f.write_fmt(format_args!("from \"{}\" import ...", fi.path)),
             Statement::Include(i) => f.write_fmt(format_args!("include \"{}\"", i.path)),
+            Statement::Extension(e) => f.write_fmt(format_args!("extension \"{}\" as {}", e.library, e.kind.name())),
+            Statement::When(w) => f.write_fmt(format_args!("when {{ {} rama(s) }}", w.branches.len())),
             Statement::Expression(e) => f.write_fmt(format_args!("expr: {:?}", e)),
             Statement::Config(c) => f.write_fmt(format_args!("#config({} = {})", c.key, c.value)),
             Statement::Cmx(c) => f.write_fmt(format_args!("<{}>", c.tag)),
