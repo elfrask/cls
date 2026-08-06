@@ -6,8 +6,27 @@
 use cls_core::config::types::TypesConfig;
 use cls_core::middleware::TypeChecker;
 use wasmtime::{Caller, Engine, Linker, Memory, Module, Store, Val};
+use std::time::Instant;
 
 const HOST: &str = "env";
+
+/// `CLS_JIT_TIMING=1` → imprime el tiempo de cada fase del pipeline a stderr.
+fn jit_timing() -> bool {
+    std::env::var("CLS_JIT_TIMING")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+fn tick(timing: bool, label: &str, start: Instant) -> Instant {
+    if timing {
+        eprintln!(
+            "[JIT-TIMING] {:<26} {:>12.2} ms",
+            label,
+            start.elapsed().as_secs_f64() * 1000.0
+        );
+    }
+    Instant::now()
+}
 
 /// Estado del host: separador de argumentos en `print`.
 struct HostState {
@@ -20,7 +39,28 @@ impl Default for HostState {
     }
 }
 
-pub fn run_jit(entry: &str, app_args: &[String]) -> i32 {
+/// Directorio del caché de compilación: `~/.cache/cls/` (HOME o USERPROFILE).
+fn cache_dir() -> std::path::PathBuf {
+    let base = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
+    std::path::PathBuf::from(base).join(".cache").join("cls")
+}
+
+/// Clave del caché: hash del fuente + versión del compilador + target.
+fn cache_key(source: &str, target_str: Option<&str>) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    source.hash(&mut h);
+    cls_core::VERSION.hash(&mut h);
+    target_str.unwrap_or("").hash(&mut h);
+    h.finish()
+}
+
+pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i32 {
+    let timing = jit_timing();
+    let mut t = Instant::now();
+
     let source = match std::fs::read_to_string(entry) {
         Ok(s) => s,
         Err(e) => {
@@ -28,16 +68,33 @@ pub fn run_jit(entry: &str, app_args: &[String]) -> i32 {
             return 1;
         }
     };
+    t = tick(timing, "lectura", t);
+
+    // Caché CLS→WASM en disco: si el fuente no cambió (misma versión + target),
+    // saltamos lexer/parser/typeck/emisión y cargamos el .wasm directamente.
+    let key = cache_key(&source, target_str);
+    let cache_path = cache_dir().join(format!("{:016x}.wasm", key));
+    if let Ok(cached) = std::fs::read(&cache_path) {
+        if timing {
+            eprintln!("[JIT-TIMING] caché CLS→WASM: HIT ({} bytes)", cached.len());
+        }
+        return run_wasm(&cached, entry, app_args, timing, t);
+    }
+    if timing {
+        eprintln!("[JIT-TIMING] caché CLS→WASM: miss");
+    }
 
     // Parseo
     let mut lexer = cls_core::frontend::Lexer::new(&source);
     let tokens = match lexer.tokenize() {
-        Ok(t) => t,
+        Ok(tk) => tk,
         Err(e) => {
             cls_runtime::show_syntax_error(e, &source, entry);
             return 1;
         }
     };
+    t = tick(timing, "lexer", t);
+
     let mut parser = cls_core::frontend::Parser::new(tokens);
     let module = match parser.parse() {
         Ok(m) => m,
@@ -46,6 +103,7 @@ pub fn run_jit(entry: &str, app_args: &[String]) -> i32 {
             return 1;
         }
     };
+    t = tick(timing, "parser", t);
 
     // Type checker: llena el mapa Span → Type (requerido por el backend).
     let types_config = TypesConfig {
@@ -59,9 +117,17 @@ pub fn run_jit(entry: &str, app_args: &[String]) -> i32 {
         eprintln!("Error interno del type checker en '{}': {}", entry, e);
         return 1;
     }
+    t = tick(timing, "typecheck", t);
 
-    // Emitir WASM.
-    let backend = cls_core::backend::wasm::WasmBackend::new(checker.type_map().clone());
+    // Emitir WASM (target para la directiva `when`).
+    let target = match target_str {
+        Some(tt) => cls_core::frontend::ast::Target::parse(tt),
+        None => cls_core::frontend::ast::Target::host(),
+    };
+    let type_map = checker.type_map().clone();
+    t = tick(timing, "type_map.clone", t);
+
+    let backend = cls_core::backend::wasm::WasmBackend::with_target(type_map, target);
     let wasm_bytes = match backend.emit(&module) {
         Ok(b) => b,
         Err(e) => {
@@ -69,12 +135,54 @@ pub fn run_jit(entry: &str, app_args: &[String]) -> i32 {
             return 1;
         }
     };
+    t = tick(timing, "emit WASM", t);
+    if timing {
+        eprintln!("[JIT-TIMING] WASM size: {} bytes", wasm_bytes.len());
+    }
 
-    run_wasm(&wasm_bytes, entry, app_args)
+    // Guardar en caché para la próxima corrida (fallo silencioso: es solo caché).
+    if let Err(e) = std::fs::create_dir_all(cache_dir())
+        .and_then(|_| std::fs::write(&cache_path, &wasm_bytes))
+    {
+        if timing {
+            eprintln!("[JIT-TIMING] aviso: no se pudo escribir el caché: {}", e);
+        }
+    }
+
+    run_wasm(&wasm_bytes, entry, app_args, timing, t)
 }
 
-fn run_wasm(wasm_bytes: &[u8], entry: &str, app_args: &[String]) -> i32 {
-    let engine = Engine::default();
+/// Config de caché de wasmtime (WASM→nativo): crea el TOML por defecto si falta.
+fn wasmtime_cache_config() -> Option<wasmtime::Config> {
+    let dir = cache_dir();
+    let config_path = dir.join("wasmtime-cache.toml");
+    if !config_path.exists() {
+        let cache_dir = dir.join("wasmtime").to_string_lossy().replace('\\', "/");
+        let toml = format!("[cache]\nenabled = true\ndirectory = \"{}\"\n", cache_dir);
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(&config_path, toml);
+    }
+    let mut config = wasmtime::Config::new();
+    if config.cache_config_load(&config_path).is_ok() {
+        Some(config)
+    } else {
+        None
+    }
+}
+
+fn run_wasm(wasm_bytes: &[u8], entry: &str, app_args: &[String], timing: bool, mut t: Instant) -> i32 {
+    let engine = match wasmtime_cache_config() {
+        Some(config) => match Engine::new(&config) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("[JIT] Error creando engine wasmtime: {}", e);
+                return 1;
+            }
+        },
+        None => Engine::default(),
+    };
+    t = tick(timing, "Engine::default", t);
+
     let module = match Module::new(&engine, wasm_bytes) {
         Ok(m) => m,
         Err(e) => {
@@ -82,13 +190,23 @@ fn run_wasm(wasm_bytes: &[u8], entry: &str, app_args: &[String]) -> i32 {
             return 1;
         }
     };
+    t = tick(timing, "Module::new (Cranelift)", t);
+
     let mut store = Store::new(&engine, HostState::default());
     let mut linker = Linker::new(&engine);
+    t = tick(timing, "Store+Linker", t);
 
     if let Err(e) = register_host_functions(&mut linker) {
         eprintln!("[JIT] Error registrando funciones host: {}", e);
         return 1;
     }
+
+    // Extensiones: hosts genéricos `env.<sym>__<sig>@<lib>` → DynamicBackend.
+    if let Err(e) = register_native_hosts(&mut linker, &module) {
+        eprintln!("[JIT] Error registrando hosts de extensiones: {}", e);
+        return 1;
+    }
+    t = tick(timing, "register hosts", t);
 
     let instance = match linker.instantiate(&mut store, &module) {
         Ok(i) => i,
@@ -97,6 +215,7 @@ fn run_wasm(wasm_bytes: &[u8], entry: &str, app_args: &[String]) -> i32 {
             return 1;
         }
     };
+    t = tick(timing, "instantiate", t);
 
     // Escribir los args de la app en la memoria y llamar main(ptr).
     let alloc = match instance.get_typed_func::<i64, i64>(&mut store, "alloc") {
@@ -121,6 +240,7 @@ fn run_wasm(wasm_bytes: &[u8], entry: &str, app_args: &[String]) -> i32 {
             return 1;
         }
     };
+    t = tick(timing, "write_args", t);
 
     let main = match instance.get_typed_func::<i64, i64>(&mut store, "main") {
         Ok(f) => f,
@@ -130,13 +250,15 @@ fn run_wasm(wasm_bytes: &[u8], entry: &str, app_args: &[String]) -> i32 {
         }
     };
 
-    match main.call(&mut store, args_ptr) {
+    let result = match main.call(&mut store, args_ptr) {
         Ok(code) => code as i32,
         Err(e) => {
             eprintln!("[JIT] Error en ejecución: {}", e);
             1
         }
-    }
+    };
+    tick(timing, "ejecución main", t);
+    result
 }
 
 /// Escribe los args como Array<String> en memoria y devuelve el ptr.
@@ -336,6 +458,624 @@ fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String>
             caller_write_str(&mut caller, &c.to_string()).unwrap_or(0)
         })
         .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "pow_num", |_: Caller<'_, HostState>, a: i64, b: i64| -> i64 {
+            if b == 0 {
+                1
+            } else {
+                (a as f64).powi(b as i32) as i64
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "fmod", |_: Caller<'_, HostState>, a: f64, b: f64| -> f64 {
+            a % b
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "input", |mut caller: Caller<'_, HostState>| -> i64 {
+            let mut line = String::new();
+            let _ = std::io::stdin().read_line(&mut line);
+            let line = line.trim_end_matches(['\r', '\n']);
+            caller_write_str(&mut caller, line).unwrap_or(0)
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "str_upper", |mut caller: Caller<'_, HostState>, v: i64| -> i64 {
+            let s = caller_read_str(&mut caller, v);
+            caller_write_str(&mut caller, &s.to_uppercase()).unwrap_or(0)
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "str_lower", |mut caller: Caller<'_, HostState>, v: i64| -> i64 {
+            let s = caller_read_str(&mut caller, v);
+            caller_write_str(&mut caller, &s.to_lowercase()).unwrap_or(0)
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "str_trim", |mut caller: Caller<'_, HostState>, v: i64| -> i64 {
+            let s = caller_read_str(&mut caller, v);
+            caller_write_str(&mut caller, s.trim()).unwrap_or(0)
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "str_contains", |mut caller: Caller<'_, HostState>, a: i64, b: i64| -> i32 {
+            let sa = caller_read_str(&mut caller, a);
+            let sb = caller_read_str(&mut caller, b);
+            if sa.contains(&sb) { 1 } else { 0 }
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "str_starts_with", |mut caller: Caller<'_, HostState>, a: i64, b: i64| -> i32 {
+            let sa = caller_read_str(&mut caller, a);
+            let sb = caller_read_str(&mut caller, b);
+            if sa.starts_with(&sb) { 1 } else { 0 }
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "str_ends_with", |mut caller: Caller<'_, HostState>, a: i64, b: i64| -> i32 {
+            let sa = caller_read_str(&mut caller, a);
+            let sb = caller_read_str(&mut caller, b);
+            if sa.ends_with(&sb) { 1 } else { 0 }
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "str_is_empty", |mut caller: Caller<'_, HostState>, v: i64| -> i32 {
+            let s = caller_read_str(&mut caller, v);
+            if s.is_empty() { 1 } else { 0 }
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "str_length", |mut caller: Caller<'_, HostState>, v: i64| -> i64 {
+            let s = caller_read_str(&mut caller, v);
+            s.len() as i64
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "int_abs", |_: Caller<'_, HostState>, v: i64| -> i64 {
+            v.abs()
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "float_abs", |_: Caller<'_, HostState>, v: f64| -> f64 {
+            v.abs()
+        })
+        .map_err(|e| e.to_string())?;
 
+    // ── Métodos de Array (layout [cap:i64][len:i64][elem...]) ───────────────
+
+    linker
+        .func_wrap(HOST, "arr_push", |mut caller: Caller<'_, HostState>, ptr: i64, val: i64, es: i64| -> i64 {
+            let p = ptr as usize;
+            let len = arr_len(&mut caller, p);
+            let cap = arr_cap(&mut caller, p);
+            let new_p = if len + 1 > cap {
+                arr_realloc(&mut caller, p, ((cap * 2 + 1).max(len + 1)) as usize, es as usize)
+            } else {
+                p
+            };
+            arr_set(&mut caller, new_p, len as usize, es as usize, val);
+            arr_write_i64(&mut caller, new_p + 8, len + 1);
+            new_p as i64
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "arr_pop", |mut caller: Caller<'_, HostState>, ptr: i64, es: i64| -> i64 {
+            let p = ptr as usize;
+            let len = arr_len(&mut caller, p);
+            if len <= 0 {
+                return p as i64;
+            }
+            arr_write_i64(&mut caller, p + 8, len - 1);
+            p as i64
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "arr_shift", |mut caller: Caller<'_, HostState>, ptr: i64, es: i64| -> i64 {
+            let p = ptr as usize;
+            let es = es as usize;
+            let len = arr_len(&mut caller, p);
+            if len <= 0 {
+                return p as i64;
+            }
+            for i in 0..(len - 1) as usize {
+                let e = arr_elem(&mut caller, p, i + 1, es);
+                arr_set(&mut caller, p, i, es, e);
+            }
+            arr_write_i64(&mut caller, p + 8, len - 1);
+            p as i64
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "arr_unshift", |mut caller: Caller<'_, HostState>, ptr: i64, val: i64, es: i64| -> i64 {
+            let p = ptr as usize;
+            let es = es as usize;
+            let len = arr_len(&mut caller, p);
+            let cap = arr_cap(&mut caller, p);
+            let new_p = if len + 1 > cap {
+                arr_realloc(&mut caller, p, ((cap * 2 + 1).max(len + 1)) as usize, es)
+            } else {
+                p
+            };
+            for i in (0..len as usize).rev() {
+                let e = arr_elem(&mut caller, new_p, i, es);
+                arr_set(&mut caller, new_p, i + 1, es, e);
+            }
+            arr_set(&mut caller, new_p, 0, es, val);
+            arr_write_i64(&mut caller, new_p + 8, len + 1);
+            new_p as i64
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "arr_reverse", |mut caller: Caller<'_, HostState>, ptr: i64, es: i64| -> i64 {
+            let p = ptr as usize;
+            let es = es as usize;
+            let len = arr_len(&mut caller, p);
+            for i in 0..(len as usize / 2) {
+                let a = arr_elem(&mut caller, p, i, es);
+                let b = arr_elem(&mut caller, p, (len as usize) - 1 - i, es);
+                arr_set(&mut caller, p, i, es, b);
+                arr_set(&mut caller, p, (len as usize) - 1 - i, es, a);
+            }
+            p as i64
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "arr_index_of", |mut caller: Caller<'_, HostState>, ptr: i64, needle: i64, es: i64| -> i64 {
+            let p = ptr as usize;
+            let len = arr_len(&mut caller, p);
+            for i in 0..len as usize {
+                if arr_elem(&mut caller, p, i, es as usize) == needle {
+                    return i as i64;
+                }
+            }
+            -1
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "arr_includes", |mut caller: Caller<'_, HostState>, ptr: i64, needle: i64, es: i64| -> i32 {
+            let p = ptr as usize;
+            let len = arr_len(&mut caller, p);
+            for i in 0..len as usize {
+                if arr_elem(&mut caller, p, i, es as usize) == needle {
+                    return 1;
+                }
+            }
+            0
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(
+            HOST,
+            "arr_join",
+            |mut caller: Caller<'_, HostState>, ptr: i64, sep: i64, es: i64, kind: i64| -> i64 {
+                let p = ptr as usize;
+                let es = es as usize;
+                let len = arr_len(&mut caller, p);
+                let separator = caller_read_str(&mut caller, sep);
+                let mut out = String::new();
+                for i in 0..len as usize {
+                    if i > 0 {
+                        out.push_str(&separator);
+                    }
+                    let e = arr_elem(&mut caller, p, i, es);
+                    match kind {
+                        1 => out.push_str(&caller_read_str(&mut caller, e)),
+                        2 => out.push_str(&format_float(f64::from_bits(e as u64))),
+                        3 => out.push_str(if e != 0 { "true" } else { "false" }),
+                        4 => out.push(char::from_u32(e as u32).unwrap_or('?')),
+                        _ => out.push_str(&e.to_string()),
+                    }
+                }
+                caller_write_str(&mut caller, &out).unwrap_or(0)
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+    register_stdlib_hosts(linker)?;
+
+    Ok(())
+}
+
+/// Registra hosts para las extensiones (`env.<sym>__<sig>@<lib>`) que delegan en
+/// `DynamicBackend` (libloading). `sig` = ret+params: i=int, f=float, b=bool, c=char, s=string, v=void.
+fn register_native_hosts(linker: &mut Linker<HostState>, module: &wasmtime::Module) -> Result<usize, String> {
+    use cls_runtime::ffi::{NativeBackend, NativeType};
+    use cls_runtime::Value;
+    let backend = &crate::native::DynamicBackend;
+    let mut count = 0;
+    let imports: Vec<(String, String)> = module
+        .imports()
+        .map(|it| (it.module().to_string(), it.name().to_string()))
+        .collect();
+    for (m, n) in imports {
+        if m != "env" {
+            continue;
+        }
+        let (rest, lib) = match n.split_once('@') {
+            Some(x) => x,
+            None => continue,
+        };
+        let (sym, sig) = match rest.split_once("__") {
+            Some(x) => x,
+            None => continue,
+        };
+        let sym = sym.to_string();
+        let lib = lib.to_string();
+        let sig = sig.to_string();
+        let name = n.clone();
+        let native_type = |c: char| match c {
+            'f' => NativeType::Float,
+            'b' => NativeType::Bool,
+            'c' => NativeType::CInt,
+            's' => NativeType::CString,
+            _ => NativeType::Int,
+        };
+        let ret_to_i64 = |v: Result<Value, cls_core::error::ClsError>| -> i64 {
+            match v {
+                Ok(Value::Int(n)) => n,
+                Ok(Value::Float(f)) => f as i64,
+                Ok(Value::Bool(b)) => {
+                    if b {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                Ok(Value::Char(ch)) => ch as i64,
+                Ok(_) => 0,
+                Err(_) => 0,
+            }
+        };
+        let ret_to_f64 = |v: Result<Value, cls_core::error::ClsError>| -> f64 {
+            match v {
+                Ok(Value::Float(f)) => f,
+                Ok(Value::Int(n)) => n as f64,
+                Ok(_) => 0.0,
+                Err(_) => 0.0,
+            }
+        };
+        let params: Vec<char> = sig.chars().skip(1).collect();
+        let rcode = sig.chars().next().unwrap_or('i');
+        let lib2 = lib.clone();
+        let sym2 = sym.clone();
+        match params.as_slice() {
+            [] => {
+                let ret = rcode;
+                let lib3 = lib2.clone();
+                let sym3 = sym2.clone();
+                linker
+                    .func_wrap(HOST, &name, move |_: Caller<'_, HostState>| -> i64 {
+                        let _ = &lib3;
+                        let _ = &sym3;
+                        let r = backend.call_function(&lib3, &sym3, &[], &[], native_type(ret));
+                        ret_to_i64(r)
+                    })
+                    .map_err(|e| e.to_string())?;
+            }
+            [p0] if *p0 == 'f' => {
+                let ret = rcode;
+                let lib3 = lib2.clone();
+                let sym3 = sym2.clone();
+                linker
+                    .func_wrap(HOST, &name, move |_: Caller<'_, HostState>, a: f64| -> f64 {
+                        let r = backend.call_function(
+                            &lib3,
+                            &sym3,
+                            &[Value::Float(a)],
+                            &[NativeType::Float],
+                            native_type(ret),
+                        );
+                        ret_to_f64(r)
+                    })
+                    .map_err(|e| e.to_string())?;
+            }
+            [p0] => {
+                let p0 = *p0;
+                let ret = rcode;
+                let lib3 = lib2.clone();
+                let sym3 = sym2.clone();
+                linker
+                    .func_wrap(HOST, &name, move |mut caller: Caller<'_, HostState>, a: i64| -> i64 {
+                        let arg = match p0 {
+                            's' => Value::String(caller_read_str(&mut caller, a)),
+                            _ => Value::Int(a),
+                        };
+                        let r = backend.call_function(&lib3, &sym3, &[arg], &[native_type(p0)], native_type(ret));
+                        match r {
+                            Ok(Value::String(s)) => caller_write_str(&mut caller, &s).unwrap_or(0),
+                            Ok(v) => match v {
+                                Value::Float(f) => f as i64,
+                                Value::Int(n) => n,
+                                _ => 0,
+                            },
+                            Err(_) => 0,
+                        }
+                    })
+                    .map_err(|e| e.to_string())?;
+            }
+            [p0, p1] if *p0 == 'f' || *p1 == 'f' => {
+                let p0 = *p0;
+                let p1 = *p1;
+                let ret = rcode;
+                let lib3 = lib2.clone();
+                let sym3 = sym2.clone();
+                if p0 == 'f' && p1 == 'f' {
+                    linker
+                        .func_wrap(HOST, &name, move |_: Caller<'_, HostState>, a: f64, b: f64| -> f64 {
+                            let r = backend.call_function(
+                                &lib3,
+                                &sym3,
+                                &[Value::Float(a), Value::Float(b)],
+                                &[NativeType::Float, NativeType::Float],
+                                native_type(ret),
+                            );
+                            ret_to_f64(r)
+                        })
+                        .map_err(|e| e.to_string())?;
+                } else if p0 == 'f' {
+                    let lib4 = lib2.clone();
+                    let sym4 = sym2.clone();
+                    linker
+                        .func_wrap(HOST, &name, move |_: Caller<'_, HostState>, a: f64, b: i64| -> f64 {
+                            let r = backend.call_function(
+                                &lib4,
+                                &sym4,
+                                &[Value::Float(a), Value::Int(b)],
+                                &[NativeType::Float, NativeType::Int],
+                                native_type(ret),
+                            );
+                            ret_to_f64(r)
+                        })
+                        .map_err(|e| e.to_string())?;
+                } else {
+                    let lib4 = lib2.clone();
+                    let sym4 = sym2.clone();
+                    linker
+                        .func_wrap(HOST, &name, move |_: Caller<'_, HostState>, a: i64, b: f64| -> f64 {
+                            let r = backend.call_function(
+                                &lib4,
+                                &sym4,
+                                &[Value::Int(a), Value::Float(b)],
+                                &[NativeType::Int, NativeType::Float],
+                                native_type(ret),
+                            );
+                            ret_to_f64(r)
+                        })
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+            [p0, p1] => {
+                let p0 = *p0;
+                let p1 = *p1;
+                let ret = rcode;
+                let lib3 = lib2.clone();
+                let sym3 = sym2.clone();
+                linker
+                    .func_wrap(HOST, &name, move |mut caller: Caller<'_, HostState>, a: i64, b: i64| -> i64 {
+                        let arg0 = match p0 {
+                            's' => Value::String(caller_read_str(&mut caller, a)),
+                            _ => Value::Int(a),
+                        };
+                        let arg1 = match p1 {
+                            's' => Value::String(caller_read_str(&mut caller, b)),
+                            _ => Value::Int(b),
+                        };
+                        let r = backend.call_function(
+                            &lib3,
+                            &sym3,
+                            &[arg0, arg1],
+                            &[native_type(p0), native_type(p1)],
+                            native_type(ret),
+                        );
+                        ret_to_i64(r)
+                    })
+                    .map_err(|e| e.to_string())?;
+            }
+            _ => {
+                return Err(format!(
+                    "[JIT] Extensión '{}': el JIT soporta natives de hasta 2 argumentos por ahora",
+                    n
+                ))
+            }
+        }
+        count += 1;
+    }
+    Ok(count)
+}
+
+// ── Helpers de memoria de arrays ────────────────────────────────────────────
+
+fn arr_read_i64(caller: &mut Caller<'_, HostState>, addr: usize) -> i64 {
+    if let Some(mem) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+        let data = mem.data(&mut *caller);
+        if addr + 8 <= data.len() {
+            return i64::from_le_bytes(data[addr..addr + 8].try_into().unwrap());
+        }
+    }
+    0
+}
+
+fn arr_write_i64(caller: &mut Caller<'_, HostState>, addr: usize, v: i64) {
+    if let Some(mem) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+        let data = mem.data_mut(caller);
+        if addr + 8 <= data.len() {
+            data[addr..addr + 8].copy_from_slice(&v.to_le_bytes());
+        }
+    }
+}
+
+fn arr_len(caller: &mut Caller<'_, HostState>, ptr: usize) -> i64 {
+    arr_read_i64(caller, ptr + 8)
+}
+
+fn arr_cap(caller: &mut Caller<'_, HostState>, ptr: usize) -> i64 {
+    arr_read_i64(caller, ptr)
+}
+
+fn arr_elem(caller: &mut Caller<'_, HostState>, ptr: usize, idx: usize, es: usize) -> i64 {
+    let addr = ptr + 16 + idx * es;
+    if es == 4 {
+        if let Some(mem) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+            let data = mem.data(&mut *caller);
+            if addr + 4 <= data.len() {
+                return i32::from_le_bytes(data[addr..addr + 4].try_into().unwrap()) as i64;
+            }
+        }
+        0
+    } else {
+        arr_read_i64(caller, addr)
+    }
+}
+
+fn arr_set(caller: &mut Caller<'_, HostState>, ptr: usize, idx: usize, es: usize, v: i64) {
+    let addr = ptr + 16 + idx * es;
+    if es == 4 {
+        if let Some(mem) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+            let data = mem.data_mut(caller);
+            if addr + 4 <= data.len() {
+                data[addr..addr + 4].copy_from_slice(&(v as i32).to_le_bytes());
+            }
+        }
+    } else {
+        arr_write_i64(caller, addr, v);
+    }
+}
+
+fn arr_realloc(caller: &mut Caller<'_, HostState>, ptr: usize, new_cap: usize, es: usize) -> usize {
+    let len = arr_len(caller, ptr) as usize;
+    let size = (new_cap * es + 16) as i64;
+    let new_ptr = caller_alloc(caller, size).unwrap_or(0) as usize;
+    arr_write_i64(caller, new_ptr, new_cap as i64);
+    arr_write_i64(caller, new_ptr + 8, len as i64);
+    for i in 0..len {
+        let e = arr_elem(caller, ptr, i, es);
+        arr_set(caller, new_ptr, i, es, e);
+    }
+    new_ptr
+}
+
+static RNG_STATE: std::sync::Mutex<u64> = std::sync::Mutex::new(0x9E37_79B9_7F4A_7C15);
+
+/// Registra los hosts de stdlib (math, json, fs).
+fn register_stdlib_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
+    linker
+        .func_wrap(HOST, "math_sqrt", |_: Caller<'_, HostState>, v: f64| -> f64 { v.sqrt() })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "math_pow", |_: Caller<'_, HostState>, a: f64, b: f64| -> f64 { a.powf(b) })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "math_min", |_: Caller<'_, HostState>, a: f64, b: f64| -> f64 { a.min(b) })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "math_max", |_: Caller<'_, HostState>, a: f64, b: f64| -> f64 { a.max(b) })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "math_floor", |_: Caller<'_, HostState>, v: f64| -> f64 { v.floor() })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "math_ceil", |_: Caller<'_, HostState>, v: f64| -> f64 { v.ceil() })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "math_round", |_: Caller<'_, HostState>, v: f64| -> f64 { v.round() })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "math_random", |_: Caller<'_, HostState>| -> f64 {
+            let mut s = RNG_STATE.lock().unwrap();
+            *s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (*s >> 11) as f64 / (1u64 << 53) as f64
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "math_sin", |_: Caller<'_, HostState>, v: f64| -> f64 { v.sin() })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "math_cos", |_: Caller<'_, HostState>, v: f64| -> f64 { v.cos() })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "math_tan", |_: Caller<'_, HostState>, v: f64| -> f64 { v.tan() })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "math_log", |_: Caller<'_, HostState>, v: f64| -> f64 { v.ln() })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "math_range", |mut caller: Caller<'_, HostState>, a: i64, b: i64| -> i64 {
+            let n = (b - a).max(0);
+            let size = (n * 8 + 16) as i64;
+            let ptr = caller_alloc(&mut caller, size).unwrap_or(0) as usize;
+            arr_write_i64(&mut caller, ptr, n);
+            arr_write_i64(&mut caller, ptr + 8, n);
+            for i in 0..n {
+                arr_set(&mut caller, ptr, i as usize, 8, a + i);
+            }
+            ptr as i64
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "json_stringify", |_: Caller<'_, HostState>, v: i64| -> i64 { v })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "fs_exists", |mut caller: Caller<'_, HostState>, p: i64| -> i32 {
+            let s = caller_read_str(&mut caller, p);
+            if std::path::Path::new(&s).exists() {
+                1
+            } else {
+                0
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "fs_cwd", |mut caller: Caller<'_, HostState>| -> i64 {
+            let cwd = std::env::current_dir()
+                .map(|d| d.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            caller_write_str(&mut caller, &cwd).unwrap_or(0)
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "fs_read_file", |mut caller: Caller<'_, HostState>, p: i64| -> i64 {
+            let s = caller_read_str(&mut caller, p);
+            match std::fs::read_to_string(&s) {
+                Ok(contents) => caller_write_str(&mut caller, &contents).unwrap_or(0),
+                Err(_) => 0,
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "fs_write_file", |mut caller: Caller<'_, HostState>, p: i64, d: i64| -> i64 {
+            let path = caller_read_str(&mut caller, p);
+            let data = caller_read_str(&mut caller, d);
+            let _ = std::fs::write(&path, data);
+            0
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "fs_list_dir", |mut caller: Caller<'_, HostState>, p: i64| -> i64 {
+            let s = caller_read_str(&mut caller, p);
+            let joined = std::fs::read_dir(&s)
+                .map(|rd| {
+                    rd.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                })
+                .unwrap_or_default();
+            caller_write_str(&mut caller, &joined).unwrap_or(0)
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "fs_mkdir", |mut caller: Caller<'_, HostState>, p: i64| -> i64 {
+            let s = caller_read_str(&mut caller, p);
+            let _ = std::fs::create_dir_all(&s);
+            0
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "fs_rm", |mut caller: Caller<'_, HostState>, p: i64| -> i64 {
+            let s = caller_read_str(&mut caller, p);
+            let _ = std::fs::remove_file(&s);
+            0
+        })
+        .map_err(|e| e.to_string())?;
     Ok(())
 }

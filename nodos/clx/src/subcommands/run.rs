@@ -15,19 +15,49 @@ pub fn execute(args: &[String]) -> i32 {
         .map(|s| s.to_string())
         .collect();
 
-    // Entry: ignorar el flag --jit al resolver el archivo
-    let cli_args: Vec<String> = args.iter()
-        .take_while(|a| *a != "--")
-        .filter(|a| *a != "--jit" && *a != "-j")
-        .map(|s| s.to_string())
-        .collect();
+    // Entry: ignorar los flags --jit y --target <valor> al resolver el archivo
+    let mut cli_args: Vec<String> = Vec::new();
+    let mut skip_next = false;
+    for a in args.iter().take_while(|a| *a != "--") {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if a == "--jit" || a == "-j" {
+            continue;
+        }
+        if a == "--target" || a == "-t" {
+            skip_next = true;
+            continue;
+        }
+        cli_args.push(a.clone());
+    }
 
     let config = load_config();
 
     let entry = resolve_entry(&cli_args, config.as_ref());
 
     if jit {
-        return crate::jit::run_jit(&entry, &app_args);
+        let target_opt: Option<String> = {
+            let a: Vec<&String> = args.iter().take_while(|a| *a != "--").collect();
+            let mut t: Option<String> = None;
+            let mut i = 0;
+            while i < a.len() {
+                if a[i] == "--target" || a[i] == "-t" {
+                    if let Some(v) = a.get(i + 1) {
+                        t = Some(v.to_string());
+                    }
+                    break;
+                }
+                if let Some(v) = a[i].strip_prefix("--target=") {
+                    t = Some(v.to_string());
+                    break;
+                }
+                i += 1;
+            }
+            t
+        };
+        return crate::jit::run_jit(&entry, &app_args, target_opt.as_deref());
     }
 
     let source = match std::fs::read_to_string(&entry) {
@@ -49,10 +79,21 @@ pub fn execute(args: &[String]) -> i32 {
 
     let vfs = make_vfs(config.as_ref());
     let lib_resolver = make_lib_resolver(vfs.clone());
-    let resolver = make_desktop_resolver(vfs, lib_resolver);
+    let native: std::sync::Arc<dyn cls_runtime::ffi::NativeBackend> =
+        std::sync::Arc::new(crate::native::DynamicBackend::default());
+    let resolver = make_desktop_resolver(vfs, lib_resolver, native.clone());
     let mut interpreter = Interpreter::new(Intrinsics::desktop_defaults(app_args), resolver);
     interpreter.set_source_file(entry);
     interpreter.set_config(config);
+    interpreter.set_native_backend(native.clone());
+    // `clx run --target <tripla>` → simula el entorno para la directiva `when`
+    if let Some(t) = args.iter()
+        .take_while(|a| *a != "--")
+        .position(|a| a == "--target" || a == "-t")
+        .and_then(|i| args.get(i + 1))
+    {
+        interpreter.set_target_str(t);
+    }
 
     if let Err(e) = interpreter.execute(&module) {
         let report = interpreter.build_error_report(e);
@@ -134,12 +175,12 @@ fn make_lib_resolver(vfs: Arc<VfsResolver>) -> Arc<dyn ClsLibResolver> {
     Arc::new(DesktopLibResolver { vfs })
 }
 
-fn make_desktop_resolver(vfs: Arc<VfsResolver>, lib_resolver: Arc<dyn ClsLibResolver>) -> cls_runtime::ModuleResolver {
+fn make_desktop_resolver(vfs: Arc<VfsResolver>, lib_resolver: Arc<dyn ClsLibResolver>, native: std::sync::Arc<dyn cls_runtime::ffi::NativeBackend>) -> cls_runtime::ModuleResolver {
     let mut resolver = cls_runtime::ModuleResolver::new().with_core_stdlib();
     resolver.add_internal("fs", crate::modules::fs::module(vfs));
     resolver.add_internal("http", crate::modules::http::module());
     resolver.add_internal("Lib", crate::modules::lib::module(lib_resolver));
-    resolver.set_external(|path: String, _env: &mut cls_runtime::Environment| -> cls_core::error::ClsResult<Option<cls_runtime::Value>> {
+    resolver.set_external(move |path: String, _env: &mut cls_runtime::Environment| -> cls_core::error::ClsResult<Option<cls_runtime::Value>> {
         let candidate = format!("{}.clsx", path);
         match std::fs::read_to_string(&candidate) {
             Ok(source) => {
@@ -148,6 +189,7 @@ fn make_desktop_resolver(vfs: Arc<VfsResolver>, lib_resolver: Arc<dyn ClsLibReso
                     Intrinsics::empty(),
                     cls_runtime::ModuleResolver::new().with_core_stdlib(),
                 );
+                interp.set_native_backend(native.clone());
                 Ok(Some(interp.load_module_source(&path, &source)?))
             }
             Err(_) => Ok(None),
