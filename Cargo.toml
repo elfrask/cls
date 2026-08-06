@@ -18,3 +18,8 @@ repository = "https://github.com/frask/cls"
 [workspace.dependencies]
 cls-core = { path = "cls-core" }
 cls-runtime = { path = "cls-runtime" }
+
+# Las dependencias (wasmtime/Cranelift) compiladas optimizadas → el JIT compila
+# WASM→nativo mucho más rápido incluso en build debug.
+[profile.dev.package."*"]
+opt-level = 2
