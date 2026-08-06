@@ -1,0 +1,458 @@
+# all-features.clsx
+# Script de prueba que ejercita TODAS las features del lenguaje CLS.
+# Sirve como contrato de regresión: el tree-walker y el futuro motor JIT
+# deben producir la MISMA salida.
+
+import "math" as math;
+import "json" as json;
+import "async" as asyncModule;
+import "fs" as fs;
+import "examples/features-lib" as lib;
+
+# ═══════════════════════════════════════════════════════════════
+# TIPADO COMPILE-TIME (no genera salida, solo verificación)
+# ═══════════════════════════════════════════════════════════════
+
+interface Hello<T=Int> {
+    num: T,
+    greet(name: String): String,
+};
+
+interface Marcador<T> {
+    real: T,
+    fantasma: !T,
+};
+
+alias Vec3 = (Int, Int, Int);
+alias FnInt = (Int) -> Int;
+alias ColorUnion = "red" | "green" | "blue";
+alias Dict = Record<String, Int>;
+
+# ═══════════════════════════════════════════════════════════════
+# ENUMS
+# ═══════════════════════════════════════════════════════════════
+
+enum Nivel {
+    Bajo,
+    Medio,
+    Alto,
+};
+
+# ═══════════════════════════════════════════════════════════════
+# STRUCTURE (layout plano)
+# ═══════════════════════════════════════════════════════════════
+
+structure Punto {
+    x: int,
+    y: int,
+};
+
+# ═══════════════════════════════════════════════════════════════
+# CLASES: herencia, visibilidad, static, super, magic methods
+# ═══════════════════════════════════════════════════════════════
+
+class Animal {
+    var nombre: String;
+
+    function main(nombre: String) {
+        me.nombre = nombre;
+    }
+
+    function hablar() -> String {
+        return me.nombre + " hace ruido";
+    }
+};
+
+class Perro: Animal {
+    function main(nombre: String) {
+        super.main(nombre);
+    }
+
+    function hablar() -> String {
+        return super.hablar() + " y ladra";
+    }
+
+    function obtenerNombre() -> String {
+        return super.nombre;
+    }
+};
+
+class Contador {
+    private var valor: int = 0;
+    public var etiqueta: String = "c";
+    protected var secreto: String = "s";
+    readonly var creadoEn: int = 2026;
+    static var total: int = 0;
+
+    function main() {
+    }
+
+    static function obtenerTotal() -> int {
+        return Contador.total;
+    }
+
+    function incrementar() -> int {
+        me.valor = me.valor + 1;
+        return me.valor;
+    }
+
+    function obtener() -> int {
+        return me.valor;
+    }
+
+    function __toString() -> String {
+        return "Contador(" + toString(me.valor) + ")";
+    }
+
+    function __equals(other) -> bool {
+        return me.obtener() == other.obtener();
+    }
+
+    function __len() -> int {
+        return 1;
+    }
+
+    function __call(x: int) -> int {
+        return me.valor + x;
+    }
+
+    function __iter() -> Array {
+        return [me.valor, me.valor + 1];
+    }
+
+    function sumar(n: int) {
+        me.valor = me.valor + n;
+    }
+
+    function __add(other) -> Contador {
+        var c = Contador();
+        c.sumar(me.valor + other.obtener());
+        return c;
+    }
+
+    protected function verSecreto() -> String {
+        return me.secreto;
+    }
+};
+
+class ContadorAvanzado: Contador {
+    function obtenerSecretoProtegido() -> String {
+        return me.verSecreto();
+    }
+};
+
+class Caja<T=Int> {
+    var contenido: T;
+
+    function main(contenido: T) {
+        me.contenido = contenido;
+    }
+
+    function obtener() -> T {
+        return me.contenido;
+    }
+};
+
+class Coleccion {
+    var items: Array;
+
+    function main() {
+        me.items = [1, 2, 3];
+    }
+
+    function __get(index: int) -> int {
+        return me.items[index];
+    }
+
+    function __set(index: int, value: int) {
+        me.items[index] = value;
+    }
+
+    function __contains(x) -> bool {
+        return x in me.items;
+    }
+};
+
+# ═══════════════════════════════════════════════════════════════
+# FUNCIONES: básica, void, genérica, arrow, closures, async
+# ═══════════════════════════════════════════════════════════════
+
+function suma(a: int, b: int) -> int {
+    return a + b;
+};
+
+function saludar(nombre: String, saludo: String = "Hola") -> String {
+    return saludo + ", " + nombre;
+};
+
+function id<T>(x: T) -> T {
+    return x;
+};
+
+function factorial(n: int) -> int {
+    if (n <= 1) { return 1; }
+    return n * factorial(n - 1);
+};
+
+async function tareaAsync(ms: int) -> String {
+    await asyncModule.delay(ms);
+    return "hecho";
+};
+
+# ═══════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════
+
+function main(args: String[]) -> int {
+    print("=== 1. Primitivos y variables ===");
+    var entero: int = 42;
+    var flotante = 3.14;
+    var cadena = "hola";
+    var booleano = true;
+    var caracter = 'a';
+    const constante = "inmutable";
+    let aliasVar = 1;
+    print("int:", entero, "float:", flotante, "bool:", booleano, "char:", caracter);
+    print("const:", constante, "let:", aliasVar);
+
+    print("=== 2. Operadores ===");
+    print("suma:", 2 + 3);
+    print("resta:", 10 - 4);
+    print("mult:", 6 * 7);
+    print("div:", 20 / 4);
+    print("mod:", 17 % 5);
+    print("potencia:", 2 ** 8);
+    var x = 5;
+    x += 3;
+    print("x += 3:", x);
+    x -= 1;
+    print("x -= 1:", x);
+    x *= 2;
+    print("x *= 2:", x);
+    x /= 7;
+    print("x /= 7:", x);
+    var y = 1;
+    y++;
+    print("postfix ++:", y);
+    y--;
+    print("postfix --:", y);
+    print("cmp ==:", 1 == 1, "!=:", 1 != 2, "<:", 1 < 2, "<=:", 2 <= 2, ">:", 3 > 2, ">=:", 3 >= 3);
+    print("and:", true && false, "or:", true || false, "not:", !true);
+    print("corto-circuit:", false && suma(1, 1) == 99);
+
+    print("=== 3. Strings e interpolacion ===");
+    var nombre = "CLS";
+    print("interpolacion: Hola $nombre");
+    print("expr: ${1 + 2}");
+    print("upper:", "hola".upper());
+    print("lower:", "HOLA".lower());
+    print("trim:", "  x  ".trim());
+    print("length:", "abcd".length);
+    print("contains:", "hola mundo".contains("mundo"));
+    print("startsWith:", "abc".startsWith("ab"));
+    print("endsWith:", "abc".endsWith("bc"));
+    print("isEmpty:", "".isEmpty());
+    print("in substring:", "mundo" in "hola mundo");
+    print("toString:", toString(42));
+    print("int.toString:", (42).toString(), "float.toString:", (2.5).toString());
+    print("int.abs:", (-7).abs(), "float.abs:", (-3.5).abs());
+    print("bool.toString:", true.toString(), "char.toString:", 'x'.toString());
+
+    print("=== 4. Arrays ===");
+    var lista = [3, 1, 2];
+    lista.push(4);
+    print("push:", lista);
+    print("length:", lista.length);
+    print("indexOf(2):", lista.indexOf(2));
+    print("includes(9):", lista.includes(9));
+    print("join:", lista.join("-"));
+    print("index [0]:", lista[0]);
+
+    print("=== 5. Tuplas (inmutables) ===");
+    var tupla = (10, "veinte", 30.0);
+    print("tupla:", tupla);
+    print("t[0]:", tupla[0], "t[1]:", tupla[1]);
+    print("tupla.length:", tupla.length);
+    print("tupla.join:", tupla.join("|"));
+
+    print("=== 6. Records ===");
+    var dic = {clave: 1, otro: 2};
+    print("keys length:", len(dic.keys()));
+    print("has:", dic.has("clave"));
+    print("length:", dic.length);
+    print("acceso por punto:", dic.clave, dic.otro);
+
+    print("=== 7. Control de flujo ===");
+    var n = 3;
+    if (n > 5) {
+        print("if: mayor");
+    } elif (n > 2) {
+        print("elif: medio");
+    } else {
+        print("else");
+    }
+    var w = 0;
+    while (w < 3) {
+        print("while:", w);
+        w = w + 1;
+    }
+    var lp = 0;
+    loop {
+        lp = lp + 1;
+        if (lp >= 2) { break; }
+    }
+    print("loop:", lp);
+    for (var i = 0; i < 3; i = i + 1) {
+        print("for:", i);
+    }
+    for each item in ([1, 2, 3]) {
+        print("for each:", item);
+    }
+    for each item and idx in ((4, 5, 6)) {
+        print("for each idx:", idx, "=", item);
+    }
+    switch (2) {
+        case (1) { print("switch: uno"); }
+        case (2) { print("switch: dos"); }
+        case default { print("switch: default"); }
+    }
+    var bc = 0;
+    for (var i = 0; i < 5; i = i + 1) {
+        if (i == 1) { continue; }
+        if (i == 4) { break; }
+        bc = bc + i;
+    }
+    print("break/continue:", bc);
+
+    print("=== 8. Enums ===");
+    var nivel = Nivel.Alto;
+    print("enum:", nivel);
+    print("enum ==:", nivel == Nivel.Alto, "!=:", nivel == Nivel.Bajo);
+    print("enum is:", nivel is Nivel);
+    for each v in (Nivel) {
+        print("enum iter:", v);
+    }
+
+    print("=== 9. Structures ===");
+    var p = Punto(3, 4);
+    print("struct:", p);
+    print("struct is:", p is Punto);
+
+    print("=== 10. Clases ===");
+    var perro = Perro("Rex");
+    print("herencia + super:", perro.hablar());
+    print("super.nombre:", perro.obtenerNombre());
+    print("is:", perro is Perro, perro is Animal);
+    var c1 = Contador();
+    c1.incrementar();
+    c1.incrementar();
+    print("contador:", c1.obtener());
+    print("etiqueta (public):", c1.etiqueta);
+    print("static total:", Contador.total);
+    print("toString:", c1);
+    var c2 = Contador();
+    c2.incrementar();
+    print("__equals:", c1 == c2);
+    print("__len:", len(c1));
+    print("__call:", c1(10));
+    for each item in (c1) {
+        print("__iter:", item);
+    }
+    var col = Coleccion();
+    print("__get:", col[1]);
+    col[1] = 99;
+    print("__set:", col[1]);
+    print("__contains:", 99 in col, 5 in col);
+    var c3 = c1 + c2;
+    print("__add:", c3.obtener());
+    var av = ContadorAvanzado();
+    av.incrementar();
+    print("protected heredado:", av.obtenerSecretoProtegido());
+    print("readonly lectura:", c1.creadoEn);
+    var caja = Caja(42);
+    print("generico clase:", caja.obtener());
+    print("operador is con enum:", nivel is Nivel);
+
+    print("=== 11. Funciones ===");
+    print("funcion:", suma(2, 3));
+    print("default param:", saludar("Ana"));
+    print("generica int:", id(5), "generica str:", id("x"));
+    print("recursion:", factorial(6));
+    var doble = (x: int) -> x * 2;
+    print("arrow:", doble(4));
+    var aplicar = (a: int, b: int) -> { return a * b; };
+    print("arrow block:", aplicar(3, 5));
+
+    print("=== 12. Excepciones ===");
+    try {
+        throw("error intencional");
+        print("NO llega");
+    } catch (e) {
+        print("catch:", "capturado");
+    } finally {
+        print("finally ejecutado");
+    }
+    try {
+        var z = 1 / 0;
+    } catch (e) {
+        print("division por cero capturada");
+    }
+
+    print("=== 13. Stdlib ===");
+    print("math.abs:", math.abs(-7));
+    print("math.sqrt:", math.sqrt(16));
+    print("math.pow:", math.pow(2, 3));
+    print("math.PI:", math.PI);
+    print("math.range:", math.range(0, 3));
+    print("math.random en [0,1):", math.random() >= 0.0 && math.random() < 1.0);
+    print("fs.exists:", fs.exists("examples/all-features.clsx"));
+    var obj = json.parse('{"nombre": "CLS"}');
+    print("json.parse:", obj);
+    print("json.stringify:", json.stringify(obj));
+
+    print("=== 14. Async ===");
+    var promesa = tareaAsync(5);
+    var res = await promesa;
+    print("async:", res);
+
+    print("=== 15. Intrinsics ===");
+    print("type:", type(42), type("x"), type(true));
+    print("int('42'):", int("42"));
+    print("float('3.5'):", float("3.5"));
+    print("bool(''):", bool(""));
+    print("now (ms):", now());
+    print("args count:", len(args));
+
+    print("=== 16. CMX ===");
+    var app = (
+        <App titulo="Demo" >
+            <Boton />
+        </App>
+    );
+    print("cmx tag:", app.tag);
+    print("cmx props.titulo:", app.props.titulo);
+    print("cmx children[0].tag:", app.children[0].tag);
+
+    print("=== 17. with ===");
+    with tmp in (suma(1, 2)) {
+        print("with:", tmp);
+    }
+
+    print("=== 18. Tipos avanzados (compile-time) ===");
+    var nExtraido: Hello["num"] = 1;
+    var sExtraido: Hello<String>["num"] = "hola";
+    var tExtraido: (Int, String)[1] = "x";
+    var dict: Dict = {a: 1, b: 2};
+    print("extraccion tipos:", nExtraido, sExtraido, tExtraido);
+    print("record tipado length:", len(dict), "has b:", dict.has("b"));
+
+    print("=== 19. Modulos de usuario (export/import) ===");
+    print("export function:", lib.duplicar(21));
+    print("export const:", lib.VERSION);
+    print("export enum:", lib.Estacion.Verano);
+    print("export struct:", lib.Coordenada(1, 2));
+    print("export class:", lib.PuntoNombre("Ana").obtener());
+
+    print("=== FIN ===");
+    return 0;
+};

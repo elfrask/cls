@@ -1,0 +1,32 @@
+# features-lib.clsx
+# Módulo de usuario con todos los tipos de export para probar imports/exports.
+
+export function duplicar(x: int) -> int {
+    return x * 2;
+};
+
+export const VERSION = "2.0";
+
+export enum Estacion {
+    Primavera,
+    Verano,
+    Otono,
+    Invierno,
+};
+
+export structure Coordenada {
+    x: int,
+    y: int,
+};
+
+export class PuntoNombre {
+    var nombre: String;
+
+    function main(nombre: String) {
+        me.nombre = nombre;
+    }
+
+    function obtener() -> String {
+        return me.nombre;
+    }
+};

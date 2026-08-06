@@ -20,6 +20,9 @@ pub struct TypeChecker {
     current_return_type: Option<Type>,
     interfaces: HashMap<String, InterfaceInfo>,
     enums: std::collections::HashSet<String>,
+    /// Mapa Span → Type de TODAS las expresiones visitadas (para backends).
+    /// Se llena solo cuando `config.check` es true.
+    types_by_span: HashMap<Span, Type>,
 }
 
 impl TypeChecker {
@@ -31,6 +34,7 @@ impl TypeChecker {
             current_return_type: None,
             interfaces: HashMap::new(),
             enums: std::collections::HashSet::new(),
+            types_by_span: HashMap::new(),
         };
         // Registrar funciones built-in (core intrinsics)
         tc.define("print", Type::Fun(vec![Type::Any], Box::new(Type::Void)));
@@ -270,6 +274,8 @@ impl TypeChecker {
         for (name, typ) in &param_types {
             self.define(name, typ.clone());
         }
+        // Registrar la función ANTES de chequear el cuerpo → permite recursión
+        self.define(&func.name, fn_type.clone());
         self.check_block(&func.body);
         self.pop_scope();
         self.current_return_type = prev_return;
@@ -314,11 +320,11 @@ impl TypeChecker {
         if let Some(init) = &f.init {
             self.check_statement(init);
         }
-        if let Some(_cond) = &f.condition {
-            // check condition
+        if let Some(cond) = &f.condition {
+            self.check_expression(cond);
         }
-        if let Some(_upd) = &f.update {
-            // check update
+        if let Some(upd) = &f.update {
+            self.check_expression(upd);
         }
         self.check_block(&f.block);
         self.pop_scope();
@@ -404,7 +410,8 @@ impl TypeChecker {
 
 
     fn check_expression(&mut self, expr: &Expression) -> Type {
-        match expr {
+        let span = expr_span(expr);
+        let t = match expr {
             Expression::Literal(l) => self.check_literal(l),
             Expression::Identifier(name, span) => {
                 self.lookup(name)
@@ -435,7 +442,16 @@ impl TypeChecker {
                 self.error("Namespace access sin tipo", span.clone())
             }
             Expression::Await(expr, _) => self.check_expression(expr),
+        };
+        if self.config.check {
+            self.types_by_span.insert(span, t.clone());
         }
+        t
+    }
+
+    /// Mapa de tipos por span de todas las expresiones visitadas.
+    pub fn type_map(&self) -> &HashMap<Span, Type> {
+        &self.types_by_span
     }
 
     fn check_literal(&mut self, lit: &Literal) -> Type {
@@ -1049,6 +1065,30 @@ mod tests {
         let src = "function f() { var a: (Int, String) = (1, \"x\"); var n: Int = a[0]; };";
         let d = check_source(src, true);
         assert_eq!(count_errors(&d), 0, "indice literal: {:?}", d);
+    }
+}
+
+/// Devuelve el `Span` de una expresión (cada variante lo lleva).
+pub fn expr_span(expr: &Expression) -> Span {
+    match expr {
+        Expression::Literal(l) => l.span,
+        Expression::Identifier(_, s) => *s,
+        Expression::Binary(b) => b.span,
+        Expression::Unary(u) => u.span,
+        Expression::Call(c) => c.span,
+        Expression::MemberAccess(m) => m.span,
+        Expression::Index(i) => i.span,
+        Expression::Array(a) => a.span,
+        Expression::Tuple(t) => t.span,
+        Expression::Record(r) => r.span,
+        Expression::ArrowFunction(a) => a.span,
+        Expression::Conditional(c) => c.span,
+        Expression::Assignment(a) => a.span,
+        Expression::Cmx(c) => c.span,
+        Expression::Parenthesized(_, s) => *s,
+        Expression::StringInterpolation(s) => s.span,
+        Expression::NamespaceAccess(_, _, s) => *s,
+        Expression::Await(_, s) => *s,
     }
 }
 
