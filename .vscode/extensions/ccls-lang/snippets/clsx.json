@@ -356,7 +356,7 @@
     "prefix": "main",
     "body": [
       "function main(args: String[]) -> int {",
-      "    ${1:// entrada}",
+      "    ${1:# entrada}",
       "    return 0;",
       "};"
     ],
@@ -378,7 +378,7 @@
     "body": [
       "var ${1:estado} = ${2:Enum}.${3:Variante};",
       "if (${1:estado} == ${2:Enum}.${3:Variante}) {",
-      "    ${4:// ...}",
+      "    ${4:# ...}",
       "}"
     ],
     "description": "Usar un enum (acceso + comparación)"
@@ -387,9 +387,147 @@
     "prefix": "enumi",
     "body": [
       "for each ${1:estado} in (${2:Enum}) {",
-      "    ${3:// ...}",
+      "    ${3:# ...}",
       "}"
     ],
     "description": "Iterar las variantes de un enum"
+  },
+  "Extensión nativa": {
+    "prefix": "ext",
+    "body": [
+      "extension \"${1:libreria}\" as ${2:C} {",
+      "    function ${3:funcion}(${4:param}: ${5:CString}) -> ${6:CInt};",
+      "};"
+    ],
+    "description": "FFI: declarar símbolos nativos de una librería del sistema"
+  },
+  "Extensión función nativa": {
+    "prefix": "extfn",
+    "body": [
+      "function ${1:funcion}(${2:param}: ${3:CString}) -> ${4:CInt};"
+    ],
+    "description": "Declaración de una función nativa (sin cuerpo) dentro de extension"
+  },
+  "Extensión estructura nativa": {
+    "prefix": "extst",
+    "body": [
+      "structure ${1:Nombre} {",
+      "    ${2:x}: ${3:CInt},",
+      "};"
+    ],
+    "description": "Estructura nativa (layout C) dentro de extension"
+  },
+  "Extensión export": {
+    "prefix": "exte",
+    "body": [
+      "extension \"${1:libreria}\" as ${2:C} {",
+      "    export function ${3:funcion}(${4:param}: ${5:CString}) -> ${6:CInt};",
+      "};"
+    ],
+    "description": "FFI: exportar símbolos nativos para módulos importados"
+  },
+  "Directiva when": {
+    "prefix": "when",
+    "body": [
+      "when ${1:os}: ${2:linux} {",
+      "    ${3:# implementación}",
+      "}"
+    ],
+    "description": "Directiva multi-entorno: implementación por plataforma/arquitectura"
+  },
+  "Directiva when target": {
+    "prefix": "whent",
+    "body": [
+      "when target: \"${1:riscv32-none-elf}\" {",
+      "    ${2:# implementación}",
+      "}"
+    ],
+    "description": "Directiva when con tripla de target (embebido/bare-metal)"
+  },
+  "Directiva default": {
+    "prefix": "dflt",
+    "body": [
+      "default {",
+      "    ${1:# implementación por defecto}",
+      "}"
+    ],
+    "description": "Rama por defecto de la directiva when (siempre matchea)"
+  },
+  "Tipos nativos C": {
+    "prefix": "cty",
+    "body": [
+      "${1:CString}|${2:CPtr}|${3:CInt}|${4:CUInt}|${5:CDouble}"
+    ],
+    "description": "Tipos primitivos dedicados del ABI C (CString, CPtr, CInt, CUInt, CDouble...)"
+  },
+  "when os": {
+    "prefix": "os",
+    "scope": "source.clsx meta.when.ccls",
+    "body": [
+      "os: ${1|windows,linux,macos,none,bare-metal,freebsd|} "
+    ],
+    "description": "Selector de sistema operativo en `when`"
+  },
+  "when arch": {
+    "prefix": "arch",
+    "scope": "source.clsx meta.when.ccls",
+    "body": [
+      "arch: ${1|cls-arch,x86_64,arm64,aarch64,arm,riscv32,riscv64,avr|} "
+    ],
+    "description": "Selector de arquitectura en `when` (cls-arch = arquitectura nativa CLS)"
+  },
+  "when abi": {
+    "prefix": "abi",
+    "scope": "source.clsx meta.when.ccls",
+    "body": [
+      "abi: ${1|gnu,msvc,eabi,elf|} "
+    ],
+    "description": "Selector de ABI en `when`"
+  },
+  "when platform": {
+    "prefix": "platform",
+    "scope": "source.clsx meta.when.ccls",
+    "body": [
+      "platform: ${1|pc,esp32,stm32f4,rp2040,none|} "
+    ],
+    "description": "Selector de plataforma/HAL en `when`"
+  },
+  "when target tripla": {
+    "prefix": "target",
+    "scope": "source.clsx meta.when.ccls",
+    "body": [
+      "target: \"${1:riscv32-none-elf}\" "
+    ],
+    "description": "Selector de target por tripla (embebido/bare-metal) en `when`"
+  },
+  "when multi-entorno": {
+    "prefix": "whenx",
+    "body": [
+      "when ${1:os}: ${2:linux} ${3:and} ${4:arch}: ${5:arm64} {",
+      "    ${6:# implementación}",
+      "}"
+    ],
+    "description": "Directiva when con múltiples condiciones (os/arch/abi/platform combinados)"
+  },
+  "Extensión multi-plataforma": {
+    "prefix": "extw",
+    "body": [
+      "when ${1:os}: ${2:windows} {",
+      "    extension \"${3:libreria}\" as C {",
+      "        ${4:function f(param: CString) -> CInt; }",
+      "    }",
+      "}"
+    ],
+    "description": "Extensión nativa condicionada a una plataforma"
+  },
+  "Extensión tipos nativos": {
+    "prefix": "extcty",
+    "body": [
+      "function ${1:funcion}(",
+      "    ${2:a}: ${3:CInt},",
+      "    ${4:b}: ${5:CDouble}",
+      ") -> ${6:CInt};"
+    ],
+    "description": "Función nativa con tipos del ABI C (CInt/CDouble/etc.)"
   }
 }

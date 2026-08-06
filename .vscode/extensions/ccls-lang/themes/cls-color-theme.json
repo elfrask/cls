@@ -16,7 +16,8 @@
       "scope": [
         "storage.type.primitive.ccls",
         "storage.type.numeric.ccls",
-        "storage.type.container.ccls"
+        "storage.type.container.ccls",
+        "storage.type.native.ccls"
       ],
       "settings": { "foreground": "#4ec9b0", "fontStyle": "" }
     },
@@ -79,6 +80,10 @@
         "keyword.import.ccls",
         "keyword.modifier.ccls",
         "keyword.control.ccls",
+        "keyword.control.platform.ccls",
+        "keyword.operator.selector.ccls",
+        "keyword.operator.logical.ccls",
+        "keyword.operator.logical.single.ccls",
         "keyword.self.ccls",
         "keyword.operator.arrow.ccls"
       ],
