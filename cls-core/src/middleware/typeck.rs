@@ -703,6 +703,20 @@ impl TypeChecker {
             if self.enums.contains(name) {
                 return Type::Named(name.clone(), vec![]);
             }
+            // Módulos internos del nodo (resueltos por nombre en el JIT).
+            if name == "http" {
+                return match member.member.as_str() {
+                    "get" | "post" => Type::String,
+                    _ => Type::Any,
+                };
+            }
+            if name == "fs" {
+                return match member.member.as_str() {
+                    "exists" => Type::Bool,
+                    "cwd" | "readFile" | "listDir" => Type::String,
+                    _ => Type::Any,
+                };
+            }
         }
         // Métodos/getters de primitivos (sin boxing): tipo conocido por miembro.
         match obj_type {
@@ -722,6 +736,14 @@ impl TypeChecker {
             Type::Tuple(_) => match member.member.as_str() {
                 "length" => Type::Int,
                 "join" | "toString" => Type::String,
+                _ => Type::Any,
+            },
+            Type::Record(k, _) => match member.member.as_str() {
+                "length" | "size" => Type::Int,
+                "has" => Type::Bool,
+                "keys" => Type::Array(k.clone()),
+                "values" => Type::Array(Box::new(Type::Any)),
+                "toString" => Type::String,
                 _ => Type::Any,
             },
             Type::Int | Type::Float => match member.member.as_str() {

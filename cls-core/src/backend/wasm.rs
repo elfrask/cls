@@ -95,6 +95,15 @@ pub enum HostFn {
     FsListDir,
     FsMkdir,
     FsRm,
+    RecordNew,
+    RecordSet,
+    RecordGet,
+    RecordHas,
+    RecordLen,
+    RecordKeys,
+    RecordValues,
+    HttpGet,
+    HttpPost,
 }
 
 impl HostFn {
@@ -161,6 +170,15 @@ impl HostFn {
             FsListDir => "fs_list_dir",
             FsMkdir => "fs_mkdir",
             FsRm => "fs_rm",
+            RecordNew => "record_new",
+            RecordSet => "record_set",
+            RecordGet => "record_get",
+            RecordHas => "record_has",
+            RecordLen => "record_len",
+            RecordKeys => "record_keys",
+            RecordValues => "record_values",
+            HttpGet => "http_get",
+            HttpPost => "http_post",
         }
     }
 
@@ -206,6 +224,14 @@ impl HostFn {
             FsReadFile => (i64p.clone(), vec![ValType::I64]),
             FsWriteFile => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             FsListDir | FsMkdir | FsRm => (i64p.clone(), vec![ValType::I64]),
+            RecordNew => (i64p.clone(), vec![ValType::I64]),
+            RecordSet => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
+            RecordGet => (i64p.clone().into_iter().chain(std::iter::once(ValType::I64)).collect(), vec![ValType::I64]),
+            RecordHas => (vec![ValType::I64, ValType::I64], vec![ValType::I32]),
+            RecordLen => (i64p.clone(), vec![ValType::I64]),
+            RecordKeys | RecordValues => (i64p.clone(), vec![ValType::I64]),
+            HttpGet => (i64p.clone(), vec![ValType::I64]),
+            HttpPost => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
         }
     }
 }
@@ -238,6 +264,7 @@ fn was_type(t: &Type) -> ClsResult<WasTy> {
         Type::String => Ok(WasTy::I64),
         Type::Array(_) => Ok(WasTy::I64),
         Type::Tuple(_) => Ok(WasTy::I64),
+        Type::Record(_, _) => Ok(WasTy::I64),
         Type::Literal(LitVal::Float(_)) => Ok(WasTy::F64),
         Type::Literal(LitVal::Bool(_)) => Ok(WasTy::I32),
         Type::Named(..) | Type::Literal(_) => Ok(WasTy::I64),
@@ -294,6 +321,7 @@ struct FuncEmitter<'a> {
     struct_defs: &'a HashMap<String, StructInfo>,
     native_indexes: &'a HashMap<String, u32>,
     native_ret: &'a HashMap<String, char>,
+    globals: &'a HashMap<String, u32>,
     target: &'a Target,
 }
 
@@ -309,6 +337,7 @@ impl<'a> FuncEmitter<'a> {
         struct_defs: &'a HashMap<String, StructInfo>,
         native_indexes: &'a HashMap<String, u32>,
         native_ret: &'a HashMap<String, char>,
+        globals: &'a HashMap<String, u32>,
         target: &'a Target,
     ) -> Self {
         Self {
@@ -328,6 +357,7 @@ impl<'a> FuncEmitter<'a> {
             struct_defs,
             native_indexes,
             native_ret,
+            globals,
             target,
         }
     }
@@ -349,6 +379,26 @@ impl<'a> FuncEmitter<'a> {
             self.next_local += 1;
             l
         })
+    }
+
+    /// Carga un identificador: global (si es un `export var` top-level) o local.
+    fn emit_ident_load(&mut self, name: &str) {
+        if let Some(g) = self.globals.get(name) {
+            self.body.push(Instruction::GlobalGet(*g));
+        } else {
+            let idx = self.local_for(name);
+            self.body.push(Instruction::LocalGet(idx));
+        }
+    }
+
+    /// Escribe un identificador: global (si es un `export var` top-level) o local.
+    fn emit_ident_store(&mut self, name: &str) {
+        if let Some(g) = self.globals.get(name) {
+            self.body.push(Instruction::GlobalSet(*g));
+        } else {
+            let idx = self.local_for(name);
+            self.body.push(Instruction::LocalSet(idx));
+        }
     }
 
     fn declare_var_ty(&mut self, name: &str, ty: WasTy) -> u32 {
@@ -823,8 +873,7 @@ impl<'a> FuncEmitter<'a> {
         match expr {
             Expression::Literal(l) => self.emit_literal(l),
             Expression::Identifier(name, _) => {
-                let idx = self.local_for(name);
-                self.body.push(Instruction::LocalGet(idx));
+                self.emit_ident_load(name);
                 Ok(())
             }
             Expression::Binary(b) => self.emit_binary(b),
@@ -833,6 +882,7 @@ impl<'a> FuncEmitter<'a> {
             Expression::Index(i) => self.emit_index_get(i),
             Expression::Array(a) => self.emit_array(a),
             Expression::Tuple(t) => self.emit_tuple(t),
+            Expression::Record(r) => self.emit_record(r),
             Expression::MemberAccess(m) => self.emit_member_access(m),
             Expression::Conditional(c) => self.emit_conditional(c),
             Expression::Assignment(a) => self.emit_assignment(a),
@@ -1187,32 +1237,31 @@ impl<'a> FuncEmitter<'a> {
     /// `x++` / `++x` / `x--` / `--x` sobre un identificador.
     fn emit_incdec(&mut self, operand: &Expression, op: UnaryOp) -> ClsResult<()> {
         if let Expression::Identifier(name, _) = operand {
-            let idx = self.local_for(name);
             let post = matches!(op, UnaryOp::PostInc | UnaryOp::PostDec);
             let inc = matches!(op, UnaryOp::PreInc | UnaryOp::PostInc);
             if post {
                 let tmp = self.fresh_local();
-                self.body.push(Instruction::LocalGet(idx));
+                self.emit_ident_load(name);
                 self.body.push(Instruction::LocalSet(tmp));
-                self.body.push(Instruction::LocalGet(idx));
+                self.emit_ident_load(name);
                 self.body.push(Instruction::I64Const(1));
                 if inc {
                     self.body.push(Instruction::I64Add);
                 } else {
                     self.body.push(Instruction::I64Sub);
                 }
-                self.body.push(Instruction::LocalSet(idx));
+                self.emit_ident_store(name);
                 self.body.push(Instruction::LocalGet(tmp));
             } else {
-                self.body.push(Instruction::LocalGet(idx));
+                self.emit_ident_load(name);
                 self.body.push(Instruction::I64Const(1));
                 if inc {
                     self.body.push(Instruction::I64Add);
                 } else {
                     self.body.push(Instruction::I64Sub);
                 }
-                self.body.push(Instruction::LocalSet(idx));
-                self.body.push(Instruction::LocalGet(idx));
+                self.emit_ident_store(name);
+                self.emit_ident_load(name);
             }
             Ok(())
         } else {
@@ -1240,9 +1289,8 @@ impl<'a> FuncEmitter<'a> {
         let op = a.op;
         match &*a.target {
             Expression::Identifier(name, _) => {
-                let idx = self.local_for(name);
                 if is_compound(op) {
-                    self.body.push(Instruction::LocalGet(idx));
+                    self.emit_ident_load(name);
                     self.emit_expression(&a.value)?;
                     match op {
                         Operator::PlusEqual => self.body.push(Instruction::I64Add),
@@ -1253,8 +1301,49 @@ impl<'a> FuncEmitter<'a> {
                 } else {
                     self.emit_expression(&a.value)?;
                 }
-                self.body.push(Instruction::LocalSet(idx));
-                self.body.push(Instruction::LocalGet(idx));
+                self.emit_ident_store(name);
+                self.emit_ident_load(name);
+                Ok(())
+            }
+            Expression::Index(i) if matches!(self.types.get(&expr_span(&i.object)), Some(Type::Record(_, _))) => {
+                if is_compound(op) {
+                    return Err(crate::error::ClsError::CompileError(
+                        "Operadores compuestos (+=) sobre registros no soportados en el JIT".to_string(),
+                    ));
+                }
+                // r["key"] = val → record_set(ptr, key, val_bits)
+                let elem_ty = self.index_elem_type(i)?;
+                let val_tmp = self.fresh_local_ty(elem_ty);
+                self.emit_expression(&i.object)?;
+                self.emit_expression(&i.index)?;
+                self.emit_expression(&a.value)?;
+                self.body.push(match elem_ty {
+                    WasTy::F64 => Instruction::LocalSet(val_tmp),
+                    WasTy::I32 => Instruction::LocalSet(val_tmp),
+                    WasTy::I64 => Instruction::LocalSet(val_tmp),
+                });
+                self.body.push(match elem_ty {
+                    WasTy::F64 => Instruction::LocalGet(val_tmp),
+                    WasTy::I32 => Instruction::LocalGet(val_tmp),
+                    WasTy::I64 => Instruction::LocalGet(val_tmp),
+                });
+                match elem_ty {
+                    WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+                    WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+                    WasTy::I64 => {}
+                }
+                self.host.call(HostFn::RecordSet, &mut self.body);
+                // write-back del ptr (el record pudo crecer y reallocarse)
+                if let Expression::Identifier(name, _) = &*i.object {
+                    self.emit_ident_store(name);
+                } else {
+                    self.body.push(Instruction::Drop);
+                }
+                self.body.push(match elem_ty {
+                    WasTy::F64 => Instruction::LocalGet(val_tmp),
+                    WasTy::I32 => Instruction::LocalGet(val_tmp),
+                    WasTy::I64 => Instruction::LocalGet(val_tmp),
+                });
                 Ok(())
             }
             Expression::Index(i) => {
@@ -1521,6 +1610,25 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
+    /// `http.X(...)` → host del módulo http.
+    fn emit_http_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
+        use HostFn::*;
+        match member.member.as_str() {
+            "get" => {
+                self.emit_expression(&c.args[0])?;
+                self.host.call(HttpGet, &mut self.body);
+                Ok(())
+            }
+            "post" => {
+                self.emit_expression(&c.args[0])?;
+                self.emit_expression(&c.args[1])?;
+                self.host.call(HttpPost, &mut self.body);
+                Ok(())
+            }
+            _ => Err(self.unsupported_expr(&Expression::Call(c.clone()))),
+        }
+    }
+
     /// Tipo de retorno de una llamada o miembro de un módulo stdlib.
     fn module_call_ret(&self, expr: &Expression) -> Option<WasTy> {
         if let Expression::Call(c) = expr {
@@ -1542,6 +1650,9 @@ impl<'a> FuncEmitter<'a> {
                             "exists" => Some(WasTy::I32),
                             _ => Some(WasTy::I64),
                         };
+                    }
+                    if obj == "http" {
+                        return Some(WasTy::I64);
                     }
                 }
             }
@@ -1630,6 +1741,9 @@ impl<'a> FuncEmitter<'a> {
                 }
                 if obj_name == "fs" {
                     return self.emit_fs_call(member, c);
+                }
+                if obj_name == "http" {
+                    return self.emit_http_call(member, c);
                 }
             }
             let obj_ty = self.types.get(&expr_span(&member.object)).cloned().unwrap_or(Type::Any);
@@ -1727,6 +1841,25 @@ impl<'a> FuncEmitter<'a> {
                             let cls_t = self.array_elem_cls_type(&member.object)?;
                             self.body.push(Instruction::I64Const(arr_kind_code(&cls_t)));
                             self.host.call(HostFn::ArrJoin, &mut self.body);
+                            return Ok(());
+                        }
+                        _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
+                    }
+                }
+                Type::Record(_, _) => {
+                    self.emit_expression(&member.object)?;
+                    match member.member.as_str() {
+                        "has" => {
+                            self.emit_expression(&c.args[0])?;
+                            self.host.call(HostFn::RecordHas, &mut self.body);
+                            return Ok(());
+                        }
+                        "keys" => {
+                            self.host.call(HostFn::RecordKeys, &mut self.body);
+                            return Ok(());
+                        }
+                        "values" => {
+                            self.host.call(HostFn::RecordValues, &mut self.body);
                             return Ok(());
                         }
                         _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
@@ -2196,6 +2329,13 @@ impl<'a> FuncEmitter<'a> {
                 }
                 _ => Err(self.unsupported_expr(&Expression::MemberAccess(m.clone()))),
             },
+            Type::Record(_, _) => match m.member.as_str() {
+                "length" | "size" => {
+                    self.host.call(HostFn::RecordLen, &mut self.body);
+                    Ok(())
+                }
+                _ => Err(self.unsupported_expr(&Expression::MemberAccess(m.clone()))),
+            },
             Type::Named(name, _) => {
                 if let Some(info) = self.struct_defs.get(name.as_str()) {
                     let fidx = info.fields.iter().position(|(n, _)| *n == m.member).ok_or_else(|| {
@@ -2309,7 +2449,41 @@ impl<'a> FuncEmitter<'a> {
         ))
     }
 
+    /// Literal de record `{ a: 1, b: "x" }` → record_new + record_set.
+    fn emit_record(&mut self, r: &RecordExpr) -> ClsResult<()> {
+        let n = r.entries.len() as i64;
+        self.body.push(Instruction::I64Const(n));
+        self.host.call(HostFn::RecordNew, &mut self.body);
+        let ptr = self.fresh_local();
+        self.body.push(Instruction::LocalSet(ptr));
+        for (key, val) in &r.entries {
+            self.body.push(Instruction::LocalGet(ptr));
+            let k = self.intern_string(key);
+            self.emit_load_str(k);
+            self.emit_expression(val)?;
+            match self.value_type(val)? {
+                WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+                WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+                WasTy::I64 => {}
+            }
+            self.host.call(HostFn::RecordSet, &mut self.body);
+            self.body.push(Instruction::Drop);
+        }
+        self.body.push(Instruction::LocalGet(ptr));
+        Ok(())
+    }
+
     fn emit_index_get(&mut self, i: &IndexExpr) -> ClsResult<()> {
+        // Record: r["key"] → record_get(ptr, key)
+        let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
+        if matches!(obj_ty, Some(Type::Record(_, _))) {
+            self.emit_expression(&i.object)?;
+            self.emit_expression(&i.index)?;
+            self.host.call(HostFn::RecordGet, &mut self.body);
+            let elem_ty = self.index_elem_type(i)?;
+            self.bits_to_elem(elem_ty)?;
+            return Ok(());
+        }
         let elem_ty = self.index_elem_type(i)?;
         self.emit_expression(&i.object)?;
         self.emit_expression(&i.index)?;
@@ -2370,6 +2544,7 @@ impl<'a> FuncEmitter<'a> {
         })?;
         match t {
             Type::Array(elem) => was_type(elem),
+            Type::Record(_, v) => was_type(v),
             Type::Tuple(slots) => {
                 // índice literal → slot exacto; dinámico → primer slot (o i64)
                 match &*i.index {
@@ -2484,9 +2659,8 @@ impl<'a> FuncEmitter<'a> {
     /// variable y deja el valor como resultado (para `drop` del statement).
     fn writeback_array(&mut self, obj: &Expression) -> ClsResult<()> {
         if let Expression::Identifier(name, _) = obj {
-            let idx = self.local_for(name);
-            self.body.push(Instruction::LocalSet(idx));
-            self.body.push(Instruction::LocalGet(idx));
+            self.emit_ident_store(name);
+            self.emit_ident_load(name);
         }
         Ok(())
     }
@@ -2667,6 +2841,8 @@ struct Engine<'a> {
     struct_defs: HashMap<String, StructInfo>,
     native_indexes: HashMap<String, u32>,
     native_ret: HashMap<String, char>,
+    globals: HashMap<String, u32>,
+    global_inits: Vec<(u32, Expression)>,
     target: Target,
 }
 
@@ -2740,6 +2916,8 @@ impl<'a> Engine<'a> {
             struct_defs: HashMap::new(),
             native_indexes: HashMap::new(),
             native_ret: HashMap::new(),
+            globals: HashMap::new(),
+            global_inits: Vec::new(),
             target,
         }
     }
@@ -2920,7 +3098,8 @@ impl<'a> Engine<'a> {
             ArrUnshift, ArrIndexOf, ArrIncludes, ArrJoin, ArrReverse, MathSqrt, MathPow, MathMin,
             MathMax, MathFloor, MathCeil, MathRound, MathRandom, MathSin, MathCos, MathTan, MathLog,
             MathRange, JsonStringify, FsExists, FsCwd, FsReadFile, FsWriteFile, FsListDir, FsMkdir,
-            FsRm,
+            FsRm, RecordNew, RecordSet, RecordGet, RecordHas, RecordLen, RecordKeys, RecordValues,
+            HttpGet, HttpPost,
         ] {
             self.register_host(h);
         }
@@ -2939,11 +3118,52 @@ impl<'a> Engine<'a> {
             Instruction::I64Const(1048576),
         );
 
+        // Globals de usuario: `var x` / `const x` top-level → sección globals.
+        // índice 0 = heap_ptr; los de usuario empiezan en 1.
+        let mut next_global = 1u32;
+        for stmt in &module.statements {
+            if let Statement::VarDecl(v) | Statement::ConstDecl(v) = stmt {
+                let w = match (&v.type_ann, &v.value) {
+                    (Some(ann), _) => was_type(&annotation_to_type(ann)).unwrap_or(WasTy::I64),
+                    (None, Some(val)) => self.expr_was_type(val).unwrap_or(WasTy::I64),
+                    (None, None) => WasTy::I64,
+                };
+                let is_const = matches!(stmt, Statement::ConstDecl(_));
+                let _ = is_const;
+                let idx = next_global;
+                next_global += 1;
+                self.globals.insert(v.name.clone(), idx);
+                // mutable=true siempre: __init_globals las setea (incluso const, que
+                // no se vuelve a escribir en runtime).
+                self.globals_sec.global(
+                    GlobalType {
+                        val_type: w.val_type(),
+                        mutable: true,
+                    },
+                    match w {
+                        WasTy::F64 => Instruction::F64Const(0.0),
+                        WasTy::I32 => Instruction::I32Const(0),
+                        WasTy::I64 => Instruction::I64Const(0),
+                    },
+                );
+                if let Some(val) = &v.value {
+                    self.global_inits.push((idx, val.clone()));
+                }
+            }
+        }
+
         // Internas __alloc y __load_str.
         let alloc_idx = self.declare_wasm_function(vec![ValType::I64], vec![ValType::I64]);
         self.func_indexes.insert("__alloc".to_string(), alloc_idx);
         let ls_idx = self.declare_wasm_function(vec![ValType::I64], vec![ValType::I64]);
         self.func_indexes.insert("__load_str".to_string(), ls_idx);
+
+        // __init_globals: se declara DESPUÉS de alloc/load_str para que el code_sec
+        // quede alineado (alloc, load_str, init, cls...).
+        if !self.global_inits.is_empty() {
+            let ig_idx = self.declare_wasm_function(vec![], vec![]);
+            self.func_indexes.insert("__init_globals".to_string(), ig_idx);
+        }
 
         // Funciones CLS.
         let mut cls_funcs: Vec<FunctionDecl> = Vec::new();
@@ -2974,6 +3194,9 @@ impl<'a> Engine<'a> {
         // __alloc y __load_str (el pool de strings ya está completo).
         let alloc_body = self.build_allocator();
         let load_str_body = self.build_load_str();
+        // __init_globals se construye ANTES del data segment: sus strings (valores
+        // iniciales de las globals) deben internarse en el pool antes del data.
+        let init_body = self.build_global_init()?;
 
         // Data segment con la tabla de strings.
         let data_bytes = self.build_string_data();
@@ -2985,9 +3208,12 @@ impl<'a> Engine<'a> {
             data: data_bytes,
         });
 
-        // Code section en el MISMO orden que las funciones: alloc, load_str, cls...
+        // Code section en el MISMO orden que las funciones: alloc, load_str, init, cls...
         self.code_sec.function(&alloc_body);
         self.code_sec.function(&load_str_body);
+        if let Some(init) = init_body {
+            self.code_sec.function(&init);
+        }
         for (_name, body) in bodies {
             self.code_sec.function(&body);
         }
@@ -3017,10 +3243,17 @@ impl<'a> Engine<'a> {
             &self.struct_defs,
             &self.native_indexes,
             &self.native_ret,
+            &self.globals,
             &self.target,
         );
         for (i, p) in f.params.iter().enumerate() {
             fe.declare_var_ty(&p.name, was_type(&param_types[i])?);
+        }
+        // main inicializa las globals top-level al arrancar.
+        if f.name == "main" {
+            if let Some(idx) = self.func_indexes.get("__init_globals") {
+                fe.body.push(Instruction::Call(*idx));
+            }
         }
         for s in &f.body.statements {
             fe.emit_statement(s)?;
@@ -3044,8 +3277,55 @@ impl<'a> Engine<'a> {
         Ok(func)
     }
 
-    fn build_allocator(&self) -> Function {
-        // (func (param $n i64) (result i64)
+    /// Tipo WASM de una expresión desde el type map (fallback I64).
+    fn expr_was_type(&self, e: &Expression) -> ClsResult<WasTy> {
+        let span = expr_span(e);
+        if let Some(t) = self.types.get(&span) {
+            was_type(t)
+        } else {
+            Ok(WasTy::I64)
+        }
+    }
+
+    /// `__init_globals`: setea cada global de usuario con su valor inicial.
+    fn build_global_init(&mut self) -> ClsResult<Option<Function>> {
+        if self.global_inits.is_empty() {
+            return Ok(None);
+        }
+        let mut fe = FuncEmitter::new(
+            self.types,
+            HostCaller {
+                indexes: self.host_indexes.clone(),
+            },
+            &mut self.string_pool,
+            &mut self.string_index,
+            &self.func_indexes,
+            &self.func_defaults,
+            &self.enum_defs,
+            &self.struct_defs,
+            &self.native_indexes,
+            &self.native_ret,
+            &self.globals,
+            &self.target,
+        );
+        for (idx, val) in &self.global_inits {
+            fe.emit_expression(val)?;
+            fe.body.push(Instruction::GlobalSet(*idx));
+        }
+        fe.body.push(Instruction::End);
+        // Declarar los temporales que la emisión pudo crear (emit_array, etc.).
+        let local_types: Vec<ValType> = (0..fe.next_local)
+            .map(|i| fe.local_tys.get(&i).copied().unwrap_or(WasTy::I64).val_type())
+            .collect();
+        let grouped: Vec<(u32, ValType)> = local_types.iter().map(|t| (1, *t)).collect();
+        let mut func = Function::new(grouped);
+        for inst in fe.body {
+            func.instruction(inst);
+        }
+        Ok(Some(func))
+    }
+
+    fn build_allocator(&self) -> Function {        // (func (param $n i64) (result i64)
         //   local 0 = n (param), local 1 = ptr, local 2 = end
         //   ptr = global 0
         //   end = (ptr + n + 8) & -8

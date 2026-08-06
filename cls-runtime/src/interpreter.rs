@@ -1535,7 +1535,7 @@ impl Interpreter {
                         Ok(Value::Promise(Promise::new(Box::new(task))))
                     } else {
                         // Si hay closure (definida en module/namespace), usarlo como base
-                        let saved = if let Some(c) = closure {
+                        let saved = if let Some(c) = closure.as_ref() {
                             let base = c.lock().unwrap().clone();
                             Some(std::mem::replace(&mut self.env, base))
                         } else {
@@ -1558,7 +1558,15 @@ impl Interpreter {
                             _ => result,
                         };
                         self.env.pop_scope();
-                        if let Some(s) = saved { self.env = s; }
+                        if let Some(mut s) = saved {
+                            // Persistir los cambios a variables top-level hechos en
+                            // el closure clonado (globals mutables entre funciones).
+                            s.sync_global_from(&self.env);
+                            if let Some(c) = &closure {
+                                c.lock().unwrap().sync_global_from(&self.env);
+                            }
+                            self.env = s;
+                        }
                         result
                     }
                 }

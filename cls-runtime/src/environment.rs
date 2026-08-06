@@ -73,6 +73,16 @@ impl Environment {
     pub fn all(&self) -> std::collections::HashMap<String, Value> {
         self.scopes.first().map(|s| s.all()).unwrap_or_default()
     }
+
+    /// Sincroniza el scope global (top-level) desde otro env. Las funciones corren
+    /// en un closure clonado del módulo; al volver, los `var` top-level mutados
+    /// dentro de la función deben persistir en el env real.
+    pub fn sync_global_from(&mut self, other: &Environment) {
+        if let (Some(dst), Some(src)) = (self.scopes.first_mut(), other.scopes.first()) {
+            dst.variables.extend(src.variables.clone());
+            dst.consts.extend(src.consts.clone());
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
