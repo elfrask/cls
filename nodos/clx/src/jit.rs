@@ -78,7 +78,7 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
         if timing {
             eprintln!("[JIT-TIMING] caché CLS→WASM: HIT ({} bytes)", cached.len());
         }
-        return run_wasm(&cached, entry, app_args, timing, t);
+        return run_wasm(&cached, entry, app_args, timing, t, None);
     }
     if timing {
         eprintln!("[JIT-TIMING] caché CLS→WASM: miss");
@@ -140,16 +140,10 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
         eprintln!("[JIT-TIMING] WASM size: {} bytes", wasm_bytes.len());
     }
 
-    // Guardar en caché para la próxima corrida (fallo silencioso: es solo caché).
-    if let Err(e) = std::fs::create_dir_all(cache_dir())
-        .and_then(|_| std::fs::write(&cache_path, &wasm_bytes))
-    {
-        if timing {
-            eprintln!("[JIT-TIMING] aviso: no se pudo escribir el caché: {}", e);
-        }
-    }
-
-    run_wasm(&wasm_bytes, entry, app_args, timing, t)
+    // Guardar en caché SOLO si run_wasm valida y ejecuta bien (evita cachear WASM
+    // inválido si el emisor tiene un bug). run_wasm recibe el path para escribirlo
+    // tras una validación exitosa de Module::new.
+    run_wasm(&wasm_bytes, entry, app_args, timing, t, Some(cache_path))
 }
 
 /// Config de caché de wasmtime (WASM→nativo): crea el TOML por defecto si falta.
@@ -170,7 +164,14 @@ fn wasmtime_cache_config() -> Option<wasmtime::Config> {
     }
 }
 
-fn run_wasm(wasm_bytes: &[u8], entry: &str, app_args: &[String], timing: bool, mut t: Instant) -> i32 {
+fn run_wasm(
+    wasm_bytes: &[u8],
+    entry: &str,
+    app_args: &[String],
+    timing: bool,
+    mut t: Instant,
+    cache_path: Option<std::path::PathBuf>,
+) -> i32 {
     let engine = match wasmtime_cache_config() {
         Some(config) => match Engine::new(&config) {
             Ok(e) => e,
@@ -187,10 +188,20 @@ fn run_wasm(wasm_bytes: &[u8], entry: &str, app_args: &[String], timing: bool, m
         Ok(m) => m,
         Err(e) => {
             eprintln!("[JIT] Módulo WASM inválido para '{}':\n{:?}", entry, e);
+            // No dejar WASM inválido en el caché.
+            if let Some(p) = &cache_path {
+                let _ = std::fs::remove_file(p);
+            }
             return 1;
         }
     };
     t = tick(timing, "Module::new (Cranelift)", t);
+
+    // El WASM es válido: persistirlo en el caché CLS→WASM (fallo silencioso).
+    if let Some(p) = &cache_path {
+        let _ = std::fs::create_dir_all(cache_dir())
+            .and_then(|_| std::fs::write(p, wasm_bytes));
+    }
 
     let mut store = Store::new(&engine, HostState::default());
     let mut linker = Linker::new(&engine);
@@ -673,6 +684,7 @@ fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String>
         .map_err(|e| e.to_string())?;
 
     register_stdlib_hosts(linker)?;
+    register_record_hosts(linker)?;
 
     Ok(())
 }
@@ -1075,6 +1087,144 @@ fn register_stdlib_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
             let s = caller_read_str(&mut caller, p);
             let _ = std::fs::remove_file(&s);
             0
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Registra los hosts de records (layout: [cap:i64][len:i64][key,val,key,val...], stride 16).
+fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
+    linker
+        .func_wrap(HOST, "record_new", |mut caller: Caller<'_, HostState>, cap: i64| -> i64 {
+            let size = cap * 16 + 16;
+            let ptr = caller_alloc(&mut caller, size).unwrap_or(0) as usize;
+            arr_write_i64(&mut caller, ptr, cap);
+            arr_write_i64(&mut caller, ptr + 8, 0);
+            ptr as i64
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "record_set", |mut caller: Caller<'_, HostState>, ptr: i64, key: i64, val: i64| -> i64 {
+            let p = ptr as usize;
+            let len = arr_len(&mut caller, p) as usize;
+            let cap = arr_cap(&mut caller, p) as usize;
+            let k = caller_read_str(&mut caller, key);
+            for i in 0..len {
+                let ki = arr_read_i64(&mut caller, p + 16 + i * 16);
+                if caller_read_str(&mut caller, ki) == k {
+                    arr_write_i64(&mut caller, p + 16 + i * 16 + 8, val);
+                    return p as i64;
+                }
+            }
+            let mut new_p = p;
+            let mut new_cap = cap;
+            if len >= cap {
+                // Realloc: copiar entradas (stride 16 = key+val).
+                new_cap = if cap == 0 { 4 } else { cap * 2 };
+                let size = (new_cap * 16 + 16) as i64;
+                let np = caller_alloc(&mut caller, size).unwrap_or(0) as usize;
+                arr_write_i64(&mut caller, np, new_cap as i64);
+                arr_write_i64(&mut caller, np + 8, len as i64);
+                for i in 0..len {
+                    let k = arr_read_i64(&mut caller, p + 16 + i * 16);
+                    let v = arr_read_i64(&mut caller, p + 16 + i * 16 + 8);
+                    arr_write_i64(&mut caller, np + 16 + i * 16, k);
+                    arr_write_i64(&mut caller, np + 16 + i * 16 + 8, v);
+                }
+                new_p = np;
+            }
+            arr_write_i64(&mut caller, new_p + 16 + len * 16, key);
+            arr_write_i64(&mut caller, new_p + 16 + len * 16 + 8, val);
+            arr_write_i64(&mut caller, new_p + 8, (len + 1) as i64);
+            new_p as i64
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "record_get", |mut caller: Caller<'_, HostState>, ptr: i64, key: i64| -> i64 {
+            let p = ptr as usize;
+            let len = arr_len(&mut caller, p) as usize;
+            let k = caller_read_str(&mut caller, key);
+            for i in 0..len {
+                let ki = arr_read_i64(&mut caller, p + 16 + i * 16);
+                if caller_read_str(&mut caller, ki) == k {
+                    return arr_read_i64(&mut caller, p + 16 + i * 16 + 8);
+                }
+            }
+            0
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "record_has", |mut caller: Caller<'_, HostState>, ptr: i64, key: i64| -> i32 {
+            let p = ptr as usize;
+            let len = arr_len(&mut caller, p) as usize;
+            let k = caller_read_str(&mut caller, key);
+            for i in 0..len {
+                let ki = arr_read_i64(&mut caller, p + 16 + i * 16);
+                if caller_read_str(&mut caller, ki) == k {
+                    return 1;
+                }
+            }
+            0
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "record_len", |mut caller: Caller<'_, HostState>, ptr: i64| -> i64 {
+            arr_len(&mut caller, ptr as usize)
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "record_keys", |mut caller: Caller<'_, HostState>, ptr: i64| -> i64 {
+            let p = ptr as usize;
+            let len = arr_len(&mut caller, p) as usize;
+            let size = (len * 8 + 16) as i64;
+            let out = caller_alloc(&mut caller, size).unwrap_or(0) as usize;
+            arr_write_i64(&mut caller, out, len as i64);
+            arr_write_i64(&mut caller, out + 8, len as i64);
+            for i in 0..len {
+                let ki = arr_read_i64(&mut caller, p + 16 + i * 16);
+                arr_set(&mut caller, out, i, 8, ki);
+            }
+            out as i64
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "record_values", |mut caller: Caller<'_, HostState>, ptr: i64| -> i64 {
+            let p = ptr as usize;
+            let len = arr_len(&mut caller, p) as usize;
+            let size = (len * 8 + 16) as i64;
+            let out = caller_alloc(&mut caller, size).unwrap_or(0) as usize;
+            arr_write_i64(&mut caller, out, len as i64);
+            arr_write_i64(&mut caller, out + 8, len as i64);
+            for i in 0..len {
+                let vi = arr_read_i64(&mut caller, p + 16 + i * 16 + 8);
+                arr_set(&mut caller, out, i, 8, vi);
+            }
+            out as i64
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "http_get", |mut caller: Caller<'_, HostState>, url: i64| -> i64 {
+            let u = caller_read_str(&mut caller, url);
+            match ureq::get(&u).call() {
+                Ok(resp) => match resp.into_string() {
+                    Ok(body) => caller_write_str(&mut caller, &body).unwrap_or(0),
+                    Err(_) => 0,
+                },
+                Err(_) => 0,
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "http_post", |mut caller: Caller<'_, HostState>, url: i64, data: i64| -> i64 {
+            let u = caller_read_str(&mut caller, url);
+            let d = caller_read_str(&mut caller, data);
+            match ureq::post(&u).send_string(&d) {
+                Ok(resp) => match resp.into_string() {
+                    Ok(body) => caller_write_str(&mut caller, &body).unwrap_or(0),
+                    Err(_) => 0,
+                },
+                Err(_) => 0,
+            }
         })
         .map_err(|e| e.to_string())?;
     Ok(())
