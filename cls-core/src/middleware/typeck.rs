@@ -62,11 +62,27 @@ impl TypeChecker {
         if !self.config.check {
             return Ok(());
         }
+        // Pre-registrar firmas de funciones top-level (uso antes de definición).
+        for stmt in &module.statements {
+            if let Statement::FunctionDecl(f) = stmt {
+                self.define_function_signature(f);
+            }
+        }
         for stmt in &module.statements {
             self.check_statement(stmt);
         }
         // No fallar si hay errores; reportar como diagnóstico
         Ok(())
+    }
+
+    fn define_function_signature(&mut self, f: &FunctionDecl) {
+        let param_tys: Vec<Type> = f.params.iter()
+            .map(|p| p.type_ann.as_ref().map(|t| self.resolve_type_annotation(t)).unwrap_or(Type::Any))
+            .collect();
+        let ret = f.return_type.as_ref()
+            .map(|t| self.resolve_type_annotation(t))
+            .unwrap_or(Type::Void);
+        self.define(&f.name, Type::Fun(param_tys, Box::new(ret)));
     }
 
     /// Chequea un módulo con un prelude de módulos importados.
@@ -198,6 +214,45 @@ impl TypeChecker {
                 Type::Void
             }
             Statement::Import(_) | Statement::FromImport(_) | Statement::Include(_) => Type::Any,
+            Statement::When(w) => {
+                // Cada rama se chequea en su propio scope (símbolos condicionales).
+                for branch in &w.branches {
+                    self.push_scope();
+                    self.check_block(&branch.block);
+                    self.pop_scope();
+                }
+                Type::Void
+            }
+            Statement::Extension(e) => {
+                // Funciones/structs/variables nativas se registran como símbolos.
+                for decl in &e.declarations {
+                    match decl {
+                        NativeDecl::Function(f) => {
+                            let mut param_tys = Vec::new();
+                            for p in &f.params {
+                                let t = p.type_ann.as_ref()
+                                    .map(|ta| self.resolve_type_annotation(ta))
+                                    .unwrap_or(Type::Any);
+                                param_tys.push(t);
+                            }
+                            let ret = f.return_type.as_ref()
+                                .map(|ta| self.resolve_type_annotation(ta))
+                                .unwrap_or(Type::Void);
+                            self.define(&f.name, Type::Fun(param_tys, Box::new(ret)));
+                        }
+                        NativeDecl::Structure(s) => {
+                            self.define(&s.name, Type::Named(s.name.clone(), vec![]));
+                        }
+                        NativeDecl::Var(v) => {
+                            let t = v.type_ann.as_ref()
+                                .map(|ta| self.resolve_type_annotation(ta))
+                                .unwrap_or(Type::Any);
+                            self.define(&v.name, t);
+                        }
+                    }
+                }
+                Type::Void
+            }
             Statement::Config(_) | Statement::Meta(_) => Type::Void,
             Statement::Cmx(_) => Type::Cmx,
         }
@@ -332,9 +387,15 @@ impl TypeChecker {
     }
 
     fn check_foreach(&mut self, fe: &ForEachStatement) -> Type {
-        let _iter = self.check_expression(&fe.iterable);
+        let iter_ty = self.check_expression(&fe.iterable);
+        let item_ty = match &iter_ty {
+            Type::Array(e) => (**e).clone(),
+            Type::Tuple(s) => s.first().cloned().unwrap_or(Type::Any),
+            Type::Named(n, _) if self.enums.contains(n) => iter_ty.clone(),
+            _ => Type::Any,
+        };
         self.push_scope();
-        self.define(&fe.item_name, Type::Any);
+        self.define(&fe.item_name, item_ty);
         if let Some(idx_name) = &fe.index_name {
             self.define(idx_name, Type::Int);
         }
@@ -436,7 +497,14 @@ impl TypeChecker {
             Expression::Conditional(c) => self.check_conditional(c),
             Expression::Assignment(a) => self.check_assignment(a),
             Expression::Parenthesized(inner, _) => self.check_expression(inner),
-            Expression::StringInterpolation(_) => Type::String,
+            Expression::StringInterpolation(s) => {
+                for part in &s.parts {
+                    if let InterpolationPart::Expr(e) = part {
+                        self.check_expression(e);
+                    }
+                }
+                Type::String
+            }
             Expression::Cmx(_) => Type::Cmx,
             Expression::NamespaceAccess(_, _, span) => {
                 self.error("Namespace access sin tipo", span.clone())
@@ -516,7 +584,8 @@ impl TypeChecker {
             }
             Operator::StrictEqual | Operator::NotEqual
             | Operator::LessThan | Operator::LessEqual
-            | Operator::GreaterThan | Operator::GreaterEqual => {
+            | Operator::GreaterThan | Operator::GreaterEqual
+            | Operator::In | Operator::Is => {
                 Type::Bool
             }
             Operator::And | Operator::Or => {
@@ -543,6 +612,15 @@ impl TypeChecker {
 
     fn check_call(&mut self, call: &CallExpr) -> Type {
         let callee_type = self.check_expression(&call.callee);
+
+        // Métodos de primitivos (callee MemberAccess): el tipo del miembro ES el
+        // resultado (`.join(sep)` → String, `.contains(x)` → Bool, ...).
+        if matches!(&*call.callee, Expression::MemberAccess(_)) {
+            for arg in &call.args {
+                self.check_expression(arg);
+            }
+            return callee_type;
+        }
 
         // Verificar args y recolectar tipos (para inferir genéricos)
         let arg_types: Vec<Type> = call.args.iter()
@@ -626,8 +704,37 @@ impl TypeChecker {
                 return Type::Named(name.clone(), vec![]);
             }
         }
-        let _ = obj_type;
-        Type::Any // No podemos saber el tipo del miembro en tiempo de compilación
+        // Métodos/getters de primitivos (sin boxing): tipo conocido por miembro.
+        match obj_type {
+            Type::String => match member.member.as_str() {
+                "length" => Type::Int,
+                "upper" | "lower" | "trim" | "toString" => Type::String,
+                "contains" | "startsWith" | "endsWith" | "isEmpty" => Type::Bool,
+                _ => Type::Any,
+            },
+            Type::Array(_) => match member.member.as_str() {
+                "length" => Type::Int,
+                "join" | "toString" => Type::String,
+                "includes" | "isEmpty" => Type::Bool,
+                "indexOf" => Type::Int,
+                _ => Type::Any,
+            },
+            Type::Tuple(_) => match member.member.as_str() {
+                "length" => Type::Int,
+                "join" | "toString" => Type::String,
+                _ => Type::Any,
+            },
+            Type::Int | Type::Float => match member.member.as_str() {
+                "toString" => Type::String,
+                "abs" => obj_type,
+                _ => Type::Any,
+            },
+            Type::Bool | Type::Char => match member.member.as_str() {
+                "toString" => Type::String,
+                _ => Type::Any,
+            },
+            _ => Type::Any,
+        }
     }
 
     fn check_index(&mut self, idx: &IndexExpr) -> Type {
