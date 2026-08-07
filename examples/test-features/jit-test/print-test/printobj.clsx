@@ -1,0 +1,16 @@
+class Persona {
+    var nombre: String;
+    var edad: int;
+
+    function main() {
+        me.nombre = "Ana";
+        me.edad = 30;
+    };
+};
+
+function main(args: String[]) -> int {
+    var p = Persona();
+    print("objeto:", p);
+    print("nombre:", p.nombre, "edad:", p.edad);
+    return 0;
+};
