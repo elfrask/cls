@@ -75,6 +75,7 @@ pub enum HostFn {
     ArrIncludes,
     ArrJoin,
     ArrReverse,
+    ArrToString,
     MathSqrt,
     MathPow,
     MathMin,
@@ -103,6 +104,7 @@ pub enum HostFn {
     RecordLen,
     RecordKeys,
     RecordValues,
+    RecordToString,
     HttpGet,
     HttpPost,
 }
@@ -150,6 +152,7 @@ impl HostFn {
             ArrIncludes => "arr_includes",
             ArrJoin => "arr_join",
             ArrReverse => "arr_reverse",
+            ArrToString => "arr_to_string",
             MathSqrt => "math_sqrt",
             MathPow => "math_pow",
             MathMin => "math_min",
@@ -178,6 +181,7 @@ impl HostFn {
             RecordLen => "record_len",
             RecordKeys => "record_keys",
             RecordValues => "record_values",
+            RecordToString => "record_to_string",
             HttpGet => "http_get",
             HttpPost => "http_post",
         }
@@ -213,6 +217,7 @@ impl HostFn {
             ArrIndexOf => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
             ArrIncludes => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I32]),
             ArrJoin => (vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
+            ArrToString => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
             MathSqrt | MathFloor | MathCeil | MathRound | MathSin | MathCos | MathTan | MathLog => {
                 (vec![ValType::F64], vec![ValType::F64])
             }
@@ -226,11 +231,12 @@ impl HostFn {
             FsWriteFile => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             FsListDir | FsMkdir | FsRm => (i64p.clone(), vec![ValType::I64]),
             RecordNew => (i64p.clone(), vec![ValType::I64]),
-            RecordSet => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
-            RecordGet => (i64p.clone().into_iter().chain(std::iter::once(ValType::I64)).collect(), vec![ValType::I64]),
+            RecordSet => (vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
+            RecordGet => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             RecordHas => (vec![ValType::I64, ValType::I64], vec![ValType::I32]),
             RecordLen => (i64p.clone(), vec![ValType::I64]),
             RecordKeys | RecordValues => (i64p.clone(), vec![ValType::I64]),
+            RecordToString => (i64p.clone(), vec![ValType::I64]),
             HttpGet => (i64p.clone(), vec![ValType::I64]),
             HttpPost => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
         }
@@ -1374,6 +1380,8 @@ impl<'a> FuncEmitter<'a> {
                     WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
                     WasTy::I64 => {}
                 }
+                let cls_t = self.types.get(&expr_span(&a.value)).cloned().unwrap_or(Type::Any);
+                self.body.push(Instruction::I64Const(arr_kind_code(&cls_t)));
                 self.host.call(HostFn::RecordSet, &mut self.body);
                 // write-back del ptr (el record pudo crecer y reallocarse)
                 if let Expression::Identifier(name, _) = &*i.object {
@@ -2249,7 +2257,20 @@ impl<'a> FuncEmitter<'a> {
             Type::Bool => self.host.call(HostFn::PrintBool, &mut self.body),
             Type::Char => self.host.call(HostFn::PrintChar, &mut self.body),
             Type::Float => self.host.call(HostFn::PrintFloat, &mut self.body),
-            Type::Array(_) => self.host.call(HostFn::PrintInt, &mut self.body),
+            Type::Array(elem) => {
+                // Formatear `[e1, e2, ...]` como el walker (evita imprimir el ptr).
+                let w = was_type(&*elem)?;
+                let kind = arr_kind_code(&*elem);
+                self.body.push(Instruction::I64Const(elem_size_bytes(w)));
+                self.body.push(Instruction::I64Const(kind));
+                self.host.call(HostFn::ArrToString, &mut self.body);
+                self.host.call(HostFn::PrintStr, &mut self.body);
+            }
+            Type::Record(_, _) => {
+                // Formatear `{k: v, ...}` como el walker (evita imprimir el ptr).
+                self.host.call(HostFn::RecordToString, &mut self.body);
+                self.host.call(HostFn::PrintStr, &mut self.body);
+            }
             Type::Named(name, _) if self.struct_defs.contains_key(&name) => {
                 let info = self.struct_defs[&name].clone();
                 let ptr = self.fresh_local();
@@ -2680,6 +2701,8 @@ impl<'a> FuncEmitter<'a> {
                 WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
                 WasTy::I64 => {}
             }
+            let cls_t = self.types.get(&expr_span(val)).cloned().unwrap_or(Type::Any);
+            self.body.push(Instruction::I64Const(arr_kind_code(&cls_t)));
             self.host.call(HostFn::RecordSet, &mut self.body);
             self.body.push(Instruction::Drop);
         }
@@ -3421,7 +3444,7 @@ impl<'a> Engine<'a> {
             MathMax, MathFloor, MathCeil, MathRound, MathRandom, MathSin, MathCos, MathTan, MathLog,
             MathRange, JsonStringify, FsExists, FsCwd, FsReadFile, FsWriteFile, FsListDir, FsMkdir,
             FsRm, RecordNew, RecordSet, RecordGet, RecordHas, RecordLen, RecordKeys, RecordValues,
-            HttpGet, HttpPost,
+            RecordToString, HttpGet, HttpPost, ArrToString,
         ] {
             self.register_host(h);
         }
