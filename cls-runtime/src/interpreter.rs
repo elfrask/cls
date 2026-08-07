@@ -1397,6 +1397,15 @@ impl Interpreter {
         Ok(None)
     }
 
+    /// Convierte un valor a string para impresión: prioriza `__repr` (representación
+    /// de impresión), luego `__toString`, luego el formato por defecto.
+    fn value_to_print(&mut self, v: &Value, span: &Span) -> ClsResult<String> {
+        if let Some(s) = self.call_magic(v, "__repr", vec![], span)? {
+            return Ok(s.to_string());
+        }
+        self.value_to_string(v, span)
+    }
+
     /// Convierte un valor a string, invocando `__toString` si es un objeto que lo implementa.
     fn value_to_string(&mut self, v: &Value, span: &Span) -> ClsResult<String> {
         if let Some(s) = self.call_magic(v, "__toString", vec![], span)? {
@@ -1429,11 +1438,11 @@ impl Interpreter {
         }
     }
 
-    /// Interceptor de `print(...)` — usa `__toString` por cada argumento.
+    /// Interceptor de `print(...)` — usa `__repr` (y luego `__toString`) por cada argumento.
     fn native_print(&mut self, args: &[Value], span: &Span) -> ClsResult<Value> {
         let mut out = Vec::new();
         for a in args {
-            out.push(self.value_to_string(a, span)?);
+            out.push(self.value_to_print(a, span)?);
         }
         println!("{}", out.join(" "));
         Ok(Value::Void)

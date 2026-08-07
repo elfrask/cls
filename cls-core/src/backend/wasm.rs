@@ -2370,6 +2370,11 @@ impl<'a> FuncEmitter<'a> {
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
             Type::Named(name, _) if self.class_defs.contains_key(&name) => {
+                // Si la clase define __repr → usarlo (el ptr ya está en el stack).
+                if let Some(idx) = self.func_indexes.get(&format!("{}::__repr", name)) {
+                    self.body.push(Instruction::Call(*idx));
+                    self.host.call(HostFn::PrintStr, &mut self.body);
+                } else {
                 // Formatear `<Clase {campo: valor, ...}>` como el walker.
                 let info = self.class_defs[&name].clone();
                 let ptr = self.fresh_local();
@@ -2434,6 +2439,7 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::LocalSet(res));
                 self.body.push(Instruction::LocalGet(res));
                 self.host.call(HostFn::PrintStr, &mut self.body);
+                }
             }
             Type::Named(name, _) if self.struct_defs.contains_key(&name) => {
                 let info = self.struct_defs[&name].clone();
@@ -2562,6 +2568,16 @@ impl<'a> FuncEmitter<'a> {
             Type::Bool => self.host.call(HostFn::StrBool, &mut self.body),
             Type::Char => self.host.call(HostFn::StrChar, &mut self.body),
             Type::Float => self.host.call(HostFn::StrFloat, &mut self.body),
+            Type::Named(name, _) if self.class_defs.contains_key(&name) => {
+                // toString(obj) → __toString si existe; si no, __repr; el ptr está en stack.
+                if let Some(idx) = self.func_indexes.get(&format!("{}::__toString", name)) {
+                    self.body.push(Instruction::Call(*idx));
+                } else if let Some(idx) = self.func_indexes.get(&format!("{}::__repr", name)) {
+                    self.body.push(Instruction::Call(*idx));
+                } else {
+                    self.host.call(HostFn::StrInt, &mut self.body);
+                }
+            }
             _ => self.host.call(HostFn::StrInt, &mut self.body),
         }
         Ok(())
