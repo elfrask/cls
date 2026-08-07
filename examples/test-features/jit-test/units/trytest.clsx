@@ -1,0 +1,13 @@
+function falla() -> int {
+    return 1 / 0;
+};
+
+function main(args: String[]) -> int {
+    try {
+        var x = falla();
+    } catch (e) {
+        print("capturado:", e);
+    }
+    print("continua");
+    return falla();
+};

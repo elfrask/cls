@@ -1,0 +1,16 @@
+const fs = require('fs');
+const t = fs.readFileSync('C:/Users/Frask/AppData/Local/Temp/opencode/b3b.wat', 'utf8');
+console.log('tamaño:', t.length);
+const defs = [...t.matchAll(/\(func \(;(\d+);\)/g)].map(m => parseInt(m[1], 10));
+const impMax = 69;
+const defined = defs.filter(n => n > impMax);
+console.log('definidas:', defined.join(', '));
+const tb = t.indexOf('(table');
+console.log('=== tabla ===');
+console.log(tb >= 0 ? t.slice(tb, tb + 250) : 'NO');
+const el = t.indexOf('(elem');
+console.log('=== elem ===');
+console.log(el >= 0 ? t.slice(el, el + 250) : 'NO');
+const ci = t.indexOf('call_indirect');
+console.log('=== call_indirect context ===');
+console.log(ci >= 0 ? t.slice(ci - 600, ci + 200) : 'NO');

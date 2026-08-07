@@ -1,0 +1,6 @@
+function main(args: String[]) -> int {
+    var tupla = (10, "veinte", 30.0);
+    print("t[2]:", tupla[2]);
+    print("t[0]:", tupla[0]);
+    return 0;
+};

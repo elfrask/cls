@@ -1,0 +1,20 @@
+function saludar(nombre: String, saludo: String = "Hola") -> String {
+    return saludo + ", " + nombre;
+}
+
+function main(args: String[]) -> int {
+    print("potencia:", 2 ** 8);
+    print("mod float:", 5.5 % 2.0);
+    var y = 1;
+    y++;
+    print("postfix ++:", y);
+    y--;
+    print("postfix --:", y);
+    print("type(42):", type(42));
+    var arr = [1, 2, 3];
+    arr[0] += 5;
+    print("arr[0]+=:", arr[0]);
+    print("default param:", saludar("Ana"));
+    print("str(42):", str(42));
+    return 0;
+};

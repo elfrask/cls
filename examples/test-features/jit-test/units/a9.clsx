@@ -1,0 +1,18 @@
+alias Color = "red" | "green" | "blue";
+
+interface Hello {
+    num: int,
+    greet(name: String): String,
+};
+
+function main(args: String[]) -> int {
+    var c: Color = "red";
+    print("union:", c);
+    const k = "constante";
+    print("literal:", k);
+    const n = 42;
+    print("const int:", n);
+    var t: (Int, String) = (1, "x");
+    print("tuple:", t[0], t[1]);
+    return 0;
+};
