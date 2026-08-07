@@ -280,9 +280,13 @@ fn write_args(
     app_args: &[String],
 ) -> Result<i64, String> {
     let n = app_args.len() as i64;
-    let array_ptr = alloc.call(&mut *store, n * 8 + 8).map_err(|e| e.to_string())?;
+    // Layout de array actual: [cap:i64][len:i64][elems...] (header 16 bytes).
+    let array_ptr = alloc.call(&mut *store, n * 8 + 16).map_err(|e| e.to_string())?;
     memory
         .write(&mut *store, array_ptr as usize, &n.to_le_bytes())
+        .map_err(|e| e.to_string())?;
+    memory
+        .write(&mut *store, (array_ptr as usize) + 8, &n.to_le_bytes())
         .map_err(|e| e.to_string())?;
     for (i, arg) in app_args.iter().enumerate() {
         let sptr = alloc
@@ -293,7 +297,7 @@ fn write_args(
             .map_err(|e| e.to_string())?;
         let packed = (sptr << 32) | (arg.len() as i64);
         memory
-            .write(&mut *store, (array_ptr as usize) + 8 + i * 8, &packed.to_le_bytes())
+            .write(&mut *store, (array_ptr as usize) + 16 + i * 8, &packed.to_le_bytes())
             .map_err(|e| e.to_string())?;
     }
     Ok(array_ptr)
@@ -629,6 +633,29 @@ fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String>
                 arr_set(&mut caller, p, (len as usize) - 1 - i, es, a);
             }
             p as i64
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "arr_to_string", |mut caller: Caller<'_, HostState>, ptr: i64, es: i64, kind: i64| -> i64 {
+            let p = ptr as usize;
+            let es = es as usize;
+            let len = arr_len(&mut caller, p);
+            let mut out = String::from("[");
+            for i in 0..len as usize {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                let e = arr_elem(&mut caller, p, i, es);
+                match kind {
+                    1 => out.push_str(&caller_read_str(&mut caller, e)),
+                    2 => out.push_str(&format_float(f64::from_bits(e as u64))),
+                    3 => out.push_str(if e != 0 { "true" } else { "false" }),
+                    4 => out.push(char::from_u32(e as u32).unwrap_or('?')),
+                    _ => out.push_str(&e.to_string()),
+                }
+            }
+            out.push(']');
+            caller_write_str(&mut caller, &out).unwrap_or(0)
         })
         .map_err(|e| e.to_string())?;
     linker
@@ -1096,7 +1123,7 @@ fn register_stdlib_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
 fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
     linker
         .func_wrap(HOST, "record_new", |mut caller: Caller<'_, HostState>, cap: i64| -> i64 {
-            let size = cap * 16 + 16;
+            let size = cap * 24 + 16;
             let ptr = caller_alloc(&mut caller, size).unwrap_or(0) as usize;
             arr_write_i64(&mut caller, ptr, cap);
             arr_write_i64(&mut caller, ptr + 8, 0);
@@ -1104,37 +1131,40 @@ fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
         })
         .map_err(|e| e.to_string())?;
     linker
-        .func_wrap(HOST, "record_set", |mut caller: Caller<'_, HostState>, ptr: i64, key: i64, val: i64| -> i64 {
+        .func_wrap(HOST, "record_set", |mut caller: Caller<'_, HostState>, ptr: i64, key: i64, val: i64, tag: i64| -> i64 {
             let p = ptr as usize;
             let len = arr_len(&mut caller, p) as usize;
             let cap = arr_cap(&mut caller, p) as usize;
             let k = caller_read_str(&mut caller, key);
             for i in 0..len {
-                let ki = arr_read_i64(&mut caller, p + 16 + i * 16);
+                let ki = arr_read_i64(&mut caller, p + 16 + i * 24);
                 if caller_read_str(&mut caller, ki) == k {
-                    arr_write_i64(&mut caller, p + 16 + i * 16 + 8, val);
+                    arr_write_i64(&mut caller, p + 16 + i * 24 + 8, val);
+                    arr_write_i64(&mut caller, p + 16 + i * 24 + 16, tag);
                     return p as i64;
                 }
             }
             let mut new_p = p;
             let mut new_cap = cap;
             if len >= cap {
-                // Realloc: copiar entradas (stride 16 = key+val).
                 new_cap = if cap == 0 { 4 } else { cap * 2 };
-                let size = (new_cap * 16 + 16) as i64;
+                let size = (new_cap * 24 + 16) as i64;
                 let np = caller_alloc(&mut caller, size).unwrap_or(0) as usize;
                 arr_write_i64(&mut caller, np, new_cap as i64);
                 arr_write_i64(&mut caller, np + 8, len as i64);
                 for i in 0..len {
-                    let k = arr_read_i64(&mut caller, p + 16 + i * 16);
-                    let v = arr_read_i64(&mut caller, p + 16 + i * 16 + 8);
-                    arr_write_i64(&mut caller, np + 16 + i * 16, k);
-                    arr_write_i64(&mut caller, np + 16 + i * 16 + 8, v);
+                    let kk = arr_read_i64(&mut caller, p + 16 + i * 24);
+                    let vv = arr_read_i64(&mut caller, p + 16 + i * 24 + 8);
+                    let tt = arr_read_i64(&mut caller, p + 16 + i * 24 + 16);
+                    arr_write_i64(&mut caller, np + 16 + i * 24, kk);
+                    arr_write_i64(&mut caller, np + 16 + i * 24 + 8, vv);
+                    arr_write_i64(&mut caller, np + 16 + i * 24 + 16, tt);
                 }
                 new_p = np;
             }
-            arr_write_i64(&mut caller, new_p + 16 + len * 16, key);
-            arr_write_i64(&mut caller, new_p + 16 + len * 16 + 8, val);
+            arr_write_i64(&mut caller, new_p + 16 + len * 24, key);
+            arr_write_i64(&mut caller, new_p + 16 + len * 24 + 8, val);
+            arr_write_i64(&mut caller, new_p + 16 + len * 24 + 16, tag);
             arr_write_i64(&mut caller, new_p + 8, (len + 1) as i64);
             new_p as i64
         })
@@ -1145,9 +1175,9 @@ fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
             let len = arr_len(&mut caller, p) as usize;
             let k = caller_read_str(&mut caller, key);
             for i in 0..len {
-                let ki = arr_read_i64(&mut caller, p + 16 + i * 16);
+                let ki = arr_read_i64(&mut caller, p + 16 + i * 24);
                 if caller_read_str(&mut caller, ki) == k {
-                    return arr_read_i64(&mut caller, p + 16 + i * 16 + 8);
+                    return arr_read_i64(&mut caller, p + 16 + i * 24 + 8);
                 }
             }
             0
@@ -1159,7 +1189,7 @@ fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
             let len = arr_len(&mut caller, p) as usize;
             let k = caller_read_str(&mut caller, key);
             for i in 0..len {
-                let ki = arr_read_i64(&mut caller, p + 16 + i * 16);
+                let ki = arr_read_i64(&mut caller, p + 16 + i * 24);
                 if caller_read_str(&mut caller, ki) == k {
                     return 1;
                 }
@@ -1181,7 +1211,7 @@ fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
             arr_write_i64(&mut caller, out, len as i64);
             arr_write_i64(&mut caller, out + 8, len as i64);
             for i in 0..len {
-                let ki = arr_read_i64(&mut caller, p + 16 + i * 16);
+                let ki = arr_read_i64(&mut caller, p + 16 + i * 24);
                 arr_set(&mut caller, out, i, 8, ki);
             }
             out as i64
@@ -1196,10 +1226,36 @@ fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
             arr_write_i64(&mut caller, out, len as i64);
             arr_write_i64(&mut caller, out + 8, len as i64);
             for i in 0..len {
-                let vi = arr_read_i64(&mut caller, p + 16 + i * 16 + 8);
+                let vi = arr_read_i64(&mut caller, p + 16 + i * 24 + 8);
                 arr_set(&mut caller, out, i, 8, vi);
             }
             out as i64
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "record_to_string", |mut caller: Caller<'_, HostState>, ptr: i64| -> i64 {
+            let p = ptr as usize;
+            let len = arr_len(&mut caller, p);
+            let mut out = String::from("{");
+            for i in 0..len as usize {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                let key = arr_read_i64(&mut caller, p + 16 + i * 24);
+                let val = arr_read_i64(&mut caller, p + 16 + i * 24 + 8);
+                let tag = arr_read_i64(&mut caller, p + 16 + i * 24 + 16);
+                out.push_str(&caller_read_str(&mut caller, key));
+                out.push_str(": ");
+                match tag {
+                    1 => out.push_str(&caller_read_str(&mut caller, val)),
+                    2 => out.push_str(&format_float(f64::from_bits(val as u64))),
+                    3 => out.push_str(if val != 0 { "true" } else { "false" }),
+                    4 => out.push(char::from_u32(val as u32).unwrap_or('?')),
+                    _ => out.push_str(&val.to_string()),
+                }
+            }
+            out.push('}');
+            caller_write_str(&mut caller, &out).unwrap_or(0)
         })
         .map_err(|e| e.to_string())?;
     linker
