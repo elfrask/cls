@@ -17,5 +17,5 @@ ureq = "2"
 zip = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std"] }
 tower-lsp = "0.20"
-wasmtime = { version = "16", features = ["cache"] }
+wasmtime = { version = "28", features = ["cache"] }
 libloading = "0.8"
