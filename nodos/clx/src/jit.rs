@@ -647,7 +647,11 @@ fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String>
                 }
                 let e = arr_elem(&mut caller, p, i, es);
                 match kind {
-                    1 => out.push_str(&caller_read_str(&mut caller, e)),
+                    1 => {
+                        out.push('"');
+                        out.push_str(&json_escape(&caller_read_str(&mut caller, e)));
+                        out.push('"');
+                    }
                     2 => out.push_str(&format_float(f64::from_bits(e as u64))),
                     3 => out.push_str(if e != 0 { "true" } else { "false" }),
                     4 => out.push(char::from_u32(e as u32).unwrap_or('?')),
@@ -1383,7 +1387,11 @@ fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
                 out.push_str(&caller_read_str(&mut caller, key));
                 out.push_str(": ");
                 match tag {
-                    1 => out.push_str(&caller_read_str(&mut caller, val)),
+                    1 => {
+                        out.push('"');
+                        out.push_str(&json_escape(&caller_read_str(&mut caller, val)));
+                        out.push('"');
+                    }
                     2 => out.push_str(&format_float(f64::from_bits(val as u64))),
                     3 => out.push_str(if val != 0 { "true" } else { "false" }),
                     4 => out.push(char::from_u32(val as u32).unwrap_or('?')),
