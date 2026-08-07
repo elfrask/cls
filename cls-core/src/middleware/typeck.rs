@@ -23,6 +23,8 @@ pub struct TypeChecker {
     /// Mapa Span → Type de TODAS las expresiones visitadas (para backends).
     /// Se llena solo cuando `config.check` es true.
     types_by_span: HashMap<Span, Type>,
+    /// Miembros de cada clase: nombre → tipo del campo o del retorno del método.
+    class_members: HashMap<String, HashMap<String, Type>>,
 }
 
 impl TypeChecker {
@@ -35,6 +37,7 @@ impl TypeChecker {
             interfaces: HashMap::new(),
             enums: std::collections::HashSet::new(),
             types_by_span: HashMap::new(),
+            class_members: HashMap::new(),
         };
         // Registrar funciones built-in (core intrinsics)
         tc.define("print", Type::Fun(vec![Type::Any], Box::new(Type::Void)));
@@ -445,10 +448,38 @@ impl TypeChecker {
         let class_type = Type::Named(c.name.clone(), vec![]);
         self.define(&c.name, class_type.clone());
         self.push_scope();
+        self.define("me", class_type.clone());
         // Type params de la clase como placeholders (para fields/methods genéricos)
         for tp in &c.type_params {
             self.define(&tp.name, Type::Named(tp.name.clone(), vec![]));
         }
+        // 1ª pasada: recolectar los tipos de los miembros ANTES de chequear los
+        // bodies, para que `me.campo`/`me.metodo()` resuelvan dentro del check.
+        let mut members: HashMap<String, Type> = HashMap::new();
+        for member in &c.body {
+            match member {
+                ClassMember::Method(f) | ClassMember::Constructor(f) => {
+                    members.insert(
+                        f.name.clone(),
+                        f.return_type
+                            .as_ref()
+                            .map(|t| self.resolve_type_annotation(t))
+                            .unwrap_or(Type::Void),
+                    );
+                }
+                ClassMember::Property(v) => {
+                    members.insert(
+                        v.name.clone(),
+                        v.type_ann
+                            .as_ref()
+                            .map(|t| self.resolve_type_annotation(t))
+                            .unwrap_or(Type::Any),
+                    );
+                }
+            }
+        }
+        self.class_members.insert(c.name.clone(), members);
+        // 2ª pasada: chequear los bodies.
         for member in &c.body {
             match member {
                 ClassMember::Method(f) | ClassMember::Constructor(f) => {
@@ -755,6 +786,14 @@ impl TypeChecker {
                 "toString" => Type::String,
                 _ => Type::Any,
             },
+            Type::Named(name, _) => {
+                if let Some(members) = self.class_members.get(name.as_str()) {
+                    if let Some(t) = members.get(&member.member) {
+                        return t.clone();
+                    }
+                }
+                Type::Any
+            }
             _ => Type::Any,
         }
     }

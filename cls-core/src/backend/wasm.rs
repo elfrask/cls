@@ -27,9 +27,10 @@ use crate::middleware::typeck::expr_span;
 use crate::middleware::types::{LitVal, Type};
 use std::collections::HashMap;
 use wasm_encoder::{
-    BlockType, CodeSection, DataSection, DataSegment, DataSegmentMode, EntityType, Export,
-    ExportSection, Function, FunctionSection, GlobalSection, GlobalType, ImportSection, Instruction,
-    Limits, MemArg, MemorySection, MemoryType, Module as WasmModule, TypeSection, ValType,
+    BlockType, CodeSection, DataSection, DataSegment, DataSegmentMode, ElementMode, ElementSection,
+    Elements, EntityType, Export, ExportSection, Function, FunctionSection, GlobalSection,
+    GlobalType, ImportSection, Instruction, Limits, MemArg, MemorySection, MemoryType,
+    Module as WasmModule, TableSection, TableType, TypeSection, ValType,
 };
 
 /// Funciones host (`env.*`) que el nodo JIT debe implementar.
@@ -322,6 +323,8 @@ struct FuncEmitter<'a> {
     native_indexes: &'a HashMap<String, u32>,
     native_ret: &'a HashMap<String, char>,
     globals: &'a HashMap<String, u32>,
+    class_defs: &'a HashMap<String, ClassInfo>,
+    method_type_indexes: &'a HashMap<String, u32>,
     target: &'a Target,
 }
 
@@ -338,6 +341,8 @@ impl<'a> FuncEmitter<'a> {
         native_indexes: &'a HashMap<String, u32>,
         native_ret: &'a HashMap<String, char>,
         globals: &'a HashMap<String, u32>,
+        class_defs: &'a HashMap<String, ClassInfo>,
+        method_type_indexes: &'a HashMap<String, u32>,
         target: &'a Target,
     ) -> Self {
         Self {
@@ -358,6 +363,8 @@ impl<'a> FuncEmitter<'a> {
             native_indexes,
             native_ret,
             globals,
+            class_defs,
+            method_type_indexes,
             target,
         }
     }
@@ -1413,6 +1420,56 @@ impl<'a> FuncEmitter<'a> {
                 }
                 Ok(())
             }
+            Expression::MemberAccess(m) => {
+                let obj_ty = self.types.get(&expr_span(&m.object)).cloned();
+                if let Some(Type::Named(name, _)) = obj_ty {
+                    if let Some(info) = self.class_defs.get(name.as_str()) {
+                        if is_compound(op) {
+                            return Err(crate::error::ClsError::CompileError(
+                                "Operadores compuestos sobre campos de clase no soportados en el JIT (B3)".to_string(),
+                            ));
+                        }
+                        let fidx = info.fields.iter().position(|(n, _, _)| *n == m.member).ok_or_else(|| {
+                            crate::error::ClsError::CompileError(format!(
+                                "El campo '{}' no existe en la clase '{}'",
+                                m.member, name
+                            ))
+                        })?;
+                        let (_, w, off) = info.fields[fidx];
+                        let obj_tmp = self.fresh_local();
+                        let val_tmp = self.fresh_local_ty(w);
+                        self.emit_expression(&m.object)?;
+                        self.body.push(Instruction::LocalSet(obj_tmp));
+                        self.emit_expression(&a.value)?;
+                        self.body.push(match w {
+                            WasTy::F64 => Instruction::LocalSet(val_tmp),
+                            WasTy::I32 => Instruction::LocalSet(val_tmp),
+                            WasTy::I64 => Instruction::LocalSet(val_tmp),
+                        });
+                        self.body.push(Instruction::LocalGet(obj_tmp));
+                        self.body.push(Instruction::I64Const(off));
+                        self.body.push(Instruction::I64Add);
+                        self.body.push(Instruction::I32WrapI64);
+                        self.body.push(match w {
+                            WasTy::F64 => Instruction::LocalGet(val_tmp),
+                            WasTy::I32 => Instruction::LocalGet(val_tmp),
+                            WasTy::I64 => Instruction::LocalGet(val_tmp),
+                        });
+                        match w {
+                            WasTy::F64 => self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                            WasTy::I32 => self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 })),
+                            WasTy::I64 => self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                        }
+                        self.body.push(match w {
+                            WasTy::F64 => Instruction::LocalGet(val_tmp),
+                            WasTy::I32 => Instruction::LocalGet(val_tmp),
+                            WasTy::I64 => Instruction::LocalGet(val_tmp),
+                        });
+                        return Ok(());
+                    }
+                }
+                Err(self.unsupported_expr(&Expression::MemberAccess(m.clone())))
+            }
             other => Err(self.unsupported_expr(other)),
         }
     }
@@ -1717,6 +1774,47 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
         }
+        // Constructor de clase: `Clase(args)` → alloc + vtable + init fields + ctor.
+        if let Expression::Identifier(name, _) = &*c.callee {
+            if let Some(info) = self.class_defs.get(name).cloned() {
+                self.body.push(Instruction::I64Const(info.total));
+                let alloc = self.func_indexes["__alloc"];
+                self.body.push(Instruction::Call(alloc));
+                let obj = self.fresh_local();
+                self.body.push(Instruction::LocalSet(obj));
+                // vtable_ptr[0] = vtable_start
+                self.body.push(Instruction::LocalGet(obj));
+                self.body.push(Instruction::I64Const(info.vtable_start as i64));
+                self.emit_i64_store(0);
+                // init fields a 0
+                for (_fn, w, off) in &info.fields {
+                    self.body.push(Instruction::LocalGet(obj));
+                    self.body.push(Instruction::I64Const(*off));
+                    self.body.push(Instruction::I64Add);
+                    self.body.push(Instruction::I32WrapI64);
+                    match w {
+                        WasTy::F64 => self.body.push(Instruction::F64Const(0.0)),
+                        WasTy::I32 => self.body.push(Instruction::I32Const(0)),
+                        WasTy::I64 => self.body.push(Instruction::I64Const(0)),
+                    }
+                    match w {
+                        WasTy::F64 => self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                        WasTy::I32 => self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 })),
+                        WasTy::I64 => self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                    }
+                }
+                // call Clase::__ctor(me, args)
+                self.body.push(Instruction::LocalGet(obj));
+                for a in &c.args {
+                    self.emit_expression(a)?;
+                }
+                if let Some(ctor) = self.func_indexes.get(&format!("{}::__ctor", name)) {
+                    self.body.push(Instruction::Call(*ctor));
+                }
+                self.body.push(Instruction::LocalGet(obj));
+                return Ok(());
+            }
+        }
         // Llamada a función nativa (extensión): import `env.<sym>__<sig>@<lib>`.
         if let Expression::Identifier(name, _) = &*c.callee {
             if let Some(idx) = self.native_indexes.get(name) {
@@ -1864,6 +1962,41 @@ impl<'a> FuncEmitter<'a> {
                         }
                         _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
                     }
+                }
+                Type::Named(name, _) => {
+                    if let Some(info) = self.class_defs.get(name.as_str()) {
+                        let method_slot = info
+                            .methods
+                            .iter()
+                            .position(|m| *m == member.member)
+                            .ok_or_else(|| {
+                                crate::error::ClsError::CompileError(format!(
+                                    "El método '{}' no existe en la clase '{}'",
+                                    member.member, name
+                                ))
+                            })? as u32;
+                        let method_key = format!("{}::{}", name, member.member);
+                        let ty = self.method_type_indexes.get(&method_key).copied().ok_or_else(|| {
+                            crate::error::ClsError::CompileError("Método sin tipo WASM".to_string())
+                        })?;
+                        let obj_tmp = self.fresh_local();
+                        self.emit_expression(&member.object)?;
+                        self.body.push(Instruction::LocalSet(obj_tmp));
+                        self.body.push(Instruction::LocalGet(obj_tmp));
+                        for a in &c.args {
+                            self.emit_expression(a)?;
+                        }
+                        // slot = vtable(obj[0]) + method_slot
+                        self.body.push(Instruction::LocalGet(obj_tmp));
+                        self.body.push(Instruction::I32WrapI64);
+                        self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                        self.body.push(Instruction::I64Const(method_slot as i64));
+                        self.body.push(Instruction::I64Add);
+                        self.body.push(Instruction::I32WrapI64);
+                        self.body.push(Instruction::CallIndirect { ty, table: 0 });
+                        return Ok(());
+                    }
+                    return Err(self.unsupported_expr(&Expression::Call(c.clone())));
                 }
                 Type::Int => {
                     self.emit_expression(&member.object)?;
@@ -2346,6 +2479,23 @@ impl<'a> FuncEmitter<'a> {
                     })?;
                     let w = info.fields[fidx].1;
                     self.body.push(Instruction::I64Const(info.offsets[fidx]));
+                    self.body.push(Instruction::I64Add);
+                    self.body.push(Instruction::I32WrapI64);
+                    match w {
+                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
+                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                    }
+                    Ok(())
+                } else if let Some(info) = self.class_defs.get(name.as_str()) {
+                    let fidx = info.fields.iter().position(|(n, _, _)| *n == m.member).ok_or_else(|| {
+                        crate::error::ClsError::CompileError(format!(
+                            "El campo '{}' no existe en la clase '{}'",
+                            m.member, name
+                        ))
+                    })?;
+                    let (_, w, off) = info.fields[fidx];
+                    self.body.push(Instruction::I64Const(off));
                     self.body.push(Instruction::I64Add);
                     self.body.push(Instruction::I32WrapI64);
                     match w {
@@ -2843,7 +2993,31 @@ struct Engine<'a> {
     native_ret: HashMap<String, char>,
     globals: HashMap<String, u32>,
     global_inits: Vec<(u32, Expression)>,
+    tables_sec: TableSection,
+    elements_sec: ElementSection,
+    class_defs: HashMap<String, ClassInfo>,
+    next_table_slot: u32,
+    /// Funciones de clase a compilar: (clave `Clase::m`, FunctionDecl).
+    cls_funcs_extra: Vec<(String, FunctionDecl)>,
+    /// type index WASM de cada método de clase (para `call_indirect`).
+    method_type_indexes: HashMap<String, u32>,
+    /// Métodos de clase pendientes de declarar (tras alloc/load_str).
+    pending_class_methods: Vec<(String, FunctionDecl)>,
     target: Target,
+}
+
+/// Definición de una clase compilada: layout de objeto + vtable.
+#[derive(Clone)]
+struct ClassInfo {
+    parent: Option<String>,
+    /// campos (nombre, tipo WASM, offset en bytes desde 8; 0..7 = vtable).
+    fields: Vec<(String, WasTy, i64)>,
+    /// nombres de métodos en orden canónico (posición = slot de la vtable).
+    methods: Vec<String>,
+    /// índice de la tabla donde empieza la vtable de esta clase.
+    vtable_start: u32,
+    /// tamaño total del objeto (8 + campos).
+    total: i64,
 }
 
 /// Definición de una extensión compilada (import `env.<sym>__<sig>@<lib>`).
@@ -2918,6 +3092,13 @@ impl<'a> Engine<'a> {
             native_ret: HashMap::new(),
             globals: HashMap::new(),
             global_inits: Vec::new(),
+            tables_sec: TableSection::new(),
+            elements_sec: ElementSection::new(),
+            class_defs: HashMap::new(),
+            next_table_slot: 0,
+            cls_funcs_extra: Vec::new(),
+            method_type_indexes: HashMap::new(),
+            pending_class_methods: Vec::new(),
             target,
         }
     }
@@ -2957,9 +3138,11 @@ impl<'a> Engine<'a> {
         m.section(&self.types_sec);
         m.section(&self.imports_sec);
         m.section(&self.funcs_sec);
+        m.section(&self.tables_sec);
         m.section(&self.memories_sec);
         m.section(&self.globals_sec);
         m.section(&self.exports_sec);
+        m.section(&self.elements_sec);
         m.section(&self.code_sec);
         m.section(&self.data_sec);
         m
@@ -3046,6 +3229,54 @@ impl<'a> Engine<'a> {
                     },
                 );
                 sdef_id += 1;
+            }
+        }
+        // Recolectar clases → class_defs (layout de objeto) + declarar métodos/ctor.
+        for stmt in &module.statements {
+            if let Statement::ClassDecl(c) = stmt {
+                let mut fields = Vec::new();
+                let mut methods = Vec::new();
+                let mut off = 8i64; // 0..7 = vtable_ptr
+                let mut total = off;
+                for member in &c.body {
+                    match member {
+                        ClassMember::Property(p) if !p.is_static => {
+                            let w = match (&p.type_ann, &p.value) {
+                                (Some(ann), _) => {
+                                    was_type(&annotation_to_type(ann)).unwrap_or(WasTy::I64)
+                                }
+                                (None, Some(v)) => self.expr_was_type(v).unwrap_or(WasTy::I64),
+                                (None, None) => WasTy::I64,
+                            };
+                            fields.push((p.name.clone(), w, off));
+                            off += elem_size_bytes(w);
+                            total = off;
+                        }
+                        ClassMember::Method(m) => {
+                            methods.push(m.name.clone());
+                            let mut m2 = m.clone();
+                            let cn = c.name.clone();
+                            self.pending_class_methods.push((cn, m2));
+                        }
+                        ClassMember::Constructor(cf) => {
+                            let mut c2 = cf.clone();
+                            c2.name = "__ctor".to_string();
+                            let cn = c.name.clone();
+                            self.pending_class_methods.push((cn, c2));
+                        }
+                        _ => {}
+                    }
+                }
+                self.class_defs.insert(
+                    c.name.clone(),
+                    ClassInfo {
+                        parent: c.extends.clone(),
+                        fields,
+                        methods,
+                        vtable_start: 0,
+                        total,
+                    },
+                );
             }
         }
         // Recolectar extensiones → imports `env.<sym>__<sig>@<lib>`.
@@ -3164,6 +3395,12 @@ impl<'a> Engine<'a> {
             let ig_idx = self.declare_wasm_function(vec![], vec![]);
             self.func_indexes.insert("__init_globals".to_string(), ig_idx);
         }
+        // Métodos/ctor de clase: se declaran aquí (tras alloc/load_str/init) para
+        // que el code_sec (que los compila después) quede alineado.
+        let pending: Vec<(String, FunctionDecl)> = std::mem::take(&mut self.pending_class_methods);
+        for (class, f) in pending {
+            self.declare_class_function(&class, &f);
+        }
 
         // Funciones CLS.
         let mut cls_funcs: Vec<FunctionDecl> = Vec::new();
@@ -3184,8 +3421,16 @@ impl<'a> Engine<'a> {
             }
         }
 
-        // Compilar cuerpos (internan strings).
+        // Compilar cuerpos (internan strings). El orden del code_sec DEBE coincidir
+        // con el orden de declaración: alloc, load_str, [init], métodos, cls.
         let mut bodies: Vec<(String, Function)> = Vec::new();
+        let extras: Vec<(String, FunctionDecl)> = self.cls_funcs_extra.clone();
+        for (key, f) in &extras {
+            let mut f2 = f.clone();
+            f2.name = key.clone();
+            let body = self.compile_function(&f2)?;
+            bodies.push((key.clone(), body));
+        }
         for f in &cls_funcs {
             let body = self.compile_function(f)?;
             bodies.push((f.name.clone(), body));
@@ -3197,6 +3442,35 @@ impl<'a> Engine<'a> {
         // __init_globals se construye ANTES del data segment: sus strings (valores
         // iniciales de las globals) deben internarse en el pool antes del data.
         let init_body = self.build_global_init()?;
+
+        // Tabla de vtables: segmento con los funcref de los métodos de cada clase.
+        let mut table_funcs: Vec<u32> = Vec::new();
+        let class_names: Vec<String> = self.class_defs.keys().cloned().collect();
+        for cn in &class_names {
+            let methods: Vec<String> = self.class_defs[cn].methods.clone();
+            self.class_defs.get_mut(cn).unwrap().vtable_start = self.next_table_slot;
+            for m in &methods {
+                if let Some(idx) = self.func_indexes.get(&format!("{}::{}", cn, m)) {
+                    table_funcs.push(*idx);
+                    self.next_table_slot += 1;
+                }
+            }
+        }
+        if !table_funcs.is_empty() {
+            self.tables_sec.table(TableType {
+                element_type: ValType::FuncRef,
+                limits: Limits {
+                    min: table_funcs.len() as u32,
+                    max: None,
+                },
+            });
+            self.elements_sec.active(
+                Some(0),
+                Instruction::I32Const(0),
+                ValType::FuncRef,
+                Elements::Functions(&table_funcs),
+            );
+        }
 
         // Data segment con la tabla de strings.
         let data_bytes = self.build_string_data();
@@ -3244,10 +3518,21 @@ impl<'a> Engine<'a> {
             &self.native_indexes,
             &self.native_ret,
             &self.globals,
+            &self.class_defs,
+            &self.method_type_indexes,
             &self.target,
         );
-        for (i, p) in f.params.iter().enumerate() {
-            fe.declare_var_ty(&p.name, was_type(&param_types[i])?);
+        // Métodos de clase: `me` (la instancia) es el primer param implícito.
+        let is_method = f.name.contains("::");
+        if is_method {
+            fe.declare_var_ty("me", was_type(&param_types[0])?);
+            for (i, p) in f.params.iter().enumerate() {
+                fe.declare_var_ty(&p.name, was_type(&param_types[i + 1])?);
+            }
+        } else {
+            for (i, p) in f.params.iter().enumerate() {
+                fe.declare_var_ty(&p.name, was_type(&param_types[i])?);
+            }
         }
         // main inicializa las globals top-level al arrancar.
         if f.name == "main" {
@@ -3306,6 +3591,8 @@ impl<'a> Engine<'a> {
             &self.native_indexes,
             &self.native_ret,
             &self.globals,
+            &self.class_defs,
+            &self.method_type_indexes,
             &self.target,
         );
         for (idx, val) in &self.global_inits {
@@ -3323,6 +3610,38 @@ impl<'a> Engine<'a> {
             func.instruction(inst);
         }
         Ok(Some(func))
+    }
+
+    /// Declara una función de clase (`Clase::m` o ctor) con `me` como primer param.
+    fn declare_class_function(&mut self, class: &str, f: &FunctionDecl) {
+        let mut param_cls = vec![Type::Int]; // me (ptr del objeto)
+        let mut pv = vec![ValType::I64];
+        for p in &f.params {
+            let t = p.type_ann.as_ref().map(annotation_to_type).unwrap_or(Type::Int);
+            param_cls.push(t.clone());
+            pv.push(was_type(&t).unwrap_or(WasTy::I64).val_type());
+        }
+        let rv: Vec<ValType> = match &f.return_type {
+            Some(ann) => {
+                let t = annotation_to_type(ann);
+                if t != Type::Void {
+                    vec![was_type(&t).unwrap_or(WasTy::I64).val_type()]
+                } else {
+                    vec![]
+                }
+            }
+            None => vec![],
+        };
+        let ret_cls = f.return_type.as_ref().map(annotation_to_type);
+        let tidx = self.register_func_type(pv, rv);
+        let fidx = self.func_count;
+        self.func_count += 1;
+        self.funcs_sec.function(tidx);
+        let key = format!("{}::{}", class, f.name);
+        self.func_indexes.insert(key.clone(), fidx);
+        self.func_types.insert(key.clone(), (param_cls, ret_cls));
+        self.method_type_indexes.insert(key.clone(), tidx);
+        self.cls_funcs_extra.push((key, f.clone()));
     }
 
     fn build_allocator(&self) -> Function {        // (func (param $n i64) (result i64)
