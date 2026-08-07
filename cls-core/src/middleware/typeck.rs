@@ -770,11 +770,12 @@ impl TypeChecker {
                 "contains" | "startsWith" | "endsWith" | "isEmpty" => Type::Bool,
                 _ => Type::Any,
             },
-            Type::Array(_) => match member.member.as_str() {
+            Type::Array(elem) => match member.member.as_str() {
                 "length" => Type::Int,
                 "join" | "toString" => Type::String,
                 "includes" | "isEmpty" => Type::Bool,
                 "indexOf" => Type::Int,
+                "push" | "pop" | "shift" | "unshift" | "reverse" => Type::Array(elem.clone()),
                 _ => Type::Any,
             },
             Type::Tuple(_) => match member.member.as_str() {
