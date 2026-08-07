@@ -7,7 +7,7 @@ import "math" as math;
 import "json" as json;
 import "async" as asyncModule;
 import "fs" as fs;
-import "examples/features-lib" as lib;
+import "features-lib" as lib;
 
 # ═══════════════════════════════════════════════════════════════
 # TIPADO COMPILE-TIME (no genera salida, solo verificación)
@@ -425,7 +425,7 @@ function main(args: String[]) -> int {
 
     print("=== 16. CMX ===");
     var app = (
-        <App titulo="Demo" >
+        <App titulo="Demo"> 
             <Boton />
         </App>
     );
