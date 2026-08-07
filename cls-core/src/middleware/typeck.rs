@@ -449,6 +449,7 @@ impl TypeChecker {
         self.define(&c.name, class_type.clone());
         self.push_scope();
         self.define("me", class_type.clone());
+        self.define("super", class_type.clone());
         // Type params de la clase como placeholders (para fields/methods genéricos)
         for tp in &c.type_params {
             self.define(&tp.name, Type::Named(tp.name.clone(), vec![]));
@@ -456,6 +457,11 @@ impl TypeChecker {
         // 1ª pasada: recolectar los tipos de los miembros ANTES de chequear los
         // bodies, para que `me.campo`/`me.metodo()` resuelvan dentro del check.
         let mut members: HashMap<String, Type> = HashMap::new();
+        if let Some(parent) = &c.extends {
+            if let Some(pm) = self.class_members.get(parent) {
+                members.extend(pm.clone());
+            }
+        }
         for member in &c.body {
             match member {
                 ClassMember::Method(f) | ClassMember::Constructor(f) => {

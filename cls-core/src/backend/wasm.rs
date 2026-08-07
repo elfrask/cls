@@ -325,6 +325,8 @@ struct FuncEmitter<'a> {
     globals: &'a HashMap<String, u32>,
     class_defs: &'a HashMap<String, ClassInfo>,
     method_type_indexes: &'a HashMap<String, u32>,
+    /// clase actual (al compilar un método) — para `super` y `me`.
+    current_class: Option<String>,
     target: &'a Target,
 }
 
@@ -343,6 +345,7 @@ impl<'a> FuncEmitter<'a> {
         globals: &'a HashMap<String, u32>,
         class_defs: &'a HashMap<String, ClassInfo>,
         method_type_indexes: &'a HashMap<String, u32>,
+        current_class: Option<String>,
         target: &'a Target,
     ) -> Self {
         Self {
@@ -365,6 +368,7 @@ impl<'a> FuncEmitter<'a> {
             globals,
             class_defs,
             method_type_indexes,
+            current_class,
             target,
         }
     }
@@ -390,7 +394,9 @@ impl<'a> FuncEmitter<'a> {
 
     /// Carga un identificador: global (si es un `export var` top-level) o local.
     fn emit_ident_load(&mut self, name: &str) {
-        if let Some(g) = self.globals.get(name) {
+        if name == "super" && self.current_class.is_some() {
+            self.body.push(Instruction::LocalGet(0));
+        } else if let Some(g) = self.globals.get(name) {
             self.body.push(Instruction::GlobalGet(*g));
         } else {
             let idx = self.local_for(name);
@@ -1091,8 +1097,37 @@ impl<'a> FuncEmitter<'a> {
                 self.host.call(HostFn::StrContains, &mut self.body);
             }
             Is => {
-                // `v is Nivel` (enum) o `p is Punto` (struct)
+                // `v is Nivel` (enum), `p is Punto` (struct) o `o is Clase` (herencia)
                 self.emit_expression(&b.left)?;
+                if let Expression::Identifier(right_name, _) = &*b.right {
+                    if let Some(info) = self.class_defs.get(right_name.as_str()) {
+                        // cid = obj[8]; true si el objeto ES la clase o una SUBCLASE.
+                        let obj_tmp = self.fresh_local();
+                        let cid_tmp = self.fresh_local();
+                        self.body.push(Instruction::LocalSet(obj_tmp));
+                        self.body.push(Instruction::LocalGet(obj_tmp));
+                        self.body.push(Instruction::I32WrapI64);
+                        self.body.push(Instruction::I64Load(MemArg { offset: 8, align: 3, memory_index: 0 }));
+                        self.body.push(Instruction::LocalSet(cid_tmp));
+                        let mut ids = vec![info.class_id];
+                        for (_, other) in self.class_defs.iter() {
+                            if other.ancestors.contains(&right_name) {
+                                ids.push(other.class_id);
+                            }
+                        }
+                        let mut first = true;
+                        for id in &ids {
+                            self.body.push(Instruction::LocalGet(cid_tmp));
+                            self.body.push(Instruction::I64Const(*id as i64));
+                            self.body.push(Instruction::I64Eq);
+                            if !first {
+                                self.body.push(Instruction::I32Or);
+                            }
+                            first = false;
+                        }
+                        return Ok(());
+                    }
+                }
                 let (def_id, is_enum) = match &*b.right {
                     Expression::Identifier(name, _) => {
                         if let Some((d, _)) = self.enum_defs.get(name) {
@@ -1782,10 +1817,13 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::Call(alloc));
                 let obj = self.fresh_local();
                 self.body.push(Instruction::LocalSet(obj));
-                // vtable_ptr[0] = vtable_start
+                // vtable_ptr[0] = vtable_start, class_id[8] = id
                 self.body.push(Instruction::LocalGet(obj));
                 self.body.push(Instruction::I64Const(info.vtable_start as i64));
                 self.emit_i64_store(0);
+                self.body.push(Instruction::LocalGet(obj));
+                self.body.push(Instruction::I64Const(info.class_id as i64));
+                self.emit_i64_store(8);
                 // init fields a 0
                 for (_fn, w, off) in &info.fields {
                     self.body.push(Instruction::LocalGet(obj));
@@ -1803,13 +1841,18 @@ impl<'a> FuncEmitter<'a> {
                         WasTy::I64 => self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
                     }
                 }
-                // call Clase::__ctor(me, args)
+                // call Clase::__ctor (o el del padre si no se define) con me
                 self.body.push(Instruction::LocalGet(obj));
                 for a in &c.args {
                     self.emit_expression(a)?;
                 }
-                if let Some(ctor) = self.func_indexes.get(&format!("{}::__ctor", name)) {
-                    self.body.push(Instruction::Call(*ctor));
+                let mut cur = Some(name.to_string());
+                while let Some(c) = cur {
+                    if let Some(idx) = self.func_indexes.get(&format!("{}::__ctor", c)) {
+                        self.body.push(Instruction::Call(*idx));
+                        break;
+                    }
+                    cur = self.class_defs.get(&c).and_then(|i| i.parent.clone());
                 }
                 self.body.push(Instruction::LocalGet(obj));
                 return Ok(());
@@ -1827,6 +1870,27 @@ impl<'a> FuncEmitter<'a> {
         }
         // Métodos de primitivos (callee MemberAccess)
         if let Expression::MemberAccess(member) = &*c.callee {
+            // `super.m(args)` → call directo al método del padre (sin vtable).
+            if let Expression::Identifier(sn, _) = &*member.object {
+                if sn == "super" {
+                    if let Some(cur) = &self.current_class {
+                        if let Some(parent) = self.class_defs.get(cur).and_then(|i| i.parent.clone()) {
+                            let key = format!("{}::{}", parent, member.member);
+                            if let Some(idx) = self.func_indexes.get(&key) {
+                                self.body.push(Instruction::LocalGet(0)); // me
+                                for a in &c.args {
+                                    self.emit_expression(a)?;
+                                }
+                                self.body.push(Instruction::Call(*idx));
+                                return Ok(());
+                            }
+                        }
+                    }
+                    return Err(crate::error::ClsError::CompileError(
+                        "super solo se puede usar dentro de métodos de clase (JIT)".to_string(),
+                    ));
+                }
+            }
             // Módulos stdlib: math / json / fs
             if let Expression::Identifier(obj_name, _) = &*member.object {
                 if obj_name == "math" {
@@ -3010,13 +3074,17 @@ struct Engine<'a> {
 #[derive(Clone)]
 struct ClassInfo {
     parent: Option<String>,
-    /// campos (nombre, tipo WASM, offset en bytes desde 8; 0..7 = vtable).
+    /// id de clase (índice en orden de declaración) para `is` por herencia.
+    class_id: u32,
+    /// cadena de ancestors: [padre, abuelo, ...].
+    ancestors: Vec<String>,
+    /// campos (nombre, tipo WASM, offset en bytes desde 16; 0..7=vtable, 8..15=class_id).
     fields: Vec<(String, WasTy, i64)>,
     /// nombres de métodos en orden canónico (posición = slot de la vtable).
     methods: Vec<String>,
     /// índice de la tabla donde empieza la vtable de esta clase.
     vtable_start: u32,
-    /// tamaño total del objeto (8 + campos).
+    /// tamaño total del objeto (16 + campos).
     total: i64,
 }
 
@@ -3232,12 +3300,24 @@ impl<'a> Engine<'a> {
             }
         }
         // Recolectar clases → class_defs (layout de objeto) + declarar métodos/ctor.
+        let mut next_class_id = 0u32;
         for stmt in &module.statements {
             if let Statement::ClassDecl(c) = stmt {
                 let mut fields = Vec::new();
                 let mut methods = Vec::new();
-                let mut off = 8i64; // 0..7 = vtable_ptr
+                let mut off = 16i64; // 0..7 = vtable, 8..15 = class_id
                 let mut total = off;
+                let mut ancestors = Vec::new();
+                if let Some(parent) = &c.extends {
+                    if let Some(pinfo) = self.class_defs.get(parent) {
+                        fields.extend(pinfo.fields.clone());
+                        methods = pinfo.methods.clone();
+                        off = pinfo.total;
+                        total = pinfo.total;
+                        ancestors.push(parent.clone());
+                        ancestors.extend(pinfo.ancestors.clone());
+                    }
+                }
                 for member in &c.body {
                     match member {
                         ClassMember::Property(p) if !p.is_static => {
@@ -3253,7 +3333,9 @@ impl<'a> Engine<'a> {
                             total = off;
                         }
                         ClassMember::Method(m) => {
-                            methods.push(m.name.clone());
+                            if !methods.contains(&m.name) {
+                                methods.push(m.name.clone());
+                            }
                             let mut m2 = m.clone();
                             let cn = c.name.clone();
                             self.pending_class_methods.push((cn, m2));
@@ -3267,13 +3349,22 @@ impl<'a> Engine<'a> {
                         _ => {}
                     }
                 }
+                let cid = next_class_id;
+                next_class_id += 1;
+                // El vtable_start se asigna AQUÍ (antes de compilar cuerpos): el
+                // ctor del objeto lo lee al emitir, y no debe depender del orden
+                // (no determinista) del HashMap.
+                let vs = self.next_table_slot;
+                self.next_table_slot += methods.len() as u32;
                 self.class_defs.insert(
                     c.name.clone(),
                     ClassInfo {
                         parent: c.extends.clone(),
+                        class_id: cid,
+                        ancestors,
                         fields,
                         methods,
-                        vtable_start: 0,
+                        vtable_start: vs,
                         total,
                     },
                 );
@@ -3443,16 +3534,20 @@ impl<'a> Engine<'a> {
         // iniciales de las globals) deben internarse en el pool antes del data.
         let init_body = self.build_global_init()?;
 
-        // Tabla de vtables: segmento con los funcref de los métodos de cada clase.
+        // Tabla de vtables: segmento con los funcref de los métodos de cada clase
+        // (los vtable_start ya se asignaron en la recolección, en orden).
         let mut table_funcs: Vec<u32> = Vec::new();
-        let class_names: Vec<String> = self.class_defs.keys().cloned().collect();
-        for cn in &class_names {
-            let methods: Vec<String> = self.class_defs[cn].methods.clone();
-            self.class_defs.get_mut(cn).unwrap().vtable_start = self.next_table_slot;
+        let mut ordered: Vec<(u32, String)> = self
+            .class_defs
+            .iter()
+            .map(|(n, i)| (i.vtable_start, n.clone()))
+            .collect();
+        ordered.sort_by_key(|(s, _)| *s);
+        for (_, cn) in ordered {
+            let methods: Vec<String> = self.class_defs[&cn].methods.clone();
             for m in &methods {
-                if let Some(idx) = self.func_indexes.get(&format!("{}::{}", cn, m)) {
-                    table_funcs.push(*idx);
-                    self.next_table_slot += 1;
+                if let Some(idx) = self.resolve_method_index(&cn, m) {
+                    table_funcs.push(idx);
                 }
             }
         }
@@ -3520,10 +3615,17 @@ impl<'a> Engine<'a> {
             &self.globals,
             &self.class_defs,
             &self.method_type_indexes,
+            None,
             &self.target,
         );
         // Métodos de clase: `me` (la instancia) es el primer param implícito.
         let is_method = f.name.contains("::");
+        let current_class = if is_method {
+            f.name.split("::").next().map(|s| s.to_string())
+        } else {
+            None
+        };
+        fe.current_class = current_class;
         if is_method {
             fe.declare_var_ty("me", was_type(&param_types[0])?);
             for (i, p) in f.params.iter().enumerate() {
@@ -3593,6 +3695,7 @@ impl<'a> Engine<'a> {
             &self.globals,
             &self.class_defs,
             &self.method_type_indexes,
+            None,
             &self.target,
         );
         for (idx, val) in &self.global_inits {
@@ -3642,6 +3745,18 @@ impl<'a> Engine<'a> {
         self.func_types.insert(key.clone(), (param_cls, ret_cls));
         self.method_type_indexes.insert(key.clone(), tidx);
         self.cls_funcs_extra.push((key, f.clone()));
+    }
+
+    /// Índice de función de un método: en la clase o subiendo por ancestors.
+    fn resolve_method_index(&self, class: &str, m: &str) -> Option<u32> {
+        let mut cur = Some(class.to_string());
+        while let Some(c) = cur {
+            if let Some(idx) = self.func_indexes.get(&format!("{}::{}", c, m)) {
+                return Some(*idx);
+            }
+            cur = self.class_defs.get(&c).and_then(|i| i.parent.clone());
+        }
+        None
     }
 
     fn build_allocator(&self) -> Function {        // (func (param $n i64) (result i64)
