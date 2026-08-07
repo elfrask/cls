@@ -90,6 +90,7 @@ pub enum HostFn {
     MathLog,
     MathRange,
     JsonStringify,
+    JsonParse,
     FsExists,
     FsCwd,
     FsReadFile,
@@ -101,6 +102,7 @@ pub enum HostFn {
     RecordSet,
     RecordGet,
     RecordHas,
+    RecordTag,
     RecordLen,
     RecordKeys,
     RecordValues,
@@ -167,6 +169,7 @@ impl HostFn {
             MathLog => "math_log",
             MathRange => "math_range",
             JsonStringify => "json_stringify",
+            JsonParse => "json_parse",
             FsExists => "fs_exists",
             FsCwd => "fs_cwd",
             FsReadFile => "fs_read_file",
@@ -178,6 +181,7 @@ impl HostFn {
             RecordSet => "record_set",
             RecordGet => "record_get",
             RecordHas => "record_has",
+            RecordTag => "record_tag",
             RecordLen => "record_len",
             RecordKeys => "record_keys",
             RecordValues => "record_values",
@@ -224,7 +228,8 @@ impl HostFn {
             MathPow | MathMin | MathMax => (vec![ValType::F64, ValType::F64], vec![ValType::F64]),
             MathRandom => (vec![], vec![ValType::F64]),
             MathRange => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            JsonStringify => (i64p.clone(), vec![ValType::I64]),
+            JsonStringify => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
+            JsonParse => (i64p.clone(), vec![ValType::I64]),
             FsExists => (i64p.clone(), vec![ValType::I32]),
             FsCwd => (vec![], vec![ValType::I64]),
             FsReadFile => (i64p.clone(), vec![ValType::I64]),
@@ -234,6 +239,7 @@ impl HostFn {
             RecordSet => (vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
             RecordGet => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             RecordHas => (vec![ValType::I64, ValType::I64], vec![ValType::I32]),
+            RecordTag => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             RecordLen => (i64p.clone(), vec![ValType::I64]),
             RecordKeys | RecordValues => (i64p.clone(), vec![ValType::I64]),
             RecordToString => (i64p.clone(), vec![ValType::I64]),
@@ -1472,13 +1478,15 @@ impl<'a> FuncEmitter<'a> {
                                 "Operadores compuestos sobre campos de clase no soportados en el JIT (B3)".to_string(),
                             ));
                         }
-                        let fidx = info.fields.iter().position(|(n, _, _)| *n == m.member).ok_or_else(|| {
+                        let fidx = info.fields.iter().position(|(n, _, _, _)| *n == m.member).ok_or_else(|| {
                             crate::error::ClsError::CompileError(format!(
                                 "El campo '{}' no existe en la clase '{}'",
                                 m.member, name
                             ))
                         })?;
-                        let (_, w, off) = info.fields[fidx];
+                    let (_, _t, w, off) = &info.fields[fidx];
+                    let w = *w;
+                    let off = *off;
                         let obj_tmp = self.fresh_local();
                         let val_tmp = self.fresh_local_ty(w);
                         self.emit_expression(&m.object)?;
@@ -1745,6 +1753,9 @@ impl<'a> FuncEmitter<'a> {
                     if obj == "json" && member.member == "stringify" {
                         return Some(WasTy::I64);
                     }
+                    if obj == "json" && member.member == "parse" {
+                        return Some(WasTy::I64);
+                    }
                     if obj == "fs" {
                         return match member.member.as_str() {
                             "exists" => Some(WasTy::I32),
@@ -1833,7 +1844,7 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Const(info.class_id as i64));
                 self.emit_i64_store(8);
                 // init fields a 0
-                for (_fn, w, off) in &info.fields {
+                for (_fn, _t, w, off) in &info.fields {
                     self.body.push(Instruction::LocalGet(obj));
                     self.body.push(Instruction::I64Const(*off));
                     self.body.push(Instruction::I64Add);
@@ -1904,10 +1915,25 @@ impl<'a> FuncEmitter<'a> {
                 if obj_name == "math" {
                     return self.emit_math_call(member, c);
                 }
-                if obj_name == "json" && member.member == "stringify" {
-                    self.emit_expression(&c.args[0])?;
-                    self.host.call(HostFn::JsonStringify, &mut self.body);
-                    return Ok(());
+                if obj_name == "json" {
+                    if member.member == "parse" {
+                        self.emit_expression(&c.args[0])?;
+                        self.host.call(HostFn::JsonParse, &mut self.body);
+                        return Ok(());
+                    }
+                    if member.member == "stringify" {
+                        self.emit_expression(&c.args[0])?;
+                        let t = self.types.get(&expr_span(&c.args[0])).cloned().unwrap_or(Type::Any);
+                        let kind = match t {
+                            Type::Record(_, _) => 1,
+                            Type::Array(_) => 2,
+                            _ => 0,
+                        };
+                        self.body.push(Instruction::I64Const(kind));
+                        self.host.call(HostFn::JsonStringify, &mut self.body);
+                        return Ok(());
+                    }
+                    return Err(self.unsupported_expr(&Expression::Call(c.clone())));
                 }
                 if obj_name == "fs" {
                     return self.emit_fs_call(member, c);
@@ -2218,7 +2244,79 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn emit_print_arg(&mut self, arg: &Expression) -> ClsResult<()> {
+        // Index sobre un record heterogéneo (value Any): imprimir según el tag del valor.
+        if let Expression::Index(i) = arg {
+            let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
+            if matches!(obj_ty, Some(Type::Record(_, _))) {
+                self.emit_expression(&i.object)?;
+                self.emit_expression(&i.index)?;
+                let key_tmp = self.fresh_local();
+                let ptr_tmp = self.fresh_local();
+                self.body.push(Instruction::LocalSet(key_tmp));
+                self.body.push(Instruction::LocalSet(ptr_tmp));
+                self.body.push(Instruction::LocalGet(ptr_tmp));
+                self.body.push(Instruction::LocalGet(key_tmp));
+                self.host.call(HostFn::RecordGet, &mut self.body);
+                let val_tmp = self.fresh_local();
+                self.body.push(Instruction::LocalSet(val_tmp));
+                self.body.push(Instruction::LocalGet(ptr_tmp));
+                self.body.push(Instruction::LocalGet(key_tmp));
+                self.host.call(HostFn::RecordTag, &mut self.body);
+                let tag_tmp = self.fresh_local();
+                self.body.push(Instruction::LocalSet(tag_tmp));
+                // if tag == 1 → string
+                self.body.push(Instruction::LocalGet(tag_tmp));
+                self.body.push(Instruction::I64Const(1));
+                self.body.push(Instruction::I64Eq);
+                self.block_depth += 1;
+                self.body.push(Instruction::If(BlockType::Empty));
+                self.body.push(Instruction::LocalGet(val_tmp));
+                self.host.call(HostFn::PrintStr, &mut self.body);
+                self.body.push(Instruction::Else);
+                // elif tag == 2 → float
+                self.body.push(Instruction::LocalGet(tag_tmp));
+                self.body.push(Instruction::I64Const(2));
+                self.body.push(Instruction::I64Eq);
+                self.block_depth += 1;
+                self.body.push(Instruction::If(BlockType::Empty));
+                self.body.push(Instruction::LocalGet(val_tmp));
+                self.body.push(Instruction::F64ReinterpretI64);
+                self.host.call(HostFn::PrintFloat, &mut self.body);
+                self.body.push(Instruction::Else);
+                // elif tag == 3 → bool
+                self.body.push(Instruction::LocalGet(tag_tmp));
+                self.body.push(Instruction::I64Const(3));
+                self.body.push(Instruction::I64Eq);
+                self.block_depth += 1;
+                self.body.push(Instruction::If(BlockType::Empty));
+                self.body.push(Instruction::LocalGet(val_tmp));
+                self.body.push(Instruction::I32WrapI64);
+                self.host.call(HostFn::PrintBool, &mut self.body);
+                self.body.push(Instruction::Else);
+                // else → int
+                self.body.push(Instruction::LocalGet(val_tmp));
+                self.host.call(HostFn::PrintInt, &mut self.body);
+                self.body.push(Instruction::End);
+                self.block_depth -= 1;
+                self.body.push(Instruction::End);
+                self.block_depth -= 1;
+                self.body.push(Instruction::End);
+                self.block_depth -= 1;
+                return Ok(());
+            }
+        }
         self.emit_expression(arg)?;
+        // json.stringify devuelve String (no un int): print_str.
+        if let Expression::Call(c) = arg {
+            if let Expression::MemberAccess(m) = &*c.callee {
+                if let Expression::Identifier(o, _) = &*m.object {
+                    if o == "json" && m.member == "stringify" {
+                        self.host.call(HostFn::PrintStr, &mut self.body);
+                        return Ok(());
+                    }
+                }
+            }
+        }
         // Llamadas a funciones nativas (extensión) → tipo de retorno codificado.
         if let Expression::Call(c) = arg {
             if let Expression::Identifier(name, _) = &*c.callee {
@@ -2269,6 +2367,72 @@ impl<'a> FuncEmitter<'a> {
             Type::Record(_, _) => {
                 // Formatear `{k: v, ...}` como el walker (evita imprimir el ptr).
                 self.host.call(HostFn::RecordToString, &mut self.body);
+                self.host.call(HostFn::PrintStr, &mut self.body);
+            }
+            Type::Named(name, _) if self.class_defs.contains_key(&name) => {
+                // Formatear `<Clase {campo: valor, ...}>` como el walker.
+                let info = self.class_defs[&name].clone();
+                let ptr = self.fresh_local();
+                self.body.push(Instruction::LocalSet(ptr));
+                let open = format!("<{} {{", name);
+                let s = self.intern_string(&open);
+                self.emit_load_str(s);
+                let res = self.fresh_local();
+                self.body.push(Instruction::LocalSet(res));
+                for (i, (fname, t_cls, w, off)) in info.fields.iter().enumerate() {
+                    let label = format!("{}: ", fname);
+                    let ls = self.intern_string(&label);
+                    self.emit_load_str(ls);
+                    let lt = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(lt));
+                    self.body.push(Instruction::LocalGet(res));
+                    self.body.push(Instruction::LocalGet(lt));
+                    self.host.call(HostFn::StrConcat, &mut self.body);
+                    self.body.push(Instruction::LocalSet(res));
+                    // valor
+                    self.body.push(Instruction::LocalGet(ptr));
+                    self.body.push(Instruction::I64Const(*off));
+                    self.body.push(Instruction::I64Add);
+                    self.body.push(Instruction::I32WrapI64);
+                    match w {
+                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
+                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                    }
+                    if matches!(t_cls, Type::String) {
+                        // el valor ya es un string (ptr<<32|len): concatenar directo
+                    } else {
+                        match w {
+                            WasTy::F64 => self.host.call(HostFn::StrFloat, &mut self.body),
+                            _ => self.host.call(HostFn::StrInt, &mut self.body),
+                        }
+                    }
+                    let sv = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(sv));
+                    self.body.push(Instruction::LocalGet(res));
+                    self.body.push(Instruction::LocalGet(sv));
+                    self.host.call(HostFn::StrConcat, &mut self.body);
+                    self.body.push(Instruction::LocalSet(res));
+                    if i < info.fields.len() - 1 {
+                        let sep = self.intern_string(", ");
+                        self.emit_load_str(sep);
+                        let st = self.fresh_local();
+                        self.body.push(Instruction::LocalSet(st));
+                        self.body.push(Instruction::LocalGet(res));
+                        self.body.push(Instruction::LocalGet(st));
+                        self.host.call(HostFn::StrConcat, &mut self.body);
+                        self.body.push(Instruction::LocalSet(res));
+                    }
+                }
+                let close = self.intern_string("}>");
+                self.emit_load_str(close);
+                let ct = self.fresh_local();
+                self.body.push(Instruction::LocalSet(ct));
+                self.body.push(Instruction::LocalGet(res));
+                self.body.push(Instruction::LocalGet(ct));
+                self.host.call(HostFn::StrConcat, &mut self.body);
+                self.body.push(Instruction::LocalSet(res));
+                self.body.push(Instruction::LocalGet(res));
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
             Type::Named(name, _) if self.struct_defs.contains_key(&name) => {
@@ -2573,13 +2737,15 @@ impl<'a> FuncEmitter<'a> {
                     }
                     Ok(())
                 } else if let Some(info) = self.class_defs.get(name.as_str()) {
-                    let fidx = info.fields.iter().position(|(n, _, _)| *n == m.member).ok_or_else(|| {
+                    let fidx = info.fields.iter().position(|(n, _, _, _)| *n == m.member).ok_or_else(|| {
                         crate::error::ClsError::CompileError(format!(
                             "El campo '{}' no existe en la clase '{}'",
                             m.member, name
                         ))
                     })?;
-                    let (_, w, off) = info.fields[fidx];
+                        let (_, _t, w, off) = &info.fields[fidx];
+                        let w = *w;
+                        let off = *off;
                     self.body.push(Instruction::I64Const(off));
                     self.body.push(Instruction::I64Add);
                     self.body.push(Instruction::I32WrapI64);
@@ -3101,8 +3267,8 @@ struct ClassInfo {
     class_id: u32,
     /// cadena de ancestors: [padre, abuelo, ...].
     ancestors: Vec<String>,
-    /// campos (nombre, tipo WASM, offset en bytes desde 16; 0..7=vtable, 8..15=class_id).
-    fields: Vec<(String, WasTy, i64)>,
+    /// campos (nombre, tipo CLS, tipo WASM, offset en bytes desde 16).
+    fields: Vec<(String, Type, WasTy, i64)>,
     /// nombres de métodos en orden canónico (posición = slot de la vtable).
     methods: Vec<String>,
     /// índice de la tabla donde empieza la vtable de esta clase.
@@ -3351,7 +3517,18 @@ impl<'a> Engine<'a> {
                                 (None, Some(v)) => self.expr_was_type(v).unwrap_or(WasTy::I64),
                                 (None, None) => WasTy::I64,
                             };
-                            fields.push((p.name.clone(), w, off));
+                            let t_cls = p
+                                .type_ann
+                                .as_ref()
+                                .map(annotation_to_type)
+                                .unwrap_or_else(|| {
+                                    if matches!(w, WasTy::F64) {
+                                        Type::Float
+                                    } else {
+                                        Type::Int
+                                    }
+                                });
+                            fields.push((p.name.clone(), t_cls, w, off));
                             off += elem_size_bytes(w);
                             total = off;
                         }
@@ -3442,8 +3619,8 @@ impl<'a> Engine<'a> {
             StrEndsWith, StrIsEmpty, StrLength, IntAbs, FloatAbs, ArrPush, ArrPop, ArrShift,
             ArrUnshift, ArrIndexOf, ArrIncludes, ArrJoin, ArrReverse, MathSqrt, MathPow, MathMin,
             MathMax, MathFloor, MathCeil, MathRound, MathRandom, MathSin, MathCos, MathTan, MathLog,
-            MathRange, JsonStringify, FsExists, FsCwd, FsReadFile, FsWriteFile, FsListDir, FsMkdir,
-            FsRm, RecordNew, RecordSet, RecordGet, RecordHas, RecordLen, RecordKeys, RecordValues,
+            MathRange, JsonStringify, JsonParse, FsExists, FsCwd, FsReadFile, FsWriteFile, FsListDir, FsMkdir,
+            FsRm, RecordNew, RecordSet, RecordGet, RecordHas, RecordTag, RecordLen, RecordKeys, RecordValues,
             RecordToString, HttpGet, HttpPost, ArrToString,
         ] {
             self.register_host(h);

@@ -754,6 +754,13 @@ impl TypeChecker {
                     _ => Type::Any,
                 };
             }
+            if name == "json" {
+                return match member.member.as_str() {
+                    "parse" => Type::Record(Box::new(Type::String), Box::new(Type::Any)),
+                    "stringify" => Type::String,
+                    _ => Type::Any,
+                };
+            }
         }
         // Métodos/getters de primitivos (sin boxing): tipo conocido por miembro.
         match obj_type {
