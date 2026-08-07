@@ -945,6 +945,7 @@ impl Interpreter {
                 Ok(Value::Struct(Box::new(StructInstance {
                     def_name: closure_name.clone(),
                     fields: values,
+                    field_names: closure_fields.iter().map(|f| f.name.clone()).collect(),
                 })))
             },
         );

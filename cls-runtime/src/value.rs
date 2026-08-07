@@ -106,6 +106,8 @@ pub struct StructField {
 pub struct StructInstance {
     pub def_name: String,
     pub fields: Vec<Value>,
+    /// Nombres de los campos (para la representación `Punto { x: 3, y: 4 }`).
+    pub field_names: Vec<String>,
 }
 
 impl PartialEq for StructInstance {
@@ -290,31 +292,38 @@ impl Value {
             Value::Null => "null".to_string(),
             Value::Void => "void".to_string(),
             Value::Array(v) => {
-                let items: Vec<String> = v.iter().map(|x| x.to_string()).collect();
+                let items: Vec<String> = v.iter().map(|x| x.repr()).collect();
                 format!("[{}]", items.join(", "))
             }
             Value::Tuple(v) => {
-                let items: Vec<String> = v.iter().map(|x| x.to_string()).collect();
+                let items: Vec<String> = v.iter().map(|x| x.repr()).collect();
                 format!("({})", items.join(", "))
             }
             Value::Record(v) => {
                 let entries: Vec<String> = v
                     .iter()
-                    .map(|(k, val)| format!("{}: {}", k, val.to_string()))
+                    .map(|(k, val)| format!("{}: {}", k, val.repr()))
                     .collect();
                 format!("{{{}}}", entries.join(", "))
             }
             Value::Fun(f) => format!("<function {}>", f.name),
             Value::Struct(s) => {
-                let def_name = &s.def_name;
-                let fields: Vec<String> = s.fields.iter().map(|v| v.to_string()).collect();
-                format!("{}({})", def_name, fields.join(", "))
+                let fields: Vec<String> = s
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| {
+                        let name = s.field_names.get(i).cloned().unwrap_or_default();
+                        format!("{}: {}", name, v.repr())
+                    })
+                    .collect();
+                format!("{} {{ {} }}", s.def_name, fields.join(", "))
             }
             Value::Promise(_) => "<promise>".to_string(),
             Value::Class(c) => format!("<class {}>", c.name),
             Value::Object(o) => {
                 let fields: Vec<String> = o.fields.iter()
-                    .map(|(k, v)| format!("{}: {}", k, v.to_string()))
+                    .map(|(k, v)| format!("{}: {}", k, v.repr()))
                     .collect();
                 format!("<{} {{{}}}>", o.class_name, fields.join(", "))
             }
@@ -338,6 +347,22 @@ impl Value {
                 };
                 format!("<{}{}{}", tag_str, props_str, children_str)
             }
+        }
+    }
+
+    /// Representación de impresión (`repr`): los strings van entre comillas dobles
+    /// con escapes visibles (`\n`, `\t`, `\\`, `\"`); el resto igual que `to_string`.
+    pub fn repr(&self) -> String {
+        match self {
+            Value::String(v) => {
+                let escaped = v
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('\n', "\\n")
+                    .replace('\t', "\\t");
+                format!("\"{}\"", escaped)
+            }
+            _ => self.to_string(),
         }
     }
 }

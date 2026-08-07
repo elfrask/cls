@@ -1794,7 +1794,7 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::LocalGet(ptr));
                 self.body.push(Instruction::I64Const(info.fields.len() as i64));
                 self.emit_i64_store(8);
-                for (i, (_, w)) in info.fields.iter().enumerate() {
+                for (i, (_, _, w)) in info.fields.iter().enumerate() {
                     if i < c.args.len() {
                         self.emit_expression(&c.args[i])?;
                     } else {
@@ -2442,54 +2442,9 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
             Type::Named(name, _) if self.struct_defs.contains_key(&name) => {
-                let info = self.struct_defs[&name].clone();
                 let ptr = self.fresh_local();
                 self.body.push(Instruction::LocalSet(ptr));
-                let name_str = format!("{}(", name);
-                let s = self.intern_string(&name_str);
-                self.emit_load_str(s);
-                let res = self.fresh_local();
-                self.body.push(Instruction::LocalSet(res));
-                for (i, (_fname, w)) in info.fields.iter().enumerate() {
-                    self.body.push(Instruction::LocalGet(ptr));
-                    self.body.push(Instruction::I64Const(info.offsets[i]));
-                    self.body.push(Instruction::I64Add);
-                    self.body.push(Instruction::I32WrapI64);
-                    match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                    }
-                    match w {
-                        WasTy::F64 => self.host.call(HostFn::StrFloat, &mut self.body),
-                        _ => self.host.call(HostFn::StrInt, &mut self.body),
-                    }
-                    let sv = self.fresh_local();
-                    self.body.push(Instruction::LocalSet(sv));
-                    self.body.push(Instruction::LocalGet(res));
-                    self.body.push(Instruction::LocalGet(sv));
-                    self.host.call(HostFn::StrConcat, &mut self.body);
-                    self.body.push(Instruction::LocalSet(res));
-                    if i < info.fields.len() - 1 {
-                        let sep = self.intern_string(", ");
-                        self.emit_load_str(sep);
-                        let st = self.fresh_local();
-                        self.body.push(Instruction::LocalSet(st));
-                        self.body.push(Instruction::LocalGet(res));
-                        self.body.push(Instruction::LocalGet(st));
-                        self.host.call(HostFn::StrConcat, &mut self.body);
-                        self.body.push(Instruction::LocalSet(res));
-                    }
-                }
-                let close = self.intern_string(")");
-                self.emit_load_str(close);
-                let ct = self.fresh_local();
-                self.body.push(Instruction::LocalSet(ct));
-                self.body.push(Instruction::LocalGet(res));
-                self.body.push(Instruction::LocalGet(ct));
-                self.host.call(HostFn::StrConcat, &mut self.body);
-                self.body.push(Instruction::LocalSet(res));
-                self.body.push(Instruction::LocalGet(res));
+                self.emit_struct_to_string(&name, ptr)?;
                 self.host.call(HostFn::PrintStr, &mut self.body);
                 return Ok(());
             }
@@ -2560,6 +2515,92 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
+    /// Construye la representación `Punto { x: 3, y: 4 }` de un struct y la deja
+    /// en el stack (el ptr del struct está en `ptr`).
+    fn emit_struct_to_string(&mut self, name: &str, ptr: u32) -> ClsResult<()> {
+        let info = self.struct_defs[name].clone();
+        let open = format!("{} {{ ", name);
+        let s = self.intern_string(&open);
+        self.emit_load_str(s);
+        let res = self.fresh_local();
+        self.body.push(Instruction::LocalSet(res));
+        for (i, (fname, t_cls, w)) in info.fields.iter().enumerate() {
+            let label = format!("{}: ", fname);
+            let ls = self.intern_string(&label);
+            self.emit_load_str(ls);
+            let lt = self.fresh_local();
+            self.body.push(Instruction::LocalSet(lt));
+            self.body.push(Instruction::LocalGet(res));
+            self.body.push(Instruction::LocalGet(lt));
+            self.host.call(HostFn::StrConcat, &mut self.body);
+            self.body.push(Instruction::LocalSet(res));
+            self.body.push(Instruction::LocalGet(ptr));
+            self.body.push(Instruction::I64Const(info.offsets[i]));
+            self.body.push(Instruction::I64Add);
+            self.body.push(Instruction::I32WrapI64);
+            match w {
+                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
+                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+            }
+            if matches!(t_cls, Type::String) {
+                let q = self.intern_string("\"");
+                self.emit_load_str(q);
+                let qt = self.fresh_local();
+                self.body.push(Instruction::LocalSet(qt));
+                self.body.push(Instruction::LocalGet(res));
+                self.body.push(Instruction::LocalGet(qt));
+                self.host.call(HostFn::StrConcat, &mut self.body);
+                self.body.push(Instruction::LocalSet(res));
+                let sv = self.fresh_local();
+                self.body.push(Instruction::LocalSet(sv));
+                self.body.push(Instruction::LocalGet(res));
+                self.body.push(Instruction::LocalGet(sv));
+                self.host.call(HostFn::StrConcat, &mut self.body);
+                self.body.push(Instruction::LocalSet(res));
+                let q2 = self.intern_string("\"");
+                self.emit_load_str(q2);
+                let qt2 = self.fresh_local();
+                self.body.push(Instruction::LocalSet(qt2));
+                self.body.push(Instruction::LocalGet(res));
+                self.body.push(Instruction::LocalGet(qt2));
+                self.host.call(HostFn::StrConcat, &mut self.body);
+                self.body.push(Instruction::LocalSet(res));
+            } else {
+                match w {
+                    WasTy::F64 => self.host.call(HostFn::StrFloat, &mut self.body),
+                    _ => self.host.call(HostFn::StrInt, &mut self.body),
+                }
+                let sv = self.fresh_local();
+                self.body.push(Instruction::LocalSet(sv));
+                self.body.push(Instruction::LocalGet(res));
+                self.body.push(Instruction::LocalGet(sv));
+                self.host.call(HostFn::StrConcat, &mut self.body);
+                self.body.push(Instruction::LocalSet(res));
+            }
+            if i < info.fields.len() - 1 {
+                let sep = self.intern_string(", ");
+                self.emit_load_str(sep);
+                let st = self.fresh_local();
+                self.body.push(Instruction::LocalSet(st));
+                self.body.push(Instruction::LocalGet(res));
+                self.body.push(Instruction::LocalGet(st));
+                self.host.call(HostFn::StrConcat, &mut self.body);
+                self.body.push(Instruction::LocalSet(res));
+            }
+        }
+        let close = self.intern_string(" }");
+        self.emit_load_str(close);
+        let ct = self.fresh_local();
+        self.body.push(Instruction::LocalSet(ct));
+        self.body.push(Instruction::LocalGet(res));
+        self.body.push(Instruction::LocalGet(ct));
+        self.host.call(HostFn::StrConcat, &mut self.body);
+        self.body.push(Instruction::LocalSet(res));
+        self.body.push(Instruction::LocalGet(res));
+        Ok(())
+    }
+
     fn emit_to_string(&mut self, arg: &Expression) -> ClsResult<()> {
         let span = expr_span(arg);
         let t = self.types.get(&span).cloned().unwrap_or(Type::Any);
@@ -2568,6 +2609,11 @@ impl<'a> FuncEmitter<'a> {
             Type::Bool => self.host.call(HostFn::StrBool, &mut self.body),
             Type::Char => self.host.call(HostFn::StrChar, &mut self.body),
             Type::Float => self.host.call(HostFn::StrFloat, &mut self.body),
+            Type::Named(name, _) if self.struct_defs.contains_key(&name) => {
+                let ptr = self.fresh_local();
+                self.body.push(Instruction::LocalSet(ptr));
+                self.emit_struct_to_string(&name, ptr)?;
+            }
             Type::Named(name, _) if self.class_defs.contains_key(&name) => {
                 // toString(obj) → __toString si existe; si no, __repr; el ptr está en stack.
                 if let Some(idx) = self.func_indexes.get(&format!("{}::__toString", name)) {
@@ -2736,13 +2782,13 @@ impl<'a> FuncEmitter<'a> {
             },
             Type::Named(name, _) => {
                 if let Some(info) = self.struct_defs.get(name.as_str()) {
-                    let fidx = info.fields.iter().position(|(n, _)| *n == m.member).ok_or_else(|| {
+                    let fidx = info.fields.iter().position(|(n, _, _)| *n == m.member).ok_or_else(|| {
                         crate::error::ClsError::CompileError(format!(
                             "El campo '{}' no existe en '{}'",
                             m.member, name
                         ))
                     })?;
-                    let w = info.fields[fidx].1;
+                    let w = info.fields[fidx].2;
                     self.body.push(Instruction::I64Const(info.offsets[fidx]));
                     self.body.push(Instruction::I64Add);
                     self.body.push(Instruction::I32WrapI64);
@@ -3334,7 +3380,8 @@ fn was_to_val(w: WasTy) -> ValType {
 #[derive(Clone)]
 struct StructInfo {
     def_id: u32,
-    fields: Vec<(String, WasTy)>,
+    /// campos (nombre, tipo CLS, tipo WASM).
+    fields: Vec<(String, Type, WasTy)>,
     offsets: Vec<i64>,
     total: i64,
 }
@@ -3489,7 +3536,7 @@ impl<'a> Engine<'a> {
                     let t = annotation_to_type(&f.type_ann);
                     let w = was_type(&t)?;
                     offsets.push(off);
-                    fields.push((f.name.clone(), w));
+                    fields.push((f.name.clone(), t, w));
                     off += elem_size_bytes(w);
                 }
                 self.struct_defs.insert(
