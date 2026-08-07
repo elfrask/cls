@@ -1,0 +1,12 @@
+extension "clx_demo" {
+    function add(a: int, b: int) -> int { native; }
+    function mul(a: float, b: float) -> float { native; }
+    function greet(n: String) -> String { native; }
+};
+
+function main(args: String[]) -> int {
+    print("add:", add(2, 3));
+    print("mul:", mul(2.5, 4.0));
+    print("greet:", greet("CLS"));
+    return 0;
+};

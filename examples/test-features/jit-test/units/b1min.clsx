@@ -1,0 +1,13 @@
+var x = 1;
+
+function inc() -> int {
+    x = x + 1;
+    return x;
+};
+
+function main(args: String[]) -> int {
+    print("x:", x);
+    print("inc:", inc());
+    print("x2:", x);
+    return 0;
+};

@@ -1,0 +1,29 @@
+class Contador {
+    var cuenta: int;
+    var etiqueta: String;
+
+    function main() {
+        me.cuenta = 0;
+        me.etiqueta = "contador";
+    };
+
+    function incrementar() -> int {
+        me.cuenta = me.cuenta + 1;
+        return me.cuenta;
+    };
+
+    function nombre() -> String {
+        return me.etiqueta;
+    };
+};
+
+function main(args: String[]) -> int {
+    var c = Contador();
+    print("cuenta inicial:", c.cuenta);
+    print("nombre:", c.nombre());
+    print("inc:", c.incrementar());
+    print("inc2:", c.incrementar());
+    c.cuenta = 10;
+    print("set:", c.cuenta);
+    return 0;
+};

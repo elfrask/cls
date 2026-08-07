@@ -1,0 +1,2 @@
+alias X = (Int -> Int;
+function main(args: String[]) -> int { return 0; };

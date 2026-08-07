@@ -1,0 +1,24 @@
+function suma() -> int {
+    return 1 + 2;
+};
+
+function main(args: String[]) -> int {
+    print("=== for each ===");
+    for each item in ([1, 2, 3]) {
+        print("fe:", item);
+    }
+    for each item and idx in ((4, 5, 6)) {
+        print("fe idx:", idx, "=", item);
+    }
+    print("=== switch ===");
+    switch (2) {
+        case (1) { print("switch: uno"); }
+        case (2) { print("switch: dos"); }
+        case default { print("switch: default"); }
+    }
+    print("=== with ===");
+    with tmp in (suma()) {
+        print("with:", tmp);
+    }
+    return 0;
+};

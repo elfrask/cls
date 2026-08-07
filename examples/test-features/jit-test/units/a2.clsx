@@ -1,0 +1,7 @@
+function main(args: String[]) -> int {
+    var tupla = (10, "veinte", 30.0);
+    print("t[0]:", tupla[0], "t[1]:", tupla[1], "t[2]:", tupla[2]);
+    print("length:", tupla.length);
+    print("join:", tupla.join("|"));
+    return 0;
+};

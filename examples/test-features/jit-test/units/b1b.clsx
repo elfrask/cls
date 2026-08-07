@@ -1,0 +1,18 @@
+export var contador = 0;
+export const FACTOR = 2;
+
+function incrementar() -> int {
+    contador = contador + 1;
+    return contador;
+};
+
+function main(args: String[]) -> int {
+    print("contador inicial:", contador);
+    incrementar();
+    incrementar();
+    print("contador:", contador);
+    print("factor:", FACTOR);
+    contador = contador + 100;
+    print("contador final:", contador);
+    return 0;
+};
