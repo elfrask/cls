@@ -1052,7 +1052,30 @@ fn register_stdlib_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
         })
         .map_err(|e| e.to_string())?;
     linker
-        .func_wrap(HOST, "json_stringify", |_: Caller<'_, HostState>, v: i64| -> i64 { v })
+        .func_wrap(HOST, "json_stringify", |mut caller: Caller<'_, HostState>, v: i64, kind: i64| -> i64 {
+            match kind {
+                1 => {
+                    let mut out = String::new();
+                    json_serialize_record(&mut caller, v, &mut out);
+                    caller_write_str(&mut caller, &out).unwrap_or(0)
+                }
+                2 => {
+                    let mut out = String::new();
+                    json_serialize_array(&mut caller, v, &mut out);
+                    caller_write_str(&mut caller, &out).unwrap_or(0)
+                }
+                _ => v,
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "json_parse", |mut caller: Caller<'_, HostState>, s: i64| -> i64 {
+            let text = caller_read_str(&mut caller, s);
+            match serde_json::from_str::<serde_json::Value>(&text) {
+                Ok(v) => json_build(&mut caller, &v).0,
+                Err(_) => 0,
+            }
+        })
         .map_err(|e| e.to_string())?;
     linker
         .func_wrap(HOST, "fs_exists", |mut caller: Caller<'_, HostState>, p: i64| -> i32 {
@@ -1119,7 +1142,106 @@ fn register_stdlib_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
     Ok(())
 }
 
-/// Registra los hosts de records (layout: [cap:i64][len:i64][key,val,key,val...], stride 16).
+/// tags de tipo para JSON: 0=int, 1=string, 2=float, 3=bool, 4=char, 5=array, 6=record.
+fn json_build(caller: &mut Caller<'_, HostState>, v: &serde_json::Value) -> (i64, i64) {
+    match v {
+        serde_json::Value::Null => (0, 0),
+        serde_json::Value::Bool(b) => ((if *b { 1 } else { 0 }), 3),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                (i, 0)
+            } else if let Some(f) = n.as_f64() {
+                (f.to_bits() as i64, 2)
+            } else {
+                (0, 0)
+            }
+        }
+        serde_json::Value::String(s) => (caller_write_str(caller, s).unwrap_or(0), 1),
+        serde_json::Value::Array(items) => {
+            let n = items.len();
+            let ptr = caller_alloc(caller, (n * 8 + 16) as i64).unwrap_or(0) as usize;
+            arr_write_i64(caller, ptr, n as i64);
+            arr_write_i64(caller, ptr + 8, n as i64);
+            for (i, it) in items.iter().enumerate() {
+                let (val, _) = json_build(caller, it);
+                arr_set(caller, ptr, i, 8, val);
+            }
+            (ptr as i64, 5)
+        }
+        serde_json::Value::Object(map) => {
+            let n = map.len();
+            let ptr = caller_alloc(caller, (n * 24 + 16) as i64).unwrap_or(0) as usize;
+            arr_write_i64(caller, ptr, n as i64);
+            arr_write_i64(caller, ptr + 8, n as i64);
+            let mut i = 0;
+            for (k, val) in map {
+                let key = caller_write_str(caller, k).unwrap_or(0);
+                let (vv, tag) = json_build(caller, val);
+                arr_write_i64(caller, ptr + 16 + i * 24, key);
+                arr_write_i64(caller, ptr + 16 + i * 24 + 8, vv);
+                arr_write_i64(caller, ptr + 16 + i * 24 + 16, tag);
+                i += 1;
+            }
+            (ptr as i64, 6)
+        }
+    }
+}
+
+fn json_serialize_val(caller: &mut Caller<'_, HostState>, val: i64, tag: i64, out: &mut String) {
+    match tag {
+        1 => {
+            out.push('"');
+            out.push_str(&json_escape(&caller_read_str(caller, val)));
+            out.push('"');
+        }
+        2 => out.push_str(&format_float(f64::from_bits(val as u64))),
+        3 => out.push_str(if val != 0 { "true" } else { "false" }),
+        4 => out.push(char::from_u32(val as u32).unwrap_or('?')),
+        5 => json_serialize_array(caller, val, out),
+        6 => json_serialize_record(caller, val, out),
+        _ => out.push_str(&val.to_string()),
+    }
+}
+
+fn json_serialize_record(caller: &mut Caller<'_, HostState>, ptr: i64, out: &mut String) {
+    let p = ptr as usize;
+    let len = arr_len(caller, p);
+    out.push('{');
+    for i in 0..len as usize {
+        if i > 0 {
+            out.push(',');
+        }
+        let key = arr_read_i64(caller, p + 16 + i * 24);
+        let val = arr_read_i64(caller, p + 16 + i * 24 + 8);
+        let tag = arr_read_i64(caller, p + 16 + i * 24 + 16);
+        out.push('"');
+        out.push_str(&json_escape(&caller_read_str(caller, key)));
+        out.push_str("\":");
+        json_serialize_val(caller, val, tag, out);
+    }
+    out.push('}');
+}
+
+fn json_serialize_array(caller: &mut Caller<'_, HostState>, ptr: i64, out: &mut String) {
+    let p = ptr as usize;
+    let len = arr_len(caller, p);
+    out.push('[');
+    for i in 0..len as usize {
+        if i > 0 {
+            out.push(',');
+        }
+        let val = arr_elem(caller, p, i, 8);
+        json_serialize_val(caller, val, 0, out);
+    }
+    out.push(']');
+}
+
+fn json_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\t', "\\t")
+}
 fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
     linker
         .func_wrap(HOST, "record_new", |mut caller: Caller<'_, HostState>, cap: i64| -> i64 {
@@ -1192,6 +1314,20 @@ fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
                 let ki = arr_read_i64(&mut caller, p + 16 + i * 24);
                 if caller_read_str(&mut caller, ki) == k {
                     return 1;
+                }
+            }
+            0
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "record_tag", |mut caller: Caller<'_, HostState>, ptr: i64, key: i64| -> i64 {
+            let p = ptr as usize;
+            let len = arr_len(&mut caller, p) as usize;
+            let k = caller_read_str(&mut caller, key);
+            for i in 0..len {
+                let ki = arr_read_i64(&mut caller, p + 16 + i * 24);
+                if caller_read_str(&mut caller, ki) == k {
+                    return arr_read_i64(&mut caller, p + 16 + i * 24 + 16);
                 }
             }
             0
