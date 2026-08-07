@@ -27,10 +27,10 @@ use crate::middleware::typeck::expr_span;
 use crate::middleware::types::{LitVal, Type};
 use std::collections::HashMap;
 use wasm_encoder::{
-    BlockType, CodeSection, DataSection, DataSegment, DataSegmentMode, ElementMode, ElementSection,
-    Elements, EntityType, Export, ExportSection, Function, FunctionSection, GlobalSection,
-    GlobalType, ImportSection, Instruction, Limits, MemArg, MemorySection, MemoryType,
-    Module as WasmModule, TableSection, TableType, TypeSection, ValType,
+    BlockType, CodeSection, ConstExpr, DataSection, DataSegment, DataSegmentMode, ElementMode,
+    ElementSection, Elements, EntityType, ExportKind, ExportSection, Function, FunctionSection,
+    GlobalSection, GlobalType, Ieee64, ImportSection, Instruction, MemArg, MemorySection,
+    MemoryType, Module as WasmModule, RefType, TableSection, TableType, TypeSection, ValType,
 };
 
 /// Funciones host (`env.*`) que el nodo JIT debe implementar.
@@ -927,7 +927,7 @@ impl<'a> FuncEmitter<'a> {
     fn emit_literal(&mut self, l: &Literal) -> ClsResult<()> {
         match &l.kind {
             LiteralKind::Int(v) => self.body.push(Instruction::I64Const(*v)),
-            LiteralKind::Float(v) => self.body.push(Instruction::F64Const(*v)),
+            LiteralKind::Float(v) => self.body.push(Instruction::F64Const(Ieee64::new(v.to_bits()))),
             LiteralKind::Bool(v) => {
                 self.body.push(Instruction::I32Const(if *v { 1 } else { 0 }))
             }
@@ -1850,7 +1850,7 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::I64Add);
                     self.body.push(Instruction::I32WrapI64);
                     match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Const(0.0)),
+                        WasTy::F64 => self.body.push(Instruction::F64Const(Ieee64::new(0.0f64.to_bits()))),
                         WasTy::I32 => self.body.push(Instruction::I32Const(0)),
                         WasTy::I64 => self.body.push(Instruction::I64Const(0)),
                     }
@@ -2091,7 +2091,7 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(method_slot as i64));
                         self.body.push(Instruction::I64Add);
                         self.body.push(Instruction::I32WrapI64);
-                        self.body.push(Instruction::CallIndirect { ty, table: 0 });
+                        self.body.push(Instruction::CallIndirect { type_index: ty, table_index: 0 });
                         return Ok(());
                     }
                     return Err(self.unsupported_expr(&Expression::Call(c.clone())));
@@ -2668,8 +2668,8 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I32Eqz);
             }
             Type::Float => {
-                self.body.push(Instruction::F64Const(0.0f64));
-                self.body.push(Instruction::F64Neq);
+                        self.body.push(Instruction::F64Const(Ieee64::new(0.0f64.to_bits())));
+                        self.body.push(Instruction::F64Ne);
             }
             Type::String => self.host.call(HostFn::ParseBool, &mut self.body),
             _ => {}
@@ -2745,11 +2745,11 @@ impl<'a> FuncEmitter<'a> {
             if obj_name == "math" {
                 match m.member.as_str() {
                     "PI" => {
-                        self.body.push(Instruction::F64Const(std::f64::consts::PI));
+                        self.body.push(Instruction::F64Const(Ieee64::new(std::f64::consts::PI.to_bits())));
                         return Ok(());
                     }
                     "E" => {
-                        self.body.push(Instruction::F64Const(std::f64::consts::E));
+                        self.body.push(Instruction::F64Const(Ieee64::new(std::f64::consts::E.to_bits())));
                         return Ok(());
                     }
                     _ => return Err(self.unsupported_expr(&Expression::MemberAccess(m.clone()))),
@@ -3136,7 +3136,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::LocalSet(v));
         self.body.push(Instruction::I32WrapI64);
         self.body.push(Instruction::LocalGet(v));
-        self.body.push(Instruction::I64Store(MemArg { offset, align: 3, memory_index: 0 }));
+        self.body.push(Instruction::I64Store(MemArg { offset: offset as u64, align: 3, memory_index: 0 }));
     }
 }
 
@@ -3426,7 +3426,7 @@ impl<'a> Engine<'a> {
     fn register_func_type(&mut self, params: Vec<ValType>, results: Vec<ValType>) -> u32 {
         let idx = self.type_count;
         self.type_count += 1;
-        self.types_sec.function(params, results);
+        self.types_sec.ty().function(params, results);
         idx
     }
 
@@ -3439,7 +3439,7 @@ impl<'a> Engine<'a> {
         let idx = self.func_count;
         self.func_count += 1;
         self.imports_sec
-            .import("env", Some(h.import_name()), EntityType::Function(tidx));
+            .import("env", h.import_name(), EntityType::Function(tidx));
         self.host_indexes.insert(h, idx);
         idx
     }
@@ -3666,7 +3666,7 @@ impl<'a> Engine<'a> {
                         let idx = self.func_count;
                         self.func_count += 1;
                         self.imports_sec
-                            .import("env", Some(&import_name), EntityType::Function(tidx));
+                            .import("env", &import_name, EntityType::Function(tidx));
                         self.native_indexes.insert(f.name.clone(), idx);
                         self.native_ret.insert(f.name.clone(), rc);
                     }
@@ -3691,7 +3691,11 @@ impl<'a> Engine<'a> {
 
         // Memoria (1 página = 64KB; el allocator hace grow).
         self.memories_sec.memory(MemoryType {
-            limits: Limits { min: 1, max: None },
+            minimum: 1,
+            maximum: None,
+            memory64: false,
+            shared: false,
+            page_size_log2: None,
         });
 
         // Global: heap_ptr, mut, inicial 1MB (tras el string pool).
@@ -3699,8 +3703,9 @@ impl<'a> Engine<'a> {
             GlobalType {
                 val_type: ValType::I64,
                 mutable: true,
+                shared: false,
             },
-            Instruction::I64Const(1048576),
+            &ConstExpr::i64_const(1048576),
         );
 
         // Globals de usuario: `var x` / `const x` top-level → sección globals.
@@ -3724,11 +3729,12 @@ impl<'a> Engine<'a> {
                     GlobalType {
                         val_type: w.val_type(),
                         mutable: true,
+                        shared: false,
                     },
-                    match w {
-                        WasTy::F64 => Instruction::F64Const(0.0),
-                        WasTy::I32 => Instruction::I32Const(0),
-                        WasTy::I64 => Instruction::I64Const(0),
+                    &match w {
+                        WasTy::F64 => ConstExpr::f64_const(Ieee64::new(0.0f64.to_bits())),
+                        WasTy::I32 => ConstExpr::i32_const(0),
+                        WasTy::I64 => ConstExpr::i64_const(0),
                     },
                 );
                 if let Some(val) = &v.value {
@@ -3816,17 +3822,16 @@ impl<'a> Engine<'a> {
         }
         if !table_funcs.is_empty() {
             self.tables_sec.table(TableType {
-                element_type: ValType::FuncRef,
-                limits: Limits {
-                    min: table_funcs.len() as u32,
-                    max: None,
-                },
+                element_type: RefType::FUNCREF,
+                table64: false,
+                minimum: table_funcs.len() as u64,
+                maximum: None,
+                shared: false,
             });
             self.elements_sec.active(
                 Some(0),
-                Instruction::I32Const(0),
-                ValType::FuncRef,
-                Elements::Functions(&table_funcs),
+                &ConstExpr::i32_const(0),
+                Elements::Functions(std::borrow::Cow::Borrowed(&table_funcs)),
             );
         }
 
@@ -3835,7 +3840,7 @@ impl<'a> Engine<'a> {
         self.data_sec.segment(DataSegment {
             mode: DataSegmentMode::Active {
                 memory_index: 0,
-                offset: Instruction::I32Const(0),
+                offset: &ConstExpr::i32_const(0),
             },
             data: data_bytes,
         });
@@ -3852,10 +3857,10 @@ impl<'a> Engine<'a> {
 
         // Exports.
         self.exports_sec
-            .export("main", Export::Function(self.func_indexes["main"]));
+            .export("main", ExportKind::Func, self.func_indexes["main"]);
         self.exports_sec
-            .export("alloc", Export::Function(self.func_indexes["__alloc"]));
-        self.exports_sec.export("memory", Export::Memory(0));
+            .export("alloc", ExportKind::Func, self.func_indexes["__alloc"]);
+        self.exports_sec.export("memory", ExportKind::Memory, 0);
 
         Ok(self.build_module().finish())
     }
@@ -3922,7 +3927,7 @@ impl<'a> Engine<'a> {
         let grouped: Vec<(u32, ValType)> = local_types.iter().map(|t| (1, *t)).collect();
         let mut func = Function::new(grouped);
         for inst in fe.body {
-            func.instruction(inst);
+            func.instruction(&inst);
         }
         Ok(func)
     }
@@ -3973,7 +3978,7 @@ impl<'a> Engine<'a> {
         let grouped: Vec<(u32, ValType)> = local_types.iter().map(|t| (1, *t)).collect();
         let mut func = Function::new(grouped);
         for inst in fe.body {
-            func.instruction(inst);
+            func.instruction(&inst);
         }
         Ok(Some(func))
     }
@@ -4059,7 +4064,7 @@ impl<'a> Engine<'a> {
         ];
         let mut func = Function::new(vec![(2, ValType::I64)]);
         for inst in b.drain(..) {
-            func.instruction(inst);
+            func.instruction(&inst);
         }
         func
     }
@@ -4097,7 +4102,7 @@ impl<'a> Engine<'a> {
         ];
         let mut func = Function::new(vec![(3, ValType::I64)]);
         for inst in b.drain(..) {
-            func.instruction(inst);
+            func.instruction(&inst);
         }
         func
     }
