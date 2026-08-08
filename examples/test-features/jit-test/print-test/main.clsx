@@ -1,9 +1,11 @@
 
 function range(init: int, end: int) -> int[] {
   
-  var out: int[] = [];
+  const out: int[] = [init];
 
-  for (var i = 0; i < limite; i = i + 1) {
+  out.pop();
+
+  for (var i = 0; i < end; i = i + 1) {
     out.push(i);
   }
 
@@ -29,13 +31,12 @@ function main(params: String[]) -> int {
   print("Arrays:", [1, 2, 3]);
   print("Arrays:", ["1", "2", "3"]);
 
-  print("Null:", null);
+  # print("Null:", null);
 
   const e: int[] = range(0, 100);
 
   for each value in (e) {
-    print("Value: $value")
+    print("Value: $value");
   };
-
   return 0;
 }
