@@ -4,11 +4,43 @@
 //! de cls-core (usando el type map del TypeChecker) y lo ejecuta en wasmtime.
 
 use cls_core::config::types::TypesConfig;
+use cls_core::error::{ClsError, Span};
 use cls_core::middleware::TypeChecker;
+use cls_runtime::error_report::{format_error, ErrorFormat, ErrorReport};
 use wasmtime::{Caller, Engine, Linker, Memory, Module, Store, Val};
 use std::time::Instant;
 
 const HOST: &str = "env";
+
+/// Muestra un error CLS con el formato estricto (trace numerado + línea + caret),
+/// igual que el walker (error_report). El nodo decide el formato (Console).
+fn show_cls_error(error: &ClsError, entry: &str, source: Option<&str>) {
+    // Reconstruir el error por tipo (ClsError no es Clone por IoError).
+    let reconstructed: ClsError = match error {
+        ClsError::SyntaxErrorAt(m, s) => ClsError::syntax_at(m, s),
+        ClsError::CompileErrorAt(m, s) => ClsError::compile_at(m, s),
+        ClsError::CompileError(m) => ClsError::CompileError(m.clone()),
+        ClsError::TypeError(m) => ClsError::TypeError(m.clone()),
+        ClsError::RuntimeError(m) => ClsError::RuntimeError(m.clone()),
+        ClsError::SyntaxError(m) => ClsError::SyntaxError(m.clone()),
+        ClsError::IoError(e) => ClsError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())),
+        ClsError::ConfigError(m) => ClsError::ConfigError(m.clone()),
+    };
+    let span = match &reconstructed {
+        ClsError::SyntaxErrorAt(_, s) | ClsError::CompileErrorAt(_, s) => Some(s.clone()),
+        _ => ClsError::extract_line_col(&reconstructed.to_string())
+            .map(|(l, c)| Span::new(l as u32, c as u32, l as u32, c as u32)),
+    };
+    let report = ErrorReport {
+        error: reconstructed,
+        span,
+        stack: vec![],
+        import_trace: vec![],
+        source_file: entry.to_string(),
+        source: source.map(|s| s.to_string()),
+    };
+    eprintln!("{}", format_error(&report, &ErrorFormat::Console));
+}
 
 /// `CLS_JIT_TIMING=1` → imprime el tiempo de cada fase del pipeline a stderr.
 fn jit_timing() -> bool {
@@ -28,14 +60,18 @@ fn tick(timing: bool, label: &str, start: Instant) -> Instant {
     Instant::now()
 }
 
-/// Estado del host: separador de argumentos en `print`.
+/// Estado del host: separador de argumentos en `print` y archivo fuente (para errores).
 struct HostState {
     first_in_line: bool,
+    source_file: String,
 }
 
 impl Default for HostState {
     fn default() -> Self {
-        Self { first_in_line: true }
+        Self {
+            first_in_line: true,
+            source_file: String::new(),
+        }
     }
 }
 
@@ -114,7 +150,7 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
     };
     let mut checker = TypeChecker::new(types_config);
     if let Err(e) = checker.check(&module) {
-        eprintln!("Error interno del type checker en '{}': {}", entry, e);
+        show_cls_error(&e, entry, Some(&source));
         return 1;
     }
     t = tick(timing, "typecheck", t);
@@ -131,7 +167,7 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
     let wasm_bytes = match backend.emit(&module) {
         Ok(b) => b,
         Err(e) => {
-            eprintln!("[JIT] Error de compilación en '{}': {}", entry, e);
+            show_cls_error(&e, entry, Some(&source));
             return 1;
         }
     };
@@ -211,7 +247,13 @@ fn run_wasm(
             .and_then(|_| std::fs::write(p, wasm_bytes));
     }
 
-    let mut store = Store::new(&engine, HostState::default());
+    let mut store = Store::new(
+        &engine,
+        HostState {
+            first_in_line: true,
+            source_file: entry.to_string(),
+        },
+    );
     let mut linker = Linker::new(&engine);
     t = tick(timing, "Store+Linker", t);
 
@@ -272,7 +314,11 @@ fn run_wasm(
     let result = match main.call(&mut store, args_ptr) {
         Ok(code) => code as i32,
         Err(e) => {
-            eprintln!("[JIT] Error en ejecución: {}", e);
+            show_cls_error(
+                &ClsError::RuntimeError(format!("Trap WASM: {}", e)),
+                entry,
+                None,
+            );
             1
         }
     };
@@ -419,9 +465,26 @@ fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String>
         })
         .map_err(|e| e.to_string())?;
     linker
-        .func_wrap(HOST, "trap", |mut caller: Caller<'_, HostState>, msg: i64| -> () {
+        .func_wrap(HOST, "trap", |mut caller: Caller<'_, HostState>, msg: i64, span: i64| -> () {
             let s = caller_read_str(&mut caller, msg);
-            eprintln!("[JIT] Error de runtime: {}", s);
+            let file = caller.data().source_file.clone();
+            let line = ((span >> 32) & 0xffff_ffff) as u32;
+            let col = (span & 0xffff_ffff) as u32;
+            let err = ClsError::RuntimeError(s);
+            let span_s = if line > 0 {
+                Some(Span::new(line, col, line, col))
+            } else {
+                None
+            };
+            let report = ErrorReport {
+                error: err,
+                span: span_s,
+                stack: vec![],
+                import_trace: vec![],
+                source_file: file,
+                source: None,
+            };
+            eprintln!("{}", format_error(&report, &ErrorFormat::Console));
             std::process::exit(1);
         })
         .map_err(|e| e.to_string())?;

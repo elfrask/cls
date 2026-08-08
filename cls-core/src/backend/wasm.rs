@@ -217,7 +217,7 @@ impl HostFn {
             PrintEnd => (vec![], vec![]),
             Now => (vec![], vec![ValType::I64]),
             Exit | Sleep => (i64p.clone(), vec![]),
-            Trap => (i64p.clone(), vec![]),
+            Trap => (vec![ValType::I64, ValType::I64], vec![]),
             ParseInt | StrInt => (i64p.clone(), vec![ValType::I64]),
             ParseBool => (i64p.clone(), vec![ValType::I32]),
             ParseFloat => (i64p.clone(), vec![ValType::F64]),
@@ -1149,10 +1149,11 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn unsupported_expr(&self, expr: &Expression) -> crate::error::ClsError {
-        crate::error::ClsError::CompileError(format!(
-            "Expresión no soportada por el JIT (subconjunto): {}",
-            expr_display(expr)
-        ))
+        let span = expr_span(expr);
+        crate::error::ClsError::compile_at(
+            &format!("Expresión no soportada por el JIT (subconjunto): {}", expr_display(expr)),
+            &span,
+        )
     }
 
     fn emit_literal(&mut self, l: &Literal) -> ClsResult<()> {
@@ -1263,7 +1264,7 @@ impl<'a> FuncEmitter<'a> {
             Slash => {
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;
-                self.div_zero_trap()?;
+                self.div_zero_trap(&b.span)?;
                 self.body.push(Instruction::I64DivS);
             }
             Percent if lt == WasTy::F64 || rt == WasTy::F64 => {
@@ -1273,7 +1274,7 @@ impl<'a> FuncEmitter<'a> {
             }            Percent => {
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;
-                self.div_zero_trap()?;
+                self.div_zero_trap(&b.span)?;
                 self.body.push(Instruction::I64RemS);
             }
             StarStar => {
@@ -1467,7 +1468,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    fn div_zero_trap(&mut self) -> ClsResult<()> {
+    fn div_zero_trap(&mut self, span: &Span) -> ClsResult<()> {
         let tmp = self.fresh_local();
         self.body.push(Instruction::LocalSet(tmp));
         self.body.push(Instruction::LocalGet(tmp));
@@ -1476,6 +1477,8 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::If(BlockType::Empty));
         let msg = self.intern_string("División por cero");
         self.emit_load_str(msg);
+        let packed = ((span.start_line as i64) << 32) | (span.start_col as i64);
+        self.body.push(Instruction::I64Const(packed));
         self.host.call(HostFn::Trap, &mut self.body);
         self.body.push(Instruction::Unreachable);
         self.body.push(Instruction::End);
@@ -2672,7 +2675,7 @@ impl<'a> FuncEmitter<'a> {
                 let idx = self.fresh_local();
                 self.body.push(Instruction::LocalSet(idx));
                 self.body.push(Instruction::LocalSet(ptr));
-                self.bounds_check(ptr, idx);
+                self.bounds_check(ptr, idx, &ix.span);
                 // addr = 16 + idx*16 → val y tag
                 self.body.push(Instruction::LocalGet(ptr));
                 self.body.push(Instruction::LocalGet(idx));
@@ -3579,13 +3582,13 @@ impl<'a> FuncEmitter<'a> {
     }
 
     /// Asume [ptr, idx] en stack; deja el valor del elemento (con bounds check).
-    fn emit_index_access(&mut self, elem_ty: WasTy, elem_size: i64, _i: &IndexExpr) -> ClsResult<()> {
+    fn emit_index_access(&mut self, elem_ty: WasTy, elem_size: i64, i: &IndexExpr) -> ClsResult<()> {
         let ptr = self.fresh_local();
         let idx = self.fresh_local();
         self.body.push(Instruction::LocalSet(idx));
         self.body.push(Instruction::LocalSet(ptr));
         // bounds check
-        self.bounds_check(ptr, idx);
+        self.bounds_check(ptr, idx, &i.span);
         // addr = ptr + 16 + idx*elem_size
         self.body.push(Instruction::LocalGet(ptr));
         self.body.push(Instruction::LocalGet(idx));
@@ -3604,7 +3607,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
     /// Emite el check `0 <= idx < len[ptr]`, trap si falla. Usa locals.
-    fn bounds_check(&mut self, ptr: u32, idx: u32) {
+    fn bounds_check(&mut self, ptr: u32, idx: u32, span: &Span) {
         self.body.push(Instruction::LocalGet(idx));
         self.body.push(Instruction::I64Const(0));
         self.body.push(Instruction::I64LtS);
@@ -3618,6 +3621,8 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::If(BlockType::Empty));
         let msg = self.intern_string("Índice fuera de rango");
         self.emit_load_str(msg);
+        let packed = ((span.start_line as i64) << 32) | (span.start_col as i64);
+        self.body.push(Instruction::I64Const(packed));
         self.host.call(HostFn::Trap, &mut self.body);
         self.body.push(Instruction::Unreachable);
         self.body.push(Instruction::End);
@@ -3673,7 +3678,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::LocalSet(value));
         self.body.push(Instruction::LocalSet(idx));
         self.body.push(Instruction::LocalSet(ptr));
-        self.bounds_check(ptr, idx);
+        self.bounds_check(ptr, idx, &i.span);
         let addr_tmp = self.fresh_local();
         self.body.push(Instruction::LocalGet(ptr));
         self.body.push(Instruction::LocalGet(idx));
@@ -5045,4 +5050,7 @@ fn collect_arrows_in_expr(expr: &Expression, out: &mut Vec<ArrowFunctionExpr>) {
         _ => {}
     }
 }
+
+
+
 
