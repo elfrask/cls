@@ -1,0 +1,19 @@
+function suma(a: int, b: int) -> int {
+    return a + b;
+};
+
+function App(props: String) -> String {
+    return "app";
+};
+
+function main(args: String[]) -> int {
+    var f = suma;
+    print("f:", f);
+    print("f(2,3):", f(2, 3));
+    print("f(10,20):", f(10, 20));
+    var app = (<App titulo="demo" />);
+    print("tag:", app.tag);
+    print("titulo:", app.props.titulo);
+    print("cmx:", app);
+    return 0;
+};
