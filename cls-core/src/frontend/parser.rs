@@ -1515,6 +1515,12 @@ impl Parser {
                     let el = self.parse_cmx_element()?;
                     children.push(CmxChild::Element(Box::new(el)));
                 }
+            } else if matches!(&self.current_token, Token::Symbol(Symbol::LBrace)) {
+                // Interpolación en el cuerpo: `{expr}` → CmxChild::Expression.
+                self.advance();
+                let expr = self.parse_expression()?;
+                self.expect_symbol(Symbol::RBrace)?;
+                children.push(CmxChild::Expression(Box::new(expr)));
             } else if is_close {
                 self.advance(); break;
             } else { break; }
@@ -2167,7 +2173,7 @@ impl Parser {
                         j += 1;
                     }
                     parts.push(InterpolationPart::Expr(
-                        Expression::Identifier(var_name, Span::new(0, 0, 0, 0))
+                        Expression::Identifier(var_name, Span::new(0, i as u32, 0, (i + 1) as u32))
                     ));
                     i = j;
                 } else {

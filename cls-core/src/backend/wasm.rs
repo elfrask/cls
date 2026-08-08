@@ -65,6 +65,7 @@ pub enum HostFn {
     StrEndsWith,
     StrIsEmpty,
     StrLength,
+    StrRepr,
     IntAbs,
     FloatAbs,
     ArrPush,
@@ -109,6 +110,13 @@ pub enum HostFn {
     RecordToString,
     HttpGet,
     HttpPost,
+    CmxNew,
+    CmxSetProp,
+    CmxAddChild,
+    CmxToString,
+    PrintAny,
+    FnHandle,
+    FnToString,
 }
 
 impl HostFn {
@@ -142,9 +150,10 @@ impl HostFn {
             StrContains => "str_contains",
             StrStartsWith => "str_starts_with",
             StrEndsWith => "str_ends_with",
-            StrIsEmpty => "str_is_empty",
-            StrLength => "str_length",
-            IntAbs => "int_abs",
+    StrIsEmpty => "str_is_empty",
+    StrLength => "str_length",
+    StrRepr => "str_repr",
+    IntAbs => "int_abs",
             FloatAbs => "float_abs",
             ArrPush => "arr_push",
             ArrPop => "arr_pop",
@@ -188,6 +197,13 @@ impl HostFn {
             RecordToString => "record_to_string",
             HttpGet => "http_get",
             HttpPost => "http_post",
+            CmxNew => "cmx_new",
+            CmxSetProp => "cmx_set_prop",
+            CmxAddChild => "cmx_add_child",
+            CmxToString => "cmx_to_string",
+    PrintAny => "print_any",
+    FnHandle => "fn_handle",
+    FnToString => "fn_to_string",
         }
     }
 
@@ -211,7 +227,7 @@ impl HostFn {
             PowNum => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             Fmod => (vec![ValType::F64, ValType::F64], vec![ValType::F64]),
             Input => (vec![], vec![ValType::I64]),
-            StrUpper | StrLower | StrTrim | StrLength => (i64p.clone(), vec![ValType::I64]),
+            StrUpper | StrLower | StrTrim | StrLength | StrRepr => (i64p.clone(), vec![ValType::I64]),
             StrContains | StrStartsWith | StrEndsWith => (vec![ValType::I64, ValType::I64], vec![ValType::I32]),
             StrIsEmpty => (i64p.clone(), vec![ValType::I32]),
             IntAbs => (i64p.clone(), vec![ValType::I64]),
@@ -245,6 +261,13 @@ impl HostFn {
             RecordToString => (i64p.clone(), vec![ValType::I64]),
             HttpGet => (i64p.clone(), vec![ValType::I64]),
             HttpPost => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
+            CmxNew => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
+            CmxSetProp => (vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
+            CmxAddChild => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
+            CmxToString => (i64p.clone(), vec![ValType::I64]),
+            PrintAny => (vec![ValType::I64, ValType::I64], vec![]),
+            FnHandle => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
+            FnToString => (i64p.clone(), vec![ValType::I64]),
         }
     }
 }
@@ -275,12 +298,14 @@ fn was_type(t: &Type) -> ClsResult<WasTy> {
         Type::Bool => Ok(WasTy::I32),
         Type::Char => Ok(WasTy::I32),
         Type::String => Ok(WasTy::I64),
+        Type::Cmx => Ok(WasTy::I64),
         Type::Array(_) => Ok(WasTy::I64),
         Type::Tuple(_) => Ok(WasTy::I64),
         Type::Record(_, _) => Ok(WasTy::I64),
         Type::Literal(LitVal::Float(_)) => Ok(WasTy::F64),
         Type::Literal(LitVal::Bool(_)) => Ok(WasTy::I32),
         Type::Named(..) | Type::Literal(_) => Ok(WasTy::I64),
+        Type::Fun(..) => Ok(WasTy::I64),
         Type::Union(members) => {
             let mut it = members.iter();
             let first = it.next().and_then(|m| was_type(m).ok());
@@ -330,6 +355,11 @@ struct FuncEmitter<'a> {
     string_index: &'a mut HashMap<String, u32>,
     func_indexes: &'a HashMap<String, u32>,
     func_defaults: &'a HashMap<String, Vec<Option<Expression>>>,
+    fn_table_idx: &'a HashMap<String, u32>,
+    arrow_names: &'a HashMap<Span, String>,
+    /// Registro de types dinámicos (call_indirect de funciones como valor).
+    type_count: &'a mut u32,
+    types_sec: &'a mut TypeSection,
     enum_defs: &'a HashMap<String, (u32, Vec<String>)>,
     struct_defs: &'a HashMap<String, StructInfo>,
     native_indexes: &'a HashMap<String, u32>,
@@ -350,6 +380,10 @@ impl<'a> FuncEmitter<'a> {
         string_index: &'a mut HashMap<String, u32>,
         func_indexes: &'a HashMap<String, u32>,
         func_defaults: &'a HashMap<String, Vec<Option<Expression>>>,
+        fn_table_idx: &'a HashMap<String, u32>,
+        arrow_names: &'a HashMap<Span, String>,
+        type_count: &'a mut u32,
+        types_sec: &'a mut TypeSection,
         enum_defs: &'a HashMap<String, (u32, Vec<String>)>,
         struct_defs: &'a HashMap<String, StructInfo>,
         native_indexes: &'a HashMap<String, u32>,
@@ -373,6 +407,10 @@ impl<'a> FuncEmitter<'a> {
             string_index,
             func_indexes,
             func_defaults,
+            fn_table_idx,
+            arrow_names,
+            type_count,
+            types_sec,
             enum_defs,
             struct_defs,
             native_indexes,
@@ -392,6 +430,15 @@ impl<'a> FuncEmitter<'a> {
         l
     }
 
+    /// Registra un type de función (para `call_indirect` de funciones como valor).
+    fn register_func_type(&mut self, params: Vec<ValType>, results: Vec<ValType>) -> u32 {
+        let idx = *self.type_count;
+        *self.type_count += 1;
+        self.types_sec.ty().function(params, results);
+        idx
+    }
+
+
     fn fresh_local(&mut self) -> u32 {
         self.fresh_local_ty(WasTy::I64)
     }
@@ -408,6 +455,19 @@ impl<'a> FuncEmitter<'a> {
     fn emit_ident_load(&mut self, name: &str) {
         if name == "super" && self.current_class.is_some() {
             self.body.push(Instruction::LocalGet(0));
+        } else if let Some(&ti) = self.fn_table_idx.get(name) {
+            // Función CLS como valor → handle [tabla_idx][capturas=0][nombre].
+            let n = self.intern_string(&format!("<function {}>", name));
+            self.body.push(Instruction::I64Const(ti as i64));
+            self.emit_load_str(n);
+            self.host.call(HostFn::FnHandle, &mut self.body);
+        } else if let Some((def_id, _)) = self.enum_defs.get(name) {
+            // Enum def como valor → marker `def_id<<32 | 0xffff_ffff` (imprime `<enum X>`).
+            let v = ((*def_id as i64) << 32) | 0xffff_ffff;
+            self.body.push(Instruction::I64Const(v));
+        } else if self.struct_defs.contains_key(name) {
+            // Struct def como valor → ptr 0 (marker: imprime `<function X>`).
+            self.body.push(Instruction::I64Const(0));
         } else if let Some(g) = self.globals.get(name) {
             self.body.push(Instruction::GlobalGet(*g));
         } else {
@@ -550,6 +610,10 @@ impl<'a> FuncEmitter<'a> {
             | Statement::NamespaceDecl(_)
             | Statement::ModuleDecl(_)
             | Statement::Config(_) => Ok(()),
+            Statement::Cmx(c) => {
+                self.emit_cmx(c)?;
+                self.emit_drop(&Expression::Cmx(c.clone()))
+            }
             other => Err(self.unsupported_stmt(other)),
         }
     }
@@ -559,6 +623,137 @@ impl<'a> FuncEmitter<'a> {
             "Statement no soportado por el JIT (subconjunto): {}",
             statement_display(stmt)
         ))
+    }
+
+    /// `arr.map(f)` — aplica la función (handle) a cada elemento y devuelve un
+    /// array nuevo con los resultados. El array original YA está en el stack
+    /// (lo emitió el dispatch del método).
+    fn emit_array_map(
+        &mut self,
+        _member: &MemberAccessExpr,
+        c: &CallExpr,
+        elem_ty: WasTy,
+        elem_size: i64,
+    ) -> ClsResult<()> {
+        let arr_ptr = self.fresh_local();
+        self.body.push(Instruction::LocalSet(arr_ptr));
+        self.emit_expression(&c.args[0])?;
+        let f_handle = self.fresh_local();
+        self.body.push(Instruction::LocalSet(f_handle));
+        // tipo de f → Fun(params, ret)
+        let ft = self.types.get(&expr_span(&c.args[0])).cloned().unwrap_or(Type::Any);
+        let (f_params, f_ret) = match ft {
+            Type::Fun(p, r) => (p, *r),
+            _ => {
+                return Err(crate::error::ClsError::CompileError(
+                    "map: el argumento debe ser una función".to_string(),
+                ))
+            }
+        };
+        let ret_was = was_type(&f_ret).unwrap_or(WasTy::I64);
+        let es_ret = elem_size_bytes(ret_was);
+        let mut pv: Vec<ValType> = Vec::new();
+        for t in &f_params {
+            pv.push(was_type(t)?.val_type());
+        }
+        let rv: Vec<ValType> = match f_ret {
+            Type::Void => vec![],
+            r => vec![was_type(&r)?.val_type()],
+        };
+        let tidx = self.register_func_type(pv, rv);
+        // nuevo array [cap][len][ret...] del mismo tamaño que el original.
+        let i = self.fresh_local();
+        let new_ptr = self.fresh_local();
+        self.body.push(Instruction::LocalGet(arr_ptr));
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::I64Load(MemArg { offset: 8, align: 3, memory_index: 0 }));
+        self.body.push(Instruction::LocalSet(i)); // n
+        self.body.push(Instruction::I64Const(16));
+        self.body.push(Instruction::LocalGet(i));
+        self.body.push(Instruction::I64Const(es_ret));
+        self.body.push(Instruction::I64Mul);
+        self.body.push(Instruction::I64Add);
+        let alloc = self.func_indexes["__alloc"];
+        self.body.push(Instruction::Call(alloc));
+        self.body.push(Instruction::LocalSet(new_ptr));
+        // cap y len del nuevo array
+        self.body.push(Instruction::LocalGet(new_ptr));
+        self.body.push(Instruction::LocalGet(i));
+        self.emit_i64_store(0);
+        self.body.push(Instruction::LocalGet(new_ptr));
+        self.body.push(Instruction::LocalGet(i));
+        self.emit_i64_store(8);
+        // loop i desde 0
+        self.body.push(Instruction::I64Const(0));
+        self.body.push(Instruction::LocalSet(i));
+        self.block_depth += 1;
+        self.body.push(Instruction::Block(BlockType::Empty));
+        let break_at = self.block_depth;
+        self.block_depth += 1;
+        self.body.push(Instruction::Loop(BlockType::Empty));
+        let loop_at = self.block_depth;
+        // cond: i >= n
+        self.body.push(Instruction::LocalGet(i));
+        self.body.push(Instruction::LocalGet(new_ptr));
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::I64Load(MemArg { offset: 8, align: 3, memory_index: 0 }));
+        self.body.push(Instruction::I64GeS);
+        let depth = self.block_depth.saturating_sub(break_at);
+        self.body.push(Instruction::BrIf(depth));
+        // addr del destino en el nuevo array (debe ir ANTES del call_indirect)
+        self.body.push(Instruction::LocalGet(new_ptr));
+        self.body.push(Instruction::LocalGet(i));
+        self.body.push(Instruction::I64Const(es_ret));
+        self.body.push(Instruction::I64Mul);
+        self.body.push(Instruction::I64Const(16));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I32WrapI64);
+        // elem = arr[16 + i*elem_size]
+        self.body.push(Instruction::LocalGet(arr_ptr));
+        self.body.push(Instruction::LocalGet(i));
+        self.body.push(Instruction::I64Const(elem_size));
+        self.body.push(Instruction::I64Mul);
+        self.body.push(Instruction::I64Const(16));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I32WrapI64);
+        match elem_ty {
+            WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+            WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
+            WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+        }
+        // llamar f(handle): handle[0] → call_indirect
+        self.body.push(Instruction::LocalGet(f_handle));
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::CallIndirect { type_index: tidx, table_index: 0 });
+        // store el resultado en [addr, result]
+        match ret_was {
+            WasTy::F64 => {
+                self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 }))
+            }
+            WasTy::I32 => {
+                self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 }))
+            }
+            WasTy::I64 => {
+                self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }))
+            }
+        }
+        // i++
+        self.body.push(Instruction::LocalGet(i));
+        self.body.push(Instruction::I64Const(1));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::LocalSet(i));
+        let depth = self.block_depth.saturating_sub(loop_at);
+        self.body.push(Instruction::Br(depth));
+        self.body.push(Instruction::End);
+        self.block_depth -= 1;
+        self.body.push(Instruction::End);
+        self.block_depth -= 1;
+        self.body.push(Instruction::LocalGet(new_ptr));
+        Ok(())
     }
 
     /// `for each x [and i] in (col)` sobre array/tuple.
@@ -579,6 +774,9 @@ impl<'a> FuncEmitter<'a> {
                 let break_at = self.block_depth;
                 self.block_depth += 1;
                 self.body.push(Instruction::Loop(BlockType::Empty));
+                // continue block: el `continue` salta aquí y ejecuta el incremento.
+                self.block_depth += 1;
+                self.body.push(Instruction::Block(BlockType::Empty));
                 let continue_at = self.block_depth;
                 self.loop_stack.push(LoopGuard { break_at, continue_at });
                 self.body.push(Instruction::LocalGet(i));
@@ -598,11 +796,14 @@ impl<'a> FuncEmitter<'a> {
                 for st in &fe.block.statements {
                     self.emit_statement(st)?;
                 }
+                // cerrar el continue block → incremento
+                self.body.push(Instruction::End);
+                self.block_depth -= 1;
                 self.body.push(Instruction::LocalGet(i));
                 self.body.push(Instruction::I64Const(1));
                 self.body.push(Instruction::I64Add);
                 self.body.push(Instruction::LocalSet(i));
-                let depth = self.block_depth.saturating_sub(continue_at);
+                let depth = self.block_depth.saturating_sub(continue_at - 1);
                 self.body.push(Instruction::Br(depth));
                 self.body.push(Instruction::End);
                 self.block_depth -= 1;
@@ -616,7 +817,9 @@ impl<'a> FuncEmitter<'a> {
         let (elem_ty, elem_size) = match &iterable_ty {
             Type::Array(elem) => {
                 let w = was_type(elem)?;
-                (w, elem_size_bytes(w))
+                // Array de Cmx → entradas `[val, tag]` stride 16.
+                let es = if matches!(**elem, Type::Cmx) { 16 } else { elem_size_bytes(w) };
+                (w, es)
             }
             Type::Tuple(slots) => {
                 let w = slots.first().map(was_type).unwrap_or(Ok(WasTy::I64))?;
@@ -644,6 +847,9 @@ impl<'a> FuncEmitter<'a> {
         let break_at = self.block_depth;
         self.block_depth += 1;
         self.body.push(Instruction::Loop(BlockType::Empty));
+        // continue block: el `continue` salta aquí y ejecuta el incremento.
+        self.block_depth += 1;
+        self.body.push(Instruction::Block(BlockType::Empty));
         let continue_at = self.block_depth;
         self.loop_stack.push(LoopGuard { break_at, continue_at });
         // cond: i >= len(iter)
@@ -681,12 +887,14 @@ impl<'a> FuncEmitter<'a> {
         for st in &fe.block.statements {
             self.emit_statement(st)?;
         }
-        // i++
+        // cerrar el continue block → i++
+        self.body.push(Instruction::End);
+        self.block_depth -= 1;
         self.body.push(Instruction::LocalGet(i));
         self.body.push(Instruction::I64Const(1));
         self.body.push(Instruction::I64Add);
         self.body.push(Instruction::LocalSet(i));
-        let depth = self.block_depth.saturating_sub(continue_at);
+        let depth = self.block_depth.saturating_sub(continue_at - 1);
         self.body.push(Instruction::Br(depth));
         self.body.push(Instruction::End); // loop
         self.block_depth -= 1;
@@ -857,18 +1065,22 @@ impl<'a> FuncEmitter<'a> {
         if let Some(init) = &f.init {
             self.emit_statement(init)?;
         }
-        let d = self.block_depth;
+        // break block
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::Empty));
         let break_at = self.block_depth;
+        // loop
         self.block_depth += 1;
         self.body.push(Instruction::Loop(BlockType::Empty));
+        // continue block: el `continue` salta aquí y ejecuta el update (evita
+        // que se salte el incremento y produzca un loop infinito).
+        self.block_depth += 1;
+        self.body.push(Instruction::Block(BlockType::Empty));
         let continue_at = self.block_depth;
         self.loop_stack.push(LoopGuard {
             break_at,
             continue_at,
         });
-        let _ = d;
         if let Some(cond) = &f.condition {
             self.emit_expression(cond)?;
             self.body.push(Instruction::I32Eqz);
@@ -878,11 +1090,15 @@ impl<'a> FuncEmitter<'a> {
         for s in &f.block.statements {
             self.emit_statement(s)?;
         }
+        // cerrar el continue block → se ejecuta el update
+        self.body.push(Instruction::End);
+        self.block_depth -= 1;
         if let Some(update) = &f.update {
             self.emit_expression(update)?;
             self.emit_drop(update)?;
         }
-        let depth = self.block_depth.saturating_sub(continue_at);
+        // volver al loop (que está en continue_at - 1)
+        let depth = self.block_depth.saturating_sub(continue_at - 1);
         self.body.push(Instruction::Br(depth));
         self.body.push(Instruction::End); // loop
         self.block_depth -= 1;
@@ -908,6 +1124,21 @@ impl<'a> FuncEmitter<'a> {
             Expression::Array(a) => self.emit_array(a),
             Expression::Tuple(t) => self.emit_tuple(t),
             Expression::Record(r) => self.emit_record(r),
+            Expression::Cmx(c) => self.emit_cmx(c),
+            Expression::ArrowFunction(a) => {
+                // Arrow → handle de su función sintética `__arrow_<n>`.
+                let name = self.arrow_names.get(&a.span).ok_or_else(|| {
+                    crate::error::ClsError::CompileError(
+                        "Arrow function sin función sintética (recolección)".to_string(),
+                    )
+                })?;
+                let ti = self.fn_table_idx[name];
+                let n = self.intern_string("<anonymous>");
+                self.body.push(Instruction::I64Const(ti as i64));
+                self.emit_load_str(n);
+                self.host.call(HostFn::FnHandle, &mut self.body);
+                Ok(())
+            }
             Expression::MemberAccess(m) => self.emit_member_access(m),
             Expression::Conditional(c) => self.emit_conditional(c),
             Expression::Assignment(a) => self.emit_assignment(a),
@@ -1922,8 +2153,31 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(());
                     }
                     if member.member == "stringify" {
-                        self.emit_expression(&c.args[0])?;
                         let t = self.types.get(&expr_span(&c.args[0])).cloned().unwrap_or(Type::Any);
+                        // Objeto de clase: __toJson si lo define; si no → "null" (paridad walker).
+                        if let Type::Named(cn, _) = &t {
+                            if self.class_defs.contains_key(cn.as_str()) {
+                                if self.emit_class_method("__toJson", &c.args[0])? {
+                                    return Ok(());
+                                }
+                                self.emit_expression(&c.args[0])?;
+                                self.body.push(Instruction::Drop);
+                                let n = self.intern_string("null");
+                                self.emit_load_str(n);
+                                return Ok(());
+                            }
+                            // struct/enum sin serialización → "null" (paridad walker).
+                            if self.struct_defs.contains_key(cn.as_str())
+                                || self.enum_defs.contains_key(cn.as_str())
+                            {
+                                self.emit_expression(&c.args[0])?;
+                                self.body.push(Instruction::Drop);
+                                let n = self.intern_string("null");
+                                self.emit_load_str(n);
+                                return Ok(());
+                            }
+                        }
+                        self.emit_expression(&c.args[0])?;
                         let kind = match t {
                             Type::Record(_, _) => 1,
                             Type::Array(_) => 2,
@@ -2039,6 +2293,7 @@ impl<'a> FuncEmitter<'a> {
                             self.host.call(HostFn::ArrJoin, &mut self.body);
                             return Ok(());
                         }
+                        "map" => return self.emit_array_map(member, c, elem_ty, elem_size),
                         _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
                     }
                 }
@@ -2198,9 +2453,21 @@ impl<'a> FuncEmitter<'a> {
                 }
                 "type" => {
                     let arg = &c.args[0];
+                    // Si la clase define __type → llamarla (paridad con el walker).
+                    if self.emit_class_method("__type", arg)? {
+                        return Ok(());
+                    }
                     let span = expr_span(arg);
                     let t = self.types.get(&span).cloned().unwrap_or(Type::Any);
-                    let idx = self.intern_string(type_name_str(&t));
+                    // type_name del walker: clase→"Object", struct→"Struct", enum→"Enum".
+                    let name = match &t {
+                        Type::Named(cn, _) if self.class_defs.contains_key(cn.as_str()) => "Object",
+                        Type::Named(cn, _) if self.struct_defs.contains_key(cn.as_str()) => "Struct",
+                        Type::Named(cn, _) if self.enum_defs.contains_key(cn.as_str()) => "Enum",
+                        Type::Named(_, _) => "Object",
+                        _ => type_name_str(&t),
+                    };
+                    let idx = self.intern_string(name);
                     self.emit_load_str(idx);
                     return Ok(());
                 }
@@ -2240,10 +2507,201 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
         }
+        // Función como valor (variable con handle) → call_indirect por tipo.
+        let callee_ty = self.types.get(&expr_span(&c.callee)).cloned();
+        if let Some(Type::Fun(params, ret)) = callee_ty {
+            for arg in &c.args {
+                self.emit_expression(arg)?;
+            }
+            let mut pv: Vec<ValType> = Vec::new();
+            for t in &params {
+                pv.push(was_type(t)?.val_type());
+            }
+            let rv: Vec<ValType> = match &*ret {
+                Type::Void => vec![],
+                r => vec![was_type(r)?.val_type()],
+            };
+            let tidx = self.register_func_type(pv, rv);
+            // handle → tabla_idx
+            self.emit_expression(&c.callee)?;
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::CallIndirect { type_index: tidx, table_index: 0 });
+            return Ok(());
+        }
         Err(self.unsupported_expr(&Expression::Call(c.clone())))
     }
 
+    /// Llama un método de clase por nombre (p.ej. `__type`/`__toJson`) sobre el
+    /// objeto expresado. Devuelve `false` si la clase no define ese método.
+    fn emit_class_method(&mut self, name: &str, object: &Expression) -> ClsResult<bool> {
+        let obj_ty = self.types.get(&expr_span(object)).cloned();
+        if let Some(Type::Named(cn, _)) = obj_ty {
+            if let Some(info) = self.class_defs.get(cn.as_str()) {
+                if let Some(slot) = info.methods.iter().position(|m| m == name) {
+                    let method_key = format!("{}::{}", cn, name);
+                    if let Some(&ty) = self.method_type_indexes.get(&method_key) {
+                        self.emit_expression(object)?;
+                        let obj_tmp = self.fresh_local();
+                        self.body.push(Instruction::LocalSet(obj_tmp));
+                        // receiver (me)
+                        self.body.push(Instruction::LocalGet(obj_tmp));
+                        // vtable(obj[0]) + slot
+                        self.body.push(Instruction::LocalGet(obj_tmp));
+                        self.body.push(Instruction::I32WrapI64);
+                        self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                        self.body.push(Instruction::I64Const(slot as i64));
+                        self.body.push(Instruction::I64Add);
+                        self.body.push(Instruction::I32WrapI64);
+                        self.body.push(Instruction::CallIndirect { type_index: ty, table_index: 0 });
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    /// Carga un campo del CmxValue (tag/props/children) — el ptr está en el stack.
+    fn emit_cmx_field(&mut self, offset: i64) -> ClsResult<()> {
+        self.body.push(Instruction::I64Const(offset));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+        Ok(())
+    }
+
+    /// Despacha el print de un campo de record heterogéneo según su tag.
+    fn emit_print_record_field(&mut self, ptr_tmp: u32, key_tmp: u32) {
+        self.body.push(Instruction::LocalGet(ptr_tmp));
+        self.body.push(Instruction::LocalGet(key_tmp));
+        self.host.call(HostFn::RecordGet, &mut self.body);
+        let val_tmp = self.fresh_local();
+        self.body.push(Instruction::LocalSet(val_tmp));
+        self.body.push(Instruction::LocalGet(ptr_tmp));
+        self.body.push(Instruction::LocalGet(key_tmp));
+        self.host.call(HostFn::RecordTag, &mut self.body);
+        let tag_tmp = self.fresh_local();
+        self.body.push(Instruction::LocalSet(tag_tmp));
+        self.body.push(Instruction::LocalGet(val_tmp));
+        self.body.push(Instruction::LocalGet(tag_tmp));
+        self.host.call(HostFn::PrintAny, &mut self.body);
+    }
+
+    /// Formatea una tupla `(e0, e1, ...)` con repr (strings entre comillas), como
+    /// el walker. El ptr de la tupla ya está en el stack.
+    fn emit_tuple_to_string(&mut self, slots: &[Type], arg: &Expression) -> ClsResult<()> {
+        let ptr = self.fresh_local();
+        self.body.push(Instruction::LocalSet(ptr));
+        let open = self.intern_string("(");
+        self.emit_load_str(open);
+        let res = self.fresh_local();
+        self.body.push(Instruction::LocalSet(res));
+        for (i, slot) in slots.iter().enumerate() {
+            if i > 0 {
+                self.body.push(Instruction::LocalGet(res));
+                let sep = self.intern_string(", ");
+                self.emit_load_str(sep);
+                self.host.call(HostFn::StrConcat, &mut self.body);
+                self.body.push(Instruction::LocalSet(res));
+            }
+            self.body.push(Instruction::LocalGet(ptr));
+            self.body.push(Instruction::I64Const(16 + (i as i64) * 8));
+            self.body.push(Instruction::I64Add);
+            self.body.push(Instruction::I32WrapI64);
+            let w = was_type(slot).unwrap_or(WasTy::I64);
+            match w {
+                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
+                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+            }
+            let val_tmp = self.fresh_local_ty(w);
+            self.body.push(match w {
+                WasTy::F64 => Instruction::LocalSet(val_tmp),
+                WasTy::I32 => Instruction::LocalSet(val_tmp),
+                WasTy::I64 => Instruction::LocalSet(val_tmp),
+            });
+            let sv = self.fresh_local();
+            match slot {
+                Type::String => {
+                    self.body.push(Instruction::LocalGet(val_tmp));
+                    self.host.call(HostFn::StrRepr, &mut self.body);
+                }
+                Type::Float => {
+                    self.body.push(Instruction::LocalGet(val_tmp));
+                    self.host.call(HostFn::StrFloat, &mut self.body);
+                }
+                Type::Bool => {
+                    self.body.push(Instruction::LocalGet(val_tmp));
+                    self.host.call(HostFn::StrBool, &mut self.body);
+                }
+                Type::Char => {
+                    self.body.push(Instruction::LocalGet(val_tmp));
+                    self.host.call(HostFn::StrChar, &mut self.body);
+                }
+                _ => {
+                    self.body.push(Instruction::LocalGet(val_tmp));
+                    self.host.call(HostFn::StrInt, &mut self.body);
+                }
+            }
+            self.body.push(Instruction::LocalSet(sv));
+            self.body.push(Instruction::LocalGet(res));
+            self.body.push(Instruction::LocalGet(sv));
+            self.host.call(HostFn::StrConcat, &mut self.body);
+            self.body.push(Instruction::LocalSet(res));
+        }
+        let close = self.intern_string(")");
+        self.body.push(Instruction::LocalGet(res));
+        self.emit_load_str(close);
+        self.host.call(HostFn::StrConcat, &mut self.body);
+        self.body.push(Instruction::LocalSet(res));
+        self.body.push(Instruction::LocalGet(res));
+        Ok(())
+    }
+
     fn emit_print_arg(&mut self, arg: &Expression) -> ClsResult<()> {
+        // Index de array de Cmx (`app.children[i]`): despachar por el tag del child
+        // (el elemento puede ser cmx, string, array, int, ...).
+        if let Expression::Index(ix) = arg {
+            let obj_ty = self.types.get(&expr_span(&ix.object)).cloned();
+            if matches!(obj_ty, Some(Type::Array(e)) if matches!(*e, Type::Cmx)) {
+                self.emit_expression(&ix.object)?;
+                self.emit_expression(&ix.index)?;
+                let ptr = self.fresh_local();
+                let idx = self.fresh_local();
+                self.body.push(Instruction::LocalSet(idx));
+                self.body.push(Instruction::LocalSet(ptr));
+                self.bounds_check(ptr, idx);
+                // addr = 16 + idx*16 → val y tag
+                self.body.push(Instruction::LocalGet(ptr));
+                self.body.push(Instruction::LocalGet(idx));
+                self.body.push(Instruction::I64Const(16));
+                self.body.push(Instruction::I64Mul);
+                self.body.push(Instruction::I64Const(16));
+                self.body.push(Instruction::I64Add);
+                self.body.push(Instruction::I64Add);
+                self.body.push(Instruction::I32WrapI64);
+                self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                let val_tmp = self.fresh_local();
+                self.body.push(Instruction::LocalSet(val_tmp));
+                self.body.push(Instruction::LocalGet(ptr));
+                self.body.push(Instruction::LocalGet(idx));
+                self.body.push(Instruction::I64Const(16));
+                self.body.push(Instruction::I64Mul);
+                self.body.push(Instruction::I64Const(24));
+                self.body.push(Instruction::I64Add);
+                self.body.push(Instruction::I64Add);
+                self.body.push(Instruction::I32WrapI64);
+                self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                let tag_tmp = self.fresh_local();
+                self.body.push(Instruction::LocalSet(tag_tmp));
+                self.body.push(Instruction::LocalGet(val_tmp));
+                self.body.push(Instruction::LocalGet(tag_tmp));
+                self.host.call(HostFn::PrintAny, &mut self.body);
+                return Ok(());
+            }
+        }
         // Index sobre un record heterogéneo (value Any): imprimir según el tag del valor.
         if let Expression::Index(i) = arg {
             let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
@@ -2254,54 +2712,24 @@ impl<'a> FuncEmitter<'a> {
                 let ptr_tmp = self.fresh_local();
                 self.body.push(Instruction::LocalSet(key_tmp));
                 self.body.push(Instruction::LocalSet(ptr_tmp));
-                self.body.push(Instruction::LocalGet(ptr_tmp));
-                self.body.push(Instruction::LocalGet(key_tmp));
-                self.host.call(HostFn::RecordGet, &mut self.body);
-                let val_tmp = self.fresh_local();
-                self.body.push(Instruction::LocalSet(val_tmp));
-                self.body.push(Instruction::LocalGet(ptr_tmp));
-                self.body.push(Instruction::LocalGet(key_tmp));
-                self.host.call(HostFn::RecordTag, &mut self.body);
-                let tag_tmp = self.fresh_local();
-                self.body.push(Instruction::LocalSet(tag_tmp));
-                // if tag == 1 → string
-                self.body.push(Instruction::LocalGet(tag_tmp));
-                self.body.push(Instruction::I64Const(1));
-                self.body.push(Instruction::I64Eq);
-                self.block_depth += 1;
-                self.body.push(Instruction::If(BlockType::Empty));
-                self.body.push(Instruction::LocalGet(val_tmp));
-                self.host.call(HostFn::PrintStr, &mut self.body);
-                self.body.push(Instruction::Else);
-                // elif tag == 2 → float
-                self.body.push(Instruction::LocalGet(tag_tmp));
-                self.body.push(Instruction::I64Const(2));
-                self.body.push(Instruction::I64Eq);
-                self.block_depth += 1;
-                self.body.push(Instruction::If(BlockType::Empty));
-                self.body.push(Instruction::LocalGet(val_tmp));
-                self.body.push(Instruction::F64ReinterpretI64);
-                self.host.call(HostFn::PrintFloat, &mut self.body);
-                self.body.push(Instruction::Else);
-                // elif tag == 3 → bool
-                self.body.push(Instruction::LocalGet(tag_tmp));
-                self.body.push(Instruction::I64Const(3));
-                self.body.push(Instruction::I64Eq);
-                self.block_depth += 1;
-                self.body.push(Instruction::If(BlockType::Empty));
-                self.body.push(Instruction::LocalGet(val_tmp));
-                self.body.push(Instruction::I32WrapI64);
-                self.host.call(HostFn::PrintBool, &mut self.body);
-                self.body.push(Instruction::Else);
-                // else → int
-                self.body.push(Instruction::LocalGet(val_tmp));
-                self.host.call(HostFn::PrintInt, &mut self.body);
-                self.body.push(Instruction::End);
-                self.block_depth -= 1;
-                self.body.push(Instruction::End);
-                self.block_depth -= 1;
-                self.body.push(Instruction::End);
-                self.block_depth -= 1;
+                self.emit_print_record_field(ptr_tmp, key_tmp);
+                return Ok(());
+            }
+        }
+        // Member access `record.campo` con value heterogéneo → igual, por tag.
+        if let Expression::MemberAccess(m) = arg {
+            let obj_ty = self.types.get(&expr_span(&m.object)).cloned();
+            if matches!(obj_ty, Some(Type::Record(_, _)))
+                && !matches!(m.member.as_str(), "length" | "size")
+            {
+                self.emit_expression(&m.object)?;
+                let ptr_tmp = self.fresh_local();
+                self.body.push(Instruction::LocalSet(ptr_tmp));
+                let k = self.intern_string(&m.member);
+                self.emit_load_str(k);
+                let key_tmp = self.fresh_local();
+                self.body.push(Instruction::LocalSet(key_tmp));
+                self.emit_print_record_field(ptr_tmp, key_tmp);
                 return Ok(());
             }
         }
@@ -2332,12 +2760,28 @@ impl<'a> FuncEmitter<'a> {
             }
         }
         // Llamadas a módulos stdlib → tipo de retorno conocido (print float/int).
+        // math.range devuelve un array (el typeck no lo tipa): formatear `[..]`.
+        if is_math_range_call(arg) {
+            self.emit_expression(arg)?;
+            self.body.push(Instruction::I64Const(8));
+            self.body.push(Instruction::I64Const(0));
+            self.host.call(HostFn::ArrToString, &mut self.body);
+            self.host.call(HostFn::PrintStr, &mut self.body);
+            return Ok(());
+        }
+        // Los contenedores (array/record/cmx/tuple) los formatea el match de tipos.
         if let Some(w) = self.module_call_ret(arg) {
-            match w {
-                WasTy::F64 => {
-                    self.host.call(HostFn::PrintFloat, &mut self.body);
-                    return Ok(());
-                }
+            let t = self.types.get(&expr_span(arg)).cloned().unwrap_or(Type::Any);
+            let is_container = matches!(
+                t,
+                Type::Array(_) | Type::Record(_, _) | Type::Cmx | Type::Tuple(_)
+            );
+            if !is_container {
+                match w {
+                    WasTy::F64 => {
+                        self.host.call(HostFn::PrintFloat, &mut self.body);
+                        return Ok(());
+                    }
                 WasTy::I32 => {
                     self.host.call(HostFn::PrintBool, &mut self.body);
                     return Ok(());
@@ -2345,6 +2789,7 @@ impl<'a> FuncEmitter<'a> {
                 _ => {
                     self.host.call(HostFn::PrintInt, &mut self.body);
                     return Ok(());
+                }
                 }
             }
         }
@@ -2359,7 +2804,8 @@ impl<'a> FuncEmitter<'a> {
                 // Formatear `[e1, e2, ...]` como el walker (evita imprimir el ptr).
                 let w = was_type(&*elem)?;
                 let kind = arr_kind_code(&*elem);
-                self.body.push(Instruction::I64Const(elem_size_bytes(w)));
+                let es = if matches!(*elem, Type::Cmx) { 16 } else { elem_size_bytes(w) };
+                self.body.push(Instruction::I64Const(es));
                 self.body.push(Instruction::I64Const(kind));
                 self.host.call(HostFn::ArrToString, &mut self.body);
                 self.host.call(HostFn::PrintStr, &mut self.body);
@@ -2367,6 +2813,10 @@ impl<'a> FuncEmitter<'a> {
             Type::Record(_, _) => {
                 // Formatear `{k: v, ...}` como el walker (evita imprimir el ptr).
                 self.host.call(HostFn::RecordToString, &mut self.body);
+                self.host.call(HostFn::PrintStr, &mut self.body);
+            }
+            Type::Tuple(slots) => {
+                self.emit_tuple_to_string(&slots, arg)?;
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
             Type::Named(name, _) if self.class_defs.contains_key(&name) => {
@@ -2441,11 +2891,31 @@ impl<'a> FuncEmitter<'a> {
                 self.host.call(HostFn::PrintStr, &mut self.body);
                 }
             }
+            Type::Cmx => {
+                self.host.call(HostFn::CmxToString, &mut self.body);
+                self.host.call(HostFn::PrintStr, &mut self.body);
+            }
+            Type::Fun(..) => {
+                // Handle de función → `<function X>` (el nombre está en el handle).
+                self.host.call(HostFn::FnToString, &mut self.body);
+                self.host.call(HostFn::PrintStr, &mut self.body);
+            }
             Type::Named(name, _) if self.struct_defs.contains_key(&name) => {
                 let ptr = self.fresh_local();
                 self.body.push(Instruction::LocalSet(ptr));
+                // Struct def como valor (ptr 0) → `<function X>` (paridad walker).
+                self.body.push(Instruction::LocalGet(ptr));
+                self.body.push(Instruction::I64Eqz);
+                self.block_depth += 1;
+                self.body.push(Instruction::If(BlockType::Empty));
+                let fs = self.intern_string(&format!("<function {}>", name));
+                self.emit_load_str(fs);
+                self.host.call(HostFn::PrintStr, &mut self.body);
+                self.body.push(Instruction::Else);
                 self.emit_struct_to_string(&name, ptr)?;
                 self.host.call(HostFn::PrintStr, &mut self.body);
+                self.body.push(Instruction::End);
+                self.block_depth -= 1;
                 return Ok(());
             }
             Type::Named(name, _) if self.enum_defs.contains_key(&name) => {
@@ -2455,11 +2925,23 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64And);
                 let idx = self.fresh_local();
                 self.body.push(Instruction::LocalSet(idx));
+                // Enum def como valor (index 0xffffffff) → `<enum X>` (paridad walker).
+                self.body.push(Instruction::LocalGet(idx));
+                self.body.push(Instruction::I64Const(0xffff_ffff));
+                self.body.push(Instruction::I64Eq);
+                self.block_depth += 1;
+                self.body.push(Instruction::If(BlockType::Empty));
+                let eds = self.intern_string(&format!("<enum {}>", name));
+                self.emit_load_str(eds);
+                self.host.call(HostFn::PrintStr, &mut self.body);
+                self.body.push(Instruction::Else);
                 let n = variants.len();
                 if n == 0 {
                     let s = self.intern_string("");
                     self.emit_load_str(s);
                     self.host.call(HostFn::PrintStr, &mut self.body);
+                    self.body.push(Instruction::End);
+                    self.block_depth -= 1;
                     return Ok(());
                 }
                 self.body.push(Instruction::LocalGet(idx));
@@ -2494,6 +2976,8 @@ impl<'a> FuncEmitter<'a> {
                     self.block_depth -= 1;
                 }
                 self.host.call(HostFn::PrintStr, &mut self.body);
+                self.body.push(Instruction::End);
+                self.block_depth -= 1;
                 return Ok(());
             }
             Type::Union(_) => {
@@ -2778,6 +3262,18 @@ impl<'a> FuncEmitter<'a> {
                     self.host.call(HostFn::RecordLen, &mut self.body);
                     Ok(())
                 }
+                _ => {
+                    // acceso por nombre de campo: r.campo → record_get(ptr, "campo")
+                    let k = self.intern_string(&m.member);
+                    self.emit_load_str(k);
+                    self.host.call(HostFn::RecordGet, &mut self.body);
+                    Ok(())
+                }
+            },
+            Type::Cmx => match m.member.as_str() {
+                "tag" => self.emit_cmx_field(0),
+                "props" => self.emit_cmx_field(8),
+                "children" => self.emit_cmx_field(16),
                 _ => Err(self.unsupported_expr(&Expression::MemberAccess(m.clone()))),
             },
             Type::Named(name, _) => {
@@ -2855,7 +3351,14 @@ impl<'a> FuncEmitter<'a> {
 
     fn emit_array(&mut self, a: &ArrayExpr) -> ClsResult<()> {
         let elem_ty = self.array_elem_type(a)?;
-        let elem_size = elem_size_bytes(elem_ty);
+        // Array de Cmx → entradas `[val, tag]` stride 16 (children del Cmx, etc.).
+        let is_cmx = a
+            .elements
+            .first()
+            .and_then(|el| cmx_literal_type(el).or_else(|| self.types.get(&expr_span(el)).cloned()))
+            .map(|t| matches!(t, Type::Cmx))
+            .unwrap_or(false);
+        let elem_size = if is_cmx { 16 } else { elem_size_bytes(elem_ty) };
         let n = a.elements.len() as i64;
         // layout: [cap:i64][len:i64][elem...] (base 16)
         self.body.push(Instruction::I64Const(n));
@@ -2877,25 +3380,46 @@ impl<'a> FuncEmitter<'a> {
         // elementos
         for (i, el) in a.elements.iter().enumerate() {
             self.emit_expression(el)?;
-            let val_tmp = self.fresh_local_ty(elem_ty);
-            let addr_tmp = self.fresh_local();
-            self.body.push(Instruction::LocalSet(val_tmp));
-            self.body.push(Instruction::LocalGet(ptr));
-            self.body.push(Instruction::I64Const(16 + (i as i64) * elem_size));
-            self.body.push(Instruction::I64Add);
-            self.body.push(Instruction::LocalSet(addr_tmp));
-            self.body.push(Instruction::LocalGet(addr_tmp));
-            self.body.push(Instruction::I32WrapI64);
-            self.body.push(Instruction::LocalGet(val_tmp));
-            match elem_ty {
-                WasTy::F64 => {
-                    self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 }))
-                }
-                WasTy::I32 => {
-                    self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 }))
-                }
-                WasTy::I64 => {
-                    self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }))
+            if is_cmx {
+                // guardar [val, tag]
+                let val_tmp = self.fresh_local_ty(elem_ty);
+                self.body.push(Instruction::LocalSet(val_tmp));
+                self.body.push(Instruction::LocalGet(ptr));
+                self.body.push(Instruction::I64Const(16 + (i as i64) * 16));
+                self.body.push(Instruction::I64Add);
+                self.body.push(Instruction::I32WrapI64);
+                self.body.push(Instruction::LocalGet(val_tmp));
+                self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                self.body.push(Instruction::LocalGet(ptr));
+                self.body.push(Instruction::I64Const(16 + (i as i64) * 16 + 8));
+                self.body.push(Instruction::I64Add);
+                self.body.push(Instruction::I32WrapI64);
+                let el_cls = cmx_literal_type(el)
+                    .or_else(|| self.types.get(&expr_span(el)).cloned())
+                    .unwrap_or(Type::Any);
+                self.body.push(Instruction::I64Const(cmx_tag_for_type(&el_cls)));
+                self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+            } else {
+                let val_tmp = self.fresh_local_ty(elem_ty);
+                let addr_tmp = self.fresh_local();
+                self.body.push(Instruction::LocalSet(val_tmp));
+                self.body.push(Instruction::LocalGet(ptr));
+                self.body.push(Instruction::I64Const(16 + (i as i64) * elem_size));
+                self.body.push(Instruction::I64Add);
+                self.body.push(Instruction::LocalSet(addr_tmp));
+                self.body.push(Instruction::LocalGet(addr_tmp));
+                self.body.push(Instruction::I32WrapI64);
+                self.body.push(Instruction::LocalGet(val_tmp));
+                match elem_ty {
+                    WasTy::F64 => {
+                        self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 }))
+                    }
+                    WasTy::I32 => {
+                        self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 }))
+                    }
+                    WasTy::I64 => {
+                        self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }))
+                    }
                 }
             }
         }
@@ -2938,6 +3462,102 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
+    /// Construye un `CmxValue` en memoria: [tag][props_ptr][children_ptr].
+    fn emit_cmx(&mut self, c: &CmxElement) -> ClsResult<()> {
+        // tag mayúscula → resolver la variable/valor SIEMPRE (debe existir; si no, error).
+        // tag minúscula → String.
+        if c.tag.starts_with(|ch: char| ch.is_uppercase()) {
+            let name = c.tag.clone();
+            if self.globals.contains_key(&name) || self.locals.contains_key(&name) {
+                self.emit_ident_load(&name);
+            } else if self.fn_table_idx.contains_key(&name) {
+                // Función como tag → el nombre formateado (CMX guarda la referencia sin ejecutarla).
+                let s = self.intern_string(&format!("<function {}>", name));
+                self.emit_load_str(s);
+            } else {
+                return Err(crate::error::ClsError::CompileError(format!(
+                    "El tag '<{}>' usa mayúscula pero '{}' no está definido: \
+                     los tags con inicial mayúscula deben ser una función/valor existente",
+                    c.tag, name
+                )));
+            }
+        } else {
+            let t = self.intern_string(&c.tag);
+            self.emit_load_str(t);
+        }
+        self.body.push(Instruction::I64Const(0)); // kind=0 → elemento
+        self.host.call(HostFn::CmxNew, &mut self.body);
+        let ptr = self.fresh_local();
+        self.body.push(Instruction::LocalSet(ptr));
+        for attr in &c.attributes {
+            self.body.push(Instruction::LocalGet(ptr));
+            let k = self.intern_string(&attr.name);
+            self.emit_load_str(k);
+            let val_type: Option<Type> = match &attr.value {
+                Some(CmxAttributeValue::String(s)) => {
+                    let s = self.intern_string(s);
+                    self.emit_load_str(s);
+                    Some(Type::String)
+                }
+                Some(CmxAttributeValue::Expression(expr)) => {
+                    self.emit_expression(expr)?;
+                    // Literales → su tipo real (el type map puede dar Any).
+                    cmx_literal_type(expr)
+                        .or_else(|| self.types.get(&expr_span(expr)).cloned())
+                }
+                Some(CmxAttributeValue::Shorthand(name)) => {
+                    self.emit_ident_load(name);
+                    None
+                }
+                None => {
+                    self.body.push(Instruction::I64Const(1));
+                    Some(Type::Bool)
+                }
+            };
+            let was = match &val_type {
+                Some(t) => was_type(t).unwrap_or(WasTy::I64),
+                None => WasTy::I64,
+            };
+            match was {
+                WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+                WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+                WasTy::I64 => {}
+            }
+            let cls = val_type.unwrap_or(Type::Any);
+            self.body.push(Instruction::I64Const(cmx_tag_for_type(&cls)));
+            self.host.call(HostFn::CmxSetProp, &mut self.body);
+            self.body.push(Instruction::Drop);
+        }
+        for child in &c.children {
+            self.body.push(Instruction::LocalGet(ptr));
+            match child {
+                CmxChild::Text(s) => {
+                    // Texto → CmxValue de texto (kind=1): el print lo muestra plano.
+                    let s = self.intern_string(s);
+                    self.emit_load_str(s);
+                    self.body.push(Instruction::I64Const(1));
+                    self.host.call(HostFn::CmxNew, &mut self.body);
+                    self.body.push(Instruction::I64Const(5 << 8));
+                }
+                CmxChild::Expression(expr) => {
+                    self.emit_expression(expr)?;
+                    let t = cmx_literal_type(expr)
+                        .or_else(|| self.types.get(&expr_span(expr)).cloned())
+                        .unwrap_or(Type::Any);
+                    self.body.push(Instruction::I64Const(cmx_tag_for_type(&t)));
+                }
+                CmxChild::Element(el) => {
+                    self.emit_cmx(el)?;
+                    self.body.push(Instruction::I64Const(5 << 8));
+                }
+            }
+            self.host.call(HostFn::CmxAddChild, &mut self.body);
+            self.body.push(Instruction::Drop);
+        }
+        self.body.push(Instruction::LocalGet(ptr));
+        Ok(())
+    }
+
     fn emit_index_get(&mut self, i: &IndexExpr) -> ClsResult<()> {
         // Record: r["key"] → record_get(ptr, key)
         let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
@@ -2952,7 +3572,9 @@ impl<'a> FuncEmitter<'a> {
         let elem_ty = self.index_elem_type(i)?;
         self.emit_expression(&i.object)?;
         self.emit_expression(&i.index)?;
-        let elem_size = self.container_elem_size(i, elem_ty);
+        // Array de Cmx → entradas `[val, tag]` stride 16 (children del Cmx, etc.).
+        let is_cmx = matches!(&obj_ty, Some(Type::Array(e)) if matches!(**e, Type::Cmx));
+        let elem_size = if is_cmx { 16 } else { self.container_elem_size(i, elem_ty) };
         self.emit_index_access(elem_ty, elem_size, i)
     }
 
@@ -3147,15 +3769,63 @@ fn is_compound(op: Operator) -> bool {
     )
 }
 
-/// Código del tipo de elemento para `arr_join` (0=int, 1=string, 2=float, 3=bool, 4=char).
+/// Código del tipo de elemento para `arr_join`/`arr_to_string`
+/// (0=int, 1=string, 2=float, 3=bool, 4=char, 5=cmx).
 fn arr_kind_code(t: &Type) -> i64 {
     match t {
         Type::String => 1,
         Type::Float | Type::F32 | Type::F64 => 2,
         Type::Bool => 3,
         Type::Char => 4,
+        Type::Cmx => 5,
         _ => 0,
     }
+}
+
+/// Tag compuesto para valores del Cmx: `tipo<<8 | kind`. tipo: 0=int, 1=string,
+/// 2=float, 3=bool, 4=char, 5=cmx, 6=array, 7=record. kind = tipo del elem (arrays).
+fn cmx_tag_for_type(t: &Type) -> i64 {
+    match t {
+        Type::String => 1 << 8,
+        Type::Float | Type::F32 | Type::F64 => 2 << 8,
+        Type::Bool => 3 << 8,
+        Type::Char => 4 << 8,
+        Type::Cmx => 5 << 8,
+        Type::Array(e) => (6 << 8) | arr_kind_code(e),
+        Type::Record(_, _) => 7 << 8,
+        _ => 0,
+    }
+}
+
+/// Tipo CLS de un literal (fallback cuando el type map no lo tiene).
+/// `math.range(...)` (posiblemente entre paréntesis) → devuelve un array.
+fn is_math_range_call(expr: &Expression) -> bool {
+    let inner = match expr {
+        Expression::Parenthesized(e, _) => &**e,
+        e => e,
+    };
+    if let Expression::Call(c) = inner {
+        if let Expression::MemberAccess(m) = &*c.callee {
+            if let Expression::Identifier(obj, _) = &*m.object {
+                return obj == "math" && m.member == "range";
+            }
+        }
+    }
+    false
+}
+
+fn cmx_literal_type(e: &Expression) -> Option<Type> {
+    if let Expression::Literal(l) = e {
+        return Some(match &l.kind {
+            LiteralKind::Int(_) => Type::Int,
+            LiteralKind::Float(_) => Type::Float,
+            LiteralKind::String(_) => Type::String,
+            LiteralKind::Bool(_) => Type::Bool,
+            LiteralKind::Char(_) => Type::Char,
+            _ => Type::Any,
+        });
+    }
+    None
 }
 
 /// Tipo runtime de una unión (monomórfica) → el tipo base de sus miembros.
@@ -3299,6 +3969,11 @@ struct Engine<'a> {
     func_indexes: HashMap<String, u32>,
     func_types: HashMap<String, (Vec<Type>, Option<Type>)>,
     func_defaults: HashMap<String, Vec<Option<Expression>>>,
+    // B5: funciones como valor. Handle = [tabla_idx][capturas] (16 bytes).
+    fn_table_idx: HashMap<String, u32>,
+    fn_type_indexes: HashMap<String, u32>,
+    /// arrow functions → nombre sintético `__arrow_<n>` (por span).
+    arrow_names: HashMap<Span, String>,
     host_indexes: HashMap<HostFn, u32>,
     string_pool: Vec<String>,
     string_index: HashMap<String, u32>,
@@ -3403,6 +4078,9 @@ impl<'a> Engine<'a> {
             func_indexes: HashMap::new(),
             func_types: HashMap::new(),
             func_defaults: HashMap::new(),
+            fn_table_idx: HashMap::new(),
+            fn_type_indexes: HashMap::new(),
+            arrow_names: HashMap::new(),
             host_indexes: HashMap::new(),
             string_pool: Vec::new(),
             string_index: HashMap::new(),
@@ -3679,12 +4357,16 @@ impl<'a> Engine<'a> {
             PrintInt, PrintFloat, PrintBool, PrintChar, PrintStr, PrintEnd, Now, Exit, Sleep,
             Trap, ParseInt, ParseFloat, ParseBool, StrConcat, StrInt, StrFloat, StrBool, StrChar,
             PowNum, Fmod, Input, StrUpper, StrLower, StrTrim, StrContains, StrStartsWith,
-            StrEndsWith, StrIsEmpty, StrLength, IntAbs, FloatAbs, ArrPush, ArrPop, ArrShift,
+            StrEndsWith, StrIsEmpty, StrLength, StrRepr, IntAbs, FloatAbs, ArrPush, ArrPop, ArrShift,
             ArrUnshift, ArrIndexOf, ArrIncludes, ArrJoin, ArrReverse, MathSqrt, MathPow, MathMin,
             MathMax, MathFloor, MathCeil, MathRound, MathRandom, MathSin, MathCos, MathTan, MathLog,
             MathRange, JsonStringify, JsonParse, FsExists, FsCwd, FsReadFile, FsWriteFile, FsListDir, FsMkdir,
             FsRm, RecordNew, RecordSet, RecordGet, RecordHas, RecordTag, RecordLen, RecordKeys, RecordValues,
-            RecordToString, HttpGet, HttpPost, ArrToString,
+            RecordToString, HttpGet, HttpPost, ArrToString, CmxNew, CmxSetProp, CmxAddChild,
+            CmxToString,
+    PrintAny,
+    FnHandle,
+    FnToString,
         ] {
             self.register_host(h);
         }
@@ -3775,10 +4457,89 @@ impl<'a> Engine<'a> {
                     Some(r) if *r != Type::Void => vec![was_type(r)?.val_type()],
                     _ => vec![],
                 };
-                let fidx = self.declare_wasm_function(pv, rv);
+                // type index (para call_indirect) + índice de función.
+                let tidx = self.register_func_type(pv.clone(), rv.clone());
+                let fidx = self.func_count;
+                self.func_count += 1;
+                self.funcs_sec.function(tidx);
                 self.func_indexes.insert(f.name.clone(), fidx);
+                self.fn_type_indexes.insert(f.name.clone(), tidx);
                 cls_funcs.push(f.clone());
             }
+        }
+        // Índices de tabla de las funciones CLS (para handles de función) — se
+        // calculan ANTES de compilar cuerpos (el emisor los usa en emit_ident_load).
+        let mut cls_names: Vec<String> = self.func_types.keys().cloned().collect();
+        cls_names.sort();
+        let mut ti = self.next_table_slot;
+        for name in &cls_names {
+            if self.func_indexes.contains_key(name) {
+                self.fn_table_idx.insert(name.clone(), ti);
+                ti += 1;
+            }
+        }
+
+        // Arrow functions (B5): recolectar de los cuerpos → funciones sintéticas
+        // `__arrow_<n>`, declarar y asignarles índice de tabla.
+        let mut arrow_funcs: Vec<FunctionDecl> = Vec::new();
+        {
+            let mut arrows: Vec<ArrowFunctionExpr> = Vec::new();
+            for f in &cls_funcs {
+                collect_arrows_in_block(&f.body, &mut arrows);
+            }
+            for (n, a) in arrows.iter().enumerate() {
+                let name = format!("__arrow_{}", n);
+                self.arrow_names.insert(a.span, name.clone());
+                arrow_funcs.push(FunctionDecl {
+                    name,
+                    params: a.params.clone(),
+                    return_type: a.return_type.clone(),
+                    body: (*a.body).clone(),
+                    visibility: Visibility::Public,
+                    modifiers: vec![],
+                    span: a.span,
+                    type_params: vec![],
+                    is_native: false,
+                });
+            }
+        }
+        for f in &arrow_funcs {
+            // Tipo del typeck (retorno inferido si la arrow no anota `-> T`).
+            let arrow_ty = self.types.get(&f.span).cloned().unwrap_or(Type::Any);
+            let (params, ret) = match arrow_ty {
+                Type::Fun(p, r) => (p, *r),
+                _ => {
+                    let params: Vec<Type> = f
+                        .params
+                        .iter()
+                        .map(|p| p.type_ann.as_ref().map(annotation_to_type).unwrap_or(Type::Any))
+                        .collect();
+                    let ret = f
+                        .return_type
+                        .as_ref()
+                        .map(annotation_to_type)
+                        .unwrap_or(Type::Void);
+                    (params, ret)
+                }
+            };
+            self.func_types.insert(f.name.clone(), (params.clone(), Some(ret.clone())));
+            let mut pv: Vec<ValType> = Vec::new();
+            for t in &params {
+                pv.push(was_type(t)?.val_type());
+            }
+            let rv: Vec<ValType> = if ret != Type::Void {
+                vec![was_type(&ret)?.val_type()]
+            } else {
+                vec![]
+            };
+            let tidx = self.register_func_type(pv.clone(), rv.clone());
+            let fidx = self.func_count;
+            self.func_count += 1;
+            self.funcs_sec.function(tidx);
+            self.func_indexes.insert(f.name.clone(), fidx);
+            self.fn_type_indexes.insert(f.name.clone(), tidx);
+            self.fn_table_idx.insert(f.name.clone(), ti);
+            ti += 1;
         }
 
         // Compilar cuerpos (internan strings). El orden del code_sec DEBE coincidir
@@ -3792,6 +4553,10 @@ impl<'a> Engine<'a> {
             bodies.push((key.clone(), body));
         }
         for f in &cls_funcs {
+            let body = self.compile_function(f)?;
+            bodies.push((f.name.clone(), body));
+        }
+        for f in &arrow_funcs {
             let body = self.compile_function(f)?;
             bodies.push((f.name.clone(), body));
         }
@@ -3818,6 +4583,14 @@ impl<'a> Engine<'a> {
                 if let Some(idx) = self.resolve_method_index(&cn, m) {
                     table_funcs.push(idx);
                 }
+            }
+        }
+        // Funciones CLS → handles (B5): los índices de tabla ya se calcularon.
+        let mut cls_names: Vec<String> = self.fn_table_idx.keys().cloned().collect();
+        cls_names.sort_by_key(|n| self.fn_table_idx[n]);
+        for name in cls_names {
+            if let Some(&fidx) = self.func_indexes.get(&name) {
+                table_funcs.push(fidx);
             }
         }
         if !table_funcs.is_empty() {
@@ -3876,6 +4649,10 @@ impl<'a> Engine<'a> {
             &mut self.string_index,
             &self.func_indexes,
             &self.func_defaults,
+            &self.fn_table_idx,
+            &self.arrow_names,
+            &mut self.type_count,
+            &mut self.types_sec,
             &self.enum_defs,
             &self.struct_defs,
             &self.native_indexes,
@@ -3956,6 +4733,10 @@ impl<'a> Engine<'a> {
             &mut self.string_index,
             &self.func_indexes,
             &self.func_defaults,
+            &self.fn_table_idx,
+            &self.arrow_names,
+            &mut self.type_count,
+            &mut self.types_sec,
             &self.enum_defs,
             &self.struct_defs,
             &self.native_indexes,
@@ -4121,3 +4902,147 @@ impl<'a> Engine<'a> {
         bytes
     }
 }
+
+
+
+
+
+
+
+/// B5 � recolecci�n de arrow functions (funciones an�nimas como valor).
+fn collect_arrows_in_block(block: &Block, out: &mut Vec<ArrowFunctionExpr>) {
+    for stmt in &block.statements {
+        collect_arrows_in_stmt(stmt, out);
+    }
+}
+
+fn collect_arrows_in_stmt(stmt: &Statement, out: &mut Vec<ArrowFunctionExpr>) {
+    match stmt {
+        Statement::VarDecl(v) | Statement::ConstDecl(v) => {
+            if let Some(val) = &v.value {
+                collect_arrows_in_expr(val, out);
+            }
+        }
+        Statement::Expression(e) => collect_arrows_in_expr(e, out),
+        Statement::Return(Some(e)) => collect_arrows_in_expr(e, out),
+        Statement::If(i) => {
+            collect_arrows_in_expr(&i.condition, out);
+            collect_arrows_in_block(&i.then_block, out);
+            for e in &i.elif_branches {
+                collect_arrows_in_expr(&e.condition, out);
+                collect_arrows_in_block(&e.block, out);
+            }
+            if let Some(eb) = &i.else_block {
+                collect_arrows_in_block(eb, out);
+            }
+        }
+        Statement::While(w) => {
+            collect_arrows_in_expr(&w.condition, out);
+            collect_arrows_in_block(&w.block, out);
+        }
+        Statement::For(f) => {
+            if let Some(init) = &f.init {
+                collect_arrows_in_stmt(init, out);
+            }
+            if let Some(cond) = &f.condition {
+                collect_arrows_in_expr(cond, out);
+            }
+            if let Some(upd) = &f.update {
+                collect_arrows_in_expr(upd, out);
+            }
+            collect_arrows_in_block(&f.block, out);
+        }
+        Statement::ForEach(fe) => {
+            collect_arrows_in_expr(&fe.iterable, out);
+            collect_arrows_in_block(&fe.block, out);
+        }
+        Statement::Switch(s) => {
+            collect_arrows_in_expr(&s.value, out);
+            for c in &s.cases {
+                collect_arrows_in_block(&c.block, out);
+            }
+            if let Some(d) = &s.default {
+                collect_arrows_in_block(d, out);
+            }
+        }
+        Statement::With(w) => {
+            collect_arrows_in_expr(&w.value, out);
+            collect_arrows_in_block(&w.block, out);
+        }
+        Statement::Loop(b) => collect_arrows_in_block(b, out),
+        _ => {}
+    }
+}
+
+fn collect_arrows_in_expr(expr: &Expression, out: &mut Vec<ArrowFunctionExpr>) {
+    match expr {
+        Expression::ArrowFunction(a) => {
+            out.push((*a).clone());
+            collect_arrows_in_block(&a.body, out);
+        }
+        Expression::Call(c) => {
+            collect_arrows_in_expr(&c.callee, out);
+            for arg in &c.args {
+                collect_arrows_in_expr(arg, out);
+            }
+        }
+        Expression::MemberAccess(m) => collect_arrows_in_expr(&m.object, out),
+        Expression::Index(i) => {
+            collect_arrows_in_expr(&i.object, out);
+            collect_arrows_in_expr(&i.index, out);
+        }
+        Expression::Array(a) => {
+            for el in &a.elements {
+                collect_arrows_in_expr(el, out);
+            }
+        }
+        Expression::Tuple(t) => {
+            for el in &t.elements {
+                collect_arrows_in_expr(el, out);
+            }
+        }
+        Expression::Record(r) => {
+            for (_, v) in &r.entries {
+                collect_arrows_in_expr(v, out);
+            }
+        }
+        Expression::Binary(b) => {
+            collect_arrows_in_expr(&b.left, out);
+            collect_arrows_in_expr(&b.right, out);
+        }
+        Expression::Unary(u) => collect_arrows_in_expr(&u.operand, out),
+        Expression::Conditional(c) => {
+            collect_arrows_in_expr(&c.condition, out);
+            collect_arrows_in_expr(&c.then_expr, out);
+            collect_arrows_in_expr(&c.else_expr, out);
+        }
+        Expression::Assignment(a) => {
+            collect_arrows_in_expr(&a.target, out);
+            collect_arrows_in_expr(&a.value, out);
+        }
+        Expression::Parenthesized(e, _) => collect_arrows_in_expr(e, out),
+        Expression::StringInterpolation(s) => {
+            for part in &s.parts {
+                if let InterpolationPart::Expr(e) = part {
+                    collect_arrows_in_expr(e, out);
+                }
+            }
+        }
+        Expression::Cmx(c) => {
+            for attr in &c.attributes {
+                if let Some(CmxAttributeValue::Expression(e)) = &attr.value {
+                    collect_arrows_in_expr(e, out);
+                }
+            }
+            for child in &c.children {
+                match child {
+                    CmxChild::Expression(e) => collect_arrows_in_expr(e, out),
+                    CmxChild::Element(el) => collect_arrows_in_expr(&Expression::Cmx((**el).clone()), out),
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+}
+

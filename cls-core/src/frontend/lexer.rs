@@ -387,6 +387,7 @@ impl Lexer {
                 self.advance();
             } else if ch == '{' {
                 self.advance();
+                tokens.push(SpannedToken::new(Token::Symbol(Symbol::LBrace), self.current_span()));
                 self.in_cmx_expr = true;
                 let mut depth: i32 = 1;
                 while !self.is_eof() && depth > 0 {
@@ -398,6 +399,7 @@ impl Lexer {
                     }
                     tokens.push(t);
                 }
+                tokens.push(SpannedToken::new(Token::Symbol(Symbol::RBrace), self.current_span()));
                 self.in_cmx_expr = false;
             } else {
                 let mut text = String::new();
@@ -499,7 +501,6 @@ impl Lexer {
     }
 
     fn peek_is_cmx_start(&self) -> bool {
-        if self.in_cmx_expr { return false; }
         if self.pos + 1 >= self.source.len() { return false; }
         let next = self.source[self.pos + 1];
         if !(next.is_alphabetic() || next == '>') { return false; }
@@ -517,6 +518,25 @@ impl Lexer {
                 '=' | ',' | '<' | ':' => return false,
                 _ => {}
             }
+        }
+        // Dentro de una expresión (`{...}` CMX): exigir que parezca un tag REAL
+        // (cierre `>`/`/>` o atributos) para no confundir `a < b` (comparación)
+        // con `[<div />, ...]` (elemento CMX en un array).
+        if self.in_cmx_expr {
+            let mut j = i;
+            while j < self.source.len()
+                && (self.source[j] == ' ' || self.source[j] == '\t' || self.source[j] == '\n')
+            {
+                j += 1;
+            }
+            if j < self.source.len() {
+                match self.source[j] {
+                    '>' | '/' => return true,
+                    c if c.is_alphabetic() || c == '{' => return true,
+                    _ => return false,
+                }
+            }
+            return false;
         }
         true
     }

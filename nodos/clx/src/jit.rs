@@ -135,6 +135,11 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
             return 1;
         }
     };
+    if std::env::var("CLS_DUMP_WAT").is_ok() {
+        if let Ok(wat) = wasmprinter::print_bytes(&wasm_bytes) {
+            eprintln!("--- WAT DEBUG ---\n{}", wat);
+        }
+    }
     t = tick(timing, "emit WASM", t);
     if timing {
         eprintln!("[JIT-TIMING] WASM size: {} bytes", wasm_bytes.len());
@@ -188,6 +193,9 @@ fn run_wasm(
         Ok(m) => m,
         Err(e) => {
             eprintln!("[JIT] Módulo WASM inválido para '{}':\n{:?}", entry, e);
+            if let Ok(wat) = wasmprinter::print_bytes(wasm_bytes) {
+                eprintln!("--- WAT ---\n{}", wat);
+            }
             // No dejar WASM inválido en el caché.
             if let Some(p) = &cache_path {
                 let _ = std::fs::remove_file(p);
@@ -411,8 +419,9 @@ fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String>
         })
         .map_err(|e| e.to_string())?;
     linker
-        .func_wrap(HOST, "trap", |_: Caller<'_, HostState>, msg: i64| -> () {
-            eprintln!("[JIT] Error de runtime: mensaje {}", msg);
+        .func_wrap(HOST, "trap", |mut caller: Caller<'_, HostState>, msg: i64| -> () {
+            let s = caller_read_str(&mut caller, msg);
+            eprintln!("[JIT] Error de runtime: {}", s);
             std::process::exit(1);
         })
         .map_err(|e| e.to_string())?;
@@ -541,6 +550,17 @@ fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String>
         })
         .map_err(|e| e.to_string())?;
     linker
+        .func_wrap(HOST, "str_repr", |mut caller: Caller<'_, HostState>, v: i64| -> i64 {
+            let s = caller_read_str(&mut caller, v);
+            let escaped = s
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('\n', "\\n")
+                .replace('\t', "\\t");
+            caller_write_str(&mut caller, &format!("\"{}\"", escaped)).unwrap_or(0)
+        })
+        .map_err(|e| e.to_string())?;
+    linker
         .func_wrap(HOST, "str_length", |mut caller: Caller<'_, HostState>, v: i64| -> i64 {
             let s = caller_read_str(&mut caller, v);
             s.len() as i64
@@ -637,29 +657,8 @@ fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String>
         .map_err(|e| e.to_string())?;
     linker
         .func_wrap(HOST, "arr_to_string", |mut caller: Caller<'_, HostState>, ptr: i64, es: i64, kind: i64| -> i64 {
-            let p = ptr as usize;
-            let es = es as usize;
-            let len = arr_len(&mut caller, p);
-            let mut out = String::from("[");
-            for i in 0..len as usize {
-                if i > 0 {
-                    out.push_str(", ");
-                }
-                let e = arr_elem(&mut caller, p, i, es);
-                match kind {
-                    1 => {
-                        out.push('"');
-                        out.push_str(&json_escape(&caller_read_str(&mut caller, e)));
-                        out.push('"');
-                    }
-                    2 => out.push_str(&format_float(f64::from_bits(e as u64))),
-                    3 => out.push_str(if e != 0 { "true" } else { "false" }),
-                    4 => out.push(char::from_u32(e as u32).unwrap_or('?')),
-                    _ => out.push_str(&e.to_string()),
-                }
-            }
-            out.push(']');
-            caller_write_str(&mut caller, &out).unwrap_or(0)
+            let s = arr_to_string(&mut caller, ptr, es, kind);
+            caller_write_str(&mut caller, &s).unwrap_or(0)
         })
         .map_err(|e| e.to_string())?;
     linker
@@ -1374,32 +1373,8 @@ fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     linker
         .func_wrap(HOST, "record_to_string", |mut caller: Caller<'_, HostState>, ptr: i64| -> i64 {
-            let p = ptr as usize;
-            let len = arr_len(&mut caller, p);
-            let mut out = String::from("{");
-            for i in 0..len as usize {
-                if i > 0 {
-                    out.push_str(", ");
-                }
-                let key = arr_read_i64(&mut caller, p + 16 + i * 24);
-                let val = arr_read_i64(&mut caller, p + 16 + i * 24 + 8);
-                let tag = arr_read_i64(&mut caller, p + 16 + i * 24 + 16);
-                out.push_str(&caller_read_str(&mut caller, key));
-                out.push_str(": ");
-                match tag {
-                    1 => {
-                        out.push('"');
-                        out.push_str(&json_escape(&caller_read_str(&mut caller, val)));
-                        out.push('"');
-                    }
-                    2 => out.push_str(&format_float(f64::from_bits(val as u64))),
-                    3 => out.push_str(if val != 0 { "true" } else { "false" }),
-                    4 => out.push(char::from_u32(val as u32).unwrap_or('?')),
-                    _ => out.push_str(&val.to_string()),
-                }
-            }
-            out.push('}');
-            caller_write_str(&mut caller, &out).unwrap_or(0)
+            let s = record_to_string(&mut caller, ptr);
+            caller_write_str(&mut caller, &s).unwrap_or(0)
         })
         .map_err(|e| e.to_string())?;
     linker
@@ -1427,5 +1402,293 @@ fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
             }
         })
         .map_err(|e| e.to_string())?;
+    // CMX: layout [tag:i64][props_ptr:i64][children_ptr:i64].
+    linker
+        .func_wrap(HOST, "cmx_new", |mut caller: Caller<'_, HostState>, tag: i64, kind: i64| -> i64 {
+            // layout: [tag][props_ptr][children_ptr][kind] (kind 0=elemento, 1=texto)
+            let ptr = caller_alloc(&mut caller, 32).unwrap_or(0) as usize;
+            arr_write_i64(&mut caller, ptr, tag);
+            arr_write_i64(&mut caller, ptr + 8, 0);
+            arr_write_i64(&mut caller, ptr + 16, 0);
+            arr_write_i64(&mut caller, ptr + 24, kind);
+            ptr as i64
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "cmx_set_prop", |mut caller: Caller<'_, HostState>, ptr: i64, key: i64, val: i64, tag: i64| -> i64 {
+            let p = ptr as usize;
+            let mut props = arr_read_i64(&mut caller, p + 8) as usize;
+            if props == 0 {
+                let np = caller_alloc(&mut caller, (4 * 24 + 16) as i64).unwrap_or(0) as usize;
+                arr_write_i64(&mut caller, np, 4);
+                arr_write_i64(&mut caller, np + 8, 0);
+                arr_write_i64(&mut caller, p + 8, np as i64);
+                props = np;
+            }
+            let pr = props as i64;
+            let len = arr_len(&mut caller, props) as usize;
+            let cap = arr_cap(&mut caller, props) as usize;
+            let k = caller_read_str(&mut caller, key);
+            for i in 0..len {
+                let ki = arr_read_i64(&mut caller, props + 16 + i * 24);
+                if caller_read_str(&mut caller, ki) == k {
+                    arr_write_i64(&mut caller, props + 16 + i * 24 + 8, val);
+                    arr_write_i64(&mut caller, props + 16 + i * 24 + 16, tag);
+                    return pr;
+                }
+            }
+            if len + 1 > cap {
+                // realloc copiando [key, val, tag]
+                let new_cap = if cap == 0 { 4 } else { cap * 2 };
+                let new_cap = new_cap.max(len + 1);
+                let np = caller_alloc(&mut caller, (new_cap * 24 + 16) as i64).unwrap_or(0) as usize;
+                arr_write_i64(&mut caller, np, new_cap as i64);
+                arr_write_i64(&mut caller, np + 8, len as i64);
+                for i in 0..len {
+                    let kk = arr_read_i64(&mut caller, props + 16 + i * 24);
+                    let vv = arr_read_i64(&mut caller, props + 16 + i * 24 + 8);
+                    let tt = arr_read_i64(&mut caller, props + 16 + i * 24 + 16);
+                    arr_write_i64(&mut caller, np + 16 + i * 24, kk);
+                    arr_write_i64(&mut caller, np + 16 + i * 24 + 8, vv);
+                    arr_write_i64(&mut caller, np + 16 + i * 24 + 16, tt);
+                }
+                props = np;
+                arr_write_i64(&mut caller, p + 8, props as i64);
+            }
+            arr_write_i64(&mut caller, props + 16 + len * 24, key);
+            arr_write_i64(&mut caller, props + 16 + len * 24 + 8, val);
+            arr_write_i64(&mut caller, props + 16 + len * 24 + 16, tag);
+            arr_write_i64(&mut caller, props + 8, (len + 1) as i64);
+            arr_read_i64(&mut caller, p + 8)
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "cmx_add_child", |mut caller: Caller<'_, HostState>, ptr: i64, val: i64, tag: i64| -> i64 {
+            let p = ptr as usize;
+            let mut children = arr_read_i64(&mut caller, p + 16) as usize;
+            if children == 0 {
+                let nc = caller_alloc(&mut caller, (4 * 16 + 16) as i64).unwrap_or(0) as usize;
+                arr_write_i64(&mut caller, nc, 4);
+                arr_write_i64(&mut caller, nc + 8, 0);
+                arr_write_i64(&mut caller, p + 16, nc as i64);
+                children = nc;
+            }
+            let len = arr_len(&mut caller, children) as usize;
+            let cap = arr_cap(&mut caller, children) as usize;
+            if len + 1 > cap {
+                // realloc copiando [val, tag]
+                let new_cap = if cap == 0 { 4 } else { cap * 2 };
+                let new_cap = new_cap.max(len + 1);
+                let np = caller_alloc(&mut caller, (new_cap * 16 + 16) as i64).unwrap_or(0) as usize;
+                arr_write_i64(&mut caller, np, new_cap as i64);
+                arr_write_i64(&mut caller, np + 8, len as i64);
+                for i in 0..len {
+                    let v = arr_read_i64(&mut caller, children + 16 + i * 16);
+                    let t = arr_read_i64(&mut caller, children + 16 + i * 16 + 8);
+                    arr_write_i64(&mut caller, np + 16 + i * 16, v);
+                    arr_write_i64(&mut caller, np + 16 + i * 16 + 8, t);
+                }
+                children = np;
+                arr_write_i64(&mut caller, p + 16, children as i64);
+            }
+            arr_write_i64(&mut caller, children + 16 + len * 16, val);
+            arr_write_i64(&mut caller, children + 16 + len * 16 + 8, tag);
+            arr_write_i64(&mut caller, children + 8, (len + 1) as i64);
+            arr_read_i64(&mut caller, p + 16)
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "cmx_to_string", |mut caller: Caller<'_, HostState>, ptr: i64| -> i64 {
+            let s = cmx_format(&mut caller, ptr as usize);
+            caller_write_str(&mut caller, &s).unwrap_or(0)
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "print_any", |mut caller: Caller<'_, HostState>, val: i64, tag: i64| {
+            let s = fmt_val_to_string(&mut caller, val, tag);
+            print_arg(&mut caller, &s);
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "fn_handle", |mut caller: Caller<'_, HostState>, table_idx: i64, nombre: i64| -> i64 {
+            // Handle de función: [tabla_idx][capturas=0][nombre] (24 bytes).
+            let ptr = caller_alloc(&mut caller, 24).unwrap_or(0) as usize;
+            arr_write_i64(&mut caller, ptr, table_idx);
+            arr_write_i64(&mut caller, ptr + 8, 0);
+            arr_write_i64(&mut caller, ptr + 16, nombre);
+            ptr as i64
+        })
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "fn_to_string", |mut caller: Caller<'_, HostState>, handle: i64| -> i64 {
+            let nombre = arr_read_i64(&mut caller, (handle as usize) + 16);
+            let s = caller_read_str(&mut caller, nombre);
+            caller_write_str(&mut caller, &s).unwrap_or(0)
+        })
+        .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Tipo de un tag: compuesto (`tipo<<8 | kind`) o legacy (0-5, arr_kind_code).
+fn tag_type(tag: i64) -> i32 {
+    if tag >= 256 {
+        (tag >> 8) as i32
+    } else {
+        tag as i32
+    }
+}
+
+/// Formatea un valor según su tag. Tag = `tipo<<8 | kind` (kind solo para arrays).
+/// tipo: 0=int,1=string,2=float,3=bool,4=char,5=cmx,6=array,7=record.
+fn fmt_val_to_string(caller: &mut Caller<'_, HostState>, val: i64, tag: i64) -> String {
+    let t = tag_type(tag);
+    let kind = (tag & 0xff) as i32;
+    match t {
+        1 => caller_read_str(caller, val),
+        2 => format_float(f64::from_bits(val as u64)),
+        3 => {
+            if val != 0 {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
+        4 => char::from_u32(val as u32).unwrap_or('?').to_string(),
+        5 => cmx_format(caller, val as usize),
+        6 => {
+            // Array: es=16 si es de Cmx (kind 5), si no 8.
+            let es = if kind == 5 { 16 } else { 8 };
+            arr_to_string(caller, val, es, kind as i64)
+        }
+        7 => record_to_string(caller, val),
+        _ => val.to_string(),
+    }
+}
+
+/// `[e1, e2, ...]` — kind 5 = array de Cmx (entradas `[val, tag]` stride 16).
+fn arr_to_string(caller: &mut Caller<'_, HostState>, ptr: i64, es: i64, kind: i64) -> String {
+    let p = ptr as usize;
+    let es = es as usize;
+    let len = arr_len(caller, p);
+    let mut out = String::from("[");
+    for i in 0..len as usize {
+        if i > 0 {
+            out.push_str(", ");
+        }
+        let e = arr_elem(caller, p, i, es);
+        match kind {
+            1 => {
+                out.push('"');
+                out.push_str(&json_escape(&caller_read_str(caller, e)));
+                out.push('"');
+            }
+            2 => out.push_str(&format_float(f64::from_bits(e as u64))),
+            3 => out.push_str(if e != 0 { "true" } else { "false" }),
+            4 => out.push(char::from_u32(e as u32).unwrap_or('?')),
+            5 => {
+                // entrada [val, tag] stride 16
+                let tg = arr_read_i64(caller, p + 16 + i * 16 + 8);
+                let tv = tag_type(tg);
+                if tv == 1 {
+                    out.push('"');
+                    out.push_str(&json_escape(&caller_read_str(caller, e)));
+                    out.push('"');
+                } else if tv == 5 {
+                    // CmxValue: texto (kind 1) → comillas; elemento → plano
+                    let ck = arr_read_i64(caller, (e as usize) + 24);
+                    if ck == 1 {
+                        let ctag = arr_read_i64(caller, e as usize);
+                        out.push('"');
+                        out.push_str(&json_escape(&caller_read_str(caller, ctag)));
+                        out.push('"');
+                    } else {
+                        out.push_str(&cmx_format(caller, e as usize));
+                    }
+                } else {
+                    out.push_str(&fmt_val_to_string(caller, e, tg));
+                }
+            }
+            _ => out.push_str(&e.to_string()),
+        }
+    }
+    out.push(']');
+    out
+}
+
+/// `{k: v, ...}` — formatea cada valor por su tag (claves ordenadas, como el walker).
+fn record_to_string(caller: &mut Caller<'_, HostState>, ptr: i64) -> String {
+    let p = ptr as usize;
+    let len = arr_len(caller, p);
+    let mut entries: Vec<(String, i64, i64)> = Vec::with_capacity(len as usize);
+    for i in 0..len as usize {
+        let key = arr_read_i64(caller, p + 16 + i * 24);
+        let val = arr_read_i64(caller, p + 16 + i * 24 + 8);
+        let tag = arr_read_i64(caller, p + 16 + i * 24 + 16);
+        entries.push((caller_read_str(caller, key), val, tag));
+    }
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut out = String::from("{");
+    for (i, (key, val, tag)) in entries.iter().enumerate() {
+        if i > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(key);
+        out.push_str(": ");
+        let t = tag_type(*tag);
+        if t == 1 {
+            out.push('"');
+            out.push_str(&json_escape(&caller_read_str(caller, *val)));
+            out.push('"');
+        } else {
+            out.push_str(&fmt_val_to_string(caller, *val, *tag));
+        }
+    }
+    out.push('}');
+    out
+}
+
+/// Formatea un CmxValue. Un CmxValue de "texto" (kind=1) se muestra plano (el tag
+/// sin `<.../>`), para paridad con el walker (los Text children del cuerpo).
+fn cmx_format(caller: &mut Caller<'_, HostState>, p: usize) -> String {
+    let tag = arr_read_i64(caller, p);
+    let props = arr_read_i64(caller, p + 8) as usize;
+    let children = arr_read_i64(caller, p + 16) as usize;
+    let kind = arr_read_i64(caller, p + 24);
+    let nprops = if props != 0 { arr_len(caller, props) as usize } else { 0 };
+    let nchild = if children != 0 { arr_len(caller, children) as usize } else { 0 };
+    if kind == 1 {
+        return caller_read_str(caller, tag);
+    }
+    let mut out = String::from("<");
+    out.push_str(&caller_read_str(caller, tag));
+    let mut prop_entries: Vec<(String, i64, i64)> = Vec::with_capacity(nprops);
+    for i in 0..nprops {
+        let key = arr_read_i64(caller, props + 16 + i * 24);
+        let val = arr_read_i64(caller, props + 16 + i * 24 + 8);
+        let t = arr_read_i64(caller, props + 16 + i * 24 + 16);
+        prop_entries.push((caller_read_str(caller, key), val, t));
+    }
+    prop_entries.sort_by(|a, b| a.0.cmp(&b.0));
+    for (key, val, t) in prop_entries {
+        out.push(' ');
+        out.push_str(&key);
+        out.push_str("=\"");
+        let tv = tag_type(t);
+        if tv == 1 {
+            out.push_str(&caller_read_str(caller, val));
+        } else {
+            out.push_str(&fmt_val_to_string(caller, val, t));
+        }
+        out.push('"');
+    }
+    if nchild == 0 {
+        out.push_str(" />");
+    } else {
+        out.push_str(">... (");
+        out.push_str(&nchild.to_string());
+        out.push_str(" children)</");
+        out.push_str(&caller_read_str(caller, tag));
+        out.push('>');
+    }
+    out
 }

@@ -1271,6 +1271,17 @@ impl Interpreter {
                     }
                     return Ok(result);
                 }
+                Value::Array(arr) if member.member == "map" => {
+                    let fun = match args.first() {
+                        Some(v) => v.clone(),
+                        None => return Err(self.err_at("map: falta la función", &call.span)),
+                    };
+                    let mut result = Vec::with_capacity(arr.len());
+                    for el in arr.iter() {
+                        result.push(self.call_function_value(fun.clone(), vec![el.clone()], &call.span)?);
+                    }
+                    return Ok(Value::Array(result));
+                }
                 other => {
                     // Resolver miembro (Clase, Cmx, Struct, primitivo, etc.) y llamar como función
                     let callee = match other {
@@ -2262,11 +2273,21 @@ impl Interpreter {
 
     fn evaluate_cmx(&mut self, cmx: &CmxElement) -> ClsResult<Value> {
         // Tag mayúscula → guardar la referencia (función, var, clase, etc) SIN ejecutarla.
-        // Tag minúscula → guardar como String. CMX es agnóstico.
+        // Tag minúscula → guardar como String. El tag mayúscula SIEMPRE debe ser una
+        // función/valor definido: si no existe, es un error (no un fallback a String).
         let tag = if cmx.tag.starts_with(|c: char| c.is_uppercase()) {
             match self.env.get(&cmx.tag) {
                 Some(val) => val.clone(),          // guardar la referencia
-                None => Value::String(cmx.tag.clone()),  // no encontrada → string
+                None => {
+                    return Err(self.err_at(
+                        format!(
+                            "El tag '<{}>' usa mayúscula pero '{}' no está definido: \
+                             los tags con inicial mayúscula deben ser una función/valor existente",
+                            cmx.tag, cmx.tag
+                        ),
+                        &cmx.span,
+                    ))
+                }
             }
         } else {
             Value::String(cmx.tag.clone())

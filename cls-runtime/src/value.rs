@@ -300,9 +300,11 @@ impl Value {
                 format!("({})", items.join(", "))
             }
             Value::Record(v) => {
-                let entries: Vec<String> = v
+                let mut keys: Vec<&String> = v.keys().collect();
+                keys.sort();
+                let entries: Vec<String> = keys
                     .iter()
-                    .map(|(k, val)| format!("{}: {}", k, val.repr()))
+                    .map(|k| format!("{}: {}", k, v[*k].repr()))
                     .collect();
                 format!("{{{}}}", entries.join(", "))
             }
@@ -335,8 +337,10 @@ impl Value {
                 let props_str = if cmx.props.is_empty() {
                     String::new()
                 } else {
-                    let entries: Vec<String> = cmx.props.iter()
-                        .map(|(k, v)| format!("{}=\"{}\"", k, v.to_string()))
+                    let mut keys: Vec<&String> = cmx.props.keys().collect();
+                    keys.sort();
+                    let entries: Vec<String> = keys.iter()
+                        .map(|k| format!("{}=\"{}\"", k, cmx.props[*k].to_string()))
                         .collect();
                     format!(" {}", entries.join(" "))
                 };
