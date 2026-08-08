@@ -1,0 +1,52 @@
+function suma() -> int {
+    return 1 + 2;
+};
+
+function main(args: String[]) -> int {
+    print("=== if ===");
+    var x = 5;
+    if (x > 3) {
+        print("mayor");
+    } else {
+        print("menor");
+    }
+    print("=== while ===");
+    var i = 0;
+    while (i < 3) {
+        print("w:", i);
+        i++;
+    }
+    print("=== for ===");
+    for (var j = 0; j < 3; j++) {
+        print("f:", j);
+    }
+    print("=== for each ===");
+    for each item in ([1, 2, 3]) {
+        print("fe:", item);
+    }
+    for each item and idx in ((4, 5, 6)) {
+        print("fe idx:", idx, "=", item);
+    }
+    print("=== switch ===");
+    switch (2) {
+        case (1) { print("switch: uno"); }
+        case (2) { print("switch: dos"); }
+        case default { print("switch: default"); }
+    }
+    print("=== with ===");
+    with tmp in (suma()) {
+        print("with:", tmp);
+    }
+    print("=== break/continue ===");
+    for (var k = 0; k < 5; k++) {
+        if (k == 1) {
+            continue;
+        }
+        if (k == 4) {
+            break;
+        }
+        print("bc:", k);
+    }
+    # print("Sigue?")
+    return 0;
+};

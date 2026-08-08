@@ -1,0 +1,23 @@
+function main(args: String[]) -> int {
+    var lista = [3, 1, 2];
+    lista.push(4);
+    print("Array:", lista);
+    print("Array:", ["hola", "mundo"]);
+    print("push length:", lista.length);
+    print("indexOf(2):", lista.indexOf(2));
+    print("includes(9):", lista.includes(9));
+    print("join:", lista.join("-"));
+    print("[0]:", lista[0]);
+    print("pop:", lista.pop());
+    print("shift:", lista.shift());
+    var l2 = [1, 2, 3];
+    l2.unshift(0);
+    print("unshift[0]:", l2[0]);
+    var l3 = [1, 2, 3];
+    l3.reverse();
+    print("reverse[0]:", l3[0]);
+    for each v in (lista) {
+        print("fe:", v);
+    }
+    return 0;
+};
