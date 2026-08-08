@@ -1,0 +1,30 @@
+function main(args: String[]) -> int {
+    var titulo = "Demo";
+    var Seccion = "galeria";
+    var app = (
+        <app titulo={titulo} activo={true} count={5}>
+            Texto hijo
+            {"interp: " + titulo}
+            {[<div />, <div />, <div />]}
+            {[1, 2, 3]}
+            <Seccion etiqueta="Click" />
+            {"ola que tal"}
+            {[1,2,3].map((x: int) -> {
+                return "value: $x"
+            })}
+        </app>
+    );
+    print("tag:", app.tag);
+    print("titulo:", app.props.titulo);
+    print("activo:", app.props.activo);
+    print("count:", app.props.count);
+    print("children len:", len(app.children));
+    print("children's:", (app.children));
+    print("primer hijo:", app.children[0]);
+    print("interp cuerpo:", app.children[1]);
+    print("array cmx:", app.children[2]);
+    print("segundo hijo:", app.children[4].tag);
+    print("5to hijo:", app.children[5]);
+    print("cmx:", app);
+    return 0;
+};

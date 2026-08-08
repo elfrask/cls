@@ -1,0 +1,8 @@
+function main(args: String[]) -> int {
+    var t = (10, "veinte", 30.0);
+    print("t[0]:", t[0], "t[1]:", t[1], "t[2]:", t[2]);
+    print("length:", t.length);
+    print("join:", t.join("|"));
+    print("tuple:", t);
+    return 0;
+};

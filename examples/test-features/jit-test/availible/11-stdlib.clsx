@@ -1,0 +1,16 @@
+import "math" as math;
+import "json" as json;
+
+function main(args: String[]) -> int {
+    print("abs:", math.abs(-7));
+    print("sqrt:", math.sqrt(16));
+    print("pow:", math.pow(2, 3));
+    print("floor:", math.floor(3.7), "ceil:", math.ceil(3.2), "round:", math.round(3.5));
+    print("min:", math.min(3, 1), "max:", math.max(3, 1));
+    print("PI:", math.PI);
+    print("range len:", (math.range(0, 3)));
+    print("random ok:", math.random() >= 0.0 && math.random() < 1.0);
+    var obj = json.parse('{"a": 1}');
+    print("json a:", obj["a"]);
+    return 0;
+};
