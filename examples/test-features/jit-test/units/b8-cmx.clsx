@@ -1,0 +1,17 @@
+function main(args: String[]) -> int {
+    var titulo = "Demo";
+    var app = (
+        <App titulo={titulo} activo={true} count={5}>
+            Texto hijo
+            <Boton etiqueta="Click" />
+        </App>
+    );
+    print("tag:", app.tag);
+    print("titulo:", app.props.titulo);
+    print("activo:", app.props.activo);
+    print("count:", app.props.count);
+    print("children len:", len(app.children));
+    print("primer hijo:", app.children[0]);
+    print("cmx:", app);
+    return 0;
+};

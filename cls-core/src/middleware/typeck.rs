@@ -257,7 +257,10 @@ impl TypeChecker {
                 Type::Void
             }
             Statement::Config(_) | Statement::Meta(_) => Type::Void,
-            Statement::Cmx(_) => Type::Cmx,
+            Statement::Cmx(c) => {
+                self.check_expression(&Expression::Cmx(c.clone()));
+                Type::Cmx
+            }
         }
     }
 
@@ -542,7 +545,27 @@ impl TypeChecker {
                 }
                 Type::String
             }
-            Expression::Cmx(_) => Type::Cmx,
+            Expression::Cmx(c) => {
+                // Chequear las subexpresiones internas (attrs y children) para que
+                // sus spans queden en el type map (el emisor las evalúa).
+                for attr in &c.attributes {
+                    if let Some(CmxAttributeValue::Expression(expr)) = &attr.value {
+                        self.check_expression(expr);
+                    }
+                }
+                for child in &c.children {
+                    match child {
+                        CmxChild::Expression(expr) => {
+                            self.check_expression(expr);
+                        }
+                        CmxChild::Element(el) => {
+                            self.check_expression(&Expression::Cmx((**el).clone()));
+                        }
+                        _ => {}
+                    }
+                }
+                Type::Cmx
+            }
             Expression::NamespaceAccess(_, _, span) => {
                 self.error("Namespace access sin tipo", span.clone())
             }
@@ -652,7 +675,20 @@ impl TypeChecker {
 
         // Métodos de primitivos (callee MemberAccess): el tipo del miembro ES el
         // resultado (`.join(sep)` → String, `.contains(x)` → Bool, ...).
-        if matches!(&*call.callee, Expression::MemberAccess(_)) {
+        if let Expression::MemberAccess(m) = &*call.callee {
+            // Array.map(f) → Array(retorno de f)
+            let obj_ty = self.check_expression(&m.object);
+            if matches!(&obj_ty, Type::Array(_)) && m.member == "map" {
+                for arg in &call.args {
+                    self.check_expression(arg);
+                }
+                if let Some(arg0) = call.args.first() {
+                    if let Type::Fun(_, ret) = self.check_expression(arg0) {
+                        return Type::Array(ret);
+                    }
+                }
+                return obj_ty;
+            }
             for arg in &call.args {
                 self.check_expression(arg);
             }
@@ -791,6 +827,12 @@ impl TypeChecker {
                 "toString" => Type::String,
                 _ => Type::Any,
             },
+            Type::Cmx => match member.member.as_str() {
+                "tag" => Type::String,
+                "props" => Type::Record(Box::new(Type::String), Box::new(Type::Any)),
+                "children" => Type::Array(Box::new(Type::Cmx)),
+                _ => Type::Any,
+            },
             Type::Int | Type::Float => match member.member.as_str() {
                 "toString" => Type::String,
                 "abs" => obj_type,
@@ -883,7 +925,17 @@ impl TypeChecker {
 
         let return_type = arrow.return_type.as_ref()
             .map(|ta| self.resolve_type_annotation(ta))
-            .unwrap_or(Type::Any);
+            .unwrap_or_else(|| {
+                // Inferir del primer `return expr` del body.
+                let mut t = Type::Any;
+                for stmt in &arrow.body.statements {
+                    if let Statement::Return(Some(e)) = stmt {
+                        t = self.check_expression(e);
+                        break;
+                    }
+                }
+                t
+            });
 
         self.push_scope();
         for (param, typ) in arrow.params.iter().zip(param_types.iter()) {
