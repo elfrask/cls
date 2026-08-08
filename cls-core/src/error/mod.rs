@@ -42,6 +42,10 @@ pub enum ClsError {
     #[error("Error de sintaxis: {0}")]
     SyntaxErrorAt(String, Span),
 
+    /// Error de compilación con span estructurado (p.ej. el JIT: "no soportado").
+    #[error("Error de compilación: {0}")]
+    CompileErrorAt(String, Span),
+
     #[error("Error de IO: {0}")]
     IoError(#[from] std::io::Error),
 
@@ -60,6 +64,11 @@ impl ClsError {
     /// Alias de `syntax_at` (mensaje limpio + span).
     pub fn with_span(msg: &str, span: &Span) -> Self {
         ClsError::SyntaxErrorAt(msg.to_string(), span.clone())
+    }
+
+    /// Fábrica: error de compilación con span estructurado (JIT y backend).
+    pub fn compile_at(msg: &str, span: &Span) -> Self {
+        ClsError::CompileErrorAt(msg.to_string(), span.clone())
     }
 
     /// Extrae línea/columna del mensaje (para variantes legacy que incrustan span en el string)

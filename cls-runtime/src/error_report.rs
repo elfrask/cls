@@ -38,7 +38,7 @@ impl ErrorReport {
 
 fn error_span(error: &ClsError) -> Option<Span> {
     match error {
-        ClsError::SyntaxErrorAt(_, span) => Some(span.clone()),
+        ClsError::SyntaxErrorAt(_, span) | ClsError::CompileErrorAt(_, span) => Some(span.clone()),
         _ => ClsError::extract_line_col(&error.to_string())
             .map(|(l, c)| Span::new(l as u32, c as u32, l as u32, c as u32)),
     }
@@ -47,6 +47,7 @@ fn error_span(error: &ClsError) -> Option<Span> {
 fn error_label(error: &ClsError) -> &'static str {
     match error {
         ClsError::SyntaxError(_) | ClsError::SyntaxErrorAt(_, _) => "[Error de Sintaxis]",
+        ClsError::CompileErrorAt(_, _) => "[Error de Compilación]",
         ClsError::RuntimeError(_) => "[Runtime Error]",
         ClsError::TypeError(_) => "[Error de Tipo]",
         ClsError::CompileError(_) => "[Error de Compilación]",
@@ -56,7 +57,12 @@ fn error_label(error: &ClsError) -> &'static str {
 
 /// ¿Es un error de sintaxis (vs runtime/compilación)?
 fn is_syntax(report: &ErrorReport) -> bool {
-    matches!(report.error, ClsError::SyntaxError(_) | ClsError::SyntaxErrorAt(_, _))
+    matches!(
+        report.error,
+        ClsError::SyntaxError(_)
+            | ClsError::SyntaxErrorAt(_, _)
+            | ClsError::CompileErrorAt(_, _)
+    )
 }
 
 /// Encabezado del reporte según el tipo de error.
