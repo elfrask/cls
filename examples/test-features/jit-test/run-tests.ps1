@@ -10,7 +10,6 @@ $special = @{
     "a11.clsx"     = "requiere DLL de extension (clx_demo.dll)"
     "f64arr.clsx"  = "requiere args de app (-- ola mundo)"
     "b7.clsx"      = "requiere red (httpbin.org)"
-    "trytest.clsx" = "try/catch aun no implementado en el JIT"
     "synerr.clsx"  = "prueba de error de sintaxis (sin paridad)"
     "syn2.clsx"    = "prueba de error de sintaxis (sin paridad)"
     "a2min.clsx"   = "variante de tuplas (cubierto por a2)"

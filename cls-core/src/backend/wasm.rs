@@ -25,12 +25,14 @@ use crate::frontend::ast::*;
 use crate::frontend::token::Operator;
 use crate::middleware::typeck::expr_span;
 use crate::middleware::types::{LitVal, Type};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use wasm_encoder::{
-    BlockType, CodeSection, ConstExpr, DataSection, DataSegment, DataSegmentMode, ElementMode,
-    ElementSection, Elements, EntityType, ExportKind, ExportSection, Function, FunctionSection,
-    GlobalSection, GlobalType, Ieee64, ImportSection, Instruction, MemArg, MemorySection,
-    MemoryType, Module as WasmModule, RefType, TableSection, TableType, TypeSection, ValType,
+    BlockType, Catch, CodeSection, ConstExpr, DataSection, DataSegment, DataSegmentMode,
+    ElementMode, ElementSection, Elements, EntityType, ExportKind, ExportSection, Function,
+    FunctionSection, GlobalSection, GlobalType, Ieee64, ImportSection, Instruction, MemArg,
+    MemorySection, MemoryType, Module as WasmModule, RefType, TableSection, TableType,
+    TagKind, TagSection, TagType, TypeSection, ValType,
 };
 
 /// Funciones host (`env.*`) que el nodo JIT debe implementar.
@@ -370,6 +372,10 @@ struct FuncEmitter<'a> {
     /// clase actual (al compilar un método) — para `super` y `me`.
     current_class: Option<String>,
     target: &'a Target,
+    /// Índice del tag de excepción CLS (para `Instruction::Throw`).
+    tag_idx: u32,
+    /// Type `[] -> [i64, i64]` del block handler del try_table.
+    eh_handler_ty: u32,
 }
 
 impl<'a> FuncEmitter<'a> {
@@ -393,6 +399,8 @@ impl<'a> FuncEmitter<'a> {
         method_type_indexes: &'a HashMap<String, u32>,
         current_class: Option<String>,
         target: &'a Target,
+        tag_idx: u32,
+        eh_handler_ty: u32,
     ) -> Self {
         Self {
             types,
@@ -420,6 +428,8 @@ impl<'a> FuncEmitter<'a> {
             method_type_indexes,
             current_class,
             target,
+            tag_idx,
+            eh_handler_ty,
         }
     }
 
@@ -586,6 +596,7 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             Statement::If(i) => self.emit_if(i),
+            Statement::Try(t) => self.emit_try(t),
             Statement::While(w) => self.emit_while(w),
             Statement::Loop(b) => self.emit_loop(b),
             Statement::For(f) => self.emit_for(f),
@@ -958,6 +969,78 @@ impl<'a> FuncEmitter<'a> {
         for st in &w.block.statements {
             self.emit_statement(st)?;
         }
+        Ok(())
+    }
+
+    /// `try { ... } catch (e) { ... } finally { ... }` — excepciones WASM (try_table).
+    /// Paridad con el walker: el finally solo se ejecuta si NO hubo catch; el catch
+    /// recibe `e = "Error de runtime: " + msg` (e.to_string() del walker).
+    fn emit_try(&mut self, stmt: &TryStatement) -> ClsResult<()> {
+        // block $outer (Empty)
+        self.block_depth += 1;
+        self.body.push(Instruction::Block(BlockType::Empty));
+        let outer = self.block_depth;
+        // block $handler (result [i64, i64]) — su label (continuation, tras su End)
+        // es donde aterriza el catch con el payload [msg, span].
+        self.block_depth += 1;
+        self.body.push(Instruction::Block(BlockType::FunctionType(self.eh_handler_ty)));
+        let handler = self.block_depth;
+        // try_table: captura nuestro tag → br al label del $handler con [msg, span]
+        // El label del catch NO cuenta el try_table como scope (br 0 = $handler).
+        self.block_depth += 1;
+        let catch_label = self.block_depth - handler - 1;
+        self.body.push(Instruction::TryTable(
+            BlockType::Empty,
+            Cow::Owned(vec![Catch::One {
+                tag: self.tag_idx,
+                label: catch_label,
+            }]),
+        ));
+        for s in &stmt.try_block.statements {
+            self.emit_statement(s)?;
+        }
+        self.body.push(Instruction::End); // cierra try_table
+        self.block_depth -= 1;
+        // flujo normal (sin excepción) → br al $outer (salta el handler)
+        let br_outer = self.block_depth - outer;
+        self.body.push(Instruction::Br(br_outer));
+        self.body.push(Instruction::End); // cierra $handler → el catch aterriza AQUÍ con [msg, span]
+        self.block_depth -= 1;
+        // handler: payload [msg, span] en el stack (span arriba, msg debajo)
+        if stmt.catch_clauses.is_empty() {
+            let span_tmp = self.fresh_local();
+            self.body.push(Instruction::LocalSet(span_tmp));
+            let msg_tmp = self.fresh_local();
+            self.body.push(Instruction::LocalSet(msg_tmp));
+            if let Some(f) = &stmt.finally_block {
+                for s in &f.statements {
+                    self.emit_statement(s)?;
+                }
+            }
+            // re-lanzar con el mismo payload (equivalente a Rethrow)
+            self.body.push(Instruction::LocalGet(msg_tmp));
+            self.body.push(Instruction::LocalGet(span_tmp));
+            self.body.push(Instruction::Throw(self.tag_idx));
+            self.body.push(Instruction::Unreachable);
+        } else {
+            let catch = &stmt.catch_clauses[0];
+            let span_tmp = self.fresh_local();
+            self.body.push(Instruction::LocalSet(span_tmp));
+            let msg_tmp = self.fresh_local();
+            self.body.push(Instruction::LocalSet(msg_tmp));
+            // e = "Error de runtime: " + msg
+            let pref = self.intern_string("Error de runtime: ");
+            self.emit_load_str(pref);
+            self.body.push(Instruction::LocalGet(msg_tmp));
+            self.host.call(HostFn::StrConcat, &mut self.body);
+            let e_local = self.declare_var_ty(&catch.param_name, WasTy::I64);
+            self.body.push(Instruction::LocalSet(e_local));
+            for s in &catch.block.statements {
+                self.emit_statement(s)?;
+            }
+        }
+        self.body.push(Instruction::End); // cierra $outer
+        self.block_depth -= 1;
         Ok(())
     }
 
@@ -1475,16 +1558,21 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Eqz);
         self.block_depth += 1;
         self.body.push(Instruction::If(BlockType::Empty));
-        let msg = self.intern_string("División por cero");
-        self.emit_load_str(msg);
-        let packed = ((span.start_line as i64) << 32) | (span.start_col as i64);
-        self.body.push(Instruction::I64Const(packed));
-        self.host.call(HostFn::Trap, &mut self.body);
+        self.emit_throw("División por cero", span);
         self.body.push(Instruction::Unreachable);
         self.body.push(Instruction::End);
         self.block_depth -= 1;
         self.body.push(Instruction::LocalGet(tmp));
         Ok(())
+    }
+
+    /// Lanza la excepción CLS: `throw(tag)` con payload (msg, span_empaquetado).
+    fn emit_throw(&mut self, msg: &str, span: &Span) {
+        let m = self.intern_string(msg);
+        self.emit_load_str(m);
+        let packed = ((span.start_line as i64) << 32) | (span.start_col as i64);
+        self.body.push(Instruction::I64Const(packed));
+        self.body.push(Instruction::Throw(self.tag_idx));
     }
 
     fn emit_unary(&mut self, u: &UnaryExpr) -> ClsResult<()> {
@@ -2407,6 +2495,21 @@ impl<'a> FuncEmitter<'a> {
         }
         if let Expression::Identifier(name, _) = &*c.callee {
             match name.as_str() {
+                "throw" => {
+                    // throw(msg) → excepción CLS (tag con payload msg + span).
+                    if let Some(arg0) = c.args.first() {
+                        self.emit_expression(arg0)?;
+                        self.emit_to_string(arg0)?;
+                    } else {
+                        let s = self.intern_string("error");
+                        self.emit_load_str(s);
+                    }
+                    let packed =
+                        ((c.span.start_line as i64) << 32) | (c.span.start_col as i64);
+                    self.body.push(Instruction::I64Const(packed));
+                    self.body.push(Instruction::Throw(self.tag_idx));
+                    return Ok(());
+                }
                 "print" => {
                     for arg in &c.args {
                         self.emit_print_arg(arg)?;
@@ -3619,11 +3722,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I32Or);
         self.block_depth += 1;
         self.body.push(Instruction::If(BlockType::Empty));
-        let msg = self.intern_string("Índice fuera de rango");
-        self.emit_load_str(msg);
-        let packed = ((span.start_line as i64) << 32) | (span.start_col as i64);
-        self.body.push(Instruction::I64Const(packed));
-        self.host.call(HostFn::Trap, &mut self.body);
+        self.emit_throw("Índice fuera de rango", span);
         self.body.push(Instruction::Unreachable);
         self.body.push(Instruction::End);
         self.block_depth -= 1;
@@ -3964,13 +4063,19 @@ struct Engine<'a> {
     types_sec: TypeSection,
     imports_sec: ImportSection,
     funcs_sec: FunctionSection,
+    tables_sec: TableSection,
     memories_sec: MemorySection,
+    tags_sec: TagSection,
     globals_sec: GlobalSection,
     exports_sec: ExportSection,
     data_sec: DataSection,
     code_sec: CodeSection,
     type_count: u32,
     func_count: u32,
+    /// Índice del tag de excepción CLS (payload: msg + span).
+    tag_idx: u32,
+    /// Type `[] -> [i64, i64]` del block handler del try_table.
+    eh_handler_ty: u32,
     func_indexes: HashMap<String, u32>,
     func_types: HashMap<String, (Vec<Type>, Option<Type>)>,
     func_defaults: HashMap<String, Vec<Option<Expression>>>,
@@ -3988,7 +4093,6 @@ struct Engine<'a> {
     native_ret: HashMap<String, char>,
     globals: HashMap<String, u32>,
     global_inits: Vec<(u32, Expression)>,
-    tables_sec: TableSection,
     elements_sec: ElementSection,
     class_defs: HashMap<String, ClassInfo>,
     next_table_slot: u32,
@@ -4096,6 +4200,9 @@ impl<'a> Engine<'a> {
             globals: HashMap::new(),
             global_inits: Vec::new(),
             tables_sec: TableSection::new(),
+            tags_sec: TagSection::new(),
+            tag_idx: 0,
+            eh_handler_ty: 0,
             elements_sec: ElementSection::new(),
             class_defs: HashMap::new(),
             next_table_slot: 0,
@@ -4143,6 +4250,7 @@ impl<'a> Engine<'a> {
         m.section(&self.funcs_sec);
         m.section(&self.tables_sec);
         m.section(&self.memories_sec);
+        m.section(&self.tags_sec);
         m.section(&self.globals_sec);
         m.section(&self.exports_sec);
         m.section(&self.elements_sec);
@@ -4375,6 +4483,15 @@ impl<'a> Engine<'a> {
         ] {
             self.register_host(h);
         }
+
+        // Tag de excepción CLS: payload (msg: i64, span: i64).
+        let tag_ty = self.register_func_type(vec![ValType::I64, ValType::I64], vec![]);
+        self.eh_handler_ty = self.register_func_type(vec![], vec![ValType::I64, ValType::I64]);
+        self.tag_idx = self.tags_sec.len();
+        self.tags_sec.tag(TagType {
+            kind: TagKind::Exception,
+            func_type_idx: tag_ty,
+        });
 
         // Memoria (1 página = 64KB; el allocator hace grow).
         self.memories_sec.memory(MemoryType {
@@ -4667,6 +4784,8 @@ impl<'a> Engine<'a> {
             &self.method_type_indexes,
             None,
             &self.target,
+            self.tag_idx,
+            self.eh_handler_ty,
         );
         // Métodos de clase: `me` (la instancia) es el primer param implícito.
         let is_method = f.name.contains("::");
@@ -4751,6 +4870,8 @@ impl<'a> Engine<'a> {
             &self.method_type_indexes,
             None,
             &self.target,
+            self.tag_idx,
+            self.eh_handler_ty,
         );
         for (idx, val) in &self.global_inits {
             fe.emit_expression(val)?;
@@ -5050,6 +5171,8 @@ fn collect_arrows_in_expr(expr: &Expression, out: &mut Vec<ArrowFunctionExpr>) {
         _ => {}
     }
 }
+
+
 
 
 

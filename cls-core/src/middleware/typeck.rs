@@ -427,7 +427,7 @@ impl TypeChecker {
             self.push_scope();
             let err_type = catch.param_type.as_ref()
                 .map(|ta| self.resolve_type_annotation(ta))
-                .unwrap_or(Type::Any);
+                .unwrap_or(Type::String);
             self.define(&catch.param_name, err_type);
             self.check_block(&catch.block);
             self.pop_scope();
