@@ -330,6 +330,17 @@ impl Interpreter {
         ))
     }
 
+    /// Quita el span legacy "(línea N, columna M)" del final de un mensaje.
+    fn strip_legacy_span(msg: &str) -> String {
+        if let Some(pos) = msg.rfind(" (línea ") {
+            let tail = &msg[pos..];
+            if tail.contains("columna") && tail.ends_with(')') {
+                return msg[..pos].to_string();
+            }
+        }
+        msg.to_string()
+    }
+
     /// Ejecuta un módulo completo
     pub fn execute(&mut self, module: &Module) -> ClsResult<Value> {
         let mut result = Value::Void;
@@ -781,7 +792,12 @@ impl Interpreter {
                 for catch in &try_stmt.catch_clauses {
                     self.env.push_scope();
                     // TODO: crear objeto de error
-                    let err_val = Value::String(e.to_string());
+                    // e = "Error de runtime: " + msg (limpiar el call stack embebido,
+                    // el prefijo duplicado que añade call_function_value y el span
+                    // legacy "(línea N, columna M)" que incrusta err_at).
+                    let clean = crate::error_report::clean_error_msg(&e.to_string());
+                    let clean = Self::strip_legacy_span(&clean);
+                    let err_val = Value::String(format!("Error de runtime: {}", clean));
                     self.env.define(&catch.param_name, err_val);
                     let result = self.execute_block(&catch.block);
                     self.env.pop_scope();

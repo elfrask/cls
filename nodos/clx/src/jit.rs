@@ -187,22 +187,12 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
     run_wasm(&wasm_bytes, entry, app_args, timing, t, Some(cache_path))
 }
 
-/// Config de caché de wasmtime (WASM→nativo): crea el TOML por defecto si falta.
+/// Config de wasmtime: habilita la propuesta de excepciones (try/catch).
+/// El caché CLS→WASM en disco ya evita recompilar; el de wasmtime es opcional.
 fn wasmtime_cache_config() -> Option<wasmtime::Config> {
-    let dir = cache_dir();
-    let config_path = dir.join("wasmtime-cache.toml");
-    if !config_path.exists() {
-        let cache_dir = dir.join("wasmtime").to_string_lossy().replace('\\', "/");
-        let toml = format!("[cache]\nenabled = true\ndirectory = \"{}\"\n", cache_dir);
-        let _ = std::fs::create_dir_all(&dir);
-        let _ = std::fs::write(&config_path, toml);
-    }
     let mut config = wasmtime::Config::new();
-    if config.cache_config_load(&config_path).is_ok() {
-        Some(config)
-    } else {
-        None
-    }
+    config.wasm_exceptions(true);
+    Some(config)
 }
 
 fn run_wasm(
@@ -313,17 +303,79 @@ fn run_wasm(
 
     let result = match main.call(&mut store, args_ptr) {
         Ok(code) => code as i32,
-        Err(e) => {
-            show_cls_error(
-                &ClsError::RuntimeError(format!("Trap WASM: {}", e)),
-                entry,
-                None,
-            );
+        Err(_e) => {
+            // Excepción CLS no capturada: extraer el payload [msg, span] del tag
+            // y formatear el error como runtime (con el mensaje real, no un trap genérico).
+            let payload: Vec<Val> = {
+                let exn = store.take_pending_exception();
+                let mut fields = match exn.as_ref() {
+                    Some(e) => e.fields(&mut store).ok(),
+                    None => None,
+                };
+                match fields.as_mut() {
+                    Some(iter) => iter.collect(),
+                    None => Vec::new(),
+                }
+            };
+            let msg = payload
+                .first()
+                .and_then(|v| v.i64())
+                .map(|packed| read_packed_str(&mut store, &memory, packed))
+                .unwrap_or_default();
+            let span = payload
+                .get(1)
+                .and_then(|v| v.i64())
+                .map(unpack_span);
+            if let Some(span) = span {
+                let report = cls_runtime::error_report::ErrorReport {
+                    error: ClsError::RuntimeError(msg.clone()),
+                    span: Some(span.clone()),
+                    stack: vec![],
+                    import_trace: vec![],
+                    source_file: entry.to_string(),
+                    source: None,
+                };
+                eprintln!(
+                    "{}",
+                    cls_runtime::error_report::format_error(
+                        &report,
+                        &cls_runtime::error_report::ErrorFormat::Console
+                    )
+                );
+            } else {
+                show_cls_error(
+                    &ClsError::RuntimeError(if msg.is_empty() {
+                        format!("Trap WASM: excepción no capturada")
+                    } else {
+                        msg
+                    }),
+                    entry,
+                    None,
+                );
+            }
             1
         }
     };
     tick(timing, "ejecución main", t);
     result
+}
+
+/// Lee un string empaquetado `(ptr<<32)|len` desde la memoria del módulo.
+fn read_packed_str(store: &mut Store<HostState>, memory: &Memory, packed: i64) -> String {
+    let ptr = (packed >> 32) as usize;
+    let len = (packed & 0xffff_ffff) as usize;
+    memory
+        .data(store)
+        .get(ptr..ptr.saturating_add(len))
+        .map(|b| String::from_utf8_lossy(b).into_owned())
+        .unwrap_or_default()
+}
+
+/// Desempaqueta `(line<<32)|col` en un Span.
+fn unpack_span(packed: i64) -> Span {
+    let line = ((packed >> 32) & 0xffff_ffff) as u32;
+    let col = (packed & 0xffff_ffff) as u32;
+    Span::new(line, col, line, col)
 }
 
 /// Escribe los args como Array<String> en memoria y devuelve el ptr.

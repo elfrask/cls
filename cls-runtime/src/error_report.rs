@@ -77,7 +77,7 @@ fn report_header(report: &ErrorReport) -> String {
 // ─── Limpieza de mensajes ────────────────────────────────────────────────────
 
 /// Quita el prefijo "Error de X: " y el "Call stack:" embebido
-fn clean_error_msg(msg: &str) -> String {
+pub fn clean_error_msg(msg: &str) -> String {
     let msg = if let Some(pos) = msg.find("\n  Call stack:") {
         &msg[..pos]
     } else {
