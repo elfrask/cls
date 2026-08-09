@@ -20,6 +20,7 @@ pub enum Type {
     Array(Box<Type>),                    // type[]
     Tuple(Vec<Type>),                    // (Int, String) heterogéneo por posición
     Record(Box<Type>, Box<Type>),       // String{Integer}
+    Shape(Vec<(String, Type)>),         // {nombre: String, edad: Int} (blueprint)
     Fun(Vec<Type>, Box<Type>),          // (Int, String) -> Bool
     Union(Vec<Type>),                   // "a" | "b" | 5
     Literal(LitVal),                    // "d", 5, 1.5 (literal type)
@@ -95,6 +96,23 @@ impl Type {
                 a1.is_assignable_to(a2) && b1.is_assignable_to(b2)
             }
 
+            // Shapes: cada campo del destino debe existir en el origen con tipo
+            // compatible (el origen puede tener campos extra). Estructural.
+            (Type::Shape(src), Type::Shape(dst)) => {
+                dst.iter().all(|(dname, dty)| {
+                    src.iter()
+                        .find(|(sname, _)| sname == dname)
+                        .map(|(_, sty)| sty.is_assignable_to(dty))
+                        .unwrap_or(false)
+                })
+            }
+            // Shape → Record<K,V>: permitido si todos los valores son assignables a V
+            // (el literal `{a:1,b:2}` se usa como diccionario homogéneo tipado).
+            (Type::Shape(src), Type::Record(k2, v2)) => {
+                k2.is_assignable_to(&Type::String)
+                    && src.iter().all(|(_, sty)| sty.is_assignable_to(v2))
+            }
+
             // Functions
             (Type::Fun(params_a, ret_a), Type::Fun(params_b, ret_b)) => {
                 // params: contravariante, ret: covariante
@@ -146,6 +164,14 @@ impl Type {
                 LitVal::Bool(b) => b.to_string(),
             },
             Type::Record(k, v) => format!("{}{{{}}}", k.to_string(), v.to_string()),
+            Type::Shape(fields) => {
+                let fields_str = fields
+                    .iter()
+                    .map(|(n, t)| format!("{}: {}", n, t.to_string()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{}}}", fields_str)
+            }
             Type::Fun(params, ret) => {
                 let params_str = params
                     .iter()
@@ -174,6 +200,17 @@ impl Type {
                 }
             }
             Type::Infer(id) => format!("_{}", id),
+        }
+    }
+
+    /// Si es un Shape, devuelve el tipo del campo por nombre.
+    pub fn shape_field(&self, name: &str) -> Option<&Type> {
+        match self {
+            Type::Shape(fields) => fields
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, t)| t),
+            _ => None,
         }
     }
 }

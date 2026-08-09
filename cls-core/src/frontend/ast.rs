@@ -754,6 +754,8 @@ pub enum TypeKind {
     Tuple(Vec<TypeAnnotation>),        // (Int, String) heterogéneo
     Union(Vec<TypeAnnotation>),        // "a" | "b" | 5
     Record(Box<TypeAnnotation>, Box<TypeAnnotation>), // String{Integer}
+    Shape(Vec<(String, TypeAnnotation)>), // {nombre: String, edad: Int}
+    Intersection(Vec<TypeAnnotation>),  // Shape1 & Shape2 (merge de shapes)
     Fun(Vec<TypeAnnotation>, Box<TypeAnnotation>),     // (Int, String) -> Bool
     Literal(LiteralKind),              // "d", 5, true (literal type)
     Access(Box<TypeAnnotation>, TypeAccess), // T["key"] | T[0]

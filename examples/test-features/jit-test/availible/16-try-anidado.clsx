@@ -1,0 +1,32 @@
+function falla(n: int) -> int {
+    if (n == 0) {
+        throw("no puede ser cero");
+    }
+    return 100 / n;
+};
+
+function main(args: String[]) -> int {
+    print("=== try/catch con funcion que lanza ===");
+    try {
+        var r = falla(0);
+        print("no llega:", r);
+    } catch (e) {
+        print("catch funcion:", e);
+    }
+    print("=== funcion que no lanza ===");
+    var ok = falla(4);
+    print("ok:", ok);
+    print("=== try anidado: catch interno primero ===");
+    try {
+        try {
+            throw("anidado");
+        } catch (e) {
+            print("inner:", e);
+        }
+        print("despues del inner");
+    } catch (e) {
+        print("outer no deberia:", e);
+    }
+    print("fin");
+    return 0;
+};
