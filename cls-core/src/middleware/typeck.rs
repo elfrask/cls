@@ -193,8 +193,7 @@ impl TypeChecker {
                     self.warn(&format!("interface '{}' solo tiene efecto en type-checker", i.name), i.span);
                 }
                 Type::Void
-            }
-            Statement::TypeAlias(t) => {
+            }            Statement::TypeAlias(t) => {
                 self.check_type_alias(t);
                 Type::Void
             }
@@ -302,6 +301,26 @@ impl TypeChecker {
         }
 
         self.define(&var.name, declared.clone());
+        // Array literal vacío con anotación (p.ej. `const out: int[] = []`):
+        // registrar el tipo anotado en el span del literal para que el backend
+        // sepa el tipo del elemento (check_array infiere Any, sin elementos).
+        if let Some(Expression::Array(arr)) = &var.value {
+            if arr.elements.is_empty() {
+                if let Some(declared_arr) = var.type_ann.as_ref().map(|t| self.resolve_type_annotation(t)) {
+                    self.types_by_span.insert(arr.span.clone(), declared_arr);
+                }
+            }
+        }
+        // Record literal con anotación (p.ej. `var d: Record<String, Int> = {a:1}`):
+        // registrar el tipo anotado en el span del literal para que el backend lo
+        // emita como dict (Record) o shape según lo que pida la anotación.
+        if let Some(Expression::Record(rec)) = &var.value {
+            if let Some(declared_rec) = var.type_ann.as_ref().map(|t| self.resolve_type_annotation(t)) {
+                if matches!(declared_rec, Type::Record(_, _)) {
+                    self.types_by_span.insert(rec.span.clone(), declared_rec);
+                }
+            }
+        }
         declared
     }
 
@@ -827,6 +846,22 @@ impl TypeChecker {
                 "toString" => Type::String,
                 _ => Type::Any,
             },
+            Type::Shape(fields) => {
+                match member.member.as_str() {
+                    "length" | "size" => Type::Int,
+                    "keys" => Type::Array(Box::new(Type::String)),
+                    "values" => Type::Array(Box::new(Type::Any)),
+                    "has" => Type::Bool,
+                    "toString" => Type::String,
+                    name => fields.iter()
+                        .find(|(n, _)| *n == name)
+                        .map(|(_, t)| t.clone())
+                        .unwrap_or_else(|| self.error(
+                            &format!("El record no tiene el campo '{}'", name),
+                            member.span.clone(),
+                        )),
+                }
+            }
             Type::Cmx => match member.member.as_str() {
                 "tag" => Type::String,
                 "props" => Type::Record(Box::new(Type::String), Box::new(Type::Any)),
@@ -860,6 +895,23 @@ impl TypeChecker {
         match obj {
             Type::Array(inner) => *inner,
             Type::Record(_k, v) => *v,
+            // Shape: índice literal con clave conocida → tipo del campo; clave
+            // desconocida → error (la estructura del record es fija).
+            Type::Shape(fields) => {
+                match idx.index.as_ref() {
+                    Expression::Literal(l) if matches!(l.kind, LiteralKind::String(_)) => {
+                        let k = match &l.kind { LiteralKind::String(s) => s.clone(), _ => String::new() };
+                        fields.iter()
+                            .find(|(n, _)| *n == k)
+                            .map(|(_, t)| t.clone())
+                            .unwrap_or_else(|| self.error(
+                                &format!("El record no tiene el campo '{}'", k),
+                                idx.span.clone(),
+                            ))
+                    }
+                    _ => Type::Any,
+                }
+            }
             // Tupla: índice literal â†’ slot exacto; dinámico â†’ unión de slots
             Type::Tuple(ts) => {
                 match idx.index.as_ref() {
@@ -906,14 +958,12 @@ impl TypeChecker {
     }
 
     fn check_record(&mut self, rec: &RecordExpr) -> Type {
-        let mut value_type = Type::Any;
-        for (_, expr) in &rec.entries {
+        let mut fields: Vec<(String, Type)> = Vec::new();
+        for (key, expr) in &rec.entries {
             let t = self.check_expression(expr);
-            if matches!(value_type, Type::Any) {
-                value_type = t;
-            }
+            fields.push((key.clone(), t));
         }
-        Type::Record(Box::new(Type::String), Box::new(value_type))
+        Type::Shape(fields)
     }
 
     fn check_arrow_function(&mut self, arrow: &ArrowFunctionExpr) -> Type {
@@ -1025,6 +1075,36 @@ impl TypeChecker {
                     Box::new(self.resolve_annotation_with(v, bindings)),
                 )
             }
+            TypeKind::Shape(fields) => {
+                Type::Shape(
+                    fields.iter()
+                        .map(|(n, ta)| (n.clone(), self.resolve_annotation_with(ta, bindings)))
+                        .collect(),
+                )
+            }
+            TypeKind::Intersection(members) => {
+                // Merge de shapes: campos de todos los miembros (los no-shape se
+                // ignoran o resuelven a Any). Conflicto de tipo = error.
+                let mut out: Vec<(String, Type)> = Vec::new();
+                for m in members {
+                    let t = self.resolve_annotation_with(m, bindings);
+                    if let Type::Shape(fields) = t {
+                        for (n, ty) in fields {
+                            if let Some((_, existing)) = out.iter_mut().find(|(en, _)| *en == n) {
+                                if *existing != ty {
+                                    return self.error(
+                                        &format!("Campo '{}' con tipos incompatibles en la conjunción de shapes", n),
+                                        ann.span.clone(),
+                                    );
+                                }
+                            } else {
+                                out.push((n, ty));
+                            }
+                        }
+                    }
+                }
+                Type::Shape(out)
+            }
             TypeKind::Fun(params, ret) => {
                 let param_types: Vec<Type> = params.iter()
                     .map(|p| self.resolve_annotation_with(p, bindings))
@@ -1057,6 +1137,21 @@ impl TypeChecker {
                         Box::new(param_types[0].clone()),
                         Box::new(param_types[1].clone()),
                     ),
+                    name if self.interfaces.contains_key(name) => {
+                        let info = self.interfaces[name].clone();
+                        let bind = self.interface_bindings(&info, &param_types);
+                        let mut fields: Vec<(String, Type)> = info
+                            .fields
+                            .iter()
+                            .map(|(fn_, ta)| {
+                                (fn_.clone(), self.resolve_annotation_with(ta, &bind))
+                            })
+                            .collect();
+                        for (name_sig, sig) in &info.signatures {
+                            fields.push((name_sig.clone(), self.signature_type(sig, &bind)));
+                        }
+                        Type::Shape(fields)
+                    }
                     _ => {
                         self.lookup(name)
                             .cloned()
@@ -1119,8 +1214,12 @@ impl TypeChecker {
         // Fallback: resolver el tipo base y aplicar sobre tipos compuestos
         let base_type = self.resolve_annotation_with(base, bindings);
         match access {
-            TypeAccess::Key(_key) => match base_type {
-                Type::Record(_, v) => *v,
+            TypeAccess::Key(key) => match &base_type {
+                Type::Record(_, v) => (**v).clone(),
+                Type::Shape(fields) => fields.iter()
+                    .find(|(n, _)| n == key)
+                    .map(|(_, t)| t.clone())
+                    .unwrap_or(Type::Any),
                 _ => Type::Any,
             },
             TypeAccess::Index(i) => match base_type {

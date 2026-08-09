@@ -1,9 +1,8 @@
 
 function range(init: int, end: int) -> int[] {
   
-  const out: int[] = [init];
+  const out: int[] = [];
 
-  out.pop();
 
   for (var i = 0; i < end; i = i + 1) {
     out.push(i);

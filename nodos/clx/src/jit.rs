@@ -76,7 +76,7 @@ impl Default for HostState {
 }
 
 /// Directorio del caché de compilación: `~/.cache/cls/` (HOME o USERPROFILE).
-fn cache_dir() -> std::path::PathBuf {
+pub fn cache_dir() -> std::path::PathBuf {
     let base = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());

@@ -1,5 +1,5 @@
 function main(args: String[]) -> int {
-    var u = { a: 10, b: 20, c: 30 };
+    var u: Record<String, Int> = { a: 10, b: 20, c: 30 };
     print("a:", u["a"]);
     print("b:", u["b"]);
     print("len:", u.length);

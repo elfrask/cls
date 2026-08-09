@@ -1,0 +1,22 @@
+import "json" as json;
+
+function main(args: String[]) -> int {
+    print("=== Record<K,V> dict mutable ===");
+    var d: Record<String, Int> = { a: 10, b: 20 };
+    print("d:", d);
+    print("a:", d["a"]);
+    d["c"] = 30;
+    print("c tras set:", d["c"], "len:", d.length);
+    print("has c:", d.has("c"));
+
+    print("=== Record<String, any> (json.parse) ===");
+    var obj: Record<String, any> = json.parse('{"n": "CLS", "v": 2026, "ok": true}');
+    print("n:", obj["n"], "v:", obj["v"], "ok:", obj["ok"]);
+    print("json len:", obj.length);
+
+    print("=== stringify de shape ===");
+    var salida = json.stringify({ x: 1, y: "a" });
+    print("stringify:", salida);
+
+    return 0;
+};

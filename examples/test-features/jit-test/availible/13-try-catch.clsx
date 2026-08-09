@@ -1,0 +1,10 @@
+function main(args: String[]) -> int {
+    print("=== try/catch ===");
+    try {
+        throw("boom");
+    } catch (e) {
+        print("catch:", e);
+    }
+    print("despues del catch");
+    return 0;
+};

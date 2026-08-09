@@ -401,10 +401,49 @@ impl Parser {
             kind = TypeKind::Union(members);
         }
 
+        // Conjunción: shape1 & shape2 (merge de campos) u otros tipos
+        if self.check_operator(Operator::And) {
+            let mut members = vec![TypeAnnotation {
+                kind: kind.clone(),
+                span: span.clone(),
+            }];
+            while self.consume_operator(Operator::And) {
+                let m_kind = self.parse_base_type()?;
+                members.push(TypeAnnotation {
+                    kind: m_kind,
+                    span: self.span(),
+                });
+            }
+            kind = TypeKind::Intersection(members);
+        }
+
         Ok(TypeAnnotation { kind, span })
     }
 
     fn parse_base_type(&mut self) -> ClsResult<TypeKind> {
+        // Shape literal: `{ nombre: String, edad: Int }` (blueprint de record)
+        if matches!(&self.current_token, Token::Symbol(Symbol::LBrace)) {
+            self.advance();
+            let mut fields = Vec::new();
+            if !self.check_symbol(Symbol::RBrace) {
+                loop {
+                    self.skip_newlines();
+                    let name = match &self.current_token {
+                        Token::Identifier(n) => n.clone(),
+                        _ => return Err(self.syntax_err("Nombre de campo inválido en shape")),
+                    };
+                    self.advance();
+                    self.expect_operator(Operator::Colon)?;
+                    let ty = self.parse_type_annotation()?;
+                    fields.push((name, ty));
+                    if !self.consume_symbol(Symbol::Comma) {
+                        break;
+                    }
+                }
+            }
+            self.expect_symbol(Symbol::RBrace)?;
+            return Ok(TypeKind::Shape(fields));
+        }
         // Literales de tipo: "d", 5, 1.5, true
         match &self.current_token {
             Token::StringLiteral(v) => {

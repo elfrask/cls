@@ -45,6 +45,9 @@ fn main() {
         "maptype" => subcommands::maptype::execute(&args[2..]),
         "tree" => { eprintln!("[clx tree] No implementado aún"); 0 }
 
+        // Caché
+        "clean" => subcommands::clean::execute(&args[2..]),
+
         // Formateo
         "fmt" => { eprintln!("[clx fmt] No implementado aún"); 0 }
 
@@ -96,6 +99,9 @@ fn print_help() {
     println!("    --watch, -w               Regenerar automáticamente al detectar cambios");
     println!("    (default output: ./.cls-types, preserva estructura de directorios)");
     println!("  tree                        Árbol de dependencias/AST (placeholder)");
+    println!();
+    println!("Caché:");
+    println!("  clean [--all]               Limpiar caché de compilación (~/.cache/cls)");
     println!();
     println!("Formateo:");
     println!("  fmt                         Formateador de código (placeholder)");

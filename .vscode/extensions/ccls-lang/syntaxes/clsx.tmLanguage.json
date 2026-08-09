@@ -317,7 +317,7 @@
         },
         {
           "name": "entity.name.function.call.ccls",
-          "match": "\\b(?!(fun|void|method|if|case|while|for|return|switch|catch|import|from|as|include|new|with|in|when|default|extension|or|not)\\b)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
+          "match": "\\b(?!(fun|void|method|if|throw|case|while|for|return|switch|catch|import|from|as|include|new|with|in|when|default|extension|or|not)\\b)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
         }
       ]
     },

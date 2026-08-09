@@ -1,0 +1,20 @@
+function main(args: String[]) -> int {
+    print("=== try/finally con excepcion capturada fuera ===");
+    try {
+        try {
+            throw("algo");
+        } finally {
+            print("cleanup interno");
+        }
+    } catch (e) {
+        print("catch externo:", e);
+    }
+    print("=== try/finally sin excepcion ===");
+    try {
+        print("try normal");
+    } finally {
+        print("finally normal");
+    }
+    print("despues del finally");
+    return 0;
+};
