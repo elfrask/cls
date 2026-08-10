@@ -2,19 +2,19 @@ import "math";
 import "json";
 import "fs";
 function main(args) -> int {
-    print("=== Stdlib como mÃƒÂ³dulos ===");
+    print("=== Stdlib como módulos ===");
 
-    # MÃƒÂ³dulo math
+    # Módulo math
     print("math.abs(-5):", math.abs(-5));
     print("math.sqrt(16):", math.sqrt(16));
     print("math.PI:", math.PI);
 
-    # MÃƒÂ³dulo fs
+    # Módulo fs
     print("fs.exists('hello.ccls'):", fs.exists("hello.ccls"));
     var content = fs.readFile("hello.ccls");
     print("fs.readFile:", len(content), "bytes");
 
-    # MÃƒÂ³dulo json
+    # Módulo json
     var obj = json.parse('{"name": "CLS"}');
     print("json.parse:", obj);
     print("json.stringify:", json.stringify(obj));

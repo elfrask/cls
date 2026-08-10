@@ -27,6 +27,7 @@ use crate::middleware::typeck::expr_span;
 use crate::middleware::types::{LitVal, Type};
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use wasm_encoder::{
     BlockType, Catch, CodeSection, ConstExpr, DataSection, DataSegment, DataSegmentMode,
     ElementMode, ElementSection, Elements, EntityType, ExportKind, ExportSection, Function,
@@ -268,7 +269,7 @@ impl HostFn {
             CmxAddChild => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
             CmxToString => (i64p.clone(), vec![ValType::I64]),
             PrintAny => (vec![ValType::I64, ValType::I64], vec![]),
-            FnHandle => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
+            FnHandle => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
             FnToString => (i64p.clone(), vec![ValType::I64]),
         }
     }
@@ -360,6 +361,7 @@ struct FuncEmitter<'a> {
     func_defaults: &'a HashMap<String, Vec<Option<Expression>>>,
     fn_table_idx: &'a HashMap<String, u32>,
     arrow_names: &'a HashMap<Span, String>,
+    arrow_captures: &'a HashMap<Span, Vec<String>>,
     /// Registro de types dinámicos (call_indirect de funciones como valor).
     type_count: &'a mut u32,
     types_sec: &'a mut TypeSection,
@@ -377,6 +379,12 @@ struct FuncEmitter<'a> {
     tag_idx: u32,
     /// Type `[] -> [i64, i64]` del block handler del try_table.
     eh_handler_ty: u32,
+    /// Closures (B5): nombre de variable capturada → índice 1-based en el bloque
+    /// de capturas `[n, v1, v2, ...]`. El param 0 del frame es `__capturas` (ptr).
+    captures: HashMap<String, u32>,
+    /// Variables promovidas al heap (capturadas por una arrow del scope): el
+    /// local guarda un PTR a un slot `[valor]`; los accesos pasan por ahí.
+    promoted: HashSet<String>,
 }
 
 impl<'a> FuncEmitter<'a> {
@@ -389,6 +397,7 @@ impl<'a> FuncEmitter<'a> {
         func_defaults: &'a HashMap<String, Vec<Option<Expression>>>,
         fn_table_idx: &'a HashMap<String, u32>,
         arrow_names: &'a HashMap<Span, String>,
+        arrow_captures: &'a HashMap<Span, Vec<String>>,
         type_count: &'a mut u32,
         types_sec: &'a mut TypeSection,
         enum_defs: &'a HashMap<String, (u32, Vec<String>)>,
@@ -418,6 +427,7 @@ impl<'a> FuncEmitter<'a> {
             func_defaults,
             fn_table_idx,
             arrow_names,
+            arrow_captures,
             type_count,
             types_sec,
             enum_defs,
@@ -431,6 +441,8 @@ impl<'a> FuncEmitter<'a> {
             target,
             tag_idx,
             eh_handler_ty,
+            captures: HashMap::new(),
+            promoted: HashSet::new(),
         }
     }
 
@@ -467,10 +479,12 @@ impl<'a> FuncEmitter<'a> {
         if name == "super" && self.current_class.is_some() {
             self.body.push(Instruction::LocalGet(0));
         } else if let Some(&ti) = self.fn_table_idx.get(name) {
-            // Función CLS como valor → handle [tabla_idx][capturas=0][nombre].
+            // Función CLS como valor → handle [tabla_idx][capturas=0][nombre]
+            // con tag-bit (ptr<<1)|1. El nombre se guarda para fn_to_string.
             let n = self.intern_string(&format!("<function {}>", name));
             self.body.push(Instruction::I64Const(ti as i64));
             self.emit_load_str(n);
+            self.body.push(Instruction::I64Const(0));
             self.host.call(HostFn::FnHandle, &mut self.body);
         } else if let Some((def_id, _)) = self.enum_defs.get(name) {
             // Enum def como valor → marker `def_id<<32 | 0xffff_ffff` (imprime `<enum X>`).
@@ -481,6 +495,47 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Const(0));
         } else if let Some(g) = self.globals.get(name) {
             self.body.push(Instruction::GlobalGet(*g));
+        } else if let Some(&ci) = self.captures.get(name) {
+            // Variable capturada (closure): el bloque guarda el valor (si no es
+            // promovida) o el PTR al slot (si es promovida). Acceder al slot.
+            self.body.push(Instruction::LocalGet(0));
+            self.body.push(Instruction::I64Const(16 + (ci as i64 - 1) * 8));
+            self.body.push(Instruction::I64Add);
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+            if self.promoted.contains(name) {
+                // La captura es un ptr al slot: doble deref.
+                self.body.push(Instruction::I32WrapI64);
+                self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+            }
+        } else if self.promoted.contains(name) {
+            // Variable del scope promovida al heap: el local guarda el ptr al slot.
+            let idx = self.local_for(name);
+            self.body.push(Instruction::LocalGet(idx));
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+        } else {
+            let idx = self.local_for(name);
+            self.body.push(Instruction::LocalGet(idx));
+        }
+    }
+
+    /// Carga el PTR al slot de una variable promovida (para capturarla por ref).
+    /// Si no es promovida, carga el valor directo (comportamiento por valor).
+    fn emit_ident_ptr(&mut self, name: &str) {
+        if let Some(g) = self.globals.get(name) {
+            // Globals ya son compartidas: cargar el valor directamente.
+            self.body.push(Instruction::GlobalGet(*g));
+        } else if self.promoted.contains(name) {
+            let idx = self.local_for(name);
+            self.body.push(Instruction::LocalGet(idx));
+        } else if let Some(&ci) = self.captures.get(name) {
+            // Captura anidada: cargar el valor del bloque.
+            self.body.push(Instruction::LocalGet(0));
+            self.body.push(Instruction::I64Const(16 + (ci as i64 - 1) * 8));
+            self.body.push(Instruction::I64Add);
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
         } else {
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalGet(idx));
@@ -491,6 +546,31 @@ impl<'a> FuncEmitter<'a> {
     fn emit_ident_store(&mut self, name: &str) {
         if let Some(g) = self.globals.get(name) {
             self.body.push(Instruction::GlobalSet(*g));
+        } else if let Some(&ci) = self.captures.get(name) {
+            // Variable capturada (closure): el bloque guarda el valor o el PTR.
+            let v = self.fresh_local();
+            self.body.push(Instruction::LocalSet(v));
+            // addr = ptr del bloque + offset de la captura.
+            self.body.push(Instruction::LocalGet(0));
+            self.body.push(Instruction::I64Const(16 + (ci as i64 - 1) * 8));
+            self.body.push(Instruction::I64Add);
+            self.body.push(Instruction::I32WrapI64);
+            if self.promoted.contains(name) {
+                // El bloque guarda un ptr al slot: store en `[ptr_al_slot]` → valor.
+                self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                self.body.push(Instruction::I32WrapI64);
+            }
+            self.body.push(Instruction::LocalGet(v));
+            self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+        } else if self.promoted.contains(name) {
+            // Variable del scope promovida: el local guarda el ptr al slot.
+            let v = self.fresh_local();
+            self.body.push(Instruction::LocalSet(v));
+            let idx = self.local_for(name);
+            self.body.push(Instruction::LocalGet(idx));
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::LocalGet(v));
+            self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
         } else {
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalSet(idx));
@@ -564,7 +644,34 @@ impl<'a> FuncEmitter<'a> {
                 let idx = self.declare_var_ty(&v.name, ty);
                 if let Some(value) = &v.value {
                     self.emit_expression(value)?;
-                    self.body.push(Instruction::LocalSet(idx));
+                    if self.promoted.contains(&v.name) {
+                        // Variable promovida: alloc slot `[valor]`, guardar ptr en
+                        // el local, store el valor en el slot.
+                        let val_tmp = self.fresh_local_ty(ty);
+                        self.body.push(match ty {
+                            WasTy::F64 => Instruction::LocalSet(val_tmp),
+                            WasTy::I32 => Instruction::LocalSet(val_tmp),
+                            WasTy::I64 => Instruction::LocalSet(val_tmp),
+                        });
+                        self.body.push(Instruction::I64Const(8));
+                        let alloc = self.func_indexes["__alloc"];
+                        self.body.push(Instruction::Call(alloc));
+                        self.body.push(Instruction::LocalSet(idx));
+                        self.body.push(Instruction::LocalGet(idx));
+                        self.body.push(Instruction::I32WrapI64);
+                        self.body.push(match ty {
+                            WasTy::F64 => Instruction::LocalGet(val_tmp),
+                            WasTy::I32 => Instruction::LocalGet(val_tmp),
+                            WasTy::I64 => Instruction::LocalGet(val_tmp),
+                        });
+                        match ty {
+                            WasTy::F64 => self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                            WasTy::I32 => self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 })),
+                            WasTy::I64 => self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                        }
+                    } else {
+                        self.body.push(Instruction::LocalSet(idx));
+                    }
                 }
                 Ok(())
             }
@@ -672,7 +779,7 @@ impl<'a> FuncEmitter<'a> {
             Type::Void => vec![],
             r => vec![was_type(&r)?.val_type()],
         };
-        let tidx = self.register_func_type(pv, rv);
+        let tidx = self.register_func_type(pv.clone(), rv.clone());
         // nuevo array [cap][len][ret...] del mismo tamaño que el original.
         let i = self.fresh_local();
         let new_ptr = self.fresh_local();
@@ -712,7 +819,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64GeS);
         let depth = self.block_depth.saturating_sub(break_at);
         self.body.push(Instruction::BrIf(depth));
-        // addr del destino en el nuevo array (debe ir ANTES del call_indirect)
+        // addr del destino en el nuevo array → guardar en local.
         self.body.push(Instruction::LocalGet(new_ptr));
         self.body.push(Instruction::LocalGet(i));
         self.body.push(Instruction::I64Const(es_ret));
@@ -720,8 +827,9 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Const(16));
         self.body.push(Instruction::I64Add);
         self.body.push(Instruction::I64Add);
-        self.body.push(Instruction::I32WrapI64);
-        // elem = arr[16 + i*elem_size]
+        let addr_tmp = self.fresh_local();
+        self.body.push(Instruction::LocalSet(addr_tmp));
+        // elem = arr[16 + i*elem_size] → guardar en local.
         self.body.push(Instruction::LocalGet(arr_ptr));
         self.body.push(Instruction::LocalGet(i));
         self.body.push(Instruction::I64Const(elem_size));
@@ -735,13 +843,60 @@ impl<'a> FuncEmitter<'a> {
             WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
             WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
         }
-        // llamar f(handle): handle[0] → call_indirect
+        let elem_tmp = self.fresh_local_ty(elem_ty);
+        self.body.push(Instruction::LocalSet(elem_tmp));
+        // llamar f(handle) con dispatch tag-bit (B5).
+        let mut pv_caps = vec![ValType::I64];
+        pv_caps.extend(pv.iter().copied());
+        let tidx_caps = self.register_func_type(pv_caps, rv.clone());
         self.body.push(Instruction::LocalGet(f_handle));
+        self.body.push(Instruction::I64Const(1));
+        self.body.push(Instruction::I64And);
+        self.body.push(Instruction::I32WrapI64);
+        self.block_depth += 1;
+        self.body.push(Instruction::If(
+            if rv.is_empty() {
+                BlockType::Empty
+            } else {
+                BlockType::Result(rv[0])
+            },
+        ));
+        // closure: push [capturas, elem, tabla]
+        self.body.push(Instruction::LocalGet(f_handle));
+        self.body.push(Instruction::I64Const(1));
+        self.body.push(Instruction::I64ShrU);
+        self.body.push(Instruction::I64Const(8));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+        let caps_tmp = self.fresh_local();
+        self.body.push(Instruction::LocalSet(caps_tmp));
+        self.body.push(Instruction::LocalGet(caps_tmp));
+        self.body.push(Instruction::LocalGet(elem_tmp));
+        self.body.push(Instruction::LocalGet(f_handle));
+        self.body.push(Instruction::I64Const(1));
+        self.body.push(Instruction::I64ShrU);
         self.body.push(Instruction::I32WrapI64);
         self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
         self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::CallIndirect { type_index: tidx_caps, table_index: 0 });
+        self.body.push(Instruction::Else);
+        // simple: push [elem, tabla]
+        self.body.push(Instruction::LocalGet(elem_tmp));
+        self.body.push(Instruction::LocalGet(f_handle));
+        self.body.push(Instruction::I64Const(1));
+        self.body.push(Instruction::I64ShrU);
+        self.body.push(Instruction::I32WrapI64);
         self.body.push(Instruction::CallIndirect { type_index: tidx, table_index: 0 });
-        // store el resultado en [addr, result]
+        self.body.push(Instruction::End);
+        self.block_depth -= 1;
+        // store el resultado en [addr_tmp, result]: guardar resultado en local,
+        // luego pushear addr y resultado en orden limpio.
+        let res_tmp = self.fresh_local_ty(ret_was);
+        self.body.push(Instruction::LocalSet(res_tmp));
+        self.body.push(Instruction::LocalGet(addr_tmp));
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::LocalGet(res_tmp));
         match ret_was {
             WasTy::F64 => {
                 self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 }))
@@ -1211,15 +1366,47 @@ impl<'a> FuncEmitter<'a> {
             Expression::Cmx(c) => self.emit_cmx(c),
             Expression::ArrowFunction(a) => {
                 // Arrow → handle de su función sintética `__arrow_<n>`.
+                // Si captura variables (closure): evaluarlas en un bloque
+                // `[n, v1, v2, ...]` y pasar el ptr como tercer arg del handle.
                 let name = self.arrow_names.get(&a.span).ok_or_else(|| {
                     crate::error::ClsError::CompileError(
                         "Arrow function sin función sintética (recolección)".to_string(),
                     )
                 })?;
                 let ti = self.fn_table_idx[name];
-                let n = self.intern_string("<anonymous>");
+                let captures = self.arrow_captures.get(&a.span).cloned().unwrap_or_default();
+                // Bloque de capturas `[n, v1, v2, ...]` (se evalúa primero).
+                let cap_ptr = self.fresh_local();
+                if captures.is_empty() {
+                    self.body.push(Instruction::I64Const(0));
+                    self.body.push(Instruction::LocalSet(cap_ptr));
+                } else {
+                    let ncap = captures.len() as i64;
+                    let es = 8i64;
+                    self.body.push(Instruction::I64Const(ncap));
+                    self.body.push(Instruction::I64Const(es));
+                    self.body.push(Instruction::I64Mul);
+                    self.body.push(Instruction::I64Const(16));
+                    self.body.push(Instruction::I64Add);
+                    let alloc = self.func_indexes["__alloc"];
+                    self.body.push(Instruction::Call(alloc));
+                    self.body.push(Instruction::LocalSet(cap_ptr));
+                    self.body.push(Instruction::LocalGet(cap_ptr));
+                    self.body.push(Instruction::I64Const(ncap));
+                    self.emit_i64_store(0);
+                    for (i, cap) in captures.iter().enumerate() {
+                        self.body.push(Instruction::LocalGet(cap_ptr));
+                        self.body.push(Instruction::I64Const(16 + (i as i64) * 8));
+                        self.body.push(Instruction::I64Add);
+                        self.body.push(Instruction::I32WrapI64);
+                        self.emit_ident_ptr(cap);
+                        self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                    }
+                }
                 self.body.push(Instruction::I64Const(ti as i64));
+                let n = self.intern_string("<anonymous>");
                 self.emit_load_str(n);
+                self.body.push(Instruction::LocalGet(cap_ptr));
                 self.host.call(HostFn::FnHandle, &mut self.body);
                 Ok(())
             }
@@ -2790,6 +2977,11 @@ impl<'a> FuncEmitter<'a> {
         }
         if let Expression::Identifier(name, _) = &*c.callee {
             if let Some(fidx) = self.func_indexes.get(name).copied() {
+                // Firma uniforme (B5): las funciones CLS top-level reciben
+                // __capturas (0) como primer arg. Internas y main no.
+                if !name.starts_with("__") && name != "main" {
+                    self.body.push(Instruction::I64Const(0));
+                }
                 for arg in &c.args {
                     self.emit_expression(arg)?;
                 }
@@ -2810,9 +3002,6 @@ impl<'a> FuncEmitter<'a> {
         // Función como valor (variable con handle) → call_indirect por tipo.
         let callee_ty = self.types.get(&expr_span(&c.callee)).cloned();
         if let Some(Type::Fun(params, ret)) = callee_ty {
-            for arg in &c.args {
-                self.emit_expression(arg)?;
-            }
             let mut pv: Vec<ValType> = Vec::new();
             for t in &params {
                 pv.push(was_type(t)?.val_type());
@@ -2821,13 +3010,63 @@ impl<'a> FuncEmitter<'a> {
                 Type::Void => vec![],
                 r => vec![was_type(r)?.val_type()],
             };
-            let tidx = self.register_func_type(pv, rv);
-            // handle → tabla_idx
+            // Firma uniforme (B5): closure = [capturas(i64), params...].
+            // Funcion simple = [params...]. El dispatch usa tag-bit + aplanado.
+            let mut pv_closure = vec![ValType::I64];
+            pv_closure.extend(pv.iter().copied());
+            let tidx_simple = self.register_func_type(pv.clone(), rv.clone());
+            let tidx_closure = self.register_func_type(pv_closure, rv.clone());
+            // v = eval(callee); valor con tag (par = simple, impar = closure).
             self.emit_expression(&c.callee)?;
+            let v = self.fresh_local();
+            self.body.push(Instruction::LocalSet(v));
+            // block $done (resultado del call) → cada rama hace call_indirect + br.
+            let ret_block = if rv.is_empty() {
+                BlockType::Empty
+            } else {
+                BlockType::Result(rv[0])
+            };
+            // tag = v & 1 → condición del if (impar = closure). Convertir a i32.
+            self.body.push(Instruction::LocalGet(v));
+            self.body.push(Instruction::I64Const(1));
+            self.body.push(Instruction::I64And);
+            self.body.push(Instruction::I32WrapI64);
+            self.block_depth += 1;
+            self.body.push(Instruction::If(ret_block));
+            // Rama closure (impar): ptr = v>>1; capturas = handle[8] (aplanado).
+            self.body.push(Instruction::LocalGet(v));
+            self.body.push(Instruction::I64Const(1));
+            self.body.push(Instruction::I64ShrU);
+            self.body.push(Instruction::I64Const(8));
+            self.body.push(Instruction::I64Add);
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+            let caps_tmp = self.fresh_local();
+            self.body.push(Instruction::LocalSet(caps_tmp));
+            // push [capturas, args..., tabla_idx]
+            self.body.push(Instruction::LocalGet(caps_tmp));
+            for arg in &c.args {
+                self.emit_expression(arg)?;
+            }
+            self.body.push(Instruction::LocalGet(v));
+            self.body.push(Instruction::I64Const(1));
+            self.body.push(Instruction::I64ShrU);
             self.body.push(Instruction::I32WrapI64);
             self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
             self.body.push(Instruction::I32WrapI64);
-            self.body.push(Instruction::CallIndirect { type_index: tidx, table_index: 0 });
+            self.body.push(Instruction::CallIndirect { type_index: tidx_closure, table_index: 0 });
+            self.body.push(Instruction::Else);
+            // Rama simple (par): tabla_idx = v>>1; push [args..., tabla_idx].
+            for arg in &c.args {
+                self.emit_expression(arg)?;
+            }
+            self.body.push(Instruction::LocalGet(v));
+            self.body.push(Instruction::I64Const(1));
+            self.body.push(Instruction::I64ShrU);
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::CallIndirect { type_index: tidx_simple, table_index: 0 });
+            self.body.push(Instruction::End);
+            self.block_depth -= 1;
             return Ok(());
         }
         Err(self.unsupported_expr(&Expression::Call(c.clone())))
@@ -4773,6 +5012,8 @@ struct Engine<'a> {
     fn_type_indexes: HashMap<String, u32>,
     /// arrow functions → nombre sintético `__arrow_<n>` (por span).
     arrow_names: HashMap<Span, String>,
+    /// Variables libres capturadas por cada arrow (por span del ArrowFunctionExpr).
+    arrow_captures: HashMap<Span, Vec<String>>,
     host_indexes: HashMap<HostFn, u32>,
     string_pool: Vec<String>,
     string_index: HashMap<String, u32>,
@@ -4879,6 +5120,7 @@ impl<'a> Engine<'a> {
             fn_table_idx: HashMap::new(),
             fn_type_indexes: HashMap::new(),
             arrow_names: HashMap::new(),
+            arrow_captures: HashMap::new(),
             host_indexes: HashMap::new(),
             string_pool: Vec::new(),
             string_index: HashMap::new(),
@@ -5261,6 +5503,11 @@ impl<'a> Engine<'a> {
             if let Statement::FunctionDecl(f) = stmt {
                 let (params, ret) = self.func_types[&f.name].clone();
                 let mut pv: Vec<ValType> = Vec::new();
+                // Firma uniforme (B5): toda funcion CLS top-level (excepto main,
+                // entry del host) recibe __capturas (i64) como primer param.
+                if f.name != "main" {
+                    pv.push(ValType::I64);
+                }
                 for t in &params {
                     pv.push(was_type(t)?.val_type());
                 }
@@ -5301,6 +5548,12 @@ impl<'a> Engine<'a> {
             for (n, a) in arrows.iter().enumerate() {
                 let name = format!("__arrow_{}", n);
                 self.arrow_names.insert(a.span, name.clone());
+                // Variables libres del body (closures): params y vars declaradas
+                // dentro se excluyen; el resto son capturas.
+                let mut locals: Vec<String> = a.params.iter().map(|p| p.name.clone()).collect();
+                let mut free: Vec<String> = Vec::new();
+                collect_free_vars_in_block(&a.body, &mut locals, &mut free);
+                self.arrow_captures.insert(a.span, free.clone());
                 arrow_funcs.push(FunctionDecl {
                     name,
                     params: a.params.clone(),
@@ -5335,6 +5588,8 @@ impl<'a> Engine<'a> {
             };
             self.func_types.insert(f.name.clone(), (params.clone(), Some(ret.clone())));
             let mut pv: Vec<ValType> = Vec::new();
+            // Firma uniforme (B5): toda arrow recibe __capturas (i64) como primer param.
+            pv.push(ValType::I64);
             for t in &params {
                 pv.push(was_type(t)?.val_type());
             }
@@ -5462,6 +5717,7 @@ impl<'a> Engine<'a> {
             &self.func_defaults,
             &self.fn_table_idx,
             &self.arrow_names,
+            &self.arrow_captures,
             &mut self.type_count,
             &mut self.types_sec,
             &self.enum_defs,
@@ -5484,6 +5740,41 @@ impl<'a> Engine<'a> {
             None
         };
         fe.current_class = current_class;
+        let is_main = f.name == "main";
+        // Promover al heap las variables locales capturadas por arrows del body:
+        // para que la mutación del closure sea visible en el scope externo (paridad
+        // con el walker, que captura por referencia). Aplica también a main (que
+        // puede declarar arrows locales).
+        if !is_method {
+            let mut arrows: Vec<ArrowFunctionExpr> = Vec::new();
+            collect_arrows_in_block(&f.body, &mut arrows);
+            for a in &arrows {
+                if let Some(caps) = self.arrow_captures.get(&a.span) {
+                    for c in caps {
+                        fe.promoted.insert(c.clone());
+                    }
+                }
+            }
+            // Si esta función ES una arrow con capturas, sus capturas son
+            // referencias a slots promovidos (para doble deref en el acceso).
+            if let Some(caps) = self.arrow_captures.get(&f.span) {
+                for c in caps {
+                    fe.promoted.insert(c.clone());
+                }
+            }
+        }
+        // Firma uniforme (B5): las funciones top-level (excepto main, entry del
+        // host) reciben __capturas (i64) como param/local 0. Las arrows ademas
+        // registran sus variables libres (closures) para cargarlas del bloque.
+        let has_caps = !is_method && !is_main;
+        let param_offset = if has_caps { 1 } else { 0 };
+        if has_caps {
+            fe.declare_var_ty("__capturas", WasTy::I64);
+            let arrow_caps = self.arrow_captures.get(&f.span).cloned().unwrap_or_default();
+            for (i, cap) in arrow_caps.iter().enumerate() {
+                fe.captures.insert(cap.clone(), (i + 1) as u32);
+            }
+        }
         if is_method {
             fe.declare_var_ty("me", was_type(&param_types[0])?);
             for (i, p) in f.params.iter().enumerate() {
@@ -5510,7 +5801,7 @@ impl<'a> Engine<'a> {
         // locals declarados empiezan después. Cada local = un grupo de 1 para
         // preservar los índices exactos (agrupar reordenaría y rompería tipos
         // mixtos).
-        let nparams = param_types.len() as u32;
+        let nparams = (param_types.len() + param_offset) as u32;
         let local_types: Vec<ValType> = (nparams..fe.next_local)
             .map(|i| fe.local_tys.get(&i).copied().unwrap_or(WasTy::I64).val_type())
             .collect();
@@ -5548,6 +5839,7 @@ impl<'a> Engine<'a> {
             &self.func_defaults,
             &self.fn_table_idx,
             &self.arrow_names,
+            &self.arrow_captures,
             &mut self.type_count,
             &mut self.types_sec,
             &self.enum_defs,
@@ -5866,3 +6158,148 @@ fn collect_arrows_in_expr(expr: &Expression, out: &mut Vec<ArrowFunctionExpr>) {
 
 
 
+/// Recolecta los identifiers libres del body de una arrow (closures).
+/// `locals` acumula params + variables declaradas dentro; `free` acumula los
+/// identifiers que se usan pero no son params ni declarados localmente.
+fn collect_free_vars_in_block(block: &Block, locals: &mut Vec<String>, free: &mut Vec<String>) {
+    for stmt in &block.statements {
+        collect_free_vars_in_stmt(stmt, locals, free);
+    }
+}
+
+fn collect_free_vars_in_stmt(stmt: &Statement, locals: &mut Vec<String>, free: &mut Vec<String>) {
+    match stmt {
+        Statement::VarDecl(v) | Statement::ConstDecl(v) => {
+            if let Some(val) = &v.value {
+                collect_free_vars_in_expr(val, locals, free);
+            }
+            locals.push(v.name.clone());
+        }
+        Statement::Expression(e) => collect_free_vars_in_expr(e, locals, free),
+        Statement::Return(Some(e)) => collect_free_vars_in_expr(e, locals, free),
+        Statement::If(i) => {
+            collect_free_vars_in_expr(&i.condition, locals, free);
+            collect_free_vars_in_block(&i.then_block, locals, free);
+            for e in &i.elif_branches {
+                collect_free_vars_in_expr(&e.condition, locals, free);
+                collect_free_vars_in_block(&e.block, locals, free);
+            }
+            if let Some(eb) = &i.else_block {
+                collect_free_vars_in_block(eb, locals, free);
+            }
+        }
+        Statement::While(w) => {
+            collect_free_vars_in_expr(&w.condition, locals, free);
+            collect_free_vars_in_block(&w.block, locals, free);
+        }
+        Statement::For(f) => {
+            if let Some(init) = &f.init {
+                collect_free_vars_in_stmt(init, locals, free);
+            }
+            if let Some(cond) = &f.condition {
+                collect_free_vars_in_expr(cond, locals, free);
+            }
+            if let Some(upd) = &f.update {
+                collect_free_vars_in_expr(upd, locals, free);
+            }
+            collect_free_vars_in_block(&f.block, locals, free);
+        }
+        Statement::ForEach(fe) => {
+            collect_free_vars_in_expr(&fe.iterable, locals, free);
+            locals.push(fe.item_name.clone());
+            if let Some(iname) = &fe.index_name {
+                locals.push(iname.clone());
+            }
+            collect_free_vars_in_block(&fe.block, locals, free);
+        }
+        Statement::Switch(s) => {
+            collect_free_vars_in_expr(&s.value, locals, free);
+            for c in &s.cases {
+                collect_free_vars_in_block(&c.block, locals, free);
+            }
+            if let Some(d) = &s.default {
+                collect_free_vars_in_block(d, locals, free);
+            }
+        }
+        Statement::With(w) => {
+            collect_free_vars_in_expr(&w.value, locals, free);
+            locals.push(w.name.clone());
+            collect_free_vars_in_block(&w.block, locals, free);
+        }
+        Statement::Loop(b) => collect_free_vars_in_block(b, locals, free),
+        _ => {}
+    }
+}
+
+fn collect_free_vars_in_expr(expr: &Expression, locals: &mut Vec<String>, free: &mut Vec<String>) {
+    match expr {
+        Expression::Identifier(name, _) => {
+            if !locals.contains(name) && !free.contains(name) {
+                free.push(name.clone());
+            }
+        }
+        Expression::Call(c) => {
+            collect_free_vars_in_expr(&c.callee, locals, free);
+            for arg in &c.args {
+                collect_free_vars_in_expr(arg, locals, free);
+            }
+        }
+        Expression::MemberAccess(m) => collect_free_vars_in_expr(&m.object, locals, free),
+        Expression::Index(i) => {
+            collect_free_vars_in_expr(&i.object, locals, free);
+            collect_free_vars_in_expr(&i.index, locals, free);
+        }
+        Expression::Array(a) => {
+            for el in &a.elements {
+                collect_free_vars_in_expr(el, locals, free);
+            }
+        }
+        Expression::Tuple(t) => {
+            for el in &t.elements {
+                collect_free_vars_in_expr(el, locals, free);
+            }
+        }
+        Expression::Record(r) => {
+            for (_, v) in &r.entries {
+                collect_free_vars_in_expr(v, locals, free);
+            }
+        }
+        Expression::Binary(b) => {
+            collect_free_vars_in_expr(&b.left, locals, free);
+            collect_free_vars_in_expr(&b.right, locals, free);
+        }
+        Expression::Unary(u) => collect_free_vars_in_expr(&u.operand, locals, free),
+        Expression::Conditional(c) => {
+            collect_free_vars_in_expr(&c.condition, locals, free);
+            collect_free_vars_in_expr(&c.then_expr, locals, free);
+            collect_free_vars_in_expr(&c.else_expr, locals, free);
+        }
+        Expression::Assignment(a) => {
+            collect_free_vars_in_expr(&a.target, locals, free);
+            collect_free_vars_in_expr(&a.value, locals, free);
+        }
+        Expression::Parenthesized(e, _) => collect_free_vars_in_expr(e, locals, free),
+        Expression::StringInterpolation(s) => {
+            for part in &s.parts {
+                if let InterpolationPart::Expr(e) = part {
+                    collect_free_vars_in_expr(e, locals, free);
+                }
+            }
+        }
+        Expression::Cmx(c) => {
+            for attr in &c.attributes {
+                if let Some(CmxAttributeValue::Expression(e)) = &attr.value {
+                    collect_free_vars_in_expr(e, locals, free);
+                }
+            }
+            for child in &c.children {
+                match child {
+                    CmxChild::Expression(e) => collect_free_vars_in_expr(e, locals, free),
+                    CmxChild::Element(el) => collect_free_vars_in_expr(&Expression::Cmx((**el).clone()), locals, free),
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+}

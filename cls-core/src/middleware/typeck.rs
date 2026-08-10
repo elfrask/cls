@@ -1,4 +1,4 @@
-﻿use crate::error::{ClsResult, Diagnostic, Span};
+use crate::error::{ClsResult, Diagnostic, Span};
 use crate::frontend::ast::*;
 use crate::middleware::types::{Type, LitVal};
 use crate::config::types::TypesConfig;
@@ -9,6 +9,8 @@ use std::collections::HashMap;
 struct InterfaceInfo {
     type_params: Vec<TypeParam>,
     fields: HashMap<String, TypeAnnotation>,
+    /// Orden de declaración de los campos (para offsets deterministas del shape).
+    field_order: Vec<String>,
     signatures: HashMap<String, SignatureDecl>,
 }
 
@@ -187,6 +189,7 @@ impl TypeChecker {
                 self.interfaces.insert(i.name.clone(), InterfaceInfo {
                     type_params: i.type_params.clone(),
                     fields,
+                    field_order: i.fields.iter().map(|f| f.name.clone()).collect(),
                     signatures,
                 });
                 if !self.config.strict {
@@ -311,12 +314,13 @@ impl TypeChecker {
                 }
             }
         }
-        // Record literal con anotación (p.ej. `var d: Record<String, Int> = {a:1}`):
-        // registrar el tipo anotado en el span del literal para que el backend lo
-        // emita como dict (Record) o shape según lo que pida la anotación.
+        // Record literal con anotación (p.ej. `var d: Record<String, Int> = {a:1}`
+        // o `var p: Persona = {nombre: "Ana", edad: 30}`): registrar el tipo
+        // anotado en el span del literal para que el backend lo emita como dict
+        // (Record) o shape según lo que pida la anotación (offsets consistentes).
         if let Some(Expression::Record(rec)) = &var.value {
             if let Some(declared_rec) = var.type_ann.as_ref().map(|t| self.resolve_type_annotation(t)) {
-                if matches!(declared_rec, Type::Record(_, _)) {
+                if matches!(declared_rec, Type::Record(_, _)) | matches!(declared_rec, Type::Shape(_)) {
                     self.types_by_span.insert(rec.span.clone(), declared_rec);
                 }
             }
@@ -635,7 +639,7 @@ impl TypeChecker {
                     }
                     return Type::Int;
                 }
-                // Int + Float â†’ Float
+                // Int + Float → Float
                 if is_num_l && matches!(right, Type::Float) {
                     return Type::Float;
                 }
@@ -912,7 +916,7 @@ impl TypeChecker {
                     _ => Type::Any,
                 }
             }
-            // Tupla: índice literal â†’ slot exacto; dinámico â†’ unión de slots
+            // Tupla: índice literal → slot exacto; dinámico → unión de slots
             Type::Tuple(ts) => {
                 match idx.index.as_ref() {
                     Expression::Literal(l) if matches!(l.kind, LiteralKind::Int(_)) => {
@@ -1025,15 +1029,15 @@ impl TypeChecker {
         left
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════
     // Type resolution
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════
 
     pub fn resolve_type_annotation(&mut self, ann: &TypeAnnotation) -> Type {
         self.resolve_annotation_with(ann, &HashMap::new())
     }
 
-    /// Resuelve una anotación bajo un contexto de type params (bindings Tâ†’tipo).
+    /// Resuelve una anotación bajo un contexto de type params (bindings T→tipo).
     fn resolve_annotation_with(
         &mut self,
         ann: &TypeAnnotation,
@@ -1132,7 +1136,7 @@ impl TypeChecker {
                     "Float" => Type::Float,
                     "Character" => Type::Char,
                     "Boolean" => Type::Bool,
-                    // Record<K, V> â†’ diccionario tipado
+                    // Record<K, V> → diccionario tipado
                     "Record" if param_types.len() == 2 => Type::Record(
                         Box::new(param_types[0].clone()),
                         Box::new(param_types[1].clone()),
@@ -1141,11 +1145,9 @@ impl TypeChecker {
                         let info = self.interfaces[name].clone();
                         let bind = self.interface_bindings(&info, &param_types);
                         let mut fields: Vec<(String, Type)> = info
-                            .fields
+                            .field_order
                             .iter()
-                            .map(|(fn_, ta)| {
-                                (fn_.clone(), self.resolve_annotation_with(ta, &bind))
-                            })
+                            .filter_map(|fn_| info.fields.get(fn_).map(|ta| (fn_.clone(), self.resolve_annotation_with(ta, &bind))))
                             .collect();
                         for (name_sig, sig) in &info.signatures {
                             fields.push((name_sig.clone(), self.signature_type(sig, &bind)));
@@ -1231,7 +1233,7 @@ impl TypeChecker {
         }
     }
 
-    /// Construye bindings Tâ†’tipo para los type params de una interface.
+    /// Construye bindings T→tipo para los type params de una interface.
     fn interface_bindings(&mut self, info: &InterfaceInfo, args: &[Type]) -> HashMap<String, Type> {
         let mut bindings = HashMap::new();
         for (i, tp) in info.type_params.iter().enumerate() {
