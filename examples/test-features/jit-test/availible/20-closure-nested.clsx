@@ -1,0 +1,11 @@
+function main(args: String[]) -> int {
+    print("=== closure-de-closure ===");
+    var base = 5;
+    var make = () -> {
+        var inner = () -> { return base + 1; };
+        return inner;
+    };
+    var f = make();
+    print("f():", f());
+    return 0;
+};

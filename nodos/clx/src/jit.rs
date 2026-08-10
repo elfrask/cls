@@ -1637,20 +1637,24 @@ fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     linker
         .func_wrap(HOST, "fn_to_string", |mut caller: Caller<'_, HostState>, handle: i64| -> i64 {
-            // Tag-bit: impar = closure (ptr >> 1 → handle), par = función simple
-            // (el valor ES el tabla_idx << 1). Se lee el nombre de [16].
-            let name_addr = if (handle & 1) == 1 {
-                arr_read_i64(&mut caller, ((handle >> 1) as usize) + 16)
-            } else {
-                // Función simple: no tiene handle; devolver el nombre genérico.
-                let s = format!("<function {}>", handle >> 1);
-                return caller_write_str(&mut caller, &s).unwrap_or(0);
-            };
-            let s = caller_read_str(&mut caller, name_addr);
+            let s = fn_to_string_str(&mut caller, handle);
             caller_write_str(&mut caller, &s).unwrap_or(0)
         })
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Nombre de una función desde un handle/valor con tag-bit.
+fn fn_to_string_str(caller: &mut Caller<'_, HostState>, handle: i64) -> String {
+    // Tag-bit: impar = closure (ptr >> 1 → handle), par = función simple
+    // (el valor ES el tabla_idx << 1). Se lee el nombre de [16].
+    if (handle & 1) == 1 {
+        let name_addr = arr_read_i64(caller, ((handle >> 1) as usize) + 16);
+        caller_read_str(caller, name_addr)
+    } else {
+        // Función simple: no tiene handle; devolver el nombre genérico.
+        format!("<function {}>", handle >> 1)
+    }
 }
 
 /// Tipo de un tag: compuesto (`tipo<<8 | kind`) o legacy (0-5, arr_kind_code).
@@ -1784,7 +1788,13 @@ fn cmx_format(caller: &mut Caller<'_, HostState>, p: usize) -> String {
         return caller_read_str(caller, tag);
     }
     let mut out = String::from("<");
-    out.push_str(&caller_read_str(caller, tag));
+    if tag >> 32 == 0 && (tag & 1) == 1 {
+        // Handle de función (tag-bit impar, ptr pequeño): `<function X>`.
+        let fn_str = fn_to_string_str(caller, tag);
+        out.push_str(&fn_str);
+    } else {
+        out.push_str(&caller_read_str(caller, tag));
+    }
     let mut prop_entries: Vec<(String, i64, i64)> = Vec::with_capacity(nprops);
     for i in 0..nprops {
         let key = arr_read_i64(caller, props + 16 + i * 24);

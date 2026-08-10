@@ -310,6 +310,7 @@ fn was_type(t: &Type) -> ClsResult<WasTy> {
         Type::Literal(LitVal::Bool(_)) => Ok(WasTy::I32),
         Type::Named(..) | Type::Literal(_) => Ok(WasTy::I64),
         Type::Fun(..) => Ok(WasTy::I64),
+        Type::Any => Ok(WasTy::I64),
         Type::Union(members) => {
             let mut it = members.iter();
             let first = it.next().and_then(|m| was_type(m).ok());
@@ -325,6 +326,59 @@ fn was_type(t: &Type) -> ClsResult<WasTy> {
             "Tipo '{}' no soportado por el backend WASM (subconjunto JIT)",
             other
         ))),
+    }
+}
+
+/// Nombre de tipo builtin para `v is Tipo` (compile-time en el JIT).
+fn builtin_was_type(name: &str) -> Option<BuiltinTypeName> {
+    match name {
+        "String" => Some(BuiltinTypeName::String),
+        "Int" => Some(BuiltinTypeName::Int),
+        "Float" => Some(BuiltinTypeName::Float),
+        "Bool" => Some(BuiltinTypeName::Bool),
+        "Char" => Some(BuiltinTypeName::Char),
+        "Array" => Some(BuiltinTypeName::Array),
+        "Tuple" => Some(BuiltinTypeName::Tuple),
+        "Record" => Some(BuiltinTypeName::Record),
+        "Cmx" => Some(BuiltinTypeName::Cmx),
+        "Null" => Some(BuiltinTypeName::Null),
+        "Void" => Some(BuiltinTypeName::Void),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BuiltinTypeName {
+    String,
+    Int,
+    Float,
+    Bool,
+    Char,
+    Array,
+    Tuple,
+    Record,
+    Cmx,
+    Null,
+    Void,
+}
+
+/// ¿El Type CLS del lado izquierdo coincide con el nombre builtin a la derecha?
+fn builtin_type_matches(t: &Type, name: &BuiltinTypeName) -> bool {
+    match (name, t) {
+        (BuiltinTypeName::String, Type::String) => true,
+        (BuiltinTypeName::Int, Type::Int) => true,
+        (BuiltinTypeName::Int, Type::I8 | Type::I16 | Type::I32 | Type::I64) => true,
+        (BuiltinTypeName::Float, Type::Float | Type::F32 | Type::F64) => true,
+        (BuiltinTypeName::Bool, Type::Bool) => true,
+        (BuiltinTypeName::Char, Type::Char) => true,
+        (BuiltinTypeName::Array, Type::Array(_)) => true,
+        (BuiltinTypeName::Tuple, Type::Tuple(_)) => true,
+        (BuiltinTypeName::Record, Type::Record(_, _)) => true,
+        (BuiltinTypeName::Record, Type::Shape(_)) => true,
+        (BuiltinTypeName::Cmx, Type::Cmx) => true,
+        (BuiltinTypeName::Null, Type::Null) => true,
+        (BuiltinTypeName::Void, Type::Void | Type::Empty) => true,
+        _ => false,
     }
 }
 
@@ -526,16 +580,17 @@ impl<'a> FuncEmitter<'a> {
         if let Some(g) = self.globals.get(name) {
             // Globals ya son compartidas: cargar el valor directamente.
             self.body.push(Instruction::GlobalGet(*g));
-        } else if self.promoted.contains(name) {
-            let idx = self.local_for(name);
-            self.body.push(Instruction::LocalGet(idx));
         } else if let Some(&ci) = self.captures.get(name) {
-            // Captura anidada: cargar el valor del bloque.
+            // Captura: el bloque guarda el PTR al slot (promovida) o el valor.
+            // Las capturas van ANTES que promoted (una captura no es un local).
             self.body.push(Instruction::LocalGet(0));
             self.body.push(Instruction::I64Const(16 + (ci as i64 - 1) * 8));
             self.body.push(Instruction::I64Add);
             self.body.push(Instruction::I32WrapI64);
             self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+        } else if self.promoted.contains(name) {
+            let idx = self.local_for(name);
+            self.body.push(Instruction::LocalGet(idx));
         } else {
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalGet(idx));
@@ -1613,6 +1668,21 @@ impl<'a> FuncEmitter<'a> {
             }
             Is => {
                 // `v is Nivel` (enum), `p is Punto` (struct) o `o is Clase` (herencia)
+                // `v is String`/`Int`/... (tipo builtin) → se evalúa estáticamente
+                // con el tipo del lado izquierdo.
+                if let Expression::Identifier(right_name, _) = &*b.right {
+                    if let Some(t) = builtin_was_type(right_name) {
+                        // El tipo del left determina el resultado en compile-time.
+                        // Comparar por Type (no WasTy: String e Int son ambos i64).
+                        let left_span = expr_span(&b.left);
+                        let lt = self.types.get(&left_span).cloned().unwrap_or(Type::Any);
+                        let matches = builtin_type_matches(&lt, &t);
+                        self.emit_expression(&b.left)?;
+                        self.body.push(Instruction::Drop);
+                        self.body.push(Instruction::I32Const(if matches { 1 } else { 0 }));
+                        return Ok(());
+                    }
+                }
                 self.emit_expression(&b.left)?;
                 if let Expression::Identifier(right_name, _) = &*b.right {
                     if let Some(info) = self.class_defs.get(right_name.as_str()) {
@@ -3048,6 +3118,10 @@ impl<'a> FuncEmitter<'a> {
             for arg in &c.args {
                 self.emit_expression(arg)?;
             }
+            // Params faltantes → Null (0), como el walker (default o Null).
+            for _ in c.args.len()..params.len() {
+                self.body.push(Instruction::I64Const(0));
+            }
             self.body.push(Instruction::LocalGet(v));
             self.body.push(Instruction::I64Const(1));
             self.body.push(Instruction::I64ShrU);
@@ -3059,6 +3133,9 @@ impl<'a> FuncEmitter<'a> {
             // Rama simple (par): tabla_idx = v>>1; push [args..., tabla_idx].
             for arg in &c.args {
                 self.emit_expression(arg)?;
+            }
+            for _ in c.args.len()..params.len() {
+                self.body.push(Instruction::I64Const(0));
             }
             self.body.push(Instruction::LocalGet(v));
             self.body.push(Instruction::I64Const(1));
@@ -3281,6 +3358,38 @@ impl<'a> FuncEmitter<'a> {
                 let key_tmp = self.fresh_local();
                 self.body.push(Instruction::LocalSet(key_tmp));
                 self.emit_print_record_field(ptr_tmp, key_tmp);
+                return Ok(());
+            }
+            // `app.tag`: puede ser un string (tag minúscula) o un handle de función
+            // (tag mayúscula). Despachar por tag-bit: handle = (ptr<<1)|1 (bits
+            // altos cero, impar); string CLS = (off<<32)|len (bits altos != 0).
+            if matches!(obj_ty, Some(Type::Cmx)) && m.member == "tag" {
+                self.emit_expression(&m.object)?;
+                self.emit_cmx_field(0)?;
+                let v = self.fresh_local();
+                self.body.push(Instruction::LocalSet(v));
+                // if (v>>32 == 0) && (v&1 == 1) → handle → FnToString
+                self.body.push(Instruction::LocalGet(v));
+                self.body.push(Instruction::I64Const(32));
+                self.body.push(Instruction::I64ShrU);
+                self.body.push(Instruction::I64Eqz);
+                self.body.push(Instruction::LocalGet(v));
+                self.body.push(Instruction::I64Const(1));
+                self.body.push(Instruction::I64And);
+                self.body.push(Instruction::I32WrapI64);
+                self.body.push(Instruction::I32Const(1));
+                self.body.push(Instruction::I32Eq);
+                self.body.push(Instruction::I32And);
+                self.block_depth += 1;
+                self.body.push(Instruction::If(BlockType::Empty));
+                self.body.push(Instruction::LocalGet(v));
+                self.host.call(HostFn::FnToString, &mut self.body);
+                self.host.call(HostFn::PrintStr, &mut self.body);
+                self.body.push(Instruction::Else);
+                self.body.push(Instruction::LocalGet(v));
+                self.host.call(HostFn::PrintStr, &mut self.body);
+                self.body.push(Instruction::End);
+                self.block_depth -= 1;
                 return Ok(());
             }
         }
@@ -3738,6 +3847,15 @@ impl<'a> FuncEmitter<'a> {
                 } else {
                     self.host.call(HostFn::StrInt, &mut self.body);
                 }
+            }
+            Type::Array(elem) => {
+                // `[e1, e2, ...]` como el walker (paridad en interpolación).
+                let w = was_type(&*elem)?;
+                let kind = arr_kind_code(&*elem);
+                let es = if matches!(*elem, Type::Cmx) { 16 } else { elem_size_bytes(w) };
+                self.body.push(Instruction::I64Const(es));
+                self.body.push(Instruction::I64Const(kind));
+                self.host.call(HostFn::ArrToString, &mut self.body);
             }
             _ => self.host.call(HostFn::StrInt, &mut self.body),
         }
@@ -4477,9 +4595,14 @@ impl<'a> FuncEmitter<'a> {
             if self.globals.contains_key(&name) || self.locals.contains_key(&name) {
                 self.emit_ident_load(&name);
             } else if self.fn_table_idx.contains_key(&name) {
-                // Función como tag → el nombre formateado (CMX guarda la referencia sin ejecutarla).
-                let s = self.intern_string(&format!("<function {}>", name));
-                self.emit_load_str(s);
+                // Función como tag → handle de función (tag-bit) para que
+                // `app.tag` sea invocable y se imprima `<function X>` (paridad walker).
+                let ti = self.fn_table_idx[&name];
+                let n = self.intern_string(&format!("<function {}>", name));
+                self.body.push(Instruction::I64Const(ti as i64));
+                self.emit_load_str(n);
+                self.body.push(Instruction::I64Const(0));
+                self.host.call(HostFn::FnHandle, &mut self.body);
             } else {
                 return Err(crate::error::ClsError::CompileError(format!(
                     "El tag '<{}>' usa mayúscula pero '{}' no está definido: \
@@ -6299,6 +6422,14 @@ fn collect_free_vars_in_expr(expr: &Expression, locals: &mut Vec<String>, free: 
                     _ => {}
                 }
             }
+        }
+        Expression::ArrowFunction(a) => {
+            // Arrow anidada: sus variables libres también son libres para la arrow
+            // externa (el padre debe capturarlas para construir el handle interno).
+            // Los params de la arrow interna se excluyen.
+            let mut inner_locals: Vec<String> = a.params.iter().map(|p| p.name.clone()).collect();
+            inner_locals.extend(locals.iter().cloned());
+            collect_free_vars_in_block(&a.body, &mut inner_locals, free);
         }
         _ => {}
     }

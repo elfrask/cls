@@ -620,8 +620,29 @@ impl TypeChecker {
     fn check_binary(&mut self, bin: &BinaryExpr) -> Type {
         use crate::frontend::token::Operator;
 
+        // `is` con tipo builtin (`v is String`): el right es un nombre de tipo, no
+        // una variable. Se registra el tipo del nombre en el span para el backend.
+        let is_builtin_is = if bin.op == Operator::Is {
+            match &*bin.right {
+                Expression::Identifier(n, _) => builtin_type_name(n).is_some(),
+                _ => false,
+            }
+        } else {
+            false
+        };
+
         let left = self.check_expression(&bin.left);
-        let right = self.check_expression(&bin.right);
+        let right = if is_builtin_is {
+            if let Expression::Identifier(n, sp) = &*bin.right {
+                let t = builtin_type_name(n).unwrap();
+                self.types_by_span.insert(sp.clone(), t.clone());
+                t
+            } else {
+                self.check_expression(&bin.right)
+            }
+        } else {
+            self.check_expression(&bin.right)
+        };
 
         match bin.op {
             Operator::Plus => {
@@ -715,7 +736,12 @@ impl TypeChecker {
             for arg in &call.args {
                 self.check_expression(arg);
             }
-            return callee_type;
+            // Llamar una función como valor (`app.tag()`, `f()`): el resultado es
+            // su retorno, no el tipo de la función.
+            return match callee_type {
+                Type::Fun(_, ret) => *ret,
+                t => t,
+            };
         }
 
         // Verificar args y recolectar tipos (para inferir genéricos)
@@ -867,7 +893,7 @@ impl TypeChecker {
                 }
             }
             Type::Cmx => match member.member.as_str() {
-                "tag" => Type::String,
+                "tag" => Type::Fun(vec![Type::Any], Box::new(Type::String)),
                 "props" => Type::Record(Box::new(Type::String), Box::new(Type::Any)),
                 "children" => Type::Array(Box::new(Type::Cmx)),
                 _ => Type::Any,
@@ -977,25 +1003,34 @@ impl TypeChecker {
                 .unwrap_or(Type::Any))
             .collect();
 
-        let return_type = arrow.return_type.as_ref()
-            .map(|ta| self.resolve_type_annotation(ta))
-            .unwrap_or_else(|| {
-                // Inferir del primer `return expr` del body.
-                let mut t = Type::Any;
-                for stmt in &arrow.body.statements {
-                    if let Statement::Return(Some(e)) = stmt {
-                        t = self.check_expression(e);
-                        break;
-                    }
-                }
-                t
-            });
-
+        // Chequear params y body PRIMERO: así las variables declaradas dentro
+        // del body (p.ej. `var inner = () -> ...`) quedan tipadas antes de
+        // inferir el retorno (necesario para arrow-de-arrow con captura).
         self.push_scope();
         for (param, typ) in arrow.params.iter().zip(param_types.iter()) {
             self.define(&param.name, typ.clone());
         }
         self.check_block(&arrow.body);
+
+        // Inferir el retorno del primer `return expr` del body. Leer del type map
+        // (ya registrado por check_block) para no depender del scope actual.
+        let return_type = arrow.return_type.as_ref()
+            .map(|ta| self.resolve_type_annotation(ta))
+            .unwrap_or_else(|| {
+                let mut t = Type::Any;
+                for stmt in &arrow.body.statements {
+                    if let Statement::Return(Some(e)) = stmt {
+                        let sp = expr_span(e);
+                        if let Some(ty) = self.types_by_span.get(&sp) {
+                            t = ty.clone();
+                        } else {
+                            t = self.check_expression(e);
+                        }
+                        break;
+                    }
+                }
+                t
+            });
         self.pop_scope();
 
         Type::Fun(param_types, Box::new(return_type))
@@ -1424,6 +1459,24 @@ pub fn expr_span(expr: &Expression) -> Span {
         Expression::StringInterpolation(s) => s.span,
         Expression::NamespaceAccess(_, _, s) => *s,
         Expression::Await(_, s) => *s,
+    }
+}
+
+/// Nombre de tipo builtin → `Type` (para `v is Tipo`). `None` si no es builtin.
+fn builtin_type_name(name: &str) -> Option<Type> {
+    match name {
+        "String" => Some(Type::String),
+        "Int" => Some(Type::Int),
+        "Float" => Some(Type::Float),
+        "Bool" => Some(Type::Bool),
+        "Char" => Some(Type::Char),
+        "Array" => Some(Type::Array(Box::new(Type::Any))),
+        "Tuple" => Some(Type::Tuple(vec![])),
+        "Record" => Some(Type::Record(Box::new(Type::Any), Box::new(Type::Any))),
+        "Cmx" => Some(Type::Cmx),
+        "Null" => Some(Type::Null),
+        "Void" => Some(Type::Void),
+        _ => None,
     }
 }
 
