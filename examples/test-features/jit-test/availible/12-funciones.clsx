@@ -15,5 +15,6 @@ function main(args: String[]) -> int {
     print("tag:", app.tag);
     print("titulo:", app.props.titulo);
     print("cmx:", app);
+    print("app.tag():", app.tag());
     return 0;
 };

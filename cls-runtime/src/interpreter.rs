@@ -1172,6 +1172,17 @@ impl Interpreter {
             _ => {}
         }
 
+        // `is` con tipo builtin: `v is String`, `v is Int`, ... (no es variable).
+        // El typechecker registró el nombre del tipo como Unknown; aquí se compara
+        // el tipo dinámico del valor.
+        if bin.op == Operator::Is {
+            if let Expression::Identifier(name, _) = &*bin.right {
+                if let Some(is_match) = builtin_type_is(&left, name) {
+                    return Ok(Value::Bool(is_match));
+                }
+            }
+        }
+
         let right = self.evaluate_expression(&bin.right)?;
         self.evaluate_binary_values(left, bin.op, right, &bin.span)
     }
@@ -2368,6 +2379,26 @@ fn as_f64(v: &Value) -> Option<f64> {
 
 fn is_object(v: &Value) -> bool {
     matches!(v, Value::Object(_))
+}
+
+/// `v is NombreTipo` para tipos builtin (String, Int, Float, ...).
+/// Devuelve `Some(true/false)` si `name` es un tipo builtin; `None` si no.
+fn builtin_type_is(v: &Value, name: &str) -> Option<bool> {
+    let m = match name {
+        "String" => matches!(v, Value::String(_)),
+        "Int" => matches!(v, Value::Int(_)),
+        "Float" => matches!(v, Value::Float(_)),
+        "Bool" => matches!(v, Value::Bool(_)),
+        "Char" => matches!(v, Value::Char(_)),
+        "Array" => matches!(v, Value::Array(_)),
+        "Tuple" => matches!(v, Value::Tuple(_)),
+        "Record" => matches!(v, Value::Record(_)),
+        "Cmx" => matches!(v, Value::Cmx(_)),
+        "Null" => matches!(v, Value::Null),
+        "Void" => matches!(v, Value::Void),
+        _ => return None,
+    };
+    Some(m)
 }
 
 /// Operación numérica: Int si ambos Int, Float si hay algún Float

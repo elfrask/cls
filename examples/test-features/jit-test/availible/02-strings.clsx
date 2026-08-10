@@ -1,6 +1,6 @@
 function main(args: String[]) -> int {
     var nombre = "CLS";
-    var val: int[] = [10, "123", 0];
+    var val: int[] = [10, 20, 0];
     print("interp:", "Hola $nombre");
     print("interp2:", "val $val");
     print("expr:", "suma: ${1 + 2}");
