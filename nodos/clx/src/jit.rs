@@ -1625,19 +1625,28 @@ fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
         })
         .map_err(|e| e.to_string())?;
     linker
-        .func_wrap(HOST, "fn_handle", |mut caller: Caller<'_, HostState>, table_idx: i64, nombre: i64| -> i64 {
-            // Handle de función: [tabla_idx][capturas=0][nombre] (24 bytes).
+        .func_wrap(HOST, "fn_handle", |mut caller: Caller<'_, HostState>, table_idx: i64, nombre: i64, capturas: i64| -> i64 {
+            // Handle de función: [tabla_idx][capturas_ptr][nombre] (24 bytes).
+            // El valor que se devuelve lleva tag: (ptr << 1) | 1 (closure).
             let ptr = caller_alloc(&mut caller, 24).unwrap_or(0) as usize;
             arr_write_i64(&mut caller, ptr, table_idx);
-            arr_write_i64(&mut caller, ptr + 8, 0);
+            arr_write_i64(&mut caller, ptr + 8, capturas);
             arr_write_i64(&mut caller, ptr + 16, nombre);
-            ptr as i64
+            ((ptr as i64) << 1) | 1
         })
         .map_err(|e| e.to_string())?;
     linker
         .func_wrap(HOST, "fn_to_string", |mut caller: Caller<'_, HostState>, handle: i64| -> i64 {
-            let nombre = arr_read_i64(&mut caller, (handle as usize) + 16);
-            let s = caller_read_str(&mut caller, nombre);
+            // Tag-bit: impar = closure (ptr >> 1 → handle), par = función simple
+            // (el valor ES el tabla_idx << 1). Se lee el nombre de [16].
+            let name_addr = if (handle & 1) == 1 {
+                arr_read_i64(&mut caller, ((handle >> 1) as usize) + 16)
+            } else {
+                // Función simple: no tiene handle; devolver el nombre genérico.
+                let s = format!("<function {}>", handle >> 1);
+                return caller_write_str(&mut caller, &s).unwrap_or(0);
+            };
+            let s = caller_read_str(&mut caller, name_addr);
             caller_write_str(&mut caller, &s).unwrap_or(0)
         })
         .map_err(|e| e.to_string())?;
