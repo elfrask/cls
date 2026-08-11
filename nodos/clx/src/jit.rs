@@ -5,6 +5,7 @@
 
 use cls_core::config::types::TypesConfig;
 use cls_core::error::{ClsError, Span};
+use cls_core::frontend::ast::{Module as ClsModule, Statement, Visibility};
 use cls_core::middleware::TypeChecker;
 use cls_runtime::error_report::{format_error, ErrorFormat, ErrorReport};
 use wasmtime::{Caller, Engine, Linker, Memory, Module, Store, Val};
@@ -93,6 +94,162 @@ fn cache_key(source: &str, target_str: Option<&str>) -> u64 {
     h.finish()
 }
 
+/// Resuelve los imports de un módulo (recursivamente) y los carga como AST.
+/// Cada entrada del resultado: (path del import, módulo parseado).
+fn load_import_modules(
+    module: &ClsModule,
+    base_dir: &std::path::Path,
+    seen: &mut std::collections::HashSet<String>,
+    out: &mut Vec<(String, ClsModule)>,
+) {
+    for stmt in &module.statements {
+        let import_path = match stmt {
+            Statement::Import(i) => Some(i.path.clone()),
+            Statement::FromImport(fi) => Some(fi.path.clone()),
+            Statement::Include(inc) => Some(inc.path.clone()),
+            _ => None,
+        };
+        if let Some(path) = import_path {
+            // Resolución: primero relativo al archivo importador (base_dir),
+            // luego relativo al directorio de trabajo (compat con el walker).
+            let candidates = [
+                base_dir.join(format!("{}.clsx", path)),
+                std::path::PathBuf::from(format!("{}.clsx", path)),
+            ];
+            for candidate in &candidates {
+                let key = candidate.to_string_lossy().to_string();
+                if seen.contains(&key) {
+                    continue;
+                }
+                if let Ok(source) = std::fs::read_to_string(candidate) {
+                    if let Ok(toks) = cls_core::frontend::Lexer::new(&source).tokenize() {
+                        if let Ok(m) = cls_core::frontend::Parser::new(toks).parse() {
+                            seen.insert(key);
+                            load_import_modules(&m, base_dir, seen, out);
+                            out.push((path, m));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Fusiona los imports aplanados (`from "m" import ...` / `include "m"`) en el
+/// módulo principal: reemplaza el statement por las declaraciones `export` del
+/// módulo importado (con el alias aplicado para `from import`). Los `import`
+/// namespaced se dejan sin tocar (se resuelven en una fase posterior).
+fn flatten_imports(module: &ClsModule, imports: &[(String, ClsModule)]) -> ClsModule {
+    let mut statements = Vec::new();
+    for stmt in &module.statements {
+        match stmt {
+            Statement::FromImport(fi) => {
+                let m = imports.iter().find(|(p, _)| *p == fi.path).map(|(_, m)| m);
+                if let Some(m) = m {
+                    for im in &fi.names {
+                        let local = im.alias.clone().unwrap_or_else(|| im.name.clone());
+                        push_export(&mut statements, m, &im.name, &local);
+                    }
+                }
+            }
+            Statement::Include(inc) => {
+                let m = imports.iter().find(|(p, _)| *p == inc.path).map(|(_, m)| m);
+                if let Some(m) = m {
+                    push_all_exports(&mut statements, m);
+                }
+            }
+            Statement::Import(imp) => {
+                // `import "m" as x` → exports bajo el prefijo `x::` (namespaced).
+                let m = imports.iter().find(|(p, _)| *p == imp.path).map(|(_, m)| m);
+                if let Some(m) = m {
+                    let prefix = imp.alias.clone().unwrap_or_else(|| imp.path.clone());
+                    push_prefixed_exports(&mut statements, m, &prefix);
+                }
+            }
+            other => statements.push(other.clone()),
+        }
+    }
+    ClsModule {
+        statements,
+        span: module.span.clone(),
+    }
+}
+
+/// Inserta un export del módulo `m` con nombre `export_name`, renombrado a `local`.
+fn push_export(out: &mut Vec<Statement>, m: &ClsModule, export_name: &str, local: &str) {
+    for stmt in &m.statements {
+        match stmt {
+            Statement::FunctionDecl(f)
+                if f.visibility == Visibility::Export && f.name == export_name =>
+            {
+                let mut f2 = f.clone();
+                f2.name = local.to_string();
+                out.push(Statement::FunctionDecl(f2));
+                return;
+            }
+            Statement::VarDecl(v)
+                if v.visibility == Visibility::Export && v.name == export_name =>
+            {
+                let mut v2 = v.clone();
+                v2.name = local.to_string();
+                out.push(Statement::VarDecl(v2));
+                return;
+            }
+            Statement::ConstDecl(v)
+                if v.visibility == Visibility::Export && v.name == export_name =>
+            {
+                let mut v2 = v.clone();
+                v2.name = local.to_string();
+                out.push(Statement::ConstDecl(v2));
+                return;
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Inserta los exports del módulo `m` renombrados con prefijo `{prefix}::`.
+fn push_prefixed_exports(out: &mut Vec<Statement>, m: &ClsModule, prefix: &str) {
+    for stmt in &m.statements {
+        match stmt {
+            Statement::FunctionDecl(f) if f.visibility == Visibility::Export => {
+                let mut f2 = f.clone();
+                f2.name = format!("{}::{}", prefix, f.name);
+                out.push(Statement::FunctionDecl(f2));
+            }
+            Statement::VarDecl(v) if v.visibility == Visibility::Export => {
+                let mut v2 = v.clone();
+                v2.name = format!("{}::{}", prefix, v.name);
+                out.push(Statement::VarDecl(v2));
+            }
+            Statement::ConstDecl(v) if v.visibility == Visibility::Export => {
+                let mut v2 = v.clone();
+                v2.name = format!("{}::{}", prefix, v.name);
+                out.push(Statement::ConstDecl(v2));
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Inserta todos los exports del módulo `m` (sin renombrar).
+fn push_all_exports(out: &mut Vec<Statement>, m: &ClsModule) {    for stmt in &m.statements {
+        match stmt {
+            Statement::FunctionDecl(f) if f.visibility == Visibility::Export => {
+                out.push(Statement::FunctionDecl(f.clone()));
+            }
+            Statement::VarDecl(v) if v.visibility == Visibility::Export => {
+                out.push(Statement::VarDecl(v.clone()));
+            }
+            Statement::ConstDecl(v) if v.visibility == Visibility::Export => {
+                out.push(Statement::ConstDecl(v.clone()));
+            }
+            _ => {}
+        }
+    }
+}
+
 pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i32 {
     let timing = jit_timing();
     let mut t = Instant::now();
@@ -149,7 +306,16 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
         null_safety: true,
     };
     let mut checker = TypeChecker::new(types_config);
-    if let Err(e) = checker.check(&module) {
+    // Resolver imports del módulo (lee los archivos .clsx) y pasarlos como
+    // prelude: el core registra los tipos/símbolos exportados antes de chequear.
+    let base_dir = std::path::Path::new(entry)
+        .parent()
+        .unwrap_or(std::path::Path::new("."))
+        .to_path_buf();
+    let mut seen = std::collections::HashSet::new();
+    let mut imports: Vec<(String, ClsModule)> = Vec::new();
+    load_import_modules(&module, &base_dir, &mut seen, &mut imports);
+    if let Err(e) = checker.check_with_prelude(&module, &imports) {
         show_cls_error(&e, entry, Some(&source));
         return 1;
     }
@@ -163,8 +329,12 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
     let type_map = checker.type_map().clone();
     t = tick(timing, "type_map.clone", t);
 
+    // Fusionar los imports aplanados (from/include) en el módulo principal para
+    // que el backend los compile como funciones/globals del mismo WASM.
+    let merged = flatten_imports(&module, &imports);
+
     let backend = cls_core::backend::wasm::WasmBackend::with_target(type_map, target);
-    let wasm_bytes = match backend.emit(&module) {
+    let wasm_bytes = match backend.emit(&merged) {
         Ok(b) => b,
         Err(e) => {
             show_cls_error(&e, entry, Some(&source));

@@ -1470,6 +1470,19 @@ impl<'a> FuncEmitter<'a> {
             Expression::Assignment(a) => self.emit_assignment(a),
             Expression::Parenthesized(inner, _) => self.emit_expression(inner),
             Expression::StringInterpolation(s) => self.emit_interpolation(s),
+            // `x::miembro` (módulo/namespace importado): global `x::miembro`.
+            Expression::NamespaceAccess(ns, member, span) => {
+                let key = format!("{}::{}", ns, member);
+                if let Some(g) = self.globals.get(&key).copied() {
+                    self.body.push(Instruction::GlobalGet(g));
+                    Ok(())
+                } else {
+                    Err(crate::error::ClsError::compile_at(
+                        &format!("'{}' no existe o no se exporta en '{}'", member, ns),
+                        span,
+                    ))
+                }
+            }
             other => Err(self.unsupported_expr(other)),
         }
     }
@@ -3044,6 +3057,22 @@ impl<'a> FuncEmitter<'a> {
                 }
                 _ => {}
             }
+        }
+        // `x::f(...)` — módulo/namespace importado: call directo a `x::f`.
+        if let Expression::NamespaceAccess(ns, member, _) = &*c.callee {
+            let key = format!("{}::{}", ns, member);
+            if let Some(fidx) = self.func_indexes.get(&key).copied() {
+                self.body.push(Instruction::I64Const(0)); // __capturas
+                for arg in &c.args {
+                    self.emit_expression(arg)?;
+                }
+                self.body.push(Instruction::Call(fidx));
+                return Ok(());
+            }
+            return Err(crate::error::ClsError::CompileError(format!(
+                "'{}' no existe o no se exporta en '{}'",
+                member, ns
+            )));
         }
         if let Expression::Identifier(name, _) = &*c.callee {
             if let Some(fidx) = self.func_indexes.get(name).copied() {
@@ -5856,7 +5885,14 @@ impl<'a> Engine<'a> {
             self.eh_handler_ty,
         );
         // Métodos de clase: `me` (la instancia) es el primer param implícito.
-        let is_method = f.name.contains("::");
+        // `Clase::metodo` es método si el prefijo es una clase conocida; si no,
+        // es un símbolo de módulo importado (`mod::fn`, sin `me`).
+        let is_method = f
+            .name
+            .split("::")
+            .next()
+            .map(|c| self.class_defs.contains_key(c))
+            .unwrap_or(false);
         let current_class = if is_method {
             f.name.split("::").next().map(|s| s.to_string())
         } else {
