@@ -712,6 +712,18 @@ impl TypeChecker {
                     bin.span.clone(),
                 )
             }
+            // Operadores bit a bit: exigen enteros y devuelven Int.
+            Operator::Caret | Operator::ShiftLeft | Operator::ShiftRight => {
+                let l_ok = matches!(left, Type::Int | Type::I32 | Type::I64 | Type::I8 | Type::I16);
+                let r_ok = matches!(right, Type::Int | Type::I32 | Type::I64 | Type::I8 | Type::I16);
+                if l_ok && r_ok {
+                    return Type::Int;
+                }
+                self.error(
+                    &format!("Operador bit a bit requiere enteros, encontró {} y {}", left, right),
+                    bin.span.clone(),
+                )
+            }
             Operator::StrictEqual | Operator::NotEqual
             | Operator::LessThan | Operator::LessEqual
             | Operator::GreaterThan | Operator::GreaterEqual

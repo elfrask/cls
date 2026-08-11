@@ -321,7 +321,7 @@ fn was_type(t: &Type) -> ClsResult<WasTy> {
             }
             Ok(WasTy::I64)
         }
-        Type::Void | Type::Empty => Ok(WasTy::I64),
+        Type::Void | Type::Empty | Type::Null => Ok(WasTy::I64),
         other => Err(crate::error::ClsError::CompileError(format!(
             "Tipo '{}' no soportado por el backend WASM (subconjunto JIT)",
             other
@@ -1507,7 +1507,8 @@ impl<'a> FuncEmitter<'a> {
                 let idx = self.intern_string(s);
                 self.emit_load_str(idx);
             }
-            LiteralKind::Null | LiteralKind::Unknown => {
+            LiteralKind::Null => self.body.push(Instruction::I64Const(0)),
+            LiteralKind::Unknown => {
                 return Err(self.unsupported_expr(&Expression::Literal(l.clone())))
             }
         }
@@ -1620,6 +1621,22 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;
                 self.host.call(HostFn::PowNum, &mut self.body);
+            }
+            // Operadores bit a bit (enteros): ^ << >>
+            Caret => {
+                self.emit_expression(&b.left)?;
+                self.emit_expression(&b.right)?;
+                self.body.push(Instruction::I64Xor);
+            }
+            ShiftLeft => {
+                self.emit_expression(&b.left)?;
+                self.emit_expression(&b.right)?;
+                self.body.push(Instruction::I64Shl);
+            }
+            ShiftRight => {
+                self.emit_expression(&b.left)?;
+                self.emit_expression(&b.right)?;
+                self.body.push(Instruction::I64ShrS);
             }
             StrictEqual => {
                 self.emit_expression(&b.left)?;
@@ -1876,7 +1893,12 @@ impl<'a> FuncEmitter<'a> {
             UnaryOp::PostInc | UnaryOp::PreInc | UnaryOp::PostDec | UnaryOp::PreDec => {
                 self.emit_incdec(&u.operand, u.op.clone())?
             }
-            UnaryOp::BitwiseNot => return Err(self.unsupported_expr(&Expression::Unary(u.clone()))),
+            UnaryOp::BitwiseNot => {
+                // ~x → x ^ -1 (en i64)
+                self.emit_expression(&u.operand)?;
+                self.body.push(Instruction::I64Const(-1));
+                self.body.push(Instruction::I64Xor);
+            }
         }
         Ok(())
     }
@@ -3489,6 +3511,13 @@ impl<'a> FuncEmitter<'a> {
             Type::Bool => self.host.call(HostFn::PrintBool, &mut self.body),
             Type::Char => self.host.call(HostFn::PrintChar, &mut self.body),
             Type::Float => self.host.call(HostFn::PrintFloat, &mut self.body),
+            Type::Null => {
+                // `null` → imprimir "null" (paridad walker).
+                self.body.push(Instruction::Drop);
+                let n = self.intern_string("null");
+                self.emit_load_str(n);
+                self.host.call(HostFn::PrintStr, &mut self.body);
+            }
             Type::Array(elem) => {
                 // Formatear `[e1, e2, ...]` como el walker (evita imprimir el ptr).
                 let w = was_type(&*elem)?;
@@ -3862,6 +3891,12 @@ impl<'a> FuncEmitter<'a> {
             Type::Bool => self.host.call(HostFn::StrBool, &mut self.body),
             Type::Char => self.host.call(HostFn::StrChar, &mut self.body),
             Type::Float => self.host.call(HostFn::StrFloat, &mut self.body),
+            Type::Null => {
+                // null → string "null"
+                self.body.push(Instruction::Drop);
+                let n = self.intern_string("null");
+                self.emit_load_str(n);
+            }
             Type::Named(name, _) if self.struct_defs.contains_key(&name) => {
                 let ptr = self.fresh_local();
                 self.body.push(Instruction::LocalSet(ptr));
