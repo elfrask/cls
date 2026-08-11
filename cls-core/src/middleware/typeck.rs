@@ -27,6 +27,11 @@ pub struct TypeChecker {
     types_by_span: HashMap<Span, Type>,
     /// Miembros de cada clase: nombre → tipo del campo o del retorno del método.
     class_members: HashMap<String, HashMap<String, Type>>,
+    /// Módulos importados (prelude) — para resolver símbolos de `import`/`from`/`include`.
+    /// Cada entrada: (path del import, módulo parseado).
+    prelude: Vec<(String, Module)>,
+    /// Alias de `import "path" as x` → path (para `x::miembro`).
+    import_aliases: HashMap<String, String>,
 }
 
 impl TypeChecker {
@@ -40,6 +45,8 @@ impl TypeChecker {
             enums: std::collections::HashSet::new(),
             types_by_span: HashMap::new(),
             class_members: HashMap::new(),
+            prelude: Vec::new(),
+            import_aliases: HashMap::new(),
         };
         // Registrar funciones built-in (core intrinsics)
         tc.define("print", Type::Fun(vec![Type::Any], Box::new(Type::Void)));
@@ -93,11 +100,12 @@ impl TypeChecker {
     /// Chequea un módulo con un prelude de módulos importados.
     /// Los tipos (enum/class/alias/interface) del prelude se registran primero,
     /// para que el módulo principal pueda usarlos en anotaciones.
-    pub fn check_with_prelude(&mut self, module: &Module, prelude: &[Module]) -> ClsResult<()> {
+    pub fn check_with_prelude(&mut self, module: &Module, prelude: &[(String, Module)]) -> ClsResult<()> {
         if !self.config.check {
             return Ok(());
         }
-        for m in prelude {
+        self.prelude = prelude.to_vec();
+        for (_path, m) in prelude {
             for stmt in &m.statements {
                 self.check_statement(stmt);
             }
@@ -218,7 +226,9 @@ impl TypeChecker {
                 self.define(&n.name, Type::Named(n.name.clone(), vec![]));
                 Type::Void
             }
-            Statement::Import(_) | Statement::FromImport(_) | Statement::Include(_) => Type::Any,
+            Statement::Import(imp) => self.check_import(imp),
+            Statement::FromImport(fi) => self.check_from_import(fi),
+            Statement::Include(inc) => self.check_include(inc),
             Statement::When(w) => {
                 // Cada rama se chequea en su propio scope (símbolos condicionales).
                 for branch in &w.branches {
@@ -589,8 +599,15 @@ impl TypeChecker {
                 }
                 Type::Cmx
             }
-            Expression::NamespaceAccess(_, _, span) => {
-                self.error("Namespace access sin tipo", span.clone())
+            Expression::NamespaceAccess(ns, name, span) => {
+                // `x::miembro` de un módulo importado → tipo del export.
+                match self.module_member_type(ns, name) {
+                    Some(t) => t,
+                    None => self.error(
+                        &format!("'{}' no existe o no se exporta en '{}'", name, ns),
+                        span.clone(),
+                    ),
+                }
             }
             Expression::Await(expr, _) => self.check_expression(expr),
         };
@@ -913,10 +930,142 @@ impl TypeChecker {
                         return t.clone();
                     }
                 }
+                // Módulo/namespace importado: `x::miembro`.
+                if let Some(t) = self.module_member_type(name.as_str(), &member.member) {
+                    return t;
+                }
                 Type::Any
             }
             _ => Type::Any,
         }
+    }
+
+    /// `import "path" as x` → define el alias como módulo (acceso `x::f`).
+    fn check_import(&mut self, imp: &ImportStatement) -> Type {
+        // `import "math"`/`import "json"` (internals del nodo) → namespace.
+        let alias = imp.alias.as_deref().unwrap_or(&imp.path);
+        self.import_aliases.insert(alias.to_string(), imp.path.clone());
+        self.define(alias, Type::Named(alias.to_string(), vec![]));
+        Type::Void
+    }
+
+    /// `from "path" import a as fa, b` → define cada nombre en el scope actual.
+    fn check_from_import(&mut self, fi: &FromImportStatement) -> Type {
+        for im in &fi.names {
+            if let Some(t) = self.find_export_type(&fi.path, &im.name) {
+                let local = im.alias.as_deref().unwrap_or(&im.name);
+                self.define(local, t);
+            } else {
+                self.error(
+                    &format!("'{}' no se exporta en el módulo '{}'", im.name, fi.path),
+                    fi.span.clone(),
+                );
+            }
+        }
+        Type::Void
+    }
+
+    /// `include "path"` → define TODOS los exports en el scope actual.
+    fn check_include(&mut self, inc: &IncludeStatement) -> Type {
+        let m = match self.find_prelude_module(&inc.path) {
+            Some(m) => m.clone(),
+            None => return Type::Void,
+        };
+        for stmt in &m.statements {
+            match stmt {
+                Statement::FunctionDecl(f) if f.visibility == Visibility::Export => {
+                    let t = self.function_decl_type(f);
+                    self.define(&f.name, t);
+                }
+                Statement::VarDecl(v) | Statement::ConstDecl(v)
+                    if v.visibility == Visibility::Export =>
+                {
+                    let t = v.type_ann.as_ref()
+                        .map(|ta| self.resolve_type_annotation(ta))
+                        .or_else(|| v.value.as_ref().map(|val| self.infer_literal_type(val)))
+                        .unwrap_or(Type::Any);
+                    self.define(&v.name, t);
+                }
+                Statement::EnumDecl(e) if e.visibility == Visibility::Export => {
+                    self.define(&e.name, Type::Named(e.name.clone(), vec![]));
+                }
+                _ => {}
+            }
+        }
+        Type::Void
+    }
+
+    /// Tipo de un export por nombre en el módulo del prelude (path).
+    fn find_export_type(&mut self, path: &str, name: &str) -> Option<Type> {
+        let m = self.find_prelude_module(path)?.clone();
+        for stmt in &m.statements {
+            match stmt {
+                Statement::FunctionDecl(f)
+                    if f.visibility == Visibility::Export && f.name == name =>
+                {
+                    return Some(self.function_decl_type(f));
+                }
+                Statement::VarDecl(v) | Statement::ConstDecl(v)
+                    if v.visibility == Visibility::Export && v.name == name =>
+                {
+                    let t = v.type_ann.as_ref()
+                        .map(|ta| self.resolve_type_annotation(ta))
+                        .or_else(|| v.value.as_ref().map(|val| self.infer_literal_type(val)))
+                        .unwrap_or(Type::Any);
+                    return Some(t);
+                }
+                Statement::EnumDecl(e) if e.visibility == Visibility::Export && e.name == name => {
+                    return Some(Type::Named(e.name.clone(), vec![]));
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// Busca un módulo del prelude cuyo path coincida con el import.
+    fn find_prelude_module(&self, path: &str) -> Option<&Module> {
+        self.prelude.iter().find(|(p, _)| p == path).map(|(_, m)| m)
+    }
+
+    /// Tipo de un valor simple (literal/identificador) para exports sin anotación.
+    fn infer_literal_type(&mut self, val: &Expression) -> Type {
+        match val {
+            Expression::Literal(l) => match &l.kind {
+                LiteralKind::Int(_) => Type::Int,
+                LiteralKind::Float(_) => Type::Float,
+                LiteralKind::String(_) => Type::String,
+                LiteralKind::Bool(_) => Type::Bool,
+                LiteralKind::Char(_) => Type::Char,
+                LiteralKind::Null => Type::Null,
+                _ => Type::Any,
+            },
+            Expression::Array(_) => Type::Array(Box::new(Type::Any)),
+            Expression::Identifier(_, _) => Type::Any,
+            _ => Type::Any,
+        }
+    }
+
+    /// Tipo de una función a partir de su declaración.
+    fn function_decl_type(&mut self, f: &FunctionDecl) -> Type {        let params: Vec<Type> = f.params.iter()
+            .map(|p| p.type_ann.as_ref()
+                .map(|ta| self.resolve_type_annotation(ta))
+                .unwrap_or(Type::Any))
+            .collect();
+        let ret = f.return_type.as_ref()
+            .map(|ta| self.resolve_type_annotation(ta))
+            .unwrap_or(Type::Void);
+        Type::Fun(params, Box::new(ret))
+    }
+
+    /// Tipo de `x::miembro` cuando `x` es un módulo importado.
+    fn module_member_type(&mut self, module_alias: &str, member: &str) -> Option<Type> {
+        let path = self
+            .import_aliases
+            .get(module_alias)
+            .cloned()
+            .unwrap_or_else(|| module_alias.to_string());
+        self.find_export_type(&path, member)
     }
 
     fn check_index(&mut self, idx: &IndexExpr) -> Type {
