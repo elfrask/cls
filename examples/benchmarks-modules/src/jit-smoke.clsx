@@ -1,8 +1,0 @@
-from "lib/primos" import contarPrimos;
-
-function main(args: String[]) -> int {
-    var t0 = now();
-    var r = contarPrimos(1000);
-    print("primos(1000):", r, "en", now() - t0, "ms");
-    return 0;
-};
