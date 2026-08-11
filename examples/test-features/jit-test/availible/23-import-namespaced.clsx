@@ -1,4 +1,4 @@
-import "examples/test-features/jit-test/availible/libmod" as lib;
+import "libmod" as lib;
 
 function main(args: String[]) -> int {
     print("=== import as (namespaced) ===");

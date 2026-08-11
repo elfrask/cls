@@ -43,6 +43,37 @@ fn show_cls_error(error: &ClsError, entry: &str, source: Option<&str>) {
     eprintln!("{}", format_error(&report, &ErrorFormat::Console));
 }
 
+/// Muestra un diagnóstico de tipo (del typeck) con línea + caret, como `clx check`.
+fn show_type_diag(
+    diag: &cls_core::error::diagnostic::Diagnostic,
+    source: &str,
+    entry: &str,
+) {
+    use cls_core::ansi;
+    let (sev_label, color) = (
+        "ERROR",
+        ansi::codes::BRIGHT_RED,
+    );
+    let sev = ansi::bold(true, ansi::fg(true, color, sev_label));
+    let msg = ansi::fg(true, color, &diag.message);
+    eprintln!(
+        "[{}] {} ({}:{})",
+        sev, msg, entry, diag.span
+    );
+    // Línea fuente + caret.
+    let line = diag.span.start_line as usize;
+    let col = diag.span.start_col as usize;
+    if let Some(src_line) = source.lines().nth(line.saturating_sub(1)) {
+        let pad = " ".repeat(line.to_string().len());
+        eprintln!("{} | {}", pad, src_line);
+        eprintln!(
+            "{} | {}^",
+            pad,
+            " ".repeat(col.saturating_sub(1))
+        );
+    }
+}
+
 /// `CLS_JIT_TIMING=1` → imprime el tiempo de cada fase del pipeline a stderr.
 fn jit_timing() -> bool {
     std::env::var("CLS_JIT_TIMING")
@@ -246,22 +277,31 @@ pub fn module_candidates(
 
 /// Resuelve los imports de un módulo (recursivamente) y los carga como AST.
 /// Cada entrada del resultado: (path del import, módulo parseado).
-fn load_import_modules(
+/// Si un import no se puede resolver, devuelve un error claro con los
+/// candidatos probados (no se queda en silencio).
+pub fn load_import_modules(
     module: &ClsModule,
     base_dir: &std::path::Path,
     seen: &mut std::collections::HashSet<String>,
     out: &mut Vec<(String, ClsModule)>,
     manifest: Option<&cls_core::config::ModuleManifest>,
-) {
+) -> cls_core::error::ClsResult<()> {
+    use cls_core::error::ClsError;
+    // Módulos internos del core/nodo: NO se resuelven como archivos.
+    const INTERNALS: &[&str] = &["math", "json", "fs", "http", "Lib", "async"];
     for stmt in &module.statements {
-        let import_path = match stmt {
-            Statement::Import(i) => Some(i.path.clone()),
-            Statement::FromImport(fi) => Some(fi.path.clone()),
-            Statement::Include(inc) => Some(inc.path.clone()),
+        let import = match stmt {
+            Statement::Import(i) => Some((i.path.clone(), i.span.clone())),
+            Statement::FromImport(fi) => Some((fi.path.clone(), fi.span.clone())),
+            Statement::Include(inc) => Some((inc.path.clone(), inc.span.clone())),
             _ => None,
         };
-        if let Some(path) = import_path {
+        if let Some((path, span)) = import {
+            if INTERNALS.contains(&path.as_str()) {
+                continue;
+            }
             let candidates = module_candidates(&path, base_dir, manifest);
+            let mut found = false;
             for candidate in &candidates {
                 let key = candidate.to_string_lossy().to_string();
                 if seen.contains(&key) {
@@ -271,15 +311,32 @@ fn load_import_modules(
                     if let Ok(toks) = cls_core::frontend::Lexer::new(&source).tokenize() {
                         if let Ok(m) = cls_core::frontend::Parser::new(toks).parse() {
                             seen.insert(key);
-                            load_import_modules(&m, base_dir, seen, out, manifest);
-                            out.push((path, m));
+                            load_import_modules(&m, base_dir, seen, out, manifest)?;
+                            out.push((path.clone(), m));
+                            found = true;
                             break;
                         }
                     }
                 }
             }
+            if !found {
+                // El módulo no se resolvió: error claro con los candidatos.
+                let tried = candidates
+                    .iter()
+                    .map(|c| format!("  - {}", c.display()))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                return Err(ClsError::compile_at(
+                    &format!(
+                        "No se pudo resolver el módulo '{}'.\nSe buscó en:\n{}",
+                        path, tried
+                    ),
+                    &span,
+                ));
+            }
         }
     }
+    Ok(())
 }
 
 /// Fusiona los imports aplanados (`from "m" import ...` / `include "m"`) en el
@@ -477,7 +534,10 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
     let mut seen = std::collections::HashSet::new();
     let mut imports: Vec<(String, ClsModule)> = Vec::new();
     let manifest = cls_core::config::ModuleManifest::find_in_dir(&base_dir);
-    load_import_modules(&module, &base_dir, &mut seen, &mut imports, manifest.as_ref());
+    if let Err(e) = load_import_modules(&module, &base_dir, &mut seen, &mut imports, manifest.as_ref()) {
+        show_cls_error(&e, entry, Some(&source));
+        return 1;
+    }
     // Desplazar los spans de cada módulo importado con un offset de línea único.
     // El `Span` no incluye el archivo, así que sin esto las coordenadas de un
     // módulo colisionan con las del main en el type map del JIT.
@@ -488,6 +548,19 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
     if let Err(e) = checker.check_with_prelude(&module, &imports) {
         show_cls_error(&e, entry, Some(&source));
         return 1;
+    }
+    // El typeck reporta errores como diagnostics (no falla con Err). Si hay
+    // algún error, mostrarlo con línea + caret y abortar antes de emitir WASM.
+    let has_type_errors = checker.diagnostics().iter().any(|d| {
+        matches!(d.severity, cls_core::error::diagnostic::Severity::Error)
+    });
+    if has_type_errors {
+        for diag in checker.diagnostics() {
+            if matches!(diag.severity, cls_core::error::diagnostic::Severity::Error) {
+                show_type_diag(diag, &source, entry);
+                return 1;
+            }
+        }
     }
     t = tick(timing, "typecheck", t);
 
