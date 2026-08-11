@@ -37,22 +37,9 @@ powershell -File examples/benchmarks-modules/run-bench.ps1
 ## Estado
 
 - **Tree-walker**: ✅ funciona con los 4 módulos; resultados correctos.
-- **JIT/WASM**: ⚠️ **limitación conocida** con módulos importados — el type map
-  usa `Span { línea, col }` **sin el archivo** (cls-core/src/error/diagnostic.rs),
-  por lo que las coordenadas de un módulo y de `main` pueden colisionar. El
-  backend busca el tipo de una expresión del módulo con el span del main (o
-  viceversa) → "Expresión sin tipo concreto". Afecta a cualquier módulo importado
-  que tenga bucles/variables (no solo recursión).
-
-### Resolución pendiente (JIT multi-módulo)
-
-Para que el JIT compile módulos importados de forma fiable hace falta que el type
-map distinga por archivo. Opciones:
-
-1. **Agregar `file: String` al `Span`** (o un id) y usarlo como clave en
-   `types_by_span`, `func_types`, etc. — cambio grande pero correcto.
-2. **Desplazar los spans** de cada módulo del prelude con un offset de línea
-   grande (p.ej. `+100000 * idx_modulo`) al fusionarlo, y que el backend use el
-   mismo offset al buscar — requiere re-mapear el AST del módulo.
-
-Documentado en `agent-context/JIT_VS_WALKER.md` (gap: multi-módulo en JIT).
+- **JIT/WASM**: ✅ **módulos importados funcionan** (incl. loops y recursión). El
+  type map usaba `Span { línea, col }` sin archivo, lo que colisionaba entre
+  módulos y main; se resolvió **desplazando los spans** de cada módulo importado
+  con un offset de línea único (`cls-core/src/frontend/span_shift.rs` + `run_jit`).
+  Nota: en los módulos, los loops deben declarar la variable (`for (var i = ...)`)
+  — la asignación implícita sin `var` no se soporta en el typeck estricto del JIT.
