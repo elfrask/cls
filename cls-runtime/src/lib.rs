@@ -18,7 +18,7 @@ pub use value::{Value, Promise, Pollable, PollState, ClassDef, ClassInstance};
 pub use environment::Environment;
 pub use interpreter::{Interpreter, ImportFrame};
 pub use intrinsics::Intrinsics;
-pub use resolver::ModuleResolver;
+pub use resolver::{ModuleResolver, user_modules_dir, global_modules_dir};
 pub use vfs::{VfsResolver, VfsProtocol, LocalFs, ZipFs, resolve_safe};
 pub use clslib::{ClsLibIndex, ClsLibEntry, ClsLibResolver, compute_hash_bytes};
 pub use error_report::{ErrorReport, ErrorFormat, ErrorFormatter, format_error, format_runtime_error, format_syntax_error, show_runtime_error, show_syntax_error, show_config_error};

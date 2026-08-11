@@ -81,7 +81,11 @@ pub fn execute(args: &[String]) -> i32 {
     let lib_resolver = make_lib_resolver(vfs.clone());
     let native: std::sync::Arc<dyn cls_runtime::ffi::NativeBackend> =
         std::sync::Arc::new(crate::native::DynamicBackend::default());
-    let resolver = make_desktop_resolver(vfs, lib_resolver, native.clone());
+    let entry_dir = std::path::Path::new(&entry)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let resolver = make_desktop_resolver(vfs, lib_resolver, native.clone(), entry_dir);
     let mut interpreter = Interpreter::new(Intrinsics::desktop_defaults(app_args), resolver);
     interpreter.set_source_file(entry);
     interpreter.set_config(config);
@@ -175,25 +179,34 @@ fn make_lib_resolver(vfs: Arc<VfsResolver>) -> Arc<dyn ClsLibResolver> {
     Arc::new(DesktopLibResolver { vfs })
 }
 
-fn make_desktop_resolver(vfs: Arc<VfsResolver>, lib_resolver: Arc<dyn ClsLibResolver>, native: std::sync::Arc<dyn cls_runtime::ffi::NativeBackend>) -> cls_runtime::ModuleResolver {
+fn make_desktop_resolver(
+    vfs: Arc<VfsResolver>,
+    lib_resolver: Arc<dyn ClsLibResolver>,
+    native: std::sync::Arc<dyn cls_runtime::ffi::NativeBackend>,
+    entry_dir: std::path::PathBuf,
+) -> cls_runtime::ModuleResolver {
     let mut resolver = cls_runtime::ModuleResolver::new().with_core_stdlib();
     resolver.add_internal("fs", crate::modules::fs::module(vfs));
     resolver.add_internal("http", crate::modules::http::module());
     resolver.add_internal("Lib", crate::modules::lib::module(lib_resolver));
+    // Directorios donde buscar módulos de usuario instalados: ~/.cls/modules/
+    let entry_dir = entry_dir.clone();
+    let manifest = cls_core::config::ModuleManifest::find_in_dir(&entry_dir);
     resolver.set_external(move |path: String, _env: &mut cls_runtime::Environment| -> cls_core::error::ClsResult<Option<cls_runtime::Value>> {
-        let candidate = format!("{}.clsx", path);
-        match std::fs::read_to_string(&candidate) {
-            Ok(source) => {
+        let candidates = crate::jit::module_candidates(&path, &entry_dir, manifest.as_ref());
+        for candidate in candidates {
+            if let Ok(source) = std::fs::read_to_string(&candidate) {
                 // El nodo consigue el source; el runtime (centralizado) lo carga y recolecta exports
                 let mut interp = Interpreter::new(
                     Intrinsics::empty(),
                     cls_runtime::ModuleResolver::new().with_core_stdlib(),
                 );
                 interp.set_native_backend(native.clone());
-                Ok(Some(interp.load_module_source(&path, &source)?))
+                let path_for_module = candidate.to_string_lossy().to_string();
+                return Ok(Some(interp.load_module_source(&path_for_module, &source)?));
             }
-            Err(_) => Ok(None),
         }
+        Ok(None)
     });
     resolver
 }

@@ -65,7 +65,8 @@ pub fn execute(args: &[String]) -> i32 {
         let base_dir = Path::new(file).parent().unwrap_or(Path::new(".")).to_path_buf();
         let mut seen = HashSet::new();
         let mut imports: Vec<(String, Module)> = Vec::new();
-        load_import_modules(&module, &base_dir, &mut seen, &mut imports);
+        let manifest = cls_core::config::ModuleManifest::find_in_dir(&base_dir);
+        load_import_modules(&module, &base_dir, &mut seen, &mut imports, manifest.as_ref());
         if let Err(e) = checker.check_with_prelude(&module, &imports) {
             eprintln!("Error interno en '{}': {}", file, e);
             total_errors += 1;
@@ -136,6 +137,7 @@ fn load_import_modules(
     base_dir: &Path,
     seen: &mut HashSet<String>,
     out: &mut Vec<(String, Module)>,
+    manifest: Option<&cls_core::config::ModuleManifest>,
 ) {
     for stmt in &module.statements {
         let import_path = match stmt {
@@ -145,12 +147,7 @@ fn load_import_modules(
             _ => None,
         };
         if let Some(path) = import_path {
-            // Resolución: primero relativo al archivo importador (base_dir),
-            // luego relativo al directorio de trabajo (compat con el walker).
-            let candidates = [
-                base_dir.join(format!("{}.clsx", path)),
-                std::path::PathBuf::from(format!("{}.clsx", path)),
-            ];
+            let candidates = crate::jit::module_candidates(&path, base_dir, manifest);
             for candidate in &candidates {
                 let key = candidate.to_string_lossy().to_string();
                 if seen.contains(&key) {
@@ -160,7 +157,7 @@ fn load_import_modules(
                     if let Ok(toks) = cls_core::frontend::Lexer::new(&source).tokenize() {
                         if let Ok(m) = cls_core::frontend::Parser::new(toks).parse() {
                             seen.insert(key);
-                            load_import_modules(&m, base_dir, seen, out);
+                            load_import_modules(&m, base_dir, seen, out, manifest);
                             out.push((path, m));
                             break;
                         }

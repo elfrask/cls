@@ -144,4 +144,36 @@ impl ModuleManifest {
             Ok(Self::default_for(&name))
         }
     }
+
+    /// Busca el cls.json de un proyecto desde un directorio hacia arriba.
+    pub fn find_in_dir(start: &Path) -> Option<Self> {
+        let mut dir = Some(start.to_path_buf());
+        while let Some(d) = dir {
+            let candidate = d.join("cls.json");
+            if candidate.exists() {
+                if let Ok(m) = Self::from_file(&candidate) {
+                    return Some(m);
+                }
+            }
+            dir = d.parent().map(|p| p.to_path_buf());
+        }
+        None
+    }
+
+    /// La versión exacta de una dependencia declarada (nombre → semver).
+    /// Devuelve el rango declarado (p.ej. `^1.2.0`); la resolución exacta del
+    /// semver se hace contra el almacén global. Si no está declarada → None.
+    pub fn dependency_version(&self, name: &str) -> Option<&str> {
+        self.dependencies
+            .get(name)
+            .map(|s| s.as_str())
+            .or_else(|| self.dev_dependencies.get(name).map(|s| s.as_str()))
+    }
+
+    /// Nombres de módulos en el workspace `{base}/modules/{name}/mod.clsx`.
+    /// Devuelve true si un módulo está declarado como dependencia (para priorizarlo
+    /// frente a los globales sin versión).
+    pub fn is_dependency(&self, name: &str) -> bool {
+        self.dependencies.contains_key(name) || self.dev_dependencies.contains_key(name)
+    }
 }

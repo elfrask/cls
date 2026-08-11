@@ -1,0 +1,11 @@
+export function sumaArray(n: int) -> int {
+    var arr: int[] = [];
+    for (i = 0; i < n; i++) {
+        arr.push(i);
+    }
+    var total = 0;
+    for each v in (arr) {
+        total = total + v;
+    }
+    return total;
+};
