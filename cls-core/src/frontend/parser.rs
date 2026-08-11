@@ -2145,7 +2145,7 @@ impl Parser {
                 Ok(Expression::Cmx(element))
             }
             _ => Err(self.syntax_err(format!(
-                "Token inesperado: {:?}",
+                "Token inesperado: {}",
                 self.current_token
             )))
         }
