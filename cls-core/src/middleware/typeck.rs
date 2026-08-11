@@ -105,6 +105,15 @@ impl TypeChecker {
             return Ok(());
         }
         self.prelude = prelude.to_vec();
+        // Pre-registrar firmas de funciones top-level de cada módulo del prelude
+        // (para soportar recursión y uso antes de definición dentro del módulo).
+        for (_path, m) in prelude {
+            for stmt in &m.statements {
+                if let Statement::FunctionDecl(f) = stmt {
+                    self.define_function_signature(f);
+                }
+            }
+        }
         for (_path, m) in prelude {
             for stmt in &m.statements {
                 self.check_statement(stmt);

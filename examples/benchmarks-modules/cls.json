@@ -1,0 +1,7 @@
+{
+  "name": "benchmarks-modules",
+  "version": "0.1.0",
+  "description": "Benchmarks de rendimiento CLS (walker vs JIT) con múltiples módulos",
+  "entry": "src/main.clsx",
+  "dependencies": {}
+}

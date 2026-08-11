@@ -94,6 +94,156 @@ fn cache_key(source: &str, target_str: Option<&str>) -> u64 {
     h.finish()
 }
 
+/// Compara dos versiones semver ("1.2.0" vs "1.10.0"). Retorna Ordering.
+fn cmp_semver(a: &str, b: &str) -> std::cmp::Ordering {
+    let av: Vec<u64> = a
+        .trim_start_matches(['^', '~', '>', '=', '<'])
+        .split('.')
+        .filter_map(|p| p.parse().ok())
+        .collect();
+    let bv: Vec<u64> = b
+        .split('.')
+        .filter_map(|p| p.parse().ok())
+        .collect();
+    for i in 0..3 {
+        let x = av.get(i).copied().unwrap_or(0);
+        let y = bv.get(i).copied().unwrap_or(0);
+        if x != y {
+            return x.cmp(&y);
+        }
+    }
+    std::cmp::Ordering::Equal
+}
+
+/// ¿El rango semver declarado (p.ej. `^1.2.0`, `~1.2`, `>=1.0`) acepta la versión?
+fn semver_matches(range: &str, version: &str) -> bool {
+    let range = range.trim();
+    if range.starts_with('^') {
+        // ^1.2.0 → >=1.2.0 y major == 1
+        let min = &range[1..];
+        if cmp_semver(version, min) == std::cmp::Ordering::Less {
+            return false;
+        }
+        let mut parts = min.split('.').collect::<Vec<_>>();
+        if parts.is_empty() {
+            return false;
+        }
+        let major = parts[0].parse::<u64>().unwrap_or(0);
+        let vmajor = version.split('.').next().and_then(|p| p.parse::<u64>().ok()).unwrap_or(0);
+        vmajor == major
+    } else if range.starts_with('~') {
+        let min = &range[1..];
+        let mut mv = min.split('.').collect::<Vec<_>>();
+        if mv.len() >= 2 {
+            mv.truncate(2);
+        }
+        let upper = format!("{}.999.999", mv.join("."));
+        cmp_semver(version, min) != std::cmp::Ordering::Less
+            && cmp_semver(version, &upper) != std::cmp::Ordering::Greater
+    } else if range.starts_with('>') || range.starts_with('=') {
+        let min = range.trim_start_matches(['>', '=', ' ']);
+        if range.starts_with(">=") {
+            cmp_semver(version, min) != std::cmp::Ordering::Less
+        } else if range.starts_with('>') {
+            cmp_semver(version, min) == std::cmp::Ordering::Greater
+        } else {
+            cmp_semver(version, min) == std::cmp::Ordering::Equal
+        }
+    } else if let Some((lo, hi)) = range.split_once(" - ") {
+        cmp_semver(version, lo) != std::cmp::Ordering::Less
+            && cmp_semver(version, hi) != std::cmp::Ordering::Greater
+    } else {
+        // Versión exacta o sin prefijo.
+        cmp_semver(version, range) == std::cmp::Ordering::Equal
+    }
+}
+
+/// Raíz del proyecto: sube desde `start` hasta encontrar `cls.json` o un dir
+/// con `modules/`. Si no encuentra, devuelve `start`.
+fn project_root(start: &std::path::Path) -> std::path::PathBuf {
+    let mut dir = Some(start.to_path_buf());
+    while let Some(d) = dir {
+        if d.join("cls.json").exists() || d.join("modules").is_dir() {
+            return d;
+        }
+        dir = d.parent().map(|p| p.to_path_buf());
+    }
+    start.to_path_buf()
+}
+
+/// Candidatos de archivo para un import de módulo, en orden de búsqueda.
+///
+/// Orden (RESOLVERS.md):
+///   1. {base_dir}/{path}.clsx            (junto al archivo que importa)
+///   2. {proyecto}/modules/{name}/mod.clsx (módulos del workspace)
+///   3. {cwd}/{path}.clsx                 (relativo al CWD)
+///   4. {cwd}/modules/{name}/mod.clsx     (módulos del proyecto)
+///   5. {home}/.cls/modules/{name}@{version}/mod.clsx (globales usuario, versionado)
+///   6. {home}/.cls/modules/{name}/mod.clsx            (globales sin versión)
+///
+/// Si `manifest` declara `dependencies[name]`, la búsqueda global filtra por el
+/// rango semver declarado (prioriza la versión instalada que lo cumpla).
+pub fn module_candidates(
+    path: &str,
+    base_dir: &std::path::Path,
+    manifest: Option<&cls_core::config::ModuleManifest>,
+) -> Vec<std::path::PathBuf> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let user_modules = cls_runtime::user_modules_dir();
+    let name = path.trim_start_matches(['/', '\\']).trim();
+    let proj = project_root(base_dir);
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if name.contains('/') || name.contains('\\') || std::path::Path::new(name).is_absolute() {
+        // Path explícito: directo. Agregar `.clsx` si no lo trae.
+        let p = std::path::Path::new(&path);
+        let with_ext = if p.extension().is_some() {
+            p.to_path_buf()
+        } else {
+            std::path::PathBuf::from(format!("{}.clsx", path))
+        };
+        if with_ext.is_absolute() {
+            candidates.push(with_ext);
+        } else {
+            candidates.push(base_dir.join(with_ext));
+        }
+    } else {
+        // Módulo por nombre: buscar en orden.
+        candidates.push(base_dir.join(format!("{}.clsx", name)));
+        candidates.push(proj.join("modules").join(name).join("mod.clsx"));
+        candidates.push(cwd.join(format!("{}.clsx", name)));
+        candidates.push(cwd.join("modules").join(name).join("mod.clsx"));
+        if let Some(ref um) = user_modules {
+            let declared = manifest.and_then(|m| m.dependency_version(name).map(|s| s.to_string()));
+            // Versiones instaladas (nombre@versión): ordenar desc y filtrar por rango.
+            if let Ok(entries) = std::fs::read_dir(um) {
+                let mut versions: Vec<(String, std::path::PathBuf)> = entries
+                    .flatten()
+                    .filter(|e| e.path().is_dir())
+                    .filter_map(|e| {
+                        let n = e.file_name().to_string_lossy().to_string();
+                        let v = n.strip_prefix(&format!("{}@", name));
+                        v.map(|ver| (ver.to_string(), e.path()))
+                    })
+                    .collect();
+                versions.sort_by(|a, b| cmp_semver(&a.0, &b.0).reverse());
+                for (ver, p) in versions {
+                    if let Some(ref d) = declared {
+                        if !semver_matches(d, &ver) {
+                            continue;
+                        }
+                    }
+                    candidates.push(p.join("mod.clsx"));
+                }
+            }
+            // Sin versión (fallback): solo si no hay rango declarado que exigir.
+            if declared.is_none() {
+                candidates.push(um.join(name).join("mod.clsx"));
+            }
+        }
+    }
+    candidates
+}
+
 /// Resuelve los imports de un módulo (recursivamente) y los carga como AST.
 /// Cada entrada del resultado: (path del import, módulo parseado).
 fn load_import_modules(
@@ -101,6 +251,7 @@ fn load_import_modules(
     base_dir: &std::path::Path,
     seen: &mut std::collections::HashSet<String>,
     out: &mut Vec<(String, ClsModule)>,
+    manifest: Option<&cls_core::config::ModuleManifest>,
 ) {
     for stmt in &module.statements {
         let import_path = match stmt {
@@ -110,12 +261,7 @@ fn load_import_modules(
             _ => None,
         };
         if let Some(path) = import_path {
-            // Resolución: primero relativo al archivo importador (base_dir),
-            // luego relativo al directorio de trabajo (compat con el walker).
-            let candidates = [
-                base_dir.join(format!("{}.clsx", path)),
-                std::path::PathBuf::from(format!("{}.clsx", path)),
-            ];
+            let candidates = module_candidates(&path, base_dir, manifest);
             for candidate in &candidates {
                 let key = candidate.to_string_lossy().to_string();
                 if seen.contains(&key) {
@@ -125,7 +271,7 @@ fn load_import_modules(
                     if let Ok(toks) = cls_core::frontend::Lexer::new(&source).tokenize() {
                         if let Ok(m) = cls_core::frontend::Parser::new(toks).parse() {
                             seen.insert(key);
-                            load_import_modules(&m, base_dir, seen, out);
+                            load_import_modules(&m, base_dir, seen, out, manifest);
                             out.push((path, m));
                             break;
                         }
@@ -314,7 +460,8 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
         .to_path_buf();
     let mut seen = std::collections::HashSet::new();
     let mut imports: Vec<(String, ClsModule)> = Vec::new();
-    load_import_modules(&module, &base_dir, &mut seen, &mut imports);
+    let manifest = cls_core::config::ModuleManifest::find_in_dir(&base_dir);
+    load_import_modules(&module, &base_dir, &mut seen, &mut imports, manifest.as_ref());
     if let Err(e) = checker.check_with_prelude(&module, &imports) {
         show_cls_error(&e, entry, Some(&source));
         return 1;

@@ -305,6 +305,23 @@ impl Interpreter {
         self.source_file = path;
     }
 
+    /// Sincroniza el base_dir del resolver con el directorio del archivo actual.
+    /// Así los imports relativos se resuelven respecto al archivo que importa
+    /// (no al CWD), y en proyectos respecto a donde vive cls.json.
+    fn sync_resolver_base(&mut self) {
+        let dir = if !self.source_file.is_empty() {
+            let p = std::path::Path::new(&self.source_file);
+            if let Some(parent) = p.parent() {
+                parent.to_path_buf()
+            } else {
+                std::path::PathBuf::from(".")
+            }
+        } else {
+            std::path::PathBuf::from(".")
+        };
+        self.resolver.set_base_dir(dir);
+    }
+
     /// Obtiene el trace de importaciones para errores
     pub fn get_import_trace(&self) -> &[ImportFrame] {
         &self.import_trace
@@ -1012,6 +1029,7 @@ impl Interpreter {
             col: import.span.start_col,
         });
 
+        self.sync_resolver_base();
         let result = self.resolver.resolve(&import.path, &mut self.env);
 
         match result {
@@ -1028,6 +1046,7 @@ impl Interpreter {
     }
 
     fn execute_from_import(&mut self, fi: &FromImportStatement) -> ClsResult<Value> {
+        self.sync_resolver_base();
         let module = self.resolver.resolve(&fi.path, &mut self.env)?;
         match module {
             Value::Record(entries) => {
@@ -1046,6 +1065,7 @@ impl Interpreter {
     }
 
     fn execute_include(&mut self, include: &IncludeStatement) -> ClsResult<Value> {
+        self.sync_resolver_base();
         let module = self.resolver.resolve(&include.path, &mut self.env)?;
         match module {
             Value::Record(entries) => {
