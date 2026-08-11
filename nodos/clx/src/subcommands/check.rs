@@ -66,7 +66,11 @@ pub fn execute(args: &[String]) -> i32 {
         let mut seen = HashSet::new();
         let mut imports: Vec<(String, Module)> = Vec::new();
         let manifest = cls_core::config::ModuleManifest::find_in_dir(&base_dir);
-        load_import_modules(&module, &base_dir, &mut seen, &mut imports, manifest.as_ref());
+        if let Err(e) = load_import_modules(&module, &base_dir, &mut seen, &mut imports, manifest.as_ref()) {
+            eprintln!("Error resolviendo imports de '{}': {}", file, e);
+            total_errors += 1;
+            continue;
+        }
         if let Err(e) = checker.check_with_prelude(&module, &imports) {
             eprintln!("Error interno en '{}': {}", file, e);
             total_errors += 1;
@@ -132,40 +136,16 @@ pub fn execute(args: &[String]) -> i32 {
 /// Resuelve los imports de un módulo (recursivamente) y los carga como AST.
 /// El nodo consigue los archivos; el core los verifica.
 /// Cada entrada del resultado: (path del import, módulo parseado).
+/// Resuelve los imports de un módulo (recursivamente) y los carga como AST.
+/// Cada entrada del resultado: (path del import, módulo parseado).
 fn load_import_modules(
     module: &Module,
     base_dir: &Path,
     seen: &mut HashSet<String>,
     out: &mut Vec<(String, Module)>,
     manifest: Option<&cls_core::config::ModuleManifest>,
-) {
-    for stmt in &module.statements {
-        let import_path = match stmt {
-            Statement::Import(i) => Some(i.path.clone()),
-            Statement::FromImport(fi) => Some(fi.path.clone()),
-            Statement::Include(inc) => Some(inc.path.clone()),
-            _ => None,
-        };
-        if let Some(path) = import_path {
-            let candidates = crate::jit::module_candidates(&path, base_dir, manifest);
-            for candidate in &candidates {
-                let key = candidate.to_string_lossy().to_string();
-                if seen.contains(&key) {
-                    continue;
-                }
-                if let Ok(source) = fs::read_to_string(&candidate) {
-                    if let Ok(toks) = cls_core::frontend::Lexer::new(&source).tokenize() {
-                        if let Ok(m) = cls_core::frontend::Parser::new(toks).parse() {
-                            seen.insert(key);
-                            load_import_modules(&m, base_dir, seen, out, manifest);
-                            out.push((path, m));
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    }
+) -> cls_core::error::ClsResult<()> {
+    crate::jit::load_import_modules(module, base_dir, seen, out, manifest)
 }
 
 fn scan_clsx_files(dir: &Path) -> Vec<String> {

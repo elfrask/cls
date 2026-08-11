@@ -1,4 +1,4 @@
-from "examples/test-features/jit-test/availible/libmod" import saludar as saludar_fn, VERSION as version, suma;
+from "libmod" import saludar as saludar_fn, VERSION as version, suma;
 
 function main(args: String[]) -> int {
     print("=== from import con alias ===");

@@ -765,7 +765,7 @@ impl Interpreter {
                 }
                 Ok(Value::Void)
             }
-            _ => Err(self.err_at(format!("No se puede iterar sobre: {:?}", iterable), &for_each.span)),
+            _ => Err(self.err_at(format!("No se puede iterar sobre un valor de tipo {}", iterable.type_name()), &for_each.span)),
         }
     }
 
@@ -1217,10 +1217,10 @@ impl Interpreter {
                     if let Some(r) = self.call_magic(obj, "__neg", vec![], &un.span)? {
                         Ok(r)
                     } else {
-                        Err(self.err_at(format!("No se puede negar: {:?}", operand), &un.span))
+                        Err(self.err_at(format!("No se puede negar un valor de tipo {}", operand.type_name()), &un.span))
                     }
                 }
-                _ => Err(self.err_at(format!("No se puede negar: {:?}", operand), &un.span)),
+                _ => Err(self.err_at(format!("No se puede negar un valor de tipo {}", operand.type_name()), &un.span)),
             },
             UnaryOp::Not => {
                 // __not() si el objeto lo implementa; sino truthiness
@@ -1233,7 +1233,7 @@ impl Interpreter {
             }
             UnaryOp::BitwiseNot => match operand {
                 Value::Int(v) => Ok(Value::Int(!v)),
-                _ => Err(self.err_at(format!("No se puede aplicar ~: {:?}", operand), &un.span)),
+                _ => Err(self.err_at(format!("No se puede aplicar ~ a un valor de tipo {}", operand.type_name()), &un.span)),
             },
             UnaryOp::TypeOf => Ok(Value::String(operand.type_name().to_string())),
             UnaryOp::PostInc | UnaryOp::PreInc | UnaryOp::PostDec | UnaryOp::PreDec => {
@@ -1844,7 +1844,7 @@ impl Interpreter {
                 if let Some(v) = self.resolve_primitive_method(&object, &member.member, &member.span)? {
                     return Ok(v);
                 }
-                Err(self.err_at(format!("No se puede acceder a miembro en: {:?}", object), &member.span))
+                Err(self.err_at(format!("No se puede acceder a un miembro en un valor de tipo {}", object.type_name()), &member.span))
             }
         }
     }

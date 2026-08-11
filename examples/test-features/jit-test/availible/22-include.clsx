@@ -1,4 +1,4 @@
-include "examples/test-features/jit-test/availible/libmod";
+include "libmod";
 
 function main(args: String[]) -> int {
     print("=== include ===");

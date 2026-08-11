@@ -32,8 +32,8 @@ use wasm_encoder::{
     BlockType, Catch, CodeSection, ConstExpr, DataSection, DataSegment, DataSegmentMode,
     ElementMode, ElementSection, Elements, EntityType, ExportKind, ExportSection, Function,
     FunctionSection, GlobalSection, GlobalType, Ieee64, ImportSection, Instruction, MemArg,
-    MemorySection, MemoryType, Module as WasmModule, RefType, TableSection, TableType,
-    TagKind, TagSection, TagType, TypeSection, ValType,
+    MemorySection, MemoryType, Module as WasmModule, RefType, TableSection, TableType, TagKind,
+    TagSection, TagType, TypeSection, ValType,
 };
 
 /// Funciones host (`env.*`) que el nodo JIT debe implementar.
@@ -153,10 +153,10 @@ impl HostFn {
             StrContains => "str_contains",
             StrStartsWith => "str_starts_with",
             StrEndsWith => "str_ends_with",
-    StrIsEmpty => "str_is_empty",
-    StrLength => "str_length",
-    StrRepr => "str_repr",
-    IntAbs => "int_abs",
+            StrIsEmpty => "str_is_empty",
+            StrLength => "str_length",
+            StrRepr => "str_repr",
+            IntAbs => "int_abs",
             FloatAbs => "float_abs",
             ArrPush => "arr_push",
             ArrPop => "arr_pop",
@@ -204,9 +204,9 @@ impl HostFn {
             CmxSetProp => "cmx_set_prop",
             CmxAddChild => "cmx_add_child",
             CmxToString => "cmx_to_string",
-    PrintAny => "print_any",
-    FnHandle => "fn_handle",
-    FnToString => "fn_to_string",
+            PrintAny => "print_any",
+            FnHandle => "fn_handle",
+            FnToString => "fn_to_string",
         }
     }
 
@@ -230,17 +230,38 @@ impl HostFn {
             PowNum => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             Fmod => (vec![ValType::F64, ValType::F64], vec![ValType::F64]),
             Input => (vec![], vec![ValType::I64]),
-            StrUpper | StrLower | StrTrim | StrLength | StrRepr => (i64p.clone(), vec![ValType::I64]),
-            StrContains | StrStartsWith | StrEndsWith => (vec![ValType::I64, ValType::I64], vec![ValType::I32]),
+            StrUpper | StrLower | StrTrim | StrLength | StrRepr => {
+                (i64p.clone(), vec![ValType::I64])
+            }
+            StrContains | StrStartsWith | StrEndsWith => {
+                (vec![ValType::I64, ValType::I64], vec![ValType::I32])
+            }
             StrIsEmpty => (i64p.clone(), vec![ValType::I32]),
             IntAbs => (i64p.clone(), vec![ValType::I64]),
             FloatAbs => (vec![ValType::F64], vec![ValType::F64]),
-            ArrPush | ArrUnshift => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
-            ArrPop | ArrShift | ArrReverse => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            ArrIndexOf => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
-            ArrIncludes => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I32]),
-            ArrJoin => (vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
-            ArrToString => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
+            ArrPush | ArrUnshift => (
+                vec![ValType::I64, ValType::I64, ValType::I64],
+                vec![ValType::I64],
+            ),
+            ArrPop | ArrShift | ArrReverse => {
+                (vec![ValType::I64, ValType::I64], vec![ValType::I64])
+            }
+            ArrIndexOf => (
+                vec![ValType::I64, ValType::I64, ValType::I64],
+                vec![ValType::I64],
+            ),
+            ArrIncludes => (
+                vec![ValType::I64, ValType::I64, ValType::I64],
+                vec![ValType::I32],
+            ),
+            ArrJoin => (
+                vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
+                vec![ValType::I64],
+            ),
+            ArrToString => (
+                vec![ValType::I64, ValType::I64, ValType::I64],
+                vec![ValType::I64],
+            ),
             MathSqrt | MathFloor | MathCeil | MathRound | MathSin | MathCos | MathTan | MathLog => {
                 (vec![ValType::F64], vec![ValType::F64])
             }
@@ -255,7 +276,10 @@ impl HostFn {
             FsWriteFile => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             FsListDir | FsMkdir | FsRm => (i64p.clone(), vec![ValType::I64]),
             RecordNew => (i64p.clone(), vec![ValType::I64]),
-            RecordSet => (vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
+            RecordSet => (
+                vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
+                vec![ValType::I64],
+            ),
             RecordGet => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             RecordHas => (vec![ValType::I64, ValType::I64], vec![ValType::I32]),
             RecordTag => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
@@ -265,11 +289,20 @@ impl HostFn {
             HttpGet => (i64p.clone(), vec![ValType::I64]),
             HttpPost => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             CmxNew => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            CmxSetProp => (vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
-            CmxAddChild => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
+            CmxSetProp => (
+                vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
+                vec![ValType::I64],
+            ),
+            CmxAddChild => (
+                vec![ValType::I64, ValType::I64, ValType::I64],
+                vec![ValType::I64],
+            ),
             CmxToString => (i64p.clone(), vec![ValType::I64]),
             PrintAny => (vec![ValType::I64, ValType::I64], vec![]),
-            FnHandle => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
+            FnHandle => (
+                vec![ValType::I64, ValType::I64, ValType::I64],
+                vec![ValType::I64],
+            ),
             FnToString => (i64p.clone(), vec![ValType::I64]),
         }
     }
@@ -515,7 +548,6 @@ impl<'a> FuncEmitter<'a> {
         idx
     }
 
-
     fn fresh_local(&mut self) -> u32 {
         self.fresh_local_ty(WasTy::I64)
     }
@@ -553,21 +585,34 @@ impl<'a> FuncEmitter<'a> {
             // Variable capturada (closure): el bloque guarda el valor (si no es
             // promovida) o el PTR al slot (si es promovida). Acceder al slot.
             self.body.push(Instruction::LocalGet(0));
-            self.body.push(Instruction::I64Const(16 + (ci as i64 - 1) * 8));
+            self.body
+                .push(Instruction::I64Const(16 + (ci as i64 - 1) * 8));
             self.body.push(Instruction::I64Add);
             self.body.push(Instruction::I32WrapI64);
-            self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+            self.body.push(Instruction::I64Load(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
             if self.promoted.contains(name) {
                 // La captura es un ptr al slot: doble deref.
                 self.body.push(Instruction::I32WrapI64);
-                self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                self.body.push(Instruction::I64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                }));
             }
         } else if self.promoted.contains(name) {
             // Variable del scope promovida al heap: el local guarda el ptr al slot.
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalGet(idx));
             self.body.push(Instruction::I32WrapI64);
-            self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+            self.body.push(Instruction::I64Load(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
         } else {
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalGet(idx));
@@ -584,10 +629,15 @@ impl<'a> FuncEmitter<'a> {
             // Captura: el bloque guarda el PTR al slot (promovida) o el valor.
             // Las capturas van ANTES que promoted (una captura no es un local).
             self.body.push(Instruction::LocalGet(0));
-            self.body.push(Instruction::I64Const(16 + (ci as i64 - 1) * 8));
+            self.body
+                .push(Instruction::I64Const(16 + (ci as i64 - 1) * 8));
             self.body.push(Instruction::I64Add);
             self.body.push(Instruction::I32WrapI64);
-            self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+            self.body.push(Instruction::I64Load(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
         } else if self.promoted.contains(name) {
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalGet(idx));
@@ -607,16 +657,25 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::LocalSet(v));
             // addr = ptr del bloque + offset de la captura.
             self.body.push(Instruction::LocalGet(0));
-            self.body.push(Instruction::I64Const(16 + (ci as i64 - 1) * 8));
+            self.body
+                .push(Instruction::I64Const(16 + (ci as i64 - 1) * 8));
             self.body.push(Instruction::I64Add);
             self.body.push(Instruction::I32WrapI64);
             if self.promoted.contains(name) {
                 // El bloque guarda un ptr al slot: store en `[ptr_al_slot]` → valor.
-                self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                self.body.push(Instruction::I64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                }));
                 self.body.push(Instruction::I32WrapI64);
             }
             self.body.push(Instruction::LocalGet(v));
-            self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+            self.body.push(Instruction::I64Store(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
         } else if self.promoted.contains(name) {
             // Variable del scope promovida: el local guarda el ptr al slot.
             let v = self.fresh_local();
@@ -625,7 +684,11 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::LocalGet(idx));
             self.body.push(Instruction::I32WrapI64);
             self.body.push(Instruction::LocalGet(v));
-            self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+            self.body.push(Instruction::I64Store(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
         } else {
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalSet(idx));
@@ -655,7 +718,8 @@ impl<'a> FuncEmitter<'a> {
         let t = self.types.get(&span).ok_or_else(|| {
             crate::error::ClsError::CompileError(format!(
                 "Expresión sin tipo ({}:{}:{}): el JIT requiere el type checker",
-                span.start_line, span.start_col,
+                span.start_line,
+                span.start_col,
                 expr_display(expr)
             ))
         })?;
@@ -720,9 +784,21 @@ impl<'a> FuncEmitter<'a> {
                             WasTy::I64 => Instruction::LocalGet(val_tmp),
                         });
                         match ty {
-                            WasTy::F64 => self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                            WasTy::I32 => self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                            WasTy::I64 => self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                            WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
+                                offset: 0,
+                                align: 3,
+                                memory_index: 0,
+                            })),
+                            WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
+                                offset: 0,
+                                align: 2,
+                                memory_index: 0,
+                            })),
+                            WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
+                                offset: 0,
+                                align: 3,
+                                memory_index: 0,
+                            })),
                         }
                     } else {
                         self.body.push(Instruction::LocalSet(idx));
@@ -794,7 +870,7 @@ impl<'a> FuncEmitter<'a> {
 
     fn unsupported_stmt(&self, stmt: &Statement) -> crate::error::ClsError {
         crate::error::ClsError::CompileError(format!(
-            "Statement no soportado por el JIT (subconjunto): {}",
+            "El JIT (subconjunto WASM) aún no soporta este statement: {}",
             statement_display(stmt)
         ))
     }
@@ -815,7 +891,11 @@ impl<'a> FuncEmitter<'a> {
         let f_handle = self.fresh_local();
         self.body.push(Instruction::LocalSet(f_handle));
         // tipo de f → Fun(params, ret)
-        let ft = self.types.get(&expr_span(&c.args[0])).cloned().unwrap_or(Type::Any);
+        let ft = self
+            .types
+            .get(&expr_span(&c.args[0]))
+            .cloned()
+            .unwrap_or(Type::Any);
         let (f_params, f_ret) = match ft {
             Type::Fun(p, r) => (p, *r),
             _ => {
@@ -840,7 +920,11 @@ impl<'a> FuncEmitter<'a> {
         let new_ptr = self.fresh_local();
         self.body.push(Instruction::LocalGet(arr_ptr));
         self.body.push(Instruction::I32WrapI64);
-        self.body.push(Instruction::I64Load(MemArg { offset: 8, align: 3, memory_index: 0 }));
+        self.body.push(Instruction::I64Load(MemArg {
+            offset: 8,
+            align: 3,
+            memory_index: 0,
+        }));
         self.body.push(Instruction::LocalSet(i)); // n
         self.body.push(Instruction::I64Const(16));
         self.body.push(Instruction::LocalGet(i));
@@ -870,7 +954,11 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::LocalGet(i));
         self.body.push(Instruction::LocalGet(new_ptr));
         self.body.push(Instruction::I32WrapI64);
-        self.body.push(Instruction::I64Load(MemArg { offset: 8, align: 3, memory_index: 0 }));
+        self.body.push(Instruction::I64Load(MemArg {
+            offset: 8,
+            align: 3,
+            memory_index: 0,
+        }));
         self.body.push(Instruction::I64GeS);
         let depth = self.block_depth.saturating_sub(break_at);
         self.body.push(Instruction::BrIf(depth));
@@ -894,9 +982,21 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Add);
         self.body.push(Instruction::I32WrapI64);
         match elem_ty {
-            WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-            WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-            WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+            WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            })),
+            WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                offset: 0,
+                align: 2,
+                memory_index: 0,
+            })),
+            WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            })),
         }
         let elem_tmp = self.fresh_local_ty(elem_ty);
         self.body.push(Instruction::LocalSet(elem_tmp));
@@ -909,13 +1009,11 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64And);
         self.body.push(Instruction::I32WrapI64);
         self.block_depth += 1;
-        self.body.push(Instruction::If(
-            if rv.is_empty() {
-                BlockType::Empty
-            } else {
-                BlockType::Result(rv[0])
-            },
-        ));
+        self.body.push(Instruction::If(if rv.is_empty() {
+            BlockType::Empty
+        } else {
+            BlockType::Result(rv[0])
+        }));
         // closure: push [capturas, elem, tabla]
         self.body.push(Instruction::LocalGet(f_handle));
         self.body.push(Instruction::I64Const(1));
@@ -923,7 +1021,11 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Const(8));
         self.body.push(Instruction::I64Add);
         self.body.push(Instruction::I32WrapI64);
-        self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+        self.body.push(Instruction::I64Load(MemArg {
+            offset: 0,
+            align: 3,
+            memory_index: 0,
+        }));
         let caps_tmp = self.fresh_local();
         self.body.push(Instruction::LocalSet(caps_tmp));
         self.body.push(Instruction::LocalGet(caps_tmp));
@@ -932,9 +1034,16 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Const(1));
         self.body.push(Instruction::I64ShrU);
         self.body.push(Instruction::I32WrapI64);
-        self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+        self.body.push(Instruction::I64Load(MemArg {
+            offset: 0,
+            align: 3,
+            memory_index: 0,
+        }));
         self.body.push(Instruction::I32WrapI64);
-        self.body.push(Instruction::CallIndirect { type_index: tidx_caps, table_index: 0 });
+        self.body.push(Instruction::CallIndirect {
+            type_index: tidx_caps,
+            table_index: 0,
+        });
         self.body.push(Instruction::Else);
         // simple: push [elem, tabla]
         self.body.push(Instruction::LocalGet(elem_tmp));
@@ -942,7 +1051,10 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Const(1));
         self.body.push(Instruction::I64ShrU);
         self.body.push(Instruction::I32WrapI64);
-        self.body.push(Instruction::CallIndirect { type_index: tidx, table_index: 0 });
+        self.body.push(Instruction::CallIndirect {
+            type_index: tidx,
+            table_index: 0,
+        });
         self.body.push(Instruction::End);
         self.block_depth -= 1;
         // store el resultado en [addr_tmp, result]: guardar resultado en local,
@@ -953,15 +1065,21 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I32WrapI64);
         self.body.push(Instruction::LocalGet(res_tmp));
         match ret_was {
-            WasTy::F64 => {
-                self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 }))
-            }
-            WasTy::I32 => {
-                self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 }))
-            }
-            WasTy::I64 => {
-                self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }))
-            }
+            WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            })),
+            WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
+                offset: 0,
+                align: 2,
+                memory_index: 0,
+            })),
+            WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            })),
         }
         // i++
         self.body.push(Instruction::LocalGet(i));
@@ -1000,7 +1118,10 @@ impl<'a> FuncEmitter<'a> {
                 self.block_depth += 1;
                 self.body.push(Instruction::Block(BlockType::Empty));
                 let continue_at = self.block_depth;
-                self.loop_stack.push(LoopGuard { break_at, continue_at });
+                self.loop_stack.push(LoopGuard {
+                    break_at,
+                    continue_at,
+                });
                 self.body.push(Instruction::LocalGet(i));
                 self.body.push(Instruction::I64Const(n));
                 self.body.push(Instruction::I64GeS);
@@ -1035,12 +1156,20 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
         }
-        let iterable_ty = self.types.get(&expr_span(&fe.iterable)).cloned().unwrap_or(Type::Any);
+        let iterable_ty = self
+            .types
+            .get(&expr_span(&fe.iterable))
+            .cloned()
+            .unwrap_or(Type::Any);
         let (elem_ty, elem_size) = match &iterable_ty {
             Type::Array(elem) => {
                 let w = was_type(elem)?;
                 // Array de Cmx → entradas `[val, tag]` stride 16.
-                let es = if matches!(**elem, Type::Cmx) { 16 } else { elem_size_bytes(w) };
+                let es = if matches!(**elem, Type::Cmx) {
+                    16
+                } else {
+                    elem_size_bytes(w)
+                };
                 (w, es)
             }
             Type::Tuple(slots) => {
@@ -1073,12 +1202,19 @@ impl<'a> FuncEmitter<'a> {
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::Empty));
         let continue_at = self.block_depth;
-        self.loop_stack.push(LoopGuard { break_at, continue_at });
+        self.loop_stack.push(LoopGuard {
+            break_at,
+            continue_at,
+        });
         // cond: i >= len(iter)
         self.body.push(Instruction::LocalGet(i));
         self.body.push(Instruction::LocalGet(iter));
         self.body.push(Instruction::I32WrapI64);
-        self.body.push(Instruction::I64Load(MemArg { offset: 8, align: 3, memory_index: 0 }));
+        self.body.push(Instruction::I64Load(MemArg {
+            offset: 8,
+            align: 3,
+            memory_index: 0,
+        }));
         self.body.push(Instruction::I64GeS);
         let depth = self.block_depth.saturating_sub(break_at);
         self.body.push(Instruction::BrIf(depth));
@@ -1092,9 +1228,21 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Add);
         self.body.push(Instruction::I32WrapI64);
         match elem_ty {
-            WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-            WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-            WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+            WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            })),
+            WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                offset: 0,
+                align: 2,
+                memory_index: 0,
+            })),
+            WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            })),
         }
         self.body.push(match elem_ty {
             WasTy::F64 => Instruction::LocalSet(item_local),
@@ -1194,7 +1342,9 @@ impl<'a> FuncEmitter<'a> {
         // block $handler (result [i64, i64]) — su label (continuation, tras su End)
         // es donde aterriza el catch con el payload [msg, span].
         self.block_depth += 1;
-        self.body.push(Instruction::Block(BlockType::FunctionType(self.eh_handler_ty)));
+        self.body.push(Instruction::Block(BlockType::FunctionType(
+            self.eh_handler_ty,
+        )));
         let handler = self.block_depth;
         // try_table: captura nuestro tag → br al label del $handler con [msg, span]
         // El label del catch NO cuenta el try_table como scope (br 0 = $handler).
@@ -1255,7 +1405,8 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    fn emit_if(&mut self, i: &IfStatement) -> ClsResult<()> {        self.emit_expression(&i.condition)?;
+    fn emit_if(&mut self, i: &IfStatement) -> ClsResult<()> {
+        self.emit_expression(&i.condition)?;
         self.block_depth += 1;
         self.body.push(Instruction::If(BlockType::Empty));
         for s in &i.then_block.statements {
@@ -1429,7 +1580,11 @@ impl<'a> FuncEmitter<'a> {
                     )
                 })?;
                 let ti = self.fn_table_idx[name];
-                let captures = self.arrow_captures.get(&a.span).cloned().unwrap_or_default();
+                let captures = self
+                    .arrow_captures
+                    .get(&a.span)
+                    .cloned()
+                    .unwrap_or_default();
                 // Bloque de capturas `[n, v1, v2, ...]` (se evalúa primero).
                 let cap_ptr = self.fresh_local();
                 if captures.is_empty() {
@@ -1455,7 +1610,11 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Add);
                         self.body.push(Instruction::I32WrapI64);
                         self.emit_ident_ptr(cap);
-                        self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                        self.body.push(Instruction::I64Store(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        }));
                     }
                 }
                 self.body.push(Instruction::I64Const(ti as i64));
@@ -1478,7 +1637,10 @@ impl<'a> FuncEmitter<'a> {
                     Ok(())
                 } else {
                     Err(crate::error::ClsError::compile_at(
-                        &format!("'{}' no existe o no se exporta en '{}'", member, ns),
+                        &format!(
+                            "El miembro '{}' no existe o no se exporta en el módulo '{}' (fase de emisión).",
+                            member, ns
+                        ),
                         span,
                     ))
                 }
@@ -1490,7 +1652,10 @@ impl<'a> FuncEmitter<'a> {
     fn unsupported_expr(&self, expr: &Expression) -> crate::error::ClsError {
         let span = expr_span(expr);
         crate::error::ClsError::compile_at(
-            &format!("Expresión no soportada por el JIT (subconjunto): {}", expr_display(expr)),
+            &format!(
+                "El JIT (subconjunto WASM) aún no soporta esta expresión: `{}`",
+                expr_display(expr)
+            ),
             &span,
         )
     }
@@ -1498,10 +1663,12 @@ impl<'a> FuncEmitter<'a> {
     fn emit_literal(&mut self, l: &Literal) -> ClsResult<()> {
         match &l.kind {
             LiteralKind::Int(v) => self.body.push(Instruction::I64Const(*v)),
-            LiteralKind::Float(v) => self.body.push(Instruction::F64Const(Ieee64::new(v.to_bits()))),
-            LiteralKind::Bool(v) => {
-                self.body.push(Instruction::I32Const(if *v { 1 } else { 0 }))
-            }
+            LiteralKind::Float(v) => self
+                .body
+                .push(Instruction::F64Const(Ieee64::new(v.to_bits()))),
+            LiteralKind::Bool(v) => self
+                .body
+                .push(Instruction::I32Const(if *v { 1 } else { 0 })),
             LiteralKind::Char(c) => self.body.push(Instruction::I32Const(*c as u32 as i32)),
             LiteralKind::String(s) => {
                 let idx = self.intern_string(s);
@@ -1538,7 +1705,10 @@ impl<'a> FuncEmitter<'a> {
         match b.op {
             Plus if lt == WasTy::I64 && rt == WasTy::I64 => {
                 let is_str = |e: &Expression| {
-                    self.types.get(&expr_span(e)).map(|t| *t == Type::String).unwrap_or(false)
+                    self.types
+                        .get(&expr_span(e))
+                        .map(|t| *t == Type::String)
+                        .unwrap_or(false)
                 };
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;
@@ -1611,7 +1781,8 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;
                 self.host.call(HostFn::Fmod, &mut self.body);
-            }            Percent => {
+            }
+            Percent => {
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;
                 self.div_zero_trap(&b.span)?;
@@ -1673,7 +1844,8 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&b.left)?;
                 self.body.push(Instruction::I32Eqz);
                 self.block_depth += 1;
-                self.body.push(Instruction::If(BlockType::Result(ValType::I32)));
+                self.body
+                    .push(Instruction::If(BlockType::Result(ValType::I32)));
                 self.body.push(Instruction::I32Const(0));
                 self.body.push(Instruction::Else);
                 self.emit_expression(&b.right)?;
@@ -1683,7 +1855,8 @@ impl<'a> FuncEmitter<'a> {
             Or => {
                 self.emit_expression(&b.left)?;
                 self.block_depth += 1;
-                self.body.push(Instruction::If(BlockType::Result(ValType::I32)));
+                self.body
+                    .push(Instruction::If(BlockType::Result(ValType::I32)));
                 self.body.push(Instruction::I32Const(1));
                 self.body.push(Instruction::Else);
                 self.emit_expression(&b.right)?;
@@ -1709,7 +1882,8 @@ impl<'a> FuncEmitter<'a> {
                         let matches = builtin_type_matches(&lt, &t);
                         self.emit_expression(&b.left)?;
                         self.body.push(Instruction::Drop);
-                        self.body.push(Instruction::I32Const(if matches { 1 } else { 0 }));
+                        self.body
+                            .push(Instruction::I32Const(if matches { 1 } else { 0 }));
                         return Ok(());
                     }
                 }
@@ -1722,7 +1896,11 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::LocalSet(obj_tmp));
                         self.body.push(Instruction::LocalGet(obj_tmp));
                         self.body.push(Instruction::I32WrapI64);
-                        self.body.push(Instruction::I64Load(MemArg { offset: 8, align: 3, memory_index: 0 }));
+                        self.body.push(Instruction::I64Load(MemArg {
+                            offset: 8,
+                            align: 3,
+                            memory_index: 0,
+                        }));
                         self.body.push(Instruction::LocalSet(cid_tmp));
                         let mut ids = vec![info.class_id];
                         for (_, other) in self.class_defs.iter() {
@@ -1767,7 +1945,11 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::I64ShrU);
                 } else {
                     self.body.push(Instruction::I32WrapI64);
-                    self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                    self.body.push(Instruction::I64Load(MemArg {
+                        offset: 0,
+                        align: 3,
+                        memory_index: 0,
+                    }));
                 }
                 self.body.push(Instruction::I64Const(def_id as i64));
                 self.body.push(Instruction::I64Eq);
@@ -1782,10 +1964,12 @@ impl<'a> FuncEmitter<'a> {
                     _ => self.body.push(Instruction::I64DivS),
                 }
             }
-            op => return Err(crate::error::ClsError::CompileError(format!(
-                "Operador {} no soportado por el JIT",
-                op
-            ))),
+            op => {
+                return Err(crate::error::ClsError::CompileError(format!(
+                    "Operador {} no soportado por el JIT",
+                    op
+                )))
+            }
         }
         Ok(())
     }
@@ -1974,10 +2158,16 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_ident_load(name);
                 Ok(())
             }
-            Expression::Index(i) if matches!(self.types.get(&expr_span(&i.object)), Some(Type::Record(_, _))) => {
+            Expression::Index(i)
+                if matches!(
+                    self.types.get(&expr_span(&i.object)),
+                    Some(Type::Record(_, _))
+                ) =>
+            {
                 if is_compound(op) {
                     return Err(crate::error::ClsError::CompileError(
-                        "Operadores compuestos (+=) sobre registros no soportados en el JIT".to_string(),
+                        "Operadores compuestos (+=) sobre registros no soportados en el JIT"
+                            .to_string(),
                     ));
                 }
                 // r["key"] = val → record_set(ptr, key, val_bits)
@@ -2001,7 +2191,11 @@ impl<'a> FuncEmitter<'a> {
                     WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
                     WasTy::I64 => {}
                 }
-                let cls_t = self.types.get(&expr_span(&a.value)).cloned().unwrap_or(Type::Any);
+                let cls_t = self
+                    .types
+                    .get(&expr_span(&a.value))
+                    .cloned()
+                    .unwrap_or(Type::Any);
                 self.body.push(Instruction::I64Const(arr_kind_code(&cls_t)));
                 self.host.call(HostFn::RecordSet, &mut self.body);
                 // write-back del ptr (el record pudo crecer y reallocarse)
@@ -2017,7 +2211,9 @@ impl<'a> FuncEmitter<'a> {
                 });
                 Ok(())
             }
-            Expression::Index(i) if matches!(self.types.get(&expr_span(&i.object)), Some(Type::Shape(_))) => {
+            Expression::Index(i)
+                if matches!(self.types.get(&expr_span(&i.object)), Some(Type::Shape(_))) =>
+            {
                 if is_compound(op) {
                     return Err(crate::error::ClsError::CompileError(
                         "Operadores compuestos (+=) sobre records con shape no soportados en el JIT".to_string(),
@@ -2025,7 +2221,10 @@ impl<'a> FuncEmitter<'a> {
                 }
                 // r["campo"] = val → store por offset (solo campos existentes).
                 let shape = self.types.get(&expr_span(&i.object)).cloned();
-                let fields = match &shape { Some(Type::Shape(f)) => f.clone(), _ => return Ok(()) };
+                let fields = match &shape {
+                    Some(Type::Shape(f)) => f.clone(),
+                    _ => return Ok(()),
+                };
                 let key = match &*i.index {
                     Expression::Literal(l) if matches!(l.kind, LiteralKind::String(_)) => {
                         match &l.kind { LiteralKind::String(k) => k.clone(), _ => String::new() }
@@ -2056,9 +2255,21 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I32WrapI64);
                 self.body.push(Instruction::LocalGet(val_tmp));
                 match w {
-                    WasTy::F64 => self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                    WasTy::I32 => self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                    WasTy::I64 => self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                    WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
+                        offset: 0,
+                        align: 3,
+                        memory_index: 0,
+                    })),
+                    WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
+                        offset: 0,
+                        align: 2,
+                        memory_index: 0,
+                    })),
+                    WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
+                        offset: 0,
+                        align: 3,
+                        memory_index: 0,
+                    })),
                 }
                 self.body.push(Instruction::LocalGet(ptr_tmp));
                 Ok(())
@@ -2139,15 +2350,19 @@ impl<'a> FuncEmitter<'a> {
                                 "Operadores compuestos sobre campos de clase no soportados en el JIT (B3)".to_string(),
                             ));
                         }
-                        let fidx = info.fields.iter().position(|(n, _, _, _)| *n == m.member).ok_or_else(|| {
-                            crate::error::ClsError::CompileError(format!(
-                                "El campo '{}' no existe en la clase '{}'",
-                                m.member, name
-                            ))
-                        })?;
-                    let (_, _t, w, off) = &info.fields[fidx];
-                    let w = *w;
-                    let off = *off;
+                        let fidx = info
+                            .fields
+                            .iter()
+                            .position(|(n, _, _, _)| *n == m.member)
+                            .ok_or_else(|| {
+                                crate::error::ClsError::CompileError(format!(
+                                    "El campo '{}' no existe en la clase '{}'",
+                                    m.member, name
+                                ))
+                            })?;
+                        let (_, _t, w, off) = &info.fields[fidx];
+                        let w = *w;
+                        let off = *off;
                         let obj_tmp = self.fresh_local();
                         let val_tmp = self.fresh_local_ty(w);
                         self.emit_expression(&m.object)?;
@@ -2168,9 +2383,21 @@ impl<'a> FuncEmitter<'a> {
                             WasTy::I64 => Instruction::LocalGet(val_tmp),
                         });
                         match w {
-                            WasTy::F64 => self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                            WasTy::I32 => self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                            WasTy::I64 => self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                            WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
+                                offset: 0,
+                                align: 3,
+                                memory_index: 0,
+                            })),
+                            WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
+                                offset: 0,
+                                align: 2,
+                                memory_index: 0,
+                            })),
+                            WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
+                                offset: 0,
+                                align: 3,
+                                memory_index: 0,
+                            })),
                         }
                         self.body.push(match w {
                             WasTy::F64 => Instruction::LocalGet(val_tmp),
@@ -2214,9 +2441,21 @@ impl<'a> FuncEmitter<'a> {
                         WasTy::I64 => Instruction::LocalGet(val_tmp),
                     });
                     match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                        WasTy::I32 => self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                        WasTy::I64 => self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                        WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        })),
+                        WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
+                            offset: 0,
+                            align: 2,
+                            memory_index: 0,
+                        })),
+                        WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        })),
                     }
                     self.body.push(match w {
                         WasTy::F64 => Instruction::LocalGet(val_tmp),
@@ -2233,7 +2472,11 @@ impl<'a> FuncEmitter<'a> {
 
     /// `.join(sep)` sobre una tupla: unroll estático (slots conocidos en compile-time).
     fn emit_tuple_join(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
-        let obj_ty = self.types.get(&expr_span(&member.object)).cloned().unwrap_or(Type::Any);
+        let obj_ty = self
+            .types
+            .get(&expr_span(&member.object))
+            .cloned()
+            .unwrap_or(Type::Any);
         let slots = match &obj_ty {
             Type::Tuple(s) => s.clone(),
             _ => vec![],
@@ -2262,9 +2505,21 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Add);
             self.body.push(Instruction::I32WrapI64);
             match slot_ty {
-                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
+                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                    offset: 0,
+                    align: 2,
+                    memory_index: 0,
+                })),
+                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
             }
             match (slot_ty, slot) {
                 (WasTy::F64, _) => self.host.call(HostFn::StrFloat, &mut self.body),
@@ -2498,7 +2753,8 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Const(info.def_id as i64));
                 self.emit_i64_store(0);
                 self.body.push(Instruction::LocalGet(ptr));
-                self.body.push(Instruction::I64Const(info.fields.len() as i64));
+                self.body
+                    .push(Instruction::I64Const(info.fields.len() as i64));
                 self.emit_i64_store(8);
                 for (i, (_, _, w)) in info.fields.iter().enumerate() {
                     if i < c.args.len() {
@@ -2525,9 +2781,21 @@ impl<'a> FuncEmitter<'a> {
                         WasTy::I64 => Instruction::LocalGet(val_tmp),
                     });
                     match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                        WasTy::I32 => self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                        WasTy::I64 => self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                        WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        })),
+                        WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
+                            offset: 0,
+                            align: 2,
+                            memory_index: 0,
+                        })),
+                        WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        })),
                     }
                 }
                 self.body.push(Instruction::LocalGet(ptr));
@@ -2544,7 +2812,8 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::LocalSet(obj));
                 // vtable_ptr[0] = vtable_start, class_id[8] = id
                 self.body.push(Instruction::LocalGet(obj));
-                self.body.push(Instruction::I64Const(info.vtable_start as i64));
+                self.body
+                    .push(Instruction::I64Const(info.vtable_start as i64));
                 self.emit_i64_store(0);
                 self.body.push(Instruction::LocalGet(obj));
                 self.body.push(Instruction::I64Const(info.class_id as i64));
@@ -2556,14 +2825,28 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::I64Add);
                     self.body.push(Instruction::I32WrapI64);
                     match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Const(Ieee64::new(0.0f64.to_bits()))),
+                        WasTy::F64 => self
+                            .body
+                            .push(Instruction::F64Const(Ieee64::new(0.0f64.to_bits()))),
                         WasTy::I32 => self.body.push(Instruction::I32Const(0)),
                         WasTy::I64 => self.body.push(Instruction::I64Const(0)),
                     }
                     match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                        WasTy::I32 => self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                        WasTy::I64 => self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                        WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        })),
+                        WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
+                            offset: 0,
+                            align: 2,
+                            memory_index: 0,
+                        })),
+                        WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        })),
                     }
                 }
                 // call Clase::__ctor (o el del padre si no se define) con me
@@ -2599,7 +2882,9 @@ impl<'a> FuncEmitter<'a> {
             if let Expression::Identifier(sn, _) = &*member.object {
                 if sn == "super" {
                     if let Some(cur) = &self.current_class {
-                        if let Some(parent) = self.class_defs.get(cur).and_then(|i| i.parent.clone()) {
+                        if let Some(parent) =
+                            self.class_defs.get(cur).and_then(|i| i.parent.clone())
+                        {
                             let key = format!("{}::{}", parent, member.member);
                             if let Some(idx) = self.func_indexes.get(&key) {
                                 self.body.push(Instruction::LocalGet(0)); // me
@@ -2628,7 +2913,11 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(());
                     }
                     if member.member == "stringify" {
-                        let t = self.types.get(&expr_span(&c.args[0])).cloned().unwrap_or(Type::Any);
+                        let t = self
+                            .types
+                            .get(&expr_span(&c.args[0]))
+                            .cloned()
+                            .unwrap_or(Type::Any);
                         // Objeto de clase: __toJson si lo define; si no → "null" (paridad walker).
                         if let Type::Named(cn, _) = &t {
                             if self.class_defs.contains_key(cn.as_str()) {
@@ -2674,7 +2963,11 @@ impl<'a> FuncEmitter<'a> {
                     return self.emit_http_call(member, c);
                 }
             }
-            let obj_ty = self.types.get(&expr_span(&member.object)).cloned().unwrap_or(Type::Any);
+            let obj_ty = self
+                .types
+                .get(&expr_span(&member.object))
+                .cloned()
+                .unwrap_or(Type::Any);
             match obj_ty {
                 Type::Tuple(_) => match member.member.as_str() {
                     "join" => return self.emit_tuple_join(member, c),
@@ -2799,12 +3092,20 @@ impl<'a> FuncEmitter<'a> {
                         "has" => {
                             // Compile-time: si la clave (literal) está en el shape.
                             let has = match &c.args[0] {
-                                Expression::Literal(l) if matches!(l.kind, LiteralKind::String(_)) => {
-                                    match &l.kind { LiteralKind::String(k) => fields.iter().any(|(n, _)| *n == *k), _ => false }
+                                Expression::Literal(l)
+                                    if matches!(l.kind, LiteralKind::String(_)) =>
+                                {
+                                    match &l.kind {
+                                        LiteralKind::String(k) => {
+                                            fields.iter().any(|(n, _)| *n == *k)
+                                        }
+                                        _ => false,
+                                    }
                                 }
                                 _ => true, // clave dinámica → se asume que puede existir
                             };
-                            self.body.push(Instruction::I32Const(if has { 1 } else { 0 }));
+                            self.body
+                                .push(Instruction::I32Const(if has { 1 } else { 0 }));
                             return Ok(());
                         }
                         "keys" => {
@@ -2835,7 +3136,11 @@ impl<'a> FuncEmitter<'a> {
                                 self.body.push(Instruction::I32WrapI64);
                                 let s = self.intern_string(k);
                                 self.emit_load_str(s);
-                                self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                                self.body.push(Instruction::I64Store(MemArg {
+                                    offset: 0,
+                                    align: 3,
+                                    memory_index: 0,
+                                }));
                             }
                             self.body.push(Instruction::LocalGet(ptr));
                             return Ok(());
@@ -2875,9 +3180,21 @@ impl<'a> FuncEmitter<'a> {
                                 self.body.push(Instruction::I64Add);
                                 self.body.push(Instruction::I32WrapI64);
                                 match *w {
-                                    WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                                    WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                                    WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                                    WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                                        offset: 0,
+                                        align: 3,
+                                        memory_index: 0,
+                                    })),
+                                    WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                                        offset: 0,
+                                        align: 2,
+                                        memory_index: 0,
+                                    })),
+                                    WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                                        offset: 0,
+                                        align: 3,
+                                        memory_index: 0,
+                                    })),
                                 }
                                 // bits a i64 (f64 → reinterpret; i32 → extend)
                                 match *w {
@@ -2885,7 +3202,11 @@ impl<'a> FuncEmitter<'a> {
                                     WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
                                     WasTy::I64 => {}
                                 }
-                                self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                                self.body.push(Instruction::I64Store(MemArg {
+                                    offset: 0,
+                                    align: 3,
+                                    memory_index: 0,
+                                }));
                             }
                             self.body.push(Instruction::LocalGet(arr));
                             return Ok(());
@@ -2906,9 +3227,15 @@ impl<'a> FuncEmitter<'a> {
                                 ))
                             })? as u32;
                         let method_key = format!("{}::{}", name, member.member);
-                        let ty = self.method_type_indexes.get(&method_key).copied().ok_or_else(|| {
-                            crate::error::ClsError::CompileError("Método sin tipo WASM".to_string())
-                        })?;
+                        let ty = self
+                            .method_type_indexes
+                            .get(&method_key)
+                            .copied()
+                            .ok_or_else(|| {
+                                crate::error::ClsError::CompileError(
+                                    "Método sin tipo WASM".to_string(),
+                                )
+                            })?;
                         let obj_tmp = self.fresh_local();
                         self.emit_expression(&member.object)?;
                         self.body.push(Instruction::LocalSet(obj_tmp));
@@ -2919,11 +3246,18 @@ impl<'a> FuncEmitter<'a> {
                         // slot = vtable(obj[0]) + method_slot
                         self.body.push(Instruction::LocalGet(obj_tmp));
                         self.body.push(Instruction::I32WrapI64);
-                        self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                        self.body.push(Instruction::I64Load(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        }));
                         self.body.push(Instruction::I64Const(method_slot as i64));
                         self.body.push(Instruction::I64Add);
                         self.body.push(Instruction::I32WrapI64);
-                        self.body.push(Instruction::CallIndirect { type_index: ty, table_index: 0 });
+                        self.body.push(Instruction::CallIndirect {
+                            type_index: ty,
+                            table_index: 0,
+                        });
                         return Ok(());
                     }
                     return Err(self.unsupported_expr(&Expression::Call(c.clone())));
@@ -2990,8 +3324,7 @@ impl<'a> FuncEmitter<'a> {
                         let s = self.intern_string("error");
                         self.emit_load_str(s);
                     }
-                    let packed =
-                        ((c.span.start_line as i64) << 32) | (c.span.start_col as i64);
+                    let packed = ((c.span.start_line as i64) << 32) | (c.span.start_col as i64);
                     self.body.push(Instruction::I64Const(packed));
                     self.body.push(Instruction::Throw(self.tag_idx));
                     return Ok(());
@@ -3054,7 +3387,9 @@ impl<'a> FuncEmitter<'a> {
                     // type_name del walker: clase→"Object", struct→"Struct", enum→"Enum".
                     let name = match &t {
                         Type::Named(cn, _) if self.class_defs.contains_key(cn.as_str()) => "Object",
-                        Type::Named(cn, _) if self.struct_defs.contains_key(cn.as_str()) => "Struct",
+                        Type::Named(cn, _) if self.struct_defs.contains_key(cn.as_str()) => {
+                            "Struct"
+                        }
                         Type::Named(cn, _) if self.enum_defs.contains_key(cn.as_str()) => "Enum",
                         Type::Named(_, _) => "Object",
                         _ => type_name_str(&t),
@@ -3091,10 +3426,13 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::Call(fidx));
                 return Ok(());
             }
-            return Err(crate::error::ClsError::CompileError(format!(
-                "'{}' no existe o no se exporta en '{}'",
-                member, ns
-            )));
+            return Err(crate::error::ClsError::compile_at(
+                &format!(
+                    "El miembro '{}' no existe o no se exporta en el módulo '{}' (fase de emisión).",
+                    member, ns
+                ),
+                &expr_span(&c.callee),
+            ));
         }
         if let Expression::Identifier(name, _) = &*c.callee {
             if let Some(fidx) = self.func_indexes.get(name).copied() {
@@ -3161,7 +3499,11 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Const(8));
             self.body.push(Instruction::I64Add);
             self.body.push(Instruction::I32WrapI64);
-            self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+            self.body.push(Instruction::I64Load(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
             let caps_tmp = self.fresh_local();
             self.body.push(Instruction::LocalSet(caps_tmp));
             // push [capturas, args..., tabla_idx]
@@ -3177,9 +3519,16 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Const(1));
             self.body.push(Instruction::I64ShrU);
             self.body.push(Instruction::I32WrapI64);
-            self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+            self.body.push(Instruction::I64Load(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
             self.body.push(Instruction::I32WrapI64);
-            self.body.push(Instruction::CallIndirect { type_index: tidx_closure, table_index: 0 });
+            self.body.push(Instruction::CallIndirect {
+                type_index: tidx_closure,
+                table_index: 0,
+            });
             self.body.push(Instruction::Else);
             // Rama simple (par): tabla_idx = v>>1; push [args..., tabla_idx].
             for arg in &c.args {
@@ -3192,7 +3541,10 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Const(1));
             self.body.push(Instruction::I64ShrU);
             self.body.push(Instruction::I32WrapI64);
-            self.body.push(Instruction::CallIndirect { type_index: tidx_simple, table_index: 0 });
+            self.body.push(Instruction::CallIndirect {
+                type_index: tidx_simple,
+                table_index: 0,
+            });
             self.body.push(Instruction::End);
             self.block_depth -= 1;
             return Ok(());
@@ -3217,11 +3569,18 @@ impl<'a> FuncEmitter<'a> {
                         // vtable(obj[0]) + slot
                         self.body.push(Instruction::LocalGet(obj_tmp));
                         self.body.push(Instruction::I32WrapI64);
-                        self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                        self.body.push(Instruction::I64Load(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        }));
                         self.body.push(Instruction::I64Const(slot as i64));
                         self.body.push(Instruction::I64Add);
                         self.body.push(Instruction::I32WrapI64);
-                        self.body.push(Instruction::CallIndirect { type_index: ty, table_index: 0 });
+                        self.body.push(Instruction::CallIndirect {
+                            type_index: ty,
+                            table_index: 0,
+                        });
                         return Ok(true);
                     }
                 }
@@ -3235,7 +3594,11 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Const(offset));
         self.body.push(Instruction::I64Add);
         self.body.push(Instruction::I32WrapI64);
-        self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+        self.body.push(Instruction::I64Load(MemArg {
+            offset: 0,
+            align: 3,
+            memory_index: 0,
+        }));
         Ok(())
     }
 
@@ -3279,9 +3642,21 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I32WrapI64);
             let w = was_type(slot).unwrap_or(WasTy::I64);
             match w {
-                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
+                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                    offset: 0,
+                    align: 2,
+                    memory_index: 0,
+                })),
+                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
             }
             let val_tmp = self.fresh_local_ty(w);
             self.body.push(match w {
@@ -3361,7 +3736,11 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Add);
                 self.body.push(Instruction::I64Add);
                 self.body.push(Instruction::I32WrapI64);
-                self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                self.body.push(Instruction::I64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                }));
                 let val_tmp = self.fresh_local();
                 self.body.push(Instruction::LocalSet(val_tmp));
                 self.body.push(Instruction::LocalGet(ptr));
@@ -3372,7 +3751,11 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Add);
                 self.body.push(Instruction::I64Add);
                 self.body.push(Instruction::I32WrapI64);
-                self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                self.body.push(Instruction::I64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                }));
                 let tag_tmp = self.fresh_local();
                 self.body.push(Instruction::LocalSet(tag_tmp));
                 self.body.push(Instruction::LocalGet(val_tmp));
@@ -3482,7 +3865,11 @@ impl<'a> FuncEmitter<'a> {
         }
         // Los contenedores (array/record/cmx/tuple) los formatea el match de tipos.
         if let Some(w) = self.module_call_ret(arg) {
-            let t = self.types.get(&expr_span(arg)).cloned().unwrap_or(Type::Any);
+            let t = self
+                .types
+                .get(&expr_span(arg))
+                .cloned()
+                .unwrap_or(Type::Any);
             let is_container = matches!(
                 t,
                 Type::Array(_) | Type::Record(_, _) | Type::Cmx | Type::Tuple(_)
@@ -3493,14 +3880,14 @@ impl<'a> FuncEmitter<'a> {
                         self.host.call(HostFn::PrintFloat, &mut self.body);
                         return Ok(());
                     }
-                WasTy::I32 => {
-                    self.host.call(HostFn::PrintBool, &mut self.body);
-                    return Ok(());
-                }
-                _ => {
-                    self.host.call(HostFn::PrintInt, &mut self.body);
-                    return Ok(());
-                }
+                    WasTy::I32 => {
+                        self.host.call(HostFn::PrintBool, &mut self.body);
+                        return Ok(());
+                    }
+                    _ => {
+                        self.host.call(HostFn::PrintInt, &mut self.body);
+                        return Ok(());
+                    }
                 }
             }
         }
@@ -3522,7 +3909,11 @@ impl<'a> FuncEmitter<'a> {
                 // Formatear `[e1, e2, ...]` como el walker (evita imprimir el ptr).
                 let w = was_type(&*elem)?;
                 let kind = arr_kind_code(&*elem);
-                let es = if matches!(*elem, Type::Cmx) { 16 } else { elem_size_bytes(w) };
+                let es = if matches!(*elem, Type::Cmx) {
+                    16
+                } else {
+                    elem_size_bytes(w)
+                };
                 self.body.push(Instruction::I64Const(es));
                 self.body.push(Instruction::I64Const(kind));
                 self.host.call(HostFn::ArrToString, &mut self.body);
@@ -3570,11 +3961,27 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::I64Add);
                     self.body.push(Instruction::I32WrapI64);
                     match *w {
-                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        })),
+                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                            offset: 0,
+                            align: 2,
+                            memory_index: 0,
+                        })),
+                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        })),
                     }
-                    let cls_t = fields.iter().find(|(n, _)| *n == *fname).map(|(_, t)| t.clone()).unwrap_or(Type::Any);
+                    let cls_t = fields
+                        .iter()
+                        .find(|(n, _)| *n == *fname)
+                        .map(|(_, t)| t.clone())
+                        .unwrap_or(Type::Any);
                     // Los strings de un shape se imprimen con comillas (paridad walker).
                     if matches!(cls_t, Type::String) {
                         let q = self.intern_string("\"");
@@ -3623,70 +4030,82 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::Call(*idx));
                     self.host.call(HostFn::PrintStr, &mut self.body);
                 } else {
-                // Formatear `<Clase {campo: valor, ...}>` como el walker.
-                let info = self.class_defs[&name].clone();
-                let ptr = self.fresh_local();
-                self.body.push(Instruction::LocalSet(ptr));
-                let open = format!("<{} {{", name);
-                let s = self.intern_string(&open);
-                self.emit_load_str(s);
-                let res = self.fresh_local();
-                self.body.push(Instruction::LocalSet(res));
-                for (i, (fname, t_cls, w, off)) in info.fields.iter().enumerate() {
-                    let label = format!("{}: ", fname);
-                    let ls = self.intern_string(&label);
-                    self.emit_load_str(ls);
-                    let lt = self.fresh_local();
-                    self.body.push(Instruction::LocalSet(lt));
-                    self.body.push(Instruction::LocalGet(res));
-                    self.body.push(Instruction::LocalGet(lt));
-                    self.host.call(HostFn::StrConcat, &mut self.body);
+                    // Formatear `<Clase {campo: valor, ...}>` como el walker.
+                    let info = self.class_defs[&name].clone();
+                    let ptr = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(ptr));
+                    let open = format!("<{} {{", name);
+                    let s = self.intern_string(&open);
+                    self.emit_load_str(s);
+                    let res = self.fresh_local();
                     self.body.push(Instruction::LocalSet(res));
-                    // valor
-                    self.body.push(Instruction::LocalGet(ptr));
-                    self.body.push(Instruction::I64Const(*off));
-                    self.body.push(Instruction::I64Add);
-                    self.body.push(Instruction::I32WrapI64);
-                    match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                    }
-                    if matches!(t_cls, Type::String) {
-                        // el valor ya es un string (ptr<<32|len): concatenar directo
-                    } else {
-                        match w {
-                            WasTy::F64 => self.host.call(HostFn::StrFloat, &mut self.body),
-                            _ => self.host.call(HostFn::StrInt, &mut self.body),
-                        }
-                    }
-                    let sv = self.fresh_local();
-                    self.body.push(Instruction::LocalSet(sv));
-                    self.body.push(Instruction::LocalGet(res));
-                    self.body.push(Instruction::LocalGet(sv));
-                    self.host.call(HostFn::StrConcat, &mut self.body);
-                    self.body.push(Instruction::LocalSet(res));
-                    if i < info.fields.len() - 1 {
-                        let sep = self.intern_string(", ");
-                        self.emit_load_str(sep);
-                        let st = self.fresh_local();
-                        self.body.push(Instruction::LocalSet(st));
+                    for (i, (fname, t_cls, w, off)) in info.fields.iter().enumerate() {
+                        let label = format!("{}: ", fname);
+                        let ls = self.intern_string(&label);
+                        self.emit_load_str(ls);
+                        let lt = self.fresh_local();
+                        self.body.push(Instruction::LocalSet(lt));
                         self.body.push(Instruction::LocalGet(res));
-                        self.body.push(Instruction::LocalGet(st));
+                        self.body.push(Instruction::LocalGet(lt));
                         self.host.call(HostFn::StrConcat, &mut self.body);
                         self.body.push(Instruction::LocalSet(res));
+                        // valor
+                        self.body.push(Instruction::LocalGet(ptr));
+                        self.body.push(Instruction::I64Const(*off));
+                        self.body.push(Instruction::I64Add);
+                        self.body.push(Instruction::I32WrapI64);
+                        match w {
+                            WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                                offset: 0,
+                                align: 3,
+                                memory_index: 0,
+                            })),
+                            WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                                offset: 0,
+                                align: 2,
+                                memory_index: 0,
+                            })),
+                            WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                                offset: 0,
+                                align: 3,
+                                memory_index: 0,
+                            })),
+                        }
+                        if matches!(t_cls, Type::String) {
+                            // el valor ya es un string (ptr<<32|len): concatenar directo
+                        } else {
+                            match w {
+                                WasTy::F64 => self.host.call(HostFn::StrFloat, &mut self.body),
+                                _ => self.host.call(HostFn::StrInt, &mut self.body),
+                            }
+                        }
+                        let sv = self.fresh_local();
+                        self.body.push(Instruction::LocalSet(sv));
+                        self.body.push(Instruction::LocalGet(res));
+                        self.body.push(Instruction::LocalGet(sv));
+                        self.host.call(HostFn::StrConcat, &mut self.body);
+                        self.body.push(Instruction::LocalSet(res));
+                        if i < info.fields.len() - 1 {
+                            let sep = self.intern_string(", ");
+                            self.emit_load_str(sep);
+                            let st = self.fresh_local();
+                            self.body.push(Instruction::LocalSet(st));
+                            self.body.push(Instruction::LocalGet(res));
+                            self.body.push(Instruction::LocalGet(st));
+                            self.host.call(HostFn::StrConcat, &mut self.body);
+                            self.body.push(Instruction::LocalSet(res));
+                        }
                     }
-                }
-                let close = self.intern_string("}>");
-                self.emit_load_str(close);
-                let ct = self.fresh_local();
-                self.body.push(Instruction::LocalSet(ct));
-                self.body.push(Instruction::LocalGet(res));
-                self.body.push(Instruction::LocalGet(ct));
-                self.host.call(HostFn::StrConcat, &mut self.body);
-                self.body.push(Instruction::LocalSet(res));
-                self.body.push(Instruction::LocalGet(res));
-                self.host.call(HostFn::PrintStr, &mut self.body);
+                    let close = self.intern_string("}>");
+                    self.emit_load_str(close);
+                    let ct = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(ct));
+                    self.body.push(Instruction::LocalGet(res));
+                    self.body.push(Instruction::LocalGet(ct));
+                    self.host.call(HostFn::StrConcat, &mut self.body);
+                    self.body.push(Instruction::LocalSet(res));
+                    self.body.push(Instruction::LocalGet(res));
+                    self.host.call(HostFn::PrintStr, &mut self.body);
                 }
             }
             Type::Cmx => {
@@ -3746,7 +4165,8 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Const(0));
                 self.body.push(Instruction::I64Eq);
                 self.block_depth += 1;
-                self.body.push(Instruction::If(BlockType::Result(ValType::I64)));
+                self.body
+                    .push(Instruction::If(BlockType::Result(ValType::I64)));
                 let s0 = self.intern_string(&variants[0]);
                 self.emit_load_str(s0);
                 if n > 1 {
@@ -3760,7 +4180,8 @@ impl<'a> FuncEmitter<'a> {
                             self.body.push(Instruction::I64Const(i as i64));
                             self.body.push(Instruction::I64Eq);
                             self.block_depth += 1;
-                            self.body.push(Instruction::If(BlockType::Result(ValType::I64)));
+                            self.body
+                                .push(Instruction::If(BlockType::Result(ValType::I64)));
                             let s = self.intern_string(variant);
                             self.emit_load_str(s);
                         }
@@ -3778,14 +4199,12 @@ impl<'a> FuncEmitter<'a> {
                 self.block_depth -= 1;
                 return Ok(());
             }
-            Type::Union(_) => {
-                match union_base(&t) {
-                    Type::String => self.host.call(HostFn::PrintStr, &mut self.body),
-                    Type::Float => self.host.call(HostFn::PrintFloat, &mut self.body),
-                    Type::Bool => self.host.call(HostFn::PrintBool, &mut self.body),
-                    _ => self.host.call(HostFn::PrintInt, &mut self.body),
-                }
-            }
+            Type::Union(_) => match union_base(&t) {
+                Type::String => self.host.call(HostFn::PrintStr, &mut self.body),
+                Type::Float => self.host.call(HostFn::PrintFloat, &mut self.body),
+                Type::Bool => self.host.call(HostFn::PrintBool, &mut self.body),
+                _ => self.host.call(HostFn::PrintInt, &mut self.body),
+            },
             Type::Literal(l) => match l {
                 LitVal::Str(_) => self.host.call(HostFn::PrintStr, &mut self.body),
                 LitVal::Float(_) => self.host.call(HostFn::PrintFloat, &mut self.body),
@@ -3821,9 +4240,21 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Add);
             self.body.push(Instruction::I32WrapI64);
             match w {
-                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
+                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                    offset: 0,
+                    align: 2,
+                    memory_index: 0,
+                })),
+                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
             }
             if matches!(t_cls, Type::String) {
                 let q = self.intern_string("\"");
@@ -3916,7 +4347,11 @@ impl<'a> FuncEmitter<'a> {
                 // `[e1, e2, ...]` como el walker (paridad en interpolación).
                 let w = was_type(&*elem)?;
                 let kind = arr_kind_code(&*elem);
-                let es = if matches!(*elem, Type::Cmx) { 16 } else { elem_size_bytes(w) };
+                let es = if matches!(*elem, Type::Cmx) {
+                    16
+                } else {
+                    elem_size_bytes(w)
+                };
                 self.body.push(Instruction::I64Const(es));
                 self.body.push(Instruction::I64Const(kind));
                 self.host.call(HostFn::ArrToString, &mut self.body);
@@ -3964,7 +4399,11 @@ impl<'a> FuncEmitter<'a> {
     }
 
     /// `u.values()` sobre un shape → string `[v1, v2, ...]` (keys ordenadas alf.).
-    fn emit_shape_values_to_string(&mut self, m: &MemberAccessExpr, fields: &[(String, Type)]) -> ClsResult<()> {
+    fn emit_shape_values_to_string(
+        &mut self,
+        m: &MemberAccessExpr,
+        fields: &[(String, Type)],
+    ) -> ClsResult<()> {
         self.emit_expression(&m.object)?;
         let ptr = self.fresh_local();
         self.body.push(Instruction::LocalSet(ptr));
@@ -3991,11 +4430,27 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Add);
             self.body.push(Instruction::I32WrapI64);
             match *w {
-                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
+                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                    offset: 0,
+                    align: 2,
+                    memory_index: 0,
+                })),
+                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
             }
-            let cls_t = fields.iter().find(|(n, _)| *n == *fname).map(|(_, t)| t.clone()).unwrap_or(Type::Any);
+            let cls_t = fields
+                .iter()
+                .find(|(n, _)| *n == *fname)
+                .map(|(_, t)| t.clone())
+                .unwrap_or(Type::Any);
             if matches!(cls_t, Type::String) {
                 let q = self.intern_string("\"");
                 self.emit_load_str(q);
@@ -4036,7 +4491,11 @@ impl<'a> FuncEmitter<'a> {
     }
 
     /// `json.stringify(shape)` → string JSON `{"k": v, ...}` (deja el string en stack).
-    fn emit_shape_to_json_string(&mut self, expr: &Expression, fields: &[(String, Type)]) -> ClsResult<()> {
+    fn emit_shape_to_json_string(
+        &mut self,
+        expr: &Expression,
+        fields: &[(String, Type)],
+    ) -> ClsResult<()> {
         self.emit_expression(expr)?;
         let ptr = self.fresh_local();
         self.body.push(Instruction::LocalSet(ptr));
@@ -4072,11 +4531,27 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Add);
             self.body.push(Instruction::I32WrapI64);
             match *w {
-                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
+                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                    offset: 0,
+                    align: 2,
+                    memory_index: 0,
+                })),
+                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
             }
-            let cls_t = fields.iter().find(|(n, _)| *n == *fname).map(|(_, t)| t.clone()).unwrap_or(Type::Any);
+            let cls_t = fields
+                .iter()
+                .find(|(n, _)| *n == *fname)
+                .map(|(_, t)| t.clone())
+                .unwrap_or(Type::Any);
             // JSON: strings con comillas, ints/floats planos, bool true/false.
             if matches!(cls_t, Type::String) {
                 let q = self.intern_string("\"");
@@ -4160,11 +4635,27 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Add);
             self.body.push(Instruction::I32WrapI64);
             match *w {
-                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
+                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                    offset: 0,
+                    align: 2,
+                    memory_index: 0,
+                })),
+                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
             }
-            let cls_t = fields.iter().find(|(n, _)| *n == *fname).map(|(_, t)| t.clone()).unwrap_or(Type::Any);
+            let cls_t = fields
+                .iter()
+                .find(|(n, _)| *n == *fname)
+                .map(|(_, t)| t.clone())
+                .unwrap_or(Type::Any);
             // Los strings de un shape se imprimen con comillas (paridad walker).
             if matches!(cls_t, Type::String) {
                 let q = self.intern_string("\"");
@@ -4243,8 +4734,9 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I32Eqz);
             }
             Type::Float => {
-                        self.body.push(Instruction::F64Const(Ieee64::new(0.0f64.to_bits())));
-                        self.body.push(Instruction::F64Ne);
+                self.body
+                    .push(Instruction::F64Const(Ieee64::new(0.0f64.to_bits())));
+                self.body.push(Instruction::F64Ne);
             }
             Type::String => self.host.call(HostFn::ParseBool, &mut self.body),
             _ => {}
@@ -4292,9 +4784,21 @@ impl<'a> FuncEmitter<'a> {
                 WasTy::I64 => Instruction::LocalGet(val_tmp),
             });
             match elem_ty {
-                WasTy::F64 => self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                WasTy::I32 => self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                WasTy::I64 => self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
+                WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
+                    offset: 0,
+                    align: 2,
+                    memory_index: 0,
+                })),
+                WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
             }
         }
         self.body.push(Instruction::LocalGet(ptr));
@@ -4306,12 +4810,15 @@ impl<'a> FuncEmitter<'a> {
         // Enum: `Nivel.Alto` → constante (def_id<<32 | index)
         if let Expression::Identifier(obj_name, _) = &*m.object {
             if let Some((def_id, variants)) = self.enum_defs.get(obj_name).cloned() {
-                let idx = variants.iter().position(|v| *v == m.member).ok_or_else(|| {
-                    crate::error::ClsError::CompileError(format!(
-                        "La variante '{}' no existe en el enum '{}'",
-                        m.member, obj_name
-                    ))
-                })?;
+                let idx = variants
+                    .iter()
+                    .position(|v| *v == m.member)
+                    .ok_or_else(|| {
+                        crate::error::ClsError::CompileError(format!(
+                            "La variante '{}' no existe en el enum '{}'",
+                            m.member, obj_name
+                        ))
+                    })?;
                 let val = ((def_id as i64) << 32) | idx as i64;
                 self.body.push(Instruction::I64Const(val));
                 return Ok(());
@@ -4320,18 +4827,26 @@ impl<'a> FuncEmitter<'a> {
             if obj_name == "math" {
                 match m.member.as_str() {
                     "PI" => {
-                        self.body.push(Instruction::F64Const(Ieee64::new(std::f64::consts::PI.to_bits())));
+                        self.body.push(Instruction::F64Const(Ieee64::new(
+                            std::f64::consts::PI.to_bits(),
+                        )));
                         return Ok(());
                     }
                     "E" => {
-                        self.body.push(Instruction::F64Const(Ieee64::new(std::f64::consts::E.to_bits())));
+                        self.body.push(Instruction::F64Const(Ieee64::new(
+                            std::f64::consts::E.to_bits(),
+                        )));
                         return Ok(());
                     }
                     _ => return Err(self.unsupported_expr(&Expression::MemberAccess(m.clone()))),
                 }
             }
         }
-        let obj_ty = self.types.get(&expr_span(&m.object)).cloned().unwrap_or(Type::Any);
+        let obj_ty = self
+            .types
+            .get(&expr_span(&m.object))
+            .cloned()
+            .unwrap_or(Type::Any);
         self.emit_expression(&m.object)?;
         match obj_ty {
             Type::String => match m.member.as_str() {
@@ -4369,24 +4884,40 @@ impl<'a> FuncEmitter<'a> {
                 }
                 "has" => {
                     let has = fields.iter().any(|(n, _)| *n == m.member);
-                    self.body.push(Instruction::I32Const(if has { 1 } else { 0 }));
+                    self.body
+                        .push(Instruction::I32Const(if has { 1 } else { 0 }));
                     Ok(())
                 }
                 _ => {
-                    let (_, w, off) = self.shape_layout(&fields)?
+                    let (_, w, off) = self
+                        .shape_layout(&fields)?
                         .into_iter()
                         .find(|(n, _, _)| *n == m.member)
-                        .ok_or_else(|| crate::error::ClsError::compile_at(
-                            &format!("El record no tiene el campo '{}'", m.member),
-                            &m.span,
-                        ))?;
+                        .ok_or_else(|| {
+                            crate::error::ClsError::compile_at(
+                                &format!("El record no tiene el campo '{}'", m.member),
+                                &m.span,
+                            )
+                        })?;
                     self.body.push(Instruction::I64Const(off));
                     self.body.push(Instruction::I64Add);
                     self.body.push(Instruction::I32WrapI64);
                     match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        })),
+                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                            offset: 0,
+                            align: 2,
+                            memory_index: 0,
+                        })),
+                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        })),
                     }
                     Ok(())
                 }
@@ -4399,39 +4930,71 @@ impl<'a> FuncEmitter<'a> {
             },
             Type::Named(name, _) => {
                 if let Some(info) = self.struct_defs.get(name.as_str()) {
-                    let fidx = info.fields.iter().position(|(n, _, _)| *n == m.member).ok_or_else(|| {
-                        crate::error::ClsError::CompileError(format!(
-                            "El campo '{}' no existe en '{}'",
-                            m.member, name
-                        ))
-                    })?;
+                    let fidx = info
+                        .fields
+                        .iter()
+                        .position(|(n, _, _)| *n == m.member)
+                        .ok_or_else(|| {
+                            crate::error::ClsError::CompileError(format!(
+                                "El campo '{}' no existe en '{}'",
+                                m.member, name
+                            ))
+                        })?;
                     let w = info.fields[fidx].2;
                     self.body.push(Instruction::I64Const(info.offsets[fidx]));
                     self.body.push(Instruction::I64Add);
                     self.body.push(Instruction::I32WrapI64);
                     match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        })),
+                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                            offset: 0,
+                            align: 2,
+                            memory_index: 0,
+                        })),
+                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        })),
                     }
                     Ok(())
                 } else if let Some(info) = self.class_defs.get(name.as_str()) {
-                    let fidx = info.fields.iter().position(|(n, _, _, _)| *n == m.member).ok_or_else(|| {
-                        crate::error::ClsError::CompileError(format!(
-                            "El campo '{}' no existe en la clase '{}'",
-                            m.member, name
-                        ))
-                    })?;
-                        let (_, _t, w, off) = &info.fields[fidx];
-                        let w = *w;
-                        let off = *off;
+                    let fidx = info
+                        .fields
+                        .iter()
+                        .position(|(n, _, _, _)| *n == m.member)
+                        .ok_or_else(|| {
+                            crate::error::ClsError::CompileError(format!(
+                                "El campo '{}' no existe en la clase '{}'",
+                                m.member, name
+                            ))
+                        })?;
+                    let (_, _t, w, off) = &info.fields[fidx];
+                    let w = *w;
+                    let off = *off;
                     self.body.push(Instruction::I64Const(off));
                     self.body.push(Instruction::I64Add);
                     self.body.push(Instruction::I32WrapI64);
                     match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        })),
+                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                            offset: 0,
+                            align: 2,
+                            memory_index: 0,
+                        })),
+                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        })),
                     }
                     Ok(())
                 } else {
@@ -4510,37 +5073,54 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Add);
                 self.body.push(Instruction::I32WrapI64);
                 self.body.push(Instruction::LocalGet(val_tmp));
-                self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                self.body.push(Instruction::I64Store(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                }));
                 self.body.push(Instruction::LocalGet(ptr));
-                self.body.push(Instruction::I64Const(16 + (i as i64) * 16 + 8));
+                self.body
+                    .push(Instruction::I64Const(16 + (i as i64) * 16 + 8));
                 self.body.push(Instruction::I64Add);
                 self.body.push(Instruction::I32WrapI64);
                 let el_cls = cmx_literal_type(el)
                     .or_else(|| self.types.get(&expr_span(el)).cloned())
                     .unwrap_or(Type::Any);
-                self.body.push(Instruction::I64Const(cmx_tag_for_type(&el_cls)));
-                self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                self.body
+                    .push(Instruction::I64Const(cmx_tag_for_type(&el_cls)));
+                self.body.push(Instruction::I64Store(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                }));
             } else {
                 let val_tmp = self.fresh_local_ty(elem_ty);
                 let addr_tmp = self.fresh_local();
                 self.body.push(Instruction::LocalSet(val_tmp));
                 self.body.push(Instruction::LocalGet(ptr));
-                self.body.push(Instruction::I64Const(16 + (i as i64) * elem_size));
+                self.body
+                    .push(Instruction::I64Const(16 + (i as i64) * elem_size));
                 self.body.push(Instruction::I64Add);
                 self.body.push(Instruction::LocalSet(addr_tmp));
                 self.body.push(Instruction::LocalGet(addr_tmp));
                 self.body.push(Instruction::I32WrapI64);
                 self.body.push(Instruction::LocalGet(val_tmp));
                 match elem_ty {
-                    WasTy::F64 => {
-                        self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 }))
-                    }
-                    WasTy::I32 => {
-                        self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 }))
-                    }
-                    WasTy::I64 => {
-                        self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }))
-                    }
+                    WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
+                        offset: 0,
+                        align: 3,
+                        memory_index: 0,
+                    })),
+                    WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
+                        offset: 0,
+                        align: 2,
+                        memory_index: 0,
+                    })),
+                    WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
+                        offset: 0,
+                        align: 3,
+                        memory_index: 0,
+                    })),
                 }
             }
         }
@@ -4590,7 +5170,11 @@ impl<'a> FuncEmitter<'a> {
                 WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
                 WasTy::I64 => {}
             }
-            let cls_t = self.types.get(&expr_span(val)).cloned().unwrap_or(Type::Any);
+            let cls_t = self
+                .types
+                .get(&expr_span(val))
+                .cloned()
+                .unwrap_or(Type::Any);
             self.body.push(Instruction::I64Const(arr_kind_code(&cls_t)));
             self.host.call(HostFn::RecordSet, &mut self.body);
             self.body.push(Instruction::Drop);
@@ -4613,13 +5197,16 @@ impl<'a> FuncEmitter<'a> {
         let ptr = self.fresh_local();
         self.body.push(Instruction::LocalSet(ptr));
         for (name, val) in &r.entries {
-            let (_, w, off) = layout.iter()
+            let (_, w, off) = layout
+                .iter()
                 .find(|(n, _, _)| n == name)
                 .cloned()
-                .ok_or_else(|| crate::error::ClsError::compile_at(
-                    &format!("El record no tiene el campo '{}' en su shape", name),
-                    &r.span,
-                ))?;
+                .ok_or_else(|| {
+                    crate::error::ClsError::compile_at(
+                        &format!("El record no tiene el campo '{}' en su shape", name),
+                        &r.span,
+                    )
+                })?;
             self.emit_expression(val)?;
             let val_tmp = self.fresh_local_ty(w);
             self.body.push(Instruction::LocalSet(val_tmp));
@@ -4629,9 +5216,21 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I32WrapI64);
             self.body.push(Instruction::LocalGet(val_tmp));
             match w {
-                WasTy::F64 => self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                WasTy::I32 => self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                WasTy::I64 => self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
+                WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
+                    offset: 0,
+                    align: 2,
+                    memory_index: 0,
+                })),
+                WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
             }
         }
         self.body.push(Instruction::LocalGet(ptr));
@@ -4695,8 +5294,7 @@ impl<'a> FuncEmitter<'a> {
                 Some(CmxAttributeValue::Expression(expr)) => {
                     self.emit_expression(expr)?;
                     // Literales → su tipo real (el type map puede dar Any).
-                    cmx_literal_type(expr)
-                        .or_else(|| self.types.get(&expr_span(expr)).cloned())
+                    cmx_literal_type(expr).or_else(|| self.types.get(&expr_span(expr)).cloned())
                 }
                 Some(CmxAttributeValue::Shorthand(name)) => {
                     self.emit_ident_load(name);
@@ -4717,7 +5315,8 @@ impl<'a> FuncEmitter<'a> {
                 WasTy::I64 => {}
             }
             let cls = val_type.unwrap_or(Type::Any);
-            self.body.push(Instruction::I64Const(cmx_tag_for_type(&cls)));
+            self.body
+                .push(Instruction::I64Const(cmx_tag_for_type(&cls)));
             self.host.call(HostFn::CmxSetProp, &mut self.body);
             self.body.push(Instruction::Drop);
         }
@@ -4766,21 +5365,36 @@ impl<'a> FuncEmitter<'a> {
         if let Some(Type::Shape(fields)) = &obj_ty {
             if let Expression::Literal(l) = &*i.index {
                 if let LiteralKind::String(key) = &l.kind {
-                    let (_, w, off) = self.shape_layout(fields)?
+                    let (_, w, off) = self
+                        .shape_layout(fields)?
                         .into_iter()
                         .find(|(n, _, _)| n == key)
-                        .ok_or_else(|| crate::error::ClsError::compile_at(
-                            &format!("El record no tiene el campo '{}'", key),
-                            &i.span,
-                        ))?;
+                        .ok_or_else(|| {
+                            crate::error::ClsError::compile_at(
+                                &format!("El record no tiene el campo '{}'", key),
+                                &i.span,
+                            )
+                        })?;
                     self.emit_expression(&i.object)?;
                     self.body.push(Instruction::I64Const(off));
                     self.body.push(Instruction::I64Add);
                     self.body.push(Instruction::I32WrapI64);
                     match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        })),
+                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                            offset: 0,
+                            align: 2,
+                            memory_index: 0,
+                        })),
+                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        })),
                     }
                     return Ok(());
                 }
@@ -4795,12 +5409,21 @@ impl<'a> FuncEmitter<'a> {
         self.emit_expression(&i.index)?;
         // Array de Cmx → entradas `[val, tag]` stride 16 (children del Cmx, etc.).
         let is_cmx = matches!(&obj_ty, Some(Type::Array(e)) if matches!(**e, Type::Cmx));
-        let elem_size = if is_cmx { 16 } else { self.container_elem_size(i, elem_ty) };
+        let elem_size = if is_cmx {
+            16
+        } else {
+            self.container_elem_size(i, elem_ty)
+        };
         self.emit_index_access(elem_ty, elem_size, i)
     }
 
     /// Asume [ptr, idx] en stack; deja el valor del elemento (con bounds check).
-    fn emit_index_access(&mut self, elem_ty: WasTy, elem_size: i64, i: &IndexExpr) -> ClsResult<()> {
+    fn emit_index_access(
+        &mut self,
+        elem_ty: WasTy,
+        elem_size: i64,
+        i: &IndexExpr,
+    ) -> ClsResult<()> {
         let ptr = self.fresh_local();
         let idx = self.fresh_local();
         self.body.push(Instruction::LocalSet(idx));
@@ -4817,9 +5440,21 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Add);
         self.body.push(Instruction::I32WrapI64);
         match elem_ty {
-            WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-            WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-            WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+            WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            })),
+            WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                offset: 0,
+                align: 2,
+                memory_index: 0,
+            })),
+            WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            })),
         }
         Ok(())
     }
@@ -4832,7 +5467,11 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::LocalGet(idx));
         self.body.push(Instruction::LocalGet(ptr));
         self.body.push(Instruction::I32WrapI64);
-        self.body.push(Instruction::I64Load(MemArg { offset: 8, align: 3, memory_index: 0 }));
+        self.body.push(Instruction::I64Load(MemArg {
+            offset: 8,
+            align: 3,
+            memory_index: 0,
+        }));
         self.body.push(Instruction::I64GeS);
         self.body.push(Instruction::I32Or);
         self.block_depth += 1;
@@ -4906,9 +5545,21 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I32WrapI64);
         self.body.push(Instruction::LocalGet(value));
         match elem_ty {
-            WasTy::F64 => self.body.push(Instruction::F64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
-            WasTy::I32 => self.body.push(Instruction::I32Store(MemArg { offset: 0, align: 2, memory_index: 0 })),
-            WasTy::I64 => self.body.push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 })),
+            WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            })),
+            WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
+                offset: 0,
+                align: 2,
+                memory_index: 0,
+            })),
+            WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            })),
         }
         Ok(())
     }
@@ -4916,7 +5567,11 @@ impl<'a> FuncEmitter<'a> {
     fn emit_array_len(&mut self) {
         // ptr está en stack → len = i64.load(ptr+8)
         self.body.push(Instruction::I32WrapI64);
-        self.body.push(Instruction::I64Load(MemArg { offset: 8, align: 3, memory_index: 0 }));
+        self.body.push(Instruction::I64Load(MemArg {
+            offset: 8,
+            align: 3,
+            memory_index: 0,
+        }));
     }
 
     /// Tipo WASM del elemento de un array (del type map del object).
@@ -4977,7 +5632,11 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::LocalSet(v));
         self.body.push(Instruction::I32WrapI64);
         self.body.push(Instruction::LocalGet(v));
-        self.body.push(Instruction::I64Store(MemArg { offset: offset as u64, align: 3, memory_index: 0 }));
+        self.body.push(Instruction::I64Store(MemArg {
+            offset: offset as u64,
+            align: 3,
+            memory_index: 0,
+        }));
     }
 }
 
@@ -5124,8 +5783,133 @@ fn type_name_str(t: &Type) -> &'static str {
     }
 }
 
+/// Formatea una expresión como código CLS legible (para mensajes de error).
+/// NO usa Debug del AST — el usuario debe poder leer qué falló.
 fn expr_display(expr: &Expression) -> String {
-    format!("{:?}", expr)
+    use crate::frontend::token::Operator;
+    match expr {
+        Expression::Literal(l) => match &l.kind {
+            LiteralKind::Int(v) => v.to_string(),
+            LiteralKind::Float(v) => v.to_string(),
+            LiteralKind::String(s) => format!("\"{}\"", s),
+            LiteralKind::Bool(b) => b.to_string(),
+            LiteralKind::Char(c) => format!("'{}'", c),
+            LiteralKind::Null => "null".to_string(),
+            LiteralKind::Unknown => "?".to_string(),
+        },
+        Expression::Identifier(name, _) => name.clone(),
+        Expression::Binary(b) => {
+            let op = match b.op {
+                Operator::Plus => "+",
+                Operator::Minus => "-",
+                Operator::Star => "*",
+                Operator::Slash => "/",
+                Operator::Percent => "%",
+                Operator::StarStar => "**",
+                Operator::StrictEqual => "==",
+                Operator::NotEqual => "!=",
+                Operator::LessThan => "<",
+                Operator::LessEqual => "<=",
+                Operator::GreaterThan => ">",
+                Operator::GreaterEqual => ">=",
+                Operator::And => "&&",
+                Operator::Or => "||",
+                Operator::In => "in",
+                Operator::Is => "is",
+                Operator::Caret => "^",
+                Operator::ShiftLeft => "<<",
+                Operator::ShiftRight => ">>",
+                Operator::PlusEqual => "+=",
+                Operator::MinusEqual => "-=",
+                Operator::StarEqual => "*=",
+                Operator::SlashEqual => "/=",
+                _ => "?",
+            };
+            format!(
+                "({} {} {})",
+                expr_display(&b.left),
+                op,
+                expr_display(&b.right)
+            )
+        }
+        Expression::Unary(u) => {
+            let op = match u.op {
+                crate::frontend::ast::UnaryOp::Negate => "-",
+                crate::frontend::ast::UnaryOp::Not => "!",
+                crate::frontend::ast::UnaryOp::BitwiseNot => "~",
+                crate::frontend::ast::UnaryOp::TypeOf => "typeof ",
+                crate::frontend::ast::UnaryOp::PostInc => "++",
+                crate::frontend::ast::UnaryOp::PostDec => "--",
+                crate::frontend::ast::UnaryOp::PreInc => "++",
+                crate::frontend::ast::UnaryOp::PreDec => "--",
+            };
+            format!("{}{}", op, expr_display(&u.operand))
+        }
+        Expression::Call(c) => format!(
+            "{}({})",
+            expr_display(&c.callee),
+            c.args
+                .iter()
+                .map(expr_display)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Expression::MemberAccess(m) => format!("{}.{}", expr_display(&m.object), m.member),
+        Expression::Index(i) => format!("{}[{}]", expr_display(&i.object), expr_display(&i.index)),
+        Expression::Array(a) => format!(
+            "[{}]",
+            a.elements
+                .iter()
+                .map(expr_display)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Expression::Tuple(t) => format!(
+            "({})",
+            t.elements
+                .iter()
+                .map(expr_display)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Expression::Record(r) => format!(
+            "{{{}}}",
+            r.entries
+                .iter()
+                .map(|(k, v)| format!("{}: {}", k, expr_display(v)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Expression::ArrowFunction(_) => "fn(...)".to_string(),
+        Expression::Conditional(c) => format!(
+            "({} ? {} : {})",
+            expr_display(&c.condition),
+            expr_display(&c.then_expr),
+            expr_display(&c.else_expr)
+        ),
+        Expression::Assignment(a) => {
+            format!("{} = {}", expr_display(&a.target), expr_display(&a.value))
+        }
+        Expression::Parenthesized(inner, _) => format!("({})", expr_display(inner)),
+        Expression::StringInterpolation(s) => {
+            let mut out = String::from("\"");
+            for part in &s.parts {
+                match part {
+                    InterpolationPart::Text(t) => out.push_str(t),
+                    InterpolationPart::Expr(e) => {
+                        out.push_str("${");
+                        out.push_str(&expr_display(e));
+                        out.push('}');
+                    }
+                }
+            }
+            out.push('"');
+            out
+        }
+        Expression::Cmx(c) => format!("<{} />", c.tag),
+        Expression::NamespaceAccess(ns, name, _) => format!("{}::{}", ns, name),
+        Expression::Await(inner, _) => format!("await {}", expr_display(inner)),
+    }
 }
 
 fn statement_display(stmt: &Statement) -> String {
@@ -5430,7 +6214,8 @@ impl<'a> Engine<'a> {
         let mut def_id = 0u32;
         for stmt in &module.statements {
             if let Statement::EnumDecl(e) = stmt {
-                self.enum_defs.insert(e.name.clone(), (def_id, e.variants.clone()));
+                self.enum_defs
+                    .insert(e.name.clone(), (def_id, e.variants.clone()));
                 def_id += 1;
             }
         }
@@ -5489,17 +6274,17 @@ impl<'a> Engine<'a> {
                                 (None, Some(v)) => self.expr_was_type(v).unwrap_or(WasTy::I64),
                                 (None, None) => WasTy::I64,
                             };
-                            let t_cls = p
-                                .type_ann
-                                .as_ref()
-                                .map(annotation_to_type)
-                                .unwrap_or_else(|| {
-                                    if matches!(w, WasTy::F64) {
-                                        Type::Float
-                                    } else {
-                                        Type::Int
-                                    }
-                                });
+                            let t_cls =
+                                p.type_ann
+                                    .as_ref()
+                                    .map(annotation_to_type)
+                                    .unwrap_or_else(|| {
+                                        if matches!(w, WasTy::F64) {
+                                            Type::Float
+                                        } else {
+                                            Type::Int
+                                        }
+                                    });
                             fields.push((p.name.clone(), t_cls, w, off));
                             off += elem_size_bytes(w);
                             total = off;
@@ -5570,7 +6355,8 @@ impl<'a> Engine<'a> {
                         } else {
                             vec![was_to_val(rw)]
                         };
-                        let import_name = format!("{}__{}{}@{}", f.name, rc, params_code, e.library);
+                        let import_name =
+                            format!("{}__{}{}@{}", f.name, rc, params_code, e.library);
                         let tidx = self.register_func_type(params_was, results);
                         let idx = self.func_count;
                         self.func_count += 1;
@@ -5585,19 +6371,87 @@ impl<'a> Engine<'a> {
 
         use HostFn::*;
         for h in [
-            PrintInt, PrintFloat, PrintBool, PrintChar, PrintStr, PrintEnd, Now, Exit, Sleep,
-            Trap, ParseInt, ParseFloat, ParseBool, StrConcat, StrInt, StrFloat, StrBool, StrChar,
-            PowNum, Fmod, Input, StrUpper, StrLower, StrTrim, StrContains, StrStartsWith,
-            StrEndsWith, StrIsEmpty, StrLength, StrRepr, IntAbs, FloatAbs, ArrPush, ArrPop, ArrShift,
-            ArrUnshift, ArrIndexOf, ArrIncludes, ArrJoin, ArrReverse, MathSqrt, MathPow, MathMin,
-            MathMax, MathFloor, MathCeil, MathRound, MathRandom, MathSin, MathCos, MathTan, MathLog,
-            MathRange, JsonStringify, JsonParse, FsExists, FsCwd, FsReadFile, FsWriteFile, FsListDir, FsMkdir,
-            FsRm, RecordNew, RecordSet, RecordGet, RecordHas, RecordTag, RecordLen, RecordKeys, RecordValues,
-            RecordToString, HttpGet, HttpPost, ArrToString, CmxNew, CmxSetProp, CmxAddChild,
+            PrintInt,
+            PrintFloat,
+            PrintBool,
+            PrintChar,
+            PrintStr,
+            PrintEnd,
+            Now,
+            Exit,
+            Sleep,
+            Trap,
+            ParseInt,
+            ParseFloat,
+            ParseBool,
+            StrConcat,
+            StrInt,
+            StrFloat,
+            StrBool,
+            StrChar,
+            PowNum,
+            Fmod,
+            Input,
+            StrUpper,
+            StrLower,
+            StrTrim,
+            StrContains,
+            StrStartsWith,
+            StrEndsWith,
+            StrIsEmpty,
+            StrLength,
+            StrRepr,
+            IntAbs,
+            FloatAbs,
+            ArrPush,
+            ArrPop,
+            ArrShift,
+            ArrUnshift,
+            ArrIndexOf,
+            ArrIncludes,
+            ArrJoin,
+            ArrReverse,
+            MathSqrt,
+            MathPow,
+            MathMin,
+            MathMax,
+            MathFloor,
+            MathCeil,
+            MathRound,
+            MathRandom,
+            MathSin,
+            MathCos,
+            MathTan,
+            MathLog,
+            MathRange,
+            JsonStringify,
+            JsonParse,
+            FsExists,
+            FsCwd,
+            FsReadFile,
+            FsWriteFile,
+            FsListDir,
+            FsMkdir,
+            FsRm,
+            RecordNew,
+            RecordSet,
+            RecordGet,
+            RecordHas,
+            RecordTag,
+            RecordLen,
+            RecordKeys,
+            RecordValues,
+            RecordToString,
+            HttpGet,
+            HttpPost,
+            ArrToString,
+            CmxNew,
+            CmxSetProp,
+            CmxAddChild,
             CmxToString,
-    PrintAny,
-    FnHandle,
-    FnToString,
+            PrintAny,
+            FnHandle,
+            FnToString,
         ] {
             self.register_host(h);
         }
@@ -5675,7 +6529,8 @@ impl<'a> Engine<'a> {
         // quede alineado (alloc, load_str, init, cls...).
         if !self.global_inits.is_empty() {
             let ig_idx = self.declare_wasm_function(vec![], vec![]);
-            self.func_indexes.insert("__init_globals".to_string(), ig_idx);
+            self.func_indexes
+                .insert("__init_globals".to_string(), ig_idx);
         }
         // Métodos/ctor de clase: se declaran aquí (tras alloc/load_str/init) para
         // que el code_sec (que los compila después) quede alineado.
@@ -5763,7 +6618,12 @@ impl<'a> Engine<'a> {
                     let params: Vec<Type> = f
                         .params
                         .iter()
-                        .map(|p| p.type_ann.as_ref().map(annotation_to_type).unwrap_or(Type::Any))
+                        .map(|p| {
+                            p.type_ann
+                                .as_ref()
+                                .map(annotation_to_type)
+                                .unwrap_or(Type::Any)
+                        })
                         .collect();
                     let ret = f
                         .return_type
@@ -5773,7 +6633,8 @@ impl<'a> Engine<'a> {
                     (params, ret)
                 }
             };
-            self.func_types.insert(f.name.clone(), (params.clone(), Some(ret.clone())));
+            self.func_types
+                .insert(f.name.clone(), (params.clone(), Some(ret.clone())));
             let mut pv: Vec<ValType> = Vec::new();
             // Firma uniforme (B5): toda arrow recibe __capturas (i64) como primer param.
             pv.push(ValType::I64);
@@ -5964,7 +6825,11 @@ impl<'a> Engine<'a> {
         let param_offset = if has_caps { 1 } else { 0 };
         if has_caps {
             fe.declare_var_ty("__capturas", WasTy::I64);
-            let arrow_caps = self.arrow_captures.get(&f.span).cloned().unwrap_or_default();
+            let arrow_caps = self
+                .arrow_captures
+                .get(&f.span)
+                .cloned()
+                .unwrap_or_default();
             for (i, cap) in arrow_caps.iter().enumerate() {
                 fe.captures.insert(cap.clone(), (i + 1) as u32);
             }
@@ -5997,7 +6862,13 @@ impl<'a> Engine<'a> {
         // mixtos).
         let nparams = (param_types.len() + param_offset) as u32;
         let local_types: Vec<ValType> = (nparams..fe.next_local)
-            .map(|i| fe.local_tys.get(&i).copied().unwrap_or(WasTy::I64).val_type())
+            .map(|i| {
+                fe.local_tys
+                    .get(&i)
+                    .copied()
+                    .unwrap_or(WasTy::I64)
+                    .val_type()
+            })
             .collect();
         let grouped: Vec<(u32, ValType)> = local_types.iter().map(|t| (1, *t)).collect();
         let mut func = Function::new(grouped);
@@ -6055,7 +6926,13 @@ impl<'a> Engine<'a> {
         fe.body.push(Instruction::End);
         // Declarar los temporales que la emisión pudo crear (emit_array, etc.).
         let local_types: Vec<ValType> = (0..fe.next_local)
-            .map(|i| fe.local_tys.get(&i).copied().unwrap_or(WasTy::I64).val_type())
+            .map(|i| {
+                fe.local_tys
+                    .get(&i)
+                    .copied()
+                    .unwrap_or(WasTy::I64)
+                    .val_type()
+            })
             .collect();
         let grouped: Vec<(u32, ValType)> = local_types.iter().map(|t| (1, *t)).collect();
         let mut func = Function::new(grouped);
@@ -6070,7 +6947,11 @@ impl<'a> Engine<'a> {
         let mut param_cls = vec![Type::Int]; // me (ptr del objeto)
         let mut pv = vec![ValType::I64];
         for p in &f.params {
-            let t = p.type_ann.as_ref().map(annotation_to_type).unwrap_or(Type::Int);
+            let t = p
+                .type_ann
+                .as_ref()
+                .map(annotation_to_type)
+                .unwrap_or(Type::Int);
             param_cls.push(t.clone());
             pv.push(was_type(&t).unwrap_or(WasTy::I64).val_type());
         }
@@ -6109,7 +6990,8 @@ impl<'a> Engine<'a> {
         None
     }
 
-    fn build_allocator(&self) -> Function {        // (func (param $n i64) (result i64)
+    fn build_allocator(&self) -> Function {
+        // (func (param $n i64) (result i64)
         //   local 0 = n (param), local 1 = ptr, local 2 = end
         //   ptr = global 0
         //   end = (ptr + n + 8) & -8
@@ -6165,14 +7047,22 @@ impl<'a> Engine<'a> {
             Instruction::LocalSet(1),
             Instruction::LocalGet(1),
             Instruction::I32WrapI64,
-            Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 }),
+            Instruction::I32Load(MemArg {
+                offset: 0,
+                align: 2,
+                memory_index: 0,
+            }),
             Instruction::I64ExtendI32U,
             Instruction::LocalSet(2),
             Instruction::LocalGet(1),
             Instruction::I64Const(4),
             Instruction::I64Add,
             Instruction::I32WrapI64,
-            Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 }),
+            Instruction::I32Load(MemArg {
+                offset: 0,
+                align: 2,
+                memory_index: 0,
+            }),
             Instruction::I64ExtendI32U,
             Instruction::LocalSet(3),
             Instruction::LocalGet(2),
@@ -6203,12 +7093,6 @@ impl<'a> Engine<'a> {
         bytes
     }
 }
-
-
-
-
-
-
 
 /// B5 � recolecci�n de arrow functions (funciones an�nimas como valor).
 fn collect_arrows_in_block(block: &Block, out: &mut Vec<ArrowFunctionExpr>) {
@@ -6338,7 +7222,9 @@ fn collect_arrows_in_expr(expr: &Expression, out: &mut Vec<ArrowFunctionExpr>) {
             for child in &c.children {
                 match child {
                     CmxChild::Expression(e) => collect_arrows_in_expr(e, out),
-                    CmxChild::Element(el) => collect_arrows_in_expr(&Expression::Cmx((**el).clone()), out),
+                    CmxChild::Element(el) => {
+                        collect_arrows_in_expr(&Expression::Cmx((**el).clone()), out)
+                    }
                     _ => {}
                 }
             }
@@ -6346,11 +7232,6 @@ fn collect_arrows_in_expr(expr: &Expression, out: &mut Vec<ArrowFunctionExpr>) {
         _ => {}
     }
 }
-
-
-
-
-
 
 /// Recolecta los identifiers libres del body de una arrow (closures).
 /// `locals` acumula params + variables declaradas dentro; `free` acumula los
@@ -6489,7 +7370,9 @@ fn collect_free_vars_in_expr(expr: &Expression, locals: &mut Vec<String>, free: 
             for child in &c.children {
                 match child {
                     CmxChild::Expression(e) => collect_free_vars_in_expr(e, locals, free),
-                    CmxChild::Element(el) => collect_free_vars_in_expr(&Expression::Cmx((**el).clone()), locals, free),
+                    CmxChild::Element(el) => {
+                        collect_free_vars_in_expr(&Expression::Cmx((**el).clone()), locals, free)
+                    }
                     _ => {}
                 }
             }

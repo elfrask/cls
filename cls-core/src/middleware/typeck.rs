@@ -612,10 +612,21 @@ impl TypeChecker {
                 // `x::miembro` de un módulo importado → tipo del export.
                 match self.module_member_type(ns, name) {
                     Some(t) => t,
-                    None => self.error(
-                        &format!("'{}' no existe o no se exporta en '{}'", name, ns),
-                        span.clone(),
-                    ),
+                    None => {
+                        let available = self.module_export_names(ns);
+                        let hint = if available.is_empty() {
+                            "el módulo no exporta ningún símbolo (usa `export` en cada declaración)".to_string()
+                        } else {
+                            format!("el módulo exporta: {}", available.join(", "))
+                        };
+                        self.error(
+                            &format!(
+                                "'{}' no existe o no se exporta en '{}' ({})",
+                                name, ns, hint
+                            ),
+                            span.clone(),
+                        )
+                    }
                 }
             }
             Expression::Await(expr, _) => self.check_expression(expr),
@@ -977,13 +988,53 @@ impl TypeChecker {
                 let local = im.alias.as_deref().unwrap_or(&im.name);
                 self.define(local, t);
             } else {
+                let available = self.module_export_names(&fi.path);
+                let hint = if available.is_empty() {
+                    format!(
+                        "El módulo '{}' no exporta ningún símbolo (usa `export` en cada declaración).",
+                        fi.path
+                    )
+                } else {
+                    format!(
+                        "El módulo '{}' exporta: {}",
+                        fi.path,
+                        available.join(", ")
+                    )
+                };
                 self.error(
-                    &format!("'{}' no se exporta en el módulo '{}'", im.name, fi.path),
+                    &format!(
+                        "'{}' no se exporta en el módulo '{}'. {}",
+                        im.name, fi.path, hint
+                    ),
                     fi.span.clone(),
                 );
             }
         }
         Type::Void
+    }
+
+    /// Nombres de los símbolos exportados de un módulo del prelude.
+    fn module_export_names(&self, path: &str) -> Vec<String> {
+        let mut names = Vec::new();
+        if let Some(m) = self.find_prelude_module(path) {
+            for stmt in &m.statements {
+                match stmt {
+                    Statement::FunctionDecl(f) if f.visibility == Visibility::Export => {
+                        names.push(f.name.clone());
+                    }
+                    Statement::VarDecl(v) | Statement::ConstDecl(v)
+                        if v.visibility == Visibility::Export =>
+                    {
+                        names.push(v.name.clone());
+                    }
+                    Statement::EnumDecl(e) if e.visibility == Visibility::Export => {
+                        names.push(e.name.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        names
     }
 
     /// `include "path"` → define TODOS los exports en el scope actual.
