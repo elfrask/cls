@@ -3,6 +3,8 @@ function suma(a: int, b: int) -> int {
 };
 
 function main(args: String[]) -> int {
+    print("inicio");
+    const e = now();
     suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3);
     suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3);
     suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3);
@@ -5284,7 +5286,7 @@ function main(args: String[]) -> int {
     suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3);
     suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3); suma(2, 3);
     
-    
+    print("listo:", "${now() - e}ms");
     return 0;
 };
 
