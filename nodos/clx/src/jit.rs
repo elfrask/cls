@@ -350,6 +350,14 @@ fn push_export(out: &mut Vec<Statement>, m: &ClsModule, export_name: &str, local
                 out.push(Statement::ConstDecl(v2));
                 return;
             }
+            Statement::EnumDecl(e)
+                if e.visibility == Visibility::Export && e.name == export_name =>
+            {
+                let mut e2 = e.clone();
+                e2.name = local.to_string();
+                out.push(Statement::EnumDecl(e2));
+                return;
+            }
             _ => {}
         }
     }
@@ -374,6 +382,11 @@ fn push_prefixed_exports(out: &mut Vec<Statement>, m: &ClsModule, prefix: &str) 
                 v2.name = format!("{}::{}", prefix, v.name);
                 out.push(Statement::ConstDecl(v2));
             }
+            Statement::EnumDecl(e) if e.visibility == Visibility::Export => {
+                let mut e2 = e.clone();
+                e2.name = format!("{}::{}", prefix, e.name);
+                out.push(Statement::EnumDecl(e2));
+            }
             _ => {}
         }
     }
@@ -390,6 +403,9 @@ fn push_all_exports(out: &mut Vec<Statement>, m: &ClsModule) {    for stmt in &m
             }
             Statement::ConstDecl(v) if v.visibility == Visibility::Export => {
                 out.push(Statement::ConstDecl(v.clone()));
+            }
+            Statement::EnumDecl(e) if e.visibility == Visibility::Export => {
+                out.push(Statement::EnumDecl(e.clone()));
             }
             _ => {}
         }
@@ -462,6 +478,13 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
     let mut imports: Vec<(String, ClsModule)> = Vec::new();
     let manifest = cls_core::config::ModuleManifest::find_in_dir(&base_dir);
     load_import_modules(&module, &base_dir, &mut seen, &mut imports, manifest.as_ref());
+    // Desplazar los spans de cada módulo importado con un offset de línea único.
+    // El `Span` no incluye el archivo, así que sin esto las coordenadas de un
+    // módulo colisionan con las del main en el type map del JIT.
+    for (i, (_path, m)) in imports.iter_mut().enumerate() {
+        let offset = 100000u32 * (i as u32 + 1);
+        cls_core::frontend::span_shift::shift_module(m, offset);
+    }
     if let Err(e) = checker.check_with_prelude(&module, &imports) {
         show_cls_error(&e, entry, Some(&source));
         return 1;

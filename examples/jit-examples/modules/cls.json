@@ -1,0 +1,7 @@
+{
+  "name": "jit-modules-example",
+  "version": "0.1.0",
+  "description": "Ejemplo JIT-only de imports con múltiples módulos (namespaced, from/alias, include)",
+  "entry": "src/main.clsx",
+  "dependencies": {}
+}

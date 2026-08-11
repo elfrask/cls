@@ -1,0 +1,9 @@
+export function cuadrado(x: int) -> int {
+    return x * x;
+};
+
+export function cubo(x: int) -> int {
+    return x * x * x;
+};
+
+export var PI = "3.14159";
