@@ -2001,7 +2001,15 @@ impl Parser {
             Token::Identifier(name) => {
                 let name = name.clone();
                 self.advance();
-                
+
+                // `null` como literal (antes era un Identifier no resuelto).
+                if name == "null" {
+                    return Ok(Expression::Literal(Literal {
+                        kind: LiteralKind::Null,
+                        span: self.span(),
+                    }));
+                }
+
                 // Verificar si es una función flecha
                 if self.check_symbol(Symbol::LParen) {
                     // Podría ser una llamada o una función flecha
