@@ -1,0 +1,15 @@
+# C-3: acceso protected desde SUBCLASE DEBE permitirse (lectura y escritura)
+class Base {
+    protected var num: String;
+    function main() { me.num = "base"; }
+};
+class Hijo: Base {
+    function leer() -> String { return me.num; }
+    function escribir(v: String) { me.num = v; }
+};
+function main(args: String[]) -> int {
+    var h = Hijo();
+    h.escribir("hijo");
+    print("leer desde subclase:", h.leer());
+    return 0;
+};

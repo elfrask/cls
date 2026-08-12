@@ -1,0 +1,9 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\fase-1\c3-protected-metodo-subclase.clsx ===
+MODE=walk
+EXITCODE=0
+TIME_MS=1053
+--- STDOUT ---
+desde subclase: 7
+
+--- STDERR ---
+================

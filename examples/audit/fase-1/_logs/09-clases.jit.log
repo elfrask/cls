@@ -1,0 +1,17 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\features\09-clases.clsx ===
+MODE=jit
+EXITCODE=0
+TIME_MS=3124
+--- STDOUT ---
+hablar: Rex hace ruido y ladra
+is Perro: true
+is Animal: true
+is String: false
+saldo: 100.5
+titular: Ana
+creadoEn: 2024
+chequear: true
+fin
+
+--- STDERR ---
+================

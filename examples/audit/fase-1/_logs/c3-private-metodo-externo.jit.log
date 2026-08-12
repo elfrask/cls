@@ -1,0 +1,9 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\fase-1\c3-private-metodo-externo.clsx ===
+MODE=jit
+EXITCODE=0
+TIME_MS=3245
+--- STDOUT ---
+42
+
+--- STDERR ---
+================

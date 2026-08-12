@@ -21,6 +21,16 @@ fn shift_span(mut s: Span, offset: u32) -> Span {
     s
 }
 
+/// Desplaza un span por línea y columna (para reubicar spans de expresiones
+/// parseadas desde substrings, p.ej. `${expr}` dentro de interpolación).
+fn shift_span_xy(mut s: Span, dl: u32, dc: i64) -> Span {
+    s.start_line = s.start_line.saturating_add(dl);
+    s.end_line = s.end_line.saturating_add(dl);
+    s.start_col = (s.start_col as i64 + dc).max(1) as u32;
+    s.end_col = (s.end_col as i64 + dc).max(1) as u32;
+    s
+}
+
 fn shift_type(t: &mut TypeAnnotation, offset: u32) {
     t.span = shift_span(t.span.clone(), offset);
     match &mut t.kind {
@@ -56,118 +66,130 @@ fn shift_type(t: &mut TypeAnnotation, offset: u32) {
     }
 }
 
-fn shift_literal(l: &mut Literal, offset: u32) {
+fn shift_literal(l: &mut Literal, dl: u32, dc: i64) {
+    l.span = shift_span_xy(l.span.clone(), dl, dc);
+}
+
+/// Solo desplazamiento de línea (compat).
+fn shift_literal_line(l: &mut Literal, offset: u32) {
     l.span = shift_span(l.span.clone(), offset);
 }
 
-pub fn shift_expr(e: &mut Expression, offset: u32) {
+/// Desplaza los spans de una expresión por `dl` líneas y `dc` columnas.
+/// Útil para reubicar expresiones parseadas desde substrings (`${expr}`).
+pub fn shift_expr_xy(e: &mut Expression, dl: u32, dc: i64) {
     match e {
-        Expression::Literal(l) => shift_literal(l, offset),
-        Expression::Identifier(_, s) => *s = shift_span(s.clone(), offset),
+        Expression::Literal(l) => shift_literal(l, dl, dc),
+        Expression::Identifier(_, s) => *s = shift_span_xy(s.clone(), dl, dc),
         Expression::Binary(b) => {
-            b.span = shift_span(b.span.clone(), offset);
-            shift_expr(&mut b.left, offset);
-            shift_expr(&mut b.right, offset);
+            b.span = shift_span_xy(b.span.clone(), dl, dc);
+            shift_expr_xy(&mut b.left, dl, dc);
+            shift_expr_xy(&mut b.right, dl, dc);
         }
         Expression::Unary(u) => {
-            u.span = shift_span(u.span.clone(), offset);
-            shift_expr(&mut u.operand, offset);
+            u.span = shift_span_xy(u.span.clone(), dl, dc);
+            shift_expr_xy(&mut u.operand, dl, dc);
         }
         Expression::Call(c) => {
-            c.span = shift_span(c.span.clone(), offset);
-            shift_expr(&mut c.callee, offset);
+            c.span = shift_span_xy(c.span.clone(), dl, dc);
+            shift_expr_xy(&mut c.callee, dl, dc);
             for a in &mut c.args {
-                shift_expr(a, offset);
+                shift_expr_xy(a, dl, dc);
             }
         }
         Expression::MemberAccess(m) => {
-            m.span = shift_span(m.span.clone(), offset);
-            shift_expr(&mut m.object, offset);
+            m.span = shift_span_xy(m.span.clone(), dl, dc);
+            shift_expr_xy(&mut m.object, dl, dc);
         }
         Expression::Index(i) => {
-            i.span = shift_span(i.span.clone(), offset);
-            shift_expr(&mut i.object, offset);
-            shift_expr(&mut i.index, offset);
+            i.span = shift_span_xy(i.span.clone(), dl, dc);
+            shift_expr_xy(&mut i.object, dl, dc);
+            shift_expr_xy(&mut i.index, dl, dc);
         }
         Expression::Array(a) => {
-            a.span = shift_span(a.span.clone(), offset);
+            a.span = shift_span_xy(a.span.clone(), dl, dc);
             for el in &mut a.elements {
-                shift_expr(el, offset);
+                shift_expr_xy(el, dl, dc);
             }
         }
         Expression::Tuple(t) => {
-            t.span = shift_span(t.span.clone(), offset);
+            t.span = shift_span_xy(t.span.clone(), dl, dc);
             for el in &mut t.elements {
-                shift_expr(el, offset);
+                shift_expr_xy(el, dl, dc);
             }
         }
         Expression::Record(r) => {
-            r.span = shift_span(r.span.clone(), offset);
+            r.span = shift_span_xy(r.span.clone(), dl, dc);
             for (_, v) in &mut r.entries {
-                shift_expr(v, offset);
+                shift_expr_xy(v, dl, dc);
             }
         }
         Expression::ArrowFunction(a) => {
-            a.span = shift_span(a.span.clone(), offset);
+            a.span = shift_span_xy(a.span.clone(), dl, dc);
             for p in &mut a.params {
-                p.span = shift_span(p.span.clone(), offset);
+                p.span = shift_span_xy(p.span.clone(), dl, dc);
                 if let Some(ann) = &mut p.type_ann {
-                    shift_type(ann, offset);
+                    shift_type(ann, dl);
                 }
                 if let Some(d) = &mut p.default_value {
-                    shift_expr(d, offset);
+                    shift_expr_xy(d, dl, dc);
                 }
             }
             if let Some(ret) = &mut a.return_type {
-                shift_type(ret, offset);
+                shift_type(ret, dl);
             }
-            shift_block(&mut a.body, offset);
+            shift_block(&mut a.body, dl);
         }
         Expression::Conditional(c) => {
-            c.span = shift_span(c.span.clone(), offset);
-            shift_expr(&mut c.condition, offset);
-            shift_expr(&mut c.then_expr, offset);
-            shift_expr(&mut c.else_expr, offset);
+            c.span = shift_span_xy(c.span.clone(), dl, dc);
+            shift_expr_xy(&mut c.condition, dl, dc);
+            shift_expr_xy(&mut c.then_expr, dl, dc);
+            shift_expr_xy(&mut c.else_expr, dl, dc);
         }
         Expression::Assignment(a) => {
-            a.span = shift_span(a.span.clone(), offset);
-            shift_expr(&mut a.target, offset);
-            shift_expr(&mut a.value, offset);
+            a.span = shift_span_xy(a.span.clone(), dl, dc);
+            shift_expr_xy(&mut a.target, dl, dc);
+            shift_expr_xy(&mut a.value, dl, dc);
         }
         Expression::Parenthesized(inner, s) => {
-            *s = shift_span(s.clone(), offset);
-            shift_expr(inner, offset);
+            *s = shift_span_xy(s.clone(), dl, dc);
+            shift_expr_xy(inner, dl, dc);
         }
         Expression::StringInterpolation(s) => {
-            s.span = shift_span(s.span.clone(), offset);
+            s.span = shift_span_xy(s.span.clone(), dl, dc);
             for part in &mut s.parts {
                 if let InterpolationPart::Expr(e) = part {
-                    shift_expr(e, offset);
+                    shift_expr_xy(e, dl, dc);
                 }
             }
         }
-        Expression::Cmx(c) => shift_cmx(c, offset),
+        Expression::Cmx(c) => shift_cmx_xy(c, dl, dc),
         Expression::NamespaceAccess(_, _, s) => {
-            *s = shift_span(s.clone(), offset);
+            *s = shift_span_xy(s.clone(), dl, dc);
         }
         Expression::Await(inner, s) => {
-            *s = shift_span(s.clone(), offset);
-            shift_expr(inner, offset);
+            *s = shift_span_xy(s.clone(), dl, dc);
+            shift_expr_xy(inner, dl, dc);
         }
     }
 }
 
-fn shift_cmx(c: &mut CmxElement, offset: u32) {
-    c.span = shift_span(c.span.clone(), offset);
+/// Solo desplazamiento de línea (compat): delega a `shift_expr_xy`.
+pub fn shift_expr(e: &mut Expression, offset: u32) {
+    shift_expr_xy(e, offset, 0);
+}
+
+fn shift_cmx_xy(c: &mut CmxElement, dl: u32, dc: i64) {
+    c.span = shift_span_xy(c.span.clone(), dl, dc);
     for attr in &mut c.attributes {
         if let Some(CmxAttributeValue::Expression(e)) = &mut attr.value {
-            shift_expr(e, offset);
+            shift_expr_xy(e, dl, dc);
         }
     }
     for child in &mut c.children {
         match child {
-            CmxChild::Expression(e) => shift_expr(e, offset),
-            CmxChild::Element(el) => shift_cmx(el, offset),
+            CmxChild::Expression(e) => shift_expr_xy(e, dl, dc),
+            CmxChild::Element(el) => shift_cmx_xy(el, dl, dc),
             _ => {}
         }
     }
@@ -253,7 +275,7 @@ pub fn shift_stmt(s: &mut Statement, offset: u32) {
             shift_expr(&mut s.value, offset);
             for c in &mut s.cases {
                 if let CasePattern::Literal(l) = &mut c.pattern {
-                    shift_literal(l, offset);
+                    shift_literal_line(l, offset);
                 }
                 shift_block(&mut c.block, offset);
             }
@@ -344,6 +366,11 @@ pub fn shift_stmt(s: &mut Statement, offset: u32) {
         }
         Statement::Expression(e) => shift_expr(e, offset),
         Statement::Config(_) | Statement::Meta(_) => {}
-        Statement::Cmx(c) => shift_cmx(c, offset),
+        Statement::Cmx(c) => shift_cmx_line(c, offset),
     }
+}
+
+/// Solo desplazamiento de línea (compat): delega a `shift_cmx_xy`.
+fn shift_cmx_line(c: &mut CmxElement, offset: u32) {
+    shift_cmx_xy(c, offset, 0);
 }

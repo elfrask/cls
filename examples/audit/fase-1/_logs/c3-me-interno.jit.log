@@ -1,0 +1,9 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\fase-1\c3-me-interno.clsx ===
+MODE=jit
+EXITCODE=0
+TIME_MS=3099
+--- STDOUT ---
+saldo: 50
+
+--- STDERR ---
+================

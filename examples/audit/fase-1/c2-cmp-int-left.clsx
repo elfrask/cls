@@ -1,0 +1,10 @@
+# C-2 isolate: comparaciones int-a-izquierda vs float-a-derecha
+function main(args: String[]) -> int {
+    print("1 > 0.5 =", 1 > 0.5);
+    print("1 < 0.5 =", 1 < 0.5);
+    print("1 >= 0.5 =", 1 >= 0.5);
+    print("1 <= 0.5 =", 1 <= 0.5);
+    print("1 == 0.5 =", 1 == 0.5);
+    print("1 != 0.5 =", 1 != 0.5);
+    return 0;
+};

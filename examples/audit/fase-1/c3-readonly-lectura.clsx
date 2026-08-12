@@ -1,0 +1,10 @@
+# C-3: readonly lectura externa DEBE permitirse; escritura externa bloqueada
+class C {
+    readonly var creado: int;
+    function main() { me.creado = 2024; }
+};
+function main(args: String[]) -> int {
+    var c = C();
+    print("lectura externa:", c.creado);
+    return 0;
+};

@@ -1,0 +1,9 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\bug-abs-float.clsx ===
+MODE=jit
+EXITCODE=0
+TIME_MS=1045
+--- STDOUT ---
+abs float: 2.5
+
+--- STDERR ---
+================

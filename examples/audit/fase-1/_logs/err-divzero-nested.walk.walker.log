@@ -1,0 +1,22 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\err-divzero-nested.clsx ===
+MODE=walk
+EXITCODE=1
+TIME_MS=1070
+--- STDOUT ---
+--- STDERR ---
+[91mError de ejecución:[0m
+
+[36m1[0m. [33m→[0m main
+[36m2[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-divzero-nested.clsx:9:22 [33m→[0m outer
+  9 |     var r = outer(10);
+    | [90m                     ^[0m
+[36m3[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-divzero-nested.clsx:6:20 [33m→[0m inner
+  6 |     return inner(y);
+    | [90m                   ^[0m
+[36m4[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-divzero-nested.clsx:3:14 [95m[Runtime Error][0m
+  3 |     return y / 0;
+    | [31m             ^[0m
+  [1m[91mError:[0m[0m División por cero (línea 3, columna 14)
+
+
+================

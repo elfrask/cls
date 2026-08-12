@@ -1,0 +1,14 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\stress\stress-recursion.clsx ===
+MODE=jit
+EXITCODE=1
+TIME_MS=3079
+--- STDOUT ---
+inicio
+
+--- STDERR ---
+[91mError de ejecución:[0m
+
+  [1m[91mError:[0m[0m Trap WASM: excepción no capturada
+
+
+================

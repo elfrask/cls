@@ -1,0 +1,15 @@
+# C-2 isolate: neg, abs, sqrt, comparaciones mixtas
+import "math" as math;
+function main(args: String[]) -> int {
+    print("-2.5 =", -2.5);
+    print("abs(-2.5) =", math.abs(-2.5));
+    print("sqrt(2.0) =", math.sqrt(2.0));
+    var f: float = 3.5;
+    print("f > 0 =", f > 0);
+    print("0.5 < 1 =", 0.5 < 1);
+    print("0.5 == 0.5 =", 0.5 == 0.5);
+    print("2.0 == 2 =", 2.0 == 2);
+    print("0.5 <= 1 =", 0.5 <= 1);
+    print("1 >= 0.5 =", 1 >= 0.5);
+    return 0;
+};

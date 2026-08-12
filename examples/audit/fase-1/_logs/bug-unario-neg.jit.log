@@ -1,0 +1,11 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\bug-unario-neg.clsx ===
+MODE=jit
+EXITCODE=0
+TIME_MS=2095
+--- STDOUT ---
+var neg: -5
+literal neg: -5
+expect: -5 / -5
+
+--- STDERR ---
+================

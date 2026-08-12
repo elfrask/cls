@@ -1,0 +1,9 @@
+# C-2 isolate: array homogeneo float y acceso/print
+function main(args: String[]) -> int {
+    var a = [1.5, 2.5, 3.5];
+    print("a =", a);
+    print("a[0] =", a[0]);
+    a[0] = 9.5;
+    print("tras a[0]=9.5 ->", a);
+    return 0;
+};

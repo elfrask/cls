@@ -1,0 +1,16 @@
+# C-3: me. interno private (sin operador compuesto, que no soporta el JIT)
+class Cuenta {
+    private var saldo: float;
+    function depositar(m: float) {
+        var nuevo: float = me.saldo + m;
+        me.saldo = nuevo;
+    };
+    function obtener() -> float { return me.saldo; }
+    function main() { me.saldo = 0.0; }
+};
+function main(args: String[]) -> int {
+    var c = Cuenta();
+    c.depositar(50.0);
+    print("saldo:", c.obtener());
+    return 0;
+};

@@ -20,6 +20,8 @@ pub struct TypeChecker {
     diagnostics: Vec<Diagnostic>,
     scopes: Vec<HashMap<String, Type>>,
     current_return_type: Option<Type>,
+    /// Span de la función actual (para errores de `return` sin span propio).
+    current_fn_span: Span,
     interfaces: HashMap<String, InterfaceInfo>,
     enums: std::collections::HashSet<String>,
     /// Mapa Span → Type de TODAS las expresiones visitadas (para backends).
@@ -41,6 +43,7 @@ impl TypeChecker {
             diagnostics: Vec::new(),
             scopes: vec![HashMap::new()],
             current_return_type: None,
+    current_fn_span: Span::new(1, 1, 1, 1),
             interfaces: HashMap::new(),
             enums: std::collections::HashSet::new(),
             types_by_span: HashMap::new(),
@@ -176,13 +179,18 @@ impl TypeChecker {
                 // Verificar que el tipo de retorno concuerde
                 if let Some(expected) = &self.current_return_type {
                     if !ret_type.is_assignable_to(expected) {
-                        self.warn(
-                            &format!(
-                                "Tipo de retorno {} no coincide con el declarado {}",
-                                ret_type, expected
-                            ),
-                            Span::new(1, 1, 1, 1),
+                        let msg = format!(
+                            "Tipo de retorno {} no coincide con el declarado {}",
+                            ret_type, expected
                         );
+                        let span = expr.as_ref()
+                            .map(|e| expr_span(e))
+                            .unwrap_or_else(|| self.current_fn_span.clone());
+                        if self.config.strict {
+                            self.error(&msg, span);
+                        } else {
+                            self.warn(&msg, span);
+                        }
                     }
                 }
                 ret_type
@@ -374,6 +382,8 @@ impl TypeChecker {
 
         // Verificar cuerpo con params y placeholders en scope
         let prev_return = self.current_return_type.replace(return_type.clone());
+        let prev_fn_span = self.current_fn_span.clone();
+        self.current_fn_span = func.span.clone();
         for (name, typ) in &param_types {
             self.define(name, typ.clone());
         }
@@ -382,6 +392,7 @@ impl TypeChecker {
         self.check_block(&func.body);
         self.pop_scope();
         self.current_return_type = prev_return;
+        self.current_fn_span = prev_fn_span;
 
         self.define(&func.name, fn_type);
         return_type
@@ -988,6 +999,11 @@ impl TypeChecker {
                         return t.clone();
                     }
                 }
+                // `Color.Rojo` / `lib::Color.Rojo` → la variante de enum es
+                // del mismo tipo (identidad con nombre del enum).
+                if self.enums.contains(name.as_str()) {
+                    return Type::Named(name.clone(), vec![]);
+                }
                 // Módulo/namespace importado: `x::miembro`.
                 if let Some(t) = self.module_member_type(name.as_str(), &member.member) {
                     return t;
@@ -1266,11 +1282,15 @@ impl TypeChecker {
         // Chequear params y body PRIMERO: así las variables declaradas dentro
         // del body (p.ej. `var inner = () -> ...`) quedan tipadas antes de
         // inferir el retorno (necesario para arrow-de-arrow con captura).
+        // El retorno de la arrow se INFIERE del body: no debe validarse contra
+        // el `current_return_type` de la función que la contiene.
         self.push_scope();
+        let prev_return = self.current_return_type.take();
         for (param, typ) in arrow.params.iter().zip(param_types.iter()) {
             self.define(&param.name, typ.clone());
         }
         self.check_block(&arrow.body);
+        self.current_return_type = prev_return;
 
         // Inferir el retorno del primer `return expr` del body. Leer del type map
         // (ya registrado por check_block) para no depender del scope actual.
@@ -1315,10 +1335,12 @@ impl TypeChecker {
         let right = self.check_expression(&assign.value);
 
         if !right.is_assignable_to(&left) {
-            self.warn(
-                &format!("Tipo {} no asignable a {}", right, left),
-                assign.span.clone(),
-            );
+            let msg = format!("Tipo {} no asignable a {}", right, left);
+            if self.config.strict {
+                self.error(&msg, assign.span.clone());
+            } else {
+                self.warn(&msg, assign.span.clone());
+            }
         }
 
         left

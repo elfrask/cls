@@ -1,0 +1,14 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\bug-visibilidad-readonly.clsx ===
+MODE=jit
+EXITCODE=1
+TIME_MS=2124
+--- STDOUT ---
+--- STDERR ---
+[91mError en 'C:\Users\Frask\Documents\cls\examples\audit\errores\bug-visibilidad-readonly.clsx':[0m
+[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\bug-visibilidad-readonly.clsx:8:14 [95m[Error de Compilación][0m
+  8 |     c.creado = 999;
+    | [31m             ^[0m
+  [1m[91mError:[0m[0m El campo 'creado' es readonly (solo se puede escribir desde la clase)
+
+
+================

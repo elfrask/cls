@@ -1,0 +1,13 @@
+# C-2 isolate: var float += variable float, += literal float, y float op int literal
+function main(args: String[]) -> int {
+    var a: float = 1.5;
+    var b: float = 2.0;
+    a += b;
+    print("a += b ->", a);
+    var c: float = 10.0;
+    c += 2.5;
+    print("c += 2.5 ->", c);
+    var x = c + 1;
+    print("x = c + 1 ->", x);
+    return 0;
+};

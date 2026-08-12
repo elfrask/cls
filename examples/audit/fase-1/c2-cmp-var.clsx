@@ -1,0 +1,10 @@
+# C-2 isolate: var int vs literal float en comparaciones
+function main(args: String[]) -> int {
+    var h: int = 3;
+    print("h > 0.5 =", h > 0.5);
+    print("h == 0.5 =", h == 0.5);
+    var g: float = 3.5;
+    print("g > 0.5 =", g > 0.5);
+    print("g == 2 =", g == 2);
+    return 0;
+};

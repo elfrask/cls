@@ -1,0 +1,10 @@
+# C-2 isolate: comparaciones float-a-izquierda (deberian funcionar)
+function main(args: String[]) -> int {
+    print("0.5 > 1 =", 0.5 > 1);
+    print("0.5 < 1 =", 0.5 < 1);
+    print("0.5 >= 1 =", 0.5 >= 1);
+    print("0.5 <= 1 =", 0.5 <= 1);
+    print("0.5 == 1 =", 0.5 == 1);
+    print("0.5 != 1 =", 0.5 != 1);
+    return 0;
+};

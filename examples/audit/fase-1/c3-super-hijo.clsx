@@ -1,0 +1,14 @@
+# C-3: super.metodo simple sin constructor padre
+class Base {
+    var nombre: String;
+    function main() { me.nombre = "base"; }
+    function saludar() -> String { return "Hola " + me.nombre; }
+};
+class Hijo: Base {
+    function saludarHijo() -> String { return super.saludar() + "!"; }
+};
+function main(args: String[]) -> int {
+    var h = Hijo();
+    print("saludar hijo:", h.saludarHijo());
+    return 0;
+};
