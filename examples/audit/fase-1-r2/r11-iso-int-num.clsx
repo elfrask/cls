@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    var x = int("42abc");
+    print("x:", x);
+    return 0;
+};

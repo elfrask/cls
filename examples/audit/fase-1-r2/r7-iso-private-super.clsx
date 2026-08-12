@@ -1,0 +1,13 @@
+class Base {
+    private function secreta() -> int { return 42; }
+    function llamar() -> int { return me.secreta(); }
+    function main() { }
+};
+class Hijo: Base {
+    function extra() -> int { return super.llamar(); }
+};
+function main(args: String[]) -> int {
+    var h = Hijo();
+    print("super a metodo publico:", h.extra());
+    return 0;
+};

@@ -1,0 +1,4 @@
+h > 0.5 = true
+h == 0.5 = false
+g > 0.5 = true
+g == 2 = false

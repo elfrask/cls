@@ -1,0 +1,6 @@
+import "math" as math;
+function main(args: String[]) -> int {
+    var arr = [math.abs(-2.5)];
+    print(arr[0]);
+    return 0;
+};

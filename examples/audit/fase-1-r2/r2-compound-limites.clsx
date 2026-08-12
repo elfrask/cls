@@ -1,0 +1,27 @@
+# R2 (nuevo): limites compound assignment float con RHS int/float
+# Nota: '%=' y '**=' NO existen en CLS (lexer solo += -= *= /=) - probado en
+# walker y JIT (paridad). Aqui se prueba f = f % 2 y f = f ** 2 equivalentes.
+function main(args: String[]) -> int {
+    var f: float = 2.5;
+    f = f ** 2;
+    print("f = f ** 2:", f);
+    f *= 2;
+    print("f *= 2:", f);
+    var k: int = 3;
+    f *= k;
+    print("f *= k:", f);
+    f += k;
+    print("f += k:", f);
+    var g: float = 1.5;
+    f += g;
+    print("f += g:", f);
+    f = f % 2;
+    print("f = f % 2:", f);
+    var h: float = 5.5;
+    h = h % 2;
+    print("h = h % 2:", h);
+    var w: float = 7.5;
+    w /= 4;
+    print("w /= 4:", w);
+    return 0;
+};

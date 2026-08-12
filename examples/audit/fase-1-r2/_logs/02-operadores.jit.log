@@ -1,0 +1,13 @@
+suma: 5 resta: 4 mult: 8 div: 2
+div entera: 3 div float: 3.3333333333333335
+mod: 1 mod float: 1.5
+potencia: 256
+neg float: -2.5
+neg via resta: -5
+cmp: true true false true
+logicos: false true false
+bitwise: 6 16 32 -6
+postfix ++: 2
+postfix --: 1
+compuestos: 9
+string concat: ab

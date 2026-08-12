@@ -1,0 +1,4 @@
+arr len: 2
+arr[0].tag: div
+arr[1].tag: span
+padre.children: [<div />]

@@ -1,0 +1,6 @@
+f == 2 = true
+f != 2 = false
+2.5 == 2 = false
+2 == 2.5 = false
+2.0 == 2 = true
+2 == 2.0 = true

@@ -869,31 +869,29 @@ fn run_wasm(
                 .and_then(|v| v.i64())
                 .map(unpack_span);
             // Shadow call stack: frames (nombre, span) en orden de ejecución
-            // (main → outer → inner). El frame del error es el último.
+            // (main → outer → inner). El frame del error es el último. Cada span
+            // se de-shiftea (los módulos importados tienen offset 100000*n).
             let call_stack: Vec<cls_core::error::StackFrame> = store
                 .data()
                 .call_stack
                 .iter()
                 .map(|(name, sp)| {
-                    cls_core::error::StackFrame::new(name, Some(*sp), entry)
+                    let (file, _source, real) = resolve_runtime_span(&store, *sp, entry);
+                    cls_core::error::StackFrame::new(name, Some(real), &file)
                 })
                 .collect();
             if let Some(span) = span {
                 // De-shiftear el span si pertenece a un módulo importado y
                 // resolver el archivo/source real (para el caret correcto).
-                let (file, source, real_span) = resolve_runtime_span(
-                    &store,
-                    span,
-                    entry,
-                    &store.data().source_file,
-                );
+                let (file, source, real_span) =
+                    resolve_runtime_span(&store, span, entry);
                 let report = cls_runtime::error_report::ErrorReport {
                     error: ClsError::RuntimeError(msg.clone()),
                     span: Some(real_span),
                     stack: call_stack,
                     import_trace: vec![],
                     source_file: file,
-                    source: Some(source),
+                    source,
                 };
                 eprintln!(
                     "{}",
@@ -954,13 +952,13 @@ fn unpack_span(packed: i64) -> Span {
 
 /// Resuelve el archivo y source reales de un span de runtime (puede estar
 /// desplazado por pertenecer a un módulo importado). Devuelve (archivo, source,
-/// span de-shifteado).
+/// span de-shifteado). Para el entry, `source` es `None` → el formateador lee del
+/// archivo en disco (evita perder la línea+caret del error del archivo principal).
 fn resolve_runtime_span(
     store: &Store<HostState>,
     span: Span,
     entry: &str,
-    _entry_source: &str,
-) -> (String, String, Span) {
+) -> (String, Option<String>, Span) {
     let raw_line = span.start_line;
     if raw_line >= 100000 {
         let idx = (raw_line / 100000) as usize;
@@ -975,10 +973,10 @@ fn resolve_runtime_span(
         {
             let _ = off;
             let real = Span::new(real_line, span.start_col, real_line, span.end_col);
-            return (file.clone(), source.clone(), real);
+            return (file.clone(), Some(source.clone()), real);
         }
     }
-    (entry.to_string(), String::new(), span)
+    (entry.to_string(), None, span)
 }
 
 /// Escribe los args como Array<String> en memoria y devuelve el ptr.
@@ -1018,11 +1016,21 @@ fn caller_memory<'a>(caller: &'a mut Caller<'_, HostState>) -> Option<Memory> {
 }
 
 /// Llama al allocator exportado del módulo desde un host function.
+/// Si la alocación falla (memoria agotada) aborta con un mensaje claro en vez
+/// de devolver un puntero inválido que los callers convertirían a 0 (corrupción).
 fn caller_alloc(caller: &mut Caller<'_, HostState>, n: i64) -> Option<i64> {
     let func = caller.get_export("alloc").and_then(|e| e.into_func())?;
     let mut results = [Val::I64(0)];
-    func.call(caller, &[Val::I64(n)], &mut results).ok()?;
-    results[0].i64()
+    if let Err(e) = func.call(caller, &[Val::I64(n)], &mut results) {
+        eprintln!("Error de ejecución: memoria insuficiente (out of memory) al alocar {} bytes: {}", n, e);
+        std::process::exit(1);
+    }
+    let ptr = results[0].i64().unwrap_or(0);
+    if ptr == 0 {
+        eprintln!("Error de ejecución: memoria insuficiente (out of memory) al alocar {} bytes", n);
+        std::process::exit(1);
+    }
+    Some(ptr)
 }
 
 /// Escribe un string en la memoria del módulo (via alloc) y lo empaqueta.

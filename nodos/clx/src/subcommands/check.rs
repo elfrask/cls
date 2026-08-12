@@ -71,6 +71,13 @@ pub fn execute(args: &[String]) -> i32 {
             total_errors += 1;
             continue;
         }
+        // Desplazar los spans de los módulos importados (offset único por módulo),
+        // igual que el JIT: sin esto las líneas de un módulo colisionan con las del
+        // archivo actual y el caret apunta al archivo equivocado.
+        for (i, (_path, _src, m)) in imports.iter_mut().enumerate() {
+            let offset = 100000u32 * (i as u32 + 1);
+            cls_core::frontend::span_shift::shift_module(m, offset);
+        }
         // Prelude para el checker: solo (path, module).
         let prelude: Vec<(String, Module)> = imports
             .iter()
@@ -95,18 +102,33 @@ pub fn execute(args: &[String]) -> i32 {
                 cls_core::error::diagnostic::Severity::Warning => ("WARN", ansi::codes::BRIGHT_YELLOW),
                 _ => ("INFO", ansi::codes::BRIGHT_CYAN),
             };
-            let name = if files.len() > 1 {
-                format!("{}:{}", file, diag.span)
+            // Determinar el archivo/source real del diag: si la línea está
+            // desplazada (>= 100000), pertenece a un módulo importado.
+            let raw_line = diag.span.start_line;
+            let (show_file, show_line, show_source) = if raw_line >= 100000 {
+                let idx = (raw_line / 100000) as usize;
+                let offset = idx * 100000;
+                let real_line = raw_line - offset as u32;
+                if let Some((_, src, _)) = imports.get(idx.saturating_sub(1)) {
+                    (format!("{} (módulo importado)", file), real_line, src.clone())
+                } else {
+                    (file.clone(), raw_line, source.clone())
+                }
             } else {
-                format!("{}:{}", diag.span.start_line, diag.span.start_col)
+                (file.clone(), raw_line, source.clone())
+            };
+            let name = if files.len() > 1 || raw_line >= 100000 {
+                format!("{}:{}:{}", show_file, show_line, diag.span.start_col)
+            } else {
+                format!("{}:{}", show_line, diag.span.start_col)
             };
             let sev = ansi::bold(true, ansi::fg(true, color, severity));
             let msg = ansi::fg(true, color, &diag.message);
             eprintln!("[{}] {} ({})", sev, msg, ansi::fg(true, ansi::codes::GRAY, &name));
             // Contexto de código: mostrar la línea fuente y el caret en la posición
-            let line = diag.span.start_line as usize;
+            let line = show_line as usize;
             let col = diag.span.start_col as usize;
-            if let Some(src_line) = source.lines().nth(line.saturating_sub(1)) {
+            if let Some(src_line) = show_source.lines().nth(line.saturating_sub(1)) {
                 let pad = " ".repeat(line.to_string().len());
                 eprintln!("  {} | {}", line, src_line);
                 let width = if diag.span.end_line == diag.span.start_line && diag.span.end_col > diag.span.start_col {
