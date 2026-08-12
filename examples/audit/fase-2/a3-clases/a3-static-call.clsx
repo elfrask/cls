@@ -1,0 +1,10 @@
+# A-3: static method que usa otro static (call directo sin me)
+class Util {
+    static var factor: int = 3;
+    static function base() -> int { return 10; }
+    static function total() -> int { return Util.base() + Util.factor; }
+};
+function main(args: String[]) -> int {
+    print("total:", Util.total());
+    return 0;
+};

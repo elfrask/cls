@@ -1,0 +1,11 @@
+llamando al modulo...
+[91mError de ejecuci+¶n:[0m
+System.Management.Automation.RemoteException
+[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\modules\err-error-en-modulo.clsx:9:1 [33m‘Â∆[0m main
+[36m2[0m. En C:\Users\Frask\Documents\cls\examples\audit\modules\err-error-en-modulo.clsx:100007:1 [33m‘Â∆[0m nivel2
+[36m3[0m. En C:\Users\Frask\Documents\cls\examples\audit\modules\err-error-en-modulo.clsx:100004:1 [33m‘Â∆[0m nivel1
+[36m4[0m. En err-lib-modulo:2:15 [95m[Runtime Error][0m
+  2 |     return 10 / 0;
+    | [31m              ^[0m
+  [1m[91mError:[0m[0m Divisi+¶n por cero
+System.Management.Automation.RemoteException

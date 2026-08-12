@@ -1,0 +1,5 @@
+inicio
+[91mError de ejecuci+¦n:[0m
+System.Management.Automation.RemoteException
+  [1m[91mError:[0m[0m Trap WASM: excepci+¦n no capturada
+System.Management.Automation.RemoteException

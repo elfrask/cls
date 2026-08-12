@@ -1,0 +1,10 @@
+# A-4: factorial que cabe en i64 (20! = 2432902008176640000)
+function fact(n: int) -> int {
+    if (n <= 1) { return 1; }
+    return n * fact(n - 1);
+};
+function main(args: String[]) -> int {
+    var r = fact(20);
+    print("fact(20):", r);
+    return 0;
+};

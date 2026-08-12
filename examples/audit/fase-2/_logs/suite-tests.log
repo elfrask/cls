@@ -1,0 +1,32 @@
+== Test de features JIT (paridad JIT == walker) ==
+SCRIPT         RES    NOTA
+------         ---    ----
+a1.clsx        PASS   
+a10.clsx       PASS   
+a11.clsx       SKIP   requiere DLL de extension (clx_demo.dll)
+a2.clsx        PASS   
+a2min.clsx     SKIP   variante de tuplas (cubierto por a2)
+a3.clsx        PASS   
+a4.clsx        PASS   
+a5.clsx        PASS   
+a6.clsx        PASS   
+a7.clsx        PASS   
+a8.clsx        PASS   
+a9.clsx        PASS   
+b1.clsx        PASS   
+b1b.clsx       PASS   
+b1min.clsx     PASS   
+b1types.clsx   PASS   
+b2.clsx        PASS   
+b3.clsx        PASS   
+b3b.clsx       PASS   
+b7.clsx        SKIP   requiere red (httpbin.org)
+b8-cmx.clsx    PASS   
+b9-magic.clsx  PASS   
+bench_fib.clsx SKIP   benchmark (usa now(), no hay paridad de tiempos)
+f64arr.clsx    SKIP   requiere args de app (-- ola mundo)
+syn2.clsx      SKIP   prueba de error de sintaxis (sin paridad)
+synerr.clsx    SKIP   prueba de error de sintaxis (sin paridad)
+trytest.clsx   PASS   
+
+Resultado: 20 PASS, 0 FAIL, 7 SKIP

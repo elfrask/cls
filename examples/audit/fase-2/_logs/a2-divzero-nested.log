@@ -1,0 +1,5 @@
+[91mError de ejecuci+¦n:[0m
+System.Management.Automation.RemoteException
+[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-divzero-nested.clsx:3:14 [95m[Runtime Error][0m
+  [1m[91mError:[0m[0m Divisi+¦n por cero
+System.Management.Automation.RemoteException

@@ -1,0 +1,456 @@
+Module {
+    statements: [
+        ClassDecl(
+            ClassDecl {
+                name: "Base",
+                extends: None,
+                implements: [],
+                body: [
+                    Property(
+                        VarDecl {
+                            name: "x",
+                            type_ann: Some(
+                                TypeAnnotation {
+                                    kind: Int,
+                                    span: Span {
+                                        start_line: 3,
+                                        start_col: 15,
+                                        end_line: 3,
+                                        end_col: 15,
+                                    },
+                                },
+                            ),
+                            value: None,
+                            visibility: Default,
+                            span: Span {
+                                start_line: 4,
+                                start_col: 5,
+                                end_line: 4,
+                                end_col: 5,
+                            },
+                            is_static: false,
+                            is_readonly: false,
+                        },
+                    ),
+                    Constructor(
+                        FunctionDecl {
+                            name: "main",
+                            params: [],
+                            return_type: None,
+                            body: Block {
+                                statements: [
+                                    Expression(
+                                        Assignment(
+                                            AssignmentExpr {
+                                                target: MemberAccess(
+                                                    MemberAccessExpr {
+                                                        object: Identifier(
+                                                            "me",
+                                                            Span {
+                                                                start_line: 4,
+                                                                start_col: 25,
+                                                                end_line: 4,
+                                                                end_col: 25,
+                                                            },
+                                                        ),
+                                                        member: "x",
+                                                        span: Span {
+                                                            start_line: 4,
+                                                            start_col: 28,
+                                                            end_line: 4,
+                                                            end_col: 28,
+                                                        },
+                                                    },
+                                                ),
+                                                op: Equal,
+                                                value: Literal(
+                                                    Literal {
+                                                        kind: Int(
+                                                            5,
+                                                        ),
+                                                        span: Span {
+                                                            start_line: 4,
+                                                            start_col: 31,
+                                                            end_line: 4,
+                                                            end_col: 31,
+                                                        },
+                                                    },
+                                                ),
+                                                span: Span {
+                                                    start_line: 4,
+                                                    start_col: 31,
+                                                    end_line: 4,
+                                                    end_col: 31,
+                                                },
+                                            },
+                                        ),
+                                    ),
+                                ],
+                                span: Span {
+                                    start_line: 5,
+                                    start_col: 5,
+                                    end_line: 5,
+                                    end_col: 5,
+                                },
+                            },
+                            visibility: Default,
+                            modifiers: [],
+                            span: Span {
+                                start_line: 5,
+                                start_col: 5,
+                                end_line: 5,
+                                end_col: 5,
+                            },
+                            type_params: [],
+                            is_native: false,
+                        },
+                    ),
+                    Method(
+                        FunctionDecl {
+                            name: "get",
+                            params: [],
+                            return_type: Some(
+                                TypeAnnotation {
+                                    kind: Int,
+                                    span: Span {
+                                        start_line: 5,
+                                        start_col: 27,
+                                        end_line: 5,
+                                        end_col: 27,
+                                    },
+                                },
+                            ),
+                            body: Block {
+                                statements: [
+                                    Return(
+                                        Some(
+                                            MemberAccess(
+                                                MemberAccessExpr {
+                                                    object: Identifier(
+                                                        "me",
+                                                        Span {
+                                                            start_line: 5,
+                                                            start_col: 38,
+                                                            end_line: 5,
+                                                            end_col: 38,
+                                                        },
+                                                    ),
+                                                    member: "x",
+                                                    span: Span {
+                                                        start_line: 5,
+                                                        start_col: 40,
+                                                        end_line: 5,
+                                                        end_col: 40,
+                                                    },
+                                                },
+                                            ),
+                                        ),
+                                    ),
+                                ],
+                                span: Span {
+                                    start_line: 6,
+                                    start_col: 1,
+                                    end_line: 6,
+                                    end_col: 1,
+                                },
+                            },
+                            visibility: Default,
+                            modifiers: [],
+                            span: Span {
+                                start_line: 6,
+                                start_col: 1,
+                                end_line: 6,
+                                end_col: 1,
+                            },
+                            type_params: [],
+                            is_native: false,
+                        },
+                    ),
+                ],
+                span: Span {
+                    start_line: 7,
+                    start_col: 1,
+                    end_line: 7,
+                    end_col: 1,
+                },
+                type_params: [],
+                visibility: Default,
+            },
+        ),
+        ClassDecl(
+            ClassDecl {
+                name: "Hijo",
+                extends: Some(
+                    "Base",
+                ),
+                implements: [],
+                body: [
+                    Constructor(
+                        FunctionDecl {
+                            name: "main",
+                            params: [],
+                            return_type: None,
+                            body: Block {
+                                statements: [
+                                    Expression(
+                                        Call(
+                                            CallExpr {
+                                                callee: MemberAccess(
+                                                    MemberAccessExpr {
+                                                        object: Identifier(
+                                                            "super",
+                                                            Span {
+                                                                start_line: 8,
+                                                                start_col: 28,
+                                                                end_line: 8,
+                                                                end_col: 28,
+                                                            },
+                                                        ),
+                                                        member: "main",
+                                                        span: Span {
+                                                            start_line: 8,
+                                                            start_col: 33,
+                                                            end_line: 8,
+                                                            end_col: 33,
+                                                        },
+                                                    },
+                                                ),
+                                                args: [],
+                                                span: Span {
+                                                    start_line: 8,
+                                                    start_col: 35,
+                                                    end_line: 8,
+                                                    end_col: 35,
+                                                },
+                                            },
+                                        ),
+                                    ),
+                                ],
+                                span: Span {
+                                    start_line: 9,
+                                    start_col: 1,
+                                    end_line: 9,
+                                    end_col: 1,
+                                },
+                            },
+                            visibility: Default,
+                            modifiers: [],
+                            span: Span {
+                                start_line: 9,
+                                start_col: 1,
+                                end_line: 9,
+                                end_col: 1,
+                            },
+                            type_params: [],
+                            is_native: false,
+                        },
+                    ),
+                ],
+                span: Span {
+                    start_line: 10,
+                    start_col: 1,
+                    end_line: 10,
+                    end_col: 1,
+                },
+                type_params: [],
+                visibility: Default,
+            },
+        ),
+        FunctionDecl(
+            FunctionDecl {
+                name: "main",
+                params: [
+                    Parameter {
+                        name: "args",
+                        type_ann: Some(
+                            TypeAnnotation {
+                                kind: Array(
+                                    TypeAnnotation {
+                                        kind: String,
+                                        span: Span {
+                                            start_line: 10,
+                                            start_col: 27,
+                                            end_line: 10,
+                                            end_col: 27,
+                                        },
+                                    },
+                                ),
+                                span: Span {
+                                    start_line: 10,
+                                    start_col: 27,
+                                    end_line: 10,
+                                    end_col: 27,
+                                },
+                            },
+                        ),
+                        default_value: None,
+                        span: Span {
+                            start_line: 10,
+                            start_col: 29,
+                            end_line: 10,
+                            end_col: 29,
+                        },
+                    },
+                ],
+                return_type: Some(
+                    TypeAnnotation {
+                        kind: Int,
+                        span: Span {
+                            start_line: 10,
+                            start_col: 38,
+                            end_line: 10,
+                            end_col: 38,
+                        },
+                    },
+                ),
+                body: Block {
+                    statements: [
+                        VarDecl(
+                            VarDecl {
+                                name: "h",
+                                type_ann: None,
+                                value: Some(
+                                    Call(
+                                        CallExpr {
+                                            callee: Identifier(
+                                                "Hijo",
+                                                Span {
+                                                    start_line: 11,
+                                                    start_col: 17,
+                                                    end_line: 11,
+                                                    end_col: 17,
+                                                },
+                                            ),
+                                            args: [],
+                                            span: Span {
+                                                start_line: 11,
+                                                start_col: 19,
+                                                end_line: 11,
+                                                end_col: 19,
+                                            },
+                                        },
+                                    ),
+                                ),
+                                visibility: Default,
+                                span: Span {
+                                    start_line: 12,
+                                    start_col: 5,
+                                    end_line: 12,
+                                    end_col: 5,
+                                },
+                                is_static: false,
+                                is_readonly: false,
+                            },
+                        ),
+                        Expression(
+                            Call(
+                                CallExpr {
+                                    callee: Identifier(
+                                        "print",
+                                        Span {
+                                            start_line: 12,
+                                            start_col: 10,
+                                            end_line: 12,
+                                            end_col: 10,
+                                        },
+                                    ),
+                                    args: [
+                                        Literal(
+                                            Literal {
+                                                kind: String(
+                                                    "x:",
+                                                ),
+                                                span: Span {
+                                                    start_line: 12,
+                                                    start_col: 15,
+                                                    end_line: 12,
+                                                    end_col: 15,
+                                                },
+                                            },
+                                        ),
+                                        Call(
+                                            CallExpr {
+                                                callee: MemberAccess(
+                                                    MemberAccessExpr {
+                                                        object: Identifier(
+                                                            "h",
+                                                            Span {
+                                                                start_line: 12,
+                                                                start_col: 18,
+                                                                end_line: 12,
+                                                                end_col: 18,
+                                                            },
+                                                        ),
+                                                        member: "get",
+                                                        span: Span {
+                                                            start_line: 12,
+                                                            start_col: 22,
+                                                            end_line: 12,
+                                                            end_col: 22,
+                                                        },
+                                                    },
+                                                ),
+                                                args: [],
+                                                span: Span {
+                                                    start_line: 12,
+                                                    start_col: 24,
+                                                    end_line: 12,
+                                                    end_col: 24,
+                                                },
+                                            },
+                                        ),
+                                    ],
+                                    span: Span {
+                                        start_line: 12,
+                                        start_col: 25,
+                                        end_line: 12,
+                                        end_col: 25,
+                                    },
+                                },
+                            ),
+                        ),
+                        Return(
+                            Some(
+                                Literal(
+                                    Literal {
+                                        kind: Int(
+                                            0,
+                                        ),
+                                        span: Span {
+                                            start_line: 13,
+                                            start_col: 13,
+                                            end_line: 13,
+                                            end_col: 13,
+                                        },
+                                    },
+                                ),
+                            ),
+                        ),
+                    ],
+                    span: Span {
+                        start_line: 15,
+                        start_col: 1,
+                        end_line: 15,
+                        end_col: 1,
+                    },
+                },
+                visibility: Default,
+                modifiers: [],
+                span: Span {
+                    start_line: 15,
+                    start_col: 1,
+                    end_line: 15,
+                    end_col: 1,
+                },
+                type_params: [],
+                is_native: false,
+            },
+        ),
+    ],
+    span: Span {
+        start_line: 1,
+        start_col: 1,
+        end_line: 1,
+        end_col: 1,
+    },
+}

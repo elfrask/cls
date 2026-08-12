@@ -568,15 +568,24 @@ impl TypeChecker {
         let t = match expr {
             Expression::Literal(l) => self.check_literal(l),
             Expression::Identifier(name, span) => {
-                self.lookup(name)
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        if self.config.no_implicit_any {
-                            self.error(&format!("Variable no definida: {}", name), span.clone())
-                        } else {
-                            Type::Any
-                        }
-                    })
+                // Módulos internos del nodo (json/math/fs/http): no son variables,
+                // pero se aceptan como namespace (el backend los resuelve).
+                if matches!(name.as_str(), "json" | "math" | "fs" | "http" | "Lib" | "async") {
+                    Type::Any
+                } else {
+                    self.lookup(name)
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            if self.config.no_implicit_any {
+                                self.error(
+                                    &format!("Variable no definida: {}", name),
+                                    span.clone(),
+                                )
+                            } else {
+                                Type::Any
+                            }
+                        })
+                }
             }
             Expression::Binary(b) => self.check_binary(b),
             Expression::Unary(u) => self.check_unary(u),
@@ -895,13 +904,12 @@ impl TypeChecker {
     }
 
     fn check_member_access(&mut self, member: &MemberAccessExpr) -> Type {
-        let obj_type = self.check_expression(&member.object);
-        // Color.Rojo → el tipo del enum (si member.object es un nombre de enum)
+        // Módulos internos del nodo (resueltos por nombre en el JIT): se manejan
+        // ANTES de evaluar el object (que no está definido como variable).
         if let Expression::Identifier(name, _) = &*member.object {
             if self.enums.contains(name) {
                 return Type::Named(name.clone(), vec![]);
             }
-            // Módulos internos del nodo (resueltos por nombre en el JIT).
             if name == "http" {
                 return match member.member.as_str() {
                     "get" | "post" => Type::String,
@@ -917,6 +925,8 @@ impl TypeChecker {
             }
             if name == "json" {
                 return match member.member.as_str() {
+                    // parse devuelve un Record<String, any> (para acceso por
+                    // índice obj["k"] y print). El layout del host es compatible.
                     "parse" => Type::Record(Box::new(Type::String), Box::new(Type::Any)),
                     "stringify" => Type::String,
                     _ => Type::Any,
@@ -933,6 +943,8 @@ impl TypeChecker {
                 };
             }
         }
+        let obj_type = self.check_expression(&member.object);
+        // Color.Rojo → el tipo del enum (si member.object es un nombre de enum)
         // Métodos/getters de primitivos (sin boxing): tipo conocido por miembro.
         match obj_type {
             Type::String => match member.member.as_str() {
@@ -1250,6 +1262,10 @@ impl TypeChecker {
                     ),
                     arr.span.clone(),
                 );
+                elem_type = t;
+            } else if !t.is_assignable_to(&elem_type) && elem_type.is_assignable_to(&t) {
+                // Compatible por promoción: `[1, 2.0]` → el array es de Float
+                // (el Int se promueve en emisión). Último tipo más específico.
                 elem_type = t;
             }
         }

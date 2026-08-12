@@ -1,0 +1,15 @@
+# A-3: super.main(args) ctor padre desde hijo
+class Base {
+    var nombre: String;
+    var edad: int;
+    function main(n: String, e: int) { me.nombre = n; me.edad = e; }
+    function presentar() -> String { return me.nombre + " edad=" + toString(me.edad); }
+};
+class Hijo: Base {
+    function main() { super.main("mundo", 42); }
+};
+function main(args: String[]) -> int {
+    var h = Hijo();
+    print("presentar:", h.presentar());
+    return 0;
+};

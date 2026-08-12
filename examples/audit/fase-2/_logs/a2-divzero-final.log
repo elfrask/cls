@@ -1,0 +1,12 @@
+[91mError de ejecuci+¦n:[0m
+System.Management.Automation.RemoteException
+[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-divzero-nested.clsx:13:1 [33mÔåÆ[0m main
+[36m2[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-divzero-nested.clsx:8:1 [33mÔåÆ[0m outer
+  8 | function main(args: String[]) -> int {
+    | [90m^[0m
+[36m3[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-divzero-nested.clsx:5:1 [33mÔåÆ[0m inner
+  5 | function outer(y: int) -> int {
+    | [90m^[0m
+[36m4[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-divzero-nested.clsx:3:14 [95m[Runtime Error][0m
+  [1m[91mError:[0m[0m Divisi+¦n por cero
+System.Management.Automation.RemoteException

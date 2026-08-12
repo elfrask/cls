@@ -1,0 +1,12 @@
+# A-7: enum local (no namespaced) con comparación
+enum Nivel {
+    Bajo,
+    Medio,
+};
+function main(args: String[]) -> int {
+    var n = Nivel.Medio;
+    print("n:", n);
+    print("n==Medio:", n == Nivel.Medio);
+    print("n==Bajo:", n == Nivel.Bajo);
+    return 0;
+};

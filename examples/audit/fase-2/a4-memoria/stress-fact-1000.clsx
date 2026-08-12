@@ -1,0 +1,10 @@
+# A-4: factorial moderado (profundidad 1000) - debe funcionar
+function fact(n: int) -> int {
+    if (n <= 1) { return 1; }
+    return n * fact(n - 1);
+};
+function main(args: String[]) -> int {
+    var r = fact(1000);
+    print("fact(1000):", r);
+    return 0;
+};

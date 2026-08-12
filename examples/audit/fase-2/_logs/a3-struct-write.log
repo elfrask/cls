@@ -1,0 +1,6 @@
+[91mError en 'C:\Users\Frask\Documents\cls\examples\audit\fase-2\a3-clases\a3-struct-write.clsx':[0m
+[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\fase-2\a3-clases\a3-struct-write.clsx:9:9 [95m[Error de Compilaci+¦n][0m
+  9 |     p.x = 100;
+    | [31m        ^[0m
+  [1m[91mError:[0m[0m El JIT (subconjunto WASM) a+¦n no soporta esta expresi+¦n: `p.x`
+System.Management.Automation.RemoteException
