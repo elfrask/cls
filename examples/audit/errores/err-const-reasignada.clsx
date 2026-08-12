@@ -1,0 +1,7 @@
+# ERROR RUNTIME: const reasignada
+function main(args: String[]) -> int {
+    const PI = 3.14;
+    PI = 3.0;
+    print(PI);
+    return 0;
+};

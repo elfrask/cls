@@ -1,0 +1,30 @@
+# QA: try/catch/finally y throw (funciones a nivel superior)
+function lanzar(msg: String) {
+    throw(msg);
+};
+function nivel2() {
+    lanzar("error interno");
+};
+function nivel1() {
+    nivel2();
+};
+
+function main(args: String[]) -> int {
+    try {
+        print("dentro de try");
+        nivel1();
+        print("NO deberia imprimirse");
+    } catch (e) {
+        print("catch:", e);
+    } finally {
+        print("finally ejecutado");
+    }
+    try {
+        var a = [1, 2, 3];
+        print("indice fuera:", a[10]);
+    } catch (e2) {
+        print("catch indice:", e2);
+    }
+    print("tras los try");
+    return 0;
+};

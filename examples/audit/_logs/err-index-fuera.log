@@ -1,0 +1,13 @@
+=== err-index-fuera === EXITCODE=1
+--- STDOUT ---
+fuera:
+--- STDERR ---
+[91mError de ejecución:[0m
+
+[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-index-fuera.clsx:4:26 [95m[Runtime Error][0m
+  4 |     print("fuera:", a[10]);
+    | [31m                         ^[0m
+  [1m[91mError:[0m[0m Índice fuera de rango
+
+
+================

@@ -1,0 +1,26 @@
+# QA: enums
+enum Color {
+    Rojo,
+    Verde,
+    Azul,
+};
+
+function main(args: String[]) -> int {
+    var c = Color.Rojo;
+    print("valor:", c);
+    print("== Rojo:", c == Color.Rojo);
+    print("== Verde:", c == Color.Verde);
+    print("is Color:", c is Color);
+    var d = Color.Verde;
+    print("d is Color:", d is Color);
+    print("iteracion:");
+    for each v in (Color) {
+        print(" -", v);
+    }
+    print("iteracion con indice:");
+    for each v and i in (Color) {
+        print(" - [$i]", v);
+    }
+    print("fin");
+    return 0;
+};

@@ -1,0 +1,17 @@
+# QA: alias de union, alias de tupla, records tipados
+alias Color = "red" | "green" | "blue";
+alias Par = (Int, String);
+alias Dict = Record<String, Int>;
+
+function main(args: String[]) -> int {
+    var c: Color = "red";
+    print("color:", c);
+    var p: Par = (1, "dos");
+    print("par:", p);
+    var d: Dict = {a: 1, b: 2};
+    print("dict:", d);
+    var t: (Int, String)[0] = 1;
+    print("type access:", t);
+    print("fin");
+    return 0;
+};

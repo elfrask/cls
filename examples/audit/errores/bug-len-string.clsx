@@ -1,0 +1,6 @@
+# BUG: len(String) devuelve basura (puntero) en el JIT
+function main(args: String[]) -> int {
+    print("len('abcd'):", len("abcd"));
+    print("expect: 4");
+    return 0;
+};

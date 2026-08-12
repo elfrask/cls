@@ -1,0 +1,6 @@
+# BUG: string dentro de array se imprime como puntero (fuga de memoria)
+function main(args: String[]) -> int {
+    var h = [1, "dos", 3];
+    print("arr:", h);
+    return 0;
+};

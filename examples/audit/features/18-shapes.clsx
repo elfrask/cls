@@ -1,0 +1,16 @@
+# QA: shapes y records con any
+interface Persona {
+    nombre: String,
+    edad: int,
+};
+
+function main(args: String[]) -> int {
+    var p: Persona = { nombre: "Ana", edad: 30 };
+    print("shape:", p);
+    print("p.nombre:", p.nombre, "p.edad:", p.edad);
+    var dict = {"a": 1, "b": 2};
+    print("dict:", dict, "a:", dict["a"]);
+    print("tipo:", type(p));
+    print("fin");
+    return 0;
+};

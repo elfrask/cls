@@ -1,0 +1,10 @@
+# CMX malformado: atributo sin valor
+function main(args: String[]) -> int {
+    var app = (
+        <div titulo=>
+            texto
+        </div>
+    );
+    print(app.tag);
+    return 0;
+};

@@ -1,0 +1,8 @@
+=== bug-len-string === EXITCODE=0
+--- STDOUT ---
+len('abcd'): 171798691844
+expect: 4
+
+--- STDERR ---
+
+================

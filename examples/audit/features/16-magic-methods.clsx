@@ -1,0 +1,18 @@
+# QA: magic methods (subset JIT: __toString/__type/__toJson)
+class Numero {
+    var valor: int;
+    function main(v: int) { me.valor = v; }
+    function __toString() -> String { return "Numero(" + toString(me.valor) + ")"; }
+    function __type() -> String { return "TipoNumero"; }
+    function __toJson() -> String { return "{\"valor\":" + toString(me.valor) + "}"; }
+};
+
+function main(args: String[]) -> int {
+    var a = Numero(5);
+    print("toString fn:", toString(a));
+    print("interpolacion: ${a}");
+    print("type:", type(a));
+    import "json" as json;
+    print("json:", json.stringify(a));
+    return 0;
+};

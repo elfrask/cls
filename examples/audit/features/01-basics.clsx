@@ -1,0 +1,25 @@
+# QA: variables, const, literales, tipos, print
+var x: int = 42;
+var y = 3.14;
+const PI = 3.14159;
+let z = 7;
+var flag: bool = true;
+var ch = 'a';
+var nulo = null;
+var s: String = "hola";
+
+function main(args: String[]) -> int {
+    print("int:", x);
+    print("float:", y);
+    print("const:", PI);
+    print("let:", z);
+    print("bool:", flag);
+    print("char:", ch);
+    print("null:", nulo);
+    print("string:", s);
+    print("type(x):", type(x), "type(y):", type(y), "type(flag):", type(flag));
+    print("len(s):", s.length);
+    print("str(42):", str(42), "int(\"99\"):", int("99"), "float(\"2.5\"):", float("2.5"));
+    print("bool(1):", bool(1), "bool(0):", bool(0));
+    return 0;
+};

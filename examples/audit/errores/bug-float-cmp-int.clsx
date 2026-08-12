@@ -1,0 +1,6 @@
+# BUG: comparar float con literal int (f >= 0) genera WASM invalido
+function main(args: String[]) -> int {
+    var f: float = 3.5;
+    print("cmp:", f >= 0);
+    return 0;
+};

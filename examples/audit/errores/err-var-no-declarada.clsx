@@ -1,0 +1,5 @@
+# ERROR RUNTIME: variable no declarada
+function main(args: String[]) -> int {
+    print("valor:", variableNoExiste);
+    return 0;
+};

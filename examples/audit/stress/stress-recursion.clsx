@@ -1,0 +1,10 @@
+# STRESS: recursion profunda (stack overflow)
+function f(n: int) -> int {
+    return f(n + 1);
+};
+function main(args: String[]) -> int {
+    print("inicio");
+    var r = f(0);
+    print("r:", r);
+    return 0;
+};

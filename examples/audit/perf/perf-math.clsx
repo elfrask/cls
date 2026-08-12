@@ -1,0 +1,15 @@
+# PERF: stdlib math
+import "math" as math;
+function main(args: String[]) -> int {
+    var t0 = now();
+    var sum: float = 0.0;
+    for (var i = 0; i < 100000; i++) {
+        var r: float = math.sqrt(i);
+        var s: float = math.sin(i);
+        sum = sum + r + s;
+    }
+    var t1 = now();
+    print("sum:", sum);
+    print("tiempo_ms:", t1 - t0);
+    return 0;
+};

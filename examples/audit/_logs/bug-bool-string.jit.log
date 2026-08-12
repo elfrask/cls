@@ -1,0 +1,10 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\bug-bool-string.clsx ===
+EXITCODE=0
+TIME_MS=2105
+--- STDOUT ---
+bool(''): false
+bool('x'): false
+expect: false / true
+
+--- STDERR ---
+================

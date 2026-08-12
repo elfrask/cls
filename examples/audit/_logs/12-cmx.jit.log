@@ -1,0 +1,16 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\features\12-cmx.clsx ===
+EXITCODE=0
+TIME_MS=2151
+--- STDOUT ---
+tag: app
+props.titulo: Hola mundo
+props.contador: 2
+children: 3
+child0 tag: parrafo
+child1 tag: separador
+child2 tag: item
+child2 props.id: 3
+fin
+
+--- STDERR ---
+================

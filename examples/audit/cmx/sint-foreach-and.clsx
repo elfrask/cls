@@ -1,0 +1,7 @@
+# Malformado: for each con doble and
+function main(args: String[]) -> int {
+    for each x and i and j in ([1, 2, 3]) {
+        print(i, j, x);
+    }
+    return 0;
+};

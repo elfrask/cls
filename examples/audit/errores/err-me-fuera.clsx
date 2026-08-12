@@ -1,0 +1,5 @@
+# ERROR RUNTIME: me fuera de clase
+function main(args: String[]) -> int {
+    print(me.nombre);
+    return 0;
+};

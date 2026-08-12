@@ -1,0 +1,10 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\err-me-fuera.clsx ===
+EXITCODE=1
+TIME_MS=1082
+--- STDOUT ---
+--- STDERR ---
+[[1m[91mERROR[0m[0m] [91mVariable no definida: me[0m (C:\Users\Frask\Documents\cls\examples\audit\errores\err-me-fuera.clsx:3:13)
+  |     print(me.nombre);
+  |             ^
+
+================

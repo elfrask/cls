@@ -1,0 +1,26 @@
+# QA: aritmetica, comparacion, logica, bitwise, ternario, compuestos, postfix
+function main(args: String[]) -> int {
+    print("suma:", 2 + 3, "resta:", 5 - 1, "mult:", 4 * 2, "div:", 10 / 4);
+    print("div entera:", 10 / 3, "div float:", 10.0 / 3.0);
+    print("mod:", 10 % 3, "mod float:", 5.5 % 2.0);
+    print("potencia:", 2 ** 8);
+    print("neg float:", -2.5);
+    var neg = 0 - 5;
+    print("neg via resta:", neg);
+    print("cmp:", 3 > 2, 3 == 3, 3 <= 2, 4 != 5);
+    print("logicos:", true && false, true || false, !true);
+    print("bitwise:", 5 ^ 3, 1 << 4, 256 >> 3, ~5);
+    var x = 1;
+    x++;
+    print("postfix ++:", x);
+    x--;
+    print("postfix --:", x);
+    var y = 10;
+    y += 5;
+    y *= 2;
+    y -= 3;
+    y /= 3;
+    print("compuestos:", y);
+    print("string concat:", "a" + "b");
+    return 0;
+};

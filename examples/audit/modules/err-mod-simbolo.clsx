@@ -1,0 +1,6 @@
+# ERROR: import de simbolo no exportado
+from "libmod" import inexistente;
+function main(args: String[]) -> int {
+    print("nunca");
+    return 0;
+};

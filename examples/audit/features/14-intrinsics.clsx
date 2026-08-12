@@ -1,0 +1,19 @@
+# QA: intrinsics
+function main(args: String[]) -> int {
+    print("print con multi args:", 1, 2, 3);
+    print("len array:", len([1, 2, 3]));
+    print("len string via length:", "abcd".length);
+    print("type:", type(1), type(1.5), type("x"), type(true));
+    print("int:", int("42"), int(3.7));
+    print("str:", str(123), str(1.5), str(true));
+    print("float:", float("3.14"), float(2));
+    print("bool:", bool(0), bool(1));
+    print("toString:", toString(42));
+    print("now:", now());
+    print("args:", args.length);
+    for each a in (args) {
+        print("arg:", a);
+    }
+    print("fin");
+    return 0;
+};

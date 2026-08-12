@@ -1,0 +1,7 @@
+# Malformado: (a) parentesis vs tupla
+function main(args: String[]) -> int {
+    var a = (5);
+    var t = (5, 6);
+    print("paren:", a, "tupla:", t);
+    return 0;
+};

@@ -1,0 +1,5 @@
+# ERROR: conversion int/float invalida
+function main(args: String[]) -> int {
+    print(int("no es un numero"));
+    return 0;
+};

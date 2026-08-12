@@ -1,0 +1,12 @@
+# PERF: loop aritmetico simple
+function main(args: String[]) -> int {
+    var t0 = now();
+    var x: int = 0;
+    for (var i = 0; i < 20000000; i++) {
+        x = x + i;
+    }
+    var t1 = now();
+    print("resultado:", x);
+    print("tiempo_ms:", t1 - t0);
+    return 0;
+};

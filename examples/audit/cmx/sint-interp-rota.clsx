@@ -1,0 +1,6 @@
+# Malformado: string sin cerrar con interp
+function main(args: String[]) -> int {
+    var s = "texto ${1 + 2;
+    print(s);
+    return 0;
+};

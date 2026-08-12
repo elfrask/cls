@@ -1,0 +1,6 @@
+# BUG: array heterogeneo con float genera WASM invalido
+function main(args: String[]) -> int {
+    var h = [1, "dos", 3.0, true];
+    print("hetero:", h);
+    return 0;
+};

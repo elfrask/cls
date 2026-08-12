@@ -1,0 +1,18 @@
+=== bug-import-doble === EXITCODE=1
+--- STDOUT ---
+
+--- STDERR ---
+[91mError en 'C:\Users\Frask\Documents\cls\examples\audit\modules\bug-import-doble.clsx':[0m
+[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\modules\bug-import-doble.clsx:4:1 [95m[Error de Compilación][0m
+  4 | function main(args: String[]) -> int {
+    | [31m^[0m
+  [1m[91mError:[0m[0m No se pudo resolver el módulo 'libmod'.
+Se buscó en:
+  - C:\Users\Frask\Documents\cls\examples\audit\modules\libmod.clsx
+  - C:\Users\Frask\Documents\cls\examples\audit\modules\libmod\mod.clsx
+  - C:\Users\Frask\Documents\cls\libmod.clsx
+  - C:\Users\Frask\Documents\cls\modules\libmod\mod.clsx
+  - C:\Users\Frask\.cls\modules\libmod\mod.clsx
+
+
+================

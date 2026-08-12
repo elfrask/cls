@@ -1,0 +1,7 @@
+=== bug-range-puntero === EXITCODE=0
+--- STDOUT ---
+range: 1048600
+
+--- STDERR ---
+
+================

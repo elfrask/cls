@@ -1,0 +1,52 @@
+# QA: clases, herencia, super, is, visibilidad, static, readonly
+class Animal {
+    var nombre: String;
+    function main(nombre: String) { me.nombre = nombre; }
+    function hablar() -> String { return me.nombre + " hace ruido"; }
+};
+class Perro: Animal {
+    function main(nombre: String) { me.nombre = nombre; }
+    function hablar() -> String {
+        return super.hablar() + " y ladra";
+    }
+};
+class Cuenta {
+    private var saldo: float;
+    public var titular: String;
+    protected var numero: String;
+    readonly var creadoEn: int;
+    static var tasa: float = 0.05;
+
+    function main(titular: String, numero: String) {
+        me.saldo = 0.0;
+        me.titular = titular;
+        me.numero = numero;
+        me.creadoEn = 2024;
+    }
+    public function depositar(monto: float) {
+        me.saldo = me.saldo + monto;
+    }
+    public function verSaldo() -> float {
+        return me.saldo;
+    }
+    private function auditar() -> bool { return me.saldo >= 0.0; }
+    protected function verNumero() -> String { return me.numero; }
+    public function chequear() -> bool { return me.auditar(); }
+};
+
+function main(args: String[]) -> int {
+    var d = Perro("Rex");
+    print("hablar:", d.hablar());
+    print("is Perro:", d is Perro);
+    print("is Animal:", d is Animal);
+    print("is String:", d is String);
+
+    var c = Cuenta("Ana", "ES1234");
+    c.depositar(100.5);
+    print("saldo:", c.verSaldo());
+    print("titular:", c.titular);
+    print("creadoEn:", c.creadoEn);
+    print("chequear:", c.chequear());
+    print("fin");
+    return 0;
+};

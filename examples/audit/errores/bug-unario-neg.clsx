@@ -1,0 +1,8 @@
+# BUG: unario - sobre literal int pierde el signo en el JIT
+function main(args: String[]) -> int {
+    var x = -5;
+    print("var neg:", x);
+    print("literal neg:", -5);
+    print("expect: -5 / -5");
+    return 0;
+};

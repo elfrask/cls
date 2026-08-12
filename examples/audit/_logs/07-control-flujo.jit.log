@@ -1,0 +1,27 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\features\07-control-flujo.clsx ===
+EXITCODE=0
+TIME_MS=2167
+--- STDOUT ---
+mediano
+while: 0
+while: 1
+while: 2
+loop: 0
+loop: 1
+for: 0
+for: 1
+for: 2
+bc: 0
+bc: 2
+bc: 3
+each: 5
+each: 6
+each: 7
+each[0]: 5
+each[1]: 6
+each[2]: 7
+dos
+with: 1048768
+
+--- STDERR ---
+================

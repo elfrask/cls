@@ -1,0 +1,19 @@
+# CMX: text con interpolacion y elementos mixtos
+function main(args: String[]) -> int {
+    var nombre = "QA";
+    var app = (
+        <app>
+            Hola $nombre
+            <hijo valor={1 + 1} />
+            {[1, 2, 3]}
+            {"expresion string"}
+        </app>
+    );
+    print("tag:", app.tag);
+    print("child0:", app.children[0]);
+    print("child1 tag:", app.children[1].tag);
+    print("child1 valor:", app.children[1].props.valor);
+    print("child2:", app.children[2]);
+    print("child3:", app.children[3]);
+    return 0;
+};
