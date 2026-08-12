@@ -1,0 +1,6 @@
+export function nivel1() -> int {
+    return 10 / 0;
+};
+export function nivel2() -> int {
+    return nivel1() + 1;
+};

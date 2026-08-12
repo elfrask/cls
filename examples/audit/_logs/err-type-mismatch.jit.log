@@ -1,0 +1,10 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\err-type-mismatch.clsx ===
+EXITCODE=1
+TIME_MS=1059
+--- STDOUT ---
+--- STDERR ---
+[[1m[91mERROR[0m[0m] [91mNo se puede asignar String a Int[0m (C:\Users\Frask\Documents\cls\examples\audit\errores\err-type-mismatch.clsx:4:5)
+  |     print(x);
+  |     ^
+
+================

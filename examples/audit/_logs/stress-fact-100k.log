@@ -1,0 +1,10 @@
+=== stress-fact-100k JIT === EXITCODE=
+--- STDOUT ---
+
+--- STDERR ---
+[91mError de ejecución:[0m
+
+  [1m[91mError:[0m[0m Trap WASM: excepción no capturada
+
+
+================

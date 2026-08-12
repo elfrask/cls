@@ -1,0 +1,13 @@
+# QA: records/diccionarios
+function main(args: String[]) -> int {
+    var r = {nombre: "Ana", edad: 30, activo: true};
+    print("literal:", r);
+    print("r.nombre:", r.nombre, "r.edad:", r.edad);
+    r.edad = 31;
+    print("tras asignacion:", r.edad);
+    print("keys:", r.keys());
+    print("values:", r.values());
+    print("has:", r.has("nombre"), r.has("nope"));
+    print("length:", r.length, "size:", r.size);
+    return 0;
+};

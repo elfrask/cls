@@ -1,0 +1,9 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\bug-visibilidad-private.clsx ===
+EXITCODE=0
+TIME_MS=2067
+--- STDOUT ---
+lectura: 5
+tras write externo: 99
+
+--- STDERR ---
+================

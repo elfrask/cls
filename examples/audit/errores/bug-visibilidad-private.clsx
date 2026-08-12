@@ -1,0 +1,12 @@
+# BUG: JIT NO aplica visibilidad private (walker si la aplica)
+class Cuenta {
+    private var saldo: float;
+    function main() { me.saldo = 5.0; }
+};
+function main(args: String[]) -> int {
+    var c = Cuenta();
+    print("lectura:", c.saldo);
+    c.saldo = 99.0;
+    print("tras write externo:", c.saldo);
+    return 0;
+};

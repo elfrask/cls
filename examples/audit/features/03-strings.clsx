@@ -1,0 +1,22 @@
+# QA: interpolacion de cadenas y metodos de String
+function main(args: String[]) -> int {
+    var nombre = "CLS";
+    var edad = 30;
+    var precio = 19.99;
+    print("Hola, $nombre");
+    print("Edad: $edad, precio: $precio");
+    print("Suma: ${2 + 3}");
+    print("Mayus: ${nombre.upper()}");
+    var s = "Hello World";
+    print("upper:", s.upper());
+    print("lower:", s.lower());
+    print("trim:", ("  x  ").trim());
+    print("contains:", s.contains("World"), s.contains("nope"));
+    print("startsWith:", s.startsWith("He"), "endsWith:", s.endsWith("ld"));
+    print("isEmpty:", "".isEmpty(), s.isEmpty());
+    print("length:", s.length);
+    print("toString:", s.toString());
+    var backtick = `Template $nombre ${edad + 1}`;
+    print("backtick:", backtick);
+    return 0;
+};

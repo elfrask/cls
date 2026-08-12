@@ -1,0 +1,7 @@
+# BUG: escribir un indice de array (a[i] = v) genera WASM invalido
+function main(args: String[]) -> int {
+    var a = [3, 1, 2];
+    a[0] = 100;
+    print("writeback:", a);
+    return 0;
+};

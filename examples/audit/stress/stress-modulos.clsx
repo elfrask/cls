@@ -1,0 +1,8 @@
+# STRESS: muchos modulos importados
+import "libmod" as m1;
+import "privados" as m2;
+function main(args: String[]) -> int {
+    print("m1:", m1::saludar("a"));
+    print("m2:", m2::publica());
+    return 0;
+};

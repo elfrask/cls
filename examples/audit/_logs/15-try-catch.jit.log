@@ -1,0 +1,11 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\features\15-try-catch.clsx ===
+EXITCODE=0
+TIME_MS=2257
+--- STDOUT ---
+dentro de try
+catch: Error de runtime: error interno
+indice fuera: catch indice: Error de runtime: Índice fuera de rango
+tras los try
+
+--- STDERR ---
+================

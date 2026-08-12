@@ -1,0 +1,57 @@
+# QA: control de flujo
+function main(args: String[]) -> int {
+    # if/elif/else
+    var n = 7;
+    if (n > 10) {
+        print("grande");
+    } elif (n > 5) {
+        print("mediano");
+    } else {
+        print("pequeno");
+    }
+    # while
+    var i = 0;
+    while (i < 3) {
+        print("while:", i);
+        i++;
+    }
+    # loop
+    var j = 0;
+    loop {
+        print("loop:", j);
+        j++;
+        if (j == 2) { break; }
+    }
+    # for clasico
+    for (var k = 0; k < 3; k++) {
+        print("for:", k);
+    }
+    # break/continue
+    for (var m = 0; m < 5; m++) {
+        if (m == 1) { continue; }
+        if (m == 4) { break; }
+        print("bc:", m);
+    }
+    # for each sobre array
+    var arr = [5, 6, 7];
+    for each v in (arr) {
+        print("each:", v);
+    }
+    # for each con indice
+    for each v and idx in (arr) {
+        print("each[$idx]:", v);
+    }
+    # switch (nota: 'case default' es la sintaxis soportada)
+    var c = 2;
+    switch (c) {
+        case (1) { print("uno"); }
+        case (2) { print("dos"); }
+        case default { print("otro"); }
+    }
+    # with
+    var obj = {x: 10, y: 20};
+    with o in (obj) {
+        print("with:", o);
+    }
+    return 0;
+};

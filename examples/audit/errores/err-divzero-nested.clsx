@@ -1,0 +1,12 @@
+# ERROR RUNTIME: division por cero (con call stack, funciones declaradas antes)
+function inner(y: int) -> int {
+    return y / 0;
+};
+function outer(y: int) -> int {
+    return inner(y);
+};
+function main(args: String[]) -> int {
+    var r = outer(10);
+    print("r:", r);
+    return 0;
+};

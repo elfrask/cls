@@ -1,0 +1,7 @@
+# ERROR RUNTIME: tupla inmutable (escritura)
+function main(args: String[]) -> int {
+    var t = (1, 2, 3);
+    t[0] = 99;
+    print(t);
+    return 0;
+};

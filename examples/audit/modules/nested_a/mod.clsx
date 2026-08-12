@@ -1,0 +1,4 @@
+# Modulo con imports anidados (module A importa module B)
+export function base() -> int {
+    return 42;
+};

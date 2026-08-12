@@ -1,0 +1,10 @@
+=== mod-import-namespaced-enum === EXITCODE=1
+--- STDOUT ---
+
+--- STDERR ---
+[91mError de ejecución:[0m
+
+  [1m[91mError:[0m[0m Expresión sin tipo concreto (4:28): lib::Color.Rojo
+
+
+================

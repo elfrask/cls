@@ -1,0 +1,17 @@
+# STRESS: anidamiento profundo de estructuras de control
+function main(args: String[]) -> int {
+    var n = 0;
+    for (var a = 0; a < 20; a++) {
+        for (var b = 0; b < 20; b++) {
+            for (var c = 0; c < 20; c++) {
+                if (a + b + c > 50) {
+                    n++;
+                } else {
+                    n = n + 2;
+                }
+            }
+        }
+    }
+    print("n:", n);
+    return 0;
+};

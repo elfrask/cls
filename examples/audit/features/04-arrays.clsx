@@ -1,0 +1,22 @@
+# QA: arrays mutables y sus metodos
+function main(args: String[]) -> int {
+    var a = [3, 1, 2];
+    print("literal:", a, "len:", len(a));
+    a.push(4);
+    print("push:", a);
+    var last = a.pop();
+    print("pop:", last, "restante:", a);
+    a.shift();
+    print("shift:", a);
+    a.unshift(9);
+    print("unshift:", a);
+    print("indexOf:", a.indexOf(3), a.indexOf(999));
+    print("includes:", a.includes(3), a.includes(999));
+    print("join:", a.join("-"));
+    a.reverse();
+    print("reverse:", a);
+    print("length:", a.length);
+    var anidado = [[1, 2], [3, 4]];
+    print("anidado:", anidado[1][0]);
+    return 0;
+};

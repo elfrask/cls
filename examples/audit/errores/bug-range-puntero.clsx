@@ -1,0 +1,7 @@
+# BUG: math.range imprime puntero en vez del array
+import "math" as math;
+function main(args: String[]) -> int {
+    var rng = math.range(0, 5);
+    print("range:", rng);
+    return 0;
+};

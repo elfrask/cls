@@ -1,0 +1,9 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\bug-len-string.clsx ===
+EXITCODE=0
+TIME_MS=2072
+--- STDOUT ---
+len('abcd'): 171798691844
+expect: 4
+
+--- STDERR ---
+================

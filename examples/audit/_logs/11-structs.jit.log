@@ -1,0 +1,10 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\features\11-structs.clsx ===
+EXITCODE=0
+TIME_MS=2111
+--- STDOUT ---
+p.x: 3 p.y: 4
+p2: Punto { x: 1, y: 1 }
+tipo: Struct
+
+--- STDERR ---
+================

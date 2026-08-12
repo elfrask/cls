@@ -1,0 +1,14 @@
+# QA: structures (solo lectura; la escritura se prueba por separado)
+structure Punto {
+    x: int,
+    y: int,
+};
+
+function main(args: String[]) -> int {
+    var p = Punto(3, 4);
+    print("p.x:", p.x, "p.y:", p.y);
+    var p2 = Punto(1, 1);
+    print("p2:", p2);
+    print("tipo:", type(p));
+    return 0;
+};

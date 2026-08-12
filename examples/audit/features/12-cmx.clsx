@@ -1,0 +1,21 @@
+# QA: CMX basico (tags minuscula)
+function main(args: String[]) -> int {
+    var contador = 1;
+    var app = (
+        <app titulo="Hola mundo" contador={contador + 1}>
+            <parrafo>Contenido</parrafo>
+            <separador />
+            <item id={3} />
+        </app>
+    );
+    print("tag:", app.tag);
+    print("props.titulo:", app.props.titulo);
+    print("props.contador:", app.props.contador);
+    print("children:", app.children.length);
+    print("child0 tag:", app.children[0].tag);
+    print("child1 tag:", app.children[1].tag);
+    print("child2 tag:", app.children[2].tag);
+    print("child2 props.id:", app.children[2].props.id);
+    print("fin");
+    return 0;
+};

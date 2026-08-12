@@ -1,0 +1,8 @@
+# ERROR: error de runtime DENTRO de un modulo importado (debe tener import_trace)
+import "err-lib-modulo" as m;
+function main(args: String[]) -> int {
+    print("llamando al modulo...");
+    var r = m::nivel2();
+    print("r:", r);
+    return 0;
+};

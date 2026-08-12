@@ -1,0 +1,6 @@
+# ERROR RUNTIME: indice fuera de rango
+function main(args: String[]) -> int {
+    var a = [1, 2, 3];
+    print("fuera:", a[10]);
+    return 0;
+};

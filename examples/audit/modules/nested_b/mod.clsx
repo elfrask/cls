@@ -1,0 +1,5 @@
+# Modulo intermedio que importa nested_a
+import "nested_a" as na;
+export function suma(n: int) -> int {
+    return na::base() + n;
+};

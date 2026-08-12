@@ -1,0 +1,10 @@
+# CMX malformado: atributo con llaves desbalanceadas en expresion
+function main(args: String[]) -> int {
+    var app = (
+        <div contador={1 + 2>
+            texto
+        </div>
+    );
+    print(app.tag);
+    return 0;
+};

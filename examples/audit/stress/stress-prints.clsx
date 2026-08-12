@@ -1,0 +1,10 @@
+# STRESS: muchos prints y strings interp
+function main(args: String[]) -> int {
+    var nombre = "stress";
+    var i = 0;
+    while (i < 10000) {
+        print("[$i] Hola $nombre ${i * 2}");
+        i++;
+    }
+    return 0;
+};

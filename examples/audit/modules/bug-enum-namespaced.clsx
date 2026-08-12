@@ -1,0 +1,7 @@
+# BUG: enum via import namespaced (lib::Color.Rojo) falla en JIT; via include funciona
+import "libmod" as lib;
+function main(args: String[]) -> int {
+    var c = lib::Color.Rojo;
+    print("color:", c);
+    return 0;
+};

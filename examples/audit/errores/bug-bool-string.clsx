@@ -1,0 +1,7 @@
+# BUG: bool(String no vacia) devuelve false en el JIT
+function main(args: String[]) -> int {
+    print("bool(''):", bool(""));
+    print("bool('x'):", bool("x"));
+    print("expect: false / true");
+    return 0;
+};

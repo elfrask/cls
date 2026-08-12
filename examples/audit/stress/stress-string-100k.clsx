@@ -1,0 +1,11 @@
+# STRESS: string enorme por concatenacion (100k concats)
+function main(args: String[]) -> int {
+    var s = "";
+    var i = 0;
+    while (i < 100000) {
+        s = s + "x";
+        i++;
+    }
+    print("len:", s.length);
+    return 0;
+};

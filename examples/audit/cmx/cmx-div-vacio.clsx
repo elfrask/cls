@@ -1,0 +1,8 @@
+# CMX malformado: div sin children (vacio)
+function main(args: String[]) -> int {
+    var app = (
+        <div></div>
+    );
+    print("tag:", app.tag, "children:", app.children);
+    return 0;
+};

@@ -1,0 +1,6 @@
+# Malformado: arrow vacio
+function main(args: String[]) -> int {
+    var f = () => 42;
+    print("f:", f());
+    return 0;
+};

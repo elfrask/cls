@@ -1,0 +1,10 @@
+# ERROR RUNTIME: miembro private desde fuera
+class Cuenta {
+    private var saldo: float;
+    function main() { me.saldo = 0.0; }
+};
+function main(args: String[]) -> int {
+    var c = Cuenta();
+    print(c.saldo);
+    return 0;
+};

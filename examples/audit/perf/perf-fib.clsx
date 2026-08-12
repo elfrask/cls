@@ -1,0 +1,13 @@
+# PERF: fibonacci recursivo
+function fib(n: int) -> int {
+    if (n < 2) { return n; }
+    return fib(n - 1) + fib(n - 2);
+};
+function main(args: String[]) -> int {
+    var t0 = now();
+    var r = fib(28);
+    var t1 = now();
+    print("fib(28):", r);
+    print("tiempo_ms:", t1 - t0);
+    return 0;
+};

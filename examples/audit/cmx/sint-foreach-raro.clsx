@@ -1,0 +1,7 @@
+# Malformado: for each raro (sin parentesis)
+function main(args: String[]) -> int {
+    for each x in [1, 2, 3] {
+        print(x);
+    }
+    return 0;
+};

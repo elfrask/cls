@@ -1,0 +1,10 @@
+# ERROR RUNTIME: acceso a miembro de clase inexistente
+class A {
+    var x: int;
+    function main() { me.x = 1; }
+};
+function main(args: String[]) -> int {
+    var a = A();
+    print(a.y);
+    return 0;
+};

@@ -1,0 +1,5 @@
+# ERROR: throw no capturado (debe mostrar el frame del error)
+function main(args: String[]) -> int {
+    throw("mensaje de prueba");
+    return 0;
+};

@@ -1,0 +1,6 @@
+# BUG: fs.cwd() devuelve puntero en vez de String
+import "fs" as fs;
+function main(args: String[]) -> int {
+    print("cwd:", fs.cwd());
+    return 0;
+};
