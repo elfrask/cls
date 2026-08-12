@@ -1005,13 +1005,9 @@ fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String>
         .map_err(|e| e.to_string())?;
     linker
         .func_wrap(HOST, "parse_bool", |mut caller: Caller<'_, HostState>, v: i64| -> i32 {
+            // Truthiness de string (paridad walker): vacío → false, no vacío → true.
             let s = caller_read_str(&mut caller, v);
-            let t = s.trim();
-            if t == "true" || t == "1" {
-                1
-            } else {
-                0
-            }
+            if s.is_empty() { 0 } else { 1 }
         })
         .map_err(|e| e.to_string())?;
     linker
@@ -2146,6 +2142,9 @@ fn fmt_val_to_string(caller: &mut Caller<'_, HostState>, val: i64, tag: i64) -> 
 
 /// `[e1, e2, ...]` — kind 5 = array de Cmx (entradas `[val, tag]` stride 16).
 fn arr_to_string(caller: &mut Caller<'_, HostState>, ptr: i64, es: i64, kind: i64) -> String {
+    if ptr == 0 {
+        return String::from("[]");
+    }
     let p = ptr as usize;
     let es = es as usize;
     let len = arr_len(caller, p);
@@ -2196,6 +2195,9 @@ fn arr_to_string(caller: &mut Caller<'_, HostState>, ptr: i64, es: i64, kind: i6
 
 /// `{k: v, ...}` — formatea cada valor por su tag (claves ordenadas, como el walker).
 fn record_to_string(caller: &mut Caller<'_, HostState>, ptr: i64) -> String {
+    if ptr == 0 {
+        return String::from("{}");
+    }
     let p = ptr as usize;
     let len = arr_len(caller, p);
     let mut entries: Vec<(String, i64, i64)> = Vec::with_capacity(len as usize);

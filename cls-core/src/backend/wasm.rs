@@ -1779,7 +1779,9 @@ impl<'a> FuncEmitter<'a> {
             }
             Percent if lt == WasTy::F64 || rt == WasTy::F64 => {
                 self.emit_expression(&b.left)?;
+                self.f64_promote(&b.left)?;
                 self.emit_expression(&b.right)?;
+                self.f64_promote(&b.right)?;
                 self.host.call(HostFn::Fmod, &mut self.body);
             }
             Percent => {
@@ -1787,6 +1789,14 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&b.right)?;
                 self.div_zero_trap(&b.span)?;
                 self.body.push(Instruction::I64RemS);
+            }
+            StarStar if lt == WasTy::F64 || rt == WasTy::F64 => {
+                // Potencia con float: promover ambos a f64 y usar math_pow.
+                self.emit_expression(&b.left)?;
+                self.f64_promote(&b.left)?;
+                self.emit_expression(&b.right)?;
+                self.f64_promote(&b.right)?;
+                self.host.call(HostFn::MathPow, &mut self.body);
             }
             StarStar => {
                 self.emit_expression(&b.left)?;
@@ -1823,21 +1833,33 @@ impl<'a> FuncEmitter<'a> {
             LessThan => {
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;
+                if lt == WasTy::F64 {
+                    self.f64_promote(&b.right)?;
+                }
                 self.push_cmp(lt, true, false)?;
             }
             LessEqual => {
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;
+                if lt == WasTy::F64 {
+                    self.f64_promote(&b.right)?;
+                }
                 self.push_cmp(lt, true, true)?;
             }
             GreaterThan => {
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;
+                if lt == WasTy::F64 {
+                    self.f64_promote(&b.right)?;
+                }
                 self.push_cmp(lt, false, false)?;
             }
             GreaterEqual => {
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;
+                if lt == WasTy::F64 {
+                    self.f64_promote(&b.right)?;
+                }
                 self.push_cmp(lt, false, true)?;
             }
             And => {
@@ -2051,15 +2073,20 @@ impl<'a> FuncEmitter<'a> {
         match u.op {
             UnaryOp::Negate => {
                 let w = self.value_type(&u.operand)?;
-                self.emit_expression(&u.operand)?;
                 match w {
-                    WasTy::F64 => self.body.push(Instruction::F64Neg),
+                    WasTy::F64 => {
+                        self.emit_expression(&u.operand)?;
+                        self.body.push(Instruction::F64Neg);
+                    }
                     WasTy::I64 => {
+                        // 0 - x: push 0 primero, luego el operando, luego sub.
                         self.body.push(Instruction::I64Const(0));
+                        self.emit_expression(&u.operand)?;
                         self.body.push(Instruction::I64Sub);
                     }
                     WasTy::I32 => {
                         self.body.push(Instruction::I32Const(0));
+                        self.emit_expression(&u.operand)?;
                         self.body.push(Instruction::I32Sub);
                     }
                 }
@@ -2143,13 +2170,25 @@ impl<'a> FuncEmitter<'a> {
         match &*a.target {
             Expression::Identifier(name, _) => {
                 if is_compound(op) {
+                    // Elegir operación según el tipo del identificador (int vs float).
+                    let ty = self.value_type(&a.target)?;
                     self.emit_ident_load(name);
                     self.emit_expression(&a.value)?;
-                    match op {
-                        Operator::PlusEqual => self.body.push(Instruction::I64Add),
-                        Operator::MinusEqual => self.body.push(Instruction::I64Sub),
-                        Operator::StarEqual => self.body.push(Instruction::I64Mul),
-                        _ => self.body.push(Instruction::I64DivS),
+                    if ty == WasTy::F64 {
+                        self.f64_promote(&a.value)?;
+                        match op {
+                            Operator::PlusEqual => self.body.push(Instruction::F64Add),
+                            Operator::MinusEqual => self.body.push(Instruction::F64Sub),
+                            Operator::StarEqual => self.body.push(Instruction::F64Mul),
+                            _ => self.body.push(Instruction::F64Div),
+                        }
+                    } else {
+                        match op {
+                            Operator::PlusEqual => self.body.push(Instruction::I64Add),
+                            Operator::MinusEqual => self.body.push(Instruction::I64Sub),
+                            Operator::StarEqual => self.body.push(Instruction::I64Mul),
+                            _ => self.body.push(Instruction::I64DivS),
+                        }
                     }
                 } else {
                     self.emit_expression(&a.value)?;
@@ -2332,12 +2371,23 @@ impl<'a> FuncEmitter<'a> {
                         WasTy::I64 => Instruction::LocalGet(res),
                     });
                 } else {
+                    // Las tuplas son inmutables: escritura → error.
+                    let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
+                    if matches!(obj_ty, Some(Type::Tuple(_))) {
+                        return Err(crate::error::ClsError::compile_at(
+                            "Las tuplas son inmutables (no se puede escribir t[i] = v)",
+                            &i.span,
+                        ));
+                    }
                     let elem_ty = self.index_elem_type(i)?;
                     let elem_size = self.container_elem_size(i, elem_ty);
                     self.emit_expression(&i.object)?;
                     self.emit_expression(&i.index)?;
                     self.emit_expression(&a.value)?;
                     self.emit_index_set(i, elem_size)?;
+                    // Dejar un valor en el stack (el array mutado) para que el
+                    // Drop del statement (o el uso del valor) lo consuma.
+                    self.emit_expression(&i.object)?;
                 }
                 Ok(())
             }
@@ -2353,14 +2403,33 @@ impl<'a> FuncEmitter<'a> {
                         let fidx = info
                             .fields
                             .iter()
-                            .position(|(n, _, _, _)| *n == m.member)
+                   .position(|(n, _, _, _, _)| *n == m.member)
                             .ok_or_else(|| {
                                 crate::error::ClsError::CompileError(format!(
                                     "El campo '{}' no existe en la clase '{}'",
                                     m.member, name
                                 ))
                             })?;
-                        let (_, _t, w, off) = &info.fields[fidx];
+                        let (_, _t, w, off, vis) = &info.fields[fidx];
+                        // Escritura: private/protected desde fuera, o readonly.
+                        self.check_field_access(name.as_str(), m.member.as_str(), *vis, &m.span)?;
+                        if vis.is_readonly() {
+                            // readonly: solo escritura interna (me.campo).
+                            let inside = self
+                                .current_class
+                                .as_deref()
+                                .map(|c| c == name.as_str())
+                                .unwrap_or(false);
+                            if !inside {
+                                return Err(crate::error::ClsError::compile_at(
+                                    &format!(
+                                        "El campo '{}' es readonly (solo se puede escribir desde la clase)",
+                                        m.member
+                                    ),
+                                    &m.span,
+                                ));
+                            }
+                        }
                         let w = *w;
                         let off = *off;
                         let obj_tmp = self.fresh_local();
@@ -2707,7 +2776,19 @@ impl<'a> FuncEmitter<'a> {
                         return match member.member.as_str() {
                             "sqrt" | "pow" | "min" | "max" | "floor" | "ceil" | "round"
                             | "random" | "sin" | "cos" | "tan" | "log" => Some(WasTy::F64),
-                            "abs" | "range" => Some(WasTy::I64),
+                            "range" => Some(WasTy::I64),
+                            // `abs`/`pow` devuelven el tipo del primer argumento.
+                            "abs" | "pow" => {
+                                let arg_ty = c.args.first()
+                                    .and_then(|a| self.types.get(&expr_span(a)))
+                                    .cloned()
+                                    .unwrap_or(Type::Any);
+                                if matches!(arg_ty, Type::Float | Type::F32 | Type::F64) {
+                                    Some(WasTy::F64)
+                                } else {
+                                    Some(WasTy::I64)
+                                }
+                            }
                             _ => None,
                         };
                     }
@@ -2819,7 +2900,7 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Const(info.class_id as i64));
                 self.emit_i64_store(8);
                 // init fields a 0
-                for (_fn, _t, w, off) in &info.fields {
+                for (_fn, _t, w, off, _vis) in &info.fields {
                     self.body.push(Instruction::LocalGet(obj));
                     self.body.push(Instruction::I64Const(*off));
                     self.body.push(Instruction::I64Add);
@@ -3339,7 +3420,18 @@ impl<'a> FuncEmitter<'a> {
                 "len" => {
                     let arg = &c.args[0];
                     self.emit_expression(arg)?;
-                    self.emit_array_len();
+                    // String → decodifica el pack (ptr<<32|len); array/tuple/record
+                    // → lee el header. Despachar por el tipo del argumento.
+                    let t = self.types.get(&expr_span(arg)).cloned().unwrap_or(Type::Any);
+                    match t {
+                        Type::String => {
+                            self.host.call(HostFn::StrLength, &mut self.body);
+                        }
+                        Type::Record(_, _) | Type::Shape(_) => {
+                            self.host.call(HostFn::RecordLen, &mut self.body);
+                        }
+                        _ => self.emit_array_len(),
+                    }
                     return Ok(());
                 }
                 "toString" => {
@@ -3875,6 +3967,27 @@ impl<'a> FuncEmitter<'a> {
                 Type::Array(_) | Type::Record(_, _) | Type::Cmx | Type::Tuple(_)
             );
             if !is_container {
+                // El tipo real del span decide (String → PrintStr; Float → PrintFloat;
+                // Bool → PrintBool); para tipos sin información, usar el WasTy.
+                match &t {
+                    Type::String => {
+                        self.host.call(HostFn::PrintStr, &mut self.body);
+                        return Ok(());
+                    }
+                    Type::Bool => {
+                        self.host.call(HostFn::PrintBool, &mut self.body);
+                        return Ok(());
+                    }
+                    Type::Char => {
+                        self.host.call(HostFn::PrintChar, &mut self.body);
+                        return Ok(());
+                    }
+                    Type::Float => {
+                        self.host.call(HostFn::PrintFloat, &mut self.body);
+                        return Ok(());
+                    }
+                    _ => {}
+                }
                 match w {
                     WasTy::F64 => {
                         self.host.call(HostFn::PrintFloat, &mut self.body);
@@ -4039,7 +4152,7 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_load_str(s);
                     let res = self.fresh_local();
                     self.body.push(Instruction::LocalSet(res));
-                    for (i, (fname, t_cls, w, off)) in info.fields.iter().enumerate() {
+                    for (i, (fname, t_cls, w, off, _vis)) in info.fields.iter().enumerate() {
                         let label = format!("{}: ", fname);
                         let ls = self.intern_string(&label);
                         self.emit_load_str(ls);
@@ -4805,9 +4918,60 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
+    /// Valida visibilidad de un campo de clase (private/protected) para lectura
+    /// o escritura desde el contexto actual. `private` y `protected` requieren
+    /// estar dentro de la clase (o subclase para protected).
+    fn check_field_access(
+        &self,
+        class_name: &str,
+        field: &str,
+        vis: FieldVis,
+        span: &Span,
+    ) -> ClsResult<()> {
+        if vis.is_private() {
+            let inside = self
+                .current_class
+                .as_deref()
+                .map(|c| c == class_name)
+                .unwrap_or(false);
+            if !inside {
+                return Err(crate::error::ClsError::compile_at(
+                    &format!("El campo '{}' es private (solo accesible desde la clase)", field),
+                    span,
+                ));
+            }
+        }
+        if vis.is_protected() {
+            // Accesible desde la clase y sus subclases.
+            let allowed = self
+                .current_class
+                .as_deref()
+                .map(|cur| {
+                    if cur == class_name {
+                        true
+                    } else {
+                        self.class_defs
+                            .get(cur)
+                            .map(|info| info.ancestors.iter().any(|a| a == class_name))
+                            .unwrap_or(false)
+                    }
+                })
+                .unwrap_or(false);
+            if !allowed {
+                return Err(crate::error::ClsError::compile_at(
+                    &format!(
+                        "El campo '{}' es protected (solo accesible desde la clase o sus subclases)",
+                        field
+                    ),
+                    span,
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Member access de primitivos: `.length` sobre tuplas/arrays, variantes de enum.
     fn emit_member_access(&mut self, m: &MemberAccessExpr) -> ClsResult<()> {
-        // Enum: `Nivel.Alto` → constante (def_id<<32 | index)
         if let Expression::Identifier(obj_name, _) = &*m.object {
             if let Some((def_id, variants)) = self.enum_defs.get(obj_name).cloned() {
                 let idx = variants
@@ -4966,14 +5130,16 @@ impl<'a> FuncEmitter<'a> {
                     let fidx = info
                         .fields
                         .iter()
-                        .position(|(n, _, _, _)| *n == m.member)
+                        .position(|(n, _, _, _, _)| *n == m.member)
                         .ok_or_else(|| {
                             crate::error::ClsError::CompileError(format!(
                                 "El campo '{}' no existe en la clase '{}'",
                                 m.member, name
                             ))
                         })?;
-                    let (_, _t, w, off) = &info.fields[fidx];
+                    let (_, _t, w, off, vis) = &info.fields[fidx];
+                    // Validar visibilidad: private/protected desde fuera.
+                    self.check_field_access(name.as_str(), m.member.as_str(), *vis, &m.span)?;
                     let w = *w;
                     let off = *off;
                     self.body.push(Instruction::I64Const(off));
@@ -6007,6 +6173,25 @@ struct Engine<'a> {
 }
 
 /// Definición de una clase compilada: layout de objeto + vtable.
+struct FieldVis {
+    is_private: bool,
+    is_protected: bool,
+    is_readonly: bool,
+}
+
+impl Clone for FieldVis {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl Copy for FieldVis {}
+
+impl FieldVis {
+    fn is_private(&self) -> bool { self.is_private }
+    fn is_protected(&self) -> bool { self.is_protected }
+    fn is_readonly(&self) -> bool { self.is_readonly }
+}
+
 #[derive(Clone)]
 struct ClassInfo {
     parent: Option<String>,
@@ -6014,8 +6199,8 @@ struct ClassInfo {
     class_id: u32,
     /// cadena de ancestors: [padre, abuelo, ...].
     ancestors: Vec<String>,
-    /// campos (nombre, tipo CLS, tipo WASM, offset en bytes desde 16).
-    fields: Vec<(String, Type, WasTy, i64)>,
+    /// campos (nombre, tipo CLS, tipo WASM, offset en bytes desde 16, visibilidad).
+    fields: Vec<(String, Type, WasTy, i64, FieldVis)>,
     /// nombres de métodos en orden canónico (posición = slot de la vtable).
     methods: Vec<String>,
     /// índice de la tabla donde empieza la vtable de esta clase.
@@ -6285,7 +6470,12 @@ impl<'a> Engine<'a> {
                                             Type::Int
                                         }
                                     });
-                            fields.push((p.name.clone(), t_cls, w, off));
+                            let vis = FieldVis {
+                                is_private: p.visibility == Visibility::Private,
+                                is_protected: p.visibility == Visibility::Protected,
+                                is_readonly: p.is_readonly,
+                            };
+                            fields.push((p.name.clone(), t_cls, w, off, vis));
                             off += elem_size_bytes(w);
                             total = off;
                         }
