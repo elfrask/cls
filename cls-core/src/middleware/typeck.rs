@@ -718,7 +718,7 @@ impl TypeChecker {
                     bin.span.clone(),
                 )
             }
-            Operator::Minus | Operator::Star | Operator::Slash | Operator::Percent => {
+            Operator::Minus | Operator::Star | Operator::Slash | Operator::Percent | Operator::StarStar => {
                 let l_ok = matches!(left, Type::Int | Type::Float | Type::I32 | Type::I64);
                 let r_ok = matches!(right, Type::Int | Type::Float | Type::I32 | Type::I64);
                 if l_ok && r_ok {
@@ -908,6 +908,16 @@ impl TypeChecker {
                 return match member.member.as_str() {
                     "parse" => Type::Record(Box::new(Type::String), Box::new(Type::Any)),
                     "stringify" => Type::String,
+                    _ => Type::Any,
+                };
+            }
+            if name == "math" {
+                return match member.member.as_str() {
+                    "range" => Type::Array(Box::new(Type::Int)),
+                    "random" => Type::Float,
+                    "sqrt" | "floor" | "ceil" | "round" | "sin" | "cos" | "tan"
+                    | "log" | "pow" | "min" | "max" => Type::Float,
+                    "abs" => Type::Int,
                     _ => Type::Any,
                 };
             }
@@ -1211,6 +1221,19 @@ impl TypeChecker {
         for elem in &arr.elements {
             let t = self.check_expression(elem);
             if matches!(elem_type, Type::Any) {
+                elem_type = t;
+            } else if !t.is_assignable_to(&elem_type) && !elem_type.is_assignable_to(&t) {
+                // Array heterogéneo: en CLS tipado no se permite mezclar tipos
+                // incompatibles en un array literal (paridad con el JIT, que no
+                // puede emitir layouts mixtos). El walker lo tolera; el JIT no.
+                self.error(
+                    &format!(
+                        "Array heterogéneo: los elementos son de tipos incompatibles \
+                         ({} y {}). Usa `Record<String, any>` o un array homogéneo.",
+                        elem_type, t
+                    ),
+                    arr.span.clone(),
+                );
                 elem_type = t;
             }
         }
