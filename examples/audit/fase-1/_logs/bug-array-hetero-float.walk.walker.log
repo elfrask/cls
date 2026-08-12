@@ -1,0 +1,9 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\bug-array-hetero-float.clsx ===
+MODE=walk
+EXITCODE=0
+TIME_MS=1105
+--- STDOUT ---
+hetero: [1, "dos", 3, true]
+
+--- STDERR ---
+================

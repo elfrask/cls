@@ -1,0 +1,11 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\bug-array-string-puntero.clsx ===
+MODE=jit
+EXITCODE=1
+TIME_MS=3071
+--- STDOUT ---
+--- STDERR ---
+[[1m[91mERROR[0m[0m] [91mArray heterogéneo: los elementos son de tipos incompatibles (Int y String). Usa `Record<String, any>` o un array homogéneo.[0m (C:\Users\Frask\Documents\cls\examples\audit\errores\bug-array-string-puntero.clsx:3:26)
+  |     var h = [1, "dos", 3];
+  |                          ^
+
+================

@@ -1972,9 +1972,10 @@ impl Parser {
             }
             Token::StringLiteral(v) => {
                 let v = v.clone();
+                let lit_span = self.span();
                 self.advance();
                 if v.contains('$') {
-                    self.parse_string_interpolation(&v)
+                    self.parse_string_interpolation(&v, &lit_span)
                 } else {
                     Ok(Expression::Literal(Literal {
                         kind: LiteralKind::String(v),
@@ -2178,7 +2179,7 @@ impl Parser {
     }
 
     /// Parsea una string con interpolación: "Hello, $name!" o "${a + b}"
-    fn parse_string_interpolation(&self, s: &str) -> ClsResult<Expression> {
+    fn parse_string_interpolation(&self, s: &str, lit_span: &Span) -> ClsResult<Expression> {
 
         let chars: Vec<char> = s.chars().collect();
         let mut parts: Vec<InterpolationPart> = Vec::new();
@@ -2208,7 +2209,13 @@ impl Parser {
                         ));
                     }
                     // Parsear la expresión interna
-                    let expr = parse_expr_from_str(&expr_str)?;
+                    let mut expr = parse_expr_from_str(&expr_str)?;
+                    // Reubicar los spans del expr (parseado en línea 1, cols
+                    // relativas) a la posición real dentro del literal, para que
+                    // cada interpolación tenga spans únicos en el type map.
+                    let dl = lit_span.start_line.saturating_sub(1);
+                    let dc = lit_span.start_col as i64 + i as i64 + 2;
+                    crate::frontend::span_shift::shift_expr_xy(&mut expr, dl, dc);
                     parts.push(InterpolationPart::Expr(expr));
                     i = j; // saltar }
                 } else if chars[i + 1].is_alphabetic() || chars[i + 1] == '_' {
@@ -2219,8 +2226,12 @@ impl Parser {
                         var_name.push(chars[j]);
                         j += 1;
                     }
+                    // Span único por literal + offset de columna (el span NO debe
+                    // colisionar con otra interpolación: el typeck los usa como clave).
+                    let start_col = lit_span.start_col + i as u32 + 1;
+                    let end_col = lit_span.start_col + j as u32 + 1;
                     parts.push(InterpolationPart::Expr(
-                        Expression::Identifier(var_name, Span::new(0, i as u32, 0, (i + 1) as u32))
+                        Expression::Identifier(var_name, Span::new(lit_span.start_line, start_col, lit_span.start_line, end_col))
                     ));
                     i = j;
                 } else {

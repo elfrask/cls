@@ -1,0 +1,9 @@
+# C-2 isolate: compound assignment con RHS float literal
+function main(args: String[]) -> int {
+    var f: float = 10.0;
+    f += 2.5;
+    print("f += 2.5 ->", f);
+    f -= 1.5;
+    print("f -= 1.5 ->", f);
+    return 0;
+};

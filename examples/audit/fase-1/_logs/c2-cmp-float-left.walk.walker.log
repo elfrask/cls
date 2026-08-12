@@ -1,0 +1,14 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\fase-1\c2-cmp-float-left.clsx ===
+MODE=walk
+EXITCODE=0
+TIME_MS=1071
+--- STDOUT ---
+0.5 > 1 = false
+0.5 < 1 = true
+0.5 >= 1 = false
+0.5 <= 1 = true
+0.5 == 1 = false
+0.5 != 1 = true
+
+--- STDERR ---
+================

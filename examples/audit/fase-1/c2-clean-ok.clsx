@@ -1,0 +1,14 @@
+# C-2 clean: neg/abs/sqrt + float-left comparaciones (sin int-left que falla)
+import "math" as math;
+function main(args: String[]) -> int {
+    print("-2.5 =", -2.5);
+    print("abs(-2.5) =", math.abs(-2.5));
+    print("sqrt(2.0) =", math.sqrt(2.0));
+    var f: float = 3.5;
+    print("f > 0 =", f > 0);
+    print("0.5 < 1 =", 0.5 < 1);
+    print("0.5 <= 1 =", 0.5 <= 1);
+    print("0.5 >= 0 =", 0.5 >= 0);
+    print("0.5 == 0.5 =", 0.5 == 0.5);
+    return 0;
+};

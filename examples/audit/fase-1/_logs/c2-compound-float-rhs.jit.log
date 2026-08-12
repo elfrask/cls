@@ -1,0 +1,10 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\fase-1\c2-compound-float-rhs.clsx ===
+MODE=jit
+EXITCODE=0
+TIME_MS=2137
+--- STDOUT ---
+f += 2.5 -> 12.5
+f -= 1.5 -> 11
+
+--- STDERR ---
+================

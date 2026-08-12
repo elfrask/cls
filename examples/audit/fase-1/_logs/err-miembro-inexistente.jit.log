@@ -1,0 +1,12 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\err-miembro-inexistente.clsx ===
+MODE=jit
+EXITCODE=1
+TIME_MS=2099
+--- STDOUT ---
+--- STDERR ---
+[91mError de ejecución:[0m
+
+  [1m[91mError:[0m[0m El campo 'y' no existe en la clase 'A'
+
+
+================

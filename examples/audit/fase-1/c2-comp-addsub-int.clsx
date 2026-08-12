@@ -1,0 +1,9 @@
+# C-2 isolate: compound += -= con RHS int literal (sin %=)
+function main(args: String[]) -> int {
+    var f: float = 10.0;
+    f += 2;
+    print("f += 2 ->", f);
+    f -= 3;
+    print("f -= 3 ->", f);
+    return 0;
+};

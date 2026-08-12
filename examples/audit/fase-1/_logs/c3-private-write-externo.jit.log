@@ -1,0 +1,14 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\fase-1\c3-private-write-externo.clsx ===
+MODE=jit
+EXITCODE=1
+TIME_MS=2068
+--- STDOUT ---
+--- STDERR ---
+[91mError en 'C:\Users\Frask\Documents\cls\examples\audit\fase-1\c3-private-write-externo.clsx':[0m
+[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\fase-1\c3-private-write-externo.clsx:8:9 [95m[Error de Compilación][0m
+  8 |     a.x = 99;
+    | [31m        ^[0m
+  [1m[91mError:[0m[0m El campo 'x' es private (solo accesible desde la clase)
+
+
+================

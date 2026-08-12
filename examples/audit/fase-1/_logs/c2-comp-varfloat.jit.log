@@ -1,0 +1,11 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\fase-1\c2-comp-varfloat.clsx ===
+MODE=jit
+EXITCODE=0
+TIME_MS=3087
+--- STDOUT ---
+a += b -> 3.5
+c += 2.5 -> 12.5
+x = c + 1 -> 13.5
+
+--- STDERR ---
+================

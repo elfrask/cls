@@ -1,0 +1,12 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\fase-1\c3-protected-metodo-subclase.clsx ===
+MODE=jit
+EXITCODE=1
+TIME_MS=2075
+--- STDOUT ---
+--- STDERR ---
+[91mError de ejecución:[0m
+
+  [1m[91mError:[0m[0m Método sin tipo WASM
+
+
+================

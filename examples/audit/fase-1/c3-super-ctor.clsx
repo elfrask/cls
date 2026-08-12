@@ -1,0 +1,14 @@
+# C-3: super.main ctor padre desde hijo
+class Base {
+    var nombre: String;
+    function main(n: String) { me.nombre = n; }
+    function saludar() -> String { return "Hola " + me.nombre; }
+};
+class Hijo: Base {
+    function main() { super.main("mundo"); }
+};
+function main(args: String[]) -> int {
+    var h = Hijo();
+    print("saludar:", h.saludar());
+    return 0;
+};

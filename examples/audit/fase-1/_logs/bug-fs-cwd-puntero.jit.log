@@ -1,0 +1,9 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\bug-fs-cwd-puntero.clsx ===
+MODE=jit
+EXITCODE=0
+TIME_MS=3064
+--- STDOUT ---
+cwd: C:\Users\Frask\Documents\cls
+
+--- STDERR ---
+================

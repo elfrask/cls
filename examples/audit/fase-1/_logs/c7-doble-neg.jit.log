@@ -1,0 +1,9 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\fase-1\c7-doble-neg.clsx ===
+MODE=jit
+EXITCODE=0
+TIME_MS=2058
+--- STDOUT ---
+-(-5) = 5
+
+--- STDERR ---
+================

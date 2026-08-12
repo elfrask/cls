@@ -1,0 +1,16 @@
+# C-7 edge: conversiones bool/int/float y negaciones
+function main(args: String[]) -> int {
+    print("bool('hola') =", bool("hola"));
+    print("bool('') =", bool(""));
+    print("bool('0') =", bool("0"));
+    print("bool('false') =", bool("false"));
+    print("-5 =", -5);
+    print("-2.5 =", -2.5);
+    print("-0 =", -0);
+    print("int('123') =", int("123"));
+    print("float('2.5') =", float("2.5"));
+    print("type(-5) =", type(-5));
+    print("type(2.5) =", type(2.5));
+    print("type(bool('x')) =", type(bool("x")));
+    return 0;
+};

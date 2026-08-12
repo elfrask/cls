@@ -1,0 +1,16 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\fase-1\c2-arith-mixed.clsx ===
+MODE=jit
+EXITCODE=0
+TIME_MS=2078
+--- STDOUT ---
+2.5 + 2 = 4.5
+2 + 2.5 = 4.5
+2.5 * 2 = 5
+2 * 2.5 = 5
+2.5 - 2 = 0.5
+2 - 2.5 = -0.5
+2.5 / 2 = 1.25
+2 / 2.5 = 0.8
+
+--- STDERR ---
+================

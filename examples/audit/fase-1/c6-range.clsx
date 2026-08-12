@@ -1,0 +1,8 @@
+# C-6 edge: math.range variantes + record/array con string mixto no
+import "math" as math;
+function main(args: String[]) -> int {
+    print("range(0,3) =", math.range(0, 3));
+    print("range(2,5) =", math.range(2, 5));
+    print("range(1,1) =", math.range(1, 1));
+    return 0;
+};

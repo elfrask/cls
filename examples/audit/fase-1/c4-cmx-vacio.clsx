@@ -1,0 +1,12 @@
+# C-4: variantes de CMX vacio
+function main(args: String[]) -> int {
+    var a = (<div></div>);
+    print("a:", a.tag, a.children);
+    var b = (<span></span>);
+    print("b:", b.tag, b.children);
+    var c = (<div> </div>);
+    print("c:", c.tag, c.children);
+    var d = (<div><p></p></div>);
+    print("d:", d.tag, d.children.length, d.children[0].tag);
+    return 0;
+};

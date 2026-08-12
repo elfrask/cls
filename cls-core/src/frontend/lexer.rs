@@ -169,6 +169,22 @@ impl Lexer {
             } else if ch == '.' && !has_dot && self.peek_char_is_digit(1) {
                 has_dot = true;
                 num_str.push(ch);
+            } else if (ch == 'e' || ch == 'E') && self.is_exp_start() {
+                // Notación científica: 1e300, 2.5E-10. Se marca como float.
+                has_dot = true;
+                num_str.push(ch);
+                self.advance();
+                // signo opcional +- y dígitos del exponente
+                let s = self.current_char();
+                if s == '+' || s == '-' {
+                    num_str.push(s);
+                    self.advance();
+                }
+                while !self.is_eof() && self.current_char().is_ascii_digit() {
+                    num_str.push(self.current_char());
+                    self.advance();
+                }
+                break;
             } else {
                 break;
             }
@@ -192,6 +208,18 @@ impl Lexer {
                 ))),
             }
         }
+    }
+
+    /// ¿El `e`/`E` actual inicia un exponente? (seguido de dígito o signo+dígito).
+    fn is_exp_start(&self) -> bool {
+        let next = self.peek_char(1);
+        if next.is_ascii_digit() {
+            return true;
+        }
+        if (next == '+' || next == '-') && self.peek_char_is_digit(2) {
+            return true;
+        }
+        false
     }
 
     fn lex_identifier_or_keyword(&mut self) -> ClsResult<Token> {

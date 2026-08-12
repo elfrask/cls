@@ -1,0 +1,9 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\fase-1\c2-mul-int-rhs.clsx ===
+MODE=walk
+EXITCODE=0
+TIME_MS=1047
+--- STDOUT ---
+f *= 2 -> 20
+
+--- STDERR ---
+================

@@ -457,6 +457,7 @@ struct FuncEmitter<'a> {
     native_indexes: &'a HashMap<String, u32>,
     native_ret: &'a HashMap<String, char>,
     globals: &'a HashMap<String, u32>,
+    static_fields: &'a HashMap<String, u32>,
     class_defs: &'a HashMap<String, ClassInfo>,
     method_type_indexes: &'a HashMap<String, u32>,
     /// clase actual (al compilar un método) — para `super` y `me`.
@@ -492,6 +493,7 @@ impl<'a> FuncEmitter<'a> {
         native_indexes: &'a HashMap<String, u32>,
         native_ret: &'a HashMap<String, char>,
         globals: &'a HashMap<String, u32>,
+        static_fields: &'a HashMap<String, u32>,
         class_defs: &'a HashMap<String, ClassInfo>,
         method_type_indexes: &'a HashMap<String, u32>,
         current_class: Option<String>,
@@ -522,6 +524,7 @@ impl<'a> FuncEmitter<'a> {
             native_indexes,
             native_ret,
             globals,
+            static_fields,
             class_defs,
             method_type_indexes,
             current_class,
@@ -2392,6 +2395,25 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             Expression::MemberAccess(m) => {
+                // `Clase.campo = v` (campo estático) → global.set.
+                if let Expression::Identifier(cn, _) = &*m.object {
+                    if let Some(&g) = self.static_fields.get(&format!("{}::{}", cn, m.member)) {
+                        if is_compound(op) {
+                            return Err(crate::error::ClsError::CompileError(
+                                "Operadores compuestos sobre campos estáticos no soportados en el JIT"
+                                    .to_string(),
+                            ));
+                        }
+                        self.emit_expression(&a.value)?;
+                        self.body.push(Instruction::GlobalSet(g));
+                        let w = self.value_type(&a.value)?;
+                        self.body.push(match w {
+                            WasTy::F64 => Instruction::GlobalGet(g),
+                            _ => Instruction::GlobalGet(g),
+                        });
+                        return Ok(());
+                    }
+                }
                 let obj_ty = self.types.get(&expr_span(&m.object)).cloned();
                 if let Some(Type::Named(name, _)) = obj_ty {
                     if let Some(info) = self.class_defs.get(name.as_str()) {
@@ -2966,7 +2988,13 @@ impl<'a> FuncEmitter<'a> {
                         if let Some(parent) =
                             self.class_defs.get(cur).and_then(|i| i.parent.clone())
                         {
-                            let key = format!("{}::{}", parent, member.member);
+                            // `super.main(...)` → ctor del padre (ClassDef.ctor se
+                            // emite como `__ctor`). `super.metodo(...)` → método.
+                            let key = if member.member == "main" {
+                                format!("{}::__ctor", parent)
+                            } else {
+                                format!("{}::{}", parent, member.member)
+                            };
                             if let Some(idx) = self.func_indexes.get(&key) {
                                 self.body.push(Instruction::LocalGet(0)); // me
                                 for a in &c.args {
@@ -3042,6 +3070,17 @@ impl<'a> FuncEmitter<'a> {
                 }
                 if obj_name == "http" {
                     return self.emit_http_call(member, c);
+                }
+                // `Clase.metodo()` con método static → call directo (sin me).
+                if self.class_defs.contains_key(obj_name.as_str()) {
+                    let skey = format!("{}::__s__{}", obj_name, member.member);
+                    if let Some(&idx) = self.func_indexes.get(&skey) {
+                        for a in &c.args {
+                            self.emit_expression(a)?;
+                        }
+                        self.body.push(Instruction::Call(idx));
+                        return Ok(());
+                    }
                 }
             }
             let obj_ty = self
@@ -5006,6 +5045,32 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
         }
+        // `lib::Color.Rojo`: el objeto es un access namespaced cuyo prefijo apunta
+        // a un enum del módulo importado (flattened como `lib::Color`).
+        if let Expression::NamespaceAccess(ns, name, _) = &*m.object {
+            let key = format!("{}::{}", ns, name);
+            if let Some((def_id, variants)) = self.enum_defs.get(&key).cloned() {
+                let idx = variants
+                    .iter()
+                    .position(|v| *v == m.member)
+                    .ok_or_else(|| {
+                        crate::error::ClsError::CompileError(format!(
+                            "La variante '{}' no existe en el enum '{}'",
+                            m.member, key
+                        ))
+                    })?;
+                let val = ((def_id as i64) << 32) | idx as i64;
+                self.body.push(Instruction::I64Const(val));
+                return Ok(());
+            }
+        }
+        // `Clase.campo` (campo estático): el objeto es el nombre de la clase.
+        if let Expression::Identifier(cn, _) = &*m.object {
+            if let Some(&g) = self.static_fields.get(&format!("{}::{}", cn, m.member)) {
+                self.body.push(Instruction::GlobalGet(g));
+                return Ok(());
+            }
+        }
         let obj_ty = self
             .types
             .get(&expr_span(&m.object))
@@ -6160,6 +6225,8 @@ struct Engine<'a> {
     native_ret: HashMap<String, char>,
     globals: HashMap<String, u32>,
     global_inits: Vec<(u32, Expression)>,
+    /// Campos estáticos de clase: `Clase::campo` → global WASM (mutable).
+    static_fields: HashMap<String, u32>,
     elements_sec: ElementSection,
     class_defs: HashMap<String, ClassInfo>,
     next_table_slot: u32,
@@ -6284,8 +6351,9 @@ impl<'a> Engine<'a> {
             struct_defs: HashMap::new(),
             native_indexes: HashMap::new(),
             native_ret: HashMap::new(),
-            globals: HashMap::new(),
-            global_inits: Vec::new(),
+        globals: HashMap::new(),
+        global_inits: Vec::new(),
+        static_fields: HashMap::new(),
             tables_sec: TableSection::new(),
             tags_sec: TagSection::new(),
             tag_idx: 0,
@@ -6480,8 +6548,14 @@ impl<'a> Engine<'a> {
                             total = off;
                         }
                         ClassMember::Method(m) => {
-                            if !methods.contains(&m.name) {
-                                methods.push(m.name.clone());
+                            // Los métodos static NO van en la vtable (no reciben me).
+                            if !m
+                                .modifiers
+                                .contains(&crate::frontend::ast::FunctionModifier::Static)
+                            {
+                                if !methods.contains(&m.name) {
+                                    methods.push(m.name.clone());
+                                }
                             }
                             let mut m2 = m.clone();
                             let cn = c.name.clone();
@@ -6705,6 +6779,49 @@ impl<'a> Engine<'a> {
                 );
                 if let Some(val) = &v.value {
                     self.global_inits.push((idx, val.clone()));
+                }
+            }
+        }
+
+        // Campos estáticos de clase: cada `static var` → un global WASM mutable
+        // (accesible como `Clase.campo`). Se declaran tras los globals de usuario.
+        for stmt in &module.statements {
+            if let Statement::ClassDecl(c) = stmt {
+                for member in &c.body {
+                    if let ClassMember::Property(p) = member {
+                        if p.is_static {
+                            let w = match (&p.type_ann, &p.value) {
+                                (Some(ann), _) => {
+                                    was_type(&annotation_to_type(ann)).unwrap_or(WasTy::I64)
+                                }
+                                (None, Some(val)) => {
+                                    self.expr_was_type(val).unwrap_or(WasTy::I64)
+                                }
+                                (None, None) => WasTy::I64,
+                            };
+                            let idx = next_global;
+                            next_global += 1;
+                            let key = format!("{}::{}", c.name, p.name);
+                            self.static_fields.insert(key, idx);
+                            self.globals_sec.global(
+                                GlobalType {
+                                    val_type: w.val_type(),
+                                    mutable: true,
+                                    shared: false,
+                                },
+                                &match w {
+                                    WasTy::F64 => {
+                                        ConstExpr::f64_const(Ieee64::new(0.0f64.to_bits()))
+                                    }
+                                    WasTy::I32 => ConstExpr::i32_const(0),
+                                    WasTy::I64 => ConstExpr::i64_const(0),
+                                },
+                            );
+                            if let Some(val) = &p.value {
+                                self.global_inits.push((idx, val.clone()));
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -6972,6 +7089,7 @@ impl<'a> Engine<'a> {
             &self.native_indexes,
             &self.native_ret,
             &self.globals,
+            &self.static_fields,
             &self.class_defs,
             &self.method_type_indexes,
             None,
@@ -6988,7 +7106,12 @@ impl<'a> Engine<'a> {
             .next()
             .map(|c| self.class_defs.contains_key(c))
             .unwrap_or(false);
-        let current_class = if is_method {
+        // Un método static NO recibe `me` ni establece la clase actual (así que
+        // `me.` dentro de él da error de variable no definida, paridad walker).
+        let is_static = f
+            .modifiers
+            .contains(&crate::frontend::ast::FunctionModifier::Static);
+        let current_class = if is_method && !is_static {
             f.name.split("::").next().map(|s| s.to_string())
         } else {
             None
@@ -7033,7 +7156,7 @@ impl<'a> Engine<'a> {
                 fe.captures.insert(cap.clone(), (i + 1) as u32);
             }
         }
-        if is_method {
+        if is_method && !is_static {
             fe.declare_var_ty("me", was_type(&param_types[0])?);
             for (i, p) in f.params.iter().enumerate() {
                 fe.declare_var_ty(&p.name, was_type(&param_types[i + 1])?);
@@ -7111,6 +7234,7 @@ impl<'a> Engine<'a> {
             &self.native_indexes,
             &self.native_ret,
             &self.globals,
+            &self.static_fields,
             &self.class_defs,
             &self.method_type_indexes,
             None,
@@ -7142,9 +7266,17 @@ impl<'a> Engine<'a> {
     }
 
     /// Declara una función de clase (`Clase::m` o ctor) con `me` como primer param.
+    /// Los métodos `static` NO reciben `me` (se registran como `Clase::__s__m`).
     fn declare_class_function(&mut self, class: &str, f: &FunctionDecl) {
-        let mut param_cls = vec![Type::Int]; // me (ptr del objeto)
-        let mut pv = vec![ValType::I64];
+        let is_static = f
+            .modifiers
+            .contains(&crate::frontend::ast::FunctionModifier::Static);
+        let mut param_cls = Vec::new();
+        let mut pv = Vec::new();
+        if !is_static {
+            param_cls.push(Type::Int); // me (ptr del objeto)
+            pv.push(ValType::I64);
+        }
         for p in &f.params {
             let t = p
                 .type_ann
@@ -7170,7 +7302,11 @@ impl<'a> Engine<'a> {
         let fidx = self.func_count;
         self.func_count += 1;
         self.funcs_sec.function(tidx);
-        let key = format!("{}::{}", class, f.name);
+        let key = if is_static {
+            format!("{}::__s__{}", class, f.name)
+        } else {
+            format!("{}::{}", class, f.name)
+        };
         self.func_indexes.insert(key.clone(), fidx);
         self.func_types.insert(key.clone(), (param_cls, ret_cls));
         self.method_type_indexes.insert(key.clone(), tidx);
@@ -7194,7 +7330,7 @@ impl<'a> Engine<'a> {
         //   local 0 = n (param), local 1 = ptr, local 2 = end
         //   ptr = global 0
         //   end = (ptr + n + 8) & -8
-        //   if end > memsize*65536 → grow 16 páginas
+        //   if end > memsize*65536 → grow las páginas exactas para cubrir `end`
         //   global 0 = end
         //   ptr)
         let mut b = vec![
@@ -7209,6 +7345,7 @@ impl<'a> Engine<'a> {
             Instruction::I64And,
             Instruction::LocalSet(2),
             Instruction::Block(BlockType::Empty),
+            // if end <= memsize*65536 → skip grow
             Instruction::LocalGet(2),
             Instruction::MemorySize(0),
             Instruction::I64ExtendI32U,
@@ -7216,7 +7353,18 @@ impl<'a> Engine<'a> {
             Instruction::I64Mul,
             Instruction::I64LeU,
             Instruction::BrIf(0),
-            Instruction::I32Const(16),
+            // pages_needed = ceil((end - memsize*65536) / 65536)
+            Instruction::LocalGet(2),
+            Instruction::MemorySize(0),
+            Instruction::I64ExtendI32U,
+            Instruction::I64Const(65536),
+            Instruction::I64Mul,
+            Instruction::I64Sub,
+            Instruction::I64Const(65535),
+            Instruction::I64Add,
+            Instruction::I64Const(65536),
+            Instruction::I64DivU,
+            Instruction::I32WrapI64,
             Instruction::MemoryGrow(0),
             Instruction::Drop,
             Instruction::End,

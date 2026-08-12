@@ -1,0 +1,9 @@
+﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\bug-pow-float.clsx ===
+MODE=jit
+EXITCODE=
+TIME_MS=909
+--- STDOUT ---
+pow float: 1.4142135623730951
+
+--- STDERR ---
+================

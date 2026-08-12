@@ -116,6 +116,10 @@ struct HostState {
     source_file: String,
     /// Módulos importados: (offset de línea, archivo, source) — offset = 100000*(i+1).
     modules: Vec<(u32, String, String)>,
+    /// Capacidad alocada por cada string dinámica (ptr del buffer → bytes).
+    /// Permite a `str_concat` reutilizar el buffer (crecimiento amortizado) en
+    /// vez de alocar exacto cada vez (O(n²) en loops de concatenación).
+    string_caps: std::collections::HashMap<i64, i64>,
 }
 
 impl Default for HostState {
@@ -124,6 +128,7 @@ impl Default for HostState {
             first_in_line: true,
             source_file: String::new(),
             modules: Vec::new(),
+            string_caps: std::collections::HashMap::new(),
         }
     }
 }
@@ -139,14 +144,24 @@ pub fn cache_dir() -> std::path::PathBuf {
 /// Clave del caché: hash del fuente + versión del compilador + target +
 /// **índice de integridad de los módulos del workspace** (para que un cambio en
 /// cualquier `.clsx` importado invalide el caché y se recompile).
-fn cache_key(source: &str, target_str: Option<&str>, entry: &std::path::Path) -> u64 {
+fn cache_key(
+    source: &str,
+    target_str: Option<&str>,
+    entry: &std::path::Path,
+    module_sources: &[String],
+) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     source.hash(&mut h);
     cls_core::VERSION.hash(&mut h);
     target_str.unwrap_or("").hash(&mut h);
-    // Integridad de los módulos: si cualquier .clsx del proyecto cambió, la clave
-    // cambia y se recompila (evita stale cache al editar un módulo importado).
+    // Integridad de los módulos importados: se hashean los SOURCES de los módulos
+    // resueltos (locales del proyecto Y globales de ~/.cls). Así editar cualquier
+    // .clsx importado invalida el caché aunque esté fuera del workspace.
+    for ms in module_sources {
+        ms.hash(&mut h);
+    }
+    // Integridad del workspace local (todos los .clsx del proyecto).
     let integrity = crate::module_index::workspace_integrity_hash(entry, &[]);
     integrity.hash(&mut h);
     h.finish()
@@ -332,6 +347,9 @@ pub fn load_import_modules(
             for candidate in &candidates {
                 let key = candidate.to_string_lossy().to_string();
                 if seen.contains(&key) {
+                    // Ya cargado por otro import: no duplicar en `out`, pero el
+                    // módulo SÍ está resuelto (import doble con sintaxis distinta).
+                    found = true;
                     continue;
                 }
                 if let Ok(source) = std::fs::read_to_string(candidate) {
@@ -395,15 +413,62 @@ fn flatten_imports(module: &ClsModule, imports: &[(String, ClsModule)]) -> ClsMo
                 if let Some(m) = m {
                     let prefix = imp.alias.clone().unwrap_or_else(|| imp.path.clone());
                     push_prefixed_exports(&mut statements, m, &prefix);
+                    // Módulo→módulo: el módulo importado puede importar otros a su
+                    // vez (nested_b → nested_a). Sus referencias internas (na::base)
+                    // necesitan que esos exports existan en el WASM merged.
+                    flatten_nested_imports(&mut statements, m, imports);
                 }
             }
             other => statements.push(other.clone()),
         }
     }
     ClsModule {
-        statements,
+        statements: dedupe_statements(statements),
         span: module.span.clone(),
     }
+}
+
+/// Procesa los imports internos de un módulo importado (y recursivamente los de
+/// sus propios imports), trayendo sus exports namespaced al módulo merged.
+fn flatten_nested_imports(out: &mut Vec<Statement>, m: &ClsModule, imports: &[(String, ClsModule)]) {
+    for stmt in &m.statements {
+        if let Statement::Import(imp) = stmt {
+            let sub = imports
+                .iter()
+                .find(|(p, _)| *p == imp.path)
+                .map(|(_, s)| s);
+            if let Some(sub) = sub {
+                let prefix = imp.alias.clone().unwrap_or_else(|| imp.path.clone());
+                push_prefixed_exports(out, sub, &prefix);
+                flatten_nested_imports(out, sub, imports);
+            }
+        }
+    }
+}
+
+/// Elimina declaraciones duplicadas por nombre (función/var/const/enum). Al
+/// flattenear imports anidados, un mismo módulo podría llegar por dos rutas.
+fn dedupe_statements(stmts: Vec<Statement>) -> Vec<Statement> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for stmt in stmts {
+        let key = match &stmt {
+            Statement::FunctionDecl(f) => Some(format!("fn:{}", f.name)),
+            Statement::VarDecl(v) => Some(format!("var:{}", v.name)),
+            Statement::ConstDecl(v) => Some(format!("const:{}", v.name)),
+            Statement::EnumDecl(e) => Some(format!("enum:{}", e.name)),
+            _ => None,
+        };
+        match key {
+            Some(k) => {
+                if seen.insert(k) {
+                    out.push(stmt);
+                }
+            }
+            None => out.push(stmt),
+        }
+    }
+    out
 }
 
 /// Inserta un export del módulo `m` con nombre `export_name`, renombrado a `local`.
@@ -509,20 +574,11 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
     };
     t = tick(timing, "lectura", t);
 
-    // Caché CLS→WASM en disco: si el fuente no cambió (misma versión + target +
-    // integridad de los módulos del workspace), saltamos la recompilación.
+    // Caché CLS→WASM en disco: la clave se calcula DESPUÉS de resolver los
+    // imports, para que los sources de los módulos importados (locales y
+    // globales ~/.cls) formen parte de la clave. Si algún módulo cambió, la
+    // clave cambia y se recompila (evita stale cache).
     let entry_path = std::path::Path::new(entry);
-    let key = cache_key(&source, target_str, entry_path);
-    let cache_path = cache_dir().join(format!("{:016x}.wasm", key));
-    if let Ok(cached) = std::fs::read(&cache_path) {
-        if timing {
-            eprintln!("[JIT-TIMING] caché CLS→WASM: HIT ({} bytes)", cached.len());
-        }
-        return run_wasm(&cached, entry, app_args, timing, t, None, &[]);
-    }
-    if timing {
-        eprintln!("[JIT-TIMING] caché CLS→WASM: miss");
-    }
 
     // Parseo
     let mut lexer = cls_core::frontend::Lexer::new(&source);
@@ -565,6 +621,20 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
     if let Err(e) = load_import_modules(&module, &base_dir, &mut seen, &mut imports, manifest.as_ref()) {
         show_cls_error(&e, entry, Some(&source));
         return 1;
+    }
+    // Clave de caché con los sources de los módulos importados: editar cualquier
+    // módulo (local o global) invalida el caché.
+    let module_sources: Vec<String> = imports.iter().map(|(_, src, _)| src.clone()).collect();
+    let key = cache_key(&source, target_str, entry_path, &module_sources);
+    let cache_path = cache_dir().join(format!("{:016x}.wasm", key));
+    if let Ok(cached) = std::fs::read(&cache_path) {
+        if timing {
+            eprintln!("[JIT-TIMING] caché CLS→WASM: HIT ({} bytes)", cached.len());
+        }
+        return run_wasm(&cached, entry, app_args, timing, t, None, &imports);
+    }
+    if timing {
+        eprintln!("[JIT-TIMING] caché CLS→WASM: miss");
     }
     // Desplazar los spans de cada módulo importado con un offset de línea único.
     // El `Span` no incluye el archivo, así que sin esto las coordenadas de un
@@ -708,6 +778,7 @@ fn run_wasm(
             first_in_line: true,
             source_file: entry.to_string(),
             modules: module_offsets,
+            string_caps: std::collections::HashMap::new(),
         },
     );
     let mut linker = Linker::new(&engine);
@@ -926,15 +997,23 @@ fn caller_alloc(caller: &mut Caller<'_, HostState>, n: i64) -> Option<i64> {
 }
 
 /// Escribe un string en la memoria del módulo (via alloc) y lo empaqueta.
+/// Aloca con capacidad amortizada (len*2 + slack) y la registra en
+/// `string_caps` para que `str_concat` reutilice el buffer.
 fn caller_write_str(caller: &mut Caller<'_, HostState>, s: &str) -> Option<i64> {
     let len = s.len() as i64;
-    let ptr = caller_alloc(caller, len)?;
-    let memory = caller_memory(caller)?;
-    let data = memory.data_mut(caller);
-    let start = ptr as usize;
-    if start + s.len() <= data.len() {
-        data[start..start + s.len()].copy_from_slice(s.as_bytes());
+    let cap = (len * 2 + 16).max(64);
+    let ptr = caller_alloc(caller, cap)?;
+    {
+        let memory = caller_memory(caller);
+        if let Some(memory) = memory {
+            let data = memory.data_mut(&mut *caller);
+            let start = ptr as usize;
+            if start + s.len() <= data.len() {
+                data[start..start + s.len()].copy_from_slice(s.as_bytes());
+            }
+        }
     }
+    caller.data_mut().string_caps.insert(ptr, cap);
     Some((ptr << 32) | len)
 }
 
@@ -1067,9 +1146,26 @@ fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String>
             HOST,
             "str_concat",
             |mut caller: Caller<'_, HostState>, a: i64, b: i64| -> i64 {
+                let a_ptr = (a >> 32) as usize;
+                let a_len = (a & 0xffff_ffff) as usize;
                 let sa = caller_read_str(&mut caller, a);
                 let sb = caller_read_str(&mut caller, b);
                 let out = format!("{}{}", sa, sb);
+                // Reutilizar el buffer de `a` si tiene capacidad (amortizado):
+                // evita alocar nuevo en cada iteración de un loop de concat.
+                let cap = caller.data().string_caps.get(&(a_ptr as i64)).copied();
+                if let Some(cap) = cap {
+                    if (out.len() as i64) <= cap && out.len() >= a_len {
+                        if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+                            let data = memory.data_mut(&mut caller);
+                            let start = a_ptr;
+                            if start + out.len() <= data.len() {
+                                data[start..start + out.len()].copy_from_slice(out.as_bytes());
+                                return ((a_ptr as i64) << 32) | (out.len() as i64);
+                            }
+                        }
+                    }
+                }
                 caller_write_str(&mut caller, &out).unwrap_or(0)
             },
         )
@@ -1604,6 +1700,29 @@ fn arr_realloc(caller: &mut Caller<'_, HostState>, ptr: usize, new_cap: usize, e
     let new_ptr = caller_alloc(caller, size).unwrap_or(0) as usize;
     arr_write_i64(caller, new_ptr, new_cap as i64);
     arr_write_i64(caller, new_ptr + 8, len as i64);
+    if let Some(mem) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+        let data = mem.data_mut(&mut *caller);
+        let data_len = data.len();
+        let src = ptr + 16;
+        let dst = new_ptr + 16;
+        let bytes = len * es;
+        if src + bytes <= data_len && dst + bytes <= data_len {
+            // Copia de bloque contigua (es==8) o elemento a elemento (es==4).
+            if es == 8 {
+                data.copy_within(src..src + bytes, dst);
+            } else {
+                for i in 0..len {
+                    let s = src + i * es;
+                    let d = dst + i * es;
+                    if s + es <= data_len && d + es <= data_len {
+                        data.copy_within(s..s + es, d);
+                    }
+                }
+            }
+            return new_ptr;
+        }
+    }
+    // Fallback: copiar elemento a elemento (bounds del host).
     for i in 0..len {
         let e = arr_elem(caller, ptr, i, es);
         arr_set(caller, new_ptr, i, es, e);
