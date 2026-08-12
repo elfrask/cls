@@ -1,0 +1,35 @@
+System.Management.Automation.RemoteException
+thread 'main' (6952) panicked at cls-core\src\backend\wasm.rs:439:31:
+no entry found for key
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library\std\src\panicking.rs:698
+   1: core::panicking::panic_fmt
+             at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library\core\src\panicking.rs:80
+   2: core::panicking::panic_display
+             at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library\core\src\panicking.rs:264
+   3: core::option::expect_failed
+             at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library\core\src\option.rs:2183
+   4: std::collections::hash::map::impl$8::index<cls_core::backend::wasm::HostFn,cls_core::backend::wasm::HostFn,u32,std::hash::random::RandomState>
+             at C:\Users\Frask\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\std\src\collections\hash\map.rs:1382
+   5: cls_core::backend::wasm::HostCaller::call
+             at .\cls-core\src\backend\wasm.rs:439
+   6: cls_core::backend::wasm::FuncEmitter::emit_fn_enter
+             at .\cls-core\src\backend\wasm.rs:1726
+   7: cls_core::backend::wasm::Engine::compile_function
+             at .\cls-core\src\backend\wasm.rs:7409
+   8: cls_core::backend::wasm::Engine::emit
+             at .\cls-core\src\backend\wasm.rs:7219
+   9: cls_core::backend::wasm::WasmBackend::emit
+             at .\cls-core\src\backend\wasm.rs:6406
+  10: clx::jit::run_jit
+             at .\nodos\clx\src\jit.rs:691
+  11: clx::subcommands::run::execute
+             at .\nodos\clx\src\subcommands\run.rs:60
+  12: clx::main
+             at .\nodos\clx\src\main.rs:34
+  13: core::ops::function::FnOnce::call_once<void (*)(),tuple$<> >
+             at C:\Users\Frask\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+  14: core::hint::black_box
+             at C:\Users\Frask\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\hint.rs:472
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.

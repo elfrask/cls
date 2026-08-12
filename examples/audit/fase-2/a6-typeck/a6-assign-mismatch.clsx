@@ -1,0 +1,6 @@
+# A-6: asignacion type mismatch debe ABORTAR en strict con linea real
+function main(args: String[]) -> int {
+    var x: int = "a";
+    print(x);
+    return 0;
+};

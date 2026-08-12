@@ -1,0 +1,11 @@
+# A-4: concat 100k veces "xx" (2 chars) → len 200000
+function main(args: String[]) -> int {
+    var s = "";
+    var i = 0;
+    while (i < 100000) {
+        s = s + "xx";
+        i++;
+    }
+    print("len:", s.length);
+    return 0;
+};

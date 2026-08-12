@@ -120,6 +120,9 @@ struct HostState {
     /// Permite a `str_concat` reutilizar el buffer (crecimiento amortizado) en
     /// vez de alocar exacto cada vez (O(n²) en loops de concatenación).
     string_caps: std::collections::HashMap<i64, i64>,
+    /// Shadow call stack: nombres y spans de las funciones CLS en ejecución.
+    /// Lo alimentan los hosts `fn_enter`/`fn_exit` emitidos por el backend.
+    call_stack: Vec<(String, cls_core::error::diagnostic::Span)>,
 }
 
 impl Default for HostState {
@@ -129,6 +132,7 @@ impl Default for HostState {
             source_file: String::new(),
             modules: Vec::new(),
             string_caps: std::collections::HashMap::new(),
+            call_stack: Vec::new(),
         }
     }
 }
@@ -779,6 +783,7 @@ fn run_wasm(
             source_file: entry.to_string(),
             modules: module_offsets,
             string_caps: std::collections::HashMap::new(),
+            call_stack: Vec::new(),
         },
     );
     let mut linker = Linker::new(&engine);
@@ -863,6 +868,16 @@ fn run_wasm(
                 .get(1)
                 .and_then(|v| v.i64())
                 .map(unpack_span);
+            // Shadow call stack: frames (nombre, span) en orden de ejecución
+            // (main → outer → inner). El frame del error es el último.
+            let call_stack: Vec<cls_core::error::StackFrame> = store
+                .data()
+                .call_stack
+                .iter()
+                .map(|(name, sp)| {
+                    cls_core::error::StackFrame::new(name, Some(*sp), entry)
+                })
+                .collect();
             if let Some(span) = span {
                 // De-shiftear el span si pertenece a un módulo importado y
                 // resolver el archivo/source real (para el caret correcto).
@@ -875,7 +890,7 @@ fn run_wasm(
                 let report = cls_runtime::error_report::ErrorReport {
                     error: ClsError::RuntimeError(msg.clone()),
                     span: Some(real_span),
-                    stack: vec![],
+                    stack: call_stack,
                     import_trace: vec![],
                     source_file: file,
                     source: Some(source),
@@ -888,14 +903,28 @@ fn run_wasm(
                     )
                 );
             } else {
-                show_cls_error(
-                    &ClsError::RuntimeError(if msg.is_empty() {
-                        format!("Trap WASM: excepción no capturada")
+                // Sin excepción CLS (p.ej. stack overflow, trap de memoria):
+                // usar el mensaje del trap de wasmtime y mostrar el call stack
+                // acumulado hasta el fallo.
+                let trap_msg = format!("Trap WASM: {}", _e);
+                let report = cls_runtime::error_report::ErrorReport {
+                    error: ClsError::RuntimeError(if msg.is_empty() {
+                        trap_msg
                     } else {
                         msg
                     }),
-                    entry,
-                    None,
+                    span: call_stack.last().and_then(|f| f.span),
+                    stack: call_stack,
+                    import_trace: vec![],
+                    source_file: entry.to_string(),
+                    source: None,
+                };
+                eprintln!(
+                    "{}",
+                    cls_runtime::error_report::format_error(
+                        &report,
+                        &cls_runtime::error_report::ErrorFormat::Console
+                    )
                 );
             }
             1
@@ -1125,13 +1154,29 @@ fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String>
     linker
         .func_wrap(HOST, "parse_int", |mut caller: Caller<'_, HostState>, v: i64| -> i64 {
             let s = caller_read_str(&mut caller, v);
-            s.trim().parse::<i64>().unwrap_or(0)
+            let t = s.trim();
+            match t.parse::<i64>() {
+                Ok(n) => n,
+                Err(_) => {
+                    // Paridad walker: `int("no es un numero")` → error, no 0.
+                    eprintln!("Error: int: no se puede convertir '{}'", t);
+                    std::process::exit(1);
+                }
+            }
         })
         .map_err(|e| e.to_string())?;
     linker
         .func_wrap(HOST, "parse_float", |mut caller: Caller<'_, HostState>, v: i64| -> f64 {
             let s = caller_read_str(&mut caller, v);
-            s.trim().parse::<f64>().unwrap_or(0.0)
+            let t = s.trim();
+            match t.parse::<f64>() {
+                Ok(n) => n,
+                Err(_) => {
+                    // Paridad walker: `float("x")` → error, no 0.0.
+                    eprintln!("Error: float: no se puede convertir '{}'", t);
+                    std::process::exit(1);
+                }
+            }
         })
         .map_err(|e| e.to_string())?;
     linker
@@ -1807,6 +1852,10 @@ fn register_stdlib_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
     linker
         .func_wrap(HOST, "json_parse", |mut caller: Caller<'_, HostState>, s: i64| -> i64 {
             let text = caller_read_str(&mut caller, s);
+            // El typeck tipa `json.parse` como Record<String, any>: el valor
+            // devuelto es el PTR del contenedor (layout [key,val,tag]*24 para
+            // records, [val,tag]*16 para arrays), compatible con record_get y
+            // record_to_string.
             match serde_json::from_str::<serde_json::Value>(&text) {
                 Ok(v) => json_build(&mut caller, &v).0,
                 Err(_) => 0,
@@ -1880,6 +1929,8 @@ fn register_stdlib_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
 
 /// tags de tipo para JSON: 0=int, 1=string, 2=float, 3=bool, 4=char, 5=array, 6=record.
 fn json_build(caller: &mut Caller<'_, HostState>, v: &serde_json::Value) -> (i64, i64) {
+    // Tags CLS estándar (paridad con fmt_val_to_string/tag_type):
+    // 1=string, 2=float, 3=bool, 4=char, 6=array, 7=record.
     match v {
         serde_json::Value::Null => (0, 0),
         serde_json::Value::Bool(b) => ((if *b { 1 } else { 0 }), 3),
@@ -1895,14 +1946,16 @@ fn json_build(caller: &mut Caller<'_, HostState>, v: &serde_json::Value) -> (i64
         serde_json::Value::String(s) => (caller_write_str(caller, s).unwrap_or(0), 1),
         serde_json::Value::Array(items) => {
             let n = items.len();
-            let ptr = caller_alloc(caller, (n * 8 + 16) as i64).unwrap_or(0) as usize;
+            // Entradas `[val, tag]` stride 16 (como los arrays de Cmx).
+            let ptr = caller_alloc(caller, (n * 16 + 16) as i64).unwrap_or(0) as usize;
             arr_write_i64(caller, ptr, n as i64);
             arr_write_i64(caller, ptr + 8, n as i64);
             for (i, it) in items.iter().enumerate() {
-                let (val, _) = json_build(caller, it);
-                arr_set(caller, ptr, i, 8, val);
+                let (val, tag) = json_build(caller, it);
+                arr_write_i64(caller, ptr + 16 + i * 16, val);
+                arr_write_i64(caller, ptr + 16 + i * 16 + 8, tag);
             }
-            (ptr as i64, 5)
+            (ptr as i64, 6)
         }
         serde_json::Value::Object(map) => {
             let n = map.len();
@@ -1918,7 +1971,7 @@ fn json_build(caller: &mut Caller<'_, HostState>, v: &serde_json::Value) -> (i64
                 arr_write_i64(caller, ptr + 16 + i * 24 + 16, tag);
                 i += 1;
             }
-            (ptr as i64, 6)
+            (ptr as i64, 7)
         }
     }
 }
@@ -2259,6 +2312,30 @@ fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
             caller_write_str(&mut caller, &s).unwrap_or(0)
         })
         .map_err(|e| e.to_string())?;
+    // Shadow call stack: el backend emite fn_enter al inicio de cada función CLS
+    // (con nombre y span) y fn_exit antes de cada return. Al reportar un error
+    // de runtime se usa `call_stack` para el trace numerado.
+    linker
+        .func_wrap(
+            HOST,
+            "fn_enter",
+            |mut caller: Caller<'_, HostState>, name_packed: i64, line: i64, col: i64| {
+                let name = caller_read_str(&mut caller, name_packed);
+                let span = cls_core::error::diagnostic::Span::new(
+                    line as u32,
+                    col as u32,
+                    line as u32,
+                    col as u32,
+                );
+                caller.data_mut().call_stack.push((name, span));
+            },
+        )
+        .map_err(|e| e.to_string())?;
+    linker
+        .func_wrap(HOST, "fn_exit", |mut caller: Caller<'_, HostState>| {
+            caller.data_mut().call_stack.pop();
+        })
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -2302,9 +2379,12 @@ fn fmt_val_to_string(caller: &mut Caller<'_, HostState>, val: i64, tag: i64) -> 
         4 => char::from_u32(val as u32).unwrap_or('?').to_string(),
         5 => cmx_format(caller, val as usize),
         6 => {
-            // Array: es=16 si es de Cmx (kind 5), si no 8.
-            let es = if kind == 5 { 16 } else { 8 };
-            arr_to_string(caller, val, es, kind as i64)
+            // Array: es=16 si es de Cmx (kind 5) o de JSON heterogéneo (tag 6,
+            // entradas [val, tag] stride 16); si no 8.
+            let es = if kind == 5 || kind == 6 { 16 } else { 8 };
+            // kind 6 = array JSON (entradas [val,tag]); kind 5 = Cmx.
+            let arr_kind = if kind == 6 { 5 } else { kind };
+            arr_to_string(caller, val, es, arr_kind as i64)
         }
         7 => record_to_string(caller, val),
         _ => val.to_string(),

@@ -1,0 +1,6 @@
+[91mError en 'C:\Users\Frask\Documents\cls\examples\audit\fase-1\c3-private-metodo-externo.clsx':[0m
+[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\fase-1\c3-private-metodo-externo.clsx:9:20 [95m[Error de Compilaci+¦n][0m
+  9 |     print(a.secreta());
+    | [31m                   ^[0m
+  [1m[91mError:[0m[0m El m+®todo 'secreta' es private (solo accesible desde la clase)
+System.Management.Automation.RemoteException

@@ -1,0 +1,7 @@
+[JIT-TIMING] lectura                            0.33 ms
+[JIT-TIMING] lexer                              0.18 ms
+[JIT-TIMING] parser                             0.22 ms
+[JIT-TIMING] cach+Æ CLS‘Â∆WASM: miss
+[[1m[91mERROR[0m[0m] [91mNo se puede asignar String a Int[0m (C:\Users\Frask\Documents\cls\examples\audit\fase-2\a6-typeck\a6-check-modulo.clsx (m+¶dulo importado):3:5)
+  |     return x;
+  |     ^

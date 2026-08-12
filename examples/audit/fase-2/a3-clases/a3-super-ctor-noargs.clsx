@@ -1,0 +1,14 @@
+# A-3: super.main ctor padre SIN args
+class Base {
+    var x: int;
+    function main() { me.x = 5; }
+    function get() -> int { return me.x; }
+};
+class Hijo: Base {
+    function main() { super.main(); }
+};
+function main(args: String[]) -> int {
+    var h = Hijo();
+    print("x:", h.get());
+    return 0;
+};

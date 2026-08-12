@@ -1,0 +1,9 @@
+# A-7: enum namespaced - print y comparación (auto-contenido en fase-2)
+import "libmod" as lib;
+function main(args: String[]) -> int {
+    var c = lib::Color.Rojo;
+    print("c:", c);
+    print("c==Rojo:", c == lib::Color.Rojo);
+    print("c==Verde:", c == lib::Color.Verde);
+    return 0;
+};

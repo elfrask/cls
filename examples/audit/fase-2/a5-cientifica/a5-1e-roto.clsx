@@ -1,0 +1,6 @@
+# A-5: 1e sin exponente (debe dar error claro)
+function main(args: String[]) -> int {
+    var x = 1e;
+    print(x);
+    return 0;
+};

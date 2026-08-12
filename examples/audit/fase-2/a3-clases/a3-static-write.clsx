@@ -1,0 +1,13 @@
+# A-3: static field escritura
+class Contador {
+    static var total: int = 0;
+    static function subir() { Contador.total = Contador.total + 1; }
+    static function ver() -> int { return Contador.total; }
+};
+function main(args: String[]) -> int {
+    print("antes:", Contador.total);
+    Contador.subir();
+    Contador.subir();
+    print("despues:", Contador.ver());
+    return 0;
+};

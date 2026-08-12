@@ -1,0 +1,14 @@
+# A-3: static field Cuenta.tasa + static method Clase.metodo()
+class Cuenta {
+    static var tasa: float = 0.05;
+    static var nombre: String = "Banco";
+    static function crear() -> int { return 7; }
+    static function dobleTasa() -> float { return Cuenta.tasa * 2; }
+};
+function main(args: String[]) -> int {
+    print("tasa:", Cuenta.tasa);
+    print("nombre:", Cuenta.nombre);
+    print("crear:", Cuenta.crear());
+    print("doble:", Cuenta.dobleTasa());
+    return 0;
+};

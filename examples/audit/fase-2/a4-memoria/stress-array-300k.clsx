@@ -1,0 +1,12 @@
+# A-4: push 300k elementos (middle)
+function main(args: String[]) -> int {
+    var a = [];
+    var i = 0;
+    while (i < 300000) {
+        a.push(i);
+        i++;
+    }
+    print("len:", a.length);
+    print("ultimo:", a[299999]);
+    return 0;
+};

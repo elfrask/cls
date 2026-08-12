@@ -1,0 +1,6 @@
+[91mError en 'C:\Users\Frask\Documents\cls\examples\test-features\tests\test-classes.clsx':[0m
+[36m1[0m. En C:\Users\Frask\Documents\cls\examples\test-features\tests\test-classes.clsx:65:24 [95m[Error de Compilaci+¦n][0m
+  65 |         var x = c.saldo;
+     | [31m                       ^[0m
+  [1m[91mError:[0m[0m El campo 'saldo' es private (solo accesible desde la clase)
+System.Management.Automation.RemoteException

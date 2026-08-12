@@ -1,0 +1,13 @@
+# A-3: escritura de campo de struct p.x = v
+structure Punto {
+    x: int,
+    y: int,
+};
+function main(args: String[]) -> int {
+    var p = Punto(3, 4);
+    print("antes:", p.x, p.y);
+    p.x = 100;
+    p.y = 7;
+    print("despues:", p.x, p.y);
+    return 0;
+};

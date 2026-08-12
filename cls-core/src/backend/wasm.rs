@@ -120,6 +120,8 @@ pub enum HostFn {
     PrintAny,
     FnHandle,
     FnToString,
+    FnEnter,
+    FnExit,
 }
 
 impl HostFn {
@@ -207,6 +209,8 @@ impl HostFn {
             PrintAny => "print_any",
             FnHandle => "fn_handle",
             FnToString => "fn_to_string",
+            FnEnter => "fn_enter",
+            FnExit => "fn_exit",
         }
     }
 
@@ -304,6 +308,11 @@ impl HostFn {
                 vec![ValType::I64],
             ),
             FnToString => (i64p.clone(), vec![ValType::I64]),
+            FnEnter => (
+                vec![ValType::I64, ValType::I64, ValType::I64],
+                vec![],
+            ),
+            FnExit => (vec![], vec![]),
         }
     }
 }
@@ -420,7 +429,6 @@ struct LoopGuard {
     break_at: u32,
     continue_at: u32,
 }
-
 struct HostCaller {
     indexes: HashMap<HostFn, u32>,
 }
@@ -462,6 +470,9 @@ struct FuncEmitter<'a> {
     method_type_indexes: &'a HashMap<String, u32>,
     /// clase actual (al compilar un método) — para `super` y `me`.
     current_class: Option<String>,
+    /// Span de la función que se está compilando (para errores de statements sin
+    /// span propio, p.ej. `break`/`continue` fuera de loop).
+    current_fn_span: Span,
     target: &'a Target,
     /// Índice del tag de excepción CLS (para `Instruction::Throw`).
     tag_idx: u32,
@@ -528,6 +539,7 @@ impl<'a> FuncEmitter<'a> {
             class_defs,
             method_type_indexes,
             current_class,
+            current_fn_span: Span::new(1, 1, 1, 1),
             target,
             tag_idx,
             eh_handler_ty,
@@ -705,6 +717,18 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn value_type(&self, expr: &Expression) -> ClsResult<WasTy> {
+        // Literales: el kind ES el tipo (los spans del parser colisionan entre
+        // un literal y la expresión que lo contiene, así que el type map puede
+        // estar contaminado). Esto mantiene el tipo real del valor emitido.
+        if let Expression::Literal(l) = expr {
+            return Ok(match &l.kind {
+                LiteralKind::Int(_) => WasTy::I64,
+                LiteralKind::Float(_) => WasTy::F64,
+                LiteralKind::Bool(_) => WasTy::I32,
+                LiteralKind::Char(_) => WasTy::I32,
+                _ => WasTy::I64,
+            });
+        }
         // Llamadas a funciones nativas (extensión) → tipo de retorno codificado.
         if let Expression::Call(c) = expr {
             if let Expression::Identifier(name, _) = &*c.callee {
@@ -823,7 +847,10 @@ impl<'a> FuncEmitter<'a> {
             }
             Statement::Break => {
                 let ctx = self.loop_stack.last().ok_or_else(|| {
-                    crate::error::ClsError::CompileError("break fuera de loop".to_string())
+                    crate::error::ClsError::compile_at(
+                        "break fuera de loop",
+                        &self.current_fn_span,
+                    )
                 })?;
                 let depth = self.block_depth.saturating_sub(ctx.break_at);
                 self.body.push(Instruction::Br(depth));
@@ -831,7 +858,10 @@ impl<'a> FuncEmitter<'a> {
             }
             Statement::Continue => {
                 let ctx = self.loop_stack.last().ok_or_else(|| {
-                    crate::error::ClsError::CompileError("continue fuera de loop".to_string())
+                    crate::error::ClsError::compile_at(
+                        "continue fuera de loop",
+                        &self.current_fn_span,
+                    )
                 })?;
                 let depth = self.block_depth.saturating_sub(ctx.continue_at);
                 self.body.push(Instruction::Br(depth));
@@ -1685,6 +1715,32 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
+    /// Emite `env.fn_enter(nombre, line, col)` al inicio de una función CLS.
+    /// Registra la función en el shadow call stack del host (para el trace de
+    /// errores de runtime).
+    fn emit_fn_enter(&mut self, f: &FunctionDecl) -> ClsResult<()> {
+        let display = f
+            .name
+            .rsplit("::")
+            .next()
+            .unwrap_or(&f.name)
+            .trim_start_matches("__s__")
+            .to_string();
+        let name_idx = self.intern_string(&display);
+        self.emit_load_str(name_idx);
+        let line = f.span.start_line;
+        let col = f.span.start_col;
+        self.body.push(Instruction::I64Const(line as i64));
+        self.body.push(Instruction::I64Const(col as i64));
+        self.host.call(HostFn::FnEnter, &mut self.body);
+        Ok(())
+    }
+
+    /// Emite `env.fn_exit()` antes de salir de una función CLS.
+    fn emit_fn_exit(&mut self) {
+        self.host.call(HostFn::FnExit, &mut self.body);
+    }
+
     fn intern_string(&mut self, s: &str) -> u32 {
         if let Some(idx) = self.string_index.get(s) {
             return *idx;
@@ -1824,46 +1880,110 @@ impl<'a> FuncEmitter<'a> {
             }
             StrictEqual => {
                 self.emit_expression(&b.left)?;
+                if lt == WasTy::F64 || rt == WasTy::F64 {
+                    self.f64_promote(&b.left)?;
+                }
                 self.emit_expression(&b.right)?;
-                self.push_eq(lt)?;
+                if lt == WasTy::F64 || rt == WasTy::F64 {
+                    self.f64_promote(&b.right)?;
+                }
+                self.push_eq(if lt == WasTy::F64 || rt == WasTy::F64 {
+                    WasTy::F64
+                } else {
+                    lt
+                })?;
             }
             NotEqual => {
                 self.emit_expression(&b.left)?;
+                if lt == WasTy::F64 || rt == WasTy::F64 {
+                    self.f64_promote(&b.left)?;
+                }
                 self.emit_expression(&b.right)?;
-                self.push_eq(lt)?;
+                if lt == WasTy::F64 || rt == WasTy::F64 {
+                    self.f64_promote(&b.right)?;
+                }
+                self.push_eq(if lt == WasTy::F64 || rt == WasTy::F64 {
+                    WasTy::F64
+                } else {
+                    lt
+                })?;
                 self.body.push(Instruction::I32Eqz);
             }
             LessThan => {
                 self.emit_expression(&b.left)?;
+                if lt == WasTy::F64 || rt == WasTy::F64 {
+                    self.f64_promote(&b.left)?;
+                }
                 self.emit_expression(&b.right)?;
-                if lt == WasTy::F64 {
+                if lt == WasTy::F64 || rt == WasTy::F64 {
                     self.f64_promote(&b.right)?;
                 }
-                self.push_cmp(lt, true, false)?;
+                self.push_cmp(
+                    if lt == WasTy::F64 || rt == WasTy::F64 {
+                        WasTy::F64
+                    } else {
+                        lt
+                    },
+                    true,
+                    false,
+                )?;
             }
             LessEqual => {
                 self.emit_expression(&b.left)?;
+                if lt == WasTy::F64 || rt == WasTy::F64 {
+                    self.f64_promote(&b.left)?;
+                }
                 self.emit_expression(&b.right)?;
-                if lt == WasTy::F64 {
+                if lt == WasTy::F64 || rt == WasTy::F64 {
                     self.f64_promote(&b.right)?;
                 }
-                self.push_cmp(lt, true, true)?;
+                self.push_cmp(
+                    if lt == WasTy::F64 || rt == WasTy::F64 {
+                        WasTy::F64
+                    } else {
+                        lt
+                    },
+                    true,
+                    true,
+                )?;
             }
             GreaterThan => {
                 self.emit_expression(&b.left)?;
+                if lt == WasTy::F64 || rt == WasTy::F64 {
+                    self.f64_promote(&b.left)?;
+                }
                 self.emit_expression(&b.right)?;
-                if lt == WasTy::F64 {
+                if lt == WasTy::F64 || rt == WasTy::F64 {
                     self.f64_promote(&b.right)?;
                 }
-                self.push_cmp(lt, false, false)?;
+                self.push_cmp(
+                    if lt == WasTy::F64 || rt == WasTy::F64 {
+                        WasTy::F64
+                    } else {
+                        lt
+                    },
+                    false,
+                    false,
+                )?;
             }
             GreaterEqual => {
                 self.emit_expression(&b.left)?;
+                if lt == WasTy::F64 || rt == WasTy::F64 {
+                    self.f64_promote(&b.left)?;
+                }
                 self.emit_expression(&b.right)?;
-                if lt == WasTy::F64 {
+                if lt == WasTy::F64 || rt == WasTy::F64 {
                     self.f64_promote(&b.right)?;
                 }
-                self.push_cmp(lt, false, true)?;
+                self.push_cmp(
+                    if lt == WasTy::F64 || rt == WasTy::F64 {
+                        WasTy::F64
+                    } else {
+                        lt
+                    },
+                    false,
+                    true,
+                )?;
             }
             And => {
                 self.emit_expression(&b.left)?;
@@ -2000,7 +2120,12 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn f64_promote(&mut self, expr: &Expression) -> ClsResult<()> {
-        if let WasTy::I64 = self.value_type(expr)? {
+        let is_int_literal = matches!(
+            expr,
+            Expression::Literal(l) if matches!(l.kind, LiteralKind::Int(_))
+        );
+        let vt = self.value_type(expr)?;
+        if is_int_literal || matches!(vt, WasTy::I64) {
             self.body.push(Instruction::F64ConvertI64S);
         }
         Ok(())
@@ -3341,21 +3466,63 @@ impl<'a> FuncEmitter<'a> {
                             .iter()
                             .position(|m| *m == member.member)
                             .ok_or_else(|| {
-                                crate::error::ClsError::CompileError(format!(
-                                    "El método '{}' no existe en la clase '{}'",
-                                    member.member, name
-                                ))
-                            })? as u32;
-                        let method_key = format!("{}::{}", name, member.member);
-                        let ty = self
-                            .method_type_indexes
-                            .get(&method_key)
-                            .copied()
-                            .ok_or_else(|| {
-                                crate::error::ClsError::CompileError(
-                                    "Método sin tipo WASM".to_string(),
+                                crate::error::ClsError::compile_at(
+                                    &format!(
+                                        "El método '{}' no existe en la clase '{}'",
+                                        member.member, name
+                                    ),
+                                    &member.span,
                                 )
-                            })?;
+                            })? as u32;
+                        // Visibilidad del método: private/protected desde fuera → error.
+                        // Se resuelve subiendo por ancestors (un método puede venir
+                        // del padre sin override).
+                        let mut vis_cls = name.to_string();
+                        let vis = loop {
+                            if let Some(v) = self
+                                .class_defs
+                                .get(&vis_cls)
+                                .and_then(|i| i.method_vis.get(&member.member))
+                            {
+                                break Some(*v);
+                            }
+                            match self
+                                .class_defs
+                                .get(&vis_cls)
+                                .and_then(|i| i.parent.clone())
+                            {
+                                Some(p) => vis_cls = p,
+                                None => break None,
+                            }
+                        };
+                        if let Some(v) = vis {
+                            self.check_method_access(&name, &member.member, v, &member.span)?;
+                        }
+                        // Método heredado sin override: buscar el índice en la clase
+                        // que lo declara (no fallar con "Método sin tipo WASM").
+                        let mut fn_cls = name.to_string();
+                        let ty = loop {
+                            let key = format!("{}::{}", fn_cls, member.member);
+                            if let Some(t) = self.method_type_indexes.get(&key) {
+                                break *t;
+                            }
+                            match self
+                                .class_defs
+                                .get(&fn_cls)
+                                .and_then(|i| i.parent.clone())
+                            {
+                                Some(p) => fn_cls = p,
+                                None => {
+                                    return Err(crate::error::ClsError::compile_at(
+                                        &format!(
+                                            "El método '{}' no existe en la clase '{}'",
+                                            member.member, name
+                                        ),
+                                        &member.span,
+                                    ))
+                                }
+                            }
+                        };
                         let obj_tmp = self.fresh_local();
                         self.emit_expression(&member.object)?;
                         self.body.push(Instruction::LocalSet(obj_tmp));
@@ -5009,9 +5176,58 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
+    /// Enforca la visibilidad de un método: private → solo desde la clase;
+    /// protected → desde la clase o subclases. Paridad con el walker.
+    fn check_method_access(
+        &self,
+        class_name: &str,
+        method: &str,
+        vis: FieldVis,
+        span: &Span,
+    ) -> ClsResult<()> {
+        if vis.is_private() {
+            let inside = self
+                .current_class
+                .as_deref()
+                .map(|c| c == class_name)
+                .unwrap_or(false);
+            if !inside {
+                return Err(crate::error::ClsError::compile_at(
+                    &format!("El método '{}' es private (solo accesible desde la clase)", method),
+                    span,
+                ));
+            }
+        }
+        if vis.is_protected() {
+            let allowed = self
+                .current_class
+                .as_deref()
+                .map(|cur| {
+                    if cur == class_name {
+                        true
+                    } else {
+                        self.class_defs
+                            .get(cur)
+                            .map(|info| info.ancestors.iter().any(|a| a == class_name))
+                            .unwrap_or(false)
+                    }
+                })
+                .unwrap_or(false);
+            if !allowed {
+                return Err(crate::error::ClsError::compile_at(
+                    &format!(
+                        "El método '{}' es protected (solo accesible desde la clase o sus subclases)",
+                        method
+                    ),
+                    span,
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Member access de primitivos: `.length` sobre tuplas/arrays, variantes de enum.
-    fn emit_member_access(&mut self, m: &MemberAccessExpr) -> ClsResult<()> {
-        if let Expression::Identifier(obj_name, _) = &*m.object {
+    fn emit_member_access(&mut self, m: &MemberAccessExpr) -> ClsResult<()> {        if let Expression::Identifier(obj_name, _) = &*m.object {
             if let Some((def_id, variants)) = self.enum_defs.get(obj_name).cloned() {
                 let idx = variants
                     .iter()
@@ -5327,6 +5543,11 @@ impl<'a> FuncEmitter<'a> {
             } else {
                 let val_tmp = self.fresh_local_ty(elem_ty);
                 let addr_tmp = self.fresh_local();
+                // Si el array es f64 y el elemento es un literal/expresión int,
+                // promoverlo a f64 para el store (layout homogéneo).
+                if elem_ty == WasTy::F64 {
+                    self.f64_promote(el)?;
+                }
                 self.body.push(Instruction::LocalSet(val_tmp));
                 self.body.push(Instruction::LocalGet(ptr));
                 self.body
@@ -5361,6 +5582,15 @@ impl<'a> FuncEmitter<'a> {
 
     fn array_elem_type(&self, a: &ArrayExpr) -> ClsResult<WasTy> {
         if let Some(first) = a.elements.first() {
+            // Promoción: si CUALQUIER elemento es float, el array es de f64
+            // (p.ej. `[1, 2.0]` → f64). El store promueve los ints a f64.
+            let has_float = a
+                .elements
+                .iter()
+                .any(|el| matches!(self.value_type(el), Ok(WasTy::F64)));
+            if has_float {
+                return Ok(WasTy::F64);
+            }
             return self.value_type(first);
         }
         // Array vacío: usar el tipo anotado registrado por el typeck (span del literal),
@@ -6270,6 +6500,9 @@ struct ClassInfo {
     fields: Vec<(String, Type, WasTy, i64, FieldVis)>,
     /// nombres de métodos en orden canónico (posición = slot de la vtable).
     methods: Vec<String>,
+    /// visibilidad de cada método (private/protected/public) para enforzarla en
+    /// llamadas desde fuera de la clase.
+    method_vis: std::collections::HashMap<String, FieldVis>,
     /// índice de la tabla donde empieza la vtable de esta clase.
     vtable_start: u32,
     /// tamaño total del objeto (16 + campos).
@@ -6504,6 +6737,7 @@ impl<'a> Engine<'a> {
             if let Statement::ClassDecl(c) = stmt {
                 let mut fields = Vec::new();
                 let mut methods = Vec::new();
+                let mut method_vis = std::collections::HashMap::new();
                 let mut off = 16i64; // 0..7 = vtable, 8..15 = class_id
                 let mut total = off;
                 let mut ancestors = Vec::new();
@@ -6511,6 +6745,7 @@ impl<'a> Engine<'a> {
                     if let Some(pinfo) = self.class_defs.get(parent) {
                         fields.extend(pinfo.fields.clone());
                         methods = pinfo.methods.clone();
+                        method_vis = pinfo.method_vis.clone();
                         off = pinfo.total;
                         total = pinfo.total;
                         ancestors.push(parent.clone());
@@ -6557,6 +6792,12 @@ impl<'a> Engine<'a> {
                                     methods.push(m.name.clone());
                                 }
                             }
+                            let vis = FieldVis {
+                                is_private: m.visibility == Visibility::Private,
+                                is_protected: m.visibility == Visibility::Protected,
+                                is_readonly: false,
+                            };
+                            method_vis.insert(m.name.clone(), vis);
                             let mut m2 = m.clone();
                             let cn = c.name.clone();
                             self.pending_class_methods.push((cn, m2));
@@ -6585,6 +6826,7 @@ impl<'a> Engine<'a> {
                         ancestors,
                         fields,
                         methods,
+                        method_vis,
                         vtable_start: vs,
                         total,
                     },
@@ -6716,6 +6958,8 @@ impl<'a> Engine<'a> {
             PrintAny,
             FnHandle,
             FnToString,
+            FnEnter,
+            FnExit,
         ] {
             self.register_host(h);
         }
@@ -7068,8 +7312,7 @@ impl<'a> Engine<'a> {
         Ok(self.build_module().finish())
     }
 
-    fn compile_function(&mut self, f: &FunctionDecl) -> ClsResult<Function> {
-        let (param_types, _ret) = self.func_types[&f.name].clone();
+    fn compile_function(&mut self, f: &FunctionDecl) -> ClsResult<Function> {        let (param_types, _ret) = self.func_types[&f.name].clone();
         let mut fe = FuncEmitter::new(
             self.types,
             HostCaller {
@@ -7117,6 +7360,7 @@ impl<'a> Engine<'a> {
             None
         };
         fe.current_class = current_class;
+        fe.current_fn_span = f.span.clone();
         let is_main = f.name == "main";
         // Promover al heap las variables locales capturadas por arrows del body:
         // para que la mutación del closure sea visible en el scope externo (paridad
@@ -7172,9 +7416,13 @@ impl<'a> Engine<'a> {
                 fe.body.push(Instruction::Call(*idx));
             }
         }
+        // Shadow call stack: registrar la entrada de la función (nombre + span)
+        // y des-registrarla al salir (antes de cada End).
+        fe.emit_fn_enter(f)?;
         for s in &f.body.statements {
             fe.emit_statement(s)?;
         }
+        fe.emit_fn_exit();
         // End final del cuerpo de la función (wasm-encoder no lo añade).
         fe.body.push(Instruction::End);
         // locals: cada índice con su tipo (fallback I64).
