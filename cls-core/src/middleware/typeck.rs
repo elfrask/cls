@@ -705,7 +705,16 @@ impl TypeChecker {
                     return Type::Float;
                 }
                 self.error(
-                    &format!("Operador + no soportado entre {} y {}", left, right),
+                    &format!(
+                        "Operador + no soportado entre {} y {} (en `{}`)",
+                        left,
+                        right,
+                        format!(
+                            "{} + {}",
+                            expr_short_display(&bin.left),
+                            expr_short_display(&bin.right)
+                        )
+                    ),
                     bin.span.clone(),
                 )
             }
@@ -719,7 +728,14 @@ impl TypeChecker {
                     return Type::Int;
                 }
                 self.error(
-                    &format!("Operador requiere tipos numéricos, encontró {} y {}", left, right),
+                    &format!(
+                        "Operador requiere tipos numéricos, encontró {} y {} (en `{} {} {}`)",
+                        left,
+                        right,
+                        expr_short_display(&bin.left),
+                        bin.op,
+                        expr_short_display(&bin.right)
+                    ),
                     bin.span.clone(),
                 )
             }
@@ -1698,6 +1714,118 @@ fn builtin_type_name(name: &str) -> Option<Type> {
         "Null" => Some(Type::Null),
         "Void" => Some(Type::Void),
         _ => None,
+    }
+}
+
+/// Formatea una expresión como texto CLS corto y legible (para mensajes de error).
+/// NO usa Debug del AST — el usuario debe poder leer qué falló.
+pub fn expr_short_display(expr: &Expression) -> String {
+    use crate::frontend::token::Operator;
+    match expr {
+        Expression::Literal(l) => match &l.kind {
+            LiteralKind::Int(v) => v.to_string(),
+            LiteralKind::Float(v) => v.to_string(),
+            LiteralKind::String(s) => format!("\"{}\"", s),
+            LiteralKind::Bool(b) => b.to_string(),
+            LiteralKind::Char(c) => format!("'{}'", c),
+            LiteralKind::Null => "null".to_string(),
+            LiteralKind::Unknown => "?".to_string(),
+        },
+        Expression::Identifier(name, _) => name.clone(),
+        Expression::Binary(b) => {
+            let op = match b.op {
+                Operator::Plus => "+",
+                Operator::Minus => "-",
+                Operator::Star => "*",
+                Operator::Slash => "/",
+                Operator::Percent => "%",
+                Operator::StarStar => "**",
+                Operator::StrictEqual => "==",
+                Operator::NotEqual => "!=",
+                Operator::LessThan => "<",
+                Operator::LessEqual => "<=",
+                Operator::GreaterThan => ">",
+                Operator::GreaterEqual => ">=",
+                Operator::And => "&&",
+                Operator::Or => "||",
+                Operator::In => "in",
+                Operator::Is => "is",
+                Operator::Caret => "^",
+                Operator::ShiftLeft => "<<",
+                Operator::ShiftRight => ">>",
+                _ => "?",
+            };
+            format!(
+                "({} {} {})",
+                expr_short_display(&b.left),
+                op,
+                expr_short_display(&b.right)
+            )
+        }
+        Expression::Unary(u) => {
+            let op = match u.op {
+                crate::frontend::ast::UnaryOp::Negate => "-",
+                crate::frontend::ast::UnaryOp::Not => "!",
+                crate::frontend::ast::UnaryOp::BitwiseNot => "~",
+                crate::frontend::ast::UnaryOp::TypeOf => "typeof ",
+                _ => "",
+            };
+            format!("{}{}", op, expr_short_display(&u.operand))
+        }
+        Expression::Call(c) => format!(
+            "{}({})",
+            expr_short_display(&c.callee),
+            c.args.iter().map(expr_short_display).collect::<Vec<_>>().join(", ")
+        ),
+        Expression::MemberAccess(m) => format!("{}.{}", expr_short_display(&m.object), m.member),
+        Expression::Index(i) => format!(
+            "{}[{}]",
+            expr_short_display(&i.object),
+            expr_short_display(&i.index)
+        ),
+        Expression::Array(a) => format!(
+            "[{}]",
+            a.elements.iter().map(expr_short_display).collect::<Vec<_>>().join(", ")
+        ),
+        Expression::Tuple(t) => format!(
+            "({})",
+            t.elements.iter().map(expr_short_display).collect::<Vec<_>>().join(", ")
+        ),
+        Expression::Record(r) => format!(
+            "{{{}}}",
+            r.entries.iter().map(|(k, v)| format!("{}: {}", k, expr_short_display(v))).collect::<Vec<_>>().join(", ")
+        ),
+        Expression::ArrowFunction(_) => "fn(...)".to_string(),
+        Expression::Conditional(c) => format!(
+            "({} ? {} : {})",
+            expr_short_display(&c.condition),
+            expr_short_display(&c.then_expr),
+            expr_short_display(&c.else_expr)
+        ),
+        Expression::Assignment(a) => format!(
+            "{} = {}",
+            expr_short_display(&a.target),
+            expr_short_display(&a.value)
+        ),
+        Expression::Parenthesized(inner, _) => format!("({})", expr_short_display(inner)),
+        Expression::StringInterpolation(s) => {
+            let mut out = String::from("\"");
+            for part in &s.parts {
+                match part {
+                    InterpolationPart::Text(t) => out.push_str(t),
+                    InterpolationPart::Expr(e) => {
+                        out.push_str("${");
+                        out.push_str(&expr_short_display(e));
+                        out.push('}');
+                    }
+                }
+            }
+            out.push('"');
+            out
+        }
+        Expression::Cmx(c) => format!("<{} />", c.tag),
+        Expression::NamespaceAccess(ns, name, _) => format!("{}::{}", ns, name),
+        Expression::Await(inner, _) => format!("await {}", expr_short_display(inner)),
     }
 }
 

@@ -1,10 +1,30 @@
-# Ejecución: el intérprete
+# Ejecución: walker y JIT
 
-El runtime de CLS (`cls-runtime`) ejecuta el AST directamente con un
-**tree-walker**: recorre las sentencias y expresiones del árbol y las evalúa una
-por una, sin compilar a código máquina.
+CLS tiene **dos ejecutores**:
 
-## Pipeline
+| Ejecutor | Comando | Modelo | Estado |
+|----------|---------|--------|--------|
+| **JIT** (objetivo) | `clx run --jit` | CLS → WASM → wasmtime (Cranelift) | **intérprete objetivo** |
+| **Tree-walker** | `clx run` | AST evaluado directo | referencia sintáctica; será deprecado tras 2.0-dev1 |
+
+El JIT compila el AST a un binario WASM con el backend de `cls-core` y lo ejecuta
+en wasmtime. El walker recorre el AST y lo evalúa paso a paso.
+
+## Pipeline JIT
+
+```
+fuente (String)
+  → Lexer → Vec<Token>
+  → Parser → Module (AST)
+  → Resolver de imports (nodo) → prelude
+  → TypeChecker (Span → Type)
+  → Backend WASM → Vec<u8>
+  → wasmtime (Cranelift) → ejecutar main → exit code
+```
+
+Detalle: `agent-context/JIT_COMPILATION.md`, `agent-context/audit/user-use/pipeline.md`.
+
+## Pipeline walker (referencia)
 
 ```
 fuente (String)
@@ -13,7 +33,7 @@ fuente (String)
   → Interpreter::execute(&Module) → Value
 ```
 
-## El `Interpreter`
+## El `Interpreter` (walker)
 
 El `Interpreter` mantiene el estado de la ejecución:
 
@@ -25,57 +45,27 @@ El `Interpreter` mantiene el estado de la ejecución:
 - **`classes`**, **`structs`**, **`method_tables`** — tipos definidos y métodos
   de primitivos.
 
-## Ciclo de vida
+### Ciclo de vida
 
-1. `Interpreter::new(Intrinsics, ModuleResolver)` — crea el intérprete, define
-   los intrinsics globales (`print`, `input`, `type`, `len`, `toString`, etc.)
-   y los módulos internos.
+1. `Interpreter::new(Intrinsics, ModuleResolver)` — define intrinsics globales
+   (`print`, `input`, `type`, `len`, `toString`, etc.) y módulos internos.
 2. `interpreter.execute(&module)` — ejecuta las sentencias de nivel superior.
-3. `interpreter.call_main()` — busca `main`, la llama con los argumentos y
-   devuelve el código de salida.
+3. `interpreter.call_main()` — llama `main` con los args y devuelve el exit code.
 
-## Ejecución de sentencias
-
-Cada sentencia tiene un manejador:
-
-- Declaraciones: `execute_var_decl`, `execute_function_decl`,
-  `execute_class_decl`, `execute_enum_decl`, `execute_structure_decl`,
-  `execute_module_decl`, ...
-- Control de flujo: `execute_if`, `execute_while`, `execute_loop`,
-  `execute_for`, `execute_for_each`, `execute_switch`, `execute_try`, ...
-- Imports: `execute_import`, `execute_from_import`.
-
-`execute_block` detiene la iteración si la señal de flujo no es `Normal` (por
-ejemplo, después de un `return`).
-
-## Evaluación de expresiones
-
-Cada expresión tiene un manejador:
-
-- Literales e identificadores.
-- `evaluate_binary` — operadores (incluye magic methods `__add`, `__equals`,
-  etc., y el operador `is`/`in`).
-- `evaluate_call` — llamadas a funciones, métodos y objetos `__call`.
-- `evaluate_member_access` — acceso a campos/métodos, enums, records, clases y
-  métodos de tipos primitivos.
-- `evaluate_index` — indexado de arrays, tuplas, records y objetos `__get`.
-- `evaluate_cmx` — construcción de `CmxValue`.
-
-## Funciones nativas
-
-Las funciones nativas de Rust se representan como `FunValue` con
-`FunKind::Native`, que encierra una closure `Fn(&[Value]) -> ClsResult<Value>`.
-Las funciones de usuario son `FunKind::User` (AST) con un entorno léxico
-capturado opcional (closures).
-
-## Cargas de módulos
+### Cargas de módulos (walker)
 
 `Interpreter::load_module_source(nombre, source)` compila un módulo, lo ejecuta
 en un scope aislado, recolecta SOLO los símbolos `export` y devuelve un record.
-Es el punto central de carga de módulos del runtime.
+En el JIT, la carga es distinta: el nodo resuelve los `.clsx` a AST y el backend
+los fusiona en un solo WASM (ver `agent-context/audit/user-use/modules.md`).
 
 ## Configuración del runtime
 
 La config (modo, límites, sandbox) se pasa con `interpreter.set_config(...)`.
-El modo actual de ejecución es `pure-ast` (tree-walker). El modo `jit` está
-planeado (ver `docs/future/`).
+
+## El JIT (intérprete objetivo)
+
+- Implementación: `nodos/clx/src/jit.rs` (`run_jit`) + `cls-core/src/backend/wasm.rs`.
+- Requiere `clx check` interno (typeck) para emitir.
+- Errores de runtime: los traps WASM se reportan con el span; el call stack
+  completo está en proceso (ver `agent-context/audit/TODO.md`).

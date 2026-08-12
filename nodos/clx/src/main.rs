@@ -6,6 +6,7 @@ mod type_defs;
 mod subcommands;
 mod jit;
 mod native;
+mod module_index;
 
 use std::env;
 use std::process;
