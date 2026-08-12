@@ -1,0 +1,17 @@
+# R2 (nuevo): float var op int var en distintas posiciones
+function main(args: String[]) -> int {
+    var k: int = 3;
+    var f: float = 2.5;
+    print("f + k expr:", f + k);
+    print("f - k expr:", f - k);
+    print("f * k expr:", f * k);
+    print("f / k expr:", f / k);
+    print("f == k:", f == k);
+    print("f < k:", f < k);
+    print("f > k:", f > k);
+    var r: float = f + k;
+    print("r = f + k:", r);
+    var m: float = 0.5 * k;
+    print("0.5 * k:", m);
+    return 0;
+};

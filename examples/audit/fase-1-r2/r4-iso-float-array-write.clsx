@@ -1,0 +1,6 @@
+function main(args: String[]) -> int {
+    var b = [1.0, 2.0, 3.0];
+    b[0] = 2.5;
+    print("b:", b);
+    return 0;
+};

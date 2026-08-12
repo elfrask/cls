@@ -2079,6 +2079,20 @@ impl<'a> FuncEmitter<'a> {
                             )));
                         }
                     }
+                    // `c is lib::Color` (enum namespaced importado).
+                    Expression::NamespaceAccess(ns, name, _) => {
+                        let key = format!("{}::{}", ns, name);
+                        if let Some((d, _)) = self.enum_defs.get(&key) {
+                            (*d, true)
+                        } else if let Some(info) = self.struct_defs.get(&key) {
+                            (info.def_id, false)
+                        } else {
+                            return Err(crate::error::ClsError::CompileError(format!(
+                                "'is' con '{}::{}': se esperaba un enum o structure en el JIT",
+                                ns, name
+                            )));
+                        }
+                    }
                     _ => {
                         return Err(crate::error::ClsError::CompileError(
                             "'is' requiere un nombre a la derecha en el JIT".to_string(),
@@ -2119,8 +2133,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    fn f64_promote(&mut self, expr: &Expression) -> ClsResult<()> {
-        let is_int_literal = matches!(
+    fn f64_promote(&mut self, expr: &Expression) -> ClsResult<()> {        let is_int_literal = matches!(
             expr,
             Expression::Literal(l) if matches!(l.kind, LiteralKind::Int(_))
         );
@@ -2623,9 +2636,73 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(());
                     }
                 }
+                // Struct: `p.campo = val` → store por offset del campo.
+                if let Some(Type::Named(sn, _)) = self.types.get(&expr_span(&m.object)).cloned() {
+                    if let Some(info) = self.struct_defs.get(sn.as_str()) {
+                        if is_compound(op) {
+                            return Err(crate::error::ClsError::compile_at(
+                                "Operadores compuestos sobre campos de struct no soportados en el JIT",
+                                &m.span,
+                            ));
+                        }
+                        let fidx = info
+                            .fields
+                            .iter()
+                            .position(|(n, _, _)| *n == m.member)
+                            .ok_or_else(|| {
+                                crate::error::ClsError::compile_at(
+                                    &format!("El campo '{}' no existe en el struct '{}'", m.member, sn),
+                                    &m.span,
+                                )
+                            })?;
+                        let w = info.fields[fidx].2;
+                        let off = info.offsets[fidx];
+                        let obj_tmp = self.fresh_local();
+                        let val_tmp = self.fresh_local_ty(w);
+                        self.emit_expression(&m.object)?;
+                        self.body.push(Instruction::LocalSet(obj_tmp));
+                        self.emit_expression(&a.value)?;
+                        self.body.push(match w {
+                            WasTy::F64 => Instruction::LocalSet(val_tmp),
+                            WasTy::I32 => Instruction::LocalSet(val_tmp),
+                            WasTy::I64 => Instruction::LocalSet(val_tmp),
+                        });
+                        self.body.push(Instruction::LocalGet(obj_tmp));
+                        self.body.push(Instruction::I64Const(off));
+                        self.body.push(Instruction::I64Add);
+                        self.body.push(Instruction::I32WrapI64);
+                        self.body.push(match w {
+                            WasTy::F64 => Instruction::LocalGet(val_tmp),
+                            WasTy::I32 => Instruction::LocalGet(val_tmp),
+                            WasTy::I64 => Instruction::LocalGet(val_tmp),
+                        });
+                        match w {
+                            WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
+                                offset: 0,
+                                align: 3,
+                                memory_index: 0,
+                            })),
+                            WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
+                                offset: 0,
+                                align: 2,
+                                memory_index: 0,
+                            })),
+                            WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
+                                offset: 0,
+                                align: 3,
+                                memory_index: 0,
+                            })),
+                        }
+                        self.body.push(match w {
+                            WasTy::F64 => Instruction::LocalGet(val_tmp),
+                            WasTy::I32 => Instruction::LocalGet(val_tmp),
+                            WasTy::I64 => Instruction::LocalGet(val_tmp),
+                        });
+                        return Ok(());
+                    }
+                }
                 // Record con shape: r.campo = val → store por offset (campo existente).
-                if let Some(Type::Shape(fields)) = self.types.get(&expr_span(&m.object)).cloned() {
-                    if is_compound(op) {
+                if let Some(Type::Shape(fields)) = self.types.get(&expr_span(&m.object)).cloned() {                    if is_compound(op) {
                         return Err(crate::error::ClsError::CompileError(
                             "Operadores compuestos sobre campos de record con shape no soportados en el JIT".to_string(),
                         ));
@@ -4000,8 +4077,21 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    fn emit_print_arg(&mut self, arg: &Expression) -> ClsResult<()> {
-        // `u.values()` sobre un record con shape → imprimir `[v1, v2, ...]` inline
+    /// Variantes de un enum por nombre. Resuelve exacto (`Color`) o por sufijo
+    /// (`lib::Color` cuando el typeck tipa la variante como `Named("Color")` pero
+    /// el flatten registró el enum prefijado).
+    fn enum_variants(&self, name: &str) -> Option<&Vec<String>> {
+        if let Some((_, v)) = self.enum_defs.get(name) {
+            return Some(v);
+        }
+        let suffix = format!("::{}", name);
+        self.enum_defs
+            .iter()
+            .find(|(k, _)| k.ends_with(&suffix))
+            .map(|(_, (_, v))| v)
+    }
+
+    fn emit_print_arg(&mut self, arg: &Expression) -> ClsResult<()> {        // `u.values()` sobre un record con shape → imprimir `[v1, v2, ...]` inline
         // (el typeck da Array<Any>, no imprimible por el backend genérico).
         if let Expression::Call(c) = arg {
             if let Expression::MemberAccess(m) = &*c.callee {
@@ -4454,8 +4544,8 @@ impl<'a> FuncEmitter<'a> {
                 self.block_depth -= 1;
                 return Ok(());
             }
-            Type::Named(name, _) if self.enum_defs.contains_key(&name) => {
-                let variants = self.enum_defs[&name].1.clone();
+            Type::Named(name, _) if self.enum_variants(&name).is_some() => {
+                let variants = self.enum_variants(&name).unwrap().clone();
                 // index = v & 0xffffffff → seleccionar el string de la variante
                 self.body.push(Instruction::I64Const(0xffff_ffff));
                 self.body.push(Instruction::I64And);

@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    var a = [1, "dos", 3.0];
+    print("a:", a);
+    return 0;
+};

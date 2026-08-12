@@ -1,0 +1,8 @@
+# R2 isolate: compound float con RHS int VARIABLE (suma)
+function main(args: String[]) -> int {
+    var k: int = 3;
+    var f: float = 2.5;
+    f += k;
+    print("f += k:", f);
+    return 0;
+};

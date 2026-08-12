@@ -1,0 +1,7 @@
+literal: {activo: true, edad: 30, nombre: "Ana"}
+r.nombre: Ana r.edad: 30
+tras asignacion: 31
+keys: ["activo", "edad", "nombre"]
+values: [true, 31, "Ana"]
+has: true false
+length: 3 size: 3

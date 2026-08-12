@@ -1,0 +1,14 @@
+# R2 control: equivalencias NO compuestas (f = f op k) con int variable
+function main(args: String[]) -> int {
+    var k: int = 3;
+    var f: float = 10.0;
+    f = f + k;
+    print("f = f + k:", f);
+    f = f - k;
+    print("f = f - k:", f);
+    f = f * k;
+    print("f = f * k:", f);
+    f = f / k;
+    print("f = f / k:", f);
+    return 0;
+};

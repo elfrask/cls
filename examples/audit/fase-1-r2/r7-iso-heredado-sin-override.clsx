@@ -1,0 +1,12 @@
+class Base {
+    function saludar() -> String { return "hola base"; }
+    var nombre: String;
+    function main() { me.nombre = "x"; }
+};
+class Hijo: Base {
+};
+function main(args: String[]) -> int {
+    var h = Hijo();
+    print("heredado:", h.saludar());
+    return 0;
+};

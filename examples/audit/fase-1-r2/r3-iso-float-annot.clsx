@@ -1,0 +1,6 @@
+import "math" as math;
+function main(args: String[]) -> int {
+    var y: float = math.abs(-2.5);
+    print(y);
+    return 0;
+};

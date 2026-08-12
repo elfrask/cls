@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    var x = float("x");
+    print("x:", x);
+    return 0;
+};

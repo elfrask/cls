@@ -1,0 +1,11 @@
+function main(args: String[]) -> int {
+    var a = [1, 2.0];
+    print("a[0] type:", type(a[0]));
+    print("a[1] type:", type(a[1]));
+    print("a[1] == 2.0:", a[1] == 2.0);
+    print("a[1] == 2:", a[1] == 2);
+    var s = 0.0;
+    for each x in (a) { s += x; }
+    print("sum:", s);
+    return 0;
+};

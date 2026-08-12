@@ -160,6 +160,7 @@ impl Parser {
 
     fn parse_var_decl(&mut self) -> ClsResult<Statement> {
         // Acepta var, let, o const
+        let decl_span = self.span();
         if !(self.consume_keyword(Keyword::Var)
             || self.consume_keyword(Keyword::Let)
             || self.consume_keyword(Keyword::Const))
@@ -188,13 +189,14 @@ impl Parser {
             type_ann,
             value,
             visibility: Visibility::Default,
-            span: self.span(),
+            span: decl_span,
             is_static: false,
             is_readonly: false,
         }))
     }
 
     fn parse_const_decl(&mut self) -> ClsResult<Statement> {
+        let decl_span = self.span();
         self.expect_keyword(Keyword::Const)?;
         let name = self.expect_identifier()?;
         
@@ -217,7 +219,7 @@ impl Parser {
             type_ann,
             value,
             visibility: Visibility::Default,
-            span: self.span(),
+            span: decl_span,
             is_static: false,
             is_readonly: false,
         }))

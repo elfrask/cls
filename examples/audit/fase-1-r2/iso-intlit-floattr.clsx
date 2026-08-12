@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    var f: float = 2.5;
+    print(2 + f);
+    return 0;
+};

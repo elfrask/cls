@@ -1,0 +1,6 @@
+function main(args: String[]) -> int {
+    var k: int = 3;
+    var f: float = 2.5;
+    print(k != f);
+    return 0;
+};

@@ -1,0 +1,10 @@
+class Base {
+    protected function secreta() -> int { return 7; }
+    function llamar() -> int { return me.secreta(); }
+    function main() { }
+};
+function main(args: String[]) -> int {
+    var b = Base();
+    print("dentro del padre:", b.llamar());
+    return 0;
+};

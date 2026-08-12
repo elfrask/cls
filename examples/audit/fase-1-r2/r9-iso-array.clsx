@@ -1,0 +1,7 @@
+import "json" as json;
+function main(args: String[]) -> int {
+    var a = json.parse('[1,"dos",2.5]');
+    print("array:", a);
+    print("a[0]:", a[0], "a[1]:", a[1], "a[2]:", a[2]);
+    return 0;
+};

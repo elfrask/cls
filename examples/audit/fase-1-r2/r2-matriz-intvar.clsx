@@ -1,0 +1,14 @@
+# R2 (nuevo): matriz compound float con RHS int VARIABLE (residuo detectado)
+function main(args: String[]) -> int {
+    var k: int = 3;
+    var f: float = 10.0;
+    f += k;
+    print("f += k:", f);
+    f -= k;
+    print("f -= k:", f);
+    f *= k;
+    print("f *= k:", f);
+    f /= k;
+    print("f /= k:", f);
+    return 0;
+};

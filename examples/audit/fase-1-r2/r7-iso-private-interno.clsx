@@ -1,0 +1,10 @@
+class A {
+    private function secreta() -> int { return 42; }
+    function llamar() -> int { return me.secreta(); }
+    function main() { }
+};
+function main(args: String[]) -> int {
+    var a = A();
+    print("interno:", a.llamar());
+    return 0;
+};

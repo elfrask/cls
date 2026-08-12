@@ -1,0 +1,9 @@
+function main(args: String[]) -> int {
+    print("2.0 ** 0.5:", 2.0 ** 0.5);
+    print("5.5 % 2:", 5.5 % 2);
+    var f: float = 1.0;
+    f += 2.5;
+    print("f += 2.5:", f);
+    print("2 ** 0.5:", 2 ** 0.5);
+    return 0;
+};
