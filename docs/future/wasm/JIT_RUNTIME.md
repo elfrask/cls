@@ -1,10 +1,24 @@
 # JIT en el Runtime (`clxr` con Cranelift)
 
-## Objetivo
+> **Estado**: el JIT ya está **funcionando en `clx`** (`clx run --jit`, CLS → WASM →
+> wasmtime). Este documento describe la evolución futura hacia `clxr` con
+> `.clbin` (formato de distribución) y el JIT en caliente.
 
-Hacer que `clxr` **compile WASM a código nativo en caliente** (JIT), en vez de interpretar.
-Esto lleva el rendimiento de ~2-10% a **50-70% de C** — el mismo modelo que Java usa con
-HotSpot sobre `.jar`.
+## Estado actual (implementado)
+
+- El nodo `clx` tiene el **JIT** completo: `nodos/clx/src/jit.rs` compila el AST
+  tipado a WASM (backend `cls-core/src/backend/wasm.rs`) y lo ejecuta en
+  **wasmtime** (Cranelift).
+- Uso: `clx run --jit archivo.clsx`.
+- El JIT es el **intérprete objetivo** (ver `AGENTS.md`); el tree-walker es
+  referencia sintáctica.
+- Detalle técnico: `agent-context/JIT_COMPILATION.md`, `agent-context/JIT_VS_WALKER.md`.
+
+## Objetivo (futuro)
+
+Hacer que `clxr` cargue **`.clbin`** (WASM empaquetado) y lo ejecute con wasmtime,
+en vez de interpretar. Esto lleva el rendimiento a **50-70% de C** — el mismo
+modelo que Java usa con HotSpot sobre `.jar`.
 
 ## Modelo
 
@@ -16,9 +30,9 @@ HotSpot sobre `.jar`.
 
 | Componente | Rol |
 |------------|-----|
-| `.clbin` | Formato de distribución portable (el `.jar`) |
-| `clxr` | Runtime host que carga `.clbin` |
-| **Cranelift** | Compila WASM → código de máquina en runtime |
+| `.clbin` | Formato de distribución portable (el `.jar`) — futuro |
+| `clxr` | Runtime host que carga `.clbin` — futuro |
+| **Cranelift** | Compila WASM → código de máquina en runtime (vía wasmtime) |
 
 ## ¿Por qué Cranelift?
 
@@ -27,29 +41,6 @@ HotSpot sobre `.jar`.
 - Integración Rust limpia
 - Alternativa: `wasmer` (con Singlepass/Cranelift/LLVM backends)
 
-## Integración en `clxr`
-
-```rust
-// clxr/src/main.rs (futuro)
-use wasmtime::{Engine, Module, Store, Linker};
-
-fn run_clbin(path: &str) -> Result<i32> {
-    let engine = Engine::default();                    // Cranelift
-    let module = Module::from_file(&engine, path)?;
-    let mut store = Store::new(&engine, ());
-    let mut linker = Linker::new(&engine);
-
-    // Exponer funciones host a CLS (print, fs, etc.)
-    linker.func_wrap("env", "print", |s: &mut Store<()>, v: i64| {
-        // print desde CLS
-    })?;
-
-    let instance = linker.instantiate(&mut store, &module)?;
-    let main = instance.get_typed_func::<(), i32>(&mut store, "main")?;
-    main.call(&mut store, ())
-}
-```
-
 ## Mapeo de tipos
 
 | CLS | WASM | Cranelift/nativo |
@@ -57,7 +48,7 @@ fn run_clbin(path: &str) -> Result<i32> {
 | `int` | `i64` | registro `i64` |
 | `float` | `f64` | registro `f64` |
 | `bool` | `i32` (0/1) | registro |
-| `String` | `(i32, i32)` ptr+len | 2 registros |
+| `String` | `i64` (ptr<<32\|len) | ptr+len |
 | `Array<T>` | ptr + len + stride | puntero |
 | `structure` | memoria lineal con offsets | acceso directo a memoria |
 
@@ -75,13 +66,6 @@ fn run_clbin(path: &str) -> Result<i32> {
 
 **Recomendación**: empezar con **A** (simple, suficiente), luego evolucionar a B.
 
-## Magic methods y JIT
-
-- `__add__`, `__equals__`, `__get__`, `__next__`...
-- En WASM se compilan a **tablas de funciones**
-- Cranelift las puede **inline** en hot paths
-- El costo desaparece en código caliente
-
 ## Rendimiento esperado
 
 | Config | Velocidad rel. a C |
@@ -90,16 +74,13 @@ fn run_clbin(path: &str) -> Result<i32> {
 | WASM + Cranelift JIT | 50-70% |
 | + tipo estático + inline de magic methods | 70%+ |
 
-## Timeline estimado
+El JIT actual en `clx` ya da speedups de ~8000x vs el walker en `fib(26)`
+(ver `examples/benchmark/`).
+
+## Timeline estimado (para `.clbin`/clxr)
 
 - Integrar `wasmtime` en `clxr`: ~1-2 semanas
 - Mapear intrinsics/modules CLS → imports WASM: ~2-4 semanas
 - Compilar examples a `.clbin` y correrlos: iterativo
 - Total para un JIT funcional: **2-4 meses**
 
-## Dependencias
-
-```toml
-# clxr/Cargo.toml
-wasmtime = "16"
-```

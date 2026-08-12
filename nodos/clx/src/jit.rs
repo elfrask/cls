@@ -44,32 +44,48 @@ fn show_cls_error(error: &ClsError, entry: &str, source: Option<&str>) {
 }
 
 /// Muestra un diagnóstico de tipo (del typeck) con línea + caret, como `clx check`.
+/// Si el span pertenece a un módulo importado (desplazado con offset 100000*n),
+/// des-desplaza la línea y usa el source del módulo real.
 fn show_type_diag(
     diag: &cls_core::error::diagnostic::Diagnostic,
-    source: &str,
+    entry_source: &str,
     entry: &str,
+    imports: &[(String, String, ClsModule)],
 ) {
     use cls_core::ansi;
-    let (sev_label, color) = (
-        "ERROR",
-        ansi::codes::BRIGHT_RED,
-    );
-    let sev = ansi::bold(true, ansi::fg(true, color, sev_label));
-    let msg = ansi::fg(true, color, &diag.message);
+    let sev = ansi::bold(true, ansi::fg(true, ansi::codes::BRIGHT_RED, "ERROR"));
+    let msg = ansi::fg(true, ansi::codes::BRIGHT_RED, &diag.message);
+
+    // Determinar el archivo real del span (desplazado → módulo importado).
+    let raw_line = diag.span.start_line;
+    let col = diag.span.start_col;
+    let (file_label, source, real_line) = if raw_line >= 100000 {
+        // Módulo importado: offset = (raw_line / 100000) * 100000.
+        let idx = (raw_line / 100000) as usize;
+        let offset = idx * 100000;
+        let real_line = raw_line - offset as u32;
+        if let Some((_, src, _)) = imports.get(idx.saturating_sub(1)) {
+            (format!("{} (módulo importado)", entry), src.clone(), real_line)
+        } else {
+            (entry.to_string(), entry_source.to_string(), real_line)
+        }
+    } else {
+        (entry.to_string(), entry_source.to_string(), raw_line)
+    };
+
     eprintln!(
-        "[{}] {} ({}:{})",
-        sev, msg, entry, diag.span
+        "[{}] {} ({}:{}:{})",
+        sev, msg, file_label, real_line, col
     );
-    // Línea fuente + caret.
-    let line = diag.span.start_line as usize;
-    let col = diag.span.start_col as usize;
+    // Línea fuente + caret (del archivo real).
+    let line = real_line as usize;
     if let Some(src_line) = source.lines().nth(line.saturating_sub(1)) {
         let pad = " ".repeat(line.to_string().len());
         eprintln!("{} | {}", pad, src_line);
         eprintln!(
             "{} | {}^",
             pad,
-            " ".repeat(col.saturating_sub(1))
+            " ".repeat(col.saturating_sub(1) as usize)
         );
     }
 }
@@ -115,13 +131,19 @@ pub fn cache_dir() -> std::path::PathBuf {
     std::path::PathBuf::from(base).join(".cache").join("cls")
 }
 
-/// Clave del caché: hash del fuente + versión del compilador + target.
-fn cache_key(source: &str, target_str: Option<&str>) -> u64 {
+/// Clave del caché: hash del fuente + versión del compilador + target +
+/// **índice de integridad de los módulos del workspace** (para que un cambio en
+/// cualquier `.clsx` importado invalide el caché y se recompile).
+fn cache_key(source: &str, target_str: Option<&str>, entry: &std::path::Path) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     source.hash(&mut h);
     cls_core::VERSION.hash(&mut h);
     target_str.unwrap_or("").hash(&mut h);
+    // Integridad de los módulos: si cualquier .clsx del proyecto cambió, la clave
+    // cambia y se recompila (evita stale cache al editar un módulo importado).
+    let integrity = crate::module_index::workspace_integrity_hash(entry, &[]);
+    integrity.hash(&mut h);
     h.finish()
 }
 
@@ -276,14 +298,14 @@ pub fn module_candidates(
 }
 
 /// Resuelve los imports de un módulo (recursivamente) y los carga como AST.
-/// Cada entrada del resultado: (path del import, módulo parseado).
+/// Cada entrada del resultado: (path del import, source, módulo parseado).
 /// Si un import no se puede resolver, devuelve un error claro con los
 /// candidatos probados (no se queda en silencio).
 pub fn load_import_modules(
     module: &ClsModule,
     base_dir: &std::path::Path,
     seen: &mut std::collections::HashSet<String>,
-    out: &mut Vec<(String, ClsModule)>,
+    out: &mut Vec<(String, String, ClsModule)>,
     manifest: Option<&cls_core::config::ModuleManifest>,
 ) -> cls_core::error::ClsResult<()> {
     use cls_core::error::ClsError;
@@ -312,7 +334,7 @@ pub fn load_import_modules(
                         if let Ok(m) = cls_core::frontend::Parser::new(toks).parse() {
                             seen.insert(key);
                             load_import_modules(&m, base_dir, seen, out, manifest)?;
-                            out.push((path.clone(), m));
+                            out.push((path.clone(), source, m));
                             found = true;
                             break;
                         }
@@ -482,9 +504,10 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
     };
     t = tick(timing, "lectura", t);
 
-    // Caché CLS→WASM en disco: si el fuente no cambió (misma versión + target),
-    // saltamos lexer/parser/typeck/emisión y cargamos el .wasm directamente.
-    let key = cache_key(&source, target_str);
+    // Caché CLS→WASM en disco: si el fuente no cambió (misma versión + target +
+    // integridad de los módulos del workspace), saltamos la recompilación.
+    let entry_path = std::path::Path::new(entry);
+    let key = cache_key(&source, target_str, entry_path);
     let cache_path = cache_dir().join(format!("{:016x}.wasm", key));
     if let Ok(cached) = std::fs::read(&cache_path) {
         if timing {
@@ -532,7 +555,7 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
         .unwrap_or(std::path::Path::new("."))
         .to_path_buf();
     let mut seen = std::collections::HashSet::new();
-    let mut imports: Vec<(String, ClsModule)> = Vec::new();
+    let mut imports: Vec<(String, String, ClsModule)> = Vec::new();
     let manifest = cls_core::config::ModuleManifest::find_in_dir(&base_dir);
     if let Err(e) = load_import_modules(&module, &base_dir, &mut seen, &mut imports, manifest.as_ref()) {
         show_cls_error(&e, entry, Some(&source));
@@ -541,11 +564,16 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
     // Desplazar los spans de cada módulo importado con un offset de línea único.
     // El `Span` no incluye el archivo, así que sin esto las coordenadas de un
     // módulo colisionan con las del main en el type map del JIT.
-    for (i, (_path, m)) in imports.iter_mut().enumerate() {
+    for (i, (_path, _src, m)) in imports.iter_mut().enumerate() {
         let offset = 100000u32 * (i as u32 + 1);
         cls_core::frontend::span_shift::shift_module(m, offset);
     }
-    if let Err(e) = checker.check_with_prelude(&module, &imports) {
+    // Prelude para el checker: solo (path, module).
+    let prelude: Vec<(String, ClsModule)> = imports
+        .iter()
+        .map(|(p, _, m)| (p.clone(), m.clone()))
+        .collect();
+    if let Err(e) = checker.check_with_prelude(&module, &prelude) {
         show_cls_error(&e, entry, Some(&source));
         return 1;
     }
@@ -557,7 +585,7 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
     if has_type_errors {
         for diag in checker.diagnostics() {
             if matches!(diag.severity, cls_core::error::diagnostic::Severity::Error) {
-                show_type_diag(diag, &source, entry);
+                show_type_diag(diag, &source, entry, &imports);
                 return 1;
             }
         }
@@ -574,7 +602,11 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
 
     // Fusionar los imports aplanados (from/include) en el módulo principal para
     // que el backend los compile como funciones/globals del mismo WASM.
-    let merged = flatten_imports(&module, &imports);
+    let prelude_for_flatten: Vec<(String, ClsModule)> = imports
+        .iter()
+        .map(|(p, _, m)| (p.clone(), m.clone()))
+        .collect();
+    let merged = flatten_imports(&module, &prelude_for_flatten);
 
     let backend = cls_core::backend::wasm::WasmBackend::with_target(type_map, target);
     let wasm_bytes = match backend.emit(&merged) {
@@ -648,6 +680,12 @@ fn run_wasm(
     if let Some(p) = &cache_path {
         let _ = std::fs::create_dir_all(cache_dir())
             .and_then(|_| std::fs::write(p, wasm_bytes));
+        // Índice de integridad de los módulos del workspace (para invalidar el
+        // caché cuando cambia cualquier .clsx importado).
+        let _ = crate::module_index::write_module_index(
+            std::path::Path::new(entry),
+            &[],
+        );
     }
 
     let mut store = Store::new(

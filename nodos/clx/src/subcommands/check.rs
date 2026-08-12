@@ -64,14 +64,19 @@ pub fn execute(args: &[String]) -> i32 {
         // el core registra los tipos del prelude antes de chequear el módulo principal.
         let base_dir = Path::new(file).parent().unwrap_or(Path::new(".")).to_path_buf();
         let mut seen = HashSet::new();
-        let mut imports: Vec<(String, Module)> = Vec::new();
+        let mut imports: Vec<(String, String, Module)> = Vec::new();
         let manifest = cls_core::config::ModuleManifest::find_in_dir(&base_dir);
         if let Err(e) = load_import_modules(&module, &base_dir, &mut seen, &mut imports, manifest.as_ref()) {
             eprintln!("Error resolviendo imports de '{}': {}", file, e);
             total_errors += 1;
             continue;
         }
-        if let Err(e) = checker.check_with_prelude(&module, &imports) {
+        // Prelude para el checker: solo (path, module).
+        let prelude: Vec<(String, Module)> = imports
+            .iter()
+            .map(|(p, _, m)| (p.clone(), m.clone()))
+            .collect();
+        if let Err(e) = checker.check_with_prelude(&module, &prelude) {
             eprintln!("Error interno en '{}': {}", file, e);
             total_errors += 1;
             continue;
@@ -135,14 +140,12 @@ pub fn execute(args: &[String]) -> i32 {
 
 /// Resuelve los imports de un módulo (recursivamente) y los carga como AST.
 /// El nodo consigue los archivos; el core los verifica.
-/// Cada entrada del resultado: (path del import, módulo parseado).
-/// Resuelve los imports de un módulo (recursivamente) y los carga como AST.
-/// Cada entrada del resultado: (path del import, módulo parseado).
+/// Cada entrada del resultado: (path del import, source, módulo parseado).
 fn load_import_modules(
     module: &Module,
     base_dir: &Path,
     seen: &mut HashSet<String>,
-    out: &mut Vec<(String, Module)>,
+    out: &mut Vec<(String, String, Module)>,
     manifest: Option<&cls_core::config::ModuleManifest>,
 ) -> cls_core::error::ClsResult<()> {
     crate::jit::load_import_modules(module, base_dir, seen, out, manifest)

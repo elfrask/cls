@@ -1,9 +1,12 @@
 # Documentación de CLS
 
-CLS es un lenguaje de programación compilado-orientado, con un intérprete
-(tree-walker), un verificador de tipos (compile-time) y un plan de compilación
-nativa/WASM. Esta documentación cubre el lenguaje, el runtime, la arquitectura
-del proyecto y cómo contribuir.
+CLS es un lenguaje de programación compilado-orientado con verificación de
+tipos (compile-time). Tiene **dos ejecutores**: el **JIT** (`clx run --jit`,
+CLS → WASM → wasmtime), que es el **intérprete objetivo**; y un **tree-walker**
+(`clx run`) que se usa solo como **referencia sintáctica** y será deprecado tras
+CLS 2.0-dev1. Hay un plan de compilación nativa/WASM (`.clbin`) en
+`docs/future/`. Esta documentación cubre el lenguaje, el runtime, la arquitectura
+y cómo contribuir.
 
 ## Estructura de la documentación
 
@@ -31,15 +34,21 @@ diseño.
 - `lenguaje/cmx.md` — el lenguaje de marcado CMX (JSX-like).
 - `lenguaje/extension.md` — FFI a librerías nativas del sistema (`extension`).
 - `lenguaje/multi-entorno.md` — directiva `when` (implementaciones por SO/arquitectura).
-- `lenguaje/cmx.md` — el lenguaje de marcado CMX (JSX-like).
 
 ### Runtime y ejecución
 
-- `runtime/ejecucion.md` — cómo funciona el intérprete (tree-walker).
+- `runtime/ejecucion.md` — cómo funciona el intérprete (walker y JIT).
 - `runtime/valores.md` — el sistema de valores (`Value`).
 - `runtime/biblioteca-estandar.md` — math, json, fs, http, async.
 - `runtime/metodos-primitivos.md` — métodos de tipos primitivos (sin boxing).
 - `runtime/errores.md` — sistema de errores y formatos de salida.
+
+### JIT (intérprete objetivo)
+
+- `future/wasm/JIT_RUNTIME.md` — el backend WASM y el JIT (wasmtime).
+- `future/wasm/WASM_PIPELINE.md` — pipeline de compilación a WASM.
+- `agent-context/JIT_COMPILATION.md` — estado operativo del backend WASM.
+- `agent-context/JIT_VS_WALKER.md` — features soportadas por JIT vs walker.
 
 ### Ejecución sin nodo y resolvers
 
@@ -60,3 +69,4 @@ diseño.
 - Las rutas internas se escriben como texto (p. ej. `cls-core/src/...`) sin enlaces.
 - Esta documentación se mantiene sincronizada con la implementación; si algo
   no coincide con el comportamiento real, es un error de documentación.
+- **El JIT es el intérprete objetivo**; el walker es referencia sintáctica.

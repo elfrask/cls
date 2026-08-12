@@ -9,3 +9,5 @@ cls.zip
 contexto-completo.md
 .cls-types
 **/node_modules
+**/.cls-cache
+.cls-cache

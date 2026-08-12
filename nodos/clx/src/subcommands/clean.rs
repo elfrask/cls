@@ -42,6 +42,13 @@ pub fn execute(args: &[String]) -> i32 {
         }
     }
 
+    // Limpiar los índices de módulos del workspace ([cwd]/.cls-cache/ si existe).
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let ws_cache = cwd.join(".cls-cache");
+    if ws_cache.exists() {
+        let _ = fs::remove_dir_all(&ws_cache);
+    }
+
     println!(
         "Caché limpiada: {} archivo(s), {} eliminados de '{}'",
         removed,
