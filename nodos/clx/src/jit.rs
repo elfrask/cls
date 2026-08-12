@@ -108,10 +108,14 @@ fn tick(timing: bool, label: &str, start: Instant) -> Instant {
     Instant::now()
 }
 
-/// Estado del host: separador de argumentos en `print` y archivo fuente (para errores).
+/// Estado del host: separador de argumentos en `print`, archivo fuente y el
+/// mapa `offset → (archivo, source)` de los módulos importados (para de-shiftear
+/// spans desplazados en errores de runtime).
 struct HostState {
     first_in_line: bool,
     source_file: String,
+    /// Módulos importados: (offset de línea, archivo, source) — offset = 100000*(i+1).
+    modules: Vec<(u32, String, String)>,
 }
 
 impl Default for HostState {
@@ -119,6 +123,7 @@ impl Default for HostState {
         Self {
             first_in_line: true,
             source_file: String::new(),
+            modules: Vec::new(),
         }
     }
 }
@@ -513,7 +518,7 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
         if timing {
             eprintln!("[JIT-TIMING] caché CLS→WASM: HIT ({} bytes)", cached.len());
         }
-        return run_wasm(&cached, entry, app_args, timing, t, None);
+        return run_wasm(&cached, entry, app_args, timing, t, None, &[]);
     }
     if timing {
         eprintln!("[JIT-TIMING] caché CLS→WASM: miss");
@@ -629,7 +634,7 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
     // Guardar en caché SOLO si run_wasm valida y ejecuta bien (evita cachear WASM
     // inválido si el emisor tiene un bug). run_wasm recibe el path para escribirlo
     // tras una validación exitosa de Module::new.
-    run_wasm(&wasm_bytes, entry, app_args, timing, t, Some(cache_path))
+    run_wasm(&wasm_bytes, entry, app_args, timing, t, Some(cache_path), &imports)
 }
 
 /// Config de wasmtime: habilita la propuesta de excepciones (try/catch).
@@ -647,6 +652,7 @@ fn run_wasm(
     timing: bool,
     mut t: Instant,
     cache_path: Option<std::path::PathBuf>,
+    modules: &[(String, String, ClsModule)],
 ) -> i32 {
     let engine = match wasmtime_cache_config() {
         Some(config) => match Engine::new(&config) {
@@ -688,11 +694,20 @@ fn run_wasm(
         );
     }
 
+    let module_offsets: Vec<(u32, String, String)> = modules
+        .iter()
+        .enumerate()
+        .map(|(i, (path, src, _m))| {
+            (100000u32 * (i as u32 + 1), path.clone(), src.clone())
+        })
+        .collect();
+
     let mut store = Store::new(
         &engine,
         HostState {
             first_in_line: true,
             source_file: entry.to_string(),
+            modules: module_offsets,
         },
     );
     let mut linker = Linker::new(&engine);
@@ -778,13 +793,21 @@ fn run_wasm(
                 .and_then(|v| v.i64())
                 .map(unpack_span);
             if let Some(span) = span {
+                // De-shiftear el span si pertenece a un módulo importado y
+                // resolver el archivo/source real (para el caret correcto).
+                let (file, source, real_span) = resolve_runtime_span(
+                    &store,
+                    span,
+                    entry,
+                    &store.data().source_file,
+                );
                 let report = cls_runtime::error_report::ErrorReport {
                     error: ClsError::RuntimeError(msg.clone()),
-                    span: Some(span.clone()),
+                    span: Some(real_span),
                     stack: vec![],
                     import_trace: vec![],
-                    source_file: entry.to_string(),
-                    source: None,
+                    source_file: file,
+                    source: Some(source),
                 };
                 eprintln!(
                     "{}",
@@ -827,6 +850,35 @@ fn unpack_span(packed: i64) -> Span {
     let line = ((packed >> 32) & 0xffff_ffff) as u32;
     let col = (packed & 0xffff_ffff) as u32;
     Span::new(line, col, line, col)
+}
+
+/// Resuelve el archivo y source reales de un span de runtime (puede estar
+/// desplazado por pertenecer a un módulo importado). Devuelve (archivo, source,
+/// span de-shifteado).
+fn resolve_runtime_span(
+    store: &Store<HostState>,
+    span: Span,
+    entry: &str,
+    _entry_source: &str,
+) -> (String, String, Span) {
+    let raw_line = span.start_line;
+    if raw_line >= 100000 {
+        let idx = (raw_line / 100000) as usize;
+        let offset = idx * 100000;
+        let real_line = raw_line - offset as u32;
+        // modules[i-1] (offset = 100000 * i).
+        if let Some((off, file, source)) = store
+            .data()
+            .modules
+            .iter()
+            .find(|(o, _, _)| *o == offset as u32)
+        {
+            let _ = off;
+            let real = Span::new(real_line, span.start_col, real_line, span.end_col);
+            return (file.clone(), source.clone(), real);
+        }
+    }
+    (entry.to_string(), String::new(), span)
 }
 
 /// Escribe los args como Array<String> en memoria y devuelve el ptr.

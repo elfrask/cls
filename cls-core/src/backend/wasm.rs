@@ -6754,6 +6754,15 @@ impl<'a> Engine<'a> {
                 self.funcs_sec.function(tidx);
                 self.func_indexes.insert(f.name.clone(), fidx);
                 self.fn_type_indexes.insert(f.name.clone(), tidx);
+                // Módulo importado (`mod::fn`): registrar el nombre base como
+                // alias para que las llamadas internas del módulo (`nivel1()`)
+                // resuelvan sin prefijo (el body se fusiona tal cual).
+                if let Some((_, base)) = f.name.split_once("::") {
+                    if !self.func_indexes.contains_key(base) {
+                        self.func_indexes.insert(base.to_string(), fidx);
+                        self.fn_type_indexes.insert(base.to_string(), tidx);
+                    }
+                }
                 cls_funcs.push(f.clone());
             }
         }
