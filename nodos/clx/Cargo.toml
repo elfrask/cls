@@ -20,6 +20,7 @@ tower-lsp = "0.20"
 wasmtime = { version = "44", features = ["cache", "gc"] }
 libloading = "0.8"
 wasmprinter = "0.2"
+sha2 = "0.10"
 
 
 

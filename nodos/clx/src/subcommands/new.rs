@@ -18,14 +18,23 @@ pub fn execute(args: &[String]) -> i32 {
 
     let src_dir = dir.join("src");
     let mod_dir = dir.join("modules");
-    fs::create_dir_all(&src_dir).unwrap();
-    fs::create_dir_all(&mod_dir).unwrap();
+    if let Err(e) = fs::create_dir_all(&src_dir) {
+        eprintln!("Error al crear '{}': {}", src_dir.display(), e);
+        return 1;
+    }
+    if let Err(e) = fs::create_dir_all(&mod_dir) {
+        eprintln!("Error al crear '{}': {}", mod_dir.display(), e);
+        return 1;
+    }
 
     // cls.json via ModuleManifest
     let mut manifest = ModuleManifest::default_for(name);
     manifest.entry = if is_lib { String::new() } else { "src/main.clsx".to_string() };
     manifest.project.target = if is_lib { "library".to_string() } else { "executable".to_string() };
-    manifest.save(&dir.join("cls.json")).unwrap();
+    if let Err(e) = manifest.save(&dir.join("cls.json")) {
+        eprintln!("Error al escribir '{}': {}", dir.join("cls.json").display(), e);
+        return 1;
+    }
 
     // main.clsx
     if !is_lib {
@@ -34,11 +43,17 @@ pub fn execute(args: &[String]) -> i32 {
     return 0;
 }
 "#;
-        fs::write(src_dir.join("main.clsx"), main_content).unwrap();
+        if let Err(e) = fs::write(src_dir.join("main.clsx"), main_content) {
+            eprintln!("Error al escribir '{}': {}", src_dir.join("main.clsx").display(), e);
+            return 1;
+        }
     }
 
     // .gitignore
-    fs::write(dir.join(".gitignore"), "modules/\ndist/\n.cls-types\n").unwrap();
+    if let Err(e) = fs::write(dir.join(".gitignore"), "modules/\ndist/\n.cls-types\n") {
+        eprintln!("Error al escribir '{}': {}", dir.join(".gitignore").display(), e);
+        return 1;
+    }
 
     println!("Proyecto '{}' creado", name);
     0

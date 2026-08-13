@@ -808,7 +808,7 @@ impl Interpreter {
                 self.call_stack.truncate(stack_len);
                 for catch in &try_stmt.catch_clauses {
                     self.env.push_scope();
-                    // TODO: crear objeto de error
+                    // TODO(dev2): crear objeto de error
                     // e = "Error de runtime: " + msg (limpiar el call stack embebido,
                     // el prefijo duplicado que añade call_function_value y el span
                     // legacy "(línea N, columna M)" que incrusta err_at).
@@ -2143,6 +2143,7 @@ impl Interpreter {
             Operator::MinusEqual => Operator::Minus,
             Operator::StarEqual => Operator::Star,
             Operator::SlashEqual => Operator::Slash,
+            Operator::PercentEqual => Operator::Percent,
             _ => op,
         };
         self.evaluate_binary_values(current, base_op, value, span)

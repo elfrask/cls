@@ -30,9 +30,6 @@ pub enum Type {
 
     // Tipos nombrados por usuario
     Named(String, Vec<Type>), // Persona, Array<String>
-
-    // Inferencia (para type checking)
-    Infer(usize), // Variable de tipo inferido
 }
 
 /// Valor de un literal type (anotación o const)
@@ -199,7 +196,6 @@ impl Type {
                     format!("{}<{}>", name, params_str)
                 }
             }
-            Type::Infer(id) => format!("_{}", id),
         }
     }
 

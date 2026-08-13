@@ -59,16 +59,21 @@ fn error_label(error: &ClsError) -> &'static str {
 fn is_syntax(report: &ErrorReport) -> bool {
     matches!(
         report.error,
-        ClsError::SyntaxError(_)
-            | ClsError::SyntaxErrorAt(_, _)
-            | ClsError::CompileErrorAt(_, _)
+        ClsError::SyntaxError(_) | ClsError::SyntaxErrorAt(_, _)
     )
+}
+
+/// ¿Es un error de compilación (no sintaxis ni runtime)?
+fn is_compile(report: &ErrorReport) -> bool {
+    matches!(report.error, ClsError::CompileError(_) | ClsError::CompileErrorAt(_, _))
 }
 
 /// Encabezado del reporte según el tipo de error.
 fn report_header(report: &ErrorReport) -> String {
     if is_syntax(report) {
         format!("Error en '{}':", report.source_file)
+    } else if is_compile(report) {
+        "Error de Compilación:".to_string()
     } else {
         "Error de ejecución:".to_string()
     }
@@ -420,7 +425,7 @@ impl ErrorFormatter for JsonFormatter {
             "col": f.col,
         })).collect();
         let obj = serde_json::json!({
-            "error": format!("{:?}", report.error),
+            "error": report.error.to_string(),
             "message": clean_error_msg(&report.error.to_string()),
             "file": report.source_file,
             "span": span,

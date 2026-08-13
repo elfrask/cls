@@ -29,13 +29,22 @@ fn cmd_add(args: &[String]) -> i32 {
         return 1;
     }
 
-    let content = fs::read_to_string(manifest_path).unwrap();
-    let mut json: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let content = match fs::read_to_string(manifest_path) {
+        Ok(c) => c,
+        Err(e) => { eprintln!("Error al leer '{}': {}", manifest_path, e); return 1; }
+    };
+    let mut json: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(j) => j,
+        Err(e) => { eprintln!("Error: '{}' corrupto ({})", manifest_path, e); return 1; }
+    };
 
     let section = if is_dev { "devDependencies" } else { "dependencies" };
     json[section][pkg] = serde_json::Value::String("^1.0.0".to_string());
 
-    fs::write(manifest_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+    if let Err(e) = fs::write(manifest_path, serde_json::to_string_pretty(&json).unwrap()) {
+        eprintln!("Error al escribir '{}': {}", manifest_path, e);
+        return 1;
+    }
     println!("'{}' agregado a {}", pkg, section);
     0
 }
@@ -53,14 +62,23 @@ fn cmd_remove(args: &[String]) -> i32 {
         return 1;
     }
 
-    let content = fs::read_to_string(manifest_path).unwrap();
-    let mut json: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let content = match fs::read_to_string(manifest_path) {
+        Ok(c) => c,
+        Err(e) => { eprintln!("Error al leer '{}': {}", manifest_path, e); return 1; }
+    };
+    let mut json: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(j) => j,
+        Err(e) => { eprintln!("Error: '{}' corrupto ({})", manifest_path, e); return 1; }
+    };
 
     let removed = json["dependencies"].as_object_mut().map(|d| d.remove(pkg).is_some()).unwrap_or(false)
         || json["devDependencies"].as_object_mut().map(|d| d.remove(pkg).is_some()).unwrap_or(false);
 
     if removed {
-        fs::write(manifest_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+        if let Err(e) = fs::write(manifest_path, serde_json::to_string_pretty(&json).unwrap()) {
+            eprintln!("Error al escribir '{}': {}", manifest_path, e);
+            return 1;
+        }
         println!("✅ '{}' removido", pkg);
     } else {
         eprintln!("'{}' no encontrado en dependencias", pkg);
@@ -76,8 +94,14 @@ fn cmd_install(_args: &[String]) -> i32 {
         return 1;
     }
 
-    let content = fs::read_to_string(manifest_path).unwrap();
-    let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let content = match fs::read_to_string(manifest_path) {
+        Ok(c) => c,
+        Err(e) => { eprintln!("Error al leer '{}': {}", manifest_path, e); return 1; }
+    };
+    let json: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(j) => j,
+        Err(e) => { eprintln!("Error: '{}' corrupto ({})", manifest_path, e); return 1; }
+    };
 
     // Registry: env var > cls.json > default
     let registry = std::env::var("CLS_REGISTRY")
@@ -103,12 +127,15 @@ fn cmd_install(_args: &[String]) -> i32 {
     let mut all_deps = deps;
     all_deps.extend(dev_deps);
 
+    let mut failed = false;
+
     for (pkg, _version) in &all_deps {
         print!("  {} ... ", pkg);
         std::io::stdout().flush().ok();
 
         let pkg_dir = mod_dir.join(pkg);
         fs::create_dir_all(&pkg_dir).ok();
+        let target = pkg_dir.join("mod.clsx");
 
         // Intentar descargar desde registry
         let url = format!("{}/{}/mod.clsx", registry.trim_end_matches('/'), pkg);
@@ -116,25 +143,35 @@ fn cmd_install(_args: &[String]) -> i32 {
             Ok(resp) => {
                 match resp.into_string() {
                     Ok(body) => {
-                        let target = pkg_dir.join("mod.clsx");
-                        fs::write(&target, &body).unwrap();
+                        if let Err(e) = fs::write(&target, &body) {
+                            eprintln!("Error escribiendo '{}': {}", target.display(), e);
+                            failed = true;
+                            continue;
+                        }
                         println!("✅ ({} bytes)", body.len());
                     }
                     Err(e) => {
-                        println!("Error leyendo respuesta: {}", e);
+                        eprintln!("Error leyendo respuesta: {}", e);
+                        failed = true;
                     }
                 }
             }
             Err(_) => {
-                // Si no hay registry, crear módulo placeholder
-                let placeholder = format!(
-                    "# {} - downloaded from {}\n# Version: {}\n\n", pkg, url, "latest"
-                );
-                let target = pkg_dir.join("mod.clsx");
-                fs::write(&target, &placeholder).unwrap();
-                println!("Placeholder (registry no disponible)");
+                // Registry no disponible: si ya hay una copia instalada localmente, úsala.
+                if target.exists() {
+                    println!("usando caché local");
+                } else {
+                    eprintln!("no se pudo contactar el registry '{}' para '{}' (sin caché local)", registry, pkg);
+                    failed = true;
+                }
             }
         }
+    }
+
+    if failed {
+        eprintln!("");
+        eprintln!("Error: uno o más paquetes no se pudieron instalar (registry no disponible y sin caché local)");
+        return 1;
     }
 
     // Lockfile
@@ -143,7 +180,10 @@ fn cmd_install(_args: &[String]) -> i32 {
         "registry": registry,
         "packages": all_deps.keys().map(|k| (k.clone(), serde_json::json!({"version": "latest"}))).collect::<serde_json::Value>()
     });
-    fs::write("cls.lock", serde_json::to_string_pretty(&lock).unwrap()).unwrap();
+    if let Err(e) = fs::write("cls.lock", serde_json::to_string_pretty(&lock).unwrap()) {
+        eprintln!("Error al escribir 'cls.lock': {}", e);
+        return 1;
+    }
 
     println!("");
     println!("Instalación completada");

@@ -23,7 +23,7 @@ fn main() {
     let result = match cmd.as_str() {
         // Gestión de proyectos
         "new" => subcommands::new::execute(&args[2..]),
-        "init" => { eprintln!("[clx init] No implementado aún"); 0 }
+        "init" => { eprintln!("'init' no implementado aún (usa 'clx new')"); 1 }
 
         // Gestión de paquetes
         "add" | "remove" | "rm" | "install" | "i" => {
@@ -44,13 +44,13 @@ fn main() {
         // Inspección y tipos
         "ast" => subcommands::ast::execute(&args[2..]),
         "maptype" => subcommands::maptype::execute(&args[2..]),
-        "tree" => { eprintln!("[clx tree] No implementado aún"); 0 }
+        "tree" => { eprintln!("'tree' no implementado aún"); 1 }
 
         // Caché
         "clean" => subcommands::clean::execute(&args[2..]),
 
         // Formateo
-        "fmt" => { eprintln!("[clx fmt] No implementado aún"); 0 }
+        "fmt" => { eprintln!("'fmt' no implementado aún"); 1 }
 
         // Globales
         "-v" | "--version" => {

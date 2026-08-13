@@ -184,7 +184,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "ureq",
  "zip",
 ]
 
@@ -197,6 +196,7 @@ dependencies = [
  "libloading",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
  "tower-lsp",
  "ureq",

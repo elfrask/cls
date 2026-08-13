@@ -12,6 +12,8 @@ struct InterfaceInfo {
     /// Orden de declaración de los campos (para offsets deterministas del shape).
     field_order: Vec<String>,
     signatures: HashMap<String, SignatureDecl>,
+    /// Orden de declaración de los métodos (para offsets deterministas del shape).
+    signature_order: Vec<String>,
 }
 
 /// Type checker configurable de CLS
@@ -226,6 +228,7 @@ impl TypeChecker {
                     fields,
                     field_order: i.fields.iter().map(|f| f.name.clone()).collect(),
                     signatures,
+                    signature_order: i.signatures.iter().map(|s| s.name.clone()).collect(),
                 });
                 if !self.config.strict {
                     self.warn(&format!("interface '{}' solo tiene efecto en type-checker", i.name), i.span);
@@ -357,7 +360,7 @@ impl TypeChecker {
         // (Record) o shape según lo que pida la anotación (offsets consistentes).
         if let Some(Expression::Record(rec)) = &var.value {
             if let Some(declared_rec) = var.type_ann.as_ref().map(|t| self.resolve_type_annotation(t)) {
-                if matches!(declared_rec, Type::Record(_, _)) | matches!(declared_rec, Type::Shape(_)) {
+                if matches!(declared_rec, Type::Record(_, _)) || matches!(declared_rec, Type::Shape(_)) {
                     self.types_by_span.insert(rec.span.clone(), declared_rec);
                 }
             }
@@ -562,8 +565,78 @@ impl TypeChecker {
                 }
             }
         }
+        // 3ª pasada: verificar conformidad con las interfaces `implements`.
+        for iface in &c.implements {
+            self.check_implements(&c.name, iface, c.span.clone());
+        }
         self.pop_scope();
         class_type
+    }
+
+    /// Verifica que la clase provea los campos y métodos que exige la interface.
+    fn check_implements(&mut self, class_name: &str, iface_name: &str, span: Span) {
+        let info = match self.interfaces.get(iface_name) {
+            Some(i) => i.clone(),
+            None => {
+                self.error(
+                    &format!(
+                        "La clase '{}' implementa la interface '{}', que no está definida",
+                        class_name, iface_name
+                    ),
+                    span,
+                );
+                return;
+            }
+        };
+        let bind = self.interface_bindings(&info, &[]);
+        let member_types: HashMap<String, Type> = self.class_members
+            .get(class_name)
+            .cloned()
+            .unwrap_or_default();
+        for fname in &info.field_order {
+            let Some(ta) = info.fields.get(fname) else { continue };
+            let required = self.resolve_annotation_with(ta, &bind);
+            let ok = member_types
+                .get(fname)
+                .map(|provided| provided.is_assignable_to(&required))
+                .unwrap_or(false);
+            if !ok {
+                self.error(
+                    &format!(
+                        "La clase '{}' no implementa el campo '{}: {}' exigido por la interface '{}'",
+                        class_name, fname, required, iface_name
+                    ),
+                    span.clone(),
+                );
+            }
+        }
+        for (sig_name, sig) in &info.signatures {
+            let required_fun = self.signature_type(sig, &bind);
+            match member_types.get(sig_name) {
+                None => {
+                    self.error(
+                        &format!(
+                            "La clase '{}' no implementa el método '{}' exigido por la interface '{}'",
+                            class_name, sig_name, iface_name
+                        ),
+                        span.clone(),
+                    );
+                }
+                Some(ret) => {
+                    if let Type::Fun(_, req_ret) = &required_fun {
+                        if !ret.is_assignable_to(req_ret) {
+                            self.error(
+                                &format!(
+                                    "El método '{}' de '{}' devuelve {}, la interface '{}' exige {}",
+                                    sig_name, class_name, ret, iface_name, req_ret
+                                ),
+                                span.clone(),
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn check_block(&mut self, block: &Block) {
@@ -881,6 +954,39 @@ impl TypeChecker {
                         }
                     }
                 }
+                // Validar que cada argumento sea asignable a su parámetro
+                // (firma conocida). No aplica a print (variádico) ni a los
+                // métodos de primitivos (MemberAccess ya retornó arriba).
+                for (i, (param, arg_ty)) in params.iter().zip(arg_types.iter()).enumerate() {
+                    let param_subst = self.substitute(param, &bindings);
+                    // Sin firma útil (Any/huecos/genérico sin binding) → no validar.
+                    if matches!(param_subst, Type::Any | Type::Unknown)
+                        || matches!(arg_ty, Type::Any | Type::Unknown)
+                        || self.has_unbound_generic(&param_subst, &bindings)
+                    {
+                        continue;
+                    }
+                    // El tipo del literal se usa como literal type para respetar
+                    // uniones de literales y promociones implícitas (int→float).
+                    let arg_check = match &call.args[i] {
+                        Expression::Literal(l) => self.literal_type(&l.kind),
+                        _ => arg_ty.clone(),
+                    };
+                    if !arg_check.is_assignable_to(&param_subst) {
+                        let msg = format!(
+                            "Se esperaba {}, recibió {} en el argumento {}",
+                            param_subst,
+                            arg_ty,
+                            i + 1
+                        );
+                        let span = expr_span(&call.args[i]);
+                        if self.config.strict {
+                            self.error(&msg, span);
+                        } else {
+                            self.warn(&msg, span);
+                        }
+                    }
+                }
                 self.substitute(&ret, &bindings)
             }
             Type::Named(_, _) => {
@@ -892,6 +998,33 @@ impl TypeChecker {
                 &format!("No se puede llamar como función: {}", callee_type),
                 call.span.clone(),
             ),
+        }
+    }
+
+    /// ¿El tipo aún contiene un type param genérico sin binding (Named sin args
+    /// que no está en bindings)? Si sí, la firma no está completamente resuelta
+    /// y el argumento no se puede validar de forma fiable (p.ej. `T[]`).
+    fn has_unbound_generic(&self, ty: &Type, bindings: &HashMap<String, Type>) -> bool {
+        match ty {
+            Type::Named(n, ps) => {
+                if ps.is_empty() {
+                    !bindings.contains_key(n)
+                } else {
+                    ps.iter().any(|p| self.has_unbound_generic(p, bindings))
+                }
+            }
+            Type::Array(inner) => self.has_unbound_generic(inner, bindings),
+            Type::Tuple(ts) => ts.iter().any(|t| self.has_unbound_generic(t, bindings)),
+            Type::Record(k, v) => {
+                self.has_unbound_generic(k, bindings) || self.has_unbound_generic(v, bindings)
+            }
+            Type::Shape(fields) => fields.iter().any(|(_, t)| self.has_unbound_generic(t, bindings)),
+            Type::Fun(ps, r) => {
+                ps.iter().any(|p| self.has_unbound_generic(p, bindings))
+                    || self.has_unbound_generic(r, bindings)
+            }
+            Type::Union(ts) => ts.iter().any(|t| self.has_unbound_generic(t, bindings)),
+            _ => false,
         }
     }
 
@@ -943,7 +1076,8 @@ impl TypeChecker {
             if name == "fs" {
                 return match member.member.as_str() {
                     "exists" => Type::Bool,
-                    "cwd" | "readFile" | "listDir" => Type::String,
+                    "cwd" | "readFile" => Type::String,
+                    "listDir" => Type::Array(Box::new(Type::String)),
                     _ => Type::Any,
                 };
             }
@@ -1512,8 +1646,10 @@ impl TypeChecker {
                             .iter()
                             .filter_map(|fn_| info.fields.get(fn_).map(|ta| (fn_.clone(), self.resolve_annotation_with(ta, &bind))))
                             .collect();
-                        for (name_sig, sig) in &info.signatures {
-                            fields.push((name_sig.clone(), self.signature_type(sig, &bind)));
+                        for name_sig in &info.signature_order {
+                            if let Some(sig) = info.signatures.get(name_sig) {
+                                fields.push((name_sig.clone(), self.signature_type(sig, &bind)));
+                            }
                         }
                         Type::Shape(fields)
                     }
@@ -1612,16 +1748,12 @@ impl TypeChecker {
         bindings
     }
 
-    /// Tipos de los campos de una interface en orden (para acceso por índice).
+    /// Tipos de los campos de una interface en orden de declaración (para acceso
+    /// por índice y offsets deterministas del shape). NO itera el HashMap: usa
+    /// `field_order` (el orden en que se declararon los campos).
     fn interface_member_types(&mut self, info: &InterfaceInfo, bindings: &HashMap<String, Type>) -> Vec<Type> {
-        info.fields.iter()
-            .map(|(name, ta)| {
-                let t = self.resolve_annotation_with(ta, bindings);
-                (name.clone(), t)
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .map(|(_, t)| t)
+        info.field_order.iter()
+            .filter_map(|name| info.fields.get(name).map(|ta| self.resolve_annotation_with(ta, bindings)))
             .collect()
     }
 
@@ -1764,6 +1896,58 @@ mod tests {
         let d = check_source(src, true);
         assert_eq!(count_errors(&d), 0, "indice literal: {:?}", d);
     }
+
+    #[test]
+    fn call_arg_type_mismatch() {
+        // Tarea 1: arg Int a param String → error en estricto (con firma conocida)
+        let src = "function f(x: String) -> String { return x; }; function g() { var y = f(123); };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 1, "Int a param String: {:?}", d);
+    }
+
+    #[test]
+    fn call_arg_type_ok() {
+        let src = "function f(x: String) -> String { return x; }; function g() { var y = f(\"ok\"); };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "String a param String: {:?}", d);
+    }
+
+    #[test]
+    fn call_arg_promotion_int_to_float() {
+        // int → float es asignable; no debe dar error
+        let src = "function f(x: Float) -> Float { return x; }; function g() { var y = f(5); };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "int a param Float: {:?}", d);
+    }
+
+    #[test]
+    fn generic_array_param_no_false_positive() {
+        // T[] sin binding (param anidado en contenedor) → no validar (sin falso positivo)
+        let src = "function first<T>(a: T[]) -> T { return a[0]; }; function g() { var y = first([1,2,3]); };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "T[] no debe false-positivar: {:?}", d);
+    }
+
+    #[test]
+    fn implements_missing_member_errors() {
+        let src = "interface I { num: Int, }; class A implements I { var num: String = \"x\"; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 1, "campo con tipo incompatibble: {:?}", d);
+    }
+
+    #[test]
+    fn implements_ok() {
+        let src = "interface I { num: Int, }; class A implements I { var num: Int = 1; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "conformidad ok: {:?}", d);
+    }
+
+    #[test]
+    fn implements_unknown_interface_errors() {
+        let src = "class A implements NoExiste { var num: Int = 1; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 1, "interface no definida: {:?}", d);
+    }
 }
 
 /// Devuelve el `Span` de una expresión (cada variante lo lleva).
@@ -1811,112 +1995,6 @@ fn builtin_type_name(name: &str) -> Option<Type> {
 /// Formatea una expresión como texto CLS corto y legible (para mensajes de error).
 /// NO usa Debug del AST — el usuario debe poder leer qué falló.
 pub fn expr_short_display(expr: &Expression) -> String {
-    use crate::frontend::token::Operator;
-    match expr {
-        Expression::Literal(l) => match &l.kind {
-            LiteralKind::Int(v) => v.to_string(),
-            LiteralKind::Float(v) => v.to_string(),
-            LiteralKind::String(s) => format!("\"{}\"", s),
-            LiteralKind::Bool(b) => b.to_string(),
-            LiteralKind::Char(c) => format!("'{}'", c),
-            LiteralKind::Null => "null".to_string(),
-            LiteralKind::Unknown => "?".to_string(),
-        },
-        Expression::Identifier(name, _) => name.clone(),
-        Expression::Binary(b) => {
-            let op = match b.op {
-                Operator::Plus => "+",
-                Operator::Minus => "-",
-                Operator::Star => "*",
-                Operator::Slash => "/",
-                Operator::Percent => "%",
-                Operator::StarStar => "**",
-                Operator::StrictEqual => "==",
-                Operator::NotEqual => "!=",
-                Operator::LessThan => "<",
-                Operator::LessEqual => "<=",
-                Operator::GreaterThan => ">",
-                Operator::GreaterEqual => ">=",
-                Operator::And => "&&",
-                Operator::Or => "||",
-                Operator::In => "in",
-                Operator::Is => "is",
-                Operator::Caret => "^",
-                Operator::ShiftLeft => "<<",
-                Operator::ShiftRight => ">>",
-                _ => "?",
-            };
-            format!(
-                "({} {} {})",
-                expr_short_display(&b.left),
-                op,
-                expr_short_display(&b.right)
-            )
-        }
-        Expression::Unary(u) => {
-            let op = match u.op {
-                crate::frontend::ast::UnaryOp::Negate => "-",
-                crate::frontend::ast::UnaryOp::Not => "!",
-                crate::frontend::ast::UnaryOp::BitwiseNot => "~",
-                crate::frontend::ast::UnaryOp::TypeOf => "typeof ",
-                _ => "",
-            };
-            format!("{}{}", op, expr_short_display(&u.operand))
-        }
-        Expression::Call(c) => format!(
-            "{}({})",
-            expr_short_display(&c.callee),
-            c.args.iter().map(expr_short_display).collect::<Vec<_>>().join(", ")
-        ),
-        Expression::MemberAccess(m) => format!("{}.{}", expr_short_display(&m.object), m.member),
-        Expression::Index(i) => format!(
-            "{}[{}]",
-            expr_short_display(&i.object),
-            expr_short_display(&i.index)
-        ),
-        Expression::Array(a) => format!(
-            "[{}]",
-            a.elements.iter().map(expr_short_display).collect::<Vec<_>>().join(", ")
-        ),
-        Expression::Tuple(t) => format!(
-            "({})",
-            t.elements.iter().map(expr_short_display).collect::<Vec<_>>().join(", ")
-        ),
-        Expression::Record(r) => format!(
-            "{{{}}}",
-            r.entries.iter().map(|(k, v)| format!("{}: {}", k, expr_short_display(v))).collect::<Vec<_>>().join(", ")
-        ),
-        Expression::ArrowFunction(_) => "fn(...)".to_string(),
-        Expression::Conditional(c) => format!(
-            "({} ? {} : {})",
-            expr_short_display(&c.condition),
-            expr_short_display(&c.then_expr),
-            expr_short_display(&c.else_expr)
-        ),
-        Expression::Assignment(a) => format!(
-            "{} = {}",
-            expr_short_display(&a.target),
-            expr_short_display(&a.value)
-        ),
-        Expression::Parenthesized(inner, _) => format!("({})", expr_short_display(inner)),
-        Expression::StringInterpolation(s) => {
-            let mut out = String::from("\"");
-            for part in &s.parts {
-                match part {
-                    InterpolationPart::Text(t) => out.push_str(t),
-                    InterpolationPart::Expr(e) => {
-                        out.push_str("${");
-                        out.push_str(&expr_short_display(e));
-                        out.push('}');
-                    }
-                }
-            }
-            out.push('"');
-            out
-        }
-        Expression::Cmx(c) => format!("<{} />", c.tag),
-        Expression::NamespaceAccess(ns, name, _) => format!("{}::{}", ns, name),
-        Expression::Await(inner, _) => format!("await {}", expr_short_display(inner)),
-    }
+    crate::frontend::ast::expr_display(expr)
 }
 

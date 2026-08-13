@@ -14,6 +14,15 @@ use cls_runtime::value::Value;
 use libloading::Library;
 use std::ffi::CString;
 use std::os::raw::c_char;
+use std::sync::Arc;
+
+/// Caché de librerías nativas cargadas (por path resuelto). Abrir la librería
+/// (dlopen/LoadLibrary) en cada llamada es caro; `Library` es `Send + Sync`, y
+/// los punteros de símbolo extraídos siguen siendo válidos mientras la librería
+/// viva. Nunca se descarga: el proceso la mantiene abierta.
+static NATIVE_LIBS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, Arc<Library>>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
 // ── Shapes de registro del ABI C ─────────────────────────────────────────────
 
@@ -99,9 +108,9 @@ fn conv_arg(nt: &NativeType, value: &Value, buffers: &mut Vec<CString>) -> ClsRe
         (NativeType::CPtr, Value::Null) | (NativeType::Struct(_), Value::Null) => Ok(CVal::I(0)),
         (NativeType::Bool, Value::Bool(b)) => Ok(CVal::I(if *b { 1 } else { 0 })),
         (NativeType::Bool, Value::Int(v)) => Ok(CVal::I(if *v != 0 { 1 } else { 0 })),
+        (NativeType::Float | NativeType::CDouble, Value::Int(v)) => Ok(CVal::F(*v as f64)),
         (_, Value::Int(v)) => Ok(CVal::I(*v)),
         (NativeType::Float | NativeType::CDouble, Value::Float(f)) => Ok(CVal::F(*f)),
-        (NativeType::Float | NativeType::CDouble, Value::Int(v)) => Ok(CVal::F(*v as f64)),
         (_, Value::Float(f)) => Ok(CVal::F(*f)),
         _ => Err(ClsError::RuntimeError(format!(
             "No se puede convertir el valor '{}' al tipo nativo '{}'",
@@ -176,6 +185,14 @@ fn resolve_library(name: &str) -> String {
 // ── Dispatcher de firmas (hasta 4 argumentos) ───────────────────────────────
 
 /// Genera un arm que castea el símbolo a la firma dada y la llama.
+///
+/// El `transmute` es el patrón dlsym: el símbolo se obtiene como un puntero a
+/// `unsafe extern "C" fn()` genérico (la firma real no se conoce hasta el
+/// dispatch por arity + shapes) y se reinterpreta por cada firma concreta. Rust
+/// no permite castear directamente entre tipos de fn pointer distintos, así que
+/// se reinterpreta el usize del símbolo. Es seguro mientras la firma elegida
+/// coincida con el símbolo real (contrato del `extension "lib" as C { ... }`)
+/// y la librería siga viva (la cachea `NATIVE_LIBS`).
 macro_rules! emit_arm {
     ($base:expr, $ret:expr; [$($t:ty, $v:expr),*]) => {
         match $ret {
@@ -286,12 +303,25 @@ impl NativeBackend for DynamicBackend {
             )));
         }
         let resolved = resolve_library(library);
-        let lib = unsafe { Library::new(&resolved) }.map_err(|e| {
-            ClsError::RuntimeError(format!(
-                "No se pudo cargar la librería nativa '{}' (resuelta a '{}'): {}",
-                library, resolved, e
-            ))
-        })?;
+        // Librería cacheadas por path (get-or-insert): no re-abrir dlopen en
+        // cada llamada. El `Arc` clonado mantiene la librería viva durante la
+        // llamada, así el puntero del símbolo extraído es válido.
+        let lib = {
+            let mut cache = NATIVE_LIBS.lock().unwrap();
+            match cache.get(&resolved) {
+                Some(l) => l.clone(),
+                None => {
+                    let l = Arc::new(unsafe { Library::new(&resolved) }.map_err(|e| {
+                        ClsError::RuntimeError(format!(
+                            "No se pudo cargar la librería nativa '{}' (resuelta a '{}'): {}",
+                            library, resolved, e
+                        ))
+                    })?);
+                    cache.insert(resolved.clone(), l.clone());
+                    l
+                }
+            }
+        };
 
         // Símbolo como puntero crudo (la firma se elige en el dispatcher).
         let sym: libloading::Symbol<'_, unsafe extern "C" fn()> =

@@ -53,6 +53,22 @@ pub enum ClsError {
     ConfigError(String),
 }
 
+// `std::io::Error` no es `Clone`; se reconstruye conservando kind y mensaje.
+impl Clone for ClsError {
+    fn clone(&self) -> Self {
+        match self {
+            ClsError::CompileError(m) => ClsError::CompileError(m.clone()),
+            ClsError::RuntimeError(m) => ClsError::RuntimeError(m.clone()),
+            ClsError::TypeError(m) => ClsError::TypeError(m.clone()),
+            ClsError::SyntaxError(m) => ClsError::SyntaxError(m.clone()),
+            ClsError::SyntaxErrorAt(m, s) => ClsError::SyntaxErrorAt(m.clone(), s.clone()),
+            ClsError::CompileErrorAt(m, s) => ClsError::CompileErrorAt(m.clone(), s.clone()),
+            ClsError::IoError(e) => ClsError::IoError(std::io::Error::new(e.kind(), e.to_string())),
+            ClsError::ConfigError(m) => ClsError::ConfigError(m.clone()),
+        }
+    }
+}
+
 impl ClsError {
     /// Fábrica centralizada: error de sintaxis con span estructurado.
     /// El mensaje queda limpio (sin "(línea N, columna M)" incrustado);
