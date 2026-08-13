@@ -3,7 +3,7 @@ export function saludar(nombre: String) -> String {
 };
 
 export function suma(a: int, b: int) -> int {
-    return a + str(b);
+    return a + b;
 };
 
 export var VERSION = "2.0";
