@@ -108,8 +108,7 @@ impl TypeChecker {
     /// Chequea un módulo con un prelude de módulos importados.
     /// Los tipos (enum/class/alias/interface) del prelude se registran primero,
     /// para que el módulo principal pueda usarlos en anotaciones.
-    pub fn check_with_prelude(&mut self, module: &Module, prelude: &[(String, Module)]) -> ClsResult<()> {
-        if !self.config.check {
+    pub fn check_with_prelude(&mut self, module: &Module, prelude: &[(String, Module)]) -> ClsResult<()> {        if !self.config.check {
             return Ok(());
         }
         self.prelude = prelude.to_vec();
@@ -131,6 +130,15 @@ impl TypeChecker {
             self.check_statement(stmt);
         }
         Ok(())
+    }
+
+    /// Registra las firmas de las funciones host del NODO (intrinsics) en el
+    /// scope global: las llamadas a esos nombres se tipan contra la firma y el
+    /// emisor las compila vía el canal `env.host_call`.
+    pub fn register_host_intrinsics(&mut self, intrinsics: &[crate::middleware::types::HostIntrinsic]) {
+        for i in intrinsics {
+            self.define(&i.name, Type::Fun(i.params.clone(), Box::new(i.ret.clone())));
+        }
     }
 
     fn error(&mut self, msg: &str, span: Span) -> Type {

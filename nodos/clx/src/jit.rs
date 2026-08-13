@@ -29,6 +29,14 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
     let ctx = cls_jit::JitContext {
         native_backend: Arc::new(crate::native::DynamicBackend),
         module_index: Some(&ClxModuleIndexHook),
+        host_intrinsics: &[],
+        host_call_handler: None,
     };
-    cls_jit::run_jit(entry, app_args, target_str, &ctx)
+    // `CLS_JIT_RUNTIME=wasmi` → ejecutar con wasmi (intérprete puro, sin
+    // excepciones CLS). Útil para validar el runtime del navegador desde el CLI.
+    let runtime = match std::env::var("CLS_JIT_RUNTIME").as_deref() {
+        Ok("wasmi") => cls_jit::RuntimeKind::Wasmi,
+        _ => cls_jit::RuntimeKind::Wasmtime,
+    };
+    cls_jit::run_jit_with(entry, app_args, target_str, &ctx, runtime)
 }
