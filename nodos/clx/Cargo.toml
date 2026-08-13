@@ -11,15 +11,14 @@ path = "src/main.rs"
 [dependencies]
 cls-core = { workspace = true, features = ["wasm-backend"] }
 cls-runtime = { workspace = true }
+cls-jit = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = "2"
 zip = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std"] }
 tower-lsp = "0.20"
-wasmtime = { version = "44", features = ["cache", "gc"] }
 libloading = "0.8"
-wasmprinter = "0.2"
 sha2 = "0.10"
 
 

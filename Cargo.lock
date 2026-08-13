@@ -177,6 +177,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cls-jit"
+version = "2.0.0"
+dependencies = [
+ "cls-core",
+ "cls-runtime",
+ "serde_json",
+ "ureq",
+ "wasmprinter 0.2.80",
+ "wasmtime",
+]
+
+[[package]]
 name = "cls-runtime"
 version = "2.0.0"
 dependencies = [
@@ -192,6 +204,7 @@ name = "clx"
 version = "2.0.0"
 dependencies = [
  "cls-core",
+ "cls-jit",
  "cls-runtime",
  "libloading",
  "serde",
@@ -200,8 +213,6 @@ dependencies = [
  "tokio",
  "tower-lsp",
  "ureq",
- "wasmprinter 0.2.80",
- "wasmtime",
  "zip",
 ]
 
