@@ -1,0 +1,55 @@
+{
+  "name": "miapp",
+  "version": "0.1.0",
+  "description": "",
+  "authors": [],
+  "license": "MIT",
+  "registry": "https://registry.cls-lang.org",
+  "entry": "src/main.clsx",
+  "project": {
+    "sourceDir": "src",
+    "outDir": "dist",
+    "target": "executable"
+  },
+  "compiler": {
+    "targetArchitecture": "wasm",
+    "optimizationLevel": "O2",
+    "types": {
+      "check": true,
+      "strict": false,
+      "noImplicitAny": false,
+      "nullSafety": true
+    },
+    "features": {
+      "async": false,
+      "macros": false,
+      "experimental": false
+    },
+    "warnings": {
+      "unusedVariables": "warn",
+      "deadCode": "warn",
+      "treatWarningsAsErrors": false
+    },
+    "sourceMaps": true
+  },
+  "interpreter": {
+    "optimization": false,
+    "mode": "pure-ast",
+    "runtime": {
+      "memoryLimit": "512MB",
+      "stackSize": "8MB",
+      "gc": {
+        "enabled": false,
+        "strategy": "compiled",
+        "threshold": "64MB"
+      }
+    },
+    "sandbox": {
+      "allowFs": false,
+      "allowNet": false,
+      "maxExecutionTime": 5000
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

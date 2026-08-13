@@ -1,0 +1,9 @@
+function main(args: String[]) -> int {
+    print("args:", args.length);
+    var i = 0;
+    while (i < args.length) {
+        print("arg", i, ":", args[i]);
+        i++;
+    }
+    return 0;
+}

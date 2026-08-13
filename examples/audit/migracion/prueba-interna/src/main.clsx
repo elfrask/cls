@@ -1,0 +1,6 @@
+include 'interna2';
+function main(args: String[]) -> int {
+    var r = procesar(5);
+    print("resultado:", r);
+    return 0;
+}

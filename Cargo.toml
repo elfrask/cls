@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "cls-core",
     "cls-runtime",
+    "cls-jit",
     "nodos/clx",
     "nodos/clxr",
 ]
@@ -18,6 +19,7 @@ repository = "https://github.com/frask/cls"
 [workspace.dependencies]
 cls-core = { path = "cls-core" }
 cls-runtime = { path = "cls-runtime" }
+cls-jit = { path = "cls-jit" }
 
 # Las dependencias (wasmtime/Cranelift) compiladas optimizadas → el JIT compila
 # WASM→nativo mucho más rápido incluso en build debug.
