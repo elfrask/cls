@@ -1,0 +1,129 @@
+﻿===== C1: ERRORES ESTANDAR (esperan exit != 0 y trace completo) =====
+--- err-divzero-nested exit=1 bad= hasErrorMsg=True ---
+[91mError de ejecuciâ”œâ”‚n:[0m
+
+[36m1[0m. [33mÃ”Ã¥Ã†[0m main
+[36m2[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-divzero-nested.clsx:9:22 [33mÃ”Ã¥Ã†[0m outer
+  9 |     var r = outer(10);
+    | [90m                     ^[0m
+[36m3[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-divzero-nested.clsx:6:20 [33mÃ”Ã¥Ã†[0m inner
+  6 |     return inner(y);
+    | [90m                   ^[0m
+[36m4[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-divzero-nested.clsx:3:14 [95m[Runtime Error][0m
+  3 |     return y / 0;
+    | [31m             ^[0m
+  [1m[91mError:[0m[0m Divisiâ”œâ”‚n por cero
+
+
+--- err-error-en-modulo exit=1 bad= hasErrorMsg=True ---
+[91mError de ejecuciâ”œâ”‚n:[0m
+
+[36m1[0m. [33mÃ”Ã¥Ã†[0m main
+[36m2[0m. En C:\Users\Frask\Documents\cls\examples\audit\modules\err-error-en-modulo.clsx:5:24 [33mÃ”Ã¥Ã†[0m nivel2
+  5 |     var r = m::nivel2();
+    | [90m                       ^[0m
+[36m3[0m. En err-lib-modulo:5:21 [33mÃ”Ã¥Ã†[0m nivel1
+[36m4[0m. En err-lib-modulo:2:15 [95m[Runtime Error][0m
+  2 |     return 10 / 0;
+    | [31m              ^[0m
+  [1m[91mError:[0m[0m Divisiâ”œâ”‚n por cero
+
+
+--- err-throw-no-capturado exit=1 bad= hasErrorMsg=True ---
+[91mError de ejecuciâ”œâ”‚n:[0m
+
+[36m1[0m. [33mÃ”Ã¥Ã†[0m main
+[36m2[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-throw-no-capturado.clsx:3:31 [95m[Runtime Error][0m
+  3 |     throw("mensaje de prueba");
+    | [31m                              ^[0m
+  [1m[91mError:[0m[0m mensaje de prueba
+
+
+--- err-index-fuera exit=1 bad= hasErrorMsg=True ---
+[91mError de ejecuciâ”œâ”‚n:[0m
+
+[36m1[0m. [33mÃ”Ã¥Ã†[0m main
+[36m2[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-index-fuera.clsx:4:26 [95m[Runtime Error][0m
+  4 |     print("fuera:", a[10]);
+    | [31m                         ^[0m
+  [1m[91mError:[0m[0m â”œÃ¬ndice fuera de rango
+
+
+--- err-miembro-inexistente exit=1 bad= hasErrorMsg=True ---
+[91mError de Compilaciâ”œâ”‚n:[0m
+
+[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-miembro-inexistente.clsx:8:14 [95m[Error de Compilaciâ”œâ”‚n][0m
+  8 |     print(a.y);
+    | [31m             ^[0m
+  [1m[91mError:[0m[0m El campo 'y' no existe en la clase 'A'
+
+
+--- sint-break-fuera exit=1 bad= hasErrorMsg=True ---
+[91mError de Compilaciâ”œâ”‚n:[0m
+
+[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\cmx\sint-break-fuera.clsx:3:5 [95m[Error de Compilaciâ”œâ”‚n][0m
+  3 |     break;
+    | [31m    ^[0m
+  [1m[91mError:[0m[0m break fuera de loop
+
+
+--- err-conversion exit=1 bad= hasErrorMsg=True ---
+[91mError de ejecuciâ”œâ”‚n:[0m
+
+[36m1[0m. [33mÃ”Ã¥Ã†[0m main
+[36m2[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-conversion.clsx:3:32 [95m[Runtime Error][0m
+  3 |     print(int("no es un numero"));
+    | [31m                               ^[0m
+  [1m[91mError:[0m[0m int: no se puede convertir 'no es un numero'
+
+
+===== C2: STRESS =====
+--- stress-aritmetica exit=0 tiempo=805ms bad= ---
+--- stress-prints exit=0 tiempo=2512ms bad= ---
+--- stress-array-1m exit=0 tiempo=10339ms bad= ---
+--- stress-recursion exit=1 tiempo=896ms bad= ---
+  stack-msg-clean=True
+--- stress-fact-100k exit=1 tiempo=952ms bad= ---
+  stack-msg-clean=True
+--- stress-infinite-while exit=TIMEOUT tiempo=15061ms bad= ---
+===== C3: PERF =====
+--- perf-loop exit=0 walltime=1036ms bad= ---
+resultado: 199999990000000
+tiempo_ms: 42
+
+--- perf-fib exit=0 walltime=8104ms bad= ---
+fib(28): 317811
+tiempo_ms: 7098
+
+--- perf-llamadas exit=0 walltime=7905ms bad= ---
+x: 499999500000
+tiempo_ms: 7095
+
+--- perf-math exit=0 walltime=942ms bad= ---
+sum: 21081694.55817993
+tiempo_ms: 151
+
+===== RESUMEN C =====
+
+Label                   Status        
+-----                   ------        
+err-divzero-nested      PASS          
+err-error-en-modulo     PASS          
+err-throw-no-capturado  PASS          
+err-index-fuera         PASS          
+err-miembro-inexistente PASS          
+sint-break-fuera        PASS          
+err-conversion          PASS          
+stress-aritmetica       PASS          
+stress-prints           PASS          
+stress-array-1m         PASS          
+stress-recursion        PASS          
+stress-fact-100k        PASS          
+stress-infinite-while   PASS(expected)
+perf-loop               PASS          
+perf-fib                PASS          
+perf-llamadas           PASS          
+perf-math               PASS          
+
+
+

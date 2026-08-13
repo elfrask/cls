@@ -1,0 +1,7 @@
+import "util" as u;
+function main(args: String[]) -> int {
+    print("llamando...");
+    var r = u::romper();
+    print("r:", r);
+    return 0;
+};

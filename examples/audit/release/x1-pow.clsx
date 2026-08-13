@@ -1,0 +1,20 @@
+# X1 (CRITICO): math.pow - batería completa de límites
+# Esperado: 8, 8, 8, 6.25, 8, [8], 8, 1, 0.5, -8, ~1.5811 - NADA de "Módulo WASM inválido"
+function main(args: String[]) -> int {
+    print("p1:", math.pow(2, 3));         # 8
+    print("p2:", math.pow(2, 3.0));       # 8
+    print("p3:", math.pow(2.0, 3));       # 8
+    print("p4:", math.pow(2.5, 2.0));     # 6.25
+    var x = math.pow(2, 3);
+    print("p5:", x);                       # 8
+    var arr = [math.pow(2, 3)];
+    print("p6:", arr);                     # [8]
+    var a = 2;
+    var b = 3;
+    print("p7:", math.pow(a, b));          # 8
+    print("p8:", math.pow(0, 0));          # 1
+    print("p9:", math.pow(2, -1));         # 0.5
+    print("p10:", math.pow(-2, 3));        # -8
+    print("p11:", math.pow(2.5, 0.5));     # ~1.5811388
+    return 0;
+};

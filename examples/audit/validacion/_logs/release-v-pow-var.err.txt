@@ -1,0 +1,9 @@
+﻿clx.exe : Comando desconocido: 'run --jit C:\Users\Frask\Documents\cls\examples\audit\validacion\v-pow-var.clsx'. Usa 
+'clx -h' para ayuda.
+En C:\Users\Frask\Documents\cls\examples\audit\validacion\_runner.ps1: 15 Carácter: 12
++     $out = & $clx $Args 2> $errFile
++            ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Comando descono...-h' para ayuda.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+

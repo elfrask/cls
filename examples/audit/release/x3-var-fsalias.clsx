@@ -1,0 +1,6 @@
+# X3-variant: import "fs" con alias + f.cwd()
+import "fs" as f;
+function main(args: String[]) -> int {
+    print("cwd:", f.cwd());
+    return 0;
+};

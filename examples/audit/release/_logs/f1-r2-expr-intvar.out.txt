@@ -1,0 +1,9 @@
+f + k expr: 5.5
+f - k expr: -0.5
+f * k expr: 7.5
+f / k expr: 0.8333333333333334
+f == k: false
+f < k: true
+f > k: false
+r = f + k: 5.5
+0.5 * k: 1.5

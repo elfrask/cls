@@ -1,0 +1,11 @@
+literal: [3, 1, 2] len: 3
+push: [3, 1, 2, 4]
+pop: [3, 1, 2] restante: [3, 1, 2]
+shift: [1, 2]
+unshift: [9, 1, 2]
+indexOf: -1 -1
+includes: false false
+join: 9-1-2
+reverse: [2, 1, 9]
+length: 3
+anidado: 3

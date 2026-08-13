@@ -1,0 +1,6 @@
+[91mError en 'C:\Users\Frask\Documents\cls\examples\audit\validacion\F-arrow-empty.clsx':[0m
+[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\validacion\F-arrow-empty.clsx:2:17 [95m[Error de Sintaxis][0m
+  2 |     var h = () => 42;
+    | [31m                ^[0m
+  [1m[91mError:[0m[0m Token inesperado: '>'
+

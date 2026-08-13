@@ -1,0 +1,11 @@
+[JIT-TIMING] lectura                            0.28 ms
+[JIT-TIMING] lexer                              0.23 ms
+[JIT-TIMING] parser                             0.24 ms
+[JIT-TIMING] cach├® CLSÔåÆWASM: HIT (2226 bytes)
+[JIT-TIMING] Engine::default                    4.19 ms
+[JIT-TIMING] Module::new (Cranelift)           12.75 ms
+[JIT-TIMING] Store+Linker                       0.23 ms
+[JIT-TIMING] register hosts                     2.52 ms
+[JIT-TIMING] instantiate                        0.52 ms
+[JIT-TIMING] write_args                         0.18 ms
+[JIT-TIMING] ejecuci├│n main                     0.31 ms

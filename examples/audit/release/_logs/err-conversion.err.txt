@@ -1,0 +1,8 @@
+[91mError de ejecuci├│n:[0m
+
+[36m1[0m. [33mÔåÆ[0m main
+[36m2[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-conversion.clsx:3:32 [95m[Runtime Error][0m
+  3 |     print(int("no es un numero"));
+    | [31m                               ^[0m
+  [1m[91mError:[0m[0m int: no se puede convertir 'no es un numero'
+

@@ -1,0 +1,7 @@
+# X2b: array INT + compound con float -> comportamiento esperado: ERROR claro de tipos
+function main(args: String[]) -> int {
+    var b = [1, 2, 3];
+    b[1] += 1.5;
+    print("b:", b);
+    return 0;
+};
