@@ -1,0 +1,7 @@
+import "leaf_a" as leaf;
+export function nivel2() -> int {
+    return leaf::nivel1() + 1;
+};
+export function nivel3() -> int {
+    return leaf::otra() + 2;
+};

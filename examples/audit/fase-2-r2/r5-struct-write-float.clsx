@@ -1,0 +1,14 @@
+# R5: limites struct write - campo float + string (sin anidacion)
+structure Punto {
+    x: int,
+    y: float,
+    nombre: String,
+};
+function main(args: String[]) -> int {
+    var p = Punto(1, 2.5, "a");
+    print("antes:", p.x, p.y, p.nombre);
+    p.y = 3.14;
+    p.nombre = "texto";
+    print("float:", p.y, "nombre:", p.nombre);
+    return 0;
+};

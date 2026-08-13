@@ -1,0 +1,14 @@
+# R5-iso: struct anidado - SOLO lectura (sin escritura anidada)
+structure Punto {
+    x: int,
+    y: int,
+};
+structure Caja {
+    p: Punto,
+    etiqueta: String,
+};
+function main(args: String[]) -> int {
+    var q = Caja(Punto(10, 20), "caja");
+    print("anidado:", q.p.x, q.p.y, q.etiqueta);
+    return 0;
+};

@@ -1,0 +1,6 @@
+# R8: var x: Int = "a" - caret debe estar en la linea de asignacion
+function main(args: String[]) -> int {
+    var x: int = "a";
+    print(x);
+    return 0;
+};

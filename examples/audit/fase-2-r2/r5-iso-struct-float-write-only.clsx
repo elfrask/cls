@@ -1,0 +1,11 @@
+# R5-iso: struct con campo float - escritura pero SIN print del campo float
+structure Punto {
+    x: int,
+    y: float,
+};
+function main(args: String[]) -> int {
+    var p = Punto(1, 2.5);
+    p.y = 3.14;
+    print("listo");
+    return 0;
+};

@@ -390,11 +390,11 @@ impl Interpreter {
                 self.flow = Flow::Return(val.clone());
                 Ok(val)
             }
-            Statement::Break => {
+            Statement::Break(_) => {
                 self.flow = Flow::Break;
                 Ok(Value::Void)
             }
-            Statement::Continue => {
+            Statement::Continue(_) => {
                 self.flow = Flow::Continue;
                 Ok(Value::Void)
             }

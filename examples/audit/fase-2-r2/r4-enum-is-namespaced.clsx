@@ -1,0 +1,10 @@
+# R4: is con enum namespaced - solo print/is/== (sin for each)
+import "libmod" as lib;
+function main(args: String[]) -> int {
+    var c = lib::Color.Rojo;
+    print("c:", c);
+    print("c is lib::Color:", c is lib::Color);
+    print("c == lib::Color.Rojo:", c == lib::Color.Rojo);
+    print("c == lib::Color.Verde:", c == lib::Color.Verde);
+    return 0;
+};

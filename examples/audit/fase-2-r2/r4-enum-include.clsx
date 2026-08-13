@@ -1,0 +1,12 @@
+# R4: enum via include (sin namespace) - print, is, iteracion
+include "libmod";
+function main(args: String[]) -> int {
+    var c = Color.Rojo;
+    print("c:", c);
+    print("c is Color:", c is Color);
+    print("c == Color.Rojo:", c == Color.Rojo);
+    for each v in (Color) {
+        print("variante:", v);
+    }
+    return 0;
+};

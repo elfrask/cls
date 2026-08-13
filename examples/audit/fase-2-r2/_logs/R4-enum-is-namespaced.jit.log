@@ -1,0 +1,4 @@
+c: Rojo
+c is lib::Color: true
+c == lib::Color.Rojo: true
+c == lib::Color.Verde: false

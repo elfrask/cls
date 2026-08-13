@@ -1,0 +1,10 @@
+# R5-iso: struct con campo int - print de campo int (control: debe funcionar)
+structure Punto {
+    x: int,
+    y: int,
+};
+function main(args: String[]) -> int {
+    var p = Punto(1, 2);
+    print("x:", p.x, "y:", p.y);
+    return 0;
+};

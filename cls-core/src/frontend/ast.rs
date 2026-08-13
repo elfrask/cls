@@ -29,8 +29,10 @@ pub enum Statement {
     Try(TryStatement),
     With(WithStatement),
     Return(Option<Expression>),
-    Break,
-    Continue,
+    /// `Break(Span)` — el span permite ubicar el `break;` en errores.
+    Break(Span),
+    /// `Continue(Span)` — el span permite ubicar el `continue;` en errores.
+    Continue(Span),
 
     // Clases y estructuras
     ClassDecl(ClassDecl),
@@ -808,8 +810,8 @@ impl fmt::Display for Statement {
             Statement::Try(_) => f.write_str("try"),
             Statement::With(_) => f.write_str("with ..."),
             Statement::Return(_) => f.write_str("return"),
-            Statement::Break => f.write_str("break"),
-            Statement::Continue => f.write_str("continue"),
+            Statement::Break(_) => f.write_str("break"),
+            Statement::Continue(_) => f.write_str("continue"),
             Statement::ClassDecl(c) => f.write_fmt(format_args!("class {}", c.name)),
             Statement::StructureDecl(s) => f.write_fmt(format_args!("structure {}", s.name)),
             Statement::InterfaceDecl(i) => f.write_fmt(format_args!("interface {}", i.name)),
