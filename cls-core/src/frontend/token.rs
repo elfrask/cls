@@ -161,6 +161,7 @@ pub enum Operator {
     MinusEqual,     // -=
     StarEqual,      // *=
     SlashEqual,     // /=
+    PercentEqual,   // %=
 
     // Incremento/Decremento
     PlusPlus,       // ++
@@ -190,7 +191,7 @@ impl Operator {
 
     /// Operadores multi-carácter para el lexer
     pub const MULTI: &[&str] = &[
-        "==", "!=", ">=", "<=", "&&", "||", "++", "--", "**", "+=", "-=", "*=", "/=", "=>",
+        "==", "!=", ">=", "<=", "&&", "||", "++", "--", "**", "+=", "-=", "*=", "/=", "%=", "=>",
         "->", "::", "..", "<<", ">>", "//",
     ];
 
@@ -220,6 +221,7 @@ impl Operator {
             "-=" => Some(Self::MinusEqual),
             "*=" => Some(Self::StarEqual),
             "/=" => Some(Self::SlashEqual),
+            "%=" => Some(Self::PercentEqual),
             "++" => Some(Self::PlusPlus),
             "--" => Some(Self::MinusMinus),
             "->" => Some(Self::Arrow),
@@ -432,6 +434,7 @@ impl fmt::Display for Operator {
             Operator::MinusEqual => "-=",
             Operator::StarEqual => "*=",
             Operator::SlashEqual => "/=",
+            Operator::PercentEqual => "%=",
             Operator::PlusPlus => "++",
             Operator::MinusMinus => "--",
             Operator::Arrow => "->",

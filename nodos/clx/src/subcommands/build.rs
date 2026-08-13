@@ -48,7 +48,16 @@ pub fn execute(args: &[String]) -> i32 {
     }
 
     // Crear .clsapp (zip)
-    let file = fs::File::create(&out).unwrap();
+    //
+    // PROVISIONAL (deuda 7.3): empaqueta el source .clsx crudo en el zip hasta que
+    // exista un formato estable de AST serializado. Ver AGENTS.md → "Sistema de
+    // módulos": el plan es empaquetar AST serializado (módulos fuente como .ast) y,
+    // más adelante, .clbin (WASM) dentro del .clsapp/.clslib. NO implementar ahora:
+    // no hay formato estable y el runtime clxr aún espera source.
+    let file = match fs::File::create(&out) {
+        Ok(f) => f,
+        Err(e) => { eprintln!("Error al crear '{}': {}", out, e); return 1; }
+    };
     let mut zip = zip::ZipWriter::new(file);
     let options: zip::write::FileOptions<()> = zip::write::FileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
@@ -62,14 +71,30 @@ pub fn execute(args: &[String]) -> i32 {
         "entry": "source.clsx",
         "format": "source"
     });
-    zip.start_file("manifest.json", options).unwrap();
-    zip.write_all(serde_json::to_string_pretty(&manifest).unwrap().as_bytes()).unwrap();
+
+    if let Err(e) = zip.start_file("manifest.json", options) {
+        eprintln!("Error empaquetando '{}': {}", out, e);
+        return 1;
+    }
+    if let Err(e) = zip.write_all(serde_json::to_string_pretty(&manifest).unwrap().as_bytes()) {
+        eprintln!("Error empaquetando '{}': {}", out, e);
+        return 1;
+    }
 
     // Código fuente
-    zip.start_file("source.clsx", options).unwrap();
-    zip.write_all(source.as_bytes()).unwrap();
+    if let Err(e) = zip.start_file("source.clsx", options) {
+        eprintln!("Error empaquetando '{}': {}", out, e);
+        return 1;
+    }
+    if let Err(e) = zip.write_all(source.as_bytes()) {
+        eprintln!("Error empaquetando '{}': {}", out, e);
+        return 1;
+    }
 
-    zip.finish().unwrap();
+    if let Err(e) = zip.finish() {
+        eprintln!("Error empaquetando '{}': {}", out, e);
+        return 1;
+    }
 
     println!("Empaquetado: {} ({})", out, name);
     0

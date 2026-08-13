@@ -1,0 +1,7 @@
+import "libmod" as lib;
+
+function main(args: String[]) -> int {
+    print("=== type error en modulo ===");
+    print(lib::saludar(123));
+    return 0;
+};

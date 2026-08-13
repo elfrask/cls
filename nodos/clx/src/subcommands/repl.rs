@@ -16,9 +16,9 @@ pub fn execute(_args: &[String]) -> i32 {
 
         let trimmed = line.trim().to_string();
         if trimmed.is_empty() { continue; }
-        if matches!(trimmed.as_str(), ":salir" | ":q" | ":exit") { break; }
+        if matches!(trimmed.as_str(), "exit" | "quit" | ":exit" | ":quit" | ":salir" | ":q") { break; }
         if matches!(trimmed.as_str(), ":help" | ":h") {
-            println!("  :salir / :q / :exit  Salir");
+            println!("  exit / quit / :q / :salir  Salir");
             continue;
         }
 

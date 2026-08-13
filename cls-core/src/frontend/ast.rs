@@ -178,13 +178,16 @@ impl Target {
         let abi = if cfg!(target_env = "msvc") { "msvc" }
         else if cfg!(target_env = "gnu") { "gnu" }
         else if cfg!(target_abi = "eabi") { "eabi" }
-        else if cfg!(target_abi = "elf") { "elf" }
+        else if cfg!(target_abi = "elfv1") { "elfv1" }
+        else if cfg!(target_abi = "elfv2") { "elfv2" }
         else { "" };
         Self {
             os: os.to_string(),
             arch: "cls-arch".to_string(),
             abi: abi.to_string(),
-            platform: if os == "pc" || os != "none" { "pc".to_string() } else { "none".to_string() },
+            // `os` solo puede ser "windows" | "macos" | "linux" | "none", así que
+            // el platform es "pc" para cualquier SO real (la rama "pc" era inalcanzable).
+            platform: if os != "none" { "pc".to_string() } else { "none".to_string() },
         }
     }
 
@@ -390,6 +393,7 @@ pub struct ClassDecl {
     #[serde(default)]
     pub type_params: Vec<TypeParam>,
     /// Visibilidad (export → disponible en módulos importados)
+    #[serde(default)]
     pub visibility: Visibility,
 }
 
@@ -406,6 +410,7 @@ pub struct StructureDecl {
     pub fields: Vec<FieldDecl>,
     pub span: Span,
     /// Visibilidad (export → disponible en módulos importados)
+    #[serde(default)]
     pub visibility: Visibility,
 }
 
@@ -420,7 +425,9 @@ pub struct FieldDecl {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InterfaceDecl {
     pub name: String,
+    #[serde(default)]
     pub type_params: Vec<TypeParam>,
+    #[serde(default)]
     pub fields: Vec<InterfaceField>,
     pub signatures: Vec<SignatureDecl>,
     pub span: Span,
@@ -730,6 +737,137 @@ pub enum CmxChild {
     Element(Box<CmxElement>),
 }
 
+/// Formatea una expresión como código CLS legible (para mensajes de error).
+/// NO usa Debug del AST — el usuario debe poder leer qué falló. Es la única
+/// implementación compartida por typeck y el backend WASM.
+pub fn expr_display(expr: &Expression) -> String {
+    use crate::frontend::token::Operator;
+    match expr {
+        Expression::Literal(l) => match &l.kind {
+            LiteralKind::Int(v) => v.to_string(),
+            LiteralKind::Float(v) => v.to_string(),
+            LiteralKind::String(s) => format!("\"{}\"", s),
+            LiteralKind::Bool(b) => b.to_string(),
+            LiteralKind::Char(c) => format!("'{}'", c),
+            LiteralKind::Null => "null".to_string(),
+            LiteralKind::Unknown => "?".to_string(),
+        },
+        Expression::Identifier(name, _) => name.clone(),
+        Expression::Binary(b) => {
+            let op = match b.op {
+                Operator::Plus => "+",
+                Operator::Minus => "-",
+                Operator::Star => "*",
+                Operator::Slash => "/",
+                Operator::Percent => "%",
+                Operator::StarStar => "**",
+                Operator::StrictEqual => "==",
+                Operator::NotEqual => "!=",
+                Operator::LessThan => "<",
+                Operator::LessEqual => "<=",
+                Operator::GreaterThan => ">",
+                Operator::GreaterEqual => ">=",
+                Operator::And => "&&",
+                Operator::Or => "||",
+                Operator::In => "in",
+                Operator::Is => "is",
+                Operator::Caret => "^",
+                Operator::ShiftLeft => "<<",
+                Operator::ShiftRight => ">>",
+                Operator::PlusEqual => "+=",
+                Operator::MinusEqual => "-=",
+                Operator::StarEqual => "*=",
+                Operator::SlashEqual => "/=",
+                Operator::PercentEqual => "%=",
+                _ => "?",
+            };
+            format!(
+                "({} {} {})",
+                expr_display(&b.left),
+                op,
+                expr_display(&b.right)
+            )
+        }
+        Expression::Unary(u) => {
+            let op = match u.op {
+                UnaryOp::Negate => "-",
+                UnaryOp::Not => "!",
+                UnaryOp::BitwiseNot => "~",
+                UnaryOp::TypeOf => "typeof ",
+                UnaryOp::PostInc => "++",
+                UnaryOp::PostDec => "--",
+                UnaryOp::PreInc => "++",
+                UnaryOp::PreDec => "--",
+            };
+            format!("{}{}", op, expr_display(&u.operand))
+        }
+        Expression::Call(c) => format!(
+            "{}({})",
+            expr_display(&c.callee),
+            c.args
+                .iter()
+                .map(expr_display)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Expression::MemberAccess(m) => format!("{}.{}", expr_display(&m.object), m.member),
+        Expression::Index(i) => format!("{}[{}]", expr_display(&i.object), expr_display(&i.index)),
+        Expression::Array(a) => format!(
+            "[{}]",
+            a.elements
+                .iter()
+                .map(expr_display)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Expression::Tuple(t) => format!(
+            "({})",
+            t.elements
+                .iter()
+                .map(expr_display)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Expression::Record(r) => format!(
+            "{{{}}}",
+            r.entries
+                .iter()
+                .map(|(k, v)| format!("{}: {}", k, expr_display(v)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Expression::ArrowFunction(_) => "fn(...)".to_string(),
+        Expression::Conditional(c) => format!(
+            "({} ? {} : {})",
+            expr_display(&c.condition),
+            expr_display(&c.then_expr),
+            expr_display(&c.else_expr)
+        ),
+        Expression::Assignment(a) => {
+            format!("{} = {}", expr_display(&a.target), expr_display(&a.value))
+        }
+        Expression::Parenthesized(inner, _) => format!("({})", expr_display(inner)),
+        Expression::StringInterpolation(s) => {
+            let mut out = String::from("\"");
+            for part in &s.parts {
+                match part {
+                    InterpolationPart::Text(t) => out.push_str(t),
+                    InterpolationPart::Expr(e) => {
+                        out.push_str("${");
+                        out.push_str(&expr_display(e));
+                        out.push('}');
+                    }
+                }
+            }
+            out.push('"');
+            out
+        }
+        Expression::Cmx(c) => format!("<{} />", c.tag),
+        Expression::NamespaceAccess(ns, name, _) => format!("{}::{}", ns, name),
+        Expression::Await(inner, _) => format!("await {}", expr_display(inner)),
+    }
+}
+
 /// Anotación de tipo
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypeAnnotation {
@@ -793,6 +931,12 @@ pub enum Visibility {
     Protected,
     Export,
     Default,
+}
+
+impl Default for Visibility {
+    fn default() -> Self {
+        Visibility::Default
+    }
 }
 
 impl fmt::Display for Statement {

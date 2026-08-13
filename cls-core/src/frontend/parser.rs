@@ -145,16 +145,16 @@ impl Parser {
 
     fn check_directive(&self) -> bool {
         // Verificar si es #config, #define, etc.
-        false // TODO: implementar
+        false // TODO(dev2): implementar
     }
 
     fn parse_config_directive(&mut self) -> ClsResult<Statement> {
-        // TODO: implementar #config(...)
+        // TODO(dev2): implementar #config(...)
         Err(self.syntax_err("Config directives no implementados aún".to_string()))
     }
 
     fn parse_config(&mut self) -> ClsResult<Statement> {
-        // TODO: implementar
+        // TODO(dev2): implementar
         Err(self.syntax_err("Config no implementado aún".to_string()))
     }
 
@@ -167,7 +167,6 @@ impl Parser {
         {
             return Err(self.syntax_err("Esperaba 'var', 'let' o 'const'"));
         }
-        let _is_const = matches!(self.current_token, _); // TODO: track const vs var
         let name = self.expect_identifier()?;
 
         let type_ann = if self.consume_operator(Operator::Colon) {
@@ -475,7 +474,7 @@ impl Parser {
             _ => {}
         }
 
-        // Phantom: !T �?" el type param no participa en el tipo (no se unifica)
+        // Phantom: !T — el type param no participa en el tipo (no se unifica)
         if self.consume_operator(Operator::Not) {
             let inner = self.parse_base_type()?;
             return Ok(TypeKind::Phantom(Box::new(TypeAnnotation {
@@ -937,9 +936,17 @@ impl Parser {
             None
         };
         
-        // Implements (opcional)
-        let implements = Vec::new(); // TODO
-        
+        // Implements (opcional): `class A implements I, J { ... }`
+        let mut implements = Vec::new();
+        if matches!(&self.current_token, Token::Identifier(w) if w == "implements") {
+            self.advance();
+            loop {
+                implements.push(self.expect_identifier()?);
+                if !self.consume_symbol(Symbol::Comma) {
+                    break;
+                }
+            }
+        }
         self.expect_symbol(Symbol::LBrace)?;
         
         let mut body = Vec::new();
@@ -1160,7 +1167,7 @@ impl Parser {
         Ok(params)
     }
 
-    /// `alias <Name>[<T=Int>] = <tipo>;` �?" alias de tipos (compile-time).
+    /// `alias <Name>[<T=Int>] = <tipo>;` — alias de tipos (compile-time).
     fn parse_alias_decl(&mut self) -> ClsResult<Statement> {
         self.expect_keyword(Keyword::Alias)?;
         let name = self.expect_identifier()?;
@@ -1176,7 +1183,7 @@ impl Parser {
         }))
     }
 
-    /// `enum Nombre { Var1, Var2, Var3, };` �?" variantes constantes con identidad.
+    /// `enum Nombre { Var1, Var2, Var3, };` — variantes constantes con identidad.
     fn parse_enum_decl(&mut self) -> ClsResult<Statement> {
         self.expect_keyword(Keyword::Enum)?;
         let name = self.expect_identifier()?;
@@ -1641,6 +1648,7 @@ impl Parser {
             Token::Operator(Operator::MinusEqual) => Some(Operator::MinusEqual),
             Token::Operator(Operator::StarEqual) => Some(Operator::StarEqual),
             Token::Operator(Operator::SlashEqual) => Some(Operator::SlashEqual),
+            Token::Operator(Operator::PercentEqual) => Some(Operator::PercentEqual),
             _ => None,
         }
     }
@@ -2204,7 +2212,7 @@ impl Parser {
         while i < chars.len() {
             if chars[i] == '$' && i + 1 < chars.len() {
                 if chars[i + 1] == '{' {
-                    // ${expr} �?" parsear expresión
+                    // ${expr} — parsear expresión
                     let mut depth = 1;
                     let mut expr_str = String::new();
                     let mut j = i + 2;
@@ -2235,7 +2243,7 @@ impl Parser {
                     parts.push(InterpolationPart::Expr(expr));
                     i = j; // saltar }
                 } else if chars[i + 1].is_alphabetic() || chars[i + 1] == '_' {
-                    // $var �?" variable lookup
+                    // $var — variable lookup
                     let mut var_name = String::new();
                     let mut j = i + 1;
                     while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_') {
@@ -2308,7 +2316,7 @@ impl Parser {
 
     // ==============================================================
     // HELPERS
-    // �.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.��.�
+    // ──────────────────────────────────────────────────────────────────────────────────────
 
     fn advance(&mut self) {
         if let Some(next) = self.tokens.next() {
@@ -2471,7 +2479,7 @@ fn parse_expr_from_str(expr_str: &str) -> ClsResult<Expression> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frontend::ast::{FunctionModifier, Visibility};
+    use crate::frontend::ast::Visibility;
     use crate::frontend::lexer::Lexer;
 
     fn parse(source: &str) -> Module {

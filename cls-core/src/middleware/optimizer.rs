@@ -1,5 +1,16 @@
 use crate::frontend::ast::*;
 
+// PUNTO DE CONEXIÓN (decisión del agente que edita nodos/clx/src/jit.rs):
+// Conectar entre parse y typeck, ANTES de que el TypeChecker llene el type map:
+//
+//     let module = parser.parse()?;
+//     cls_core::middleware::Optimizer::new().optimize(&mut module);
+//     let mut checker = TypeChecker::new(types_config);
+//
+// El type map (Span → Type) se construye desde los nodos del AST; si el
+// optimizer reemplaza nodos (folding) debe hacerlo ANTES del typeck para que
+// los spans coincidan. Hoy `optimize` es solo un recorrido sin transformaciones.
+
 /// Optimizador de AST de CLS
 pub struct Optimizer;
 

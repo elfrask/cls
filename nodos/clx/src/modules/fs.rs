@@ -56,6 +56,17 @@ fn make_dir(path: &str, vfs: &VfsResolver) -> ClsResult<()> {
     }
 }
 
+/// `fs.listDir` — CONTRATO (deuda 7.5).
+///
+/// Debe devolver un **array real** de nombres de entrada (cada uno un `String`):
+/// aquí (walker) se construye `Value::Array([Value::String(entry), ...])`.
+///
+/// El JIT NO usa este módulo: tiene su propia host function `fs_list_dir` en
+/// `nodos/clx/src/jit.rs` (~línea 1954) que une los nombres con `join(",")` y los
+/// devuelve como un solo string. Para el agente del JIT: la host function debe
+/// construir un array CLS (layout estándar: cabecera len/cap + stride de `[val, tag]`
+/// por elemento, tag `1` = String, igual que los arrays que genera `json_build`) y
+/// devolver `(ptr, tag_array)`. El walker ya cumple el contrato; NO romperlo.
 fn list_dir(path: &str, vfs: &VfsResolver) -> ClsResult<Vec<Value>> {
     if path.contains("://") {
         let entries = vfs.list_dir(path)?;

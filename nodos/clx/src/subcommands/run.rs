@@ -5,6 +5,12 @@ use std::sync::Arc;
 use std::path::Path;
 
 pub fn execute(args: &[String]) -> i32 {
+    // Help manual del subcomando
+    if args.iter().take_while(|a| *a != "--").any(|a| a == "-h" || a == "--help") {
+        print_help();
+        return 0;
+    }
+
     // `clx run --jit <archivo> [-- args...]` → compilación JIT
     let jit = args.iter().take_while(|a| *a != "--").any(|a| a == "--jit" || a == "-j");
 
@@ -112,6 +118,20 @@ pub fn execute(args: &[String]) -> i32 {
             1
         }
     }
+}
+
+fn print_help() {
+    println!("clx run — Ejecutar un programa CLS");
+    println!();
+    println!("Uso: clx run [archivo] [--] [args...]");
+    println!();
+    println!("Opciones:");
+    println!("  --jit, -j               Compilar y ejecutar con el intérprete JIT (CLS → WASM)");
+    println!("  --target <tripla>, -t   Simular el entorno para la directiva 'when'");
+    println!("  -h, --help              Mostrar esta ayuda");
+    println!("  --                      Separar los args de la aplicación");
+    println!();
+    println!("Sin archivo, usa el 'entry' de cls.json (o busca main.clsx).");
 }
 
 fn resolve_entry(args: &[String], config: Option<&ModuleManifest>) -> String {

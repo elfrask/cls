@@ -1,0 +1,6 @@
+import "qalib-type-error" as lib;
+
+function main(args: String[]) -> int {
+    print(lib::suma(1, 2));
+    return 0;
+};

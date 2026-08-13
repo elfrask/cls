@@ -2,11 +2,29 @@ use std::fs;
 use std::path::Path;
 use std::collections::HashSet;
 use cls_core::config::ModuleManifest;
-use cls_core::frontend::ast::{Module, Statement};
+use cls_core::frontend::ast::Module;
 
 pub fn execute(args: &[String]) -> i32 {
     let strict = args.iter().any(|a| a == "--strict");
-    let path = args.iter().find(|a| !a.starts_with("--")).map(|s| s.as_str()).unwrap_or(".");
+
+    // Resolver el objetivo a chequear: argumento > entry de cls.json > error de uso.
+    let path = match args.iter().find(|a| !a.starts_with("--")) {
+        Some(p) => p.to_string(),
+        None => {
+            let entry = ModuleManifest::find_and_load()
+                .ok()
+                .filter(|m| !m.entry.is_empty() && Path::new(&m.entry).exists())
+                .map(|m| m.entry);
+            match entry {
+                Some(e) => e,
+                None => {
+                    eprintln!("Uso: clx check <archivo.clsx|directorio>");
+                    eprintln!("  (o ejecuta desde un proyecto con cls.json que tenga 'entry')");
+                    return 1;
+                }
+            }
+        }
+    };
 
     // Cargar config para tipos
     let mut types_config = ModuleManifest::find_and_load()
@@ -21,7 +39,7 @@ pub fn execute(args: &[String]) -> i32 {
         types_config.strict = true;
     }
 
-    let p = Path::new(path);
+    let p = Path::new(&path);
     if !p.exists() {
         eprintln!("Error: '{}' no encontrado", path);
         return 1;
@@ -30,7 +48,7 @@ pub fn execute(args: &[String]) -> i32 {
     let files: Vec<String> = if p.is_dir() {
         scan_clsx_files(p)
     } else {
-        vec![path.to_string()]
+        vec![path.clone()]
     };
 
     if files.is_empty() {
@@ -109,8 +127,8 @@ pub fn execute(args: &[String]) -> i32 {
                 let idx = (raw_line / 100000) as usize;
                 let offset = idx * 100000;
                 let real_line = raw_line - offset as u32;
-                if let Some((_, src, _)) = imports.get(idx.saturating_sub(1)) {
-                    (format!("{} (módulo importado)", file), real_line, src.clone())
+                if let Some((path, src, _)) = imports.get(idx.saturating_sub(1)) {
+                    (path.clone(), real_line, src.clone())
                 } else {
                     (file.clone(), raw_line, source.clone())
                 }

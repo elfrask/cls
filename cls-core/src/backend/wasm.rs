@@ -30,7 +30,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use wasm_encoder::{
     BlockType, Catch, CodeSection, ConstExpr, DataSection, DataSegment, DataSegmentMode,
-    ElementMode, ElementSection, Elements, EntityType, ExportKind, ExportSection, Function,
+    ElementSection, Elements, EntityType, ExportKind, ExportSection, Function,
     FunctionSection, GlobalSection, GlobalType, Ieee64, ImportSection, Instruction, MemArg,
     MemorySection, MemoryType, Module as WasmModule, RefType, TableSection, TableType, TagKind,
     TagSection, TagType, TypeSection, ValType,
@@ -118,10 +118,13 @@ pub enum HostFn {
     CmxAddChild,
     CmxToString,
     PrintAny,
+    AnyMember,
+    AnyIndex,
     FnHandle,
     FnToString,
     FnEnter,
     FnExit,
+    CallSite,
 }
 
 impl HostFn {
@@ -207,10 +210,13 @@ impl HostFn {
             CmxAddChild => "cmx_add_child",
             CmxToString => "cmx_to_string",
             PrintAny => "print_any",
+            AnyMember => "any_member",
+            AnyIndex => "any_index",
             FnHandle => "fn_handle",
             FnToString => "fn_to_string",
             FnEnter => "fn_enter",
             FnExit => "fn_exit",
+            CallSite => "fn_call_site",
         }
     }
 
@@ -303,6 +309,14 @@ impl HostFn {
             ),
             CmxToString => (i64p.clone(), vec![ValType::I64]),
             PrintAny => (vec![ValType::I64, ValType::I64], vec![]),
+            AnyMember => (
+                vec![ValType::I64, ValType::I64, ValType::I64],
+                vec![ValType::I64, ValType::I64],
+            ),
+            AnyIndex => (
+                vec![ValType::I64, ValType::I64, ValType::I64],
+                vec![ValType::I64, ValType::I64],
+            ),
             FnHandle => (
                 vec![ValType::I64, ValType::I64, ValType::I64],
                 vec![ValType::I64],
@@ -313,6 +327,10 @@ impl HostFn {
                 vec![],
             ),
             FnExit => (vec![], vec![]),
+            CallSite => (
+                vec![ValType::I64, ValType::I64],
+                vec![],
+            ),
         }
     }
 }
@@ -944,7 +962,6 @@ impl<'a> FuncEmitter<'a> {
             Type::Void => vec![],
             r => vec![was_type(&r)?.val_type()],
         };
-        let tidx = self.register_func_type(pv.clone(), rv.clone());
         // nuevo array [cap][len][ret...] del mismo tamaño que el original.
         let i = self.fresh_local();
         let new_ptr = self.fresh_local();
@@ -1075,14 +1092,15 @@ impl<'a> FuncEmitter<'a> {
             table_index: 0,
         });
         self.body.push(Instruction::Else);
-        // simple: push [elem, tabla]
+        // simple: push [capturas=0, elem, tabla]
+        self.body.push(Instruction::I64Const(0));
         self.body.push(Instruction::LocalGet(elem_tmp));
         self.body.push(Instruction::LocalGet(f_handle));
         self.body.push(Instruction::I64Const(1));
         self.body.push(Instruction::I64ShrU);
         self.body.push(Instruction::I32WrapI64);
         self.body.push(Instruction::CallIndirect {
-            type_index: tidx,
+            type_index: tidx_caps,
             table_index: 0,
         });
         self.body.push(Instruction::End);
@@ -1128,9 +1146,15 @@ impl<'a> FuncEmitter<'a> {
 
     /// `for each x [and i] in (col)` sobre array/tuple.
     fn emit_foreach(&mut self, fe: &ForEachStatement) -> ClsResult<()> {
-        // Enum: `for each v in (Nivel)` → loop 0..variants.len()
-        if let Expression::Identifier(name, _) = &fe.iterable {
-            if let Some((def_id, variants)) = self.enum_defs.get(name).cloned() {
+        // Enum: `for each v in (Nivel)` o `for each v in (lib::Color)` (namespaced)
+        // → loop 0..variants.len()
+        let enum_key = match &fe.iterable {
+            Expression::Identifier(name, _) => Some(name.clone()),
+            Expression::NamespaceAccess(ns, name, _) => Some(format!("{}::{}", ns, name)),
+            _ => None,
+        };
+        if let Some(key) = enum_key {
+            if let Some((def_id, variants)) = self.enum_defs.get(&key).cloned() {
                 let n = variants.len() as i64;
                 let i = self.fresh_local();
                 self.body.push(Instruction::I64Const(0));
@@ -1714,7 +1738,8 @@ impl<'a> FuncEmitter<'a> {
 
     /// Emite `env.fn_enter(nombre, line, col)` al inicio de una función CLS.
     /// Registra la función en el shadow call stack del host (para el trace de
-    /// errores de runtime).
+    /// errores de runtime). `main` (la entrada) se registra sin ubicación
+    /// (línea 0): el formateador lo muestra como `→ main` sin línea.
     fn emit_fn_enter(&mut self, f: &FunctionDecl) -> ClsResult<()> {
         let display = f
             .name
@@ -1725,12 +1750,24 @@ impl<'a> FuncEmitter<'a> {
             .to_string();
         let name_idx = self.intern_string(&display);
         self.emit_load_str(name_idx);
-        let line = f.span.start_line;
-        let col = f.span.start_col;
+        let (line, col) = if f.name == "main" {
+            (0, 0)
+        } else {
+            (f.span.start_line, f.span.start_col)
+        };
         self.body.push(Instruction::I64Const(line as i64));
         self.body.push(Instruction::I64Const(col as i64));
         self.host.call(HostFn::FnEnter, &mut self.body);
         Ok(())
+    }
+
+    /// Emite `env.fn_call_site(line, col)` con el span del call site (la llamada
+    /// dentro del llamador). El host lo guarda como pendiente; el `fn_enter` del
+    /// callee lo consume como span del frame.
+    fn emit_call_site(&mut self, span: &Span) {
+        self.body.push(Instruction::I64Const(span.start_line as i64));
+        self.body.push(Instruction::I64Const(span.start_col as i64));
+        self.host.call(HostFn::CallSite, &mut self.body);
     }
 
     /// Emite `env.fn_exit()` antes de salir de una función CLS.
@@ -2110,14 +2147,15 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Const(def_id as i64));
                 self.body.push(Instruction::I64Eq);
             }
-            PlusEqual | MinusEqual | StarEqual | SlashEqual => {
+            PlusEqual | MinusEqual | StarEqual | SlashEqual | PercentEqual => {
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;
                 match b.op {
                     PlusEqual => self.body.push(Instruction::I64Add),
                     MinusEqual => self.body.push(Instruction::I64Sub),
                     StarEqual => self.body.push(Instruction::I64Mul),
-                    _ => self.body.push(Instruction::I64DivS),
+                    SlashEqual => self.body.push(Instruction::I64DivS),
+                    _ => self.body.push(Instruction::I64RemS),
                 }
             }
             op => {
@@ -2318,14 +2356,17 @@ impl<'a> FuncEmitter<'a> {
                             Operator::PlusEqual => self.body.push(Instruction::F64Add),
                             Operator::MinusEqual => self.body.push(Instruction::F64Sub),
                             Operator::StarEqual => self.body.push(Instruction::F64Mul),
-                            _ => self.body.push(Instruction::F64Div),
+                            Operator::SlashEqual => self.body.push(Instruction::F64Div),
+                            // `%=` float: WASM no tiene resto float → host fmod.
+                            _ => self.host.call(HostFn::Fmod, &mut self.body),
                         }
                     } else {
                         match op {
                             Operator::PlusEqual => self.body.push(Instruction::I64Add),
                             Operator::MinusEqual => self.body.push(Instruction::I64Sub),
                             Operator::StarEqual => self.body.push(Instruction::I64Mul),
-                            _ => self.body.push(Instruction::I64DivS),
+                            Operator::SlashEqual => self.body.push(Instruction::I64DivS),
+                            _ => self.body.push(Instruction::I64RemS),
                         }
                     }
                 } else {
@@ -3011,8 +3052,8 @@ impl<'a> FuncEmitter<'a> {
                             "sqrt" | "pow" | "min" | "max" | "floor" | "ceil" | "round"
                             | "random" | "sin" | "cos" | "tan" | "log" => Some(WasTy::F64),
                             "range" => Some(WasTy::I64),
-                            // `abs`/`pow` devuelven el tipo del primer argumento.
-                            "abs" | "pow" => {
+                            // `abs` devuelve el tipo del primer argumento.
+                            "abs" => {
                                 let arg_ty = c.args.first()
                                     .and_then(|a| self.types.get(&expr_span(a)))
                                     .cloned()
@@ -3169,13 +3210,15 @@ impl<'a> FuncEmitter<'a> {
                 for a in &c.args {
                     self.emit_expression(a)?;
                 }
+                let callsite = c.span.clone();
                 let mut cur = Some(name.to_string());
-                while let Some(c) = cur {
-                    if let Some(idx) = self.func_indexes.get(&format!("{}::__ctor", c)) {
+                while let Some(cls) = cur {
+                    if let Some(idx) = self.func_indexes.get(&format!("{}::__ctor", cls)) {
+                        self.emit_call_site(&callsite);
                         self.body.push(Instruction::Call(*idx));
                         break;
                     }
-                    cur = self.class_defs.get(&c).and_then(|i| i.parent.clone());
+                    cur = self.class_defs.get(&cls).and_then(|i| i.parent.clone());
                 }
                 self.body.push(Instruction::LocalGet(obj));
                 return Ok(());
@@ -3212,6 +3255,7 @@ impl<'a> FuncEmitter<'a> {
                                 for a in &c.args {
                                     self.emit_expression(a)?;
                                 }
+                                self.emit_call_site(&c.span);
                                 self.body.push(Instruction::Call(*idx));
                                 return Ok(());
                             }
@@ -3290,6 +3334,7 @@ impl<'a> FuncEmitter<'a> {
                         for a in &c.args {
                             self.emit_expression(a)?;
                         }
+                        self.emit_call_site(&c.span);
                         self.body.push(Instruction::Call(idx));
                         return Ok(());
                     }
@@ -3502,7 +3547,7 @@ impl<'a> FuncEmitter<'a> {
                             self.body.push(Instruction::LocalGet(arr));
                             self.body.push(Instruction::I64Const(n));
                             self.emit_i64_store(8);
-                            for (i, (fname, w, off)) in ordered.iter().enumerate() {
+                            for (i, (_, w, off)) in ordered.iter().enumerate() {
                                 self.body.push(Instruction::LocalGet(arr));
                                 self.body.push(Instruction::I64Const(16 + (i as i64) * 8));
                                 self.body.push(Instruction::I64Add);
@@ -3808,6 +3853,7 @@ impl<'a> FuncEmitter<'a> {
                 for arg in &c.args {
                     self.emit_expression(arg)?;
                 }
+                self.emit_call_site(&c.span);
                 self.body.push(Instruction::Call(fidx));
                 return Ok(());
             }
@@ -3839,6 +3885,7 @@ impl<'a> FuncEmitter<'a> {
                         }
                     }
                 }
+                self.emit_call_site(&c.span);
                 self.body.push(Instruction::Call(fidx));
                 return Ok(());
             }
@@ -3855,10 +3902,12 @@ impl<'a> FuncEmitter<'a> {
                 r => vec![was_type(r)?.val_type()],
             };
             // Firma uniforme (B5): closure = [capturas(i64), params...].
-            // Funcion simple = [params...]. El dispatch usa tag-bit + aplanado.
+            // Toda función CLS (top-level y arrows) se compila con el capturas
+            // como primer param. El dispatch usa tag-bit: impar = closure (lee
+            // el ptr de capturas del handle en memoria); par = función simple
+            // (capturas = 0 literal, sin handle).
             let mut pv_closure = vec![ValType::I64];
             pv_closure.extend(pv.iter().copied());
-            let tidx_simple = self.register_func_type(pv.clone(), rv.clone());
             let tidx_closure = self.register_func_type(pv_closure, rv.clone());
             // v = eval(callee); valor con tag (par = simple, impar = closure).
             self.emit_expression(&c.callee)?;
@@ -3910,12 +3959,14 @@ impl<'a> FuncEmitter<'a> {
                 memory_index: 0,
             }));
             self.body.push(Instruction::I32WrapI64);
+            self.emit_call_site(&c.span);
             self.body.push(Instruction::CallIndirect {
                 type_index: tidx_closure,
                 table_index: 0,
             });
             self.body.push(Instruction::Else);
-            // Rama simple (par): tabla_idx = v>>1; push [args..., tabla_idx].
+            // Rama simple (par): tabla_idx = v>>1; push [capturas=0, args..., tabla_idx].
+            self.body.push(Instruction::I64Const(0));
             for arg in &c.args {
                 self.emit_expression(arg)?;
             }
@@ -3926,8 +3977,9 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Const(1));
             self.body.push(Instruction::I64ShrU);
             self.body.push(Instruction::I32WrapI64);
+            self.emit_call_site(&c.span);
             self.body.push(Instruction::CallIndirect {
-                type_index: tidx_simple,
+                type_index: tidx_closure,
                 table_index: 0,
             });
             self.body.push(Instruction::End);
@@ -4006,7 +4058,7 @@ impl<'a> FuncEmitter<'a> {
 
     /// Formatea una tupla `(e0, e1, ...)` con repr (strings entre comillas), como
     /// el walker. El ptr de la tupla ya está en el stack.
-    fn emit_tuple_to_string(&mut self, slots: &[Type], arg: &Expression) -> ClsResult<()> {
+    fn emit_tuple_to_string(&mut self, slots: &[Type], _arg: &Expression) -> ClsResult<()> {
         let ptr = self.fresh_local();
         self.body.push(Instruction::LocalSet(ptr));
         let open = self.intern_string("(");
@@ -4193,24 +4245,21 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
             // `app.tag`: puede ser un string (tag minúscula) o un handle de función
-            // (tag mayúscula). Despachar por tag-bit: handle = (ptr<<1)|1 (bits
-            // altos cero, impar); string CLS = (off<<32)|len (bits altos != 0).
+            // (tag mayúscula). Despachar por tag-bit: handle (par O impar) =
+            // bits altos cero; string CLS = (off<<32)|len (bits altos != 0).
             if matches!(obj_ty, Some(Type::Cmx)) && m.member == "tag" {
                 self.emit_expression(&m.object)?;
                 self.emit_cmx_field(0)?;
                 let v = self.fresh_local();
                 self.body.push(Instruction::LocalSet(v));
-                // if (v>>32 == 0) && (v&1 == 1) → handle → FnToString
+                // if (v>>32 == 0) && (v != 0) → handle → FnToString
                 self.body.push(Instruction::LocalGet(v));
                 self.body.push(Instruction::I64Const(32));
                 self.body.push(Instruction::I64ShrU);
                 self.body.push(Instruction::I64Eqz);
                 self.body.push(Instruction::LocalGet(v));
-                self.body.push(Instruction::I64Const(1));
-                self.body.push(Instruction::I64And);
-                self.body.push(Instruction::I32WrapI64);
-                self.body.push(Instruction::I32Const(1));
-                self.body.push(Instruction::I32Eq);
+                self.body.push(Instruction::I64Eqz);
+                self.body.push(Instruction::I32Eqz);
                 self.body.push(Instruction::I32And);
                 self.block_depth += 1;
                 self.body.push(Instruction::If(BlockType::Empty));
@@ -4222,6 +4271,25 @@ impl<'a> FuncEmitter<'a> {
                 self.host.call(HostFn::PrintStr, &mut self.body);
                 self.body.push(Instruction::End);
                 self.block_depth -= 1;
+                return Ok(());
+            }
+        }
+        // Cadenas de acceso sobre `Any`/Record (json.parse anidado): `o.x[0]`,
+        // `o.a.c`, `o.a.b[0]`. El objeto de la cadena tiene tipo `Any` o Record;
+        // despachar por tag en runtime y formatear el valor (val, tag) real.
+        if let Expression::Index(ix) = arg {
+            let obj_ty = self.types.get(&expr_span(&ix.object)).cloned();
+            if matches!(obj_ty, Some(Type::Any)) {
+                self.emit_any_chain(arg)?;
+                self.host.call(HostFn::PrintAny, &mut self.body);
+                return Ok(());
+            }
+        }
+        if let Expression::MemberAccess(m) = arg {
+            let obj_ty = self.types.get(&expr_span(&m.object)).cloned();
+            if matches!(obj_ty, Some(Type::Any)) {
+                self.emit_any_chain(arg)?;
+                self.host.call(HostFn::PrintAny, &mut self.body);
                 return Ok(());
             }
         }
@@ -5121,7 +5189,10 @@ impl<'a> FuncEmitter<'a> {
             Type::Int => {}
             Type::Float => self.body.push(Instruction::I64TruncSatF64S),
             Type::Bool => self.body.push(Instruction::I64ExtendI32U),
-            Type::String => self.host.call(HostFn::ParseInt, &mut self.body),
+            Type::String => {
+                self.emit_call_site(&span);
+                self.host.call(HostFn::ParseInt, &mut self.body)
+            }
             _ => {}
         }
         Ok(())
@@ -5137,7 +5208,10 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64ExtendI32U);
                 self.body.push(Instruction::F64ConvertI64S);
             }
-            Type::String => self.host.call(HostFn::ParseFloat, &mut self.body),
+            Type::String => {
+                self.emit_call_site(&span);
+                self.host.call(HostFn::ParseFloat, &mut self.body)
+            }
             _ => {}
         }
         Ok(())
@@ -5324,6 +5398,53 @@ impl<'a> FuncEmitter<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Tag runtime estático de un tipo (paridad con `fmt_val_to_string` del host):
+    /// 0=int,1=string,2=float,3=bool,4=char,5=cmx,6=array,7=record.
+    fn any_static_tag(&self, t: &Type) -> i64 {
+        match t {
+            Type::Record(_, _) => 7,
+            Type::Array(_) => 6,
+            Type::String => 1,
+            Type::Bool => 3,
+            Type::Float | Type::F32 | Type::F64 => 2,
+            Type::Char => 4,
+            Type::Cmx => 5,
+            _ => 0,
+        }
+    }
+
+    /// Evalúa una cadena de acceso `o.a.c`, `o.x[0]`, `o.a.b[0]` sobre valores
+    /// `Any`/Record de json.parse, despachando por tag en runtime. Deja `(val, tag)`
+    /// en el stack. La base (raíz de la cadena) se emite con su tag estático.
+    fn emit_any_chain(&mut self, expr: &Expression) -> ClsResult<()> {
+        match expr {
+            Expression::MemberAccess(m) => {
+                self.emit_any_chain(&m.object)?;
+                let k = self.intern_string(&m.member);
+                self.emit_load_str(k);
+                self.host.call(HostFn::AnyMember, &mut self.body);
+                Ok(())
+            }
+            Expression::Index(i) => {
+                self.emit_any_chain(&i.object)?;
+                self.emit_expression(&i.index)?;
+                self.host.call(HostFn::AnyIndex, &mut self.body);
+                Ok(())
+            }
+            other => {
+                self.emit_expression(other)?;
+                let t = self
+                    .types
+                    .get(&expr_span(other))
+                    .cloned()
+                    .unwrap_or(Type::Any);
+                let tag = self.any_static_tag(&t);
+                self.body.push(Instruction::I64Const(tag));
+                Ok(())
+            }
+        }
     }
 
     /// Member access de primitivos: `.length` sobre tuplas/arrays, variantes de enum.
@@ -5550,6 +5671,15 @@ impl<'a> FuncEmitter<'a> {
                 } else {
                     Err(self.unsupported_expr(&Expression::MemberAccess(m.clone())))
                 }
+            }
+            Type::Any => {
+                // `o.a.c` donde `o.a` es Any (json.parse anidado): despachar por tag.
+                let expr = Expression::MemberAccess(m.clone());
+                self.emit_any_chain(&expr)?;
+                // Resultado (val, tag) en el stack → dejar solo el val (el tag se
+                // pierde en un valor Any; los prints usan emit_print_arg con PrintAny).
+                self.body.push(Instruction::Drop);
+                Ok(())
             }
             _ => Err(self.unsupported_expr(&Expression::MemberAccess(m.clone()))),
         }
@@ -5917,6 +6047,14 @@ impl<'a> FuncEmitter<'a> {
     fn emit_index_get(&mut self, i: &IndexExpr) -> ClsResult<()> {
         // Record: r["key"] → record_get(ptr, key)
         let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
+        // `o.x[0]` con `o.x` Any (json.parse anidado): indexar despachando por tag.
+        if matches!(obj_ty, Some(Type::Any)) {
+            let expr = Expression::Index(i.clone());
+            self.emit_any_chain(&expr)?;
+            // Resultado (val, tag) → dejar solo el val.
+            self.body.push(Instruction::Drop);
+            return Ok(());
+        }
         if matches!(obj_ty, Some(Type::Record(_, _))) {
             self.emit_expression(&i.object)?;
             self.emit_expression(&i.index)?;
@@ -6207,7 +6345,11 @@ impl<'a> FuncEmitter<'a> {
 fn is_compound(op: Operator) -> bool {
     matches!(
         op,
-        Operator::PlusEqual | Operator::MinusEqual | Operator::StarEqual | Operator::SlashEqual
+        Operator::PlusEqual
+            | Operator::MinusEqual
+            | Operator::StarEqual
+            | Operator::SlashEqual
+            | Operator::PercentEqual
     )
 }
 
@@ -6314,10 +6456,16 @@ fn apply_compound_ty(
         (Operator::MinusEqual, WasTy::F64) => Instruction::F64Sub,
         (Operator::StarEqual, WasTy::F64) => Instruction::F64Mul,
         (Operator::SlashEqual, WasTy::F64) => Instruction::F64Div,
+        (Operator::PercentEqual, WasTy::F64) => {
+            return Err(crate::error::ClsError::CompileError(
+                "`%=` sobre un elemento float no soportado por el JIT (usa el identificador)".to_string(),
+            ))
+        }
         (Operator::PlusEqual, _) => Instruction::I64Add,
         (Operator::MinusEqual, _) => Instruction::I64Sub,
         (Operator::StarEqual, _) => Instruction::I64Mul,
         (Operator::SlashEqual, _) => Instruction::I64DivS,
+        (Operator::PercentEqual, _) => Instruction::I64RemS,
         _ => {
             return Err(crate::error::ClsError::CompileError(
                 "Operador compuesto no soportado por el JIT".to_string(),
@@ -6348,132 +6496,9 @@ fn type_name_str(t: &Type) -> &'static str {
 }
 
 /// Formatea una expresión como código CLS legible (para mensajes de error).
-/// NO usa Debug del AST — el usuario debe poder leer qué falló.
+/// Implementación única en `cls_core::frontend::ast::expr_display`.
 fn expr_display(expr: &Expression) -> String {
-    use crate::frontend::token::Operator;
-    match expr {
-        Expression::Literal(l) => match &l.kind {
-            LiteralKind::Int(v) => v.to_string(),
-            LiteralKind::Float(v) => v.to_string(),
-            LiteralKind::String(s) => format!("\"{}\"", s),
-            LiteralKind::Bool(b) => b.to_string(),
-            LiteralKind::Char(c) => format!("'{}'", c),
-            LiteralKind::Null => "null".to_string(),
-            LiteralKind::Unknown => "?".to_string(),
-        },
-        Expression::Identifier(name, _) => name.clone(),
-        Expression::Binary(b) => {
-            let op = match b.op {
-                Operator::Plus => "+",
-                Operator::Minus => "-",
-                Operator::Star => "*",
-                Operator::Slash => "/",
-                Operator::Percent => "%",
-                Operator::StarStar => "**",
-                Operator::StrictEqual => "==",
-                Operator::NotEqual => "!=",
-                Operator::LessThan => "<",
-                Operator::LessEqual => "<=",
-                Operator::GreaterThan => ">",
-                Operator::GreaterEqual => ">=",
-                Operator::And => "&&",
-                Operator::Or => "||",
-                Operator::In => "in",
-                Operator::Is => "is",
-                Operator::Caret => "^",
-                Operator::ShiftLeft => "<<",
-                Operator::ShiftRight => ">>",
-                Operator::PlusEqual => "+=",
-                Operator::MinusEqual => "-=",
-                Operator::StarEqual => "*=",
-                Operator::SlashEqual => "/=",
-                _ => "?",
-            };
-            format!(
-                "({} {} {})",
-                expr_display(&b.left),
-                op,
-                expr_display(&b.right)
-            )
-        }
-        Expression::Unary(u) => {
-            let op = match u.op {
-                crate::frontend::ast::UnaryOp::Negate => "-",
-                crate::frontend::ast::UnaryOp::Not => "!",
-                crate::frontend::ast::UnaryOp::BitwiseNot => "~",
-                crate::frontend::ast::UnaryOp::TypeOf => "typeof ",
-                crate::frontend::ast::UnaryOp::PostInc => "++",
-                crate::frontend::ast::UnaryOp::PostDec => "--",
-                crate::frontend::ast::UnaryOp::PreInc => "++",
-                crate::frontend::ast::UnaryOp::PreDec => "--",
-            };
-            format!("{}{}", op, expr_display(&u.operand))
-        }
-        Expression::Call(c) => format!(
-            "{}({})",
-            expr_display(&c.callee),
-            c.args
-                .iter()
-                .map(expr_display)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        Expression::MemberAccess(m) => format!("{}.{}", expr_display(&m.object), m.member),
-        Expression::Index(i) => format!("{}[{}]", expr_display(&i.object), expr_display(&i.index)),
-        Expression::Array(a) => format!(
-            "[{}]",
-            a.elements
-                .iter()
-                .map(expr_display)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        Expression::Tuple(t) => format!(
-            "({})",
-            t.elements
-                .iter()
-                .map(expr_display)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        Expression::Record(r) => format!(
-            "{{{}}}",
-            r.entries
-                .iter()
-                .map(|(k, v)| format!("{}: {}", k, expr_display(v)))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        Expression::ArrowFunction(_) => "fn(...)".to_string(),
-        Expression::Conditional(c) => format!(
-            "({} ? {} : {})",
-            expr_display(&c.condition),
-            expr_display(&c.then_expr),
-            expr_display(&c.else_expr)
-        ),
-        Expression::Assignment(a) => {
-            format!("{} = {}", expr_display(&a.target), expr_display(&a.value))
-        }
-        Expression::Parenthesized(inner, _) => format!("({})", expr_display(inner)),
-        Expression::StringInterpolation(s) => {
-            let mut out = String::from("\"");
-            for part in &s.parts {
-                match part {
-                    InterpolationPart::Text(t) => out.push_str(t),
-                    InterpolationPart::Expr(e) => {
-                        out.push_str("${");
-                        out.push_str(&expr_display(e));
-                        out.push('}');
-                    }
-                }
-            }
-            out.push('"');
-            out
-        }
-        Expression::Cmx(c) => format!("<{} />", c.tag),
-        Expression::NamespaceAccess(ns, name, _) => format!("{}::{}", ns, name),
-        Expression::Await(inner, _) => format!("await {}", expr_display(inner)),
-    }
+    crate::frontend::ast::expr_display(expr)
 }
 
 fn statement_display(stmt: &Statement) -> String {
@@ -6495,26 +6520,26 @@ fn annotation_to_type(ann: &TypeAnnotation) -> Type {
 }
 
 /// Compila un Module tipado a un binario WASM.
-pub struct WasmBackend {
-    types: HashMap<Span, Type>,
+/// Backend WASM. Toma el type map `Span → Type` por referencia (el caller —
+/// `jit.rs` — mantiene el `TypeChecker` vivo durante la emisión) para no clonar
+/// el mapa en cada compilación.
+pub struct WasmBackend<'a> {
+    types: &'a HashMap<Span, Type>,
     target: Target,
 }
 
-impl WasmBackend {
-    pub fn new(types: HashMap<Span, Type>) -> Self {
-        Self {
-            types,
-            target: Target::host(),
-        }
+impl<'a> WasmBackend<'a> {
+    pub fn new(types: &'a HashMap<Span, Type>) -> Self {
+        Self::with_target(types, Target::host())
     }
 
     /// Backend con un target explícito (para `when` compile-time).
-    pub fn with_target(types: HashMap<Span, Type>, target: Target) -> Self {
+    pub fn with_target(types: &'a HashMap<Span, Type>, target: Target) -> Self {
         Self { types, target }
     }
 
     pub fn emit(&self, module: &Module) -> ClsResult<Vec<u8>> {
-        let mut engine = Engine::new(&self.types, self.target.clone());
+        let mut engine = Engine::new(self.types, self.target.clone());
         engine.emit(module)
     }
 }
@@ -6612,14 +6637,6 @@ struct ClassInfo {
     total: i64,
 }
 
-/// Definición de una extensión compilada (import `env.<sym>__<sig>@<lib>`).
-#[derive(Clone)]
-struct NativeSig {
-    lib: String,
-    params: Vec<char>,
-    ret: char,
-}
-
 /// Código de tipo nativo para la firma de extensiones: i=int, f=float, b=bool,
 /// c=char, s=string, v=void. El nombre del import codifica ret+params.
 fn ty_code(t: &Type) -> (char, WasTy) {
@@ -6696,7 +6713,7 @@ impl<'a> Engine<'a> {
             eh_handler_ty: 0,
             elements_sec: ElementSection::new(),
             class_defs: HashMap::new(),
-            next_table_slot: 0,
+            next_table_slot: 1,
             cls_funcs_extra: Vec::new(),
             method_type_indexes: HashMap::new(),
             pending_class_methods: Vec::new(),
@@ -6796,6 +6813,37 @@ impl<'a> Engine<'a> {
         }
     }
 
+    /// Tipo concreto de un campo de struct/clase. Si la anotación no resuelve a
+    /// un tipo concreto (`Any`/`Unknown`), se intenta el type map (el campo tiene
+    /// un span); si el kind es un tipo nombrado (struct/clase/enum) se trata como
+    /// puntero (i64); si nada resuelve, error claro en vez de asumir i64.
+    fn resolve_field_type(
+        &self,
+        owner: &str,
+        field: &str,
+        ann: &TypeAnnotation,
+    ) -> ClsResult<Type> {
+        let t = annotation_to_type(ann);
+        if !matches!(t, Type::Any | Type::Unknown) {
+            return Ok(t);
+        }
+        if let Some(rt) = self.types.get(&ann.span).cloned() {
+            if !matches!(rt, Type::Any | Type::Unknown) {
+                return Ok(rt);
+            }
+        }
+        if let TypeKind::Named(name, args) = &ann.kind {
+            return Ok(Type::Named(
+                name.clone(),
+                args.iter().map(annotation_to_type).collect(),
+            ));
+        }
+        Err(crate::error::ClsError::CompileError(format!(
+            "Campo '{}' de '{}' con tipo desconocido (el JIT requiere un tipo concreto)",
+            field, owner
+        )))
+    }
+
     fn emit(&mut self, module: &Module) -> ClsResult<Vec<u8>> {
         self.collect_functions(module)?;
 
@@ -6816,7 +6864,7 @@ impl<'a> Engine<'a> {
                 let mut offsets = Vec::new();
                 let mut off = 16i64;
                 for f in &s.fields {
-                    let t = annotation_to_type(&f.type_ann);
+                    let t = self.resolve_field_type(&s.name, &f.name, &f.type_ann)?;
                     let w = was_type(&t)?;
                     offsets.push(off);
                     fields.push((f.name.clone(), t, w));
@@ -6858,24 +6906,23 @@ impl<'a> Engine<'a> {
                 for member in &c.body {
                     match member {
                         ClassMember::Property(p) if !p.is_static => {
-                            let w = match (&p.type_ann, &p.value) {
+                            let (w, t_cls) = match (&p.type_ann, &p.value) {
                                 (Some(ann), _) => {
-                                    was_type(&annotation_to_type(ann)).unwrap_or(WasTy::I64)
+                                    let t = self.resolve_field_type(&c.name, &p.name, ann)?;
+                                    let w = was_type(&t).unwrap_or(WasTy::I64);
+                                    (w, t)
                                 }
-                                (None, Some(v)) => self.expr_was_type(v).unwrap_or(WasTy::I64),
-                                (None, None) => WasTy::I64,
+                                (None, Some(v)) => {
+                                    let w = self.expr_was_type(v).unwrap_or(WasTy::I64);
+                                    let t_cls = if matches!(w, WasTy::F64) {
+                                        Type::Float
+                                    } else {
+                                        Type::Int
+                                    };
+                                    (w, t_cls)
+                                }
+                                (None, None) => (WasTy::I64, Type::Int),
                             };
-                            let t_cls =
-                                p.type_ann
-                                    .as_ref()
-                                    .map(annotation_to_type)
-                                    .unwrap_or_else(|| {
-                                        if matches!(w, WasTy::F64) {
-                                            Type::Float
-                                        } else {
-                                            Type::Int
-                                        }
-                                    });
                             let vis = FieldVis {
                                 is_private: p.visibility == Visibility::Private,
                                 is_protected: p.visibility == Visibility::Protected,
@@ -6901,7 +6948,7 @@ impl<'a> Engine<'a> {
                                 is_readonly: false,
                             };
                             method_vis.insert(m.name.clone(), vis);
-                            let mut m2 = m.clone();
+                            let m2 = m.clone();
                             let cn = c.name.clone();
                             self.pending_class_methods.push((cn, m2));
                         }
@@ -7059,10 +7106,13 @@ impl<'a> Engine<'a> {
             CmxAddChild,
             CmxToString,
             PrintAny,
+            AnyMember,
+            AnyIndex,
             FnHandle,
             FnToString,
             FnEnter,
             FnExit,
+            CallSite,
         ] {
             self.register_host(h);
         }
@@ -7347,7 +7397,10 @@ impl<'a> Engine<'a> {
 
         // Tabla de vtables: segmento con los funcref de los métodos de cada clase
         // (los vtable_start ya se asignaron en la recolección, en orden).
+        // La ranura 0 se RESERVA (dummy) para que ningún handle par valga 0
+        // (colisión con Null); `next_table_slot` empieza en 1.
         let mut table_funcs: Vec<u32> = Vec::new();
+        table_funcs.push(self.func_indexes["__alloc"]);
         let mut ordered: Vec<(u32, String)> = self
             .class_defs
             .iter()
@@ -7792,7 +7845,7 @@ impl<'a> Engine<'a> {
     }
 }
 
-/// B5 � recolecci�n de arrow functions (funciones an�nimas como valor).
+/// B5 — recolección de arrow functions (funciones anónimas como valor).
 fn collect_arrows_in_block(block: &Block, out: &mut Vec<ArrowFunctionExpr>) {
     for stmt in &block.statements {
         collect_arrows_in_stmt(stmt, out);
