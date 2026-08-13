@@ -5,6 +5,7 @@
 //! de nodo (intrinsics vía `env.host_call`, resolver de módulos). La capa C
 //! (`clsb_v1_*`) vive en `capi.rs` (F2b).
 
+pub mod capi;
 pub mod engine;
 pub mod value;
 
