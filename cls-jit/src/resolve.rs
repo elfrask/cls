@@ -211,6 +211,19 @@ pub fn load_import_modules(
     out: &mut Vec<(String, String, ClsModule)>,
     manifest: Option<&cls_core::config::ModuleManifest>,
 ) -> cls_core::error::ClsResult<()> {
+    load_import_modules_hooked(module, base_dir, seen, out, manifest, None)
+}
+
+/// Igual que [`load_import_modules`] pero con un hook del nodo: si un import no
+/// resuelve en disco, el hook provee el source (módulos en memoria/VFS).
+pub fn load_import_modules_hooked(
+    module: &ClsModule,
+    base_dir: &std::path::Path,
+    seen: &mut std::collections::HashSet<String>,
+    out: &mut Vec<(String, String, ClsModule)>,
+    manifest: Option<&cls_core::config::ModuleManifest>,
+    hook: Option<&dyn crate::host::ModuleSourceResolver>,
+) -> cls_core::error::ClsResult<()> {
     use cls_core::error::ClsError;
     // Módulos internos del core/nodo: NO se resuelven como archivos.
     const INTERNALS: &[&str] = &["math", "json", "fs", "http", "Lib", "async"];
@@ -239,10 +252,26 @@ pub fn load_import_modules(
                     if let Ok(toks) = cls_core::frontend::Lexer::new(&source).tokenize() {
                         if let Ok(m) = cls_core::frontend::Parser::new(toks).parse() {
                             seen.insert(key);
-                            load_import_modules(&m, base_dir, seen, out, manifest)?;
+                            load_import_modules_hooked(&m, base_dir, seen, out, manifest, hook)?;
                             out.push((path.clone(), source, m));
                             found = true;
                             break;
+                        }
+                    }
+                }
+            }
+            // Hook del nodo: el import no está en disco → el nodo provee el source.
+            if !found {
+                if let Some(h) = hook {
+                    if let Some(source) = h.resolve_source(&path, base_dir) {
+                        if let Ok(toks) = cls_core::frontend::Lexer::new(&source).tokenize() {
+                            if let Ok(m) = cls_core::frontend::Parser::new(toks).parse() {
+                                let key = format!("hook:{}", path);
+                                seen.insert(key);
+                                load_import_modules_hooked(&m, base_dir, seen, out, manifest, hook)?;
+                                out.push((path.clone(), source, m));
+                                found = true;
+                            }
                         }
                     }
                 }

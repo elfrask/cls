@@ -12,6 +12,7 @@
 //! [`JitContext`]. Todo lo demás (parseo, typeck, span_shift, flatten, emisión
 //! WASM, host functions, ejecución) es responsabilidad del motor.
 
+pub mod compile;
 pub mod engine;
 pub mod error;
 pub mod flatten;
@@ -24,8 +25,9 @@ pub mod timing;
 pub mod wasmi_rt;
 pub mod wasmtime_rt;
 
+pub use compile::{compile_file, compile_source, parse_clx_exports, CompileOptions, CompiledModule, ExportSig};
 pub use engine::{run_jit, run_jit_with};
-pub use host::{HostCallArg, HostCallHandler, HostCallResult};
+pub use host::{HostCallArg, HostCallHandler, HostCallResult, ModuleSourceResolver, OutputSink};
 pub use resolve::{cache_dir, load_import_modules, module_candidates};
 
 use std::path::Path;
@@ -81,4 +83,8 @@ pub struct JitContext<'a> {
     pub host_intrinsics: &'a [cls_core::middleware::types::HostIntrinsic],
     /// Handler del canal `env.host_call` (sin handler → 0 + warning).
     pub host_call_handler: Option<Arc<dyn HostCallHandler>>,
+    /// Resolver de módulos del nodo: provee sources que no están en disco.
+    pub module_source_resolver: Option<&'a dyn ModuleSourceResolver>,
+    /// Destino de `print` (sin él → stdout).
+    pub output: Option<Arc<dyn OutputSink>>,
 }

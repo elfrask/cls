@@ -31,6 +31,8 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
         module_index: Some(&ClxModuleIndexHook),
         host_intrinsics: &[],
         host_call_handler: None,
+        module_source_resolver: None,
+        output: None,
     };
     // `CLS_JIT_RUNTIME=wasmi` → ejecutar con wasmi (intérprete puro, sin
     // excepciones CLS). Útil para validar el runtime del navegador desde el CLI.

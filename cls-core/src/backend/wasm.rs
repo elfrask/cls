@@ -6697,6 +6697,24 @@ fn annotation_to_type(ann: &TypeAnnotation) -> Type {
         TypeKind::Char => Type::Char,
         TypeKind::Void | TypeKind::Empty => Type::Void,
         TypeKind::Array(inner) => Type::Array(Box::new(annotation_to_type(inner))),
+        TypeKind::Tuple(items) => Type::Tuple(items.iter().map(annotation_to_type).collect()),
+        TypeKind::Record(k, v) => {
+            Type::Record(Box::new(annotation_to_type(k)), Box::new(annotation_to_type(v)))
+        }
+        // Shape literal `{ campo: tipo, ... }`.
+        TypeKind::Shape(fields) => Type::Shape(
+            fields
+                .iter()
+                .map(|(n, t)| (n.clone(), annotation_to_type(t)))
+                .collect(),
+        ),
+        // Nombrados (enum/struct/clase/alias → i64 en WASM; los alias de tipos
+        // básicos se resuelven en el typeck y llegan como el tipo base).
+        TypeKind::Named(name, args) => Type::Named(
+            name.clone(),
+            args.iter().map(annotation_to_type).collect(),
+        ),
+        TypeKind::Cmx => Type::Cmx,
         _ => Type::Any,
     }
 }
@@ -7801,10 +7819,18 @@ impl<'a> Engine<'a> {
                     self.exports_sec.export(&f.name, ExportKind::Func, fidx);
                 }
                 let (params, ret) = self.func_types[&f.name].clone();
+                // elem kind de los arrays (para el marshalling del host): el
+                // kind del array anidado; -1 si no es array.
+                let elem_kind = |t: &Type| match t {
+                    Type::Array(inner) => cls_kind_code(inner),
+                    _ => -1,
+                };
                 exports_meta.push(serde_json::json!({
                     "name": f.name,
                     "params": params.iter().map(cls_kind_code).collect::<Vec<i64>>(),
+                    "pe": params.iter().map(elem_kind).collect::<Vec<i64>>(),
                     "ret": ret.as_ref().map(cls_kind_code).unwrap_or(9),
+                    "re": ret.as_ref().map(elem_kind).unwrap_or(-1),
                 }));
             }
         }
