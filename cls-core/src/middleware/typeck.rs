@@ -29,6 +29,8 @@ pub struct TypeChecker {
     types_by_span: HashMap<Span, Type>,
     /// Miembros de cada clase: nombre → tipo del campo o del retorno del método.
     class_members: HashMap<String, HashMap<String, Type>>,
+    /// Campos de cada structure: nombre → tipo. Para tipar `p.campo` (member access).
+    struct_members: HashMap<String, HashMap<String, Type>>,
     /// Módulos importados (prelude) — para resolver símbolos de `import`/`from`/`include`.
     /// Cada entrada: (path del import, módulo parseado).
     prelude: Vec<(String, Module)>,
@@ -48,6 +50,7 @@ impl TypeChecker {
             enums: std::collections::HashSet::new(),
             types_by_span: HashMap::new(),
             class_members: HashMap::new(),
+        struct_members: HashMap::new(),
             prelude: Vec::new(),
             import_aliases: HashMap::new(),
         };
@@ -201,6 +204,13 @@ impl TypeChecker {
             Statement::ClassDecl(c) => self.check_class(c),
             Statement::StructureDecl(s) => {
                 self.define(&s.name, Type::Named(s.name.clone(), vec![]));
+                let members: HashMap<String, Type> = s.fields.iter()
+                    .map(|f| {
+                        let t = self.resolve_type_annotation(&f.type_ann);
+                        (f.name.clone(), t)
+                    })
+                    .collect();
+                self.struct_members.insert(s.name.clone(), members);
                 Type::Void
             }
             Statement::InterfaceDecl(i) => {
@@ -1021,6 +1031,12 @@ impl TypeChecker {
             },
             Type::Named(name, _) => {
                 if let Some(members) = self.class_members.get(name.as_str()) {
+                    if let Some(t) = members.get(&member.member) {
+                        return t.clone();
+                    }
+                }
+                // Campo de structure: `p.campo` → tipo anotado del campo.
+                if let Some(members) = self.struct_members.get(name.as_str()) {
                     if let Some(t) = members.get(&member.member) {
                         return t.clone();
                     }

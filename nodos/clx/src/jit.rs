@@ -145,9 +145,10 @@ pub fn cache_dir() -> std::path::PathBuf {
     std::path::PathBuf::from(base).join(".cache").join("cls")
 }
 
-/// Clave del caché: hash del fuente + versión del compilador + target +
-/// **índice de integridad de los módulos del workspace** (para que un cambio en
-/// cualquier `.clsx` importado invalide el caché y se recompile).
+/// Clave del caché: hash del fuente + versión del compilador + target + los
+/// **sources de los módulos importados** (locales y globales de ~/.cls). Editar
+/// un .clsx del grafo importado invalida el caché; editar uno NO importado NO
+/// lo invalida (evita sobre-invalidación al tocar archivos no relacionados).
 fn cache_key(
     source: &str,
     target_str: Option<&str>,
@@ -165,9 +166,9 @@ fn cache_key(
     for ms in module_sources {
         ms.hash(&mut h);
     }
-    // Integridad del workspace local (todos los .clsx del proyecto).
-    let integrity = crate::module_index::workspace_integrity_hash(entry, &[]);
-    integrity.hash(&mut h);
+    // El entry forma parte del `source`; los imports del grafo están en
+    // `module_sources`. NO se barre el workspace completo (sobre-invalidación).
+    let _ = entry;
     h.finish()
 }
 
