@@ -1,0 +1,18 @@
+﻿C:\Users\Frask\Documents\cls\examples\audit\errores\err-throw-no-capturado.clsx
+EXIT=1
+clx.exe : [91mError de ejecuci├│n:[0m
+En línea: 4 Carácter: 8
++   $o = & $clx run --jit $script 2>&1 | Out-String
++        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([91mError de ejecuci├│n:[0m:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+[36m1[0m. [33mÔåÆ[0m main
+[36m2[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-throw-no-capturado.clsx:3:31 [95m[Runtime 
+Error][0m
+  3 |     throw("mensaje de prueba");
+    | [31m                              ^[0m
+  [1m[91mError:[0m[0m mensaje de prueba
+
+

@@ -1,0 +1,4 @@
+function main(args: String[]) -> int {
+    print("pow:", math.pow(2, 3));
+    return 0;
+}

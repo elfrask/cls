@@ -2520,6 +2520,11 @@ impl<'a> FuncEmitter<'a> {
                         WasTy::I64 => Instruction::LocalSet(cur),
                     });
                     self.emit_expression(&a.value)?;
+                    // `farr[i] += 2` con array F64: el RHS int debe promover a f64
+                    // (paridad con el write simple `farr[i] = 7` del fix R4).
+                    if elem_ty == WasTy::F64 {
+                        self.f64_promote(&a.value)?;
+                    }
                     self.body.push(match elem_ty {
                         WasTy::F64 => Instruction::LocalSet(v),
                         WasTy::I32 => Instruction::LocalSet(v),
@@ -2535,7 +2540,12 @@ impl<'a> FuncEmitter<'a> {
                         WasTy::I32 => Instruction::LocalGet(v),
                         WasTy::I64 => Instruction::LocalGet(v),
                     });
-                    apply_compound_ty(&mut self.body, op, elem_ty)?;
+                    if elem_ty == WasTy::F64 && op == Operator::PercentEqual {
+                        // `farr[i] %= v` float: WASM no tiene resto float → host fmod.
+                        self.host.call(HostFn::Fmod, &mut self.body);
+                    } else {
+                        apply_compound_ty(&mut self.body, op, elem_ty)?;
+                    }
                     self.body.push(match elem_ty {
                         WasTy::F64 => Instruction::LocalSet(res),
                         WasTy::I32 => Instruction::LocalSet(res),

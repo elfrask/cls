@@ -651,9 +651,14 @@ impl TypeChecker {
         let t = match expr {
             Expression::Literal(l) => self.check_literal(l),
             Expression::Identifier(name, span) => {
-                // Módulos internos del nodo (json/math/fs/http): no son variables,
-                // pero se aceptan como namespace (el backend los resuelve).
-                if matches!(name.as_str(), "json" | "math" | "fs" | "http" | "Lib" | "async") {
+                // Primero: ¿es una variable local declarada (incluso si se llama
+                // `fs`, `math`, `json`)? El scope local gana sobre los módulos
+                // internos del nodo (json/math/fs/http).
+                if let Some(t) = self.lookup(name) {
+                    t.clone()
+                } else if matches!(name.as_str(), "json" | "math" | "fs" | "http" | "Lib" | "async") {
+                    // Módulos internos del nodo: no son variables, pero se aceptan
+                    // como namespace (el backend los resuelve).
                     Type::Any
                 } else {
                     self.lookup(name)
@@ -904,18 +909,23 @@ impl TypeChecker {
             for arg in &call.args {
                 self.check_expression(arg);
             }
-            // `math.abs`/`math.pow` devuelven el tipo del primer argumento:
-            // con un arg float → Float (paridad con module_call_ret del backend).
+            // `math.abs` devuelve el tipo del primer argumento (int→Int, float→Float);
+            // `math.pow` SIEMPRE devuelve Float (el walker usa `powf` incondicional
+            // y el emisor emite MathPow f64). Paridad con module_call_ret del backend.
             if let Expression::Identifier(obj, _) = &*m.object {
-                if obj == "math" && (m.member == "abs" || m.member == "pow") {
-                    if let Some(arg0) = call.args.first() {
-                        let at = self.check_expression(arg0);
-                        if matches!(at, Type::Float | Type::F32 | Type::F64) {
-                            return Type::Float;
+                if obj == "math" {
+                    if m.member == "pow" {
+                        return Type::Float;
+                    }
+                    if m.member == "abs" {
+                        if let Some(arg0) = call.args.first() {
+                            let at = self.check_expression(arg0);
+                            if matches!(at, Type::Float | Type::F32 | Type::F64) {
+                                return Type::Float;
+                            }
                         }
                         return Type::Int;
                     }
-                    return Type::Int;
                 }
             }
             // Llamar una función como valor (`app.tag()`, `f()`): el resultado es
