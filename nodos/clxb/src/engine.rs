@@ -12,13 +12,37 @@ use wasmtime::{Engine, Linker, Memory, Module, Store, TypedFunc};
 use crate::value::{read_value, write_value, ClsValue, StoreCtx};
 use crate::ClsError;
 
+/// Sink de salida compartido: `set_output` afecta también a los módulos ya
+/// instanciados (el HostState guarda el wrapper, que delega al sink actual).
+#[derive(Default)]
+pub struct SharedSink {
+    current: std::sync::RwLock<Option<Arc<dyn cls_jit::OutputSink>>>,
+}
+
+impl cls_jit::OutputSink for SharedSink {
+    fn write(&self, s: &str) {
+        if let Some(sink) = self.current.read().unwrap().as_ref() {
+            sink.write(s);
+        } else {
+            print!("{}", s);
+        }
+    }
+    fn end_line(&self) {
+        if let Some(sink) = self.current.read().unwrap().as_ref() {
+            sink.end_line();
+        } else {
+            println!();
+        }
+    }
+}
+
 /// Engine de embedding: configuración (intrinsics, output, resolver) + compila.
 pub struct ClsEngine {
     native: Arc<dyn cls_runtime::ffi::NativeBackend>,
     intrinsics: Vec<HostIntrinsic>,
     host_call: Option<Arc<dyn cls_jit::HostCallHandler>>,
     resolver: Option<Arc<dyn cls_jit::ModuleSourceResolver>>,
-    output: Option<Arc<dyn cls_jit::OutputSink>>,
+    output: Arc<SharedSink>,
     next_id: u32,
 }
 
@@ -35,13 +59,13 @@ impl ClsEngine {
             intrinsics: Vec::new(),
             host_call: None,
             resolver: None,
-            output: None,
+            output: Arc::new(SharedSink::default()),
             next_id: 1,
         }
     }
 
     pub fn set_output(&mut self, sink: Arc<dyn cls_jit::OutputSink>) {
-        self.output = Some(sink);
+        *self.output.current.write().unwrap() = Some(sink);
     }
 
     pub fn set_module_resolver(&mut self, r: Arc<dyn cls_jit::ModuleSourceResolver>) {
@@ -75,7 +99,7 @@ impl ClsEngine {
             host_intrinsics: &self.intrinsics,
             host_call_handler: self.host_call.clone(),
             module_source_resolver: self.resolver.as_deref(),
-            output: self.output.clone(),
+            output: Some(self.output.clone()),
         }
     }
 
