@@ -1,0 +1,11 @@
+# R5-iso: struct con campo float - leer a variable SIN print del campo
+structure Punto {
+    x: int,
+    y: float,
+};
+function main(args: String[]) -> int {
+    var p = Punto(1, 2.5);
+    var f = p.y;
+    print("ok");
+    return 0;
+};

@@ -226,6 +226,10 @@ impl Parser {
     }
 
     fn parse_function_decl(&mut self) -> ClsResult<Statement> {
+        // Span del inicio de la función (token `function`): apuntar aquí en vez
+        // de `self.span()` tras el `;` (que apunta al token siguiente → frames
+        // de call stack con línea off-by-one).
+        let fn_span = self.span();
         self.expect_keyword(Keyword::Function)?;
         let name = self.expect_identifier()?;
         let type_params = self.parse_type_params()?;
@@ -259,7 +263,7 @@ impl Parser {
             body,
             visibility: Visibility::Default,
             modifiers: Vec::new(),
-            span: self.span(),
+            span: fn_span,
             type_params,
             is_native,
         }))
@@ -899,15 +903,17 @@ impl Parser {
     }
 
     fn parse_break(&mut self) -> ClsResult<Statement> {
+        let span = self.span();
         self.expect_keyword(Keyword::Break)?;
         self.consume_symbol(Symbol::Semicolon);
-        Ok(Statement::Break)
+        Ok(Statement::Break(span))
     }
 
     fn parse_continue(&mut self) -> ClsResult<Statement> {
+        let span = self.span();
         self.expect_keyword(Keyword::Continue)?;
         self.consume_symbol(Symbol::Semicolon);
-        Ok(Statement::Continue)
+        Ok(Statement::Continue(span))
     }
 
     fn parse_class_decl(&mut self) -> ClsResult<Statement> {
@@ -1614,11 +1620,14 @@ impl Parser {
         if let Some(op) = self.check_assignment_operator() {
             self.advance();
             let value = self.parse_assignment()?;
+            // Span mergeado del target y el valor: `self.span()` (token actual)
+            // colisiona con el span del RHS y contamina el type map del emisor.
+            let assign_span = expr_span(&expr).merge(&expr_span(&value));
             return Ok(Expression::Assignment(AssignmentExpr {
                 target: Box::new(expr),
                 op,
                 value: Box::new(value),
-                span: self.span(),
+                span: assign_span,
             }));
         }
         
@@ -1687,11 +1696,15 @@ impl Parser {
                         let op = op.clone();
                         self.advance();
                         let right = self.parse_xor()?;
+                        // Span mergeado de ambos operandos: `self.span()` (token
+                        // actual) colisiona con el span del operando derecho y
+                        // contamina el type map del emisor.
+                        let bin_span = expr_span(&expr).merge(&expr_span(&right));
                         expr = Expression::Binary(BinaryExpr {
                             left: Box::new(expr),
                             op,
                             right: Box::new(right),
-                            span: self.span(),
+                            span: bin_span,
                         });
                         continue;
                     }
@@ -1702,11 +1715,12 @@ impl Parser {
             if self.check_keyword(Keyword::Is) {
                 self.advance();
                 let right = self.parse_xor()?;
+                let bin_span = expr_span(&expr).merge(&expr_span(&right));
                 expr = Expression::Binary(BinaryExpr {
                     left: Box::new(expr),
                     op: Operator::Is,
                     right: Box::new(right),
-                    span: self.span(),
+                    span: bin_span,
                 });
                 continue;
             }

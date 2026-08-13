@@ -1,0 +1,10 @@
+# R5-iso: struct con campo float - lectura simple (solo print)
+structure Punto {
+    x: int,
+    y: float,
+};
+function main(args: String[]) -> int {
+    var p = Punto(1, 2.5);
+    print("y:", p.y);
+    return 0;
+};

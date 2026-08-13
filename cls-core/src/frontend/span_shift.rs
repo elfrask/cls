@@ -304,7 +304,7 @@ pub fn shift_stmt(s: &mut Statement, offset: u32) {
         }
         Statement::Return(Some(e)) => shift_expr(e, offset),
         Statement::Return(None) => {}
-        Statement::Break | Statement::Continue => {}
+        Statement::Break(_) | Statement::Continue(_) => {}
         Statement::ClassDecl(c) => {
             c.span = shift_span(c.span.clone(), offset);
             for m in &mut c.body {

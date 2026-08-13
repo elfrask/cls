@@ -166,7 +166,7 @@ impl NameResolver {
                     self.resolve_expression(expr)?;
                 }
             }
-            Statement::Break | Statement::Continue => {}
+            Statement::Break(_) | Statement::Continue(_) => {}
             Statement::Import(import) => {
                 // TODO: cargar módulo y registrar símbolos importados
                 if let Some(alias) = &import.alias {

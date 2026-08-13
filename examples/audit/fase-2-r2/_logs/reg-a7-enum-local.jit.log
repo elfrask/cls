@@ -1,0 +1,3 @@
+n: Medio
+n==Medio: true
+n==Bajo: false

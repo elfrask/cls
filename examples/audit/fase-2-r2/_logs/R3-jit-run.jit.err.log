@@ -1,0 +1,3 @@
+[[1m[91mERROR[0m[0m] [91mNo se puede asignar String a Int[0m (C:\Users\Frask\Documents\cls\examples\audit\fase-2\a6-typeck\a6-check-modulo.clsx (módulo importado):2:5)
+  |     var x: int = "texto";
+  |     ^

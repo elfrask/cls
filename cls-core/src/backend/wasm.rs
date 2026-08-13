@@ -842,26 +842,23 @@ impl<'a> FuncEmitter<'a> {
                 if e.is_some() {
                     self.emit_expression(e.as_ref().unwrap())?;
                 }
+                // Des-registrar el frame antes de cortar: `Instruction::Return`
+                // salta al final sin pasar por el `fn_exit` del cuerpo.
+                self.emit_fn_exit();
                 self.body.push(Instruction::Return);
                 Ok(())
             }
-            Statement::Break => {
+            Statement::Break(bspan) => {
                 let ctx = self.loop_stack.last().ok_or_else(|| {
-                    crate::error::ClsError::compile_at(
-                        "break fuera de loop",
-                        &self.current_fn_span,
-                    )
+                    crate::error::ClsError::compile_at("break fuera de loop", bspan)
                 })?;
                 let depth = self.block_depth.saturating_sub(ctx.break_at);
                 self.body.push(Instruction::Br(depth));
                 Ok(())
             }
-            Statement::Continue => {
+            Statement::Continue(cspan) => {
                 let ctx = self.loop_stack.last().ok_or_else(|| {
-                    crate::error::ClsError::compile_at(
-                        "continue fuera de loop",
-                        &self.current_fn_span,
-                    )
+                    crate::error::ClsError::compile_at("continue fuera de loop", cspan)
                 })?;
                 let depth = self.block_depth.saturating_sub(ctx.continue_at);
                 self.body.push(Instruction::Br(depth));
@@ -2333,6 +2330,11 @@ impl<'a> FuncEmitter<'a> {
                     }
                 } else {
                     self.emit_expression(&a.value)?;
+                    // Assignment simple `f = k`: si el target es float y el RHS
+                    // es int, promover a f64 (el store del local espera f64).
+                    if self.value_type(&a.target)? == WasTy::F64 {
+                        self.f64_promote(&a.value)?;
+                    }
                 }
                 self.emit_ident_store(name);
                 self.emit_ident_load(name);
@@ -2525,6 +2527,11 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_expression(&i.object)?;
                     self.emit_expression(&i.index)?;
                     self.emit_expression(&a.value)?;
+                    // Array de float con valor int: promover el RHS a f64 antes
+                    // del store (el layout del array es homogéneo).
+                    if elem_ty == WasTy::F64 {
+                        self.f64_promote(&a.value)?;
+                    }
                     self.emit_index_set(i, elem_size)?;
                     // Dejar un valor en el stack (el array mutado) para que el
                     // Drop del statement (o el uso del valor) lo consuma.
@@ -2565,10 +2572,13 @@ impl<'a> FuncEmitter<'a> {
                             .iter()
                    .position(|(n, _, _, _, _)| *n == m.member)
                             .ok_or_else(|| {
-                                crate::error::ClsError::CompileError(format!(
-                                    "El campo '{}' no existe en la clase '{}'",
-                                    m.member, name
-                                ))
+                                crate::error::ClsError::compile_at(
+                                    &format!(
+                                        "El campo '{}' no existe en la clase '{}'",
+                                        m.member, name
+                                    ),
+                                    &m.span,
+                                )
                             })?;
                         let (_, _t, w, off, vis) = &info.fields[fidx];
                         // Escritura: private/protected desde fuera, o readonly.
@@ -5503,10 +5513,13 @@ impl<'a> FuncEmitter<'a> {
                         .iter()
                         .position(|(n, _, _, _, _)| *n == m.member)
                         .ok_or_else(|| {
-                            crate::error::ClsError::CompileError(format!(
-                                "El campo '{}' no existe en la clase '{}'",
-                                m.member, name
-                            ))
+                            crate::error::ClsError::compile_at(
+                                &format!(
+                                    "El campo '{}' no existe en la clase '{}'",
+                                    m.member, name
+                                ),
+                                &m.span,
+                            )
                         })?;
                     let (_, _t, w, off, vis) = &info.fields[fidx];
                     // Validar visibilidad: private/protected desde fuera.

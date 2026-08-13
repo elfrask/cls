@@ -1,0 +1,8 @@
+# R2: error en cadena modulo->modulo->modulo (call stack con archivos reales)
+import "mid_a" as mid;
+function main(args: String[]) -> int {
+    print("llamando...");
+    var r = mid::nivel2();
+    print("r:", r);
+    return 0;
+};

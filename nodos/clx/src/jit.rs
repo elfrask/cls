@@ -902,9 +902,15 @@ fn run_wasm(
                 );
             } else {
                 // Sin excepción CLS (p.ej. stack overflow, trap de memoria):
-                // usar el mensaje del trap de wasmtime y mostrar el call stack
-                // acumulado hasta el fallo.
-                let trap_msg = format!("Trap WASM: {}", _e);
+                // usar el mensaje raíz del trap de wasmtime (sin el backtrace
+                // multilínea crudo) y mostrar el call stack acumulado.
+                let root = _e.root_cause().to_string();
+                let short = if root.is_empty() { _e.to_string() } else { root };
+                let trap_msg = if short.starts_with("Trap") {
+                    format!("Trap WASM: {}", short.trim_start_matches("Trap "))
+                } else {
+                    format!("Trap WASM: {}", short)
+                };
                 let report = cls_runtime::error_report::ErrorReport {
                     error: ClsError::RuntimeError(if msg.is_empty() {
                         trap_msg
@@ -1861,10 +1867,27 @@ fn register_stdlib_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
         .func_wrap(HOST, "json_parse", |mut caller: Caller<'_, HostState>, s: i64| -> i64 {
             let text = caller_read_str(&mut caller, s);
             // El typeck tipa `json.parse` como Record<String, any>: el valor
-            // devuelto es el PTR del contenedor (layout [key,val,tag]*24 para
-            // records, [val,tag]*16 para arrays), compatible con record_get y
-            // record_to_string.
+            // devuelto es el PTR del contenedor (layout [key,val,tag]*24), que
+            // es lo que entienden record_get y record_to_string. Si el JSON
+            // raíz es un ARRAY, se envuelve en un record con claves numéricas
+            // `{"0":..., "1":...}` para que el formateador de records lo
+            // imprima sin corrupción (el layout de array [val,tag]*16 no lo
+            // lee record_to_string).
             match serde_json::from_str::<serde_json::Value>(&text) {
+                Ok(serde_json::Value::Array(items)) => {
+                    let n = items.len();
+                    let ptr = caller_alloc(&mut caller, (n * 24 + 16) as i64).unwrap_or(0) as usize;
+                    arr_write_i64(&mut caller, ptr, n as i64);
+                    arr_write_i64(&mut caller, ptr + 8, n as i64);
+                    for (i, it) in items.iter().enumerate() {
+                        let key = caller_write_str(&mut caller, &i.to_string()).unwrap_or(0);
+                        let (vv, tag) = json_build(&mut caller, it);
+                        arr_write_i64(&mut caller, ptr + 16 + i * 24, key);
+                        arr_write_i64(&mut caller, ptr + 16 + i * 24 + 8, vv);
+                        arr_write_i64(&mut caller, ptr + 16 + i * 24 + 16, tag);
+                    }
+                    ptr as i64
+                }
                 Ok(v) => json_build(&mut caller, &v).0,
                 Err(_) => 0,
             }
@@ -2322,20 +2345,25 @@ fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     // Shadow call stack: el backend emite fn_enter al inicio de cada función CLS
     // (con nombre y span) y fn_exit antes de cada return. Al reportar un error
-    // de runtime se usa `call_stack` para el trace numerado.
+    // de runtime se usa `call_stack` para el trace numerado. Con tope de
+    // profundidad: en recursión infinita el stack shadow no debe crecer sin
+    // límite (leak + volcado de miles de frames en el reporte).
     linker
         .func_wrap(
             HOST,
             "fn_enter",
             |mut caller: Caller<'_, HostState>, name_packed: i64, line: i64, col: i64| {
                 let name = caller_read_str(&mut caller, name_packed);
-                let span = cls_core::error::diagnostic::Span::new(
-                    line as u32,
-                    col as u32,
-                    line as u32,
-                    col as u32,
-                );
-                caller.data_mut().call_stack.push((name, span));
+                let state = caller.data_mut();
+                if state.call_stack.len() < 1000 {
+                    let span = cls_core::error::diagnostic::Span::new(
+                        line as u32,
+                        col as u32,
+                        line as u32,
+                        col as u32,
+                    );
+                    state.call_stack.push((name, span));
+                }
             },
         )
         .map_err(|e| e.to_string())?;

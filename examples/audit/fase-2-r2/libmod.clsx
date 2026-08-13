@@ -1,0 +1,8 @@
+export function saludar(nombre: String) -> String {
+    return "Hola, " + nombre;
+};
+export var VERSION = "1.0.0";
+export enum Color {
+    Rojo,
+    Verde,
+};

@@ -1,0 +1,18 @@
+# R6: herencia de 3 niveles - metodo heredado sin override
+class Abuelo {
+    function raiz() -> int {
+        return 7;
+    };
+};
+class Padre: Abuelo {
+};
+class Nieto: Padre {
+    function usar() -> int {
+        return me.raiz() + 3;
+    };
+};
+function main(args: String[]) -> int {
+    var n = Nieto();
+    print("raiz:", n.raiz(), "usar:", n.usar());
+    return 0;
+};

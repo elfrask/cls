@@ -195,8 +195,8 @@ impl TypeChecker {
                 }
                 ret_type
             }
-            Statement::Break => Type::Void,
-            Statement::Continue => Type::Void,
+            Statement::Break(_) => Type::Void,
+            Statement::Continue(_) => Type::Void,
             Statement::Expression(e) => self.check_expression(e),
             Statement::ClassDecl(c) => self.check_class(c),
             Statement::StructureDecl(s) => {
@@ -820,6 +820,20 @@ impl TypeChecker {
             }
             for arg in &call.args {
                 self.check_expression(arg);
+            }
+            // `math.abs`/`math.pow` devuelven el tipo del primer argumento:
+            // con un arg float → Float (paridad con module_call_ret del backend).
+            if let Expression::Identifier(obj, _) = &*m.object {
+                if obj == "math" && (m.member == "abs" || m.member == "pow") {
+                    if let Some(arg0) = call.args.first() {
+                        let at = self.check_expression(arg0);
+                        if matches!(at, Type::Float | Type::F32 | Type::F64) {
+                            return Type::Float;
+                        }
+                        return Type::Int;
+                    }
+                    return Type::Int;
+                }
             }
             // Llamar una función como valor (`app.tag()`, `f()`): el resultado es
             // su retorno, no el tipo de la función.

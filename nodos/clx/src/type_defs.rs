@@ -237,7 +237,7 @@ fn statement_span(stmt: &Statement) -> Span {
         Statement::Import(s) => s.span,
         Statement::FromImport(s) => s.span,
         Statement::Include(s) => s.span,
-        Statement::Break | Statement::Continue => Span { start_line: 0, start_col: 0, end_line: 0, end_col: 0 },
+        Statement::Break(_) | Statement::Continue(_) => Span { start_line: 0, start_col: 0, end_line: 0, end_col: 0 },
         Statement::ClassDecl(s) => s.span,
         Statement::StructureDecl(s) => s.span,
         Statement::InterfaceDecl(s) => s.span,
