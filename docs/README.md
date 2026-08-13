@@ -1,12 +1,12 @@
 # Documentación de CLS
 
 CLS es un lenguaje de programación compilado-orientado con verificación de
-tipos (compile-time). Tiene **dos ejecutores**: el **JIT** (`clx run --jit`,
-CLS → WASM → wasmtime), que es el **intérprete objetivo**; y un **tree-walker**
-(`clx run`) que se usa solo como **referencia sintáctica** y será deprecado tras
-CLS 2.0-dev1. Hay un plan de compilación nativa/WASM (`.clbin`) en
-`docs/future/`. Esta documentación cubre el lenguaje, el runtime, la arquitectura
-y cómo contribuir.
+tipos (compile-time). Tiene **dos ejecutores**: el **JIT** (`clx run`, CLS →
+WASM → wasmtime), que es el **intérprete objetivo por defecto**; y un
+**tree-walker** (`clx run --ast-walker`) **DEPRECADO**, usado solo como
+**referencia sintáctica**, que se eliminará tras CLS 2.0-dev1. Hay un plan de
+compilación nativa/WASM (`.clbin`) en `docs/future/`. Esta documentación cubre
+el lenguaje, el runtime, la arquitectura y cómo contribuir.
 
 ## Estructura de la documentación
 

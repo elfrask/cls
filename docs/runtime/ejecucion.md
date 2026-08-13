@@ -4,11 +4,14 @@ CLS tiene **dos ejecutores**:
 
 | Ejecutor | Comando | Modelo | Estado |
 |----------|---------|--------|--------|
-| **JIT** (objetivo) | `clx run --jit` | CLS → WASM → wasmtime (Cranelift) | **intérprete objetivo** |
-| **Tree-walker** | `clx run` | AST evaluado directo | referencia sintáctica; será deprecado tras 2.0-dev1 |
+| **JIT** (objetivo) | `clx run` (default) | CLS → WASM → wasmtime (Cranelift) | **intérprete objetivo** |
+| **Tree-walker** | `clx run --ast-walker` | AST evaluado directo | **DEPRECADO**; solo referencia sintáctica; se eliminará tras CLS 2.0-dev1 |
 
 El JIT compila el AST a un binario WASM con el backend de `cls-core` y lo ejecuta
-en wasmtime. El walker recorre el AST y lo evalúa paso a paso.
+en wasmtime. El walker recorre el AST y lo evalúa paso a paso. `clx run` usa el
+JIT por defecto desde la deprecación del walker; `--jit`/`-j` se aceptan por
+compatibilidad sin efecto. `clx run --ast-walker` imprime una advertencia de
+deprecación en stderr y ejecuta con el walker.
 
 ## Pipeline JIT
 

@@ -28,7 +28,7 @@ foreach ($f in Get-ChildItem $units -Filter *.clsx | Sort-Object Name) {
         continue
     }
     $jit = (& $clx run --jit $f.FullName 2>$null | Out-String)
-    $walk = (& $clx run $f.FullName 2>$null | Out-String)
+    $walk = (& $clx run --ast-walker $f.FullName 2>$null | Out-String)
     if ($jit -eq $walk) {
         Write-Host ("{0,-14} {1,-6} {2}" -f $name, "PASS", "")
         $pass++

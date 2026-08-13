@@ -11,8 +11,22 @@ pub fn execute(args: &[String]) -> i32 {
         return 0;
     }
 
-    // `clx run --jit <archivo> [-- args...]` → compilación JIT
-    let jit = args.iter().take_while(|a| *a != "--").any(|a| a == "--jit" || a == "-j");
+    // `clx run` → JIT por defecto (el intérprete objetivo). `--jit`/`-j` se
+    // aceptan por compatibilidad (sin efecto: ya es el default).
+    // `clx run --ast-walker` → tree-walker DEPRECADO (solo referencia sintáctica;
+    // será eliminado tras CLS 2.0-dev1). Imprime una advertencia en stderr.
+    let ast_walker = args.iter().take_while(|a| *a != "--").any(|a| a == "--ast-walker");
+    if ast_walker {
+        eprintln!(
+            "{}",
+            cls_core::ansi::fg(
+                true,
+                cls_core::ansi::codes::BRIGHT_YELLOW,
+                "[DEPRECADO] El intérprete AST-walker está deprecado y se desaconseja su uso. \
+                 Se eliminará tras CLS 2.0-dev1. Usa `clx run` (JIT) para ejecutar programas.",
+            )
+        );
+    }
 
     // Separar args de la app (todo después de --)
     let app_args: Vec<String> = args.iter()
@@ -29,7 +43,7 @@ pub fn execute(args: &[String]) -> i32 {
             skip_next = false;
             continue;
         }
-        if a == "--jit" || a == "-j" {
+        if a == "--jit" || a == "-j" || a == "--ast-walker" {
             continue;
         }
         if a == "--target" || a == "-t" {
@@ -43,7 +57,7 @@ pub fn execute(args: &[String]) -> i32 {
 
     let entry = resolve_entry(&cli_args, config.as_ref());
 
-    if jit {
+    if !ast_walker {
         let target_opt: Option<String> = {
             let a: Vec<&String> = args.iter().take_while(|a| *a != "--").collect();
             let mut t: Option<String> = None;
@@ -126,12 +140,16 @@ fn print_help() {
     println!("Uso: clx run [archivo] [--] [args...]");
     println!();
     println!("Opciones:");
-    println!("  --jit, -j               Compilar y ejecutar con el intérprete JIT (CLS → WASM)");
+    println!("  --jit, -j               (obsoleto) El JIT ya es el intérprete por defecto");
+    println!("  --ast-walker            Ejecutar con el tree-walker DEPRECADO (solo referencia)");
     println!("  --target <tripla>, -t   Simular el entorno para la directiva 'when'");
     println!("  -h, --help              Mostrar esta ayuda");
     println!("  --                      Separar los args de la aplicación");
     println!();
     println!("Sin archivo, usa el 'entry' de cls.json (o busca main.clsx).");
+    println!();
+    println!("El JIT (CLS → WASM) es el intérprete objetivo; el AST-walker será");
+    println!("eliminado tras CLS 2.0-dev1.");
 }
 
 fn resolve_entry(args: &[String], config: Option<&ModuleManifest>) -> String {

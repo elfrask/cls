@@ -21,7 +21,7 @@ $errF = Join-Path $env:TEMP ("fase2_{0}_err.txt" -f $base)
 Remove-Item $outF, $errF -ErrorAction SilentlyContinue
 
 $args = @("run", "--jit", $script)
-if ($Walk) { $args = @("run", $script) }
+if ($Walk) { $args = @("run", "--ast-walker", $script) }
 
 $savedEnv = $null
 if ($Env -ne "") {

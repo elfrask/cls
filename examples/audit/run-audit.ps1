@@ -17,7 +17,7 @@ function Run-One($mode, $f) {
     $errF = Join-Path $env:TEMP ("qa_audit_{0}_err.txt" -f $mode)
     Remove-Item $outF, $errF -ErrorAction SilentlyContinue
     $args = @("run", "--jit", $f)
-    if ($mode -eq "walk") { $args = @("run", $f) }
+    if ($mode -eq "walk") { $args = @("run", "--ast-walker", $f) }
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $p = Start-Process -FilePath $clx -ArgumentList $args -NoNewWindow -Wait -PassThru `
         -RedirectStandardOutput $outF -RedirectStandardError $errF

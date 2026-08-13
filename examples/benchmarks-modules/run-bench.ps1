@@ -10,9 +10,9 @@ Write-Host "=============================================="
 Write-Host "  Benchmarks CLS (múltiples módulos)"
 Write-Host "=============================================="
 Write-Host ""
-Write-Host "== TREE-WALKER (clx run) =="
+Write-Host "== TREE-WALKER DEPRECADO (clx run --ast-walker) =="
 $t0 = Get-Date
-& $clx run $main 2>&1 | ForEach-Object { Write-Host $_ }
+& $clx run --ast-walker $main 2>&1 | ForEach-Object { Write-Host $_ }
 $tw = ((Get-Date) - $t0).TotalMilliseconds
 Write-Host ("Walker total: {0:N0} ms" -f $tw)
 Write-Host ""

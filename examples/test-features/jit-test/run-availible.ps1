@@ -12,7 +12,7 @@ Write-Host ("{0,-26} {1,-6} {2}" -f "SCRIPT", "RES", "SALIDA (JIT)")
 Write-Host ("{0,-26} {1,-6} {2}" -f "------", "---", "-----")
 foreach ($f in Get-ChildItem $dir -Filter *.clsx | Sort-Object Name) {
     $jit = (& $clx run --jit $f.FullName 2>$null | Out-String)
-    $walk = (& $clx run $f.FullName 2>$null | Out-String)
+    $walk = (& $clx run --ast-walker $f.FullName 2>$null | Out-String)
     if ($jit -eq $walk) {
         $res = "PASS"
         $pass++
