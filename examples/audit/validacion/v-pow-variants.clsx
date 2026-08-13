@@ -1,0 +1,9 @@
+function main(args: String[]) -> int {
+    print("pow int,float:", math.pow(2, 3.0));
+    print("pow float,int:", math.pow(2.0, 3));
+    print("pow float,float:", math.pow(2.5, 2.0));
+    var a = 2;
+    var b = 3;
+    print("pow var,var:", math.pow(a, b));
+    return 0;
+}

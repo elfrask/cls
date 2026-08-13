@@ -1,0 +1,13 @@
+function f(x: int) -> int {
+    return x / 0;
+};
+function g(x: int) -> int {
+    return f(x);
+};
+function h(x: int) -> int {
+    return g(x);
+};
+function main(args: String[]) -> int {
+    print(h(5));
+    return 0;
+};

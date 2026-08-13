@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    var f = (x) => x * 2;
+    print("f(5):", f(5));
+    return 0;
+};

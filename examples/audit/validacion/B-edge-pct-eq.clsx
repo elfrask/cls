@@ -1,0 +1,10 @@
+function main(args: String[]) -> int {
+    var f = 5.5;
+    f %= 2;
+    print("f %%= 2:", f);
+    var k = 7;
+    k %= 3;
+    print("k %%= 3:", k);
+    print("pow:", math.pow(2.5, 2));
+    return 0;
+};

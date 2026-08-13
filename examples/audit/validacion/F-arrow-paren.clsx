@@ -1,0 +1,8 @@
+import "libmod" as lib;
+
+function main(args: String[]) -> int {
+    print("inicio");
+    print("f:", lib::apply((x) => x * 2, 21));
+    print("fin");
+    return 0;
+};
