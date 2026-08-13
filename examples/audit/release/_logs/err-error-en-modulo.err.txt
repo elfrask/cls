@@ -1,0 +1,12 @@
+[91mError de ejecuci├│n:[0m
+
+[36m1[0m. [33mÔåÆ[0m main
+[36m2[0m. En C:\Users\Frask\Documents\cls\examples\audit\modules\err-error-en-modulo.clsx:5:24 [33mÔåÆ[0m nivel2
+  5 |     var r = m::nivel2();
+    | [90m                       ^[0m
+[36m3[0m. En err-lib-modulo:5:21 [33mÔåÆ[0m nivel1
+[36m4[0m. En err-lib-modulo:2:15 [95m[Runtime Error][0m
+  2 |     return 10 / 0;
+    | [31m              ^[0m
+  [1m[91mError:[0m[0m Divisi├│n por cero
+

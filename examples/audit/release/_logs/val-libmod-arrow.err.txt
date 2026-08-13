@@ -1,0 +1,4 @@
+[91mError de Compilaci├│n:[0m
+
+  [1m[91mError:[0m[0m Anotaci├│n de tipo no soportada por el JIT (se requiere tipo concreto)
+

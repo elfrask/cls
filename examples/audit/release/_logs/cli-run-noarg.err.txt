@@ -1,0 +1,2 @@
+Uso: clx run <archivo> [--] [args...]
+  (o ejecuta desde un proyecto con cls.json que tenga 'entry')

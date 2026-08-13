@@ -1,0 +1,5 @@
+# X3: usuario intenta crear un módulo local llamado math (suplantar interno)
+# El resolver debe ganar el interno math y NUNCA cargar este archivo.
+export function pow(a: int, b: int) -> String {
+    return "FAKE";
+};

@@ -1,0 +1,2 @@
+saludar: hola desde base
+sumar: 42

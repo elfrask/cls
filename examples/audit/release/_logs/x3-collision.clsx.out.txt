@@ -1,0 +1,15 @@
+fs local: [1, 4, 3]
+math local: [1, 4, 3]
+json local: [3, 2, 3]
+http local: [1, 2, 2]
+pow: 8
+abs: 4
+json parse: {a: 1}
+saludar: Hola, mundo
+VERSION: 3.1.4
+c: Rojo
+c is: true
+c == verde: false
+via: Hola, qa [via x3-mod-b]
+valor lib: A
+valor lib2: B

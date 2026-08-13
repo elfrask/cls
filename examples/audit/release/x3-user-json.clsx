@@ -1,0 +1,8 @@
+# X3: import "json" con un archivo local json.clsx presente (suplantación)
+# Esperado: gana el interno -> {a: 1}; si imprime FAKE: es REGRESIÓN de X3
+import "json" as j;
+function main(args: String[]) -> int {
+    var p = j::parse('{"a": 1}');
+    print("parse:", p);
+    return 0;
+};

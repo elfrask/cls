@@ -1,0 +1,7 @@
+# X3-variant: import "json" SIN alias + acceso directo
+import "json";
+function main(args: String[]) -> int {
+    var p = json.parse('{"a": 1}');
+    print("parse:", p);
+    return 0;
+};

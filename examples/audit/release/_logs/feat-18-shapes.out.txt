@@ -1,0 +1,5 @@
+shape: {edad: 30, nombre: "Ana"}
+p.nombre: Ana p.edad: 30
+dict: {a: 1, b: 2} a: 1
+tipo: Any
+fin

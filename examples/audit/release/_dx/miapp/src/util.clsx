@@ -1,0 +1,4 @@
+export function romper() -> int {
+    var x = 10;
+    return x / 0;
+};

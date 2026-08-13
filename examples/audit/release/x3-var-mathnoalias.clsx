@@ -1,0 +1,6 @@
+# X3-variant: import "math" SIN alias + math.pow (con math.clsx local presente)
+import "math";
+function main(args: String[]) -> int {
+    print("pow:", math.pow(2, 3));
+    return 0;
+};

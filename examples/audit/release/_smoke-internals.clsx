@@ -1,0 +1,9 @@
+# SMOKE: internals en JIT (fs/json/math) - diseño de X3
+function main(args: String[]) -> int {
+    print("pow:", math.pow(2, 3));
+    print("abs:", math.abs(-4));
+    var p = json.parse('{"a": 1}');
+    print("json:", p);
+    print("cwd:", fs.cwd());
+    return 0;
+};

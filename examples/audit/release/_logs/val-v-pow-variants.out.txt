@@ -1,0 +1,4 @@
+pow int,float: 8
+pow float,int: 8
+pow float,float: 6.25
+pow var,var: 8

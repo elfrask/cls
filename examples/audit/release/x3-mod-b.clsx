@@ -1,0 +1,11 @@
+# X3: módulo que importa OTRO módulo (módulo -> módulo) y re-exporta
+import "x3-libmod" as lib;
+export function valor() -> String {
+    return "B";
+};
+export function saludarViaModulo(nombre: String) -> String {
+    return lib::saludar(nombre) + " [via x3-mod-b]";
+};
+export function colorRojoIgual() -> bool {
+    return lib::Color.Rojo == lib::Color.Rojo;
+};

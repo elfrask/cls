@@ -1,0 +1,3 @@
+[[1m[91mERROR[0m[0m] [91mOperador requiere tipos num├®ricos, encontr├│ Any y Int (en `x '*' 2`)[0m (C:\Users\Frask\Documents\cls\examples\audit\validacion\F-arrow-arrow.clsx:2:22)
+  |     var f = (x) -> x * 2;
+  |                      ^

@@ -1,0 +1,5 @@
+# X3: usuario intenta crear un módulo local llamado json (suplantar interno)
+# El resolver debe ganar el interno json y NUNCA cargar este archivo.
+export function parse(s: String) -> String {
+    return "FAKE:" + s;
+};

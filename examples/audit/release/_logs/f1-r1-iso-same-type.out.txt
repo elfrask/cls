@@ -1,0 +1,3 @@
+int == int: true
+float == float: true
+f == k literal-eq: true

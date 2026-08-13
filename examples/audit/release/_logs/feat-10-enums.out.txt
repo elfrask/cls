@@ -1,0 +1,14 @@
+valor: Rojo
+== Rojo: true
+== Verde: false
+is Color: true
+d is Color: true
+iteracion:
+ - Rojo
+ - Verde
+ - Azul
+iteracion con indice:
+ - [0] Rojo
+ - [1] Verde
+ - [2] Azul
+fin

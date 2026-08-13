@@ -1,0 +1,14 @@
+[JIT-TIMING] lectura                            0.24 ms
+[JIT-TIMING] lexer                              0.19 ms
+[JIT-TIMING] parser                             0.16 ms
+[JIT-TIMING] cach├® CLSÔåÆWASM: miss
+[JIT-TIMING] typecheck                          3.39 ms
+[JIT-TIMING] emit WASM                          1.49 ms
+[JIT-TIMING] WASM size: 2226 bytes
+[JIT-TIMING] Engine::default                    0.38 ms
+[JIT-TIMING] Module::new (Cranelift)           11.62 ms
+[JIT-TIMING] Store+Linker                     509.56 ms
+[JIT-TIMING] register hosts                     2.57 ms
+[JIT-TIMING] instantiate                        0.68 ms
+[JIT-TIMING] write_args                         0.15 ms
+[JIT-TIMING] ejecuci├│n main                     0.26 ms
