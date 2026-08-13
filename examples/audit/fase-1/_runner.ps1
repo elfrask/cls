@@ -20,7 +20,7 @@ $errF = Join-Path $env:TEMP ("fase1_{0}_err.txt" -f $base)
 Remove-Item $outF, $errF -ErrorAction SilentlyContinue
 
 $args = @("run", "--jit", $script)
-if ($Walk) { $args = @("run", $script) }
+if ($Walk) { $args = @("run", "--ast-walker", $script) }
 
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $mode = if ($Walk) { "walk" } else { "jit" }

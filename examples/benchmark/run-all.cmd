@@ -4,7 +4,7 @@ REM Cada script usa los mismos parámetros (N_*) y la misma lógica.
 
 echo.
 echo ============================================
-echo  1/3  CLS (tree-walker)
+echo  1/3  CLS (JIT — intérprete objetivo)
 echo ============================================
 "%~dp0..\..\scripts\clx.cmd" run benchmark.clsx
 echo.

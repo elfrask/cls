@@ -14,13 +14,18 @@ Crea un nuevo proyecto CLS con la estructura mínima:
 
 ### `clx run <archivo.clsx> [args...]`
 
-Compila (lexer + parser) y ejecuta un archivo. El intérprete es un tree-walker.
-Los argumentos adicionales se pasan a `main(args)`.
+Compila (lexer + parser + typeck) y ejecuta un archivo con el **JIT** (CLS → WASM
+→ wasmtime), el intérprete objetivo por defecto. Los argumentos adicionales se
+pasan a `main(args)`.
 
 ```
 clx run main.clsx
 clx run app.clsx --arg1 --arg2
 ```
+
+- `--jit, -j` — obsoleto (el JIT ya es el default); se acepta por compatibilidad.
+- `--ast-walker` — ejecuta con el tree-walker **DEPRECADO** (solo referencia
+  sintáctica; imprime una advertencia y se eliminará tras CLS 2.0-dev1).
 
 Durante la ejecución resuelve los `import "mod"` leyendo `<mod>.clsx` del
 directorio de trabajo, además de los módulos internos (`math`, `json`, `async`)
