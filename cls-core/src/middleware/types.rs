@@ -217,6 +217,21 @@ impl fmt::Display for Type {
     }
 }
 
+/// Función host registrada por el NODO (intrinsic), llamable desde CLS como
+/// `nombre(args)`. Se compila vía el canal genérico `env.host_call(id, ptr, n)`:
+/// el host recibe el id + los args empaquetados (val, tag) y responde un valor.
+///
+/// El `id` lo asigna el nodo (debe ser único dentro del registro).
+#[derive(Debug, Clone, PartialEq)]
+pub struct HostIntrinsic {
+    pub id: u32,
+    pub name: String,
+    /// Tipos concretos de los parámetros (el typeck los valida en la llamada).
+    pub params: Vec<Type>,
+    /// Tipo del retorno (`Type::Void` si no devuelve nada).
+    pub ret: Type,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

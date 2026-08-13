@@ -1,78 +1,42 @@
-//! Motor de ejecución: CLS → WASM → wasmtime (Cranelift).
+//! Orquestación del motor: pipeline CLS → WASM y despacho al runtime.
 //!
-//! Orquestación completa del pipeline (parseo → typeck → span_shift →
-//! flatten → emit → run), las ~70 host functions `env.*`, los helpers de
-//! memoria lineal y la presentación de errores de runtime con trace.
-//!
-//! El nodo inyecta [`JitContext`](crate::JitContext): backend de extensiones
-//! nativas + hooks del índice de módulos.
+//! El pipeline (lectura → lexer → parser → typeck → imports → span_shift →
+//! flatten → emisión) es compartido por todos los runtimes. La ejecución del
+//! WASM vive en [`crate::wasmtime_rt`] (desktop) y [`crate::wasmi_rt`] (web).
 
 use cls_core::config::types::TypesConfig;
 use cls_core::error::{ClsError, Span};
 use cls_core::frontend::ast::Module as ClsModule;
 use cls_core::middleware::TypeChecker;
-use cls_runtime::error_report::{format_error, ErrorFormat, ErrorReport};
-use std::sync::Arc;
 use std::time::Instant;
-use wasmtime::{Caller, Engine, Linker, Memory, Module, Store, Val};
 
 use crate::error::{show_cls_error, show_type_diag};
 use crate::flatten::flatten_imports;
-use crate::resolve::{atomic_write, cache_dir, cache_key, load_import_modules, module_candidates};
+use crate::resolve::{cache_dir, cache_key, load_import_modules};
 use crate::timing::{jit_timing, tick};
-use crate::{JitContext};
-
-const HOST: &str = "env";
-
-/// Estado del host: separador de argumentos en `print`, archivo fuente y el
-/// mapa `offset → (archivo, source)` de los módulos importados (para de-shiftear
-/// spans desplazados en errores de runtime).
-struct HostState {
-    first_in_line: bool,
-    source_file: String,
-    /// Módulos importados: (offset de línea, archivo, source) — offset = 100000*(i+1).
-    modules: Vec<(u32, String, String)>,
-    /// Capacidad alocada por cada string dinámica (ptr del buffer → bytes).
-    /// Permite a `str_concat` reutilizar el buffer (crecimiento amortizado) en
-    /// vez de alocar exacto cada vez (O(n²) en loops de concatenación).
-    string_caps: std::collections::HashMap<i64, i64>,
-    /// Shadow call stack: nombres y spans de las funciones CLS en ejecución.
-    /// Lo alimentan los hosts `fn_enter`/`fn_exit` emitidos por el backend.
-    call_stack: Vec<(String, cls_core::error::diagnostic::Span)>,
-    /// Call site pendiente: lo setea `fn_call_site` (emitido por el backend en el
-    /// punto de llamada, justo antes del `Call`). El `fn_enter` del callee lo
-    /// consume como span del frame (el frame apunta al CALL SITE del llamador).
-    pending_call_site: Option<cls_core::error::diagnostic::Span>,
-    /// Nombres de las funciones simples (capturas=0) usadas como valor:
-    /// tabla_idx → nombre. Lo llena `fn_handle` (handle par, sin handle en
-    /// memoria) y lo consulta `fn_to_string` para imprimir `<function X>`.
-    simple_fn_names: std::collections::HashMap<i64, String>,
-}
-
-impl Default for HostState {
-    fn default() -> Self {
-        Self {
-            first_in_line: true,
-            source_file: String::new(),
-            modules: Vec::new(),
-            string_caps: std::collections::HashMap::new(),
-            call_stack: Vec::new(),
-            pending_call_site: None,
-            simple_fn_names: std::collections::HashMap::new(),
-        }
-    }
-}
+use crate::{JitContext, RuntimeKind};
 
 /// Ejecuta un programa CLS con el JIT (CLS → WASM → wasmtime).
+/// Devuelve el exit code del proceso (0 = OK, 1 = error).
+pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>, ctx: &JitContext) -> i32 {
+    run_jit_with(entry, app_args, target_str, ctx, RuntimeKind::Wasmtime)
+}
+
+/// Ejecuta con un runtime explícito (wasmtime o wasmi).
 ///
-/// Pipeline completo: lectura → lexer → parser → typeck (strict) → resolución
-/// de imports → span_shift → flatten → `WasmBackend::emit` → ejecución con los
-/// host functions. Devuelve el exit code del proceso (0 = OK, 1 = error).
-pub fn run_jit(
+/// Diferencias por runtime:
+/// - **wasmtime**: excepciones CLS (tag + try_table), errores de runtime con
+///   payload (msg, span) → caret exacto.
+/// - **wasmi** (sin propuesta de exception-handling): el backend emite sin tag;
+///   los `try/catch`/`throw` fallan en compilación con error claro y los errores
+///   de runtime (div 0, índice) son traps (`unreachable`) con el shadow call
+///   stack pero sin caret del span CLS.
+pub fn run_jit_with(
     entry: &str,
     app_args: &[String],
     target_str: Option<&str>,
     ctx: &JitContext,
+    runtime: RuntimeKind,
 ) -> i32 {
     let timing = jit_timing();
     let mut t = Instant::now();
@@ -86,10 +50,6 @@ pub fn run_jit(
     };
     t = tick(timing, "lectura", t);
 
-    // Caché CLS→WASM en disco: la clave se calcula DESPUÉS de resolver los
-    // imports, para que los sources de los módulos importados (locales y
-    // globales ~/.cls) formen parte de la clave. Si algún módulo cambió, la
-    // clave cambia y se recompila (evita stale cache).
     let entry_path = std::path::Path::new(entry);
 
     // Parseo
@@ -121,8 +81,9 @@ pub fn run_jit(
         null_safety: true,
     };
     let mut checker = TypeChecker::new(types_config);
-    // Resolver imports del módulo (lee los archivos .clsx) y pasarlos como
-    // prelude: el core registra los tipos/símbolos exportados antes de chequear.
+    // Funciones host del nodo (intrinsics): el typeck las registra en el scope
+    // global para tipar las llamadas (el emisor las compila vía env.host_call).
+    checker.register_host_intrinsics(ctx.host_intrinsics);
     let base_dir = std::path::Path::new(entry)
         .parent()
         .unwrap_or(std::path::Path::new("."))
@@ -134,23 +95,21 @@ pub fn run_jit(
         show_cls_error(&e, entry, Some(&source));
         return 1;
     }
-    // Clave de caché con los sources de los módulos importados: editar cualquier
-    // módulo (local o global) invalida el caché.
+    // Clave de caché: source + versión + target + sources de módulos + runtime
+    // (wasmtime y wasmi emiten bytes distintos: el tag de excepciones).
     let module_sources: Vec<String> = imports.iter().map(|(_, src, _)| src.clone()).collect();
-    let key = cache_key(&source, target_str, entry_path, &module_sources);
+    let key = cache_key(&source, target_str, entry_path, &module_sources, runtime.as_str());
     let cache_path = cache_dir().join(format!("{:016x}.wasm", key));
     if let Ok(cached) = std::fs::read(&cache_path) {
         if timing {
             eprintln!("[JIT-TIMING] caché CLS→WASM: HIT ({} bytes)", cached.len());
         }
-        return run_wasm(&cached, entry, app_args, timing, t, None, &imports, ctx);
+        return run_wasm_dispatch(&cached, entry, app_args, timing, t, None, &imports, ctx, runtime);
     }
     if timing {
         eprintln!("[JIT-TIMING] caché CLS→WASM: miss");
     }
     // Desplazar los spans de cada módulo importado con un offset de línea único.
-    // El `Span` no incluye el archivo, así que sin esto las coordenadas de un
-    // módulo colisionan con las del main en el type map del JIT.
     for (i, (_path, _src, m)) in imports.iter_mut().enumerate() {
         let offset = 100000u32 * (i as u32 + 1);
         cls_core::frontend::span_shift::shift_module(m, offset);
@@ -164,8 +123,6 @@ pub fn run_jit(
         show_cls_error(&e, entry, Some(&source));
         return 1;
     }
-    // El typeck reporta errores como diagnostics (no falla con Err). Si hay
-    // algún error, mostrarlo con línea + caret y abortar antes de emitir WASM.
     let has_type_errors = checker.diagnostics().iter().any(|d| {
         matches!(d.severity, cls_core::error::diagnostic::Severity::Error)
     });
@@ -184,19 +141,23 @@ pub fn run_jit(
         Some(tt) => cls_core::frontend::ast::Target::parse(tt),
         None => cls_core::frontend::ast::Target::host(),
     };
-    // El type map se pasa al backend POR REFERENCIA (el checker sigue vivo);
-    // no se clona.
     let type_map = checker.type_map();
 
-    // Fusionar los imports aplanados (from/include) en el módulo principal para
-    // que el backend los compile como funciones/globals del mismo WASM.
     let prelude_for_flatten: Vec<(String, ClsModule)> = imports
         .iter()
         .map(|(p, _, m)| (p.clone(), m.clone()))
         .collect();
     let merged = flatten_imports(&module, &prelude_for_flatten);
 
-    let backend = cls_core::backend::wasm::WasmBackend::with_target(type_map, target);
+    // wasmtime → excepciones CLS; wasmi → modo sin excepciones (sin tag).
+    // El modo app exige main; los intrinsics del nodo viajan al backend.
+    let exceptions = matches!(runtime, RuntimeKind::Wasmtime);
+    let opts = cls_core::backend::wasm::WasmBackendOptions {
+        exceptions,
+        require_main: true,
+        intrinsics: ctx.host_intrinsics.to_vec(),
+    };
+    let backend = cls_core::backend::wasm::WasmBackend::with_options(type_map, target, opts);
     let wasm_bytes = match backend.emit(&merged) {
         Ok(b) => b,
         Err(e) => {
@@ -214,323 +175,69 @@ pub fn run_jit(
         eprintln!("[JIT-TIMING] WASM size: {} bytes", wasm_bytes.len());
     }
 
-    // Guardar en caché SOLO si run_wasm valida y ejecuta bien (evita cachear WASM
-    // inválido si el emisor tiene un bug). run_wasm recibe el path para escribirlo
-    // tras una validación exitosa de Module::new.
-    run_wasm(&wasm_bytes, entry, app_args, timing, t, Some(cache_path), &imports, ctx)
+    run_wasm_dispatch(&wasm_bytes, entry, app_args, timing, t, Some(cache_path), &imports, ctx, runtime)
 }
 
-/// Config de wasmtime: habilita la propuesta de excepciones (try/catch).
-/// El caché CLS→WASM en disco ya evita recompilar; el de wasmtime es opcional.
-fn wasmtime_cache_config() -> Option<wasmtime::Config> {
-    let mut config = wasmtime::Config::new();
-    config.wasm_exceptions(true);
-    Some(config)
-}
-
-fn run_wasm(
+fn run_wasm_dispatch(
     wasm_bytes: &[u8],
     entry: &str,
     app_args: &[String],
     timing: bool,
-    mut t: Instant,
+    t: Instant,
     cache_path: Option<std::path::PathBuf>,
-    modules: &[(String, String, ClsModule)],
+    imports: &[(String, String, ClsModule)],
     ctx: &JitContext,
+    runtime: RuntimeKind,
 ) -> i32 {
-    let engine = match wasmtime_cache_config() {
-        Some(config) => match Engine::new(&config) {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("[JIT] Error creando engine wasmtime: {}", e);
-                return 1;
-            }
-        },
-        None => Engine::default(),
-    };
-    t = tick(timing, "Engine::default", t);
-
-    let module = match Module::new(&engine, wasm_bytes) {
-        Ok(m) => m,
-        Err(e) => {
-            eprintln!("[JIT] Módulo WASM inválido para '{}':\n{:?}", entry, e);
-            if let Ok(wat) = wasmprinter::print_bytes(wasm_bytes) {
-                eprintln!("--- WAT ---\n{}", wat);
-            }
-            // No dejar WASM inválido en el caché.
-            if let Some(p) = &cache_path {
-                let _ = std::fs::remove_file(p);
-            }
-            return 1;
-        }
-    };
-    t = tick(timing, "Module::new (Cranelift)", t);
-
-    // El WASM es válido: persistirlo en el caché CLS→WASM (fallo silencioso).
-    // Escritura atómica: temporal + rename, para no dejar un .wasm corrupto en
-    // el caché si el proceso se interrumpe a mitad de la escritura.
-    if let Some(p) = &cache_path {
-        let _ = std::fs::create_dir_all(cache_dir())
-            .and_then(|_| atomic_write(p, wasm_bytes));
-        // Índice de integridad de los módulos del workspace (INFORMATIVO; el
-        // HIT no lo lee: la invalidación la cubre `cache_key` con los sources
-        // importados). El hook lo provee el nodo; si el nodo no lo registra,
-        // se omite. Se pasan las rutas ABSOLUTAS de los módulos resueltos que
-        // caen FUERA del workspace (globales de ~/.cls).
-        if let Some(hook) = ctx.module_index {
-            let base_dir = std::path::Path::new(entry)
-                .parent()
-                .unwrap_or(std::path::Path::new("."))
-                .to_path_buf();
-            let manifest = cls_core::config::ModuleManifest::find_in_dir(&base_dir);
-            let root = hook.workspace_root(std::path::Path::new(entry));
-            let mut extra: Vec<std::path::PathBuf> = Vec::new();
-            for (import_path, _src, _m) in modules {
-                for cand in module_candidates(import_path, &base_dir, manifest.as_ref()) {
-                    if cand.is_file() {
-                        if !cand.starts_with(&root) {
-                            extra.push(cand);
-                        }
-                        break;
-                    }
-                }
-            }
-            hook.write_module_index(std::path::Path::new(entry), &extra);
-        }
-    }
-
-    let module_offsets: Vec<(u32, String, String)> = modules
-        .iter()
-        .enumerate()
-        .map(|(i, (path, src, _m))| {
-            (100000u32 * (i as u32 + 1), path.clone(), src.clone())
-        })
-        .collect();
-
-    let mut store = Store::new(
-        &engine,
-        HostState {
-            first_in_line: true,
-            source_file: entry.to_string(),
-            modules: module_offsets,
-            string_caps: std::collections::HashMap::new(),
-            call_stack: Vec::new(),
-            pending_call_site: None,
-            simple_fn_names: std::collections::HashMap::new(),
-        },
-    );
-    let mut linker = Linker::new(&engine);
-    t = tick(timing, "Store+Linker", t);
-
-    if let Err(e) = register_host_functions(&mut linker) {
-        eprintln!("[JIT] Error registrando funciones host: {}", e);
-        return 1;
-    }
-
-    // Extensiones: hosts genéricos `env.<sym>__<sig>@<lib>` → backend del nodo.
-    if let Err(e) = register_native_hosts(&mut linker, &module, ctx.native_backend.clone()) {
-        eprintln!("[JIT] Error registrando hosts de extensiones: {}", e);
-        return 1;
-    }
-    t = tick(timing, "register hosts", t);
-
-    let instance = match linker.instantiate(&mut store, &module) {
-        Ok(i) => i,
-        Err(e) => {
-            eprintln!("[JIT] Error de instanciación para '{}': {}", entry, e);
-            return 1;
-        }
-    };
-    t = tick(timing, "instantiate", t);
-
-    // Escribir los args de la app en la memoria y llamar main(ptr).
-    let alloc = match instance.get_typed_func::<i64, i64>(&mut store, "alloc") {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("[JIT] Export 'alloc' no disponible: {}", e);
-            return 1;
-        }
-    };
-    let memory = match instance.get_memory(&mut store, "memory") {
-        Some(m) => m,
-        None => {
-            eprintln!("[JIT] Export 'memory' no disponible");
-            return 1;
-        }
-    };
-
-    let args_ptr = match write_args(&mut store, &memory, &alloc, app_args) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("[JIT] Error escribiendo args: {}", e);
-            return 1;
-        }
-    };
-    t = tick(timing, "write_args", t);
-
-    let main = match instance.get_typed_func::<i64, i64>(&mut store, "main") {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("[JIT] Export 'main' no disponible: {}", e);
-            return 1;
-        }
-    };
-
-    let result = match main.call(&mut store, args_ptr) {
-        Ok(code) => code as i32,
-        Err(_e) => {
-            // Excepción CLS no capturada: extraer el payload [msg, span] del tag
-            // y formatear el error como runtime (con el mensaje real, no un trap genérico).
-            let payload: Vec<Val> = {
-                let exn = store.take_pending_exception();
-                let mut fields = match exn.as_ref() {
-                    Some(e) => e.fields(&mut store).ok(),
-                    None => None,
-                };
-                match fields.as_mut() {
-                    Some(iter) => iter.collect(),
-                    None => Vec::new(),
-                }
-            };
-            let msg = payload
-                .first()
-                .and_then(|v| v.i64())
-                .map(|packed| read_packed_str(&mut store, &memory, packed))
-                .unwrap_or_default();
-            let span = payload
-                .get(1)
-                .and_then(|v| v.i64())
-                .map(unpack_span);
-            // Shadow call stack: frames (nombre, span) en orden de ejecución
-            // (main → outer → inner). El frame del error es el último. Cada span
-            // se de-shiftea (los módulos importados tienen offset 100000*n).
-            let call_stack: Vec<cls_core::error::StackFrame> = store
-                .data()
-                .call_stack
-                .iter()
-                .map(|(name, sp)| {
-                    let (file, _source, real) = resolve_runtime_span(&store, *sp, entry);
-                    cls_core::error::StackFrame::new(name, Some(real), &file)
-                })
-                .collect();
-            let mut error_span = span;
-            // Sin excepción CLS (p.ej. stack overflow, trap de memoria, host
-            // que devuelve Err): usar el mensaje raíz del trap de wasmtime (sin
-            // el backtrace multilínea crudo) y mostrar el call stack acumulado.
-            // Si el backend emitió un call site pendiente (p.ej. `int("x")`
-            // inválido), ese es el span real del error.
-            let root = _e.root_cause().to_string();
-            let short = if root.is_empty() { _e.to_string() } else { root };
-            // Stack overflow: mensaje limpio y solo los frames del tope de la
-            // recursión (no los ~1000 acumulados).
-            let is_stack_overflow =
-                short.contains("call stack exhausted") || short.contains("stack overflow");
-            let from_call_site = error_span.is_none()
-                && store.data().pending_call_site.is_some();
-            let trap_msg = if is_stack_overflow {
-                "stack overflow".to_string()
-            } else if from_call_site {
-                // Error de conversión de host (`int("x")` inválido): el span ya
-                // apunta al call site y el mensaje es del usuario (sin prefijo).
-                short
-            } else if short.starts_with("Trap") {
-                format!("Trap WASM: {}", short.trim_start_matches("Trap "))
-            } else {
-                format!("Trap WASM: {}", short)
-            };
-            let fallback_msg = if msg.is_empty() { trap_msg } else { msg };
-            let mut stack = call_stack;
-            if is_stack_overflow {
-                // Solo el punto de recursión + los frames más recientes.
-                let keep = stack.len().saturating_sub(3);
-                stack.drain(..keep);
-            }
-            if error_span.is_none() {
-                let pending = store.data_mut().pending_call_site.take();
-                error_span = pending.or_else(|| stack.last().and_then(|f| f.span));
-            }
-            if let Some(span) = error_span {
-                // De-shiftear el span si pertenece a un módulo importado y
-                // resolver el archivo/source real (para el caret correcto).
-                let (file, source, real_span) = resolve_runtime_span(&store, span, entry);
-                let report = cls_runtime::error_report::ErrorReport {
-                    error: ClsError::RuntimeError(fallback_msg),
-                    span: Some(real_span),
-                    stack,
-                    import_trace: vec![],
-                    source_file: file,
-                    source,
-                };
-                eprintln!(
-                    "{}",
-                    cls_runtime::error_report::format_error(
-                        &report,
-                        &cls_runtime::error_report::ErrorFormat::Console
-                    )
-                );
-            } else {
-                let report = cls_runtime::error_report::ErrorReport {
-                    error: ClsError::RuntimeError(fallback_msg),
-                    span: stack.last().and_then(|f| f.span),
-                    stack,
-                    import_trace: vec![],
-                    source_file: entry.to_string(),
-                    source: None,
-                };
-                eprintln!(
-                    "{}",
-                    cls_runtime::error_report::format_error(
-                        &report,
-                        &cls_runtime::error_report::ErrorFormat::Console
-                    )
-                );
-            }
+    match runtime {
+        RuntimeKind::Wasmtime => crate::wasmtime_rt::run_wasm_wasmtime(
+            wasm_bytes, entry, app_args, timing, t, cache_path, imports, ctx,
+        ),
+        #[cfg(feature = "wasmi-runtime")]
+        RuntimeKind::Wasmi => crate::wasmi_rt::run_wasm_wasmi(
+            wasm_bytes, entry, app_args, timing, t, cache_path, imports, ctx,
+        ),
+        #[cfg(not(feature = "wasmi-runtime"))]
+        RuntimeKind::Wasmi => {
+            eprintln!(
+                "[JIT] runtime wasmi no disponible: compila cls-jit con la feature 'wasmi-runtime'"
+            );
             1
         }
-    };
-    tick(timing, "ejecución main", t);
-    result
-}
-
-/// Lee un string empaquetado `(ptr<<32)|len` desde la memoria del módulo.
-fn read_packed_str(store: &mut Store<HostState>, memory: &Memory, packed: i64) -> String {
-    let ptr = (packed >> 32) as usize;
-    let len = (packed & 0xffff_ffff) as usize;
-    memory
-        .data(store)
-        .get(ptr..ptr.saturating_add(len))
-        .map(|b| String::from_utf8_lossy(b).into_owned())
-        .unwrap_or_default()
+    }
 }
 
 /// Desempaqueta `(line<<32)|col` en un Span.
-fn unpack_span(packed: i64) -> Span {
+pub(crate) fn unpack_span(packed: i64) -> Span {
     let line = ((packed >> 32) & 0xffff_ffff) as u32;
     let col = (packed & 0xffff_ffff) as u32;
     Span::new(line, col, line, col)
+}
+
+/// Offsets de línea de los módulos importados: `(100000*(i+1), path, source)`.
+pub(crate) fn module_offsets(modules: &[(String, String, ClsModule)]) -> Vec<(u32, String, String)> {
+    modules
+        .iter()
+        .enumerate()
+        .map(|(i, (path, src, _m))| (100000u32 * (i as u32 + 1), path.clone(), src.clone()))
+        .collect()
 }
 
 /// Resuelve el archivo y source reales de un span de runtime (puede estar
 /// desplazado por pertenecer a un módulo importado). Devuelve (archivo, source,
 /// span de-shifteado). Para el entry, `source` es `None` → el formateador lee del
 /// archivo en disco (evita perder la línea+caret del error del archivo principal).
-fn resolve_runtime_span(
-    store: &Store<HostState>,
+pub(crate) fn resolve_runtime_span(
     span: Span,
     entry: &str,
+    modules: &[(u32, String, String)],
 ) -> (String, Option<String>, Span) {
     let raw_line = span.start_line;
     if raw_line >= 100000 {
         let idx = (raw_line / 100000) as usize;
         let offset = idx * 100000;
         let real_line = raw_line - offset as u32;
-        // modules[i-1] (offset = 100000 * i).
-        if let Some((off, file, source)) = store
-            .data()
-            .modules
-            .iter()
-            .find(|(o, _, _)| *o == offset as u32)
-        {
+        if let Some((off, file, source)) = modules.iter().find(|(o, _, _)| *o == offset as u32) {
             let _ = off;
             let real = Span::new(real_line, span.start_col, real_line, span.end_col);
             return (file.clone(), Some(source.clone()), real);
@@ -539,1759 +246,118 @@ fn resolve_runtime_span(
     (entry.to_string(), None, span)
 }
 
-/// Escribe los args como Array<String> en memoria y devuelve el ptr.
-fn write_args(
-    store: &mut Store<HostState>,
-    memory: &Memory,
-    alloc: &wasmtime::TypedFunc<i64, i64>,
-    app_args: &[String],
-) -> Result<i64, String> {
-    let n = app_args.len() as i64;
-    // Layout de array actual: [cap:i64][len:i64][elems...] (header 16 bytes).
-    let array_ptr = alloc.call(&mut *store, n * 8 + 16).map_err(|e| e.to_string())?;
-    memory
-        .write(&mut *store, array_ptr as usize, &n.to_le_bytes())
-        .map_err(|e| e.to_string())?;
-    memory
-        .write(&mut *store, (array_ptr as usize) + 8, &n.to_le_bytes())
-        .map_err(|e| e.to_string())?;
-    for (i, arg) in app_args.iter().enumerate() {
-        let sptr = alloc
-            .call(&mut *store, arg.len() as i64)
-            .map_err(|e| e.to_string())?;
-        memory
-            .write(&mut *store, sptr as usize, arg.as_bytes())
-            .map_err(|e| e.to_string())?;
-        let packed = (sptr << 32) | (arg.len() as i64);
-        memory
-            .write(&mut *store, (array_ptr as usize) + 16 + i * 8, &packed.to_le_bytes())
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(array_ptr)
-}
-
-/// Resuelve la memoria del módulo desde el caller del host function.
-fn caller_memory<'a>(caller: &'a mut Caller<'_, HostState>) -> Option<Memory> {
-    caller.get_export("memory").and_then(|e| e.into_memory())
-}
-
-/// Llama al allocator exportado del módulo desde un host function.
-/// Si la alocación falla (memoria agotada) aborta con un mensaje claro en vez
-/// de devolver un puntero inválido que los callers convertirían a 0 (corrupción).
-fn caller_alloc(caller: &mut Caller<'_, HostState>, n: i64) -> Option<i64> {
-    let func = caller.get_export("alloc").and_then(|e| e.into_func())?;
-    let mut results = [Val::I64(0)];
-    if let Err(e) = func.call(caller, &[Val::I64(n)], &mut results) {
-        eprintln!("Error de ejecución: memoria insuficiente (out of memory) al alocar {} bytes: {}", n, e);
-        std::process::exit(1);
-    }
-    let ptr = results[0].i64().unwrap_or(0);
-    if ptr == 0 {
-        eprintln!("Error de ejecución: memoria insuficiente (out of memory) al alocar {} bytes", n);
-        std::process::exit(1);
-    }
-    Some(ptr)
-}
-
-/// Escribe un string en la memoria del módulo (via alloc) y lo empaqueta.
-/// Aloca con capacidad amortizada (len*2 + slack) y la registra en
-/// `string_caps` para que `str_concat` reutilice el buffer.
-fn caller_write_str(caller: &mut Caller<'_, HostState>, s: &str) -> Option<i64> {
-    let len = s.len() as i64;
-    let cap = (len * 2 + 16).max(64);
-    let ptr = caller_alloc(caller, cap)?;
-    {
-        let memory = caller_memory(caller);
-        if let Some(memory) = memory {
-            let data = memory.data_mut(&mut *caller);
-            let start = ptr as usize;
-            if start + s.len() <= data.len() {
-                data[start..start + s.len()].copy_from_slice(s.as_bytes());
+/// Índice de integridad de los módulos del workspace (INFORMATIVO). El hook lo
+/// provee el nodo; si el nodo no lo registra, se omite. Se pasan las rutas
+/// ABSOLUTAS de los módulos resueltos que caen FUERA del workspace (globales
+/// de ~/.cls).
+pub(crate) fn maybe_write_module_index(
+    entry: &str,
+    modules: &[(String, String, ClsModule)],
+    ctx: &JitContext,
+) {
+    if let Some(hook) = ctx.module_index {
+        let base_dir = std::path::Path::new(entry)
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .to_path_buf();
+        let manifest = cls_core::config::ModuleManifest::find_in_dir(&base_dir);
+        let root = hook.workspace_root(std::path::Path::new(entry));
+        let mut extra: Vec<std::path::PathBuf> = Vec::new();
+        for (import_path, _src, _m) in modules {
+            for cand in crate::resolve::module_candidates(import_path, &base_dir, manifest.as_ref()) {
+                if cand.is_file() {
+                    if !cand.starts_with(&root) {
+                        extra.push(cand);
+                    }
+                    break;
+                }
             }
         }
+        hook.write_module_index(std::path::Path::new(entry), &extra);
     }
-    caller.data_mut().string_caps.insert(ptr, cap);
-    Some((ptr << 32) | len)
 }
 
-/// Lee un string empaquetado (ptr<<32|len) de la memoria.
-fn caller_read_str(caller: &mut Caller<'_, HostState>, packed: i64) -> String {
-    let ptr = (packed >> 32) as usize;
-    let len = (packed & 0xffff_ffff) as usize;
-    if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
-        let data = memory.data(&mut *caller);
-        if ptr + len <= data.len() {
-            return String::from_utf8_lossy(&data[ptr..ptr + len]).into_owned();
-        }
-    }
-    String::new()
-}
+/// Reporta un error de runtime con el trazo completo (AGENTS.md: obligatorio).
+///
+/// Recibe las piezas que cada runtime extrae de su error:
+/// - `msg`: mensaje de la excepción CLS (vacío si el error fue un trap del host).
+/// - `span`: span de la excepción CLS (puede ser None).
+/// - `call_stack`: shadow call stack `(nombre, span)` acumulado por fn_enter.
+/// - `pending_call_site`: span del call site pendiente (si el backend lo emitió).
+/// - `trap_text`: root cause del error del runtime (para traps).
+pub(crate) fn finish_run_error(
+    msg: String,
+    span: Option<Span>,
+    call_stack: Vec<(String, Span)>,
+    pending_call_site: Option<Span>,
+    trap_text: String,
+    entry: &str,
+    modules: &[(u32, String, String)],
+) -> i32 {
+    use cls_runtime::error_report::{format_error, ErrorFormat, ErrorReport};
 
-fn print_arg(caller: &mut Caller<'_, HostState>, value: &str) {
-    let state = caller.data_mut();
-    if !state.first_in_line {
-        print!(" ");
-    }
-    print!("{}", value);
-    state.first_in_line = false;
-}
-
-fn format_float(v: f64) -> String {
-    format!("{}", v)
-}
-
-fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String> {
-    linker
-        .func_wrap(HOST, "print_int", |mut caller: Caller<'_, HostState>, v: i64| {
-            print_arg(&mut caller, &v.to_string());
+    // Shadow call stack: frames (nombre, span) en orden de ejecución
+    // (main → outer → inner). El frame del error es el último. Cada span
+    // se de-shiftea (los módulos importados tienen offset 100000*n).
+    let stack: Vec<cls_core::error::StackFrame> = call_stack
+        .iter()
+        .map(|(name, sp)| {
+            let (file, _source, real) = resolve_runtime_span(*sp, entry, modules);
+            cls_core::error::StackFrame::new(name, Some(real), &file)
         })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "print_float", |mut caller: Caller<'_, HostState>, v: f64| {
-            print_arg(&mut caller, &format_float(v));
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "print_bool", |mut caller: Caller<'_, HostState>, v: i32| {
-            print_arg(&mut caller, if v != 0 { "true" } else { "false" });
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "print_char", |mut caller: Caller<'_, HostState>, v: i32| {
-            let c = char::from_u32(v as u32).unwrap_or('?');
-            print_arg(&mut caller, &c.to_string());
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "print_str", |mut caller: Caller<'_, HostState>, v: i64| {
-            let s = caller_read_str(&mut caller, v);
-            print_arg(&mut caller, &s);
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "print_end", |mut caller: Caller<'_, HostState>| {
-            println!();
-            caller.data_mut().first_in_line = true;
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "now", |_: Caller<'_, HostState>| -> i64 {
-            use std::time::{SystemTime, UNIX_EPOCH};
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or(0)
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "exit", |_: Caller<'_, HostState>, code: i64| -> () {
-            std::process::exit(code as i32);
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "sleep", |_: Caller<'_, HostState>, ms: i64| {
-            if ms > 0 {
-                std::thread::sleep(std::time::Duration::from_millis(ms as u64));
-            }
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "trap", |mut caller: Caller<'_, HostState>, msg: i64, span: i64| -> () {
-            let s = caller_read_str(&mut caller, msg);
-            let file = caller.data().source_file.clone();
-            let line = ((span >> 32) & 0xffff_ffff) as u32;
-            let col = (span & 0xffff_ffff) as u32;
-            let err = ClsError::RuntimeError(s);
-            let span_s = if line > 0 {
-                Some(Span::new(line, col, line, col))
-            } else {
-                None
-            };
-            let report = ErrorReport {
-                error: err,
-                span: span_s,
-                stack: vec![],
-                import_trace: vec![],
-                source_file: file,
-                source: None,
-            };
-            eprintln!("{}", format_error(&report, &ErrorFormat::Console));
-            std::process::exit(1);
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "parse_int", |mut caller: Caller<'_, HostState>, v: i64| -> Result<i64, wasmtime::Error> {
-            let s = caller_read_str(&mut caller, v);
-            let t = s.trim();
-            match t.parse::<i64>() {
-                Ok(n) => Ok(n),
-                Err(_) => {
-                    // Paridad walker: `int("no es un numero")` → error, no 0.
-                    // Trap con mensaje claro: run_wasm lo muestra con call stack.
-                    Err(wasmtime::Error::new(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("int: no se puede convertir '{}'", t),
-                    )))
-                }
-            }
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "parse_float", |mut caller: Caller<'_, HostState>, v: i64| -> Result<f64, wasmtime::Error> {
-            let s = caller_read_str(&mut caller, v);
-            let t = s.trim();
-            match t.parse::<f64>() {
-                Ok(n) => Ok(n),
-                Err(_) => {
-                    // Paridad walker: `float("x")` → error, no 0.0.
-                    Err(wasmtime::Error::new(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("float: no se puede convertir '{}'", t),
-                    )))
-                }
-            }
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "parse_bool", |mut caller: Caller<'_, HostState>, v: i64| -> i32 {
-            // Truthiness de string (paridad walker): vacío → false, no vacío → true.
-            let s = caller_read_str(&mut caller, v);
-            if s.is_empty() { 0 } else { 1 }
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(
-            HOST,
-            "str_concat",
-            |mut caller: Caller<'_, HostState>, a: i64, b: i64| -> i64 {
-                let a_ptr = (a >> 32) as usize;
-                let a_len = (a & 0xffff_ffff) as usize;
-                let sa = caller_read_str(&mut caller, a);
-                let sb = caller_read_str(&mut caller, b);
-                let out = format!("{}{}", sa, sb);
-                // Reutilizar el buffer de `a` si tiene capacidad (amortizado):
-                // evita alocar nuevo en cada iteración de un loop de concat.
-                let cap = caller.data().string_caps.get(&(a_ptr as i64)).copied();
-                if let Some(cap) = cap {
-                    if (out.len() as i64) <= cap && out.len() >= a_len {
-                        if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
-                            let data = memory.data_mut(&mut caller);
-                            let start = a_ptr;
-                            if start + out.len() <= data.len() {
-                                data[start..start + out.len()].copy_from_slice(out.as_bytes());
-                                return ((a_ptr as i64) << 32) | (out.len() as i64);
-                            }
-                        }
-                    }
-                }
-                caller_write_str(&mut caller, &out).unwrap_or(0)
-            },
-        )
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "str_int", |mut caller: Caller<'_, HostState>, v: i64| -> i64 {
-            caller_write_str(&mut caller, &v.to_string()).unwrap_or(0)
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "str_float", |mut caller: Caller<'_, HostState>, v: f64| -> i64 {
-            caller_write_str(&mut caller, &format_float(v)).unwrap_or(0)
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "str_bool", |mut caller: Caller<'_, HostState>, v: i32| -> i64 {
-            caller_write_str(&mut caller, if v != 0 { "true" } else { "false" })
-                .unwrap_or(0)
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "str_char", |mut caller: Caller<'_, HostState>, v: i32| -> i64 {
-            let c = char::from_u32(v as u32).unwrap_or('?');
-            caller_write_str(&mut caller, &c.to_string()).unwrap_or(0)
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "pow_num", |_: Caller<'_, HostState>, a: i64, b: i64| -> i64 {
-            if b == 0 {
-                1
-            } else {
-                (a as f64).powi(b as i32) as i64
-            }
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "fmod", |_: Caller<'_, HostState>, a: f64, b: f64| -> f64 {
-            a % b
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "input", |mut caller: Caller<'_, HostState>| -> i64 {
-            let mut line = String::new();
-            let _ = std::io::stdin().read_line(&mut line);
-            let line = line.trim_end_matches(['\r', '\n']);
-            caller_write_str(&mut caller, line).unwrap_or(0)
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "str_upper", |mut caller: Caller<'_, HostState>, v: i64| -> i64 {
-            let s = caller_read_str(&mut caller, v);
-            caller_write_str(&mut caller, &s.to_uppercase()).unwrap_or(0)
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "str_lower", |mut caller: Caller<'_, HostState>, v: i64| -> i64 {
-            let s = caller_read_str(&mut caller, v);
-            caller_write_str(&mut caller, &s.to_lowercase()).unwrap_or(0)
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "str_trim", |mut caller: Caller<'_, HostState>, v: i64| -> i64 {
-            let s = caller_read_str(&mut caller, v);
-            caller_write_str(&mut caller, s.trim()).unwrap_or(0)
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "str_contains", |mut caller: Caller<'_, HostState>, a: i64, b: i64| -> i32 {
-            let sa = caller_read_str(&mut caller, a);
-            let sb = caller_read_str(&mut caller, b);
-            if sa.contains(&sb) { 1 } else { 0 }
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "str_starts_with", |mut caller: Caller<'_, HostState>, a: i64, b: i64| -> i32 {
-            let sa = caller_read_str(&mut caller, a);
-            let sb = caller_read_str(&mut caller, b);
-            if sa.starts_with(&sb) { 1 } else { 0 }
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "str_ends_with", |mut caller: Caller<'_, HostState>, a: i64, b: i64| -> i32 {
-            let sa = caller_read_str(&mut caller, a);
-            let sb = caller_read_str(&mut caller, b);
-            if sa.ends_with(&sb) { 1 } else { 0 }
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "str_is_empty", |mut caller: Caller<'_, HostState>, v: i64| -> i32 {
-            let s = caller_read_str(&mut caller, v);
-            if s.is_empty() { 1 } else { 0 }
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "str_repr", |mut caller: Caller<'_, HostState>, v: i64| -> i64 {
-            let s = caller_read_str(&mut caller, v);
-            let escaped = s
-                .replace('\\', "\\\\")
-                .replace('"', "\\\"")
-                .replace('\n', "\\n")
-                .replace('\t', "\\t");
-            caller_write_str(&mut caller, &format!("\"{}\"", escaped)).unwrap_or(0)
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "str_length", |mut caller: Caller<'_, HostState>, v: i64| -> i64 {
-            let s = caller_read_str(&mut caller, v);
-            s.len() as i64
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "int_abs", |_: Caller<'_, HostState>, v: i64| -> i64 {
-            v.abs()
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "float_abs", |_: Caller<'_, HostState>, v: f64| -> f64 {
-            v.abs()
-        })
-        .map_err(|e| e.to_string())?;
-
-    // ── Métodos de Array (layout [cap:i64][len:i64][elem...]) ───────────────
-
-    linker
-        .func_wrap(HOST, "arr_push", |mut caller: Caller<'_, HostState>, ptr: i64, val: i64, es: i64| -> i64 {
-            let p = ptr as usize;
-            let len = arr_len(&mut caller, p);
-            let cap = arr_cap(&mut caller, p);
-            let new_p = if len + 1 > cap {
-                arr_realloc(&mut caller, p, ((cap * 2 + 1).max(len + 1)) as usize, es as usize)
-            } else {
-                p
-            };
-            arr_set(&mut caller, new_p, len as usize, es as usize, val);
-            arr_write_i64(&mut caller, new_p + 8, len + 1);
-            new_p as i64
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "arr_pop", |mut caller: Caller<'_, HostState>, ptr: i64, _es: i64| -> i64 {
-            let p = ptr as usize;
-            let len = arr_len(&mut caller, p);
-            if len <= 0 {
-                return p as i64;
-            }
-            arr_write_i64(&mut caller, p + 8, len - 1);
-            p as i64
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "arr_shift", |mut caller: Caller<'_, HostState>, ptr: i64, es: i64| -> i64 {
-            let p = ptr as usize;
-            let es = es as usize;
-            let len = arr_len(&mut caller, p);
-            if len <= 0 {
-                return p as i64;
-            }
-            for i in 0..(len - 1) as usize {
-                let e = arr_elem(&mut caller, p, i + 1, es);
-                arr_set(&mut caller, p, i, es, e);
-            }
-            arr_write_i64(&mut caller, p + 8, len - 1);
-            p as i64
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "arr_unshift", |mut caller: Caller<'_, HostState>, ptr: i64, val: i64, es: i64| -> i64 {
-            let p = ptr as usize;
-            let es = es as usize;
-            let len = arr_len(&mut caller, p);
-            let cap = arr_cap(&mut caller, p);
-            let new_p = if len + 1 > cap {
-                arr_realloc(&mut caller, p, ((cap * 2 + 1).max(len + 1)) as usize, es)
-            } else {
-                p
-            };
-            for i in (0..len as usize).rev() {
-                let e = arr_elem(&mut caller, new_p, i, es);
-                arr_set(&mut caller, new_p, i + 1, es, e);
-            }
-            arr_set(&mut caller, new_p, 0, es, val);
-            arr_write_i64(&mut caller, new_p + 8, len + 1);
-            new_p as i64
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "arr_reverse", |mut caller: Caller<'_, HostState>, ptr: i64, es: i64| -> i64 {
-            let p = ptr as usize;
-            let es = es as usize;
-            let len = arr_len(&mut caller, p);
-            for i in 0..(len as usize / 2) {
-                let a = arr_elem(&mut caller, p, i, es);
-                let b = arr_elem(&mut caller, p, (len as usize) - 1 - i, es);
-                arr_set(&mut caller, p, i, es, b);
-                arr_set(&mut caller, p, (len as usize) - 1 - i, es, a);
-            }
-            p as i64
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "arr_to_string", |mut caller: Caller<'_, HostState>, ptr: i64, es: i64, kind: i64| -> i64 {
-            let s = arr_to_string(&mut caller, ptr, es, kind);
-            caller_write_str(&mut caller, &s).unwrap_or(0)
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "arr_index_of", |mut caller: Caller<'_, HostState>, ptr: i64, needle: i64, es: i64| -> i64 {
-            let p = ptr as usize;
-            let len = arr_len(&mut caller, p);
-            for i in 0..len as usize {
-                if arr_elem(&mut caller, p, i, es as usize) == needle {
-                    return i as i64;
-                }
-            }
-            -1
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "arr_includes", |mut caller: Caller<'_, HostState>, ptr: i64, needle: i64, es: i64| -> i32 {
-            let p = ptr as usize;
-            let len = arr_len(&mut caller, p);
-            for i in 0..len as usize {
-                if arr_elem(&mut caller, p, i, es as usize) == needle {
-                    return 1;
-                }
-            }
-            0
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(
-            HOST,
-            "arr_join",
-            |mut caller: Caller<'_, HostState>, ptr: i64, sep: i64, es: i64, kind: i64| -> i64 {
-                let p = ptr as usize;
-                let es = es as usize;
-                let len = arr_len(&mut caller, p);
-                let separator = caller_read_str(&mut caller, sep);
-                let mut out = String::new();
-                for i in 0..len as usize {
-                    if i > 0 {
-                        out.push_str(&separator);
-                    }
-                    let e = arr_elem(&mut caller, p, i, es);
-                    match kind {
-                        1 => out.push_str(&caller_read_str(&mut caller, e)),
-                        2 => out.push_str(&format_float(f64::from_bits(e as u64))),
-                        3 => out.push_str(if e != 0 { "true" } else { "false" }),
-                        4 => out.push(char::from_u32(e as u32).unwrap_or('?')),
-                        _ => out.push_str(&e.to_string()),
-                    }
-                }
-                caller_write_str(&mut caller, &out).unwrap_or(0)
-            },
-        )
-        .map_err(|e| e.to_string())?;
-
-    register_stdlib_hosts(linker)?;
-    register_record_hosts(linker)?;
-
-    Ok(())
-}
-
-/// Registra hosts para las extensiones (`env.<sym>__<sig>@<lib>`) que delegan en
-/// el backend nativo del nodo (libloading). `sig` = ret+params: i=int, f=float,
-/// b=bool, c=char, s=string, v=void.
-fn register_native_hosts(
-    linker: &mut Linker<HostState>,
-    module: &wasmtime::Module,
-    backend: Arc<dyn cls_runtime::ffi::NativeBackend>,
-) -> Result<usize, String> {
-    use cls_runtime::ffi::NativeType;
-    use cls_runtime::Value;
-    let mut count = 0;
-    let imports: Vec<(String, String)> = module
-        .imports()
-        .map(|it| (it.module().to_string(), it.name().to_string()))
         .collect();
-    for (m, n) in imports {
-        if m != "env" {
-            continue;
-        }
-        let (rest, lib) = match n.split_once('@') {
-            Some(x) => x,
-            None => continue,
+    let mut error_span = span;
+    let root = trap_text;
+    let short = root;
+    // Stack overflow: mensaje limpio y solo los frames del tope de la
+    // recursión (no los ~1000 acumulados).
+    let is_stack_overflow =
+        short.contains("call stack exhausted") || short.contains("stack overflow");
+    let from_call_site = error_span.is_none() && pending_call_site.is_some();
+    let trap_msg = if is_stack_overflow {
+        "stack overflow".to_string()
+    } else if from_call_site {
+        // Error de conversión de host (`int("x")` inválido): el span ya
+        // apunta al call site y el mensaje es del usuario (sin prefijo).
+        short
+    } else if short.starts_with("Trap") {
+        format!("Trap WASM: {}", short.trim_start_matches("Trap "))
+    } else {
+        format!("Trap WASM: {}", short)
+    };
+    let fallback_msg = if msg.is_empty() { trap_msg } else { msg };
+    let mut stack = stack;
+    if is_stack_overflow {
+        // Solo el punto de recursión + los frames más recientes.
+        let keep = stack.len().saturating_sub(3);
+        stack.drain(..keep);
+    }
+    if error_span.is_none() {
+        error_span = pending_call_site.or_else(|| stack.last().and_then(|f| f.span));
+    }
+    if let Some(span) = error_span {
+        // De-shiftear el span si pertenece a un módulo importado y resolver el
+        // archivo/source real (para el caret correcto).
+        let (file, source, real_span) = resolve_runtime_span(span, entry, modules);
+        let report = ErrorReport {
+            error: ClsError::RuntimeError(fallback_msg),
+            span: Some(real_span),
+            stack,
+            import_trace: vec![],
+            source_file: file,
+            source,
         };
-        let (sym, sig) = match rest.split_once("__") {
-            Some(x) => x,
-            None => continue,
+        eprintln!("{}", format_error(&report, &ErrorFormat::Console));
+    } else {
+        let report = ErrorReport {
+            error: ClsError::RuntimeError(fallback_msg),
+            span: stack.last().and_then(|f| f.span),
+            stack,
+            import_trace: vec![],
+            source_file: entry.to_string(),
+            source: None,
         };
-        let sym = sym.to_string();
-        let lib = lib.to_string();
-        let sig = sig.to_string();
-        let name = n.clone();
-        let native_type = |c: char| match c {
-            'f' => NativeType::Float,
-            'b' => NativeType::Bool,
-            'c' => NativeType::CInt,
-            's' => NativeType::CString,
-            _ => NativeType::Int,
-        };
-        let ret_to_i64 = |v: Result<Value, cls_core::error::ClsError>| -> i64 {
-            match v {
-                Ok(Value::Int(n)) => n,
-                Ok(Value::Float(f)) => f as i64,
-                Ok(Value::Bool(b)) => {
-                    if b {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                Ok(Value::Char(ch)) => ch as i64,
-                Ok(_) => 0,
-                Err(_) => 0,
-            }
-        };
-        let ret_to_f64 = |v: Result<Value, cls_core::error::ClsError>| -> f64 {
-            match v {
-                Ok(Value::Float(f)) => f,
-                Ok(Value::Int(n)) => n as f64,
-                Ok(_) => 0.0,
-                Err(_) => 0.0,
-            }
-        };
-        let params: Vec<char> = sig.chars().skip(1).collect();
-        let rcode = sig.chars().next().unwrap_or('i');
-        let lib2 = lib.clone();
-        let sym2 = sym.clone();
-        match params.as_slice() {
-            [] => {
-                let ret = rcode;
-                let lib3 = lib2.clone();
-                let sym3 = sym2.clone();
-                let backend = backend.clone();
-                linker
-                    .func_wrap(HOST, &name, move |_: Caller<'_, HostState>| -> i64 {
-                        let _ = &lib3;
-                        let _ = &sym3;
-                        let r = backend.call_function(&lib3, &sym3, &[], &[], native_type(ret));
-                        ret_to_i64(r)
-                    })
-                    .map_err(|e| e.to_string())?;
-            }
-            [p0] if *p0 == 'f' => {
-                let ret = rcode;
-                let lib3 = lib2.clone();
-                let sym3 = sym2.clone();
-                let backend = backend.clone();
-                linker
-                    .func_wrap(HOST, &name, move |_: Caller<'_, HostState>, a: f64| -> f64 {
-                        let r = backend.call_function(
-                            &lib3,
-                            &sym3,
-                            &[Value::Float(a)],
-                            &[NativeType::Float],
-                            native_type(ret),
-                        );
-                        ret_to_f64(r)
-                    })
-                    .map_err(|e| e.to_string())?;
-            }
-            [p0] => {
-                let p0 = *p0;
-                let ret = rcode;
-                let lib3 = lib2.clone();
-                let sym3 = sym2.clone();
-                let backend = backend.clone();
-                linker
-                    .func_wrap(HOST, &name, move |mut caller: Caller<'_, HostState>, a: i64| -> i64 {
-                        let arg = match p0 {
-                            's' => Value::String(caller_read_str(&mut caller, a)),
-                            _ => Value::Int(a),
-                        };
-                        let r = backend.call_function(&lib3, &sym3, &[arg], &[native_type(p0)], native_type(ret));
-                        match r {
-                            Ok(Value::String(s)) => caller_write_str(&mut caller, &s).unwrap_or(0),
-                            Ok(v) => match v {
-                                Value::Float(f) => f as i64,
-                                Value::Int(n) => n,
-                                _ => 0,
-                            },
-                            Err(_) => 0,
-                        }
-                    })
-                    .map_err(|e| e.to_string())?;
-            }
-            [p0, p1] if *p0 == 'f' || *p1 == 'f' => {
-                let p0 = *p0;
-                let p1 = *p1;
-                let ret = rcode;
-                let lib3 = lib2.clone();
-                let sym3 = sym2.clone();
-                if p0 == 'f' && p1 == 'f' {
-                    let backend = backend.clone();
-                    linker
-                        .func_wrap(HOST, &name, move |_: Caller<'_, HostState>, a: f64, b: f64| -> f64 {
-                            let r = backend.call_function(
-                                &lib3,
-                                &sym3,
-                                &[Value::Float(a), Value::Float(b)],
-                                &[NativeType::Float, NativeType::Float],
-                                native_type(ret),
-                            );
-                            ret_to_f64(r)
-                        })
-                        .map_err(|e| e.to_string())?;
-                } else if p0 == 'f' {
-                    let lib4 = lib2.clone();
-                    let sym4 = sym2.clone();
-                    let backend = backend.clone();
-                    linker
-                        .func_wrap(HOST, &name, move |_: Caller<'_, HostState>, a: f64, b: i64| -> f64 {
-                            let r = backend.call_function(
-                                &lib4,
-                                &sym4,
-                                &[Value::Float(a), Value::Int(b)],
-                                &[NativeType::Float, NativeType::Int],
-                                native_type(ret),
-                            );
-                            ret_to_f64(r)
-                        })
-                        .map_err(|e| e.to_string())?;
-                } else {
-                    let lib4 = lib2.clone();
-                    let sym4 = sym2.clone();
-                    let backend = backend.clone();
-                    linker
-                        .func_wrap(HOST, &name, move |_: Caller<'_, HostState>, a: i64, b: f64| -> f64 {
-                            let r = backend.call_function(
-                                &lib4,
-                                &sym4,
-                                &[Value::Int(a), Value::Float(b)],
-                                &[NativeType::Int, NativeType::Float],
-                                native_type(ret),
-                            );
-                            ret_to_f64(r)
-                        })
-                        .map_err(|e| e.to_string())?;
-                }
-            }
-            [p0, p1] => {
-                let p0 = *p0;
-                let p1 = *p1;
-                let ret = rcode;
-                let lib3 = lib2.clone();
-                let sym3 = sym2.clone();
-                let backend = backend.clone();
-                linker
-                    .func_wrap(HOST, &name, move |mut caller: Caller<'_, HostState>, a: i64, b: i64| -> i64 {
-                        let arg0 = match p0 {
-                            's' => Value::String(caller_read_str(&mut caller, a)),
-                            _ => Value::Int(a),
-                        };
-                        let arg1 = match p1 {
-                            's' => Value::String(caller_read_str(&mut caller, b)),
-                            _ => Value::Int(b),
-                        };
-                        let r = backend.call_function(
-                            &lib3,
-                            &sym3,
-                            &[arg0, arg1],
-                            &[native_type(p0), native_type(p1)],
-                            native_type(ret),
-                        );
-                        ret_to_i64(r)
-                    })
-                    .map_err(|e| e.to_string())?;
-            }
-            _ => {
-                return Err(format!(
-                    "[JIT] Extensión '{}': el JIT soporta natives de hasta 2 argumentos por ahora",
-                    n
-                ))
-            }
-        }
-        count += 1;
+        eprintln!("{}", format_error(&report, &ErrorFormat::Console));
     }
-    Ok(count)
-}
-
-// ── Helpers de memoria de arrays ────────────────────────────────────────────
-
-fn arr_read_i64(caller: &mut Caller<'_, HostState>, addr: usize) -> i64 {
-    if let Some(mem) = caller.get_export("memory").and_then(|e| e.into_memory()) {
-        let data = mem.data(&mut *caller);
-        if addr + 8 <= data.len() {
-            return i64::from_le_bytes(data[addr..addr + 8].try_into().unwrap());
-        }
-    }
-    0
-}
-
-fn arr_write_i64(caller: &mut Caller<'_, HostState>, addr: usize, v: i64) {
-    if let Some(mem) = caller.get_export("memory").and_then(|e| e.into_memory()) {
-        let data = mem.data_mut(caller);
-        if addr + 8 <= data.len() {
-            data[addr..addr + 8].copy_from_slice(&v.to_le_bytes());
-        }
-    }
-}
-
-fn arr_len(caller: &mut Caller<'_, HostState>, ptr: usize) -> i64 {
-    arr_read_i64(caller, ptr + 8)
-}
-
-fn arr_cap(caller: &mut Caller<'_, HostState>, ptr: usize) -> i64 {
-    arr_read_i64(caller, ptr)
-}
-
-fn arr_elem(caller: &mut Caller<'_, HostState>, ptr: usize, idx: usize, es: usize) -> i64 {
-    let addr = ptr + 16 + idx * es;
-    if es == 4 {
-        if let Some(mem) = caller.get_export("memory").and_then(|e| e.into_memory()) {
-            let data = mem.data(&mut *caller);
-            if addr + 4 <= data.len() {
-                return i32::from_le_bytes(data[addr..addr + 4].try_into().unwrap()) as i64;
-            }
-        }
-        0
-    } else {
-        arr_read_i64(caller, addr)
-    }
-}
-
-fn arr_set(caller: &mut Caller<'_, HostState>, ptr: usize, idx: usize, es: usize, v: i64) {
-    let addr = ptr + 16 + idx * es;
-    if es == 4 {
-        if let Some(mem) = caller.get_export("memory").and_then(|e| e.into_memory()) {
-            let data = mem.data_mut(caller);
-            if addr + 4 <= data.len() {
-                data[addr..addr + 4].copy_from_slice(&(v as i32).to_le_bytes());
-            }
-        }
-    } else {
-        arr_write_i64(caller, addr, v);
-    }
-}
-
-fn arr_realloc(caller: &mut Caller<'_, HostState>, ptr: usize, new_cap: usize, es: usize) -> usize {
-    let len = arr_len(caller, ptr) as usize;
-    let size = (new_cap * es + 16) as i64;
-    let new_ptr = caller_alloc(caller, size).unwrap_or(0) as usize;
-    arr_write_i64(caller, new_ptr, new_cap as i64);
-    arr_write_i64(caller, new_ptr + 8, len as i64);
-    if let Some(mem) = caller.get_export("memory").and_then(|e| e.into_memory()) {
-        let data = mem.data_mut(&mut *caller);
-        let data_len = data.len();
-        let src = ptr + 16;
-        let dst = new_ptr + 16;
-        let bytes = len * es;
-        if src + bytes <= data_len && dst + bytes <= data_len {
-            // Copia de bloque contigua (es==8) o elemento a elemento (es==4).
-            if es == 8 {
-                data.copy_within(src..src + bytes, dst);
-            } else {
-                for i in 0..len {
-                    let s = src + i * es;
-                    let d = dst + i * es;
-                    if s + es <= data_len && d + es <= data_len {
-                        data.copy_within(s..s + es, d);
-                    }
-                }
-            }
-            return new_ptr;
-        }
-    }
-    // Fallback: copiar elemento a elemento (bounds del host).
-    for i in 0..len {
-        let e = arr_elem(caller, ptr, i, es);
-        arr_set(caller, new_ptr, i, es, e);
-    }
-    new_ptr
-}
-
-/// Estado del LCG de `math_random`. Se siembra UNA vez con entropía del sistema
-/// (nanos desde UNIX_EPOCH + PID) en el primer uso, en vez de una constante fija
-/// que producía la misma secuencia en cada ejecución.
-static RNG_STATE: std::sync::OnceLock<std::sync::Mutex<u64>> = std::sync::OnceLock::new();
-
-/// Registra los hosts de stdlib (math, json, fs).
-fn register_stdlib_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
-    linker
-        .func_wrap(HOST, "math_sqrt", |_: Caller<'_, HostState>, v: f64| -> f64 { v.sqrt() })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "math_pow", |_: Caller<'_, HostState>, a: f64, b: f64| -> f64 { a.powf(b) })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "math_min", |_: Caller<'_, HostState>, a: f64, b: f64| -> f64 { a.min(b) })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "math_max", |_: Caller<'_, HostState>, a: f64, b: f64| -> f64 { a.max(b) })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "math_floor", |_: Caller<'_, HostState>, v: f64| -> f64 { v.floor() })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "math_ceil", |_: Caller<'_, HostState>, v: f64| -> f64 { v.ceil() })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "math_round", |_: Caller<'_, HostState>, v: f64| -> f64 { v.round() })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "math_random", |_: Caller<'_, HostState>| -> f64 {
-            let state = RNG_STATE.get_or_init(|| {
-                let nanos = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_nanos())
-                    .unwrap_or(0);
-                let seed = (nanos as u64) ^ ((std::process::id() as u64) << 32);
-                std::sync::Mutex::new(seed | 1)
-            });
-            let mut s = state.lock().unwrap();
-            *s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            (*s >> 11) as f64 / (1u64 << 53) as f64
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "math_sin", |_: Caller<'_, HostState>, v: f64| -> f64 { v.sin() })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "math_cos", |_: Caller<'_, HostState>, v: f64| -> f64 { v.cos() })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "math_tan", |_: Caller<'_, HostState>, v: f64| -> f64 { v.tan() })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "math_log", |_: Caller<'_, HostState>, v: f64| -> f64 { v.ln() })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "math_range", |mut caller: Caller<'_, HostState>, a: i64, b: i64| -> i64 {
-            let n = (b - a).max(0);
-            let size = (n * 8 + 16) as i64;
-            let ptr = caller_alloc(&mut caller, size).unwrap_or(0) as usize;
-            arr_write_i64(&mut caller, ptr, n);
-            arr_write_i64(&mut caller, ptr + 8, n);
-            for i in 0..n {
-                arr_set(&mut caller, ptr, i as usize, 8, a + i);
-            }
-            ptr as i64
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "json_stringify", |mut caller: Caller<'_, HostState>, v: i64, kind: i64| -> i64 {
-            match kind {
-                1 => {
-                    let mut out = String::new();
-                    json_serialize_record(&mut caller, v, &mut out);
-                    caller_write_str(&mut caller, &out).unwrap_or(0)
-                }
-                2 => {
-                    let mut out = String::new();
-                    json_serialize_array(&mut caller, v, &mut out);
-                    caller_write_str(&mut caller, &out).unwrap_or(0)
-                }
-                _ => v,
-            }
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "json_parse", |mut caller: Caller<'_, HostState>, s: i64| -> i64 {
-            let text = caller_read_str(&mut caller, s);
-            // El typeck tipa `json.parse` como Record<String, any>: el valor
-            // devuelto es el PTR del contenedor (layout [key,val,tag]*24), que
-            // es lo que entienden record_get y record_to_string. Si el JSON
-            // raíz es un ARRAY, se envuelve en un record con claves numéricas
-            // `{"0":..., "1":...}` para que el formateador de records lo
-            // imprima sin corrupción (el layout de array [val,tag]*16 no lo
-            // lee record_to_string).
-            match serde_json::from_str::<serde_json::Value>(&text) {
-                Ok(serde_json::Value::Array(items)) => {
-                    let n = items.len();
-                    let ptr = caller_alloc(&mut caller, (n * 24 + 16) as i64).unwrap_or(0) as usize;
-                    arr_write_i64(&mut caller, ptr, n as i64);
-                    arr_write_i64(&mut caller, ptr + 8, n as i64);
-                    for (i, it) in items.iter().enumerate() {
-                        let key = caller_write_str(&mut caller, &i.to_string()).unwrap_or(0);
-                        let (vv, tag) = json_build(&mut caller, it);
-                        arr_write_i64(&mut caller, ptr + 16 + i * 24, key);
-                        arr_write_i64(&mut caller, ptr + 16 + i * 24 + 8, vv);
-                        arr_write_i64(&mut caller, ptr + 16 + i * 24 + 16, tag);
-                    }
-                    ptr as i64
-                }
-                Ok(v) => json_build(&mut caller, &v).0,
-                Err(_) => 0,
-            }
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "fs_exists", |mut caller: Caller<'_, HostState>, p: i64| -> i32 {
-            let s = caller_read_str(&mut caller, p);
-            if std::path::Path::new(&s).exists() {
-                1
-            } else {
-                0
-            }
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "fs_cwd", |mut caller: Caller<'_, HostState>| -> i64 {
-            let cwd = std::env::current_dir()
-                .map(|d| d.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            caller_write_str(&mut caller, &cwd).unwrap_or(0)
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "fs_read_file", |mut caller: Caller<'_, HostState>, p: i64| -> i64 {
-            let s = caller_read_str(&mut caller, p);
-            match std::fs::read_to_string(&s) {
-                Ok(contents) => caller_write_str(&mut caller, &contents).unwrap_or(0),
-                Err(_) => 0,
-            }
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "fs_write_file", |mut caller: Caller<'_, HostState>, p: i64, d: i64| -> i64 {
-            let path = caller_read_str(&mut caller, p);
-            let data = caller_read_str(&mut caller, d);
-            let _ = std::fs::write(&path, data);
-            0
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "fs_list_dir", |mut caller: Caller<'_, HostState>, p: i64| -> i64 {
-            let s = caller_read_str(&mut caller, p);
-            let names: Vec<String> = std::fs::read_dir(&s)
-                .map(|rd| {
-                    rd.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
-                        .collect()
-                })
-                .unwrap_or_default();
-            // Array<String> en memoria: header [cap:i64][len:i64] + elems packed.
-            let n = names.len() as i64;
-            let array_ptr = match caller_alloc(&mut caller, n * 8 + 16) {
-                Some(ptr) => ptr,
-                None => return 0,
-            };
-            {
-                let memory = caller_memory(&mut caller);
-                let memory = match memory {
-                    Some(m) => m,
-                    None => return 0,
-                };
-                let _ = memory.write(&mut caller, array_ptr as usize, &n.to_le_bytes());
-                let _ = memory.write(&mut caller, (array_ptr as usize) + 8, &n.to_le_bytes());
-                for (i, name) in names.iter().enumerate() {
-                    let sp = match caller_write_str(&mut caller, name) {
-                        Some(sp) => sp,
-                        None => return 0,
-                    };
-                    let _ = memory.write(
-                        &mut caller,
-                        (array_ptr as usize) + 16 + i * 8,
-                        &sp.to_le_bytes(),
-                    );
-                }
-            }
-            array_ptr
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "fs_mkdir", |mut caller: Caller<'_, HostState>, p: i64| -> i64 {
-            let s = caller_read_str(&mut caller, p);
-            let _ = std::fs::create_dir_all(&s);
-            0
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "fs_rm", |mut caller: Caller<'_, HostState>, p: i64| -> i64 {
-            let s = caller_read_str(&mut caller, p);
-            let _ = std::fs::remove_file(&s);
-            0
-        })
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-/// tags de tipo para JSON: 0=int, 1=string, 2=float, 3=bool, 4=char, 5=array, 6=record.
-fn json_build(caller: &mut Caller<'_, HostState>, v: &serde_json::Value) -> (i64, i64) {
-    // Tags CLS estándar (paridad con fmt_val_to_string/tag_type):
-    // 1=string, 2=float, 3=bool, 4=char, 6=array, 7=record.
-    match v {
-        serde_json::Value::Null => (0, 0),
-        serde_json::Value::Bool(b) => ((if *b { 1 } else { 0 }), 3),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                (i, 0)
-            } else if let Some(f) = n.as_f64() {
-                (f.to_bits() as i64, 2)
-            } else {
-                (0, 0)
-            }
-        }
-        serde_json::Value::String(s) => (caller_write_str(caller, s).unwrap_or(0), 1),
-        serde_json::Value::Array(items) => {
-            let n = items.len();
-            // Entradas `[val, tag]` stride 16 (como los arrays de Cmx).
-            let ptr = caller_alloc(caller, (n * 16 + 16) as i64).unwrap_or(0) as usize;
-            arr_write_i64(caller, ptr, n as i64);
-            arr_write_i64(caller, ptr + 8, n as i64);
-            for (i, it) in items.iter().enumerate() {
-                let (val, tag) = json_build(caller, it);
-                arr_write_i64(caller, ptr + 16 + i * 16, val);
-                arr_write_i64(caller, ptr + 16 + i * 16 + 8, tag);
-            }
-            (ptr as i64, 6)
-        }
-        serde_json::Value::Object(map) => {
-            let n = map.len();
-            let ptr = caller_alloc(caller, (n * 24 + 16) as i64).unwrap_or(0) as usize;
-            arr_write_i64(caller, ptr, n as i64);
-            arr_write_i64(caller, ptr + 8, n as i64);
-            let mut i = 0;
-            for (k, val) in map {
-                let key = caller_write_str(caller, k).unwrap_or(0);
-                let (vv, tag) = json_build(caller, val);
-                arr_write_i64(caller, ptr + 16 + i * 24, key);
-                arr_write_i64(caller, ptr + 16 + i * 24 + 8, vv);
-                arr_write_i64(caller, ptr + 16 + i * 24 + 16, tag);
-                i += 1;
-            }
-            (ptr as i64, 7)
-        }
-    }
-}
-
-fn json_serialize_val(caller: &mut Caller<'_, HostState>, val: i64, tag: i64, out: &mut String) {
-    match tag {
-        1 => {
-            out.push('"');
-            out.push_str(&json_escape(&caller_read_str(caller, val)));
-            out.push('"');
-        }
-        2 => out.push_str(&format_float(f64::from_bits(val as u64))),
-        3 => out.push_str(if val != 0 { "true" } else { "false" }),
-        4 => out.push(char::from_u32(val as u32).unwrap_or('?')),
-        5 => json_serialize_array(caller, val, out),
-        6 => json_serialize_record(caller, val, out),
-        _ => out.push_str(&val.to_string()),
-    }
-}
-
-fn json_serialize_record(caller: &mut Caller<'_, HostState>, ptr: i64, out: &mut String) {
-    let p = ptr as usize;
-    let len = arr_len(caller, p);
-    out.push('{');
-    for i in 0..len as usize {
-        if i > 0 {
-            out.push(',');
-        }
-        let key = arr_read_i64(caller, p + 16 + i * 24);
-        let val = arr_read_i64(caller, p + 16 + i * 24 + 8);
-        let tag = arr_read_i64(caller, p + 16 + i * 24 + 16);
-        out.push('"');
-        out.push_str(&json_escape(&caller_read_str(caller, key)));
-        out.push_str("\":");
-        json_serialize_val(caller, val, tag, out);
-    }
-    out.push('}');
-}
-
-fn json_serialize_array(caller: &mut Caller<'_, HostState>, ptr: i64, out: &mut String) {
-    let p = ptr as usize;
-    let len = arr_len(caller, p);
-    out.push('[');
-    for i in 0..len as usize {
-        if i > 0 {
-            out.push(',');
-        }
-        let val = arr_elem(caller, p, i, 8);
-        json_serialize_val(caller, val, 0, out);
-    }
-    out.push(']');
-}
-
-fn json_escape(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\t', "\\t")
-}
-
-fn register_record_hosts(linker: &mut Linker<HostState>) -> Result<(), String> {
-    linker
-        .func_wrap(HOST, "record_new", |mut caller: Caller<'_, HostState>, cap: i64| -> i64 {
-            let size = cap * 24 + 16;
-            let ptr = caller_alloc(&mut caller, size).unwrap_or(0) as usize;
-            arr_write_i64(&mut caller, ptr, cap);
-            arr_write_i64(&mut caller, ptr + 8, 0);
-            ptr as i64
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "record_set", |mut caller: Caller<'_, HostState>, ptr: i64, key: i64, val: i64, tag: i64| -> i64 {
-            let p = ptr as usize;
-            let len = arr_len(&mut caller, p) as usize;
-            let cap = arr_cap(&mut caller, p) as usize;
-            let k = caller_read_str(&mut caller, key);
-            for i in 0..len {
-                let ki = arr_read_i64(&mut caller, p + 16 + i * 24);
-                if caller_read_str(&mut caller, ki) == k {
-                    arr_write_i64(&mut caller, p + 16 + i * 24 + 8, val);
-                    arr_write_i64(&mut caller, p + 16 + i * 24 + 16, tag);
-                    return p as i64;
-                }
-            }
-            let mut new_p = p;
-            if len >= cap {
-                let new_cap = if cap == 0 { 4 } else { cap * 2 };
-                let size = (new_cap * 24 + 16) as i64;
-                let np = caller_alloc(&mut caller, size).unwrap_or(0) as usize;
-                arr_write_i64(&mut caller, np, new_cap as i64);
-                arr_write_i64(&mut caller, np + 8, len as i64);
-                for i in 0..len {
-                    let kk = arr_read_i64(&mut caller, p + 16 + i * 24);
-                    let vv = arr_read_i64(&mut caller, p + 16 + i * 24 + 8);
-                    let tt = arr_read_i64(&mut caller, p + 16 + i * 24 + 16);
-                    arr_write_i64(&mut caller, np + 16 + i * 24, kk);
-                    arr_write_i64(&mut caller, np + 16 + i * 24 + 8, vv);
-                    arr_write_i64(&mut caller, np + 16 + i * 24 + 16, tt);
-                }
-                new_p = np;
-            }
-            arr_write_i64(&mut caller, new_p + 16 + len * 24, key);
-            arr_write_i64(&mut caller, new_p + 16 + len * 24 + 8, val);
-            arr_write_i64(&mut caller, new_p + 16 + len * 24 + 16, tag);
-            arr_write_i64(&mut caller, new_p + 8, (len + 1) as i64);
-            new_p as i64
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "record_get", |mut caller: Caller<'_, HostState>, ptr: i64, key: i64| -> i64 {
-            let p = ptr as usize;
-            let len = arr_len(&mut caller, p) as usize;
-            let k = caller_read_str(&mut caller, key);
-            for i in 0..len {
-                let ki = arr_read_i64(&mut caller, p + 16 + i * 24);
-                if caller_read_str(&mut caller, ki) == k {
-                    return arr_read_i64(&mut caller, p + 16 + i * 24 + 8);
-                }
-            }
-            0
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "record_has", |mut caller: Caller<'_, HostState>, ptr: i64, key: i64| -> i32 {
-            let p = ptr as usize;
-            let len = arr_len(&mut caller, p) as usize;
-            let k = caller_read_str(&mut caller, key);
-            for i in 0..len {
-                let ki = arr_read_i64(&mut caller, p + 16 + i * 24);
-                if caller_read_str(&mut caller, ki) == k {
-                    return 1;
-                }
-            }
-            0
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "record_tag", |mut caller: Caller<'_, HostState>, ptr: i64, key: i64| -> i64 {
-            let p = ptr as usize;
-            let len = arr_len(&mut caller, p) as usize;
-            let k = caller_read_str(&mut caller, key);
-            for i in 0..len {
-                let ki = arr_read_i64(&mut caller, p + 16 + i * 24);
-                if caller_read_str(&mut caller, ki) == k {
-                    return arr_read_i64(&mut caller, p + 16 + i * 24 + 16);
-                }
-            }
-            0
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "record_len", |mut caller: Caller<'_, HostState>, ptr: i64| -> i64 {
-            arr_len(&mut caller, ptr as usize)
-        })
-        .map_err(|e| e.to_string())?;
-    // `any_member(val, tag, key)`: acceso a miembro de un valor `Any` en runtime
-    // (JSON parse anidado, p.ej. `o.a.c`). Despacha por tag: record → campo
-    // (val, tag); array → length/size; string → length; si no, error.
-    linker
-        .func_wrap(
-            HOST,
-            "any_member",
-            |mut caller: Caller<'_, HostState>, val: i64, tag: i64, key: i64| {
-                let t = tag_type(tag);
-                match t {
-                    7 => {
-                        // Record: encontrar el campo y devolver (val, tag).
-                        let p = val as usize;
-                        let len = arr_len(&mut caller, p) as usize;
-                        let k = caller_read_str(&mut caller, key);
-                        for i in 0..len {
-                            let ki = arr_read_i64(&mut caller, p + 16 + i * 24);
-                            if caller_read_str(&mut caller, ki) == k {
-                                return (
-                                    arr_read_i64(&mut caller, p + 16 + i * 24 + 8),
-                                    arr_read_i64(&mut caller, p + 16 + i * 24 + 16),
-                                );
-                            }
-                        }
-                        (0, 0)
-                    }
-                    6 => {
-                        // Array: length/size.
-                        let k = caller_read_str(&mut caller, key);
-                        if k == "length" || k == "size" {
-                            (arr_len(&mut caller, val as usize), 0)
-                        } else {
-                            (0, 0)
-                        }
-                    }
-                    1 => {
-                        // String: length = len bajo (packed ptr<<32|len).
-                        let k = caller_read_str(&mut caller, key);
-                        if k == "length" || k == "size" {
-                            ((val & 0xffff_ffff), 0)
-                        } else {
-                            (0, 0)
-                        }
-                    }
-                    _ => (0, 0),
-                }
-            },
-        )
-        .map_err(|e| e.to_string())?;
-    // `any_index(val, tag, idx)`: indexar un valor `Any` en runtime (JSON parse
-    // anidado, p.ej. `o.x[0]`). Si el tag es array (6), devuelve el elemento
-    // (val, tag); si record → miembro por índice numérico (no soportado → 0,0).
-    linker
-        .func_wrap(
-            HOST,
-            "any_index",
-            |mut caller: Caller<'_, HostState>, val: i64, tag: i64, idx: i64| {
-                let t = tag_type(tag);
-                match t {
-                    6 => {
-                        // Array de JSON heterogéneo: entradas [val, tag] stride 16.
-                        let p = val as usize;
-                        let len = arr_len(&mut caller, p);
-                        if idx >= 0 && idx < len {
-                            let i = idx as usize;
-                            (
-                                arr_read_i64(&mut caller, p + 16 + i * 16),
-                                arr_read_i64(&mut caller, p + 16 + i * 16 + 8),
-                            )
-                        } else {
-                            (0, 0)
-                        }
-                    }
-                    _ => (0, 0),
-                }
-            },
-        )
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "record_keys", |mut caller: Caller<'_, HostState>, ptr: i64| -> i64 {
-            let p = ptr as usize;
-            let len = arr_len(&mut caller, p) as usize;
-            let size = (len * 8 + 16) as i64;
-            let out = caller_alloc(&mut caller, size).unwrap_or(0) as usize;
-            arr_write_i64(&mut caller, out, len as i64);
-            arr_write_i64(&mut caller, out + 8, len as i64);
-            for i in 0..len {
-                let ki = arr_read_i64(&mut caller, p + 16 + i * 24);
-                arr_set(&mut caller, out, i, 8, ki);
-            }
-            out as i64
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "record_values", |mut caller: Caller<'_, HostState>, ptr: i64| -> i64 {
-            let p = ptr as usize;
-            let len = arr_len(&mut caller, p) as usize;
-            let size = (len * 8 + 16) as i64;
-            let out = caller_alloc(&mut caller, size).unwrap_or(0) as usize;
-            arr_write_i64(&mut caller, out, len as i64);
-            arr_write_i64(&mut caller, out + 8, len as i64);
-            for i in 0..len {
-                let vi = arr_read_i64(&mut caller, p + 16 + i * 24 + 8);
-                arr_set(&mut caller, out, i, 8, vi);
-            }
-            out as i64
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "record_to_string", |mut caller: Caller<'_, HostState>, ptr: i64| -> i64 {
-            let s = record_to_string(&mut caller, ptr);
-            caller_write_str(&mut caller, &s).unwrap_or(0)
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "http_get", |mut caller: Caller<'_, HostState>, url: i64| -> i64 {
-            let u = caller_read_str(&mut caller, url);
-            match ureq::get(&u).call() {
-                Ok(resp) => match resp.into_string() {
-                    Ok(body) => caller_write_str(&mut caller, &body).unwrap_or(0),
-                    Err(_) => 0,
-                },
-                Err(_) => 0,
-            }
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "http_post", |mut caller: Caller<'_, HostState>, url: i64, data: i64| -> i64 {
-            let u = caller_read_str(&mut caller, url);
-            let d = caller_read_str(&mut caller, data);
-            match ureq::post(&u).send_string(&d) {
-                Ok(resp) => match resp.into_string() {
-                    Ok(body) => caller_write_str(&mut caller, &body).unwrap_or(0),
-                    Err(_) => 0,
-                },
-                Err(_) => 0,
-            }
-        })
-        .map_err(|e| e.to_string())?;
-    // CMX: layout [tag:i64][props_ptr:i64][children_ptr:i64].
-    linker
-        .func_wrap(HOST, "cmx_new", |mut caller: Caller<'_, HostState>, tag: i64, kind: i64| -> i64 {
-            // layout: [tag][props_ptr][children_ptr][kind] (kind 0=elemento, 1=texto)
-            let ptr = caller_alloc(&mut caller, 32).unwrap_or(0) as usize;
-            arr_write_i64(&mut caller, ptr, tag);
-            arr_write_i64(&mut caller, ptr + 8, 0);
-            arr_write_i64(&mut caller, ptr + 16, 0);
-            arr_write_i64(&mut caller, ptr + 24, kind);
-            ptr as i64
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "cmx_set_prop", |mut caller: Caller<'_, HostState>, ptr: i64, key: i64, val: i64, tag: i64| -> i64 {
-            let p = ptr as usize;
-            let mut props = arr_read_i64(&mut caller, p + 8) as usize;
-            if props == 0 {
-                let np = caller_alloc(&mut caller, (4 * 24 + 16) as i64).unwrap_or(0) as usize;
-                arr_write_i64(&mut caller, np, 4);
-                arr_write_i64(&mut caller, np + 8, 0);
-                arr_write_i64(&mut caller, p + 8, np as i64);
-                props = np;
-            }
-            let pr = props as i64;
-            let len = arr_len(&mut caller, props) as usize;
-            let cap = arr_cap(&mut caller, props) as usize;
-            let k = caller_read_str(&mut caller, key);
-            for i in 0..len {
-                let ki = arr_read_i64(&mut caller, props + 16 + i * 24);
-                if caller_read_str(&mut caller, ki) == k {
-                    arr_write_i64(&mut caller, props + 16 + i * 24 + 8, val);
-                    arr_write_i64(&mut caller, props + 16 + i * 24 + 16, tag);
-                    return pr;
-                }
-            }
-            if len + 1 > cap {
-                // realloc copiando [key, val, tag]
-                let new_cap = if cap == 0 { 4 } else { cap * 2 };
-                let new_cap = new_cap.max(len + 1);
-                let np = caller_alloc(&mut caller, (new_cap * 24 + 16) as i64).unwrap_or(0) as usize;
-                arr_write_i64(&mut caller, np, new_cap as i64);
-                arr_write_i64(&mut caller, np + 8, len as i64);
-                for i in 0..len {
-                    let kk = arr_read_i64(&mut caller, props + 16 + i * 24);
-                    let vv = arr_read_i64(&mut caller, props + 16 + i * 24 + 8);
-                    let tt = arr_read_i64(&mut caller, props + 16 + i * 24 + 16);
-                    arr_write_i64(&mut caller, np + 16 + i * 24, kk);
-                    arr_write_i64(&mut caller, np + 16 + i * 24 + 8, vv);
-                    arr_write_i64(&mut caller, np + 16 + i * 24 + 16, tt);
-                }
-                props = np;
-                arr_write_i64(&mut caller, p + 8, props as i64);
-            }
-            arr_write_i64(&mut caller, props + 16 + len * 24, key);
-            arr_write_i64(&mut caller, props + 16 + len * 24 + 8, val);
-            arr_write_i64(&mut caller, props + 16 + len * 24 + 16, tag);
-            arr_write_i64(&mut caller, props + 8, (len + 1) as i64);
-            arr_read_i64(&mut caller, p + 8)
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "cmx_add_child", |mut caller: Caller<'_, HostState>, ptr: i64, val: i64, tag: i64| -> i64 {
-            let p = ptr as usize;
-            let mut children = arr_read_i64(&mut caller, p + 16) as usize;
-            if children == 0 {
-                let nc = caller_alloc(&mut caller, (4 * 16 + 16) as i64).unwrap_or(0) as usize;
-                arr_write_i64(&mut caller, nc, 4);
-                arr_write_i64(&mut caller, nc + 8, 0);
-                arr_write_i64(&mut caller, p + 16, nc as i64);
-                children = nc;
-            }
-            let len = arr_len(&mut caller, children) as usize;
-            let cap = arr_cap(&mut caller, children) as usize;
-            if len + 1 > cap {
-                // realloc copiando [val, tag]
-                let new_cap = if cap == 0 { 4 } else { cap * 2 };
-                let new_cap = new_cap.max(len + 1);
-                let np = caller_alloc(&mut caller, (new_cap * 16 + 16) as i64).unwrap_or(0) as usize;
-                arr_write_i64(&mut caller, np, new_cap as i64);
-                arr_write_i64(&mut caller, np + 8, len as i64);
-                for i in 0..len {
-                    let v = arr_read_i64(&mut caller, children + 16 + i * 16);
-                    let t = arr_read_i64(&mut caller, children + 16 + i * 16 + 8);
-                    arr_write_i64(&mut caller, np + 16 + i * 16, v);
-                    arr_write_i64(&mut caller, np + 16 + i * 16 + 8, t);
-                }
-                children = np;
-                arr_write_i64(&mut caller, p + 16, children as i64);
-            }
-            arr_write_i64(&mut caller, children + 16 + len * 16, val);
-            arr_write_i64(&mut caller, children + 16 + len * 16 + 8, tag);
-            arr_write_i64(&mut caller, children + 8, (len + 1) as i64);
-            arr_read_i64(&mut caller, p + 16)
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "cmx_to_string", |mut caller: Caller<'_, HostState>, ptr: i64| -> i64 {
-            let s = cmx_format(&mut caller, ptr as usize);
-            caller_write_str(&mut caller, &s).unwrap_or(0)
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "print_any", |mut caller: Caller<'_, HostState>, val: i64, tag: i64| {
-            let s = fmt_val_to_string(&mut caller, val, tag);
-            print_arg(&mut caller, &s);
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "fn_handle", |mut caller: Caller<'_, HostState>, table_idx: i64, nombre: i64, capturas: i64| -> i64 {
-            // Contrato con el backend (dispatch tag-bit en wasm.rs):
-            //  - capturas == 0 → handle PAR = (tabla_idx << 1): sin alocar. El
-            //    dispatch usa la rama "simple" (capturas = 0 literal). El nombre
-            //    se guarda en `HostState.simple_fn_names` para `fn_to_string`.
-            //  - capturas != 0 → handle IMPAR = (ptr << 1) | 1: bloque de 24B
-            //    [tabla_idx][ptr_capturas][nombre] en la memoria del módulo.
-            if capturas == 0 {
-                if nombre != 0 {
-                    let name = caller_read_str(&mut caller, nombre);
-                    caller
-                        .data_mut()
-                        .simple_fn_names
-                        .insert(table_idx, name);
-                }
-                return table_idx << 1;
-            }
-            let ptr = caller_alloc(&mut caller, 24).unwrap_or(0) as usize;
-            arr_write_i64(&mut caller, ptr, table_idx);
-            arr_write_i64(&mut caller, ptr + 8, capturas);
-            arr_write_i64(&mut caller, ptr + 16, nombre);
-            ((ptr as i64) << 1) | 1
-        })
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "fn_to_string", |mut caller: Caller<'_, HostState>, handle: i64| -> i64 {
-            let s = fn_to_string_str(&mut caller, handle);
-            caller_write_str(&mut caller, &s).unwrap_or(0)
-        })
-        .map_err(|e| e.to_string())?;
-    // Shadow call stack: el backend emite fn_enter al inicio de cada función CLS
-    // (con nombre y span) y fn_exit antes de cada return. Al reportar un error
-    // de runtime se usa `call_stack` para el trace numerado. Con tope de
-    // profundidad: en recursión infinita el stack shadow no debe crecer sin
-    // límite (leak + volcado de miles de frames en el reporte).
-    linker
-        .func_wrap(
-            HOST,
-            "fn_enter",
-            |mut caller: Caller<'_, HostState>, name_packed: i64, line: i64, col: i64| {
-                let name = caller_read_str(&mut caller, name_packed);
-                let state = caller.data_mut();
-                // Si el backend emitó un call site pendiente (justo antes del
-                // Call), usarlo como span del frame: el frame apunta al CALL SITE
-                // del llamador, no a la declaración de la función.
-                let span = state
-                    .pending_call_site
-                    .take()
-                    .unwrap_or_else(|| {
-                        cls_core::error::diagnostic::Span::new(
-                            line as u32,
-                            col as u32,
-                            line as u32,
-                            col as u32,
-                        )
-                    });
-                if state.call_stack.len() < 1000 {
-                    state.call_stack.push((name, span));
-                }
-            },
-        )
-        .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(HOST, "fn_exit", |mut caller: Caller<'_, HostState>| {
-            caller.data_mut().call_stack.pop();
-        })
-        .map_err(|e| e.to_string())?;
-    // `fn_call_site(line, col)`: el backend lo emite justo antes del `Call` de
-    // una función de usuario, con el span del call site (la llamada en el
-    // llamador). `fn_enter` lo consume como span del frame.
-    linker
-        .func_wrap(HOST, "fn_call_site", |mut caller: Caller<'_, HostState>, line: i64, col: i64| {
-            caller.data_mut().pending_call_site = Some(cls_core::error::diagnostic::Span::new(
-                line as u32,
-                col as u32,
-                line as u32,
-                col as u32,
-            ));
-        })
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-/// Nombre de una función desde un handle/valor con tag-bit.
-fn fn_to_string_str(caller: &mut Caller<'_, HostState>, handle: i64) -> String {
-    // Tag-bit: impar = closure (ptr >> 1 → handle con [tabla_idx][capturas][nombre]);
-    // par = función simple (el valor ES el tabla_idx << 1, sin handle en memoria;
-    // el nombre se registró en HostState.simple_fn_names por `fn_handle`).
-    if (handle & 1) == 1 {
-        let name_addr = arr_read_i64(caller, ((handle >> 1) as usize) + 16);
-        caller_read_str(caller, name_addr)
-    } else {
-        caller
-            .data()
-            .simple_fn_names
-            .get(&(handle >> 1))
-            .cloned()
-            .unwrap_or_else(|| format!("<function {}>", handle >> 1))
-    }
-}
-
-/// Tipo de un tag: compuesto (`tipo<<8 | kind`) o legacy (0-5, arr_kind_code).
-fn tag_type(tag: i64) -> i32 {
-    if tag >= 256 {
-        (tag >> 8) as i32
-    } else {
-        tag as i32
-    }
-}
-
-/// Formatea un valor según su tag. Tag = `tipo<<8 | kind` (kind solo para arrays).
-/// tipo: 0=int,1=string,2=float,3=bool,4=char,5=cmx,6=array,7=record.
-fn fmt_val_to_string(caller: &mut Caller<'_, HostState>, val: i64, tag: i64) -> String {
-    let t = tag_type(tag);
-    let kind = (tag & 0xff) as i32;
-    match t {
-        1 => caller_read_str(caller, val),
-        2 => format_float(f64::from_bits(val as u64)),
-        3 => {
-            if val != 0 {
-                "true".to_string()
-            } else {
-                "false".to_string()
-            }
-        }
-        4 => char::from_u32(val as u32).unwrap_or('?').to_string(),
-        5 => cmx_format(caller, val as usize),
-        6 => {
-            // Array: es=16 si es de Cmx (kind 5) o de JSON heterogéneo (tag 6,
-            // entradas [val, tag] stride 16); si no 8.
-            let es = if kind == 5 || kind == 6 { 16 } else { 8 };
-            // kind 6 = array JSON (entradas [val,tag]); kind 5 = Cmx.
-            let arr_kind = if kind == 6 { 5 } else { kind };
-            arr_to_string(caller, val, es, arr_kind as i64)
-        }
-        7 => record_to_string(caller, val),
-        _ => val.to_string(),
-    }
-}
-
-/// `[e1, e2, ...]` — kind 5 = array de Cmx (entradas `[val, tag]` stride 16).
-fn arr_to_string(caller: &mut Caller<'_, HostState>, ptr: i64, es: i64, kind: i64) -> String {
-    if ptr == 0 {
-        return String::from("[]");
-    }
-    let p = ptr as usize;
-    let es = es as usize;
-    let len = arr_len(caller, p);
-    let mut out = String::from("[");
-    for i in 0..len as usize {
-        if i > 0 {
-            out.push_str(", ");
-        }
-        let e = arr_elem(caller, p, i, es);
-        match kind {
-            1 => {
-                out.push('"');
-                out.push_str(&json_escape(&caller_read_str(caller, e)));
-                out.push('"');
-            }
-            2 => out.push_str(&format_float(f64::from_bits(e as u64))),
-            3 => out.push_str(if e != 0 { "true" } else { "false" }),
-            4 => out.push(char::from_u32(e as u32).unwrap_or('?')),
-            5 => {
-                // entrada [val, tag] stride 16
-                let tg = arr_read_i64(caller, p + 16 + i * 16 + 8);
-                let tv = tag_type(tg);
-                if tv == 1 {
-                    out.push('"');
-                    out.push_str(&json_escape(&caller_read_str(caller, e)));
-                    out.push('"');
-                } else if tv == 5 {
-                    // CmxValue: texto (kind 1) → comillas; elemento → plano
-                    let ck = arr_read_i64(caller, (e as usize) + 24);
-                    if ck == 1 {
-                        let ctag = arr_read_i64(caller, e as usize);
-                        out.push('"');
-                        out.push_str(&json_escape(&caller_read_str(caller, ctag)));
-                        out.push('"');
-                    } else {
-                        out.push_str(&cmx_format(caller, e as usize));
-                    }
-                } else {
-                    out.push_str(&fmt_val_to_string(caller, e, tg));
-                }
-            }
-            _ => out.push_str(&e.to_string()),
-        }
-    }
-    out.push(']');
-    out
-}
-
-/// `{k: v, ...}` — formatea cada valor por su tag (claves ordenadas, como el walker).
-fn record_to_string(caller: &mut Caller<'_, HostState>, ptr: i64) -> String {
-    if ptr == 0 {
-        return String::from("{}");
-    }
-    let p = ptr as usize;
-    let len = arr_len(caller, p);
-    let mut entries: Vec<(String, i64, i64)> = Vec::with_capacity(len as usize);
-    for i in 0..len as usize {
-        let key = arr_read_i64(caller, p + 16 + i * 24);
-        let val = arr_read_i64(caller, p + 16 + i * 24 + 8);
-        let tag = arr_read_i64(caller, p + 16 + i * 24 + 16);
-        entries.push((caller_read_str(caller, key), val, tag));
-    }
-    entries.sort_by(|a, b| a.0.cmp(&b.0));
-    let mut out = String::from("{");
-    for (i, (key, val, tag)) in entries.iter().enumerate() {
-        if i > 0 {
-            out.push_str(", ");
-        }
-        out.push_str(key);
-        out.push_str(": ");
-        let t = tag_type(*tag);
-        if t == 1 {
-            out.push('"');
-            out.push_str(&json_escape(&caller_read_str(caller, *val)));
-            out.push('"');
-        } else {
-            out.push_str(&fmt_val_to_string(caller, *val, *tag));
-        }
-    }
-    out.push('}');
-    out
-}
-
-/// Formatea un CmxValue. Un CmxValue de "texto" (kind=1) se muestra plano (el tag
-/// sin `<.../>`), para paridad con el walker (los Text children del cuerpo).
-fn cmx_format(caller: &mut Caller<'_, HostState>, p: usize) -> String {
-    let tag = arr_read_i64(caller, p);
-    let props = arr_read_i64(caller, p + 8) as usize;
-    let children = arr_read_i64(caller, p + 16) as usize;
-    let kind = arr_read_i64(caller, p + 24);
-    let nprops = if props != 0 { arr_len(caller, props) as usize } else { 0 };
-    let nchild = if children != 0 { arr_len(caller, children) as usize } else { 0 };
-    if kind == 1 {
-        return caller_read_str(caller, tag);
-    }
-    let mut out = String::from("<");
-    if tag >> 32 == 0 && tag != 0 {
-        // Handle de función (par O impar, bits altos cero): `<function X>`.
-        let fn_str = fn_to_string_str(caller, tag);
-        out.push_str(&fn_str);
-    } else {
-        out.push_str(&caller_read_str(caller, tag));
-    }
-    let mut prop_entries: Vec<(String, i64, i64)> = Vec::with_capacity(nprops);
-    for i in 0..nprops {
-        let key = arr_read_i64(caller, props + 16 + i * 24);
-        let val = arr_read_i64(caller, props + 16 + i * 24 + 8);
-        let t = arr_read_i64(caller, props + 16 + i * 24 + 16);
-        prop_entries.push((caller_read_str(caller, key), val, t));
-    }
-    prop_entries.sort_by(|a, b| a.0.cmp(&b.0));
-    for (key, val, t) in prop_entries {
-        out.push(' ');
-        out.push_str(&key);
-        out.push_str("=\"");
-        let tv = tag_type(t);
-        if tv == 1 {
-            out.push_str(&caller_read_str(caller, val));
-        } else {
-            out.push_str(&fmt_val_to_string(caller, val, t));
-        }
-        out.push('"');
-    }
-    if nchild == 0 {
-        out.push_str(" />");
-    } else {
-        out.push_str(">... (");
-        out.push_str(&nchild.to_string());
-        out.push_str(" children)</");
-        if tag >> 32 == 0 && tag != 0 {
-            let fn_str = fn_to_string_str(caller, tag);
-            out.push_str(&fn_str);
-        } else {
-            out.push_str(&caller_read_str(caller, tag));
-        }
-        out.push('>');
-    }
-    out
+    1
 }

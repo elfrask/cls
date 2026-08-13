@@ -20,20 +20,24 @@ pub(crate) fn atomic_write(path: &std::path::Path, data: &[u8]) -> std::io::Resu
 }
 
 /// Clave del caché: hash del fuente + versión del compilador + target + los
-/// **sources de los módulos importados** (locales y globales de ~/.cls). Editar
-/// un .clsx del grafo importado invalida el caché; editar uno NO importado NO
-/// lo invalida (evita sobre-invalidación al tocar archivos no relacionados).
+/// **sources de los módulos importados** (locales y globales de ~/.cls) + el
+/// runtime (wasmtime y wasmi emiten bytes distintos: el tag de excepciones).
+/// Editar un .clsx del grafo importado invalida el caché; editar uno NO
+/// importado NO lo invalida (evita sobre-invalidación al tocar archivos no
+/// relacionados).
 pub(crate) fn cache_key(
     source: &str,
     target_str: Option<&str>,
     entry: &std::path::Path,
     module_sources: &[String],
+    runtime: &str,
 ) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     source.hash(&mut h);
     cls_core::VERSION.hash(&mut h);
     target_str.unwrap_or("").hash(&mut h);
+    runtime.hash(&mut h);
     // Integridad de los módulos importados: se hashean los SOURCES de los módulos
     // resueltos (locales del proyecto Y globales de ~/.cls). Así editar cualquier
     // .clsx importado invalida el caché aunque esté fuera del workspace.

@@ -24,13 +24,13 @@ use crate::error::Span;
 use crate::frontend::ast::*;
 use crate::frontend::token::Operator;
 use crate::middleware::typeck::expr_span;
-use crate::middleware::types::{LitVal, Type};
+use crate::middleware::types::{HostIntrinsic, LitVal, Type};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use wasm_encoder::{
-    BlockType, Catch, CodeSection, ConstExpr, DataSection, DataSegment, DataSegmentMode,
-    ElementSection, Elements, EntityType, ExportKind, ExportSection, Function,
+    BlockType, Catch, CodeSection, ConstExpr, CustomSection, DataSection, DataSegment,
+    DataSegmentMode, ElementSection, Elements, EntityType, ExportKind, ExportSection, Function,
     FunctionSection, GlobalSection, GlobalType, Ieee64, ImportSection, Instruction, MemArg,
     MemorySection, MemoryType, Module as WasmModule, RefType, TableSection, TableType, TagKind,
     TagSection, TagType, TypeSection, ValType,
@@ -125,6 +125,9 @@ pub enum HostFn {
     FnEnter,
     FnExit,
     CallSite,
+    /// Canal genérico de funciones host del nodo: `host_call(id, ptr, n) -> i64`
+    /// con args empaquetados `[n:i64][(val:i64, tag:i64)*n]`.
+    HostCall,
 }
 
 impl HostFn {
@@ -217,6 +220,7 @@ impl HostFn {
             FnEnter => "fn_enter",
             FnExit => "fn_exit",
             CallSite => "fn_call_site",
+            HostCall => "host_call",
         }
     }
 
@@ -331,6 +335,7 @@ impl HostFn {
                 vec![ValType::I64, ValType::I64],
                 vec![],
             ),
+            HostCall => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
         }
     }
 }
@@ -389,9 +394,54 @@ fn was_type(t: &Type) -> ClsResult<WasTy> {
     }
 }
 
+/// Declaración sintética de `main` no-op (modo librería): `(i64 args) -> i64`,
+/// devuelve 0. Permite instanciar un módulo sin `main` (solo exports).
+fn noop_main_decl() -> FunctionDecl {
+    let span = Span::new(1, 1, 1, 1);
+    FunctionDecl {
+        name: "main".to_string(),
+        params: vec![],
+        return_type: None,
+        body: Block {
+            statements: vec![Statement::Return(Some(Expression::Literal(Literal {
+                kind: LiteralKind::Int(0),
+                span,
+            })))],
+            span,
+        },
+        visibility: Visibility::Private,
+        modifiers: vec![],
+        span,
+        type_params: vec![],
+        is_native: false,
+    }
+}
+
+/// Código de kind CLS para la sección custom `clx:exports` (firma tipada que el
+/// host usa para el marshalling de valores):
+/// 0=int 1=float 2=bool 3=char 4=string 5=array 6=record/shape 7=tuple
+/// 8=otro i64 (enum/struct/clase/named/union) 9=void 10=cmx 11=funcion 12=null.
+fn cls_kind_code(t: &Type) -> i64 {
+    match t {
+        Type::Int | Type::I8 | Type::I16 | Type::I32 | Type::I64
+        | Type::Literal(LitVal::Int(_)) => 0,
+        Type::Float | Type::F32 | Type::F64 | Type::Literal(LitVal::Float(_)) => 1,
+        Type::Bool | Type::Literal(LitVal::Bool(_)) => 2,
+        Type::Char => 3,
+        Type::String => 4,
+        Type::Array(_) => 5,
+        Type::Record(_, _) | Type::Shape(_) => 6,
+        Type::Tuple(_) => 7,
+        Type::Void | Type::Empty => 9,
+        Type::Cmx => 10,
+        Type::Fun(..) => 11,
+        Type::Null => 12,
+        _ => 8,
+    }
+}
+
 /// Nombre de tipo builtin para `v is Tipo` (compile-time en el JIT).
-fn builtin_was_type(name: &str) -> Option<BuiltinTypeName> {
-    match name {
+fn builtin_was_type(name: &str) -> Option<BuiltinTypeName> {    match name {
         "String" => Some(BuiltinTypeName::String),
         "Int" => Some(BuiltinTypeName::Int),
         "Float" => Some(BuiltinTypeName::Float),
@@ -496,6 +546,12 @@ struct FuncEmitter<'a> {
     tag_idx: u32,
     /// Type `[] -> [i64, i64]` del block handler del try_table.
     eh_handler_ty: u32,
+    /// `true` = excepciones CLS habilitadas (wasmtime); `false` = modo sin
+    /// excepciones (wasmi): try/catch/throw fallan y los errores de runtime se
+    /// emiten como `unreachable` (trap).
+    exceptions: bool,
+    /// Funciones host del nodo por nombre (canal `env.host_call`).
+    intrinsics: &'a HashMap<String, HostIntrinsic>,
     /// Closures (B5): nombre de variable capturada → índice 1-based en el bloque
     /// de capturas `[n, v1, v2, ...]`. El param 0 del frame es `__capturas` (ptr).
     captures: HashMap<String, u32>,
@@ -529,6 +585,8 @@ impl<'a> FuncEmitter<'a> {
         target: &'a Target,
         tag_idx: u32,
         eh_handler_ty: u32,
+        exceptions: bool,
+        intrinsics: &'a HashMap<String, HostIntrinsic>,
     ) -> Self {
         Self {
             types,
@@ -561,6 +619,8 @@ impl<'a> FuncEmitter<'a> {
             target,
             tag_idx,
             eh_handler_ty,
+            exceptions,
+            intrinsics,
             captures: HashMap::new(),
             promoted: HashSet::new(),
         }
@@ -1389,6 +1449,13 @@ impl<'a> FuncEmitter<'a> {
     /// Paridad con el walker: el finally solo se ejecuta si NO hubo catch; el catch
     /// recibe `e = "Error de runtime: " + msg` (e.to_string() del walker).
     fn emit_try(&mut self, stmt: &TryStatement) -> ClsResult<()> {
+        if !self.exceptions {
+            return Err(crate::error::ClsError::compile_at(
+                "try/catch no soportado en este runtime: el backend se compiló sin \
+                 excepciones WASM (wasmi). Usa el runtime wasmtime o el WASM nativo del navegador.",
+                &stmt.span,
+            ));
+        }
         // block $outer (Empty)
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::Empty));
@@ -1768,6 +1835,93 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Const(span.start_line as i64));
         self.body.push(Instruction::I64Const(span.start_col as i64));
         self.host.call(HostFn::CallSite, &mut self.body);
+    }
+
+    /// Emite una llamada a una función host del nodo (intrinsic) vía el canal
+    /// genérico `env.host_call(id, ptr, n)`. Los args viajan empaquetados en
+    /// memoria: `[n:i64][(val:i64, tag:i64)*n]` (tag = `cls_kind_code`).
+    fn emit_host_call(&mut self, intr: &HostIntrinsic, c: &CallExpr) -> ClsResult<()> {
+        let n = c.args.len() as i64;
+        // 1. Evaluar cada arg y guardarlo en un temporal (bits uniformes i64:
+        //    float → reinterpret bits; bool/char → extender a i64).
+        let mut tmps: Vec<u32> = Vec::with_capacity(c.args.len());
+        for (i, arg) in c.args.iter().enumerate() {
+            self.emit_expression(arg)?;
+            match intr.params.get(i) {
+                Some(Type::Float) | Some(Type::F32) | Some(Type::F64)
+                | Some(Type::Literal(LitVal::Float(_))) => {
+                    self.body.push(Instruction::I64ReinterpretF64);
+                }
+                Some(Type::Bool) | Some(Type::Char)
+                | Some(Type::Literal(LitVal::Bool(_))) => {
+                    self.body.push(Instruction::I64ExtendI32S);
+                }
+                _ => {}
+            }
+            let tmp = self.fresh_local();
+            self.body.push(Instruction::LocalSet(tmp));
+            tmps.push(tmp);
+        }
+        // 2. Alocar el bloque [n][(val,tag)*n].
+        let size = 8 + n * 16;
+        self.body.push(Instruction::I64Const(size));
+        self.body.push(Instruction::Call(self.func_indexes["__alloc"]));
+        let ptr = self.fresh_local();
+        self.body.push(Instruction::LocalSet(ptr));
+        // 3. Escribir n.
+        self.body.push(Instruction::LocalGet(ptr));
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::I64Const(n));
+        self.body.push(Instruction::I64Store(MemArg {
+            offset: 0,
+            align: 3,
+            memory_index: 0,
+        }));
+        // 4. Por arg: val + tag. (El addr de los memory ops es i32 → wrap.)
+        for (i, tmp) in tmps.iter().enumerate() {
+            let base = 8 + (i as i64) * 16;
+            self.body.push(Instruction::LocalGet(ptr));
+            self.body.push(Instruction::I64Const(base));
+            self.body.push(Instruction::I64Add);
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::LocalGet(*tmp));
+            self.body.push(Instruction::I64Store(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
+            self.body.push(Instruction::LocalGet(ptr));
+            self.body.push(Instruction::I64Const(base + 8));
+            self.body.push(Instruction::I64Add);
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::I64Const(cls_kind_code(
+                intr.params.get(i).unwrap_or(&Type::Any),
+            )));
+            self.body.push(Instruction::I64Store(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
+        }
+        // 5. `env.host_call(id, ptr, n)`.
+        self.body.push(Instruction::I64Const(intr.id as i64));
+        self.body.push(Instruction::LocalGet(ptr));
+        self.body.push(Instruction::I64Const(n));
+        self.host.call(HostFn::HostCall, &mut self.body);
+        // 6. Convertir el retorno (bits i64) al tipo nativo del CLS.
+        match &intr.ret {
+            Type::Void | Type::Empty => {
+                self.body.push(Instruction::Drop);
+            }
+            Type::Float | Type::F32 | Type::F64 | Type::Literal(LitVal::Float(_)) => {
+                self.body.push(Instruction::F64ReinterpretI64);
+            }
+            Type::Bool | Type::Char | Type::Literal(LitVal::Bool(_)) => {
+                self.body.push(Instruction::I32WrapI64);
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     /// Emite `env.fn_exit()` antes de salir de una función CLS.
@@ -2237,7 +2391,13 @@ impl<'a> FuncEmitter<'a> {
     }
 
     /// Lanza la excepción CLS: `throw(tag)` con payload (msg, span_empaquetado).
+    /// En modo sin excepciones (wasmi): `unreachable` (trap) — el host muestra el
+    /// error como trap con el shadow call stack (sin caret del span CLS).
     fn emit_throw(&mut self, msg: &str, span: &Span) {
+        if !self.exceptions {
+            self.body.push(Instruction::Unreachable);
+            return;
+        }
         let m = self.intern_string(msg);
         self.emit_load_str(m);
         let packed = ((span.start_line as i64) << 32) | (span.start_col as i64);
@@ -3746,6 +3906,13 @@ impl<'a> FuncEmitter<'a> {
             match name.as_str() {
                 "throw" => {
                     // throw(msg) → excepción CLS (tag con payload msg + span).
+                    if !self.exceptions {
+                        return Err(crate::error::ClsError::compile_at(
+                            "'throw' no soportado en este runtime: el backend se compiló sin \
+                             excepciones WASM (wasmi).",
+                            &c.span,
+                        ));
+                    }
                     if let Some(arg0) = c.args.first() {
                         self.emit_expression(arg0)?;
                         self.emit_to_string(arg0)?;
@@ -3897,6 +4064,11 @@ impl<'a> FuncEmitter<'a> {
                 }
                 self.emit_call_site(&c.span);
                 self.body.push(Instruction::Call(fidx));
+                return Ok(());
+            }
+            // Función host del nodo (intrinsic): canal `env.host_call(id, ptr, n)`.
+            if let Some(intr) = self.intrinsics.get(name) {
+                self.emit_host_call(intr, c)?;
                 return Ok(());
             }
         }
@@ -6529,6 +6701,32 @@ fn annotation_to_type(ann: &TypeAnnotation) -> Type {
     }
 }
 
+/// Opciones del backend WASM.
+#[derive(Clone, Debug)]
+pub struct WasmBackendOptions {
+    /// `true` = emite el tag de excepción CLS + try_table/throw (wasmtime).
+    /// `false` = modo sin excepciones (wasmi): sin tag, errores de runtime como
+    /// `unreachable` y `try/catch`/`throw` fallan con error claro.
+    pub exceptions: bool,
+    /// `true` = el módulo DEBE tener `main(args: String[])` (modo app).
+    /// `false` = modo librería: si no hay main se sintetiza un main no-op
+    /// (para `.clx`-librería que solo expone `export function`).
+    pub require_main: bool,
+    /// Funciones host del NODO (intrinsics): las llamadas a esos nombres se
+    /// compilan vía el canal `env.host_call(id, ptr, n)`.
+    pub intrinsics: Vec<HostIntrinsic>,
+}
+
+impl Default for WasmBackendOptions {
+    fn default() -> Self {
+        Self {
+            exceptions: true,
+            require_main: true,
+            intrinsics: Vec::new(),
+        }
+    }
+}
+
 /// Compila un Module tipado a un binario WASM.
 /// Backend WASM. Toma el type map `Span → Type` por referencia (el caller —
 /// `jit.rs` — mantiene el `TypeChecker` vivo durante la emisión) para no clonar
@@ -6536,6 +6734,9 @@ fn annotation_to_type(ann: &TypeAnnotation) -> Type {
 pub struct WasmBackend<'a> {
     types: &'a HashMap<Span, Type>,
     target: Target,
+    exceptions: bool,
+    require_main: bool,
+    intrinsics: Vec<HostIntrinsic>,
 }
 
 impl<'a> WasmBackend<'a> {
@@ -6545,11 +6746,72 @@ impl<'a> WasmBackend<'a> {
 
     /// Backend con un target explícito (para `when` compile-time).
     pub fn with_target(types: &'a HashMap<Span, Type>, target: Target) -> Self {
-        Self { types, target }
+        Self::with_options(types, target, WasmBackendOptions::default())
+    }
+
+    /// Backend con opciones explícitas.
+    pub fn with_options(
+        types: &'a HashMap<Span, Type>,
+        target: Target,
+        opts: WasmBackendOptions,
+    ) -> Self {
+        Self {
+            types,
+            target,
+            exceptions: opts.exceptions,
+            require_main: opts.require_main,
+            intrinsics: opts.intrinsics,
+        }
+    }
+
+    /// Backend sin excepciones WASM (para runtimes que no implementan la
+    /// propuesta de exception-handling, p.ej. wasmi en el navegador).
+    pub fn without_exceptions(types: &'a HashMap<Span, Type>, target: Target) -> Self {
+        Self::with_options(
+            types,
+            target,
+            WasmBackendOptions {
+                exceptions: false,
+                ..Default::default()
+            },
+        )
+    }
+
+    /// Backend en modo librería (sin `main` obligatorio): útil para `.clx`
+    /// que solo exponen `export function` (futuro nodo de bindings).
+    pub fn library_mode(types: &'a HashMap<Span, Type>, target: Target) -> Self {
+        Self::with_options(
+            types,
+            target,
+            WasmBackendOptions {
+                require_main: false,
+                ..Default::default()
+            },
+        )
+    }
+
+    /// Backend en modo librería Y sin excepciones (bindings browser).
+    pub fn library_without_exceptions(types: &'a HashMap<Span, Type>, target: Target) -> Self {
+        Self::with_options(
+            types,
+            target,
+            WasmBackendOptions {
+                exceptions: false,
+                require_main: false,
+                intrinsics: Vec::new(),
+            },
+        )
     }
 
     pub fn emit(&self, module: &Module) -> ClsResult<Vec<u8>> {
         let mut engine = Engine::new(self.types, self.target.clone());
+        engine.exceptions = self.exceptions;
+        engine.require_main = self.require_main;
+        engine.intrinsics = self
+            .intrinsics
+            .iter()
+            .map(|i| (i.name.clone(), i.clone()))
+            .collect();
         engine.emit(module)
     }
 }
@@ -6570,6 +6832,17 @@ struct Engine<'a> {
     code_sec: CodeSection,
     type_count: u32,
     func_count: u32,
+    /// `true` = el módulo lleva el tag de excepción CLS (payload: msg + span) y
+    /// los try/catch/throw funcionan (wasmtime). `false` = modo sin excepciones
+    /// (wasmi): sin tag; errores de runtime como traps.
+    exceptions: bool,
+    /// `true` = main obligatorio (modo app); `false` = se sintetiza main no-op
+    /// (modo librería, solo exports).
+    require_main: bool,
+    /// Funciones host del nodo por nombre (canal `env.host_call`).
+    intrinsics: HashMap<String, HostIntrinsic>,
+    /// Metadatos de los exports tipados (JSON, sección custom `clx:exports`).
+    exports_meta: Vec<u8>,
     /// Índice del tag de excepción CLS (payload: msg + span).
     tag_idx: u32,
     /// Type `[] -> [i64, i64]` del block handler del try_table.
@@ -6700,6 +6973,10 @@ impl<'a> Engine<'a> {
             code_sec: CodeSection::new(),
             type_count: 0,
             func_count: 0,
+            exceptions: true,
+            require_main: true,
+            intrinsics: HashMap::new(),
+            exports_meta: Vec::new(),
             func_indexes: HashMap::new(),
             func_types: HashMap::new(),
             func_defaults: HashMap::new(),
@@ -6768,12 +7045,24 @@ impl<'a> Engine<'a> {
         m.section(&self.funcs_sec);
         m.section(&self.tables_sec);
         m.section(&self.memories_sec);
-        m.section(&self.tags_sec);
+        // Solo en modo con excepciones: sin tag (wasmi) la sección debe omitirse
+        // (una sección de tags vacía sigue siendo sintaxis de exception-handling).
+        if self.exceptions {
+            m.section(&self.tags_sec);
+        }
         m.section(&self.globals_sec);
         m.section(&self.exports_sec);
         m.section(&self.elements_sec);
         m.section(&self.code_sec);
         m.section(&self.data_sec);
+        // Sección custom con las firmas tipadas de los exports (para el host
+        // de bindings). Solo si hay `export function`.
+        if !self.exports_meta.is_empty() {
+            m.section(&CustomSection {
+                name: "clx:exports".into(),
+                data: std::borrow::Cow::Owned(self.exports_meta.clone()),
+            });
+        }
         m
     }
 
@@ -6784,9 +7073,17 @@ impl<'a> Engine<'a> {
             }
         }
         if !self.func_types.contains_key("main") {
-            return Err(crate::error::ClsError::CompileError(
-                "No se encontró function main(args: String[]) para el JIT".to_string(),
-            ));
+            if self.require_main {
+                return Err(crate::error::ClsError::CompileError(
+                    "No se encontró function main(args: String[]) para el JIT".to_string(),
+                ));
+            }
+            // Modo librería: main no-op sintetizado (el host lo llama con args=0).
+            self.func_types.insert(
+                "main".to_string(),
+                (vec![Type::Array(Box::new(Type::String))], Some(Type::Int)),
+            );
+            self.func_defaults.insert("main".to_string(), vec![None]);
         }
         Ok(())
     }
@@ -7123,18 +7420,23 @@ impl<'a> Engine<'a> {
             FnEnter,
             FnExit,
             CallSite,
+            HostCall,
         ] {
             self.register_host(h);
         }
 
-        // Tag de excepción CLS: payload (msg: i64, span: i64).
-        let tag_ty = self.register_func_type(vec![ValType::I64, ValType::I64], vec![]);
-        self.eh_handler_ty = self.register_func_type(vec![], vec![ValType::I64, ValType::I64]);
-        self.tag_idx = self.tags_sec.len();
-        self.tags_sec.tag(TagType {
-            kind: TagKind::Exception,
-            func_type_idx: tag_ty,
-        });
+        // Tag de excepción CLS: payload (msg: i64, span: i64). Solo en modo con
+        // excepciones (wasmtime); en modo sin excepciones (wasmi) no hay tag, no
+        // hay try_table y los `Throw` se emiten como `unreachable` (trap).
+        if self.exceptions {
+            let tag_ty = self.register_func_type(vec![ValType::I64, ValType::I64], vec![]);
+            self.eh_handler_ty = self.register_func_type(vec![], vec![ValType::I64, ValType::I64]);
+            self.tag_idx = self.tags_sec.len();
+            self.tags_sec.tag(TagType {
+                kind: TagKind::Exception,
+                func_type_idx: tag_ty,
+            });
+        }
 
         // Memoria (1 página = 64KB; el allocator hace grow).
         self.memories_sec.memory(MemoryType {
@@ -7289,6 +7591,16 @@ impl<'a> Engine<'a> {
                 }
                 cls_funcs.push(f.clone());
             }
+        }
+        // Modo librería: declarar el main no-op sintetizado (firma (i64) -> i64).
+        if !self.func_indexes.contains_key("main") {
+            let tidx = self.register_func_type(vec![ValType::I64], vec![ValType::I64]);
+            let fidx = self.func_count;
+            self.func_count += 1;
+            self.funcs_sec.function(tidx);
+            self.func_indexes.insert("main".to_string(), fidx);
+            self.fn_type_indexes.insert("main".to_string(), tidx);
+            cls_funcs.push(noop_main_decl());
         }
         // Índices de tabla de las funciones CLS (para handles de función) — se
         // calculan ANTES de compilar cuerpos (el emisor los usa en emit_ident_load).
@@ -7475,6 +7787,31 @@ impl<'a> Engine<'a> {
             .export("alloc", ExportKind::Func, self.func_indexes["__alloc"]);
         self.exports_sec.export("memory", ExportKind::Memory, 0);
 
+        // `export function f(...)` top-level → export WASM con su firma concreta
+        // (el host la llama pasando `__capturas=0` como primer param). La firma
+        // tipada viaja en la sección custom `clx:exports` (JSON) para que el
+        // host sepa el marshalling exacto de cada parámetro/retorno.
+        let mut exports_meta: Vec<serde_json::Value> = Vec::new();
+        for stmt in &module.statements {
+            if let Statement::FunctionDecl(f) = stmt {
+                if f.visibility != Visibility::Export || f.name == "main" {
+                    continue;
+                }
+                if let Some(&fidx) = self.func_indexes.get(&f.name) {
+                    self.exports_sec.export(&f.name, ExportKind::Func, fidx);
+                }
+                let (params, ret) = self.func_types[&f.name].clone();
+                exports_meta.push(serde_json::json!({
+                    "name": f.name,
+                    "params": params.iter().map(cls_kind_code).collect::<Vec<i64>>(),
+                    "ret": ret.as_ref().map(cls_kind_code).unwrap_or(9),
+                }));
+            }
+        }
+        if !exports_meta.is_empty() {
+            self.exports_meta = serde_json::to_string(&exports_meta).unwrap_or_default().into_bytes();
+        }
+
         Ok(self.build_module().finish())
     }
 
@@ -7505,6 +7842,8 @@ impl<'a> Engine<'a> {
             &self.target,
             self.tag_idx,
             self.eh_handler_ty,
+            self.exceptions,
+            &self.intrinsics,
         );
         // Métodos de clase: `me` (la instancia) es el primer param implícito.
         // `Clase::metodo` es método si el prefijo es una clase conocida; si no,
@@ -7655,6 +7994,8 @@ impl<'a> Engine<'a> {
             &self.target,
             self.tag_idx,
             self.eh_handler_ty,
+            self.exceptions,
+            &self.intrinsics,
         );
         for (idx, val) in &self.global_inits {
             fe.emit_expression(val)?;
