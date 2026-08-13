@@ -12,7 +12,7 @@ use std::time::Instant;
 
 use crate::error::{show_cls_error, show_type_diag};
 use crate::flatten::flatten_imports;
-use crate::resolve::{cache_dir, cache_key, load_import_modules};
+use crate::resolve::{cache_dir, cache_key, load_import_modules_hooked};
 use crate::timing::{jit_timing, tick};
 use crate::{JitContext, RuntimeKind};
 
@@ -91,7 +91,14 @@ pub fn run_jit_with(
     let mut seen = std::collections::HashSet::new();
     let mut imports: Vec<(String, String, ClsModule)> = Vec::new();
     let manifest = cls_core::config::ModuleManifest::find_in_dir(&base_dir);
-    if let Err(e) = load_import_modules(&module, &base_dir, &mut seen, &mut imports, manifest.as_ref()) {
+    if let Err(e) = load_import_modules_hooked(
+        &module,
+        &base_dir,
+        &mut seen,
+        &mut imports,
+        manifest.as_ref(),
+        ctx.module_source_resolver,
+    ) {
         show_cls_error(&e, entry, Some(&source));
         return 1;
     }
@@ -277,23 +284,21 @@ pub(crate) fn maybe_write_module_index(
     }
 }
 
-/// Reporta un error de runtime con el trazo completo (AGENTS.md: obligatorio).
-///
+/// Construye el reporte de un error de runtime como string (trace completo).
 /// Recibe las piezas que cada runtime extrae de su error:
 /// - `msg`: mensaje de la excepción CLS (vacío si el error fue un trap del host).
 /// - `span`: span de la excepción CLS (puede ser None).
 /// - `call_stack`: shadow call stack `(nombre, span)` acumulado por fn_enter.
 /// - `pending_call_site`: span del call site pendiente (si el backend lo emitió).
 /// - `trap_text`: root cause del error del runtime (para traps).
-pub(crate) fn finish_run_error(
-    msg: String,
+pub fn build_error_string(    msg: String,
     span: Option<Span>,
     call_stack: Vec<(String, Span)>,
     pending_call_site: Option<Span>,
     trap_text: String,
     entry: &str,
     modules: &[(u32, String, String)],
-) -> i32 {
+) -> String {
     use cls_runtime::error_report::{format_error, ErrorFormat, ErrorReport};
 
     // Shadow call stack: frames (nombre, span) en orden de ejecución
@@ -307,8 +312,7 @@ pub(crate) fn finish_run_error(
         })
         .collect();
     let mut error_span = span;
-    let root = trap_text;
-    let short = root;
+    let short = trap_text;
     // Stack overflow: mensaje limpio y solo los frames del tope de la
     // recursión (no los ~1000 acumulados).
     let is_stack_overflow =
@@ -347,7 +351,7 @@ pub(crate) fn finish_run_error(
             source_file: file,
             source,
         };
-        eprintln!("{}", format_error(&report, &ErrorFormat::Console));
+        format_error(&report, &ErrorFormat::Console)
     } else {
         let report = ErrorReport {
             error: ClsError::RuntimeError(fallback_msg),
@@ -357,7 +361,29 @@ pub(crate) fn finish_run_error(
             source_file: entry.to_string(),
             source: None,
         };
-        eprintln!("{}", format_error(&report, &ErrorFormat::Console));
+        format_error(&report, &ErrorFormat::Console)
     }
+}
+
+/// Reporta un error de runtime con el trazo completo (AGENTS.md: obligatorio).
+pub(crate) fn finish_run_error(
+    msg: String,
+    span: Option<Span>,
+    call_stack: Vec<(String, Span)>,
+    pending_call_site: Option<Span>,
+    trap_text: String,
+    entry: &str,
+    modules: &[(u32, String, String)],
+) -> i32 {
+    let text = build_error_string(
+        msg,
+        span,
+        call_stack,
+        pending_call_site,
+        trap_text,
+        entry,
+        modules,
+    );
+    eprintln!("{}", text);
     1
 }

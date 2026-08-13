@@ -121,6 +121,8 @@ fn run_with(runtime: RuntimeKind) -> i32 {
         module_index: None,
         host_intrinsics: &intrinsics,
         host_call_handler: Some(Arc::new(TestHandler)),
+        module_source_resolver: None,
+        output: None,
     };
     cls_jit::run_jit_with(&file, &[], None, &ctx, runtime)
 }

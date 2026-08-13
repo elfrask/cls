@@ -129,7 +129,9 @@ impl HostCtx for Caller<'_, HostState> {
 
 // ── Registro de host functions (adaptadores) ────────────────────────────────
 
-fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String> {
+/// Registra las host functions `env.*` (adaptadores). Público para que el nodo
+/// de bindings (`clxb`) construya su propio Linker.
+pub fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String> {
     macro_rules! w {
         ($name:literal, $f:expr) => {
             linker.func_wrap(HOST, $name, $f).map_err(|e| e.to_string())?;
@@ -572,6 +574,7 @@ pub(crate) fn run_wasm_wasmi(
             pending_call_site: None,
             simple_fn_names: std::collections::HashMap::new(),
             host_call: ctx.host_call_handler.clone(),
+            output: ctx.output.clone(),
         },
     );
     let mut linker = Linker::new(&engine);
@@ -734,6 +737,8 @@ mod tests {
             module_index: None,
             host_intrinsics: &[],
             host_call_handler: None,
+            module_source_resolver: None,
+            output: None,
         };
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             crate::engine::run_jit_with(

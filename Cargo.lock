@@ -243,6 +243,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "clxb"
+version = "2.0.0"
+dependencies = [
+ "cls-core",
+ "cls-jit",
+ "cls-runtime",
+ "wasmtime",
+]
+
+[[package]]
 name = "clxr"
 version = "2.0.0"
 dependencies = [

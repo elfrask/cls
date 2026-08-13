@@ -121,7 +121,10 @@ impl HostCtx for Caller<'_, HostState> {
 
 // ── Registro de host functions (adaptadores) ────────────────────────────────
 
-fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String> {
+/// Registra las host functions `env.*` (adaptadores de una línea a los cuerpos
+/// genéricos). Público para que el nodo de bindings (`clxb`) construya su propio
+/// Linker.
+pub fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String> {
     macro_rules! w {
         ($name:literal, $f:expr) => {
             linker.func_wrap(HOST, $name, $f).map_err(|e| e.to_string())?;
@@ -304,7 +307,7 @@ fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), String>
 /// Registra hosts para las extensiones (`env.<sym>__<sig>@<lib>`) que delegan en
 /// el backend nativo del nodo (libloading). `sig` = ret+params: i=int, f=float,
 /// b=bool, c=char, s=string, v=void.
-fn register_native_hosts(
+pub fn register_native_hosts(
     linker: &mut Linker<HostState>,
     module: &wasmtime::Module,
     backend: Arc<dyn cls_runtime::ffi::NativeBackend>,
@@ -583,6 +586,7 @@ pub(crate) fn run_wasm_wasmtime(
             pending_call_site: None,
             simple_fn_names: std::collections::HashMap::new(),
             host_call: ctx.host_call_handler.clone(),
+            output: ctx.output.clone(),
         },
     );
     let mut linker = Linker::new(&engine);

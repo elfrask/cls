@@ -40,6 +40,21 @@ pub trait HostCallHandler: Send + Sync {
     fn call(&self, id: u32, args: &[HostCallArg]) -> Result<HostCallResult, String>;
 }
 
+/// Destino de la salida de `print` del script. Si el nodo registra uno, todo
+/// `print`/`printEnd` se redirige aquí (en vez de stdout).
+pub trait OutputSink: Send + Sync {
+    /// Un valor de print (sin separador; el motor agrega los espacios).
+    fn write(&self, s: &str);
+    /// Fin de línea (`print()` sin args / fin de la llamada print).
+    fn end_line(&self);
+}
+
+/// Resolver de módulos del NODO: provee el source de `import "path"` que no se
+/// resuelve en disco (módulos en memoria, VFS, red, ...).
+pub trait ModuleSourceResolver: Send + Sync {
+    fn resolve_source(&self, path: &str, base_dir: &std::path::Path) -> Option<String>;
+}
+
 /// Implementación de `env.host_call(id, ptr, n)`: lee el bloque empaquetado
 /// `[n:i64][(val:i64, tag:i64)*n]`, despacha al handler del nodo y escribe el
 /// retorno (los strings se escriben en la memoria del módulo).
@@ -99,6 +114,14 @@ fn format_float(v: f64) -> String {
 
 fn print_arg<C: HostCtx>(ctx: &mut C, value: &str) {
     let state = ctx.state_mut();
+    if let Some(out) = &state.output {
+        if !state.first_in_line {
+            out.write(" ");
+        }
+        out.write(value);
+        state.first_in_line = false;
+        return;
+    }
     if !state.first_in_line {
         print!(" ");
     }
@@ -131,6 +154,11 @@ pub fn host_print_str<C: HostCtx>(ctx: &mut C, v: i64) {
 }
 
 pub fn host_print_end<C: HostCtx>(ctx: &mut C) {
+    if let Some(out) = &ctx.state().output {
+        out.end_line();
+        ctx.state_mut().first_in_line = true;
+        return;
+    }
     println!();
     ctx.state_mut().first_in_line = true;
 }

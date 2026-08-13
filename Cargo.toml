@@ -5,6 +5,7 @@ members = [
     "cls-runtime",
     "cls-jit",
     "nodos/clx",
+    "nodos/clxb",
     "nodos/clxr",
 ]
 
