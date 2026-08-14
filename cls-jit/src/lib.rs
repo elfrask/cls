@@ -17,6 +17,7 @@ pub mod engine;
 pub mod error;
 pub mod flatten;
 pub mod host;
+pub mod repl;
 pub mod resolve;
 pub mod state;
 pub mod timing;

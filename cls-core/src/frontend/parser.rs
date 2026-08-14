@@ -191,6 +191,7 @@ impl Parser {
             span: decl_span,
             is_static: false,
             is_readonly: false,
+            pool_only: false,
         }))
     }
 
@@ -221,6 +222,7 @@ impl Parser {
             span: decl_span,
             is_static: false,
             is_readonly: false,
+            pool_only: false,
         }))
     }
 

@@ -36,6 +36,15 @@ use wasm_encoder::{
     TagSection, TagType, TypeSection, ValType,
 };
 
+/// Base de la tabla de índices de strings (8 bytes por entrada: offset, len).
+/// Layout de memoria: `[0 .. data_len)` = bytes de los strings (append-only,
+/// en orden de interning) y `[STRING_TABLE_BASE .. + 8N)` = tabla. Con base
+/// FIJA, los offsets de los datos no dependen del tamaño total del pool: el
+/// REPL JIT (estado persistente) transfiere punteros de strings entre
+/// instancias y estos siguen siendo válidos (las entradas compartidas
+/// conservan su posición si las nuevas se agregan al final).
+const STRING_TABLE_BASE: u32 = 524_288; // 512KB — por debajo del heap (1MB)
+
 /// Funciones host (`env.*`) que el nodo JIT debe implementar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HostFn {
@@ -7252,6 +7261,10 @@ struct Engine<'a> {
     native_ret: HashMap<String, char>,
     globals: HashMap<String, u32>,
     global_inits: Vec<(u32, Expression)>,
+    /// Índices WASM de las globals de usuario (var/const top-level y static
+    /// fields), en orden de declaración; el host las exporta como `__g_{idx}`
+    /// (0 = heap_ptr) para transferir estado entre instancias (REPL).
+    user_global_idxs: Vec<u32>,
     /// Campos estáticos de clase: `Clase::campo` → global WASM (mutable).
     static_fields: HashMap<String, u32>,
     elements_sec: ElementSection,
@@ -7377,8 +7390,9 @@ impl<'a> Engine<'a> {
             struct_defs: HashMap::new(),
             native_indexes: HashMap::new(),
             native_ret: HashMap::new(),
-        globals: HashMap::new(),
+            globals: HashMap::new(),
         global_inits: Vec::new(),
+        user_global_idxs: Vec::new(),
         static_fields: HashMap::new(),
             tables_sec: TableSection::new(),
             tags_sec: TagSection::new(),
@@ -7868,9 +7882,11 @@ impl<'a> Engine<'a> {
             });
         }
 
-        // Memoria (1 página = 64KB; el allocator hace grow).
+        // Memoria (1 página = 64KB). Mínimo 16 páginas (1MB): el string pool
+        // (datos + tabla de índices) vive bajo el heap, que arranca en 1MB; el
+        // allocator hace grow para el heap a partir de ahí.
         self.memories_sec.memory(MemoryType {
-            minimum: 1,
+            minimum: 16,
             maximum: None,
             memory64: false,
             shared: false,
@@ -7895,12 +7911,20 @@ impl<'a> Engine<'a> {
                 let w = match (&v.type_ann, &v.value) {
                     (Some(ann), _) => was_type(&annotation_to_type(ann)).unwrap_or(WasTy::I64),
                     (None, Some(val)) => self.expr_was_type(val).unwrap_or(WasTy::I64),
-                    (None, None) => WasTy::I64,
+                    // Sin anotación ni init (REPL con estado persistente): el
+                    // tipo viene del type map (registrado por el typeck en el
+                    // span de la declaración original).
+                    (None, None) => self
+                        .types
+                        .get(&v.span)
+                        .and_then(|t| was_type(t).ok())
+                        .unwrap_or(WasTy::I64),
                 };
                 let is_const = matches!(stmt, Statement::ConstDecl(_));
                 let _ = is_const;
                 let idx = next_global;
                 next_global += 1;
+                self.user_global_idxs.push(idx);
                 self.globals.insert(v.name.clone(), idx);
                 // mutable=true siempre: __init_globals las setea (incluso const, que
                 // no se vuelve a escribir en runtime).
@@ -7917,7 +7941,12 @@ impl<'a> Engine<'a> {
                     },
                 );
                 if let Some(val) = &v.value {
-                    self.global_inits.push((idx, val.clone()));
+                    // REPL: inits pool-only NO se ejecutan (el valor llega por
+                    // transferencia de estado entre instancias); sus strings se
+                    // siembran igualmente en el pool (bloque de seed abajo).
+                    if !v.pool_only {
+                        self.global_inits.push((idx, val.clone()));
+                    }
                 }
             }
         }
@@ -7936,10 +7965,15 @@ impl<'a> Engine<'a> {
                                 (None, Some(val)) => {
                                     self.expr_was_type(val).unwrap_or(WasTy::I64)
                                 }
-                                (None, None) => WasTy::I64,
+                                (None, None) => self
+                                    .types
+                                    .get(&p.span)
+                                    .and_then(|t| was_type(t).ok())
+                                    .unwrap_or(WasTy::I64),
                             };
                             let idx = next_global;
                             next_global += 1;
+                            self.user_global_idxs.push(idx);
                             let key = format!("{}::{}", c.name, p.name);
                             self.static_fields.insert(key, idx);
                             self.globals_sec.global(
@@ -7977,6 +8011,55 @@ impl<'a> Engine<'a> {
             let ig_idx = self.declare_wasm_function(vec![], vec![]);
             self.func_indexes
                 .insert("__init_globals".to_string(), ig_idx);
+        }
+
+        // Seed del string pool (REPL con estado persistente): los inits de TODAS
+        // las declaraciones top-level (reales y pool-only) se emiten a un buffer
+        // descartado ANTES de compilar los cuerpos. Así el pool queda con el
+        // prefijo [inits de decls en orden de statements] idéntico entre sesiones
+        // y los punteros de strings transferidos entre instancias siguen
+        // siendo válidos (los cuerpos/init reales re-internan como no-op).
+        let seed: Vec<Expression> = module
+            .statements
+            .iter()
+            .filter_map(|s| match s {
+                Statement::VarDecl(v) | Statement::ConstDecl(v) => v.value.clone(),
+                _ => None,
+            })
+            .collect();
+        if !seed.is_empty() {
+            let mut fe = FuncEmitter::new(
+                self.types,
+                HostCaller {
+                    indexes: self.host_indexes.clone(),
+                },
+                &mut self.string_pool,
+                &mut self.string_index,
+                &self.func_indexes,
+                &self.func_defaults,
+                &self.fn_table_idx,
+                &self.arrow_names,
+                &self.arrow_captures,
+                &mut self.type_count,
+                &mut self.types_sec,
+                &self.enum_defs,
+                &self.struct_defs,
+                &self.native_indexes,
+                &self.native_ret,
+                &self.globals,
+                &self.static_fields,
+                &self.class_defs,
+                &self.method_type_indexes,
+                None,
+                &self.target,
+                self.tag_idx,
+                self.eh_handler_ty,
+                self.exceptions,
+                &self.intrinsics,
+            );
+            for init in &seed {
+                let _ = fe.emit_expression(init);
+            }
         }
         // Métodos/ctor de clase: se declaran aquí (tras alloc/load_str/init) para
         // que el code_sec (que los compila después) quede alineado.
@@ -8216,6 +8299,17 @@ impl<'a> Engine<'a> {
         self.exports_sec
             .export("alloc", ExportKind::Func, self.func_indexes["__alloc"]);
         self.exports_sec.export("memory", ExportKind::Memory, 0);
+
+        // Globals de usuario exportadas como `__g_{idx}` (0 = heap_ptr, 1.. =
+        // vars/consts/static fields). El host las usa para transferir estado
+        // persistente entre instancias (REPL): leer del módulo anterior y
+        // escribir en el nuevo antes de llamar a `main`.
+        self.exports_sec
+            .export("__g_0", ExportKind::Global, 0);
+        for &idx in &self.user_global_idxs {
+            let name = format!("__g_{}", idx);
+            self.exports_sec.export(&name, ExportKind::Global, idx);
+        }
 
         // `export function f(...)` top-level → export WASM con su firma concreta
         // (el host la llama pasando `__capturas=0` como primer param). La firma
@@ -8576,7 +8670,7 @@ impl<'a> Engine<'a> {
     fn build_load_str(&self) -> Function {
         // (func (param $i i64) (result i64)
         //   local 0 = i (param), 1 = entry, 2 = off, 3 = len
-        //   entry = i*8
+        //   entry = STRING_TABLE_BASE + i*8
         //   off = i32.load(entry)
         //   len = i32.load(entry+4)
         //   result = (off << 32) | len)
@@ -8584,6 +8678,8 @@ impl<'a> Engine<'a> {
             Instruction::LocalGet(0),
             Instruction::I64Const(8),
             Instruction::I64Mul,
+            Instruction::I64Const(STRING_TABLE_BASE as i64),
+            Instruction::I64Add,
             Instruction::LocalSet(1),
             Instruction::LocalGet(1),
             Instruction::I32WrapI64,
@@ -8620,15 +8716,34 @@ impl<'a> Engine<'a> {
     }
 
     fn build_string_data(&self) -> Vec<u8> {
-        let table_bytes = self.string_pool.len() * 8;
-        let mut bytes: Vec<u8> = vec![0u8; table_bytes];
-        let mut offset = table_bytes as u32;
-        for (i, s) in self.string_pool.iter().enumerate() {
+        let data_bytes: usize = self.string_pool.iter().map(|s| s.len()).sum();
+        // El layout es: [0 .. data_len) = bytes de los strings (en orden de
+        // interning, append-only) y [STRING_TABLE_BASE .. + 8N) = tabla de
+        // índices (offset, len). Con base FIJA, los offsets de los datos NO
+        // dependen del tamaño total del pool: el REPL (estado persistente)
+        // transfiere punteros entre instancias y estos siguen siendo válidos
+        // mientras las entradas compartidas conserven su posición (prefix).
+        assert!(
+            data_bytes <= STRING_TABLE_BASE as usize,
+            "el string pool excede la región de datos ({} > {} bytes)",
+            data_bytes,
+            STRING_TABLE_BASE
+        );
+        let mut bytes: Vec<u8> =
+            vec![0u8; STRING_TABLE_BASE as usize + self.string_pool.len() * 8];
+        let mut data_off = 0u32;
+        for s in self.string_pool.iter() {
+            bytes[data_off as usize..data_off as usize + s.len()].copy_from_slice(s.as_bytes());
+            data_off += s.len() as u32;
+        }
+        let mut entry = STRING_TABLE_BASE as usize;
+        let mut off = 0u32;
+        for s in self.string_pool.iter() {
             let len = s.len() as u32;
-            bytes[i * 8..i * 8 + 4].copy_from_slice(&offset.to_le_bytes());
-            bytes[i * 8 + 4..i * 8 + 8].copy_from_slice(&len.to_le_bytes());
-            bytes.extend_from_slice(s.as_bytes());
-            offset += len;
+            bytes[entry..entry + 4].copy_from_slice(&off.to_le_bytes());
+            bytes[entry + 4..entry + 8].copy_from_slice(&len.to_le_bytes());
+            off += len;
+            entry += 8;
         }
         bytes
     }

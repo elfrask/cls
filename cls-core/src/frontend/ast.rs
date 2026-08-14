@@ -84,6 +84,13 @@ pub struct VarDecl {
     /// Variable de solo lectura: escritura solo interna (readonly)
     #[serde(default)]
     pub is_readonly: bool,
+    /// REPL: el inicializador SOLO puebla el string pool (data segment), no se
+    /// ejecuta en `__init_globals`. El valor llega por transferencia de estado
+    /// entre instancias (el hoist conserva la expresión para que los strings
+    /// mantengan los mismos offsets del pool y los punteros previos sigan
+    /// siendo válidos).
+    #[serde(default)]
+    pub pool_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
