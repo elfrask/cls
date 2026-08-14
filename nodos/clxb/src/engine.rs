@@ -375,8 +375,8 @@ impl ClsModule {
             // El frame CLS espera `__capturas` (0) como primer param (B5).
             params.push(wasmtime::Val::I64(0));
             for (i, arg) in args.iter().enumerate() {
-                let elem = sig.param_elems.get(i).copied().unwrap_or(-1);
-                let bits = write_value(&mut ctx, arg, elem)?;
+                let desc = sig.param_types.get(i);
+                let bits = write_value(&mut ctx, arg, desc)?;
                 let v = match sig.params.get(i).copied().unwrap_or(8) {
                     1 => wasmtime::Val::F64(bits as u64),
                     2 | 3 => wasmtime::Val::I32(bits as i32),
@@ -412,7 +412,7 @@ impl ClsModule {
                     memory: self.memory,
                     alloc: &mut self.alloc,
                 };
-                read_value(&mut ctx, raw, sig.ret, sig.ret_elem).map_err(ClsError::new)
+                read_value(&mut ctx, raw, sig.ret, sig.ret_type.as_ref()).map_err(ClsError::new)
             }
             Err(e) => match exit_code_from_trap(&e) {
                 Some(_) => Err(ClsError::new("exit() llamado dentro de una función exportada (no aplicable)".to_string())),

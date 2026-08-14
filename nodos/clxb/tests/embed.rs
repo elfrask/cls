@@ -1,7 +1,7 @@
 //! Tests de integración del nodo clxb (F2a): compile, call, run_main, eval,
 //! captura de print y SDK de nodo (intrinsics + resolver).
 
-use clxb::{ClsEngine, ClsValue};
+use clsb::{ClsEngine, ClsValue};
 use cls_core::middleware::types::Type;
 use std::sync::{Arc, Mutex};
 

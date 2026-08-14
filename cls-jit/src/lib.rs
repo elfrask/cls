@@ -26,7 +26,7 @@ pub mod timing;
 pub mod wasmi_rt;
 pub mod wasmtime_rt;
 
-pub use compile::{compile_file, compile_source, parse_clx_exports, CompileOptions, CompiledModule, ExportSig};
+pub use compile::{compile_file, compile_source, parse_clx_exports, CompileOptions, CompiledModule, ExportSig, TypeDesc};
 pub use engine::{run_jit, run_jit_with};
 pub use host::{HostCallArg, HostCallHandler, HostCallResult, ModuleSourceResolver, OutputSink};
 pub use resolve::{cache_dir, load_import_modules, module_candidates};
