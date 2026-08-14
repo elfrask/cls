@@ -1,0 +1,14 @@
+function main(args: String[]) -> int {
+    print("platform:", os.platform());
+    print("arch:", os.arch());
+    print("hostname:", os.hostname());
+    print("home:", os.home());
+    print("tempdir:", os.tempdir());
+    print("cpus:", os.cpus());
+    print("pid:", os.pid());
+    print("sep:", os.sep());
+    print("isWindows:", os.isWindows());
+    print("isUnix:", os.isUnix());
+    print("env PATH:", os.env("PATH"));
+    return 0;
+}

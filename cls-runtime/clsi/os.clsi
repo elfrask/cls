@@ -1,0 +1,41 @@
+# @title os
+# @description Modulo de sistema y entorno del nodo desktop.
+
+# @description Nombre del sistema operativo (windows/linux/macos/...)
+function platform() -> String {};
+
+# @description Arquitectura de la CPU (x86_64, aarch64, ...)
+function arch() -> String {};
+
+# @description Version del sistema operativo
+function version() -> String {};
+
+# @description Nombre del host
+function hostname() -> String {};
+
+# @description Directorio home del usuario
+function home() -> String {};
+
+# @description Directorio temporal del sistema
+function tempdir() -> String {};
+
+# @description Numero de nucleos de CPU disponibles
+function cpus() -> int {};
+
+# @description PID del proceso actual
+function pid() -> int {};
+
+# @description Segundos desde el boot (0 si no disponible)
+function uptime() -> int {};
+
+# @description Variable de entorno ("" si no existe)
+function env(key: String) -> String {};
+
+# @description Separador de rutas del sistema
+function sep() -> String {};
+
+# @description ¿El sistema es Windows?
+function isWindows() -> bool {};
+
+# @description ¿El sistema es Unix?
+function isUnix() -> bool {};

@@ -78,6 +78,75 @@ No están disponibles en `clxr` (el runtime ligero).
 |---------|-------------|
 | `load(ruta)` | Carga una librería `.clslib` (planeado completo). |
 
+### `os` — sistema y entorno (nodo desktop)
+
+| Función | Descripción |
+|---------|-------------|
+| `platform()` | Nombre del SO (`windows`/`linux`/`macos`/...). |
+| `arch()` | Arquitectura de la CPU (`x86_64`, `aarch64`, ...). |
+| `version()` | Versión del sistema operativo. |
+| `hostname()` | Nombre del host. |
+| `home()` | Directorio home del usuario. |
+| `tempdir()` | Directorio temporal del sistema. |
+| `cpus()` | Núcleos de CPU disponibles. |
+| `pid()` | PID del proceso actual. |
+| `uptime()` | Segundos desde el boot (`0` si no disponible). |
+| `env(clave)` | Variable de entorno (`""` si no existe). |
+| `sep()` | Separador de rutas del sistema. |
+| `isWindows()` / `isUnix()` | ¿Sistema Windows / Unix? |
+
+### `path` — rutas de archivos (nodo desktop)
+
+| Función | Descripción |
+|---------|-------------|
+| `join(a, b)` | Une dos segmentos de ruta. |
+| `basename(ruta)` | Último componente. |
+| `dirname(ruta)` | Directorio padre (`"."` si ninguno). |
+| `extname(ruta)` | Extensión con punto (`.txt`; `""` si no). |
+| `resolve(ruta)` | Ruta absoluta (relativa → unida al cwd). |
+| `normalize(ruta)` | Normaliza `.`/`..` sin tocar el FS (acepta `/` y `\`). |
+| `isAbsolute(ruta)` | ¿La ruta es absoluta? |
+| `sep()` | Separador de rutas. |
+
+### `process` — proceso actual (nodo desktop)
+
+| Función | Descripción |
+|---------|-------------|
+| `args()` | Args de la aplicación (los de después de `--`). |
+| `cwd()` | Directorio de trabajo actual. |
+| `env(clave)` | Variable de entorno (`""` si no existe). |
+| `exit(código)` | Termina el proceso. |
+| `pid()` | PID del proceso. |
+| `platform()` | Nombre del SO. |
+| `title()` | Título del proceso (`""` si no disponible). |
+
+### `time` — fechas y hora (nodo desktop, UTC)
+
+| Función | Descripción |
+|---------|-------------|
+| `now()` | Milisegundos desde la epoch Unix. |
+| `seconds()` | Segundos desde la epoch Unix. |
+| `iso()` | Fecha/hora ISO 8601 (`YYYY-MM-DDTHH:MM:SSZ`). |
+| `date()` | Fecha UTC (`YYYY-MM-DD`). |
+| `clock()` | Hora UTC (`HH:MM:SS`). |
+| `year()` / `month()` / `day()` | Año / mes 1-12 / día 1-31 (UTC). |
+| `hour()` / `minute()` / `second()` | Hora 0-23 / minuto 0-59 / segundo 0-59 (UTC). |
+| `sleep(ms)` | Duerme el hilo actual. |
+
+### `random` — aleatoriedad (nodo desktop)
+
+| Función | Descripción |
+|---------|-------------|
+| `random()` | Float en `[0, 1)`. |
+| `int(min, max)` | Entero en `[min, max]` (inclusivo). |
+| `float(min, max)` | Float en `[min, max)`. |
+| `uuid()` | UUID v4. |
+
+> Los módulos del nodo desktop (`fs`, `http`, `Lib`, `os`, `path`, `process`,
+> `time`, `random`) se usan por nombre directo en el JIT o con
+> `import "mod" as mod` (ambos intérpretes). Las firmas oficiales viven en
+> `cls-runtime/clsi/*.clsi`.
+
 ## Intrinsics globales
 
 Funciones disponibles sin import:

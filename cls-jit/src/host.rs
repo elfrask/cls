@@ -560,21 +560,35 @@ pub fn host_math_log<C: HostCtx>(_ctx: &mut C, v: f64) -> f64 {
     v.ln()
 }
 
-pub fn host_math_random<C: HostCtx>(_ctx: &mut C) -> f64 {
-    // Estado del LCG: se siembra UNA vez con entropía del sistema.
+/// LCG compartido: se siembra UNA vez con entropía del sistema. Lo usan
+/// `math.random` y el módulo `random`.
+fn rng_state() -> &'static std::sync::Mutex<u64> {
     use std::sync::OnceLock;
     static RNG_STATE: OnceLock<std::sync::Mutex<u64>> = OnceLock::new();
-    let state = RNG_STATE.get_or_init(|| {
+    RNG_STATE.get_or_init(|| {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
         let seed = (nanos as u64) ^ ((std::process::id() as u64) << 32);
         std::sync::Mutex::new(seed | 1)
-    });
-    let mut s = state.lock().unwrap();
+    })
+}
+
+/// Siguiente valor del LCG (u64) — avanza el estado compartido.
+fn rng_next_u64() -> u64 {
+    let mut s = rng_state().lock().unwrap();
     *s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-    (*s >> 11) as f64 / (1u64 << 53) as f64
+    *s
+}
+
+/// Float en [0, 1) desde el LCG compartido.
+fn rng_next_f64() -> f64 {
+    (rng_next_u64() >> 11) as f64 / (1u64 << 53) as f64
+}
+
+pub fn host_math_random<C: HostCtx>(_ctx: &mut C) -> f64 {
+    rng_next_f64()
 }
 
 pub fn host_math_range<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i64 {
@@ -844,6 +858,380 @@ pub fn host_http_post<C: HostCtx>(ctx: &mut C, url: i64, data: i64) -> i64 {
         },
         Err(_) => 0,
     }
+}
+
+// ── os (sistema y entorno) ───────────────────────────────────────────────────
+
+pub fn host_os_platform<C: HostCtx>(ctx: &mut C) -> i64 {
+    let p = match std::env::consts::OS {
+        "windows" => "windows",
+        "linux" => "linux",
+        "macos" => "macos",
+        other => other,
+    };
+    ctx.write_str(p)
+}
+
+pub fn host_os_arch<C: HostCtx>(ctx: &mut C) -> i64 {
+    ctx.write_str(std::env::consts::ARCH)
+}
+
+pub fn host_os_version<C: HostCtx>(ctx: &mut C) -> i64 {
+    #[cfg(windows)]
+    {
+        // Sin crates: reportar windows-<mayor>.<menor> aproximado desde la
+        // variable de entorno del sistema si existe; si no, cadena vacía.
+        let v = std::env::var("OS").unwrap_or_default();
+        if !v.is_empty() {
+            return ctx.write_str(&v);
+        }
+        ctx.write_str("")
+    }
+    #[cfg(not(windows))]
+    {
+        // Unix: sin libc disponible, reportar el OS (documentado como aprox.).
+        ctx.write_str(std::env::consts::OS)
+    }
+}
+
+pub fn host_os_hostname<C: HostCtx>(ctx: &mut C) -> i64 {
+    let name = std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_default();
+    ctx.write_str(&name)
+}
+
+pub fn host_os_home<C: HostCtx>(ctx: &mut C) -> i64 {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    ctx.write_str(&home)
+}
+
+pub fn host_os_tempdir<C: HostCtx>(ctx: &mut C) -> i64 {
+    ctx.write_str(&std::env::temp_dir().to_string_lossy())
+}
+
+pub fn host_os_cpus<C: HostCtx>(_ctx: &mut C) -> i64 {
+    std::thread::available_parallelism()
+        .map(|n| n.get() as i64)
+        .unwrap_or(1)
+}
+
+pub fn host_os_pid<C: HostCtx>(_ctx: &mut C) -> i64 {
+    std::process::id() as i64
+}
+
+pub fn host_os_uptime<C: HostCtx>(_ctx: &mut C) -> i64 {
+    // Sin crates de sysinfo: uptime real no disponible portablemente.
+    // Documentado: devuelve 0 (mejora futura con sysinfo/windows-sys).
+    0
+}
+
+pub fn host_os_env<C: HostCtx>(ctx: &mut C, key: i64) -> i64 {
+    let k = ctx.read_str(key);
+    let v = std::env::var(&k).unwrap_or_default();
+    ctx.write_str(&v)
+}
+
+pub fn host_os_sep<C: HostCtx>(ctx: &mut C) -> i64 {
+    ctx.write_str(std::path::MAIN_SEPARATOR_STR)
+}
+
+pub fn host_os_is_windows<C: HostCtx>(_ctx: &mut C) -> i32 {
+    if cfg!(windows) {
+        1
+    } else {
+        0
+    }
+}
+
+pub fn host_os_is_unix<C: HostCtx>(_ctx: &mut C) -> i32 {
+    if cfg!(windows) {
+        0
+    } else {
+        1
+    }
+}
+
+// ── path (rutas de archivos) ─────────────────────────────────────────────────
+
+pub fn host_path_join<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i64 {
+    let sa = ctx.read_str(a);
+    let sb = ctx.read_str(b);
+    let joined = std::path::Path::new(&sa).join(&sb);
+    ctx.write_str(&joined.to_string_lossy())
+}
+
+pub fn host_path_basename<C: HostCtx>(ctx: &mut C, p: i64) -> i64 {
+    let s = ctx.read_str(p);
+    let base = std::path::Path::new(&s)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    ctx.write_str(&base)
+}
+
+pub fn host_path_dirname<C: HostCtx>(ctx: &mut C, p: i64) -> i64 {
+    let s = ctx.read_str(p);
+    let dir = std::path::Path::new(&s)
+        .parent()
+        .map(|d| d.to_string_lossy().into_owned())
+        .unwrap_or_else(|| ".".to_string());
+    ctx.write_str(&dir)
+}
+
+pub fn host_path_extname<C: HostCtx>(ctx: &mut C, p: i64) -> i64 {
+    let s = ctx.read_str(p);
+    let ext = std::path::Path::new(&s)
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
+    ctx.write_str(&ext)
+}
+
+pub fn host_path_resolve<C: HostCtx>(ctx: &mut C, p: i64) -> i64 {
+    let s = ctx.read_str(p);
+    let path = std::path::Path::new(&s);
+    let resolved = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(path))
+            .unwrap_or_else(|_| path.to_path_buf())
+    };
+    ctx.write_str(&resolved.to_string_lossy())
+}
+
+pub fn host_path_normalize<C: HostCtx>(ctx: &mut C, p: i64) -> i64 {
+    let s = ctx.read_str(p);
+    // Aceptar ambos separadores (/ y \) en el input; normalizar con el nativo.
+    let mut parts: Vec<&str> = Vec::new();
+    for comp in s.split(['/', '\\']) {
+        match comp {
+            "" | "." => {}
+            ".." => {
+                if let Some(last) = parts.last() {
+                    if *last != ".." {
+                        parts.pop();
+                        continue;
+                    }
+                }
+                parts.push(comp);
+            }
+            other => parts.push(other),
+        }
+    }
+    let mut out = String::new();
+    if s.starts_with('/') || s.starts_with('\\') {
+        out.push(std::path::MAIN_SEPARATOR);
+    }
+    out.push_str(&parts.join(&std::path::MAIN_SEPARATOR.to_string()));
+    if out.is_empty() {
+        out.push('.');
+    }
+    ctx.write_str(&out)
+}
+
+pub fn host_path_is_absolute<C: HostCtx>(ctx: &mut C, p: i64) -> i32 {
+    let s = ctx.read_str(p);
+    if std::path::Path::new(&s).is_absolute() {
+        1
+    } else {
+        0
+    }
+}
+
+pub fn host_path_sep<C: HostCtx>(ctx: &mut C) -> i64 {
+    ctx.write_str(std::path::MAIN_SEPARATOR_STR)
+}
+
+// ── process (proceso actual) ─────────────────────────────────────────────────
+
+pub fn host_process_args<C: HostCtx>(ctx: &mut C) -> i64 {
+    let names = ctx.state().app_args.clone();
+    let n = names.len() as i64;
+    let array_ptr = ctx.alloc(n * 8 + 16);
+    if array_ptr == 0 {
+        return 0;
+    }
+    ctx.write_i64(array_ptr as usize, n);
+    ctx.write_i64(array_ptr as usize + 8, n);
+    for (i, name) in names.iter().enumerate() {
+        let sp = ctx.write_str(name);
+        ctx.write_i64(array_ptr as usize + 16 + i * 8, sp);
+    }
+    array_ptr
+}
+
+pub fn host_process_cwd<C: HostCtx>(ctx: &mut C) -> i64 {
+    let cwd = std::env::current_dir()
+        .map(|d| d.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    ctx.write_str(&cwd)
+}
+
+pub fn host_process_env<C: HostCtx>(ctx: &mut C, key: i64) -> i64 {
+    let k = ctx.read_str(key);
+    let v = std::env::var(&k).unwrap_or_default();
+    ctx.write_str(&v)
+}
+
+pub fn host_process_exit<C: HostCtx>(_ctx: &mut C, code: i64) {
+    std::process::exit(code as i32);
+}
+
+pub fn host_process_pid<C: HostCtx>(_ctx: &mut C) -> i64 {
+    std::process::id() as i64
+}
+
+pub fn host_process_platform<C: HostCtx>(ctx: &mut C) -> i64 {
+    ctx.write_str(std::env::consts::OS)
+}
+
+pub fn host_process_title<C: HostCtx>(ctx: &mut C) -> i64 {
+    // Sin crates: título del proceso no portable (Windows GetConsoleTitle
+    // requiere windows-sys). Documentado: cadena vacía.
+    let _ = ctx;
+    ctx.write_str("")
+}
+
+// ── time (fechas y hora; UTC sin crates) ─────────────────────────────────────
+
+/// Descompone un epoch (segundos) en fecha/hora UTC.
+fn epoch_fields(secs: i64) -> (i64, i64, i64, i64, i64, i64) {
+    let days = secs.div_euclid(86400);
+    let rem = secs.rem_euclid(86400);
+    let hour = rem / 3600;
+    let minute = (rem % 3600) / 60;
+    let second = rem % 60;
+    // Algoritmo civil (Howard Hinnant): días desde 1970-01-01 → (y, m, d).
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z.rem_euclid(146097);
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d, hour, minute, second)
+}
+
+fn pad2(n: i64) -> String {
+    if n < 10 {
+        format!("0{}", n)
+    } else {
+        n.to_string()
+    }
+}
+
+pub fn host_time_now<C: HostCtx>(_ctx: &mut C) -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+pub fn host_time_seconds<C: HostCtx>(_ctx: &mut C) -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+pub fn host_time_sleep<C: HostCtx>(_ctx: &mut C, ms: i64) {
+    if ms > 0 {
+        std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+    }
+}
+
+pub fn host_time_iso<C: HostCtx>(ctx: &mut C) -> i64 {
+    let secs = host_time_seconds(ctx);
+    let (y, mo, d, h, mi, s) = epoch_fields(secs);
+    ctx.write_str(&format!(
+        "{:04}-{}-{}T{}:{}:{}Z",
+        y,
+        pad2(mo),
+        pad2(d),
+        pad2(h),
+        pad2(mi),
+        pad2(s)
+    ))
+}
+
+pub fn host_time_date<C: HostCtx>(ctx: &mut C) -> i64 {
+    let secs = host_time_seconds(ctx);
+    let (y, mo, d, _, _, _) = epoch_fields(secs);
+    ctx.write_str(&format!("{:04}-{}-{}", y, pad2(mo), pad2(d)))
+}
+
+pub fn host_time_clock<C: HostCtx>(ctx: &mut C) -> i64 {
+    let secs = host_time_seconds(ctx);
+    let (_, _, _, h, mi, s) = epoch_fields(secs);
+    ctx.write_str(&format!("{}:{}:{}", pad2(h), pad2(mi), pad2(s)))
+}
+
+pub fn host_time_year<C: HostCtx>(ctx: &mut C) -> i64 {
+    epoch_fields(host_time_seconds(ctx)).0
+}
+
+pub fn host_time_month<C: HostCtx>(ctx: &mut C) -> i64 {
+    epoch_fields(host_time_seconds(ctx)).1
+}
+
+pub fn host_time_day<C: HostCtx>(ctx: &mut C) -> i64 {
+    epoch_fields(host_time_seconds(ctx)).2
+}
+
+pub fn host_time_hour<C: HostCtx>(ctx: &mut C) -> i64 {
+    epoch_fields(host_time_seconds(ctx)).3
+}
+
+pub fn host_time_minute<C: HostCtx>(ctx: &mut C) -> i64 {
+    epoch_fields(host_time_seconds(ctx)).4
+}
+
+pub fn host_time_second<C: HostCtx>(ctx: &mut C) -> i64 {
+    epoch_fields(host_time_seconds(ctx)).5
+}
+
+// ── random (aleatoriedad) ────────────────────────────────────────────────────
+
+pub fn host_random_random<C: HostCtx>(_ctx: &mut C) -> f64 {
+    rng_next_f64()
+}
+
+pub fn host_random_int<C: HostCtx>(_ctx: &mut C, min: i64, max: i64) -> i64 {
+    if max <= min {
+        return min;
+    }
+    let range = (max - min + 1) as u64;
+    min + (rng_next_u64() % range) as i64
+}
+
+pub fn host_random_float<C: HostCtx>(_ctx: &mut C, min: f64, max: f64) -> f64 {
+    min + rng_next_f64() * (max - min)
+}
+
+pub fn host_random_uuid<C: HostCtx>(ctx: &mut C) -> i64 {
+    let mut b = [0u8; 16];
+    for chunk in b.chunks_mut(8) {
+        let v = rng_next_u64().to_le_bytes();
+        chunk.copy_from_slice(&v[..chunk.len()]);
+    }
+    b[6] = (b[6] & 0x0f) | 0x40; // versión 4
+    b[8] = (b[8] & 0x3f) | 0x80; // variante 10xx
+    let h = b.iter().map(|x| format!("{:02x}", x)).collect::<Vec<_>>();
+    ctx.write_str(&format!(
+        "{}-{}-{}-{}-{}",
+        h[0..4].concat(),
+        h[4..6].concat(),
+        h[6..8].concat(),
+        h[8..10].concat(),
+        h[10..16].concat()
+    ))
 }
 
 // ── records ─────────────────────────────────────────────────────────────────

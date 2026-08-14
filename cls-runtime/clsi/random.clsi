@@ -1,0 +1,14 @@
+# @title random
+# @description Modulo de aleatoriedad del nodo desktop.
+
+# @description Numero aleatorio en [0, 1)
+function random() -> float {};
+
+# @description Entero aleatorio en [min, max] (inclusivo)
+function int(min: int, max: int) -> int {};
+
+# @description Float aleatorio en [min, max)
+function float(min: float, max: float) -> float {};
+
+# @description UUID v4
+function uuid() -> String {};

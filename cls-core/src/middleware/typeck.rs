@@ -664,7 +664,11 @@ impl TypeChecker {
                 // internos del nodo (json/math/fs/http).
                 if let Some(t) = self.lookup(name) {
                     t.clone()
-                } else if matches!(name.as_str(), "json" | "math" | "fs" | "http" | "Lib" | "async") {
+                } else if matches!(
+                    name.as_str(),
+                    "json" | "math" | "fs" | "http" | "Lib" | "async" | "os" | "path"
+                        | "process" | "time" | "random"
+                ) {
                     // Módulos internos del nodo: no son variables, pero se aceptan
                     // como namespace (el backend los resuelve).
                     Type::Any
@@ -1115,6 +1119,49 @@ impl TypeChecker {
                     "sqrt" | "floor" | "ceil" | "round" | "sin" | "cos" | "tan"
                     | "log" | "pow" | "min" | "max" => Type::Float,
                     "abs" => Type::Int,
+                    _ => Type::Any,
+                };
+            }
+            if name == "os" {
+                return match member.member.as_str() {
+                    "platform" | "arch" | "version" | "hostname" | "home"
+                    | "tempdir" | "env" | "sep" => Type::String,
+                    "cpus" | "pid" | "uptime" => Type::Int,
+                    "isWindows" | "isUnix" => Type::Bool,
+                    _ => Type::Any,
+                };
+            }
+            if name == "path" {
+                return match member.member.as_str() {
+                    "join" | "basename" | "dirname" | "extname" | "resolve"
+                    | "normalize" | "sep" => Type::String,
+                    "isAbsolute" => Type::Bool,
+                    _ => Type::Any,
+                };
+            }
+            if name == "process" {
+                return match member.member.as_str() {
+                    "args" => Type::Array(Box::new(Type::String)),
+                    "cwd" | "env" | "platform" | "title" => Type::String,
+                    "pid" => Type::Int,
+                    "exit" => Type::Void,
+                    _ => Type::Any,
+                };
+            }
+            if name == "time" {
+                return match member.member.as_str() {
+                    "iso" | "date" | "clock" => Type::String,
+                    "now" | "seconds" | "year" | "month" | "day" | "hour"
+                    | "minute" | "second" => Type::Int,
+                    "sleep" => Type::Void,
+                    _ => Type::Any,
+                };
+            }
+            if name == "random" {
+                return match member.member.as_str() {
+                    "random" | "float" => Type::Float,
+                    "int" => Type::Int,
+                    "uuid" => Type::String,
                     _ => Type::Any,
                 };
             }

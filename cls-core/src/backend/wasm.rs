@@ -128,6 +128,55 @@ pub enum HostFn {
     /// Canal genérico de funciones host del nodo: `host_call(id, ptr, n) -> i64`
     /// con args empaquetados `[n:i64][(val:i64, tag:i64)*n]`.
     HostCall,
+    // Módulo os
+    OsPlatform,
+    OsArch,
+    OsVersion,
+    OsHostname,
+    OsHome,
+    OsTempdir,
+    OsCpus,
+    OsPid,
+    OsUptime,
+    OsEnv,
+    OsSep,
+    OsIsWindows,
+    OsIsUnix,
+    // Módulo path
+    PathJoin,
+    PathBasename,
+    PathDirname,
+    PathExtname,
+    PathResolve,
+    PathNormalize,
+    PathIsAbsolute,
+    PathSep,
+    // Módulo process
+    ProcessArgs,
+    ProcessCwd,
+    ProcessEnv,
+    ProcessExit,
+    ProcessPid,
+    ProcessPlatform,
+    ProcessTitle,
+    // Módulo time
+    TimeNow,
+    TimeSeconds,
+    TimeIso,
+    TimeDate,
+    TimeClock,
+    TimeYear,
+    TimeMonth,
+    TimeDay,
+    TimeHour,
+    TimeMinute,
+    TimeSecond,
+    TimeSleep,
+    // Módulo random
+    RandomRandom,
+    RandomInt,
+    RandomFloat,
+    RandomUuid,
 }
 
 impl HostFn {
@@ -221,6 +270,50 @@ impl HostFn {
             FnExit => "fn_exit",
             CallSite => "fn_call_site",
             HostCall => "host_call",
+            OsPlatform => "os_platform",
+            OsArch => "os_arch",
+            OsVersion => "os_version",
+            OsHostname => "os_hostname",
+            OsHome => "os_home",
+            OsTempdir => "os_tempdir",
+            OsCpus => "os_cpus",
+            OsPid => "os_pid",
+            OsUptime => "os_uptime",
+            OsEnv => "os_env",
+            OsSep => "os_sep",
+            OsIsWindows => "os_is_windows",
+            OsIsUnix => "os_is_unix",
+            PathJoin => "path_join",
+            PathBasename => "path_basename",
+            PathDirname => "path_dirname",
+            PathExtname => "path_extname",
+            PathResolve => "path_resolve",
+            PathNormalize => "path_normalize",
+            PathIsAbsolute => "path_is_absolute",
+            PathSep => "path_sep",
+            ProcessArgs => "process_args",
+            ProcessCwd => "process_cwd",
+            ProcessEnv => "process_env",
+            ProcessExit => "process_exit",
+            ProcessPid => "process_pid",
+            ProcessPlatform => "process_platform",
+            ProcessTitle => "process_title",
+            TimeNow => "time_now",
+            TimeSeconds => "time_seconds",
+            TimeIso => "time_iso",
+            TimeDate => "time_date",
+            TimeClock => "time_clock",
+            TimeYear => "time_year",
+            TimeMonth => "time_month",
+            TimeDay => "time_day",
+            TimeHour => "time_hour",
+            TimeMinute => "time_minute",
+            TimeSecond => "time_second",
+            TimeSleep => "time_sleep",
+            RandomRandom => "random_random",
+            RandomInt => "random_int",
+            RandomFloat => "random_float",
+            RandomUuid => "random_uuid",
         }
     }
 
@@ -336,6 +429,35 @@ impl HostFn {
                 vec![],
             ),
             HostCall => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
+            // Módulo os: sin args → i64 (string) o i32 (bool); env(key) → i64
+            OsPlatform | OsArch | OsVersion | OsHostname | OsHome | OsTempdir
+            | OsCpus | OsPid | OsUptime | OsSep => (vec![], vec![ValType::I64]),
+            OsEnv => (i64p.clone(), vec![ValType::I64]),
+            OsIsWindows | OsIsUnix => (vec![], vec![ValType::I32]),
+            // Módulo path
+            PathBasename | PathDirname | PathExtname | PathResolve | PathNormalize => {
+                (i64p.clone(), vec![ValType::I64])
+            }
+            PathJoin => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
+            PathIsAbsolute => (i64p.clone(), vec![ValType::I32]),
+            PathSep => (vec![], vec![ValType::I64]),
+            // Módulo process
+            ProcessArgs | ProcessCwd | ProcessPid | ProcessPlatform | ProcessTitle => {
+                (vec![], vec![ValType::I64])
+            }
+            ProcessEnv => (i64p.clone(), vec![ValType::I64]),
+            ProcessExit => (i64p.clone(), vec![]),
+            // Módulo time
+            TimeNow | TimeSeconds | TimeIso | TimeDate | TimeClock | TimeYear
+            | TimeMonth | TimeDay | TimeHour | TimeMinute | TimeSecond => {
+                (vec![], vec![ValType::I64])
+            }
+            TimeSleep => (i64p.clone(), vec![]),
+            // Módulo random
+            RandomRandom => (vec![], vec![ValType::F64]),
+            RandomInt => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
+            RandomFloat => (vec![ValType::F64, ValType::F64], vec![ValType::F64]),
+            RandomUuid => (vec![], vec![ValType::I64]),
         }
     }
 }
@@ -3212,6 +3334,139 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
+    /// `os.X(...)` → host del módulo os.
+    fn emit_os_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
+        use HostFn::*;
+        match member.member.as_str() {
+            "platform" => self.host.call(OsPlatform, &mut self.body),
+            "arch" => self.host.call(OsArch, &mut self.body),
+            "version" => self.host.call(OsVersion, &mut self.body),
+            "hostname" => self.host.call(OsHostname, &mut self.body),
+            "home" => self.host.call(OsHome, &mut self.body),
+            "tempdir" => self.host.call(OsTempdir, &mut self.body),
+            "cpus" => self.host.call(OsCpus, &mut self.body),
+            "pid" => self.host.call(OsPid, &mut self.body),
+            "uptime" => self.host.call(OsUptime, &mut self.body),
+            "env" => {
+                self.emit_expression(&c.args[0])?;
+                self.host.call(OsEnv, &mut self.body);
+            }
+            "sep" => self.host.call(OsSep, &mut self.body),
+            "isWindows" => self.host.call(OsIsWindows, &mut self.body),
+            "isUnix" => self.host.call(OsIsUnix, &mut self.body),
+            _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
+        }
+        Ok(())
+    }
+
+    /// `path.X(...)` → host del módulo path.
+    fn emit_path_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
+        use HostFn::*;
+        match member.member.as_str() {
+            "join" => {
+                self.emit_expression(&c.args[0])?;
+                self.emit_expression(&c.args[1])?;
+                self.host.call(PathJoin, &mut self.body);
+            }
+            "basename" => {
+                self.emit_expression(&c.args[0])?;
+                self.host.call(PathBasename, &mut self.body);
+            }
+            "dirname" => {
+                self.emit_expression(&c.args[0])?;
+                self.host.call(PathDirname, &mut self.body);
+            }
+            "extname" => {
+                self.emit_expression(&c.args[0])?;
+                self.host.call(PathExtname, &mut self.body);
+            }
+            "resolve" => {
+                self.emit_expression(&c.args[0])?;
+                self.host.call(PathResolve, &mut self.body);
+            }
+            "normalize" => {
+                self.emit_expression(&c.args[0])?;
+                self.host.call(PathNormalize, &mut self.body);
+            }
+            "isAbsolute" => {
+                self.emit_expression(&c.args[0])?;
+                self.host.call(PathIsAbsolute, &mut self.body);
+            }
+            "sep" => self.host.call(PathSep, &mut self.body),
+            _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
+        }
+        Ok(())
+    }
+
+    /// `process.X(...)` → host del módulo process.
+    fn emit_process_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
+        use HostFn::*;
+        match member.member.as_str() {
+            "args" => self.host.call(ProcessArgs, &mut self.body),
+            "cwd" => self.host.call(ProcessCwd, &mut self.body),
+            "env" => {
+                self.emit_expression(&c.args[0])?;
+                self.host.call(ProcessEnv, &mut self.body);
+            }
+            "exit" => {
+                self.emit_expression(&c.args[0])?;
+                self.host.call(ProcessExit, &mut self.body);
+            }
+            "pid" => self.host.call(ProcessPid, &mut self.body),
+            "platform" => self.host.call(ProcessPlatform, &mut self.body),
+            "title" => self.host.call(ProcessTitle, &mut self.body),
+            _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
+        }
+        Ok(())
+    }
+
+    /// `time.X(...)` → host del módulo time.
+    fn emit_time_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
+        use HostFn::*;
+        match member.member.as_str() {
+            "now" => self.host.call(TimeNow, &mut self.body),
+            "seconds" => self.host.call(TimeSeconds, &mut self.body),
+            "iso" => self.host.call(TimeIso, &mut self.body),
+            "date" => self.host.call(TimeDate, &mut self.body),
+            "clock" => self.host.call(TimeClock, &mut self.body),
+            "year" => self.host.call(TimeYear, &mut self.body),
+            "month" => self.host.call(TimeMonth, &mut self.body),
+            "day" => self.host.call(TimeDay, &mut self.body),
+            "hour" => self.host.call(TimeHour, &mut self.body),
+            "minute" => self.host.call(TimeMinute, &mut self.body),
+            "second" => self.host.call(TimeSecond, &mut self.body),
+            "sleep" => {
+                self.emit_expression(&c.args[0])?;
+                self.host.call(TimeSleep, &mut self.body);
+            }
+            _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
+        }
+        Ok(())
+    }
+
+    /// `random.X(...)` → host del módulo random.
+    fn emit_random_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
+        use HostFn::*;
+        match member.member.as_str() {
+            "random" => self.host.call(RandomRandom, &mut self.body),
+            "int" => {
+                self.emit_expression(&c.args[0])?;
+                self.emit_expression(&c.args[1])?;
+                self.host.call(RandomInt, &mut self.body);
+            }
+            "float" => {
+                self.emit_expression(&c.args[0])?;
+                self.f64_promote(&c.args[0])?;
+                self.emit_expression(&c.args[1])?;
+                self.f64_promote(&c.args[1])?;
+                self.host.call(RandomFloat, &mut self.body);
+            }
+            "uuid" => self.host.call(RandomUuid, &mut self.body),
+            _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
+        }
+        Ok(())
+    }
+
     /// Tipo de retorno de una llamada o miembro de un módulo stdlib.
     fn module_call_ret(&self, expr: &Expression) -> Option<WasTy> {
         if let Expression::Call(c) = expr {
@@ -3251,6 +3506,31 @@ impl<'a> FuncEmitter<'a> {
                     }
                     if obj == "http" {
                         return Some(WasTy::I64);
+                    }
+                    if obj == "os" {
+                        return match member.member.as_str() {
+                            "isWindows" | "isUnix" => Some(WasTy::I32),
+                            _ => Some(WasTy::I64),
+                        };
+                    }
+                    if obj == "path" {
+                        return match member.member.as_str() {
+                            "isAbsolute" => Some(WasTy::I32),
+                            _ => Some(WasTy::I64),
+                        };
+                    }
+                    if obj == "process" {
+                        return Some(WasTy::I64);
+                    }
+                    if obj == "time" {
+                        return Some(WasTy::I64);
+                    }
+                    if obj == "random" {
+                        return match member.member.as_str() {
+                            "random" | "float" => Some(WasTy::F64),
+                            "int" => Some(WasTy::I64),
+                            _ => Some(WasTy::I64),
+                        };
                     }
                 }
             }
@@ -3496,6 +3776,21 @@ impl<'a> FuncEmitter<'a> {
                 }
                 if obj_name == "http" {
                     return self.emit_http_call(member, c);
+                }
+                if obj_name == "os" {
+                    return self.emit_os_call(member, c);
+                }
+                if obj_name == "path" {
+                    return self.emit_path_call(member, c);
+                }
+                if obj_name == "process" {
+                    return self.emit_process_call(member, c);
+                }
+                if obj_name == "time" {
+                    return self.emit_time_call(member, c);
+                }
+                if obj_name == "random" {
+                    return self.emit_random_call(member, c);
                 }
                 // `Clase.metodo()` con método static → call directo (sin me).
                 if self.class_defs.contains_key(obj_name.as_str()) {
@@ -6708,12 +7003,25 @@ fn annotation_to_type(ann: &TypeAnnotation) -> Type {
                 .map(|(n, t)| (n.clone(), annotation_to_type(t)))
                 .collect(),
         ),
-        // Nombrados (enum/struct/clase/alias → i64 en WASM; los alias de tipos
-        // básicos se resuelven en el typeck y llegan como el tipo base).
-        TypeKind::Named(name, args) => Type::Named(
-            name.clone(),
-            args.iter().map(annotation_to_type).collect(),
-        ),
+        // Nombrados: los builtins genéricos (`Record<K,V>`, `Array<T>`, alias
+        // básicos) se resuelven aquí (el typeck los resuelve en su propio
+        // resolve_type_annotation; el emisor debe hacer lo mismo).
+        TypeKind::Named(name, args) => match name.as_str() {
+            "Record" | "Dict" | "Map" if args.len() == 2 => Type::Record(
+                Box::new(annotation_to_type(&args[0])),
+                Box::new(annotation_to_type(&args[1])),
+            ),
+            "Array" | "List" if args.len() == 1 => {
+                Type::Array(Box::new(annotation_to_type(&args[0])))
+            }
+            "String" => Type::String,
+            "Int" | "Integer" => Type::Int,
+            "Float" | "Double" => Type::Float,
+            "Bool" | "Boolean" => Type::Bool,
+            "Char" => Type::Char,
+            "Any" | "any" => Type::Any,
+            _ => Type::Named(name.clone(), args.iter().map(annotation_to_type).collect()),
+        },
         TypeKind::Cmx => Type::Cmx,
         _ => Type::Any,
     }
@@ -7439,6 +7747,50 @@ impl<'a> Engine<'a> {
             FnExit,
             CallSite,
             HostCall,
+            OsPlatform,
+            OsArch,
+            OsVersion,
+            OsHostname,
+            OsHome,
+            OsTempdir,
+            OsCpus,
+            OsPid,
+            OsUptime,
+            OsEnv,
+            OsSep,
+            OsIsWindows,
+            OsIsUnix,
+            PathJoin,
+            PathBasename,
+            PathDirname,
+            PathExtname,
+            PathResolve,
+            PathNormalize,
+            PathIsAbsolute,
+            PathSep,
+            ProcessArgs,
+            ProcessCwd,
+            ProcessEnv,
+            ProcessExit,
+            ProcessPid,
+            ProcessPlatform,
+            ProcessTitle,
+            TimeNow,
+            TimeSeconds,
+            TimeIso,
+            TimeDate,
+            TimeClock,
+            TimeYear,
+            TimeMonth,
+            TimeDay,
+            TimeHour,
+            TimeMinute,
+            TimeSecond,
+            TimeSleep,
+            RandomRandom,
+            RandomInt,
+            RandomFloat,
+            RandomUuid,
         ] {
             self.register_host(h);
         }
