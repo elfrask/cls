@@ -226,7 +226,9 @@ pub fn load_import_modules_hooked(
 ) -> cls_core::error::ClsResult<()> {
     use cls_core::error::ClsError;
     // Módulos internos del core/nodo: NO se resuelven como archivos.
-    const INTERNALS: &[&str] = &["math", "json", "fs", "http", "Lib", "async"];
+    const INTERNALS: &[&str] = &[
+        "math", "json", "fs", "http", "Lib", "async", "os", "path", "process", "time", "random",
+    ];
     for stmt in &module.statements {
         let import = match stmt {
             Statement::Import(i) => Some((i.path.clone(), i.span.clone())),
@@ -262,8 +264,10 @@ pub fn load_import_modules_hooked(
             }
             // Hook del nodo: el import no está en disco → el nodo provee el source.
             if !found {
+                eprintln!("[DBG] hook check: path={} hook={}", path, hook.is_some());
                 if let Some(h) = hook {
                     if let Some(source) = h.resolve_source(&path, base_dir) {
+                        eprintln!("[DBG] hook resolvió '{}': {:?}", path, &source[..source.len().min(60)]);
                         if let Ok(toks) = cls_core::frontend::Lexer::new(&source).tokenize() {
                             if let Ok(m) = cls_core::frontend::Parser::new(toks).parse() {
                                 let key = format!("hook:{}", path);

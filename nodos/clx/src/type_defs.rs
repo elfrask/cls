@@ -52,6 +52,11 @@ fn builtin_type_definitions() -> Vec<(&'static str, &'static str)> {
         ("http", include_str!("../../../cls-runtime/clsi/http.clsi")),
         ("Lib", include_str!("../../../cls-runtime/clsi/Lib.clsi")),
         ("async", include_str!("../../../cls-runtime/clsi/async.clsi")),
+        ("os", include_str!("../../../cls-runtime/clsi/os.clsi")),
+        ("path", include_str!("../../../cls-runtime/clsi/path.clsi")),
+        ("process", include_str!("../../../cls-runtime/clsi/process.clsi")),
+        ("time", include_str!("../../../cls-runtime/clsi/time.clsi")),
+        ("random", include_str!("../../../cls-runtime/clsi/random.clsi")),
     ]
 }
 

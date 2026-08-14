@@ -1,0 +1,38 @@
+# @title time
+# @description Modulo de fechas y hora del nodo desktop (UTC).
+
+# @description Milisegundos desde la epoch Unix
+function now() -> int {};
+
+# @description Segundos desde la epoch Unix
+function seconds() -> int {};
+
+# @description Fecha y hora ISO 8601 (UTC, YYYY-MM-DDTHH:MM:SSZ)
+function iso() -> String {};
+
+# @description Fecha UTC (YYYY-MM-DD)
+function date() -> String {};
+
+# @description Hora UTC (HH:MM:SS)
+function clock() -> String {};
+
+# @description Anio UTC
+function year() -> int {};
+
+# @description Mes UTC (1-12)
+function month() -> int {};
+
+# @description Dia UTC (1-31)
+function day() -> int {};
+
+# @description Hora UTC (0-23)
+function hour() -> int {};
+
+# @description Minuto UTC (0-59)
+function minute() -> int {};
+
+# @description Segundo UTC (0-59)
+function second() -> int {};
+
+# @description Duerme el hilo actual ms milisegundos
+function sleep(ms: int) {};

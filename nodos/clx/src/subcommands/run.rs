@@ -105,7 +105,7 @@ pub fn execute(args: &[String]) -> i32 {
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| std::path::PathBuf::from("."));
-    let resolver = make_desktop_resolver(vfs, lib_resolver, native.clone(), entry_dir);
+    let resolver = make_desktop_resolver(vfs, lib_resolver, native.clone(), entry_dir, app_args.clone());
     let mut interpreter = Interpreter::new(Intrinsics::desktop_defaults(app_args), resolver);
     interpreter.set_source_file(entry);
     interpreter.set_config(config);
@@ -222,11 +222,17 @@ fn make_desktop_resolver(
     lib_resolver: Arc<dyn ClsLibResolver>,
     native: std::sync::Arc<dyn cls_runtime::ffi::NativeBackend>,
     entry_dir: std::path::PathBuf,
+    app_args: Vec<String>,
 ) -> cls_runtime::ModuleResolver {
     let mut resolver = cls_runtime::ModuleResolver::new().with_core_stdlib();
     resolver.add_internal("fs", crate::modules::fs::module(vfs));
     resolver.add_internal("http", crate::modules::http::module());
     resolver.add_internal("Lib", crate::modules::lib::module(lib_resolver));
+    resolver.add_internal("os", crate::modules::os::module());
+    resolver.add_internal("path", crate::modules::path::module());
+    resolver.add_internal("process", crate::modules::process::module(app_args));
+    resolver.add_internal("time", crate::modules::time::module());
+    resolver.add_internal("random", crate::modules::random::module());
     // Directorios donde buscar módulos de usuario instalados: ~/.cls/modules/
     let entry_dir = entry_dir.clone();
     let manifest = cls_core::config::ModuleManifest::find_in_dir(&entry_dir);

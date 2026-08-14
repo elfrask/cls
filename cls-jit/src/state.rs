@@ -29,4 +29,7 @@ pub struct HostState {
     pub host_call: Option<std::sync::Arc<dyn crate::host::HostCallHandler>>,
     /// Destino de `print` (si el nodo registró uno; si no, stdout).
     pub output: Option<std::sync::Arc<dyn crate::host::OutputSink>>,
+    /// Args de la aplicación (los que el nodo inyectó tras `--`). Los usa
+    /// `process.args()`.
+    pub app_args: Vec<String>,
 }

@@ -301,6 +301,77 @@ pub fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), Str
     w!("host_call", |mut c: Caller<'_, HostState>, id: i64, ptr: i64, n: i64| -> i64 {
         host::host_host_call(&mut c, id, ptr, n)
     });
+    // Módulo os
+    w!("os_platform", |mut c: Caller<'_, HostState>| -> i64 { host::host_os_platform(&mut c) });
+    w!("os_arch", |mut c: Caller<'_, HostState>| -> i64 { host::host_os_arch(&mut c) });
+    w!("os_version", |mut c: Caller<'_, HostState>| -> i64 { host::host_os_version(&mut c) });
+    w!("os_hostname", |mut c: Caller<'_, HostState>| -> i64 { host::host_os_hostname(&mut c) });
+    w!("os_home", |mut c: Caller<'_, HostState>| -> i64 { host::host_os_home(&mut c) });
+    w!("os_tempdir", |mut c: Caller<'_, HostState>| -> i64 { host::host_os_tempdir(&mut c) });
+    w!("os_cpus", |mut c: Caller<'_, HostState>| -> i64 { host::host_os_cpus(&mut c) });
+    w!("os_pid", |mut c: Caller<'_, HostState>| -> i64 { host::host_os_pid(&mut c) });
+    w!("os_uptime", |mut c: Caller<'_, HostState>| -> i64 { host::host_os_uptime(&mut c) });
+    w!("os_env", |mut c: Caller<'_, HostState>, k: i64| -> i64 { host::host_os_env(&mut c, k) });
+    w!("os_sep", |mut c: Caller<'_, HostState>| -> i64 { host::host_os_sep(&mut c) });
+    w!("os_is_windows", |mut c: Caller<'_, HostState>| -> i32 { host::host_os_is_windows(&mut c) });
+    w!("os_is_unix", |mut c: Caller<'_, HostState>| -> i32 { host::host_os_is_unix(&mut c) });
+    // Módulo path
+    w!("path_join", |mut c: Caller<'_, HostState>, a: i64, b: i64| -> i64 {
+        host::host_path_join(&mut c, a, b)
+    });
+    w!("path_basename", |mut c: Caller<'_, HostState>, p: i64| -> i64 {
+        host::host_path_basename(&mut c, p)
+    });
+    w!("path_dirname", |mut c: Caller<'_, HostState>, p: i64| -> i64 {
+        host::host_path_dirname(&mut c, p)
+    });
+    w!("path_extname", |mut c: Caller<'_, HostState>, p: i64| -> i64 {
+        host::host_path_extname(&mut c, p)
+    });
+    w!("path_resolve", |mut c: Caller<'_, HostState>, p: i64| -> i64 {
+        host::host_path_resolve(&mut c, p)
+    });
+    w!("path_normalize", |mut c: Caller<'_, HostState>, p: i64| -> i64 {
+        host::host_path_normalize(&mut c, p)
+    });
+    w!("path_is_absolute", |mut c: Caller<'_, HostState>, p: i64| -> i32 {
+        host::host_path_is_absolute(&mut c, p)
+    });
+    w!("path_sep", |mut c: Caller<'_, HostState>| -> i64 { host::host_path_sep(&mut c) });
+    // Módulo process
+    w!("process_args", |mut c: Caller<'_, HostState>| -> i64 { host::host_process_args(&mut c) });
+    w!("process_cwd", |mut c: Caller<'_, HostState>| -> i64 { host::host_process_cwd(&mut c) });
+    w!("process_env", |mut c: Caller<'_, HostState>, k: i64| -> i64 {
+        host::host_process_env(&mut c, k)
+    });
+    w!("process_exit", |mut c: Caller<'_, HostState>, code: i64| host::host_process_exit(&mut c, code));
+    w!("process_pid", |mut c: Caller<'_, HostState>| -> i64 { host::host_process_pid(&mut c) });
+    w!("process_platform", |mut c: Caller<'_, HostState>| -> i64 {
+        host::host_process_platform(&mut c)
+    });
+    w!("process_title", |mut c: Caller<'_, HostState>| -> i64 { host::host_process_title(&mut c) });
+    // Módulo time
+    w!("time_now", |mut c: Caller<'_, HostState>| -> i64 { host::host_time_now(&mut c) });
+    w!("time_seconds", |mut c: Caller<'_, HostState>| -> i64 { host::host_time_seconds(&mut c) });
+    w!("time_iso", |mut c: Caller<'_, HostState>| -> i64 { host::host_time_iso(&mut c) });
+    w!("time_date", |mut c: Caller<'_, HostState>| -> i64 { host::host_time_date(&mut c) });
+    w!("time_clock", |mut c: Caller<'_, HostState>| -> i64 { host::host_time_clock(&mut c) });
+    w!("time_year", |mut c: Caller<'_, HostState>| -> i64 { host::host_time_year(&mut c) });
+    w!("time_month", |mut c: Caller<'_, HostState>| -> i64 { host::host_time_month(&mut c) });
+    w!("time_day", |mut c: Caller<'_, HostState>| -> i64 { host::host_time_day(&mut c) });
+    w!("time_hour", |mut c: Caller<'_, HostState>| -> i64 { host::host_time_hour(&mut c) });
+    w!("time_minute", |mut c: Caller<'_, HostState>| -> i64 { host::host_time_minute(&mut c) });
+    w!("time_second", |mut c: Caller<'_, HostState>| -> i64 { host::host_time_second(&mut c) });
+    w!("time_sleep", |mut c: Caller<'_, HostState>, ms: i64| host::host_time_sleep(&mut c, ms));
+    // Módulo random
+    w!("random_random", |mut c: Caller<'_, HostState>| -> f64 { host::host_random_random(&mut c) });
+    w!("random_int", |mut c: Caller<'_, HostState>, min: i64, max: i64| -> i64 {
+        host::host_random_int(&mut c, min, max)
+    });
+    w!("random_float", |mut c: Caller<'_, HostState>, min: f64, max: f64| -> f64 {
+        host::host_random_float(&mut c, min, max)
+    });
+    w!("random_uuid", |mut c: Caller<'_, HostState>| -> i64 { host::host_random_uuid(&mut c) });
     Ok(())
 }
 
@@ -587,6 +658,7 @@ pub(crate) fn run_wasm_wasmtime(
             simple_fn_names: std::collections::HashMap::new(),
             host_call: ctx.host_call_handler.clone(),
             output: ctx.output.clone(),
+            app_args: app_args.to_vec(),
         },
     );
     let mut linker = Linker::new(&engine);
