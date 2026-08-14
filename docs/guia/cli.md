@@ -1,92 +1,134 @@
 # CLI
 
 El binario `clx` es el CLI de desarrollo. El binario `clxr` es el runtime
-ligero.
+ligero (ver `herramientas/clxr.md`).
 
-## clx
+```
+clx <subcomando> [opciones] [argumentos]
+```
 
-### `clx new [path]`
+## Subcomandos
 
-Crea un nuevo proyecto CLS con la estructura mínima:
+| Subcomando | Estado |
+|---|---|
+| `new`, `add`, `remove`/`rm`, `install`/`i`, `run`, `check`, `repl`, `build`, `lsp`, `ast`, `maptype`, `clean`, `-v`/`--version`, `-h`/`--help` | Implementados |
+| `init`, `tree`, `fmt` | **Placeholder** — imprimen "no implementado" y salen con código 1 |
+| `--quiet` | No hace nada (retorna 0) |
 
-- `cls.json` — manifiesto del proyecto.
-- `src/main.clsx` — punto de entrada.
+## `clx new <nombre> [--lib]`
 
-### `clx run <archivo.clsx> [args...]`
+Crea un proyecto nuevo con la estructura mínima:
 
-Compila (lexer + parser + typeck) y ejecuta un archivo con el **JIT** (CLS → WASM
-→ wasmtime), el intérprete objetivo por defecto. Los argumentos adicionales se
-pasan a `main(args)`.
+```
+<nombre>/
+├── cls.json          # manifiesto (entry: "src/main.clsx")
+├── .gitignore        # modules/, dist/, .cls-types
+├── modules/          # dependencias instaladas
+└── src/
+    └── main.clsx     # function main(args: String[]) -> int
+```
+
+- `--lib` — proyecto librería: `entry` vacío, `target: "library"` y no genera
+  `main.clsx`.
+
+## `clx add <paquete> [--dev]` · `clx remove|rm <paquete>` · `clx install|i`
+
+Gestión de dependencias con `cls.json`:
+
+- `add` — agrega `"<paquete>": "^1.0.0"` a `dependencies` (o `devDependencies`
+  con `--dev`). Requiere un `cls.json` en el directorio actual.
+- `remove` — quita el paquete de `dependencies` o `devDependencies`.
+- `install` — descarga cada dependencia desde el registry como
+  `modules/<paquete>/mod.clsx` y escribe el lockfile `cls.lock`.
+
+El registry se toma de, en orden: `CLS_REGISTRY` > `cls.json["registry"]` >
+`https://registry.cls-lang.org`. Si la descarga falla, se usa el caché local.
+
+## `clx run [archivo] [--] [args...]`
+
+Compila y ejecuta con el **JIT** (CLS → WASM → wasmtime), el intérprete
+objetivo por defecto. Los argumentos tras `--` se pasan a `main(args)` (y
+quedan disponibles vía `process.args()`).
+
+Sin archivo, usa el `entry` de `cls.json`; si no hay manifiesto, busca
+`main.clsx`, `src/main.clsx`, `mod.clsx` o `src/mod.clsx`.
 
 ```
 clx run main.clsx
-clx run app.clsx --arg1 --arg2
+clx run app.clsx -- a1 a2
 ```
 
-- `--jit, -j` — obsoleto (el JIT ya es el default); se acepta por compatibilidad.
-- `--ast-walker` — ejecuta con el tree-walker **DEPRECADO** (solo referencia
-  sintáctica; imprime una advertencia y se eliminará tras CLS 2.0-dev1).
+Opciones:
 
-Durante la ejecución resuelve los `import "mod"` leyendo `<mod>.clsx` del
-directorio de trabajo, además de los módulos internos (`math`, `json`, `async`)
-y los del nodo desktop (`fs`, `http`, `Lib`).
+- `--jit, -j` — obsoleto, sin efecto (el JIT ya es el default).
+- `--ast-walker` — ejecuta con el tree-walker **DEPRECADO** (imprime una
+  advertencia en stderr; solo referencia sintáctica).
+- `--target <tripla>, -t` — simula el entorno (`arch-os-abi`) para la
+  directiva `when` (no cambia la compilación).
+- `--` — separador de argumentos de la aplicación.
 
-### `clx check [path] [--strict]`
+Los `import "mod"` se resuelven con el resolver del JIT: caché de módulos →
+directorio del archivo que importa → `modules/` del proyecto → módulos
+globales `~/.cls/modules/` (ver `lenguaje/modulos.md`).
 
-Verifica tipos sin ejecutar. Acepta un archivo o un directorio (en cuyo caso
-recorre todos los `.clsx`). Reporta errores y advertencias con contexto de
-código (línea + caret).
+## `clx check [archivo|dir] [--strict]`
 
-- `--strict` activa el modo estricto: las asignaciones incompatibles son error.
-- Resuelve los imports del archivo (y de los módulos importados) y registra sus
-  tipos como prelude, de modo que `var c: Color` con `Color` importado sea
-  verificable.
+Verifica tipos sin ejecutar. Acepta un archivo, un directorio (recorre todos
+los `.clsx` recursivamente, saltando `modules/`, `dist/`, `libs/` y ocultos)
+o el `entry` del proyecto. Resuelve los imports del grafo y registra sus
+exports como prelude (los tipos importados son verificables).
 
-### `clx repl`
+- `--strict` — activa el modo estricto (asignaciones incompatibles = error).
+- Reporta `[ERROR|WARN|INFO] mensaje (file:line:col)` con línea + caret.
+- Código de salida: 0 sin errores, 1 con errores.
 
-REPL interactivo. Evalúa expresiones y declaraciones de una en una. Para salir
-usa `Ctrl+C` o `:salir`.
+## `clx build [archivo] -o <salida>`
 
-### `clx build [path]`
+Empaqueta la aplicación en un `.clsapp` (zip con dos entradas):
 
-Prepara el proyecto para empaquetar (pipeline futuro). Genera el AST serializado
-de los módulos para incluirlo en el `.clsapp`.
+- `manifest.json` — `{name, version, entry, format: "source"}`.
+- `source.clsx` — el código fuente crudo del entry.
 
-### `clx lsp`
+Default de salida: `dist/app.clsapp`. Nota: el empaquetado es de **código
+fuente** (el AST/WASM embebido es un trabajo futuro).
 
-Lanza el servidor de lenguaje (Language Server Protocol) sobre stdio. Lo usa la
-extensión de VS Code. Ofrece autocompletado, diagnóstico y documentación basados
-en los type maps.
+## `clx repl`
 
-### `clx ast <archivo.clsx>`
+REPL interactivo (usando el tree-walker). Evalúa declaraciones completas;
+las expresiones sueltas se imprimen. Comandos: `exit`, `quit`, `:exit`,
+`:quit`, `:salir`, `:q`; ayuda con `:help`/`:h`. Ver `herramientas/repl.md`.
 
-Muestra el árbol de sintaxis abstracta (AST) de un archivo en formato de
-depuración.
+## `clx lsp [--silent]`
 
-### `clx maptype [path] -o <dir> [--watch]`
+Lanza el servidor LSP sobre **stdin/stdout** (no existe transporte TCP pese a
+que el help global lo mencione). Ver `herramientas/lsp.md`.
 
-Genera los type maps (`.type.json`) a partir de los archivos `.clsx` y `.clsi`
-de `path`, escribiéndolos en `dir`. Los type maps alimentan el autocompletado
-de la extensión de VS Code.
+## `clx ast <archivo> [--json]`
 
-- `--watch` / `-w` regenera automáticamente al detectar cambios (polling).
+Muestra el AST de un archivo: dump de depuración Rust por defecto, JSON
+pretty con `--json`.
 
-## clxr
+## `clx maptype [path] -o <dir> [--watch]`
 
-`clxr` ejecuta aplicaciones sin las herramientas de desarrollo:
+Genera un `.type.json` por cada `.clsx`/`.clsi` bajo `path` (default `.`),
+preservando la estructura relativa; output default `./.cls-types`. Ver
+`herramientas/maptype.md`.
 
-```
-clxr <archivo.clsx|app.clsapp>
-```
+## `clx clean [--all]`
 
-- Con un `.clsx`, compila y ejecuta el archivo directamente.
-- Con un `.clsapp`, abre el paquete (zip) a través del VFS (`app://`) y ejecuta
-  el punto de entrada.
-- Carga los módulos internos core (`math`, `json`, `async`); no incluye los
-  módulos del nodo desktop (`fs`, `http`, `Lib`).
+Limpia el caché de compilación JIT en `~/.cache/cls/` (reporta archivos y
+bytes eliminados). `--all` además borra el directorio completo y el caché del
+workspace `[cwd]/.cls-cache/`.
 
-Los errores de ejecución muestran el trazo completo numerado (call stack con
-código fuente por frame), igual que `clx run`.
+## Variables de entorno
+
+| Variable | Efecto |
+|---|---|
+| `CLS_REGISTRY` | Registry para `clx install` |
+| `CLS_JIT_RUNTIME=wasmi` | Usa wasmi en lugar de wasmtime (sin excepciones) |
+| `CLS_DUMP_WAT` | Imprime el WAT del módulo compilado en stderr |
+| `CLS_JIT_TIMING=1` | Log de tiempos por fase del JIT |
+| `CLS_LIB_PATH` | Directorio del binario `clsb` para los bindings Python |
 
 ## Códigos de salida
 

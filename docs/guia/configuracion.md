@@ -1,157 +1,166 @@
-# Configuración: cls.json
+# Configuración
 
-`cls.json` es el manifiesto único de un proyecto CLS. Unifica los metadatos del
-proyecto, la configuración del compilador y la del intérprete en un solo
-archivo. Se busca desde el directorio de trabajo hacia arriba; si no existe, se
-usan los valores por defecto.
+Toda la configuración de un proyecto vive en `cls.json`
+(`ModuleManifest`, ver `cls-core/src/config/manifest.rs` y
+`cls-core/src/config/types.rs`). Los campos usan **camelCase**.
 
-## Ejemplo completo
+## Estructura de `cls.json`
+
+| Campo | Tipo | Default | Descripción |
+|---|---|---|---|
+| `name` | string | — | Nombre del proyecto (obligatorio) |
+| `version` | string | — | Versión semver (obligatorio) |
+| `description` | string | `""` | Descripción |
+| `authors` | string[] | `[]` | Autores |
+| `license` | string | `"MIT"` | Licencia |
+| `registry` | string | `https://registry.cls-lang.org` | Registry para dependencias |
+| `entry` | string | `"src/main.clsx"` | Punto de entrada principal |
+| `project` | object | — | Ver `project` |
+| `compiler` | object | — | Ver `compiler` |
+| `interpreter` | object | — | Ver `interpreter` |
+| `dependencies` | map | `{}` | Dependencias (`"<pkg>": "^1.0.0"`) |
+| `devDependencies` | map | `{}` | Dependencias de desarrollo (renombrada de `devDependencies`) |
+| `lockfileVersion` | number | ausente | Versión del lockfile |
+
+### `project`
+
+| Campo | Default | Descripción |
+|---|---|---|
+| `sourceDir` | `"src"` | Directorio de fuentes |
+| `outDir` | `"dist"` | Directorio de salida |
+| `target` | `"executable"` | `"executable"` o `"library"` |
+
+### `compiler`
+
+| Campo | Default | Descripción |
+|---|---|---|
+| `targetArchitecture` | `"wasm"` | `x86_64`, `arm64`, `wasm`, `bytecode` |
+| `optimizationLevel` | `"O2"` | `O0`–`O3`, `Os` |
+| `types` | object | Configuración de tipos (`TypesConfig`) |
+| `features` | object | `async`, `macros`, `experimental` (bool, default `false`) |
+| `warnings` | object | Ver abajo |
+| `sourceMaps` | bool | `true` |
+
+`types` (`TypesConfig`):
+
+| Campo | Default | Descripción |
+|---|---|---|
+| `check` | `true` | Chequeo de tipos (`true` = híbrido, `false` = dinámico) |
+| `strict` | `false` | Tipado estricto (solo si `check`) |
+| `noImplicitAny` | `false` | Prohibir tipos no inferidos |
+| `nullSafety` | `true` | Evitar null pointer exceptions |
+
+`warnings` (`WarningsConfig`):
+
+| Campo | Default | Descripción |
+|---|---|---|
+| `unusedVariables` | `"warn"` | Nivel del warning |
+| `deadCode` | `"warn"` | Nivel del warning |
+| `treatWarningsAsErrors` | `false` | Warnings como errores |
+
+### `interpreter`
+
+| Campo | Default | Descripción |
+|---|---|---|
+| `optimization` | `false` | Optimización en interpretación |
+| `mode` | `"pure-ast"` | `"pure-ast"` \| `"jit"` |
+| `runtime` | object | Memoria del runtime (`RuntimeMemoryConfig`) |
+| `sandbox` | object | Sandbox (`SandboxConfig`) |
+
+`runtime.` (`RuntimeMemoryConfig`):
+
+| Campo | Default | Descripción |
+|---|---|---|
+| `memoryLimit` | `"512MB"` | Límite de memoria |
+| `stackSize` | `"8MB"` | Tamaño de stack |
+| `gc` | object | GC (`GcConfig`: `enabled` `false`, `strategy` `"compiled"`, `threshold` `"64MB"`) |
+
+`sandbox.` (`SandboxConfig`):
+
+| Campo | Default | Descripción |
+|---|---|---|
+| `allowFs` | `false` | Permitir acceso a filesystem |
+| `allowNet` | `false` | Permitir acceso a red |
+| `maxExecutionTime` | `5000` | Tiempo máximo de ejecución (ms) |
+
+## Ejemplo real
+
+`examples/hello/cls.json`:
 
 ```json
 {
-  "name": "mi-proyecto",
-  "version": "0.1.0",
-  "description": "Un proyecto CLS",
-  "authors": ["Nombre <correo>"],
-  "license": "MIT",
-  "registry": "https://registry.cls-lang.org",
+  "authors": [],
+  "dependencies": {},
+  "description": "",
+  "devDependencies": {},
   "entry": "src/main.clsx",
-
+  "license": "MIT",
+  "name": "hello",
   "project": {
-    "sourceDir": "src",
     "outDir": "dist",
+    "sourceDir": "src",
     "target": "executable"
   },
-
+  "registry": "https://registry.cls-lang.org",
+  "version": "0.1.0",
   "compiler": {
-    "targetArchitecture": "wasm",
-    "optimizationLevel": "O2",
-    "sourceMaps": true,
-    "types": {
-      "check": true,
-      "strict": false,
-      "noImplicitAny": false,
-      "nullSafety": true
-    },
-    "features": {
-      "async": true,
-      "macros": false,
-      "experimental": false
-    },
-    "warnings": {
-      "unusedVariables": "warn",
-      "deadCode": "warn",
-      "treatWarningsAsErrors": false
-    }
-  },
-
-  "interpreter": {
-    "optimization": false,
-    "mode": "pure-ast",
-    "runtime": {
-      "memoryLimit": "512MB",
-      "stackSize": "8MB",
-      "gc": {
-        "enabled": false,
-        "strategy": "compiled",
-        "threshold": "64MB"
-      }
-    },
-    "sandbox": {
-      "allowFs": false,
-      "allowNet": false,
-      "maxExecutionTime": 5000
-    }
-  },
-
-  "dependencies": {},
-  "devDependencies": {}
+    "targetArchitecture": "arm64",
+    "features": {}
+  }
 }
 ```
 
-## Campos del proyecto
+## Variables de entorno
 
-| Campo | Por defecto | Descripción |
-|-------|-------------|-------------|
-| `name` | — | Nombre del proyecto (requerido). |
-| `version` | `0.1.0` | Versión semver. |
-| `description` | `""` | Descripción. |
-| `authors` | `[]` | Lista de autores. |
-| `license` | `MIT` | Licencia. |
-| `registry` | `https://registry.cls-lang.org` | URL del registry de dependencias. |
-| `entry` | `src/main.clsx` | Punto de entrada principal. |
-| `dependencies` / `devDependencies` | `{}` | Dependencias (nombre → versión). |
+| Variable | Efecto |
+|---|---|
+| `CLS_REGISTRY` | Registry para `clx install` (prioridad sobre `cls.json["registry"]`) |
+| `CLS_JIT_RUNTIME=wasmi` | Usa wasmi en lugar de wasmtime (sin excepciones CLS) |
+| `CLS_DUMP_WAT` | Imprime el WAT del módulo compilado en stderr |
+| `CLS_JIT_TIMING=1` | Log de tiempos por fase del JIT |
+| `CLS_LIB_PATH` | Directorio del binario `clsb` (bindings Python: `clsb.dll`/`.so`/`.dylib`) |
 
-## Sección `project`
+## Caché de compilación
 
-| Campo | Por defecto | Descripción |
-|-------|-------------|-------------|
-| `sourceDir` | `src` | Directorio del código fuente. |
-| `outDir` | `dist` | Directorio de salida del build. |
-| `target` | `executable` | Tipo de artefacto: `executable`, `library`, `dynamic-lib`. |
+- `~/.cache/cls/` — binarios WASM compilados; la clave es un hash de la
+  fuente del entry + versión de `cls-core` + target + runtime + fuentes de
+  todos los módulos importados. Editar cualquier `.clsx` del grafo invalida
+  el caché.
+- `[workspace]/.cls-cache/module-index.json` — índice de integridad
+  informativo (hashes SHA-256 de cada `.clsx` del workspace; el JIT no lo
+  usa para invalidar).
 
-## Sección `compiler`
+Limpieza:
 
-| Campo | Por defecto | Descripción |
-|-------|-------------|-------------|
-| `targetArchitecture` | `wasm` | Arquitectura objetivo: `wasm`, `x86_64`, `arm64`, `bytecode`. |
-| `optimizationLevel` | `O2` | Nivel de optimización: `O0`..`O3`, `Os`. |
-| `sourceMaps` | `true` | Generar source maps para depuración. |
+```ps
+clx clean        # vacía ~/.cache/cls (reporta archivos y bytes)
+clx clean --all  # además borra el directorio completo y [cwd]/.cls-cache/
+```
 
-### `compiler.types`
+## Dependencias y registry
 
-| Campo | Por defecto | Descripción |
-|-------|-------------|-------------|
-| `check` | `true` | Habilitar el verificador de tipos (híbrido). Si es `false`, el lenguaje se comporta dinámico. |
-| `strict` | `false` | Modo estricto: las asignaciones incompatibles son error (no advertencia). |
-| `noImplicitAny` | `false` | Prohibir variables sin tipo inferible. |
-| `nullSafety` | `true` | Advertir cuando se asigna `null` a un tipo no `Any`. |
+```ps
+clx add <paquete>        # agrega "<paquete>": "^1.0.0" a dependencies
+clx add <paquete> --dev  # idem, en devDependencies
+clx install              # descarga a modules/<paquete>/mod.clsx
+```
 
-### `compiler.features`
+`clx install` escribe el lockfile `cls.lock`:
 
-| Campo | Por defecto | Descripción |
-|-------|-------------|-------------|
-| `async` | `false` | Habilitar funciones asíncronas y el módulo `async`. |
-| `macros` | `false` | Habilitar macros (planeado). |
-| `experimental` | `false` | Habilitar features experimentales. |
+```json
+{
+  "lockfileVersion": 1,
+  "registry": "https://registry.cls-lang.org",
+  "packages": { "<paquete>": { "version": "latest" } }
+}
+```
 
-### `compiler.warnings`
+## Resolución de `.clslib` (`ClsLibResolver`)
 
-| Campo | Por defecto | Descripción |
-|-------|-------------|-------------|
-| `unusedVariables` | `warn` | `warn`, `error` u `off`. |
-| `deadCode` | `warn` | `warn`, `error` u `off`. |
-| `treatWarningsAsErrors` | `false` | Elevar todas las advertencias a errores. |
+Para `Lib.load(...)`, el nodo desktop (`nodos/clx/src/subcommands/run.rs`)
+busca en este orden:
 
-## Sección `interpreter`
-
-| Campo | Por defecto | Descripción |
-|-------|-------------|-------------|
-| `optimization` | `false` | Optimizaciones durante la interpretación. |
-| `mode` | `pure-ast` | Modo de ejecución: `pure-ast` (tree-walker) o `jit` (planeado). |
-
-### `interpreter.runtime`
-
-| Campo | Por defecto | Descripción |
-|-------|-------------|-------------|
-| `memoryLimit` | `512MB` | Límite de memoria del runtime. |
-| `stackSize` | `8MB` | Tamaño de pila. |
-| `gc.enabled` | `false` | Habilitar el recolector de basura. |
-| `gc.strategy` | `compiled` | `active` (runtime) o `compiled` (quemado en WASM). |
-| `gc.threshold` | `64MB` | Umbral de activación del GC. |
-
-### `interpreter.sandbox`
-
-| Campo | Por defecto | Descripción |
-|-------|-------------|-------------|
-| `allowFs` | `false` | Permitir acceso al sistema de archivos. |
-| `allowNet` | `false` | Permitir acceso a la red. |
-| `maxExecutionTime` | `5000` | Tiempo máximo de ejecución en milisegundos. |
-
-## Notas
-
-- Los campos usan `camelCase` en el JSON (por ejemplo `sourceDir`, `maxExecutionTime`).
-- El tipo checker lee `compiler.types`; `clx check --strict` fuerza `strict: true`
-  aunque el manifiesto diga lo contrario.
-- Si un campo falta, se aplica su valor por defecto; el manifiesto nunca falla
-  por campos ausentes.
+1. Path directo (si el nombre contiene `/`, `\` o termina en `.clslib`).
+2. `./libs/{name}.clslib`.
+3. `~/.cls/clslibs/names/{name}.clslib`.
+4. `~/.cls/clslibs/index.json` → entry por nombre → `~/.cls/clslibs/by-hash/{hash}/{name}.clslib`.

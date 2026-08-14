@@ -1,72 +1,76 @@
 # Documentación de CLS
 
-CLS es un lenguaje de programación compilado-orientado con verificación de
-tipos (compile-time). Tiene **dos ejecutores**: el **JIT** (`clx run`, CLS →
-WASM → wasmtime), que es el **intérprete objetivo por defecto**; y un
-**tree-walker** (`clx run --ast-walker`) **DEPRECADO**, usado solo como
-**referencia sintáctica**, que se eliminará tras CLS 2.0-dev1. Hay un plan de
-compilación nativa/WASM (`.clbin`) en `docs/future/`. Esta documentación cubre
-el lenguaje, el runtime, la arquitectura y cómo contribuir.
+CLS es un lenguaje de programación con verificación de tipos (compile-time),
+compilado a **WASM** y ejecutado con un **JIT** (`clx run`: CLS → WASM →
+wasmtime). El proyecto es un workspace Rust con seis crates — `cls-core`,
+`cls-runtime`, `cls-jit`, `nodos/clx`, `nodos/clxb`, `nodos/clxr` — y bindings
+de Python (`bindings/python`, paquete `clsb`).
+
+> **JIT = intérprete objetivo.** El tree-walker (`clx run --ast-walker`) está
+> **DEPRECADO**: es solo referencia sintáctica y se eliminará tras
+> CLS 2.0-dev1. Toda ejecución normal usa el JIT.
 
 ## Estructura de la documentación
 
-Cada tema vive en su propio documento. Empieza por `guia/inicio-rapido.md` si
-no conoces el lenguaje, o por `lenguaje/arquitectura.md` para entender el
-diseño.
-
 ### Guías de uso
 
-- `guia/instalacion.md` — requisitos, compilación y ejecución.
-- `guia/inicio-rapido.md` — primer programa, sintaxis esencial.
+- `guia/instalacion.md` — requisitos, compilación desde fuente, scripts.
+- `guia/inicio-rapido.md` — primer programa y sintaxis esencial.
 - `guia/cli.md` — todos los subcomandos de `clx` y `clxr`.
-- `guia/configuracion.md` — el manifiesto `cls.json` y todas sus opciones.
+- `guia/configuracion.md` — `cls.json`, variables de entorno, caché.
 
 ### El lenguaje
 
-- `lenguaje/arquitectura.md` — las capas, el pipeline, las extensiones de archivo.
-- `lenguaje/sintaxis.md` — léxico, tipos base, variables, literales.
-- `lenguaje/control-de-flujo.md` — if, while, loop, for, for-each, switch, try, break, continue.
-- `lenguaje/funciones.md` — funciones, genéricos, funciones flecha, async/await.
-- `lenguaje/tipos.md` — tuplas, arrays, records, uniones, alias, interfaces, extracción de tipos.
-- `lenguaje/enums.md` — enums con identidad, iteración, comparación.
-- `lenguaje/oop.md` — clases, herencia, visibilidad, super, magic methods.
-- `lenguaje/modulos.md` — el sistema de módulos, imports, exports.
-- `lenguaje/cmx.md` — el lenguaje de marcado CMX (JSX-like).
-- `lenguaje/extension.md` — FFI a librerías nativas del sistema (`extension`).
+- `lenguaje/sintaxis.md` — léxico: literales, strings, comentarios, keywords, operadores.
+- `lenguaje/tipos.md` — el sistema de tipos compile-time: tuplas, uniones, alias, interfaces, extracción, genéricos.
+- `lenguaje/datos.md` — arrays, tuplas, records, strings e interpolación en runtime.
+- `lenguaje/control-de-flujo.md` — `if`, `while`, `loop`, `for`, `for each`, `switch`, `with`, `break`, `continue`.
+- `lenguaje/funciones.md` — funciones, parámetros con default, arrow functions, closures, `main`.
+- `lenguaje/oop.md` — clases, herencia, visibilidad, `super`, `is`, `me`, magic methods.
+- `lenguaje/enums.md` — enums con identidad, comparación e iteración.
+- `lenguaje/estructuras.md` — `structure` (datos planos).
+- `lenguaje/modulos.md` — `import` / `from import` / `include`, exports, resolución.
+- `lenguaje/errores.md` — `throw`, `try/catch/finally` y errores en runtime.
 - `lenguaje/multi-entorno.md` — directiva `when` (implementaciones por SO/arquitectura).
+- `lenguaje/extension.md` — FFI a librerías nativas del sistema (`extension`).
+- `lenguaje/cmx.md` — el lenguaje de marcado CMX (JSX-like).
+
+### Biblioteca estándar
+
+- `stdlib/core.md` — intrinsics globales (`print`, `input`, `toString`, `int`, ...) y módulos core `math`, `json`, `async`.
+- `stdlib/desktop.md` — módulos del nodo desktop: `fs`, `http`, `os`, `path`, `process`, `time`, `random`, `Lib`.
+- `stdlib/primitivos.md` — métodos de tipos primitivos (sin boxing).
 
 ### Runtime y ejecución
 
-- `runtime/ejecucion.md` — cómo funciona el intérprete (walker y JIT).
-- `runtime/valores.md` — el sistema de valores (`Value`).
-- `runtime/biblioteca-estandar.md` — math, json, fs, http, async.
-- `runtime/metodos-primitivos.md` — métodos de tipos primitivos (sin boxing).
-- `runtime/errores.md` — sistema de errores y formatos de salida.
+- `runtime/jit.md` — el JIT: pipeline CLS → WASM → wasmtime, caché, host functions, límites.
+- `runtime/walker.md` — el tree-walker DEPRECADO (referencia sintáctica).
+- `runtime/errores.md` — el sistema de errores y sus formatos.
+- `runtime/vfs.md` — VFS (sistema de archivos virtual), protocolos y `.clsapp`.
 
-### JIT (intérprete objetivo)
+### Herramientas
 
-- `future/wasm/JIT_RUNTIME.md` — el backend WASM y el JIT (wasmtime).
-- `future/wasm/WASM_PIPELINE.md` — pipeline de compilación a WASM.
-- `agent-context/JIT_COMPILATION.md` — estado operativo del backend WASM.
-- `agent-context/JIT_VS_WALKER.md` — features soportadas por JIT vs walker.
+- `herramientas/repl.md` — REPL interactivo.
+- `herramientas/lsp.md` — servidor LSP (autocompletado, diagnósticos, hover).
+- `herramientas/maptype.md` — generador de type maps (`.type.json`).
+- `herramientas/clxr.md` — runtime ligero para ejecutar apps.
+- `herramientas/clxb.md` — bindings C para embedding (`clsb.h`).
+- `herramientas/python.md` — bindings de Python (paquete `clsb`).
 
-### Ejecución sin nodo y resolvers
+### Desarrollo
 
-- `ejecucion/sin-nodo.md` — usar el core y el runtime directamente (embedding).
-- `ejecucion/resolvers.md` — cómo funciona la resolución de módulos y cómo desarrollar un resolver.
-
-### Desarrollo y contribución
-
-- `desarrollo/contribuir.md` — workflow, estilo, cómo reportar.
-- `desarrollo/arquitectura-core.md` — cls-core en detalle (lexer, parser, middleware).
+- `desarrollo/arquitectura.md` — workspace, crates, pipeline del compilador.
+- `desarrollo/contribuir.md` — workflow, estilo y reglas.
+- `desarrollo/testing.md` — cómo ejecutar y escribir tests.
 - `desarrollo/agregar-feature.md` — cómo agregar una feature al lenguaje.
 - `desarrollo/agregar-modulo-interno.md` — cómo agregar un módulo interno.
-- `desarrollo/testing.md` — cómo ejecutar y escribir los tests.
 
 ## Convenciones
 
 - Los ejemplos de código usan bloques de lenguaje `clx`.
-- Las rutas internas se escriben como texto (p. ej. `cls-core/src/...`) sin enlaces.
-- Esta documentación se mantiene sincronizada con la implementación; si algo
-  no coincide con el comportamiento real, es un error de documentación.
-- **El JIT es el intérprete objetivo**; el walker es referencia sintáctica.
+- Esta documentación solo cubre **lo implementado y accesible hoy**. Las
+  features futuras se planifican en `agent-context/` (fuera de `docs/`); si un
+  documento menciona algo que no existe en el código, es un error de
+  documentación.
+- Comentarios en CLS usan `#` hasta el final de línea (no existe `//`).
+- Las rutas internas se escriben como texto (p. ej. `cls-core/src/...`).

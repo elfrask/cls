@@ -1,115 +1,120 @@
 # Funciones
 
+Sintaxis verificada en `features/08-funciones.clsx` y
+`tests/all-features-jit2.clsx`. Todo lo documentado aquí lo soporta el JIT
+salvo donde se indica.
+
 ## Declaración
 
+```clx
+function suma(a: int, b: int) -> int { return a + b; };
+function saludar(nombre: String) { print("Hola", nombre); };
 ```
-function nombre(parámetro: Tipo, otro: Tipo) -> TipoDeRetorno {
-    return valor;
+
+- Parámetros con anotación de tipo (`a: int`).
+- Retorno opcional: sin `-> Tipo` la función es `void` (retorna sin valor).
+- `;` final opcional después de `}`.
+
+### Parámetros con valor por defecto
+
+```clx
+function suma(a: int, b: int = 5) -> int {
+    return a + b;
 };
+
+print(suma(2));   # 7
 ```
-
-- `function` para funciones con retorno.
-- `function` sin `-> Tipo` (o `void nombre(...)`) para procedimientos.
-- La función se cierra con `};`.
-
-Parámetros con valores por defecto:
-
-```
-function saludar(nombre: String, saludo: String = "Hola") -> String {
-    return saludo + ", " + nombre;
-};
-```
-
-## Retorno
-
-`return` devuelve un valor y detiene la función. En procedimientos, `return`
-sin valor termina la ejecución.
-
-## Llamadas
-
-```
-var r = sumar(2, 3);
-```
-
-Los argumentos se evalúan en orden y se pasan por valor (los valores se clonan;
-los objetos y arrays comparten referencia en el intérprete).
-
-## Funciones flecha
-
-```
-var doble = (x: int) -> x * 2;
-var aplicar = (a: int, b: int) -> { return a * b; };
-```
-
-- Con cuerpo de expresión: `(x) -> expresión`.
-- Con cuerpo de bloque: `(x) -> { ... }` (admite múltiples sentencias).
-
-Las funciones flecha son valores asignables y capturan el entorno léxico
-(closures).
-
-## Genéricos
-
-```
-function id<T>(x: T) -> T {
-    return x;
-};
-```
-
-- `T` es un parámetro de tipo (compile-time).
-- Al llamar `id(5)`, el verificador infiere `T = Int` y sustituye en el retorno:
-  `var n: Int = id(5);` es válido.
-
-## Funciones como valores
-
-Una función declarada se puede asignar:
-
-```
-var f = sumar;
-print(f(1, 2));
-```
-
-## Async / Await
-
-```
-async function descargar() -> String {
-    var res = await operacion();
-    return res;
-};
-```
-
-- `async function` crea una corrutina: al llamarla devuelve una `Promise` y el
-  cuerpo no se ejecuta hasta que se "consume".
-- `await` espera el resultado de una expresión que devuelve `Promise`.
-- El módulo `async` ofrece utilidades (`delay`, `all`, `race`).
-
-## Visibilidad y export
-
-Una función puede llevar modificadores:
-
-```
-export function publica() -> int { return 1; };
-```
-
-- `export` la hace disponible en módulos importados.
-- `public`/`private`/`protected`/`static` se usan como miembros de clase.
 
 ## Recursión
 
-Las funciones pueden llamarse a sí mismas:
+Recursión normal (sin optimización de cola documentada):
 
-```
+```clx
 function factorial(n: int) -> int {
     if (n <= 1) { return 1; }
     return n * factorial(n - 1);
 };
+
+function fib(n: int) -> int {
+    if (n < 2) { return n; }
+    return fib(n - 1) + fib(n - 2);
+};
 ```
 
-## Firma de tipos de función
+## Arrow functions
 
-Como anotación, un tipo de función se escribe `(Int) -> Int` (o
-`fun(Int) -> Int`):
+Tres formas: expresión, cuerpo con `return`, y sin argumentos:
 
+```clx
+var doble = (x: int) -> x * 2;
+var multi = (a: int, b: int) -> { return a * b; };
+var sinArgs = () -> 99;
+
+print(doble(21));    # 42
+print(multi(3, 5));
+print(sinArgs());
 ```
-alias Operacion = (Int, Int) -> Int;
-var suma: Operacion = (a: int, b: int) -> a + b;
+
+## Closures
+
+Capturan variables del entorno léxico:
+
+```clx
+var base = 10;
+var closure = (x: int) -> x + base;
+print(closure(5));          # 15
+base = 100;
+print(closure(5));          # 105 (ve el nuevo valor)
 ```
+
+El JIT promueve las capturas al heap.
+
+## Funciones como valor
+
+Las funciones se pueden guardar y pasar:
+
+```clx
+print(type(suma));          # <function suma>
+```
+
+`Array.map(fn)` recibe una función como argumento (ver `datos.md`).
+
+## main
+
+`main(args: String[]) -> int` es el punto de entrada; el valor de retorno es
+el exit code del proceso.
+
+```clx
+function main(args: String[]) -> int {
+    return 0;
+}
+```
+
+## Genéricos
+
+```clx
+function id<T>(x: T) -> T {
+    return x;
+};
+
+var g: Int = id(5);
+var h: String = id("hola");
+```
+
+Ver `tipos.md` para defaults `<T=Default>` y phantom `!T`.
+
+## Módulos
+
+`export function` exporta la función al cargar el módulo:
+
+```clx
+export function suma(a: int, b: int) -> int { return a + b; };
+```
+
+Ver `sistema de módulos` en el contexto del proyecto.
+
+## async / await
+
+`async function`/`await` existen en el parser y el tree-walker, pero **el JIT
+no compila `await`** (error explícito del emisor). No usarlos en código que
+corra con `clx run`.

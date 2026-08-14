@@ -1,88 +1,97 @@
-# Extensiones nativas (`extension`)
+# Extensiones nativas (`extension` — FFI)
 
-La directiva `extension` declara **símbolos de librerías nativas del sistema**
-(`.dll`, `.so`, `.dylib`) para su uso desde CLS: funciones, estructuras y
-variables. Es el FFI de CLS.
+`extension` declara símbolos de librerías del sistema (C ABI) para llamarlos
+desde CLS. Las funciones se declaran **sin cuerpo** (terminan en `;`).
 
-> Esta es la feature oficial. Detalles de implementación (walker/JIT, backend
-> dinámico, ABI) en `agent-context/NATIVE_FFI.md`.
-
-## Sintaxis
+## Declaración
 
 ```clx
 extension "libm" as C {
     function sqrt(x: CDouble) -> CDouble;
     function pow(x: CDouble, y: CDouble) -> CDouble;
+    export function strlen(s: CString) -> CInt;   # exportable
 };
+```
 
-extension "libc" {          # `as C` es opcional (default)
+- La librería se escribe como string; los nombres conocidos se mapean al
+  archivo real del SO (ver más abajo). También vale una ruta directa:
+
+```clx
+extension "msvcrt.dll" as C {
     function strlen(s: CString) -> CInt;
+    function atoi(s: CString) -> CInt;
+};
+```
+
+- `export function` (y `export structure`/`export var`) marca el símbolo como
+  exportable a otros módulos.
+- Dentro del bloque solo se permiten `function`, `structure` y `var`.
+
+Ejemplos: `examples/audit/test-features/extension-demo.clsx`,
+`examples/audit/test-features/native-lib.clsx`.
+
+## Tipos C
+
+| Tipo | ABI |
+|---|---|
+| `CString` | `char*` (String CLS → buffer null-terminated) |
+| `CInt` / `CUInt` | `i32` / `u32` |
+| `CShort` / `CUShort` | `i16` / `u16` |
+| `CLong` / `CULong` | `i64` / `u64` (long de 64 bits) |
+| `CChar` / `CUChar` | `i8` / `u8` |
+| `CDouble` / `CFloat` | `f64` / `f32` |
+| `CPtr` | puntero (`void*`) |
+| `Struct(nombre)` | layout C de una `structure` declarada |
+| `Bool` | `i32` (0/1) |
+| `Void` | sin retorno |
+| `Any` | sin anotación: el backend decide |
+
+Nota: **`CFloat` no está soportado** por el dispatcher (`f32`); usar
+`CDouble`.
+
+## Variables nativas
+
+`var` dentro de `extension` genera funciones **getter/setter** en el scope:
+`get_X()` lee y `set_X(valor)` escribe la variable `X`. El backend C del nodo
+`clx` no soporta el acceso directo al símbolo de variable y devuelve un error
+claro indicando el patrón get/set vía función nativa.
+
+## Estructuras nativas
+
+```clx
+extension "libm" as C {
     structure Punto { x: int, y: int };
-    var errno: CInt;        # getters/setters: get_errno() / set_errno(v)
-};
-
-# exportar símbolos para módulos importados
-extension "libc" as C {
-    export function atoi(s: CString) -> CInt;
 };
 ```
 
-- `extension "<librería>" as <Tipo> { ... }` — `<Tipo>` es el **tipo de
-  extensión** (backend): `C` hoy; `Python`, `Wasm`, `Js`, `Wasi` en el futuro.
-- Las funciones sin cuerpo (`function f(...) -> T;`) son **declaraciones** de
-  símbolos nativos.
-- `export` hace el símbolo visible en módulos importados.
+Declaran un layout C; luego `Punto(3, 4)` instancia con campos posicionales.
 
-## Tipos primitivos dedicados (ABI C)
+## Kinds de extensión
 
-| Tipo CLS | ABI nativo |
-|----------|-----------|
-| `int` | `i64` |
-| `float` | `f64` |
-| `bool` | `i32` (0/1) |
-| `CString` | `char*` (CLS String → buffer null-terminated) |
-| `CPtr<T>` | `void*` / puntero a `T` |
-| `CInt` / `CUInt` | `int32_t` / `uint32_t` |
-| `CShort` / `CUShort` | `int16_t` / `uint16_t` |
-| `CLong` / `CULong` | `long` / `unsigned long` |
-| `CChar` / `CUChar` | `int8_t` / `uint8_t` |
-| `CFloat` / `CDouble` | `float` / `double` |
-| `structure` | puntero a layout C |
+`extension "<lib>" as <Kind>`: las fórmulas y el parser soportan
+`C | Python | Wasm | Js | Wasi | Custom(nombre)`. El backend nativo
+**implementado es `C`** (DynamicBackend del nodo: libloading/dlopen/
+LoadLibrary); los otros kinds requieren un backend registrado por el nodo
+(`Interpreter::set_native_backend` por kind); sin él, el error indica que el
+nodo no registró backend para el tipo.
 
-> Usa el tipo **exacto** del símbolo C. P. ej. `atoi` devuelve `int` (32 bits)
-> → decláralo `-> CInt` (no `-> int`, que es `i64`).
+## Límites y mapeo de librerías
 
-## Resolución
+- Hasta **4 argumentos** por función nativa (dispatcher `arity0`–`arity4`;
+  más de 4 → error claro).
+- Mapeo de nombres de librería por SO:
 
-- El símbolo lo resuelve el **nodo** en runtime (`dlopen`/`LoadLibrary`) por
-  nombre en la librería declarada — el usuario final solo escribe CLS.
-- Nombres canónicos: `libc`, `libm` se mapean al archivo real del SO.
-- Para el futuro binario nativo, el linker del SO resuelve en build-time.
+| Nombre | Windows | Linux | macOS |
+|---|---|---|---|
+| `libc` / `c` | `msvcrt.dll` | `libc.so.6` | `libSystem.B.dylib` |
+| `libm` / `m` | `msvcrt.dll` | `libm.so.6` | `libSystem.B.dylib` |
 
-## Sandbox
+- Las librerías se cachean por path (no se re-abren por llamada).
 
-Las librerías nativas rompen el sandbox (acceso total al sistema). El acceso es
-**opt-in explícito**: `cls.json → security.allowNative` (o flag CLI). Permitido
-por defecto en desktop; bloqueado en contextos no confiables.
+## Soporte por intérprete
 
-## Uso
-
-```clx
-extension "libm" as C { function sqrt(x: CDouble) -> CDouble; };
-print(sqrt(16.0));   # 4
-```
-
-Para declaraciones condicionadas a plataforma, combina con la directiva `when`
-(ver `multi-entorno.md`):
-
-```clx
-when os: windows {
-    extension "user32" as C { function MessageBoxA(h: CPtr, t: CString, c: CString, u: CUInt) -> CInt; }
-}
-```
-
-## Ver también
-
-- `multi-entorno.md` — la directiva `when` (implementaciones por SO/arquitectura).
-- `modulos.md` — `export`/`import` de símbolos entre módulos.
-- `agent-context/NATIVE_FFI.md` — plan de implementación y ABI.
+- **Tree-walker**: sí, vía el backend nativo inyectado por el nodo.
+- **JIT**: sí; el emisor compila las llamadas a host functions
+  `env.<sym>__<sig>@<lib>` que delegan en el backend del nodo.
+- **clxb** (bindings): **no** — backend dummy con error claro
+  (`extension nativa 'lib.sym' no soportada por el binding (clxb)`).

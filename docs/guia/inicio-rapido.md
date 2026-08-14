@@ -1,111 +1,167 @@
 # Inicio rápido
 
-Esta guía te lleva de cero a tu primer programa CLS.
+`clx run` compila CLS a WASM y lo ejecuta con el JIT (wasmtime). Es el
+intérprete objetivo; el tree-walker (`--ast-walker`) está deprecado.
 
 ## Hola mundo
 
-Crea un archivo `main.clsx`:
-
-```
+```clx
 function main(args: String[]) -> int {
     print("Hola, CLS!");
     return 0;
 };
 ```
 
-Ejecútalo:
-
-```
+```ps
 clx run main.clsx
 ```
 
-Salida:
+El programa debe declarar `main(args: String[]) -> int`; el valor de retorno
+es el código de salida.
 
-```
-Hola, CLS!
-```
+## Crear un proyecto
 
-El punto de entrada es la función `main`, que recibe los argumentos de la línea
-de comandos como un array de cadenas y devuelve un código de salida entero.
-
-## Variables y tipos
-
-```
-var nombre: String = "CLS";
-var edad: int = 30;
-const PI = 3.14159;        // const infiere un literal type
-var activo = true;
+```ps
+clx new my-app
+cd my-app
+clx run
 ```
 
-Los tipos básicos son `Int`, `Float`, `String`, `Bool`, `Char`, `Null`, `Void`
-y `Any`. Las declaraciones usan `var`, `const` y `let` (alias de `var`).
+`clx new` genera:
+
+```
+my-app/
+├── cls.json          # manifiesto (entry: "src/main.clsx")
+├── .gitignore        # modules/, dist/, .cls-types
+├── modules/          # dependencias instaladas
+└── src/
+    └── main.clsx     # function main(args: String[]) -> int
+```
+
+## Variables
+
+```clx
+var x: int = 42;      # anotada
+var y = 3.14;         # inferida (Float)
+const PI = 3.14159;   # constante
+let z = 7;            # let es alias de var
+var flag: bool = true;
+var ch = 'a';         # Char
+var nulo = null;
+var s: String = "hola";
+```
+
+Acrónimos de tipos: `int`, `float`, `String`, `bool`.
 
 ## Funciones
 
-```
+```clx
 function sumar(a: int, b: int) -> int {
     return a + b;
-};
+}
 
-print(sumar(2, 3));   // 5
+function main(args: String[]) -> int {
+    var doble = (x: int) -> x * 2;   # arrow function
+    print("suma:", sumar(3, 4));
+    print("doble:", doble(21));
+    return 0;
+};
 ```
+
+`print("etiqueta:", valor)` imprime la etiqueta seguida del valor
+(p. ej. `int: 42`).
 
 ## Colecciones
 
-```
-var lista = [1, 2, 3];           // array (mutable)
-var tupla = (1, "dos", 3.0);     // tupla (inmutable)
-var dic = {clave: 1, otro: 2};   // record / diccionario
+```clx
+var lista = [1, 2, 3];        # Array
+var tupla = (1, "dos", 3.0);  # Tuple (inmutable)
+var dic = {clave: 1};         # Record
 
-print(lista.length);     // 3
-print(tupla[1]);         // "dos"
-print(dic.clave);        // 1
+function main(args: String[]) -> int {
+    print(lista.length);      # 3  (getter de primitivo)
+    print(tupla[1]);          # "dos"
+    print(dic.clave);         # 1
+    return 0;
+};
 ```
-
-Los métodos de tipos primitivos se resuelven por tipo (sin objetos):
-`"hola".upper()` devuelve `"HOLA"`, `[1,2].push(3)` muta el array en el lugar.
 
 ## Control de flujo
 
-```
-for each x in (lista) {
-    print(x);
-}
-
-var i = 0;
-while (i < 5) {
-    i = i + 1;
-}
-
-if (edad >= 18) {
-    print("Mayor");
-} else {
-    print("Menor");
-}
+```clx
+function main(args: String[]) -> int {
+    # if / elif / else
+    var n = 7;
+    if (n > 10) {
+        print("grande");
+    } elif (n > 5) {
+        print("mediano");
+    } else {
+        print("pequeno");
+    }
+    # while
+    var i = 0;
+    while (i < 3) {
+        print("while:", i);
+        i++;
+    }
+    # loop (infinito, sale con break)
+    var j = 0;
+    loop {
+        j++;
+        if (j == 2) { break; }
+    }
+    # for clásico
+    for (var k = 0; k < 3; k++) {
+        print("for:", k);
+    }
+    # for each (con y sin índice)
+    var arr = [5, 6, 7];
+    for each v in (arr) {
+        print("each:", v);
+    }
+    for each v and idx in (arr) {
+        print("each[$idx]:", v);
+    }
+    # switch: 'case (N)' y 'case default'
+    var c = 2;
+    switch (c) {
+        case (1) { print("uno"); }
+        case (2) { print("dos"); }
+        case default { print("otro"); }
+    }
+    # with
+    var obj = {x: 10, y: 20};
+    with o in (obj) {
+        print("with:", o);
+    }
+    return 0;
+};
 ```
 
 ## Enums
 
-```
+```clx
 enum Color {
     Rojo,
     Verde,
     Azul,
 };
 
-var c = Color.Verde;
-print(c);                    // "Verde"
-print(c == Color.Verde);     // true
-print(c is Color);           // true
-
-for each color in (Color) {
-    print(color);
-}
+function main(args: String[]) -> int {
+    var c = Color.Verde;
+    print(c == Color.Verde);  # true (identidad)
+    print(c is Color);        # true
+    for each v in (Color) {
+        print(" -", v);
+    }
+    return 0;
+};
 ```
 
 ## Clases
 
-```
+```clx
 class Persona {
     var nombre: String;
 
@@ -118,43 +174,45 @@ class Persona {
     }
 };
 
-var p = Persona("Ana");
-print(p.saludar());   // "Hola, Ana"
+function main(args: String[]) -> int {
+    var p = Persona("Ana");
+    print(p.saludar());       # Hola, Ana
+    return 0;
+};
 ```
+
+`me` es el equivalente a `this`. El constructor se declara como
+`function main(...)` dentro de la clase.
 
 ## Módulos
 
-Crea `lib.clsx`:
+`lib.clsx`:
 
-```
+```clx
 export function doble(x: int) -> int {
     return x * 2;
 };
 ```
 
-Y `main.clsx`:
+`main.clsx`:
 
-```
+```clx
 import "lib" as lib;
 
 function main(args: String[]) -> int {
-    print(lib.doble(4));   // 8
+    print("doble(4):", lib.doble(4));
     return 0;
 };
 ```
 
-## Verificar tipos
+Los imports se resuelven relativos al archivo que importa, luego
+`modules/` del proyecto y luego los globales `~/.cls/modules/`.
 
-```
+## Verificación de tipos
+
+```ps
 clx check --strict main.clsx
 ```
 
-El modo estricto valida las anotaciones de tipo. Si no hay errores, muestra
-"No se encontraron errores de tipo."
-
-## Siguientes pasos
-
-- `lenguaje/sintaxis.md` — el detalle completo de la sintaxis.
-- `lenguaje/tipos.md` — el sistema de tipos (tuplas, uniones, alias, interfaces).
-- `guia/cli.md` — todos los subcomandos.
-- `guia/configuracion.md` — el manifiesto `cls.json`.
+Sin errores imprime (en verde) `No se encontraron errores de tipo.` y sale
+con código 0. Con `--strict`, las asignaciones incompatibles son error.

@@ -1,130 +1,115 @@
-# Sintaxis del lenguaje
+# Sintaxis y léxico
 
-## Comentarios
+Referencia del léxico y la estructura básica del lenguaje. Fuentes:
+`cls-core/src/frontend/lexer.rs`, `cls-core/src/frontend/token.rs` y los QA
+validados en `examples/audit/features/`.
 
-Los comentarios de línea usan `#`:
+## Estructura de un programa
 
+Un programa es una secuencia de declaraciones (funciones, clases, variables,
+alias, etc.). Las declaraciones terminan en `;`. El `;` después de `}` de un
+bloque es opcional.
+
+```clx
+# variables a nivel superior
+var x: int = 42;
+
+# punto de entrada obligatorio
+function main(args: String[]) -> int {
+    print("hola");
+    return 0;
+}
 ```
-# esto es un comentario
-var x = 1;   # comentario al final de la línea
-```
+
+`main(args: String[]) -> int` es el punto de entrada; su valor de retorno es el
+exit code del proceso.
 
 ## Identificadores
 
-Los identificadores comienzan con una letra o `_` y pueden contener letras,
-dígitos y `_`. Son sensibles a mayúsculas.
+Estándar: letras, dígitos y `_`, no pueden comenzar con un dígito.
 
-## Palabras reservadas
+## Palabras clave (74)
 
-`if`, `elif`, `then`, `else`, `while`, `loop`, `for`, `each`, `switch`, `case`,
-`default`, `try`, `catch`, `finally`, `throw`, `return`, `break`, `continue`,
-`with`, `in`, `is`, `and`, `function`, `fun`, `void`, `method`, `var`, `const`,
-`let`, `class`, `structure`, `interface`, `module`, `namespace`, `alias`,
-`enum`, `import`, `from`, `as`, `include`, `export`, `public`, `private`,
-`protected`, `static`, `readonly`, `global`, `async`, `await`, `sync`, `macro`,
-`extends`, `me`, `super`, `config`, `true`, `false`, `null`.
+| Categoría | Keywords |
+|---|---|
+| Declaración | `var`, `const`, `let`, `function`, `void`, `method`, `export` |
+| Control de flujo | `if`, `elif`, `else`, `while`, `loop`, `for`, `each`, `in`, `when`, `switch`, `case`, `default` |
+| Excepciones | `try`, `catch`, `finally` (el lanzamiento se hace con la intrinsic `throw(msg)`) |
+| Funciones | `return`, `break`, `continue` |
+| Tipos/OOP | `class`, `structure`, `interface`, `module`, `namespace`, `alias`, `enum` |
+| Visibilidad | `public`, `private`, `protected`, `static`, `extends`, `is`, `super`, `readonly`, `me` |
+| Módulos | `import`, `from`, `as`, `include` |
+| Otros | `extension`, `async`, `await`, `sync`, `macro`, `global`, `config`, `then`, `and`, `or`, `not`, `true`, `false` |
 
-## Literales
+Nota: `let` es un alias de `var`. `true`/`false` son keywords (no literales
+reservados de otro tipo).
 
-| Literal | Ejemplo |
-|---------|---------|
-| Entero | `42`, `-1`, `0xFF` (no soportado aún) |
-| Flotante | `3.14`, `-0.5` |
-| Cadena | `"texto"`, `'texto'`, `` `plantilla` `` |
-| Booleano | `true`, `false` |
-| Carácter | `'a'` |
-| Nulo | `null` |
+## Comentarios
 
-### Interpolación de cadenas
+Solo `#` hasta fin de línea. No existe `//` ni comentarios multilínea.
 
-Las cadenas con comillas dobles y backtick admiten interpolación:
-
+```clx
+# esto es un comentario
+var x = 1;  # comentario al final de línea
 ```
+
+## Literales numéricos
+
+Solo decimales.
+
+- Enteros: `i64` (`42`, `-7`, `0`). No hay hex, binario, octal ni separador `_`.
+- Floats: requieren punto decimal y/o notación científica (`3.14`, `1e300`,
+  `2.5E-10`).
+
+## Strings
+
+Tres delimitadores producen el mismo tipo `String`: `"..."`, `'...'` y
+`` `...` `` (backtick).
+
+Escapes soportados: `\n`, `\t`, `\r`, `\b`, `\\`, `\'`, `\"`. Cualquier otro
+`\x` se conserva literal.
+
+Interpolación dentro de cualquier delimitador:
+
+```clx
 var nombre = "CLS";
-print("Hola, $nombre");            // variable
-print("Suma: ${2 + 3}");           // expresión
+var edad = 30;
+print("Hola, $nombre");        # $var
+print("Suma: ${2 + 3}");       # ${expr}
+print(`Template $nombre ${edad + 1}`);
 ```
 
-## Variables
+### Char
 
-```
-var x: int = 1;        // declaración tipada
-var y = 2;             // inferencia de tipo
-const PI = 3.14;       // constante (infiere literal type)
-let z = 0;             // alias de var
-```
+No existe literal `char` real: `'a'` produce un `String` de un carácter. El
+token `CharLiteral` existe en el lexer, pero nunca se produce.
 
-- `const` no puede reasignarse.
-- `var` infiere el tipo base de su inicializador.
-- `const` infiere un *literal type* (por ejemplo `"constante"`), útil para
-  anotaciones y uniones.
+## Bools
 
-## Tipos básicos
-
-| Tipo | Descripción |
-|------|-------------|
-| `Int` / `int` | Entero de 64 bits con signo. |
-| `Float` / `float` | Punto flotante de 64 bits. |
-| `String` / `str` | Cadena UTF-8. |
-| `Bool` / `bool` | Booleano. |
-| `Char` / `char` | Carácter Unicode. |
-| `Any` | Tipo dinámico. |
-| `Null` | El valor nulo. |
-| `Void` | Sin valor (retorno de procedimientos). |
+`true` / `false` son keywords y valores del tipo `Bool`.
 
 ## Operadores
 
-### Aritméticos
+| Categoría | Operadores |
+|---|---|
+| Aritmética | `+`, `-`, `*`, `/`, `%`, `**` (potencia) |
+| Comparación | `==`, `!=`, `<`, `<=`, `>`, `>=`, y keywords `is`, `in` |
+| Lógicos | `&`, `\|`, `!` (se aceptan también `&&` y `\|\|`) |
+| Asignación | `=`, `+=`, `-=`, `*=`, `/=`, `%=` |
+| Incremento | `++`, `--` (pre y postfix) |
+| Otros | `->` (retorno/flecha), `::`, `..`, `:` , `@`, `~`, `^`, `<<`, `>>`, `\` |
 
-`+`, `-`, `*`, `/`, `%` (módulo), `**` (potencia).
+## Símbolos
 
-### Comparación
+`( ) [ ] { } , . ;` y `...` (ellipsis, token existente).
 
-`==`, `!=`, `<`, `<=`, `>`, `>=`. `is` valida instancia de clase/enum.
+## CMX
 
-### Lógicos
+Los tags `<tag>` se tokenizan aparte (lexer CMX), con desambiguación frente a
+genéricos `<T>` y comparaciones `<` dentro de expresiones.
 
-`&&`, `||`, `!`, `and`. El cortocircuito funciona: `false && expr` no evalúa
-`expr`.
+## Interacción con el JIT
 
-### Asignación
-
-`=`, `+=`, `-=`, `*=`, `/=`. También postfix `++` y `--`.
-
-### Otros
-
-`::` (namespace), `->` (flecha/tipo de retorno), `|` (unión de tipos),
-`in` (pertenencia).
-
-## Expresiones
-
-Las expresiones admiten precedencia estándar:
-
-```
-a + b * c        // * antes que +
-(a + b) * c      // paréntesis agrupan
-x ? a : b        // condicional
-f(x).campo[i]    // llamada, miembro, índice
-```
-
-### Literales de colección
-
-```
-[1, 2, 3]            // array (mutable)
-(1, "dos", 3.0)      // tupla (inmutable)
-{clave: 1, otro: 2}  // record / diccionario
-```
-
-## Terminación
-
-Las sentencias terminan en `;`. Las declaraciones de tipos (class, enum,
-interface, alias, structure, module, namespace) se cierran con `};`.
-
-## Funciones flecha
-
-```
-var doble = (x: int) -> x * 2;
-var suma = (a: int, b: int) -> { return a + b; };
-```
-
-La forma con cuerpo entre llaves admite múltiples sentencias.
+`clx run` compila el archivo a WASM (ver `runtime/jit.md`). El JIT requiere
+typecheck estricto: parámetros sin anotación de tipo, tipos `Any`/`Unknown` sin
+anotar y arrays vacíos sin anotación generan error del emisor.
