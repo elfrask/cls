@@ -925,6 +925,25 @@ impl TypeChecker {
             // `math.pow` SIEMPRE devuelve Float (el walker usa `powf` incondicional
             // y el emisor emite MathPow f64). Paridad con module_call_ret del backend.
             if let Expression::Identifier(obj, _) = &*m.object {
+                // Validar aridad de los módulos internos del nodo (os/path/process/
+                // time/random): el emisor accede a c.args[i] y un índice fuera de
+                // rango paniquea. Error de tipo claro aquí, antes de emitir.
+                if matches!(obj.as_str(), "os" | "path" | "process" | "time" | "random") {
+                    if let Some(arity) = module_arity(obj.as_str(), m.member.as_str()) {
+                        if call.args.len() != arity {
+                            self.error(
+                                &format!(
+                                    "{}.{} esperaba {} argumento(s), recibió {}",
+                                    obj,
+                                    m.member,
+                                    arity,
+                                    call.args.len()
+                                ),
+                                call.span.clone(),
+                            );
+                        }
+                    }
+                }
                 if obj == "math" {
                     if m.member == "pow" {
                         return Type::Float;
@@ -2053,6 +2072,44 @@ fn builtin_type_name(name: &str) -> Option<Type> {
         "Cmx" => Some(Type::Cmx),
         "Null" => Some(Type::Null),
         "Void" => Some(Type::Void),
+        _ => None,
+    }
+}
+
+/// Aridad esperada de un miembro de los módulos internos del nodo desktop
+/// (os/path/process/time/random). `None` si el miembro no existe o es libre.
+fn module_arity(mod_name: &str, member: &str) -> Option<usize> {
+    match mod_name {
+        "os" => match member {
+            "platform" | "arch" | "version" | "hostname" | "home" | "tempdir"
+            | "cpus" | "pid" | "uptime" | "sep" | "isWindows" | "isUnix" => Some(0),
+            "env" => Some(1),
+            _ => None,
+        },
+        "path" => match member {
+            "join" => Some(2),
+            "basename" | "dirname" | "extname" | "resolve" | "normalize"
+            | "isAbsolute" => Some(1),
+            "sep" => Some(0),
+            _ => None,
+        },
+        "process" => match member {
+            "args" | "cwd" | "pid" | "platform" | "title" => Some(0),
+            "env" => Some(1),
+            "exit" => Some(1),
+            _ => None,
+        },
+        "time" => match member {
+            "now" | "seconds" | "iso" | "date" | "clock" | "year" | "month"
+            | "day" | "hour" | "minute" | "second" => Some(0),
+            "sleep" => Some(1),
+            _ => None,
+        },
+        "random" => match member {
+            "random" | "uuid" => Some(0),
+            "int" | "float" => Some(2),
+            _ => None,
+        },
         _ => None,
     }
 }
