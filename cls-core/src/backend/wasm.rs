@@ -3348,7 +3348,7 @@ impl<'a> FuncEmitter<'a> {
             "pid" => self.host.call(OsPid, &mut self.body),
             "uptime" => self.host.call(OsUptime, &mut self.body),
             "env" => {
-                self.emit_expression(&c.args[0])?;
+                self.emit_expression(self.call_arg(c, 0, "os.env")?)?;
                 self.host.call(OsEnv, &mut self.body);
             }
             "sep" => self.host.call(OsSep, &mut self.body),
@@ -3364,32 +3364,32 @@ impl<'a> FuncEmitter<'a> {
         use HostFn::*;
         match member.member.as_str() {
             "join" => {
-                self.emit_expression(&c.args[0])?;
-                self.emit_expression(&c.args[1])?;
+                self.emit_expression(self.call_arg(c, 0, "path.join")?)?;
+                self.emit_expression(self.call_arg(c, 1, "path.join")?)?;
                 self.host.call(PathJoin, &mut self.body);
             }
             "basename" => {
-                self.emit_expression(&c.args[0])?;
+                self.emit_expression(self.call_arg(c, 0, "path.basename")?)?;
                 self.host.call(PathBasename, &mut self.body);
             }
             "dirname" => {
-                self.emit_expression(&c.args[0])?;
+                self.emit_expression(self.call_arg(c, 0, "path.dirname")?)?;
                 self.host.call(PathDirname, &mut self.body);
             }
             "extname" => {
-                self.emit_expression(&c.args[0])?;
+                self.emit_expression(self.call_arg(c, 0, "path.extname")?)?;
                 self.host.call(PathExtname, &mut self.body);
             }
             "resolve" => {
-                self.emit_expression(&c.args[0])?;
+                self.emit_expression(self.call_arg(c, 0, "path.resolve")?)?;
                 self.host.call(PathResolve, &mut self.body);
             }
             "normalize" => {
-                self.emit_expression(&c.args[0])?;
+                self.emit_expression(self.call_arg(c, 0, "path.normalize")?)?;
                 self.host.call(PathNormalize, &mut self.body);
             }
             "isAbsolute" => {
-                self.emit_expression(&c.args[0])?;
+                self.emit_expression(self.call_arg(c, 0, "path.isAbsolute")?)?;
                 self.host.call(PathIsAbsolute, &mut self.body);
             }
             "sep" => self.host.call(PathSep, &mut self.body),
@@ -3405,11 +3405,11 @@ impl<'a> FuncEmitter<'a> {
             "args" => self.host.call(ProcessArgs, &mut self.body),
             "cwd" => self.host.call(ProcessCwd, &mut self.body),
             "env" => {
-                self.emit_expression(&c.args[0])?;
+                self.emit_expression(self.call_arg(c, 0, "process.env")?)?;
                 self.host.call(ProcessEnv, &mut self.body);
             }
             "exit" => {
-                self.emit_expression(&c.args[0])?;
+                self.emit_expression(self.call_arg(c, 0, "process.exit")?)?;
                 self.host.call(ProcessExit, &mut self.body);
             }
             "pid" => self.host.call(ProcessPid, &mut self.body),
@@ -3436,7 +3436,7 @@ impl<'a> FuncEmitter<'a> {
             "minute" => self.host.call(TimeMinute, &mut self.body),
             "second" => self.host.call(TimeSecond, &mut self.body),
             "sleep" => {
-                self.emit_expression(&c.args[0])?;
+                self.emit_expression(self.call_arg(c, 0, "time.sleep")?)?;
                 self.host.call(TimeSleep, &mut self.body);
             }
             _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
@@ -3450,21 +3450,34 @@ impl<'a> FuncEmitter<'a> {
         match member.member.as_str() {
             "random" => self.host.call(RandomRandom, &mut self.body),
             "int" => {
-                self.emit_expression(&c.args[0])?;
-                self.emit_expression(&c.args[1])?;
+                self.emit_expression(self.call_arg(c, 0, "random.int")?)?;
+                self.emit_expression(self.call_arg(c, 1, "random.int")?)?;
                 self.host.call(RandomInt, &mut self.body);
             }
             "float" => {
-                self.emit_expression(&c.args[0])?;
-                self.f64_promote(&c.args[0])?;
-                self.emit_expression(&c.args[1])?;
-                self.f64_promote(&c.args[1])?;
+                let a0 = self.call_arg(c, 0, "random.float")?;
+                let a1 = self.call_arg(c, 1, "random.float")?;
+                self.emit_expression(a0)?;
+                self.f64_promote(a0)?;
+                self.emit_expression(a1)?;
+                self.f64_promote(a1)?;
                 self.host.call(RandomFloat, &mut self.body);
             }
             "uuid" => self.host.call(RandomUuid, &mut self.body),
             _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
         }
         Ok(())
+    }
+
+    /// Valida la aridad de una llamada a host de módulo y devuelve el arg `i`.
+    /// Evita `c.args[i]` con índice fuera de rango (panic → error de compilación).
+    fn call_arg<'e>(&self, c: &'e CallExpr, i: usize, fn_name: &str) -> ClsResult<&'e Expression> {
+        c.args.get(i).ok_or_else(|| {
+            crate::error::ClsError::compile_at(
+                &format!("{} esperaba {} argumento(s), recibió {}", fn_name, i + 1, c.args.len()),
+                &c.span,
+            )
+        })
     }
 
     /// Tipo de retorno de una llamada o miembro de un módulo stdlib.
@@ -3520,10 +3533,18 @@ impl<'a> FuncEmitter<'a> {
                         };
                     }
                     if obj == "process" {
-                        return Some(WasTy::I64);
+                        // exit es void: no reportar valor (rompería `print(exit(0))`).
+                        return match member.member.as_str() {
+                            "exit" => None,
+                            _ => Some(WasTy::I64),
+                        };
                     }
                     if obj == "time" {
-                        return Some(WasTy::I64);
+                        // sleep es void: no reportar valor.
+                        return match member.member.as_str() {
+                            "sleep" => None,
+                            _ => Some(WasTy::I64),
+                        };
                     }
                     if obj == "random" {
                         return match member.member.as_str() {
@@ -5175,6 +5196,13 @@ impl<'a> FuncEmitter<'a> {
                 LitVal::Bool(_) => self.host.call(HostFn::PrintBool, &mut self.body),
                 _ => self.host.call(HostFn::PrintInt, &mut self.body),
             },
+            Type::Void | Type::Empty => {
+                // `print("x", time.sleep(5))` → imprime "void" (paridad walker).
+                // La llamada void no deja valor en el stack: solo imprimir la etiqueta.
+                let n = self.intern_string("void");
+                self.emit_load_str(n);
+                self.host.call(HostFn::PrintStr, &mut self.body);
+            }
             _ => self.host.call(HostFn::PrintInt, &mut self.body),
         }
         Ok(())
