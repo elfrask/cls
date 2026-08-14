@@ -97,6 +97,11 @@ clsb_value clsb_value_string(const char* s);
 clsb_value clsb_value_array(size_t n);
 clsb_value clsb_value_record(size_t n);
 void clsb_value_free(clsb_value* v);
+/* setters seguros: copian con el runtime (el host no toca los punteros) */
+void clsb_value_set_text(clsb_value* v, const char* s);
+void clsb_value_array_set(clsb_value* v, size_t i, clsb_value val);
+void clsb_value_record_set(clsb_value* v, size_t i, const char* key,
+                           clsb_value val);
 
 /* errores y versión */
 void clsb_error_free(clsb_error* e);
