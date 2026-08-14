@@ -1,0 +1,1 @@
+function main(args: String[]) -> int { var a: String = "x"; print(a + "y"); return 0; }

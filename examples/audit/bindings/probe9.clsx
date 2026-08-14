@@ -1,0 +1,2 @@
+export function fchar() -> char { return obtenerX(); }
+export function echo_c(c: char) -> char { return c; }

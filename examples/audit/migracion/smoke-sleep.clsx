@@ -1,0 +1,4 @@
+function main(args: String[]) -> int {
+    print("time.sleep:", time.sleep(10));
+    return 0;
+}

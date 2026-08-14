@@ -1,0 +1,8 @@
+import "os" as os;
+import "random" as r;
+function main(args: String[]) -> int {
+    print("os.platform:", os::platform());
+    print("r.random:", r::random());
+    print("r.float:", r::float(0.0, 1.0));
+    return 0;
+}

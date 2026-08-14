@@ -1,0 +1,1 @@
+function main(args: String[]) -> int { var c: char = 'X'; print(c); return 0; }

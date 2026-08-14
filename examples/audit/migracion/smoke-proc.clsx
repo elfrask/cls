@@ -1,0 +1,4 @@
+function main(args: String[]) -> int {
+    print("process.pid:", process.pid());
+    return 0;
+}
