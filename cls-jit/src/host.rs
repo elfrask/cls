@@ -211,6 +211,19 @@ pub fn host_trap<C: HostCtx>(ctx: &mut C, msg: i64, span: i64) {
     std::process::exit(1);
 }
 
+/// Extrae el mensaje + ubicación de un trap CLS sin matar el proceso.
+/// Lo usan los embeddings (clxb) que interceptan `env.trap` como error.
+pub fn host_trap_message<C: HostCtx>(ctx: &mut C, msg: i64, span: i64) -> String {
+    let s = ctx.read_str(msg);
+    let line = ((span >> 32) & 0xffff_ffff) as u32;
+    let col = (span & 0xffff_ffff) as u32;
+    if line > 0 {
+        format!("{} (línea {}, columna {})", s, line, col)
+    } else {
+        s
+    }
+}
+
 // ── conversiones (errores con trap → mensaje claro) ─────────────────────────
 
 pub fn host_parse_int<C: HostCtx>(ctx: &mut C, v: i64) -> Result<i64, String> {

@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clsb"
+version = "2.0.0.dev1"
+description = "Bindings de CLS para Python (embedding: compile, call, eval, SDK de nodo)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+
+[tool.setuptools]
+packages = ["clsb"]
+
+[tool.setuptools.package-data]
+clsb = ["py.typed", "bin/*.dll", "bin/*.so", "bin/*.dylib"]

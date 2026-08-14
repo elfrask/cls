@@ -7,7 +7,7 @@ use std::sync::Arc;
 use cls_core::middleware::types::{HostIntrinsic, Type};
 use cls_jit::host::HostCtx;
 use cls_jit::state::HostState;
-use wasmtime::{Engine, Linker, Memory, Module, Store, TypedFunc};
+use wasmtime::{Caller, Engine, Linker, Memory, Module, Store, TypedFunc};
 
 use crate::value::{read_value, write_value, ClsValue, StoreCtx};
 use crate::ClsError;
@@ -36,16 +36,47 @@ impl cls_jit::OutputSink for SharedSink {
     }
 }
 
+/// Despacha `host_call(id, ...)` al handler registrado para ese id. Permite
+/// registrar varias host functions en el mismo engine (B3: antes solo la
+/// última funcionaba porque el engine guardaba un handler global).
+struct DispatchHostCall {
+    handlers: std::sync::Mutex<std::collections::HashMap<u32, Arc<dyn cls_jit::HostCallHandler>>>,
+}
+
+impl DispatchHostCall {
+    fn new() -> Self {
+        Self {
+            handlers: std::sync::Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+
+    fn insert(&self, id: u32, h: Arc<dyn cls_jit::HostCallHandler>) {
+        self.handlers.lock().unwrap().insert(id, h);
+    }
+}
+
+impl cls_jit::HostCallHandler for DispatchHostCall {
+    fn call(&self, id: u32, args: &[cls_jit::HostCallArg]) -> Result<cls_jit::HostCallResult, String> {
+        let handlers = self.handlers.lock().unwrap();
+        match handlers.get(&id) {
+            Some(h) => h.call(id, args),
+            None => Err(format!("host function id {} no registrada", id)),
+        }
+    }
+}
+
 /// Engine de embedding: configuración (intrinsics, output, resolver) + compila.
 pub struct ClsEngine {
     native: Arc<dyn cls_runtime::ffi::NativeBackend>,
     intrinsics: Vec<HostIntrinsic>,
-    host_call: Option<Arc<dyn cls_jit::HostCallHandler>>,
+    host_call: Arc<DispatchHostCall>,
     resolver: Option<Arc<dyn cls_jit::ModuleSourceResolver>>,
     output: Arc<SharedSink>,
     next_id: u32,
+    /// Sandbox: oculta los módulos del nodo desktop (fs/http/os/path/process/
+    /// time/random) — solo core. Por defecto `true` (seguro para embeds).
+    sandbox: bool,
 }
-
 impl Default for ClsEngine {
     fn default() -> Self {
         Self::new()
@@ -57,11 +88,18 @@ impl ClsEngine {
         Self {
             native: Arc::new(NoNative),
             intrinsics: Vec::new(),
-            host_call: None,
+            host_call: Arc::new(DispatchHostCall::new()),
             resolver: None,
             output: Arc::new(SharedSink::default()),
             next_id: 1,
+            sandbox: true,
         }
+    }
+
+    /// Controla el sandbox: `true` oculta fs/http/os/path/process/time/random
+    /// (por defecto). `false` los expone (embedding con nodo desktop completo).
+    pub fn set_sandbox(&mut self, sandbox: bool) {
+        self.sandbox = sandbox;
     }
 
     pub fn set_output(&mut self, sink: Arc<dyn cls_jit::OutputSink>) {
@@ -88,7 +126,7 @@ impl ClsEngine {
             params,
             ret,
         });
-        self.host_call = Some(handler);
+        self.host_call.insert(id, handler);
         id
     }
 
@@ -97,7 +135,7 @@ impl ClsEngine {
             native_backend: self.native.clone(),
             module_index: None,
             host_intrinsics: &self.intrinsics,
-            host_call_handler: self.host_call.clone(),
+            host_call_handler: Some(self.host_call.clone()),
             module_source_resolver: self.resolver.as_deref(),
             output: Some(self.output.clone()),
         }
@@ -111,7 +149,7 @@ impl ClsEngine {
             target: None,
         };
         let compiled = cls_jit::compile_source(source, name, base_dir, &self.jit_ctx(), &opts)?;
-        let module = ClsModule::instantiate(compiled, &self.jit_ctx())?;
+        let module = ClsModule::instantiate(compiled, &self.jit_ctx(), self.sandbox)?;
         Ok(module)
     }
 
@@ -123,7 +161,7 @@ impl ClsEngine {
             target: None,
         };
         let compiled = cls_jit::compile_file(path, &self.jit_ctx(), &opts)?;
-        let module = ClsModule::instantiate(compiled, &self.jit_ctx())?;
+        let module = ClsModule::instantiate(compiled, &self.jit_ctx(), self.sandbox)?;
         Ok(module)
     }
 
@@ -194,6 +232,7 @@ impl ClsModule {
     fn instantiate(
         compiled: cls_jit::CompiledModule,
         ctx: &cls_jit::JitContext,
+        sandbox: bool,
     ) -> Result<Self, ClsError> {
         let mut config = wasmtime::Config::new();
         config.wasm_exceptions(true);
@@ -214,11 +253,46 @@ impl ClsModule {
                 simple_fn_names: std::collections::HashMap::new(),
                 host_call: ctx.host_call_handler.clone(),
                 output: ctx.output.clone(),
+                app_args: Vec::new(),
             },
         );
         let mut linker = Linker::new(&engine);
-        cls_jit::wasmtime_rt::register_host_functions(&mut linker)
+        cls_jit::wasmtime_rt::register_host_functions_opt(&mut linker, true, sandbox)
             .map_err(ClsError::new)?;
+        if sandbox {
+            // Sandbox: los imports no registrados (fs/http/os/path/process/
+            // time/random y exit/trap) se definen como traps → el script recibe
+            // error de runtime si intenta acceder (instanciación OK).
+            linker
+                .define_unknown_imports_as_traps(&module)
+                .map_err(|e| ClsError::new(format!("sandbox: {}", e)))?;
+        } else {
+            // `exit`/`trap` del binding: NO matan el proceso del embedder. Lanzan
+            // un trap WASM con mensaje codificado que `run_main`/`call` traducen.
+            linker
+                .func_wrap("env", "exit", |_: Caller<'_, HostState>, code: i64| -> Result<(), wasmtime::Error> {
+                    Err(wasmtime::Error::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("__clsb_exit__:{}", code),
+                    )))
+                })
+                .map_err(|e| e.to_string())
+                .map_err(ClsError::new)?;
+            linker
+                .func_wrap(
+                    "env",
+                    "trap",
+                    |mut c: Caller<'_, HostState>, m: i64, s: i64| -> Result<(), wasmtime::Error> {
+                        let msg = cls_jit::host::host_trap_message(&mut c, m, s);
+                        Err(wasmtime::Error::new(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("__clsb_trap__:{}", msg),
+                        )))
+                    },
+                )
+                .map_err(|e| e.to_string())
+                .map_err(ClsError::new)?;
+        }
         // Extensiones nativas: el backend del engine (NoNative → error claro).
         cls_jit::wasmtime_rt::register_native_hosts(&mut linker, &module, ctx.native_backend.clone())
             .map_err(ClsError::new)?;
@@ -262,7 +336,10 @@ impl ClsModule {
         };
         match main.call(&mut self.store, args_ptr) {
             Ok(code) => Ok(code),
-            Err(e) => Err(self.runtime_error(String::new(), None, e.to_string())),
+            Err(e) => match exit_code_from_trap(&e) {
+                Some(code) => Ok(code),
+                None => Err(self.runtime_error(String::new(), None, e.to_string())),
+            },
         }
     }
 
@@ -309,7 +386,12 @@ impl ClsModule {
             }
         }
 
-        let mut results = vec![wasmtime::Val::I64(0)];
+        // Resultados según el tipo del retorno (void → ninguno).
+        let mut results = if sig.ret == 9 {
+            Vec::new()
+        } else {
+            vec![wasmtime::Val::I64(0)]
+        };
         match func.call(&mut self.store, &params, &mut results) {
             Ok(()) => {
                 if sig.ret == 9 {
@@ -332,7 +414,10 @@ impl ClsModule {
                 };
                 read_value(&mut ctx, raw, sig.ret, sig.ret_elem).map_err(ClsError::new)
             }
-            Err(e) => Err(self.runtime_error(String::new(), None, e.to_string())),
+            Err(e) => match exit_code_from_trap(&e) {
+                Some(_) => Err(ClsError::new("exit() llamado dentro de una función exportada (no aplicable)".to_string())),
+                None => Err(self.runtime_error(String::new(), None, e.to_string())),
+            },
         }
     }
 
@@ -361,4 +446,21 @@ fn write_args(ctx: &mut StoreCtx, args: &[String]) -> i64 {
         ctx.write_i64(array_ptr as usize + 16 + i * 8, sptr);
     }
     array_ptr
+}
+
+/// Extrae el código de `exit(n)` del trap interceptado por el binding
+/// (`__clsb_exit__:<code>`). `None` si el trap no es un exit. Busca en el
+/// error y sus causas raíz (wasmtime envuelve el io::Error del host).
+fn exit_code_from_trap(e: &wasmtime::Error) -> Option<i64> {
+    let mut msgs: Vec<String> = Vec::new();
+    msgs.push(e.to_string());
+    msgs.push(e.root_cause().to_string());
+    for msg in msgs {
+        if let Some(rest) = msg.split("__clsb_exit__:").nth(1) {
+            if let Ok(code) = rest.trim().parse::<i64>() {
+                return Some(code);
+            }
+        }
+    }
+    None
 }

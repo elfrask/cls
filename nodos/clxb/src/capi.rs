@@ -285,12 +285,108 @@ pub extern "C" fn clsb_value_record(n: usize) -> clsb_value {
 }
 
 /// Libera un clsb_value (recursivo). Seguro solo sobre valores construidos por
-/// los constructores.
+/// los constructores. Tolerante a doble free: tras liberar, marca el tag como
+/// NULL (12) y anula los punteros para que un segundo free no toque memoria
+/// liberada.
 #[no_mangle]
 pub unsafe extern "C" fn clsb_value_free(v: *mut clsb_value) {
-    if !v.is_null() {
-        unsafe { clsb_value_free_inner(&*v) };
+    if v.is_null() {
+        return;
     }
+    let val = unsafe { &mut *v };
+    if val.tag == CLSB_NULL && val.text.is_null() && val.items.is_null()
+        && val.keys.is_null() && val.vals.is_null()
+    {
+        return; // ya liberado (doble free tolerado)
+    }
+    unsafe { clsb_value_free_inner(val) };
+    // Marcar como liberado: el host podría llamar clsb_value_free de nuevo.
+    val.tag = CLSB_NULL;
+    val.bits = 0;
+    val.text = std::ptr::null();
+    val.items = std::ptr::null_mut();
+    val.keys = std::ptr::null_mut();
+    val.vals = std::ptr::null_mut();
+    val.n = 0;
+}
+
+/// Copia `s` al campo `text` de un valor (liberando el anterior si lo había).
+/// Necesario para que el host llene strings con memoria libreable por Rust
+/// (los `c_char_p` del host no se pueden liberar con el free interno).
+#[no_mangle]
+pub unsafe extern "C" fn clsb_value_set_text(v: *mut clsb_value, s: *const c_char) {
+    let v = match unsafe { v.as_mut() } {
+        Some(x) => x,
+        None => return,
+    };
+    if !v.text.is_null() {
+        unsafe { drop(CString::from_raw(v.text as *mut c_char)) };
+    }
+    v.text = std::ptr::null();
+    if !s.is_null() {
+        if let Ok(c) = unsafe { CStr::from_ptr(s) }.to_owned().into_string() {
+            if let Ok(cs) = CString::new(c) {
+                v.text = cs.into_raw();
+            }
+        }
+    }
+    v.tag = CLSB_STRING;
+}
+
+/// Escribe un valor en el slot `i` de un array (el slot debe estar vacío o se
+/// libera el anterior). El array queda como owner.
+#[no_mangle]
+pub unsafe extern "C" fn clsb_value_array_set(v: *mut clsb_value, i: usize, val: clsb_value) {
+    let v = match unsafe { v.as_mut() } {
+        Some(x) => x,
+        None => return,
+    };
+    if v.tag != CLSB_ARRAY || v.items.is_null() || i >= v.n {
+        // Slot inválido: liberar el valor huérfano para no fugarlo.
+        unsafe { clsb_value_free_inner(&val) };
+        return;
+    }
+    let slot = unsafe { &mut *v.items.add(i) };
+    unsafe { clsb_value_free_inner(slot) };
+    *slot = val;
+}
+
+/// Escribe clave + valor en la entrada `i` de un record (copia la clave con
+/// Rust). El record queda como owner.
+#[no_mangle]
+pub unsafe extern "C" fn clsb_value_record_set(
+    v: *mut clsb_value,
+    i: usize,
+    key: *const c_char,
+    val: clsb_value,
+) {
+    let v = match unsafe { v.as_mut() } {
+        Some(x) => x,
+        None => {
+            unsafe { clsb_value_free_inner(&val) };
+            return;
+        }
+    };
+    if v.tag != CLSB_RECORD || v.keys.is_null() || v.vals.is_null() || i >= v.n {
+        unsafe { clsb_value_free_inner(&val) };
+        return;
+    }
+    // Liberar clave y valor viejos del slot.
+    let kslot = unsafe { &mut *v.keys.add(i) };
+    if !kslot.is_null() {
+        unsafe { drop(CString::from_raw(*kslot as *mut c_char)) };
+    }
+    *kslot = std::ptr::null();
+    if !key.is_null() {
+        if let Ok(c) = unsafe { CStr::from_ptr(key) }.to_owned().into_string() {
+            if let Ok(cs) = CString::new(c) {
+                *kslot = cs.into_raw();
+            }
+        }
+    }
+    let vslot = unsafe { &mut *v.vals.add(i) };
+    unsafe { clsb_value_free_inner(vslot) };
+    *vslot = val;
 }
 
 unsafe fn clsb_value_free_inner(v: &clsb_value) {
@@ -422,9 +518,16 @@ unsafe fn value_to_result(v: &clsb_value) -> cls_jit::HostCallResult {
 
 /// `cfg` puede ser NULL (opciones reservadas para el sandbox futuro).
 #[no_mangle]
-pub extern "C" fn clsb_engine_new(_cfg: *const clsb_config) -> *mut clsb_engine {
+pub extern "C" fn clsb_engine_new(cfg: *const clsb_config) -> *mut clsb_engine {
+    let mut engine = ClsEngine::new();
+    if !cfg.is_null() {
+        let cfg = unsafe { &*cfg };
+        // Sandbox: solo si el embedder pide explícitamente fs/http se expone el
+        // nodo desktop completo; si no, se ocultan los módulos del sistema.
+        engine.set_sandbox(cfg.enable_fs == 0 && cfg.enable_http == 0);
+    }
     Box::into_raw(Box::new(clsb_engine {
-        inner: Mutex::new(ClsEngine::new()),
+        inner: Mutex::new(engine),
     }))
 }
 
@@ -470,7 +573,11 @@ pub extern "C" fn clsb_compile_source(
     match engine.compile_source(&source, &name, &base) {
         Ok(m) => Box::into_raw(Box::new(clsb_module { inner: m })),
         Err(err) => {
-            unsafe { *err_out = error_ptr(err) };
+            unsafe {
+                if !err_out.is_null() {
+                    *err_out = error_ptr(err);
+                }
+            };
             std::ptr::null_mut()
         }
     }
@@ -491,7 +598,11 @@ pub extern "C" fn clsb_compile_file(
     match engine.compile_file(&path) {
         Ok(m) => Box::into_raw(Box::new(clsb_module { inner: m })),
         Err(err) => {
-            unsafe { *err_out = error_ptr(err) };
+            unsafe {
+                if !err_out.is_null() {
+                    *err_out = error_ptr(err);
+                }
+            };
             std::ptr::null_mut()
         }
     }
@@ -530,7 +641,11 @@ pub extern "C" fn clsb_run_main(
     match m.inner.run_main(&strs) {
         Ok(code) => code,
         Err(err) => {
-            unsafe { *err_out = error_ptr(err) };
+            unsafe {
+                if !err_out.is_null() {
+                    *err_out = error_ptr(err);
+                }
+            };
             -1
         }
     }
@@ -549,6 +664,9 @@ pub extern "C" fn clsb_call(
         Some(x) => x,
         None => return 1,
     };
+    if name.is_null() {
+        return 1;
+    }
     let name = unsafe { CStr::from_ptr(name) }.to_string_lossy().into_owned();
     let mut vals = Vec::with_capacity(args_len);
     if !args.is_null() {
@@ -564,7 +682,11 @@ pub extern "C" fn clsb_call(
             CLSB_OK
         }
         Err(err) => {
-            unsafe { *err_out = error_ptr(err) };
+            unsafe {
+                if !err_out.is_null() {
+                    *err_out = error_ptr(err);
+                }
+            };
             1
         }
     }
@@ -591,7 +713,11 @@ pub extern "C" fn clsb_eval(
             CLSB_OK
         }
         Err(err) => {
-            unsafe { *err_out = error_ptr(err) };
+            unsafe {
+                if !err_out.is_null() {
+                    *err_out = error_ptr(err);
+                }
+            };
             1
         }
     }

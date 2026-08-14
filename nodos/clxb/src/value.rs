@@ -124,6 +124,37 @@ impl HostCtx for StoreCtx<'_> {
 
 // ── Marshalling ─────────────────────────────────────────────────────────────
 
+/// Traduce un tag de la tabla del RUNTIME (los records en memoria usan la tabla
+/// interna: 0=int 1=string 2=float 3=bool 4=char 6=array 7=record) a la tabla
+/// del BINDING (cls_kind_code: 0=int 1=float 2=bool 3=char 4=string 5=array
+/// 6=record).
+fn rt_tag_to_kind(tag: i64) -> i64 {
+    match tag {
+        0 => 0, // int
+        1 => 4, // string
+        2 => 1, // float
+        3 => 2, // bool
+        4 => 3, // char
+        6 => 5, // array
+        7 => 6, // record
+        other => other,
+    }
+}
+
+/// Traduce un kind del binding al tag del runtime (inverso).
+fn kind_to_rt_tag(kind: i64) -> i64 {
+    match kind {
+        0 => 0, // int
+        4 => 1, // string
+        1 => 2, // float
+        2 => 3, // bool
+        3 => 4, // char
+        5 => 6, // array
+        6 => 7, // record
+        other => other,
+    }
+}
+
 /// Escribe un valor CLS en la memoria del módulo y devuelve sus bits i64
 /// (int/float-bits/bool/char directos; string → packed; array/record → ptr).
 /// `elem_kind` solo se usa para arrays (stride del layout).
@@ -187,7 +218,8 @@ fn write_record(ctx: &mut StoreCtx, entries: &[(String, ClsValue)]) -> Result<i6
     for (i, (k, v)) in entries.iter().enumerate() {
         let key = ctx.write_str(k);
         let bits = write_value(ctx, v, -1)?;
-        let tag = v.kind();
+        // Los records en memoria usan la tabla de tags del RUNTIME.
+        let tag = kind_to_rt_tag(v.kind());
         let base = ptr as usize + 16 + i * 24;
         ctx.write_i64(base, key);
         ctx.write_i64(base + 8, bits);
@@ -242,8 +274,10 @@ fn read_record(ctx: &mut StoreCtx, ptr: i64) -> Result<ClsValue, String> {
         let kbits = ctx.read_i64(base);
         let key = ctx.read_str(kbits);
         let bits = ctx.read_i64(base + 8);
-        let tag = ctx.read_i64(base + 16);
-        let val = read_value(ctx, bits, tag, -1)?;
+        let rt_tag = ctx.read_i64(base + 16);
+        // Los records en memoria usan la tabla del runtime → traducir.
+        let kind = rt_tag_to_kind(rt_tag);
+        let val = read_value(ctx, bits, kind, -1)?;
         entries.push((key, val));
     }
     Ok(ClsValue::Record(entries))
