@@ -1,0 +1,19 @@
+function main(args: String[]) -> int {
+    print("os.platform:", os.platform());
+    print("os.arch:", os.arch());
+    print("os.sep:", os.sep());
+    print("os.isWindows:", os.isWindows());
+    print("os.isUnix:", os.isUnix());
+    print("path.join:", path.join("a", "b", "c"));
+    print("path.basename:", path.basename("C:/x/y/file.txt"));
+    print("path.extname:", path.extname("C:/x/y/file.txt"));
+    print("path.isAbsolute:", path.isAbsolute("C:/x/y"));
+    print("process.pid:", process.pid());
+    print("process.platform:", process.platform());
+    print("time.year:", time.year());
+    print("time.month:", time.month());
+    print("time.day:", time.day());
+    print("random.int:", random.int(1, 100));
+    print("random.float:", random.float());
+    return 0;
+}

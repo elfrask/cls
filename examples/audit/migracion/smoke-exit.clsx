@@ -1,0 +1,6 @@
+function main(args: String[]) -> int {
+    print("antes");
+    process.exit(3);
+    print("despues (no debe imprimir)");
+    return 0;
+}

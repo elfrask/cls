@@ -1,0 +1,1 @@
+export function fstr() -> String { return "hola bindings"; }

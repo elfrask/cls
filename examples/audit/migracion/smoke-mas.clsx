@@ -1,0 +1,8 @@
+function main(args: String[]) -> int {
+    print("time.sleep:", time.sleep(10));
+    print("process.title:", process.title());
+    print("os.version:", os.version());
+    print("os.uptime:", os.uptime());
+    print("path.sep:", path.sep());
+    return 0;
+}

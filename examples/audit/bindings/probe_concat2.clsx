@@ -1,0 +1,1 @@
+function main(args: String[]) -> int { var s: String = ""; for each x in (["a", "b"]) { s += x; } print(s); return 0; }

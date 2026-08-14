@@ -1,0 +1,20 @@
+import "os" as os;
+import "path" as p;
+import "process" as pr;
+import "time" as t;
+import "random" as r;
+function main(args: String[]) -> int {
+    print("os.arch:", os::arch());
+    print("os.sep:", os::sep());
+    print("os.env:", os::env("PATH"));
+    print("p.join:", p::join("a", "b"));
+    print("p.basename:", p::basename("C:/x/y.txt"));
+    print("p.isAbsolute:", p::isAbsolute("C:/x"));
+    print("pr.pid:", pr::pid());
+    print("pr.cwd:", pr::cwd());
+    print("t.year:", t::year());
+    print("t.now:", t::now());
+    print("r.int:", r::int(1, 10));
+    print("r.uuid:", r::uuid());
+    return 0;
+}

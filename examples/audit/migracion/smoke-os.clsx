@@ -1,0 +1,4 @@
+function main(args: String[]) -> int {
+    print("os.platform:", os.platform());
+    return 0;
+}
