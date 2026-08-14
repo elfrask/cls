@@ -34,6 +34,7 @@ use cls_core::frontend::ast::{
 };
 use cls_core::frontend::span_shift::shift_module;
 use cls_core::frontend::token::Operator;
+use cls_core::middleware::typeck::expr_span;
 use cls_core::middleware::types::{LitVal, Type};
 use cls_core::middleware::TypeChecker;
 use std::collections::{HashMap, HashSet};
@@ -91,6 +92,15 @@ pub struct ReplSession {
     lines: Vec<ReplLine>,
     /// Nombres de vars/consts hoisted (redeclarar = asignar).
     var_names: HashSet<String>,
+    /// Tipos hoisted de los vars/consts: validan las reasignaciones entre
+    /// líneas (B2 — el typeck permisivo no rechaza el cambio de tipo y la
+    /// transferencia de bytes corrompería el slot).
+    var_types: HashMap<String, Type>,
+    /// String pool de la sesión (orden de interning, append-only): se re-siembra
+    /// como decls pool-only en cada módulo nuevo ANTES de los decls de la línea
+    /// actual. Así los punteros de strings transferidos entre instancias
+    /// conservan su offset (B1).
+    pool_strings: Vec<String>,
     /// (offset de línea, source de la línea) por línea commiteada.
     line_sources: Vec<(u32, String)>,
     live: Option<LiveState>,
@@ -105,6 +115,8 @@ impl ReplSession {
             engine,
             lines: Vec::new(),
             var_names: HashSet::new(),
+            var_types: HashMap::new(),
+            pool_strings: Vec::new(),
             line_sources: Vec::new(),
             live: None,
         })
@@ -182,18 +194,47 @@ impl ReplSession {
         }
 
         // 3) Módulo de la sesión: [hoisted y other de líneas previas] +
-        //    [decls nuevas de esta línea] + [other de esta línea] + [main].
+        //    [seed del string pool] + [decls nuevas de esta línea] + [other de
+        //    esta línea] + [main].
         let mut module_statements: Vec<Statement> = Vec::new();
         for line in &self.lines {
             module_statements.extend(line.hoisted.iter().cloned());
             module_statements.extend(line.other.iter().cloned());
         }
+        // Seed del string pool de la sesión (B1): los literales de líneas
+        // previas (asignaciones, prints, bodies de funciones, ...) se re-internan
+        // como decls pool-only ANTES de los decls de esta línea — posición
+        // idéntica al orden de interning de la sesión anterior — para que los
+        // punteros de strings transferidos entre instancias conserven su offset.
+        let pool_base = LINE_BASE * 3000;
+        for (i, s) in self.pool_strings.iter().enumerate() {
+            let sp = Span::new(pool_base + i as u32, 1, 1, 1);
+            module_statements.push(Statement::VarDecl(VarDecl {
+                name: format!("__clspool_{}", i),
+                type_ann: None,
+                value: Some(Expression::Literal(Literal {
+                    kind: LiteralKind::String(s.clone()),
+                    span: sp.clone(),
+                })),
+                visibility: Visibility::Private,
+                span: sp.clone(),
+                is_static: false,
+                is_readonly: false,
+                pool_only: true,
+                pool_seed: true,
+            }));
+        }
+        // Reasignaciones a vars hoisted (nombre, span del valor): B2 las
+        // valida tras el typeck (el typeck permisivo no rechaza el cambio de
+        // tipo y la transferencia de bytes corrompería el slot).
+        let mut reassign_checks: Vec<(String, Span)> = Vec::new();
         let mut main_body: Vec<Statement> = Vec::new();
         for (is_const, v) in &current_decls {
             if self.var_names.contains(&v.name) {
                 // Redeclaración → asignación en main (el tipo lo valida el typeck).
                 if let Some(value) = &v.value {
                     let span = v.span.clone();
+                    reassign_checks.push((v.name.clone(), expr_span(value)));
                     main_body.push(Statement::Expression(Expression::Assignment(
                         AssignmentExpr {
                             target: Box::new(Expression::Identifier(v.name.clone(), v.span.clone())),
@@ -211,6 +252,13 @@ impl ReplSession {
                     Statement::VarDecl(v.clone())
                 };
                 module_statements.push(stmt);
+            }
+        }
+        for stmt in &runnable {
+            if let Statement::Expression(Expression::Assignment(a)) = stmt {
+                if let Expression::Identifier(name, _) = a.target.as_ref() {
+                    reassign_checks.push((name.clone(), expr_span(&a.value)));
+                }
             }
         }
         module_statements.extend(other.iter().cloned());
@@ -276,6 +324,30 @@ impl ReplSession {
                 }
             }
         }
+        // B2: rechazar cambios de tipo en reasignaciones (a vars hoisted con
+        // tipo conocido). El typeck PERMISIVO los deja pasar, pero la
+        // transferencia de estado copia bytes crudos sin migrar el tipo → el
+        // slot se lee con el tipo declarado viejo (basura).
+        for (name, value_span) in &reassign_checks {
+            if let (Some(new_t), Some(old_t)) =
+                (checker.type_map().get(value_span), self.var_types.get(name))
+            {
+                if !new_t.is_assignable_to(old_t) {
+                    self.show_shifted(
+                        "ERROR",
+                        &format!(
+                            "no se puede reasignar '{}': {} no es asignable a {} (el REPL no permite cambiar el tipo de una variable entre líneas)",
+                            name,
+                            new_t,
+                            old_t
+                        ),
+                        Some(value_span),
+                        source,
+                    );
+                    return ReplResult::CompileError;
+                }
+            }
+        }
         let type_map = checker.type_map();
 
         // 5) Emisión WASM.
@@ -290,7 +362,7 @@ impl ReplSession {
             opts,
         );
         let merged = flatten_imports(&module, &prelude);
-        let wasm_bytes = match backend.emit(&merged) {
+        let (wasm_bytes, emitted_pool) = match backend.emit_with_pool(&merged) {
             Ok(b) => b,
             Err(e) => {
                 self.show_shifted_error(&e, source);
@@ -302,7 +374,7 @@ impl ReplSession {
         let wasm_module = match WasmModule::new(&self.engine, &wasm_bytes) {
             Ok(m) => m,
             Err(e) => {
-                eprintln!("[JIT] Módulo WASM inválido en el REPL: {}", e);
+                eprintln!("[JIT] Módulo WASM inválido en el REPL: {:#}", e);
                 return ReplResult::CompileError;
             }
         };
@@ -439,7 +511,10 @@ impl ReplSession {
         }
 
         // 9) Commit: la línea pasó. Hoistear los decls nuevos (sin init, con
-        //    la anotación del typeck) para las próximas sesiones.
+        //    la anotación del typeck) para las próximas sesiones. El string
+        //    pool de la sesión se captura del backend (re-seed en la línea
+        //    siguiente); los inits hoisted NO se re-sembran (sus strings ya
+        //    viajan en el pool capturado).
         let mut hoisted: Vec<Statement> = Vec::new();
         for (is_const, v) in &current_decls {
             if self.var_names.contains(&v.name) {
@@ -452,15 +527,13 @@ impl ReplSession {
             let decl = VarDecl {
                 name: v.name.clone(),
                 type_ann: ann,
-                // Se conserva el inicializador (pool-only): puebla el string
-                // pool del módulo con los mismos offsets que en la línea
-                // original, así los punteros transferidos siguen siendo válidos.
-                value: v.value.clone(),
+                value: None,
                 visibility: v.visibility.clone(),
                 span: v.span.clone(),
                 is_static: false,
                 is_readonly: v.is_readonly,
                 pool_only: true,
+                pool_seed: false,
             };
             hoisted.push(if *is_const {
                 Statement::ConstDecl(decl)
@@ -468,9 +541,13 @@ impl ReplSession {
                 Statement::VarDecl(decl)
             });
             self.var_names.insert(v.name.clone());
+            if let Some(t) = checker.type_map().get(&v.span) {
+                self.var_types.insert(v.name.clone(), t.clone());
+            }
         }
         self.lines.push(ReplLine { hoisted, other });
         self.line_sources.push((offset, source.to_string()));
+        self.pool_strings = emitted_pool;
         self.live = Some(LiveState { store, instance, memory });
         ReplResult::Ok
     }

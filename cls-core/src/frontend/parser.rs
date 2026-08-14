@@ -192,6 +192,7 @@ impl Parser {
             is_static: false,
             is_readonly: false,
             pool_only: false,
+            pool_seed: false,
         }))
     }
 
@@ -223,6 +224,7 @@ impl Parser {
             is_static: false,
             is_readonly: false,
             pool_only: false,
+            pool_seed: false,
         }))
     }
 
