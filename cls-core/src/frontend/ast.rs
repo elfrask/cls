@@ -91,6 +91,12 @@ pub struct VarDecl {
     /// siendo válidos).
     #[serde(default)]
     pub pool_only: bool,
+    /// REPL: seed del string pool SIN global WASM. El inicializador se interna
+    /// en el pool (seed), pero la declaración no crea un `__g_N` ni se registra
+    /// en los globals de usuario (los índices de los vars de usuario deben
+    /// mantenerse estables entre sesiones para la transferencia de estado).
+    #[serde(default)]
+    pub pool_seed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -3714,15 +3714,19 @@ impl<'a> FuncEmitter<'a> {
                         })),
                     }
                 }
-                // call Clase::__ctor (o el del padre si no se define) con me
-                self.body.push(Instruction::LocalGet(obj));
-                for a in &c.args {
-                    self.emit_expression(a)?;
-                }
+                // call Clase::__ctor (o el del padre si no se define) con me.
+                // Solo se pushea `me`+args si EXISTE el ctor: si la clase no lo
+                // define, el stack debe quedar limpio (el leftover rompía la
+                // validación WASM en `__init_globals`, que no tiene resultado
+                // que lo consuma — el modo archivo lo enmascaraba con `return`).
                 let callsite = c.span.clone();
                 let mut cur = Some(name.to_string());
                 while let Some(cls) = cur {
                     if let Some(idx) = self.func_indexes.get(&format!("{}::__ctor", cls)) {
+                        self.body.push(Instruction::LocalGet(obj));
+                        for a in &c.args {
+                            self.emit_expression(a)?;
+                        }
                         self.emit_call_site(&callsite);
                         self.body.push(Instruction::Call(*idx));
                         break;
@@ -7199,6 +7203,14 @@ impl<'a> WasmBackend<'a> {
     }
 
     pub fn emit(&self, module: &Module) -> ClsResult<Vec<u8>> {
+        self.emit_with_pool(module).map(|(bytes, _)| bytes)
+    }
+
+    /// Igual que [`Self::emit`] pero además devuelve el string pool final del
+    /// módulo (orden de interning, append-only). El REPL JIT lo usa para
+    /// re-sembrar los mismos offsets en la sesión siguiente (los punteros de
+    /// strings transferidos entre instancias apuntan a esta región).
+    pub fn emit_with_pool(&self, module: &Module) -> ClsResult<(Vec<u8>, Vec<String>)> {
         let mut engine = Engine::new(self.types, self.target.clone());
         engine.exceptions = self.exceptions;
         engine.require_main = self.require_main;
@@ -7207,7 +7219,8 @@ impl<'a> WasmBackend<'a> {
             .iter()
             .map(|i| (i.name.clone(), i.clone()))
             .collect();
-        engine.emit(module)
+        let bytes = engine.emit(module)?;
+        Ok((bytes, engine.string_pool.clone()))
     }
 }
 
@@ -7464,6 +7477,11 @@ impl<'a> Engine<'a> {
             });
         }
         m
+    }
+
+    /// String pool final del módulo (orden de interning, append-only).
+    fn string_pool(&self) -> &[String] {
+        &self.string_pool
     }
 
     fn collect_functions(&mut self, module: &Module) -> ClsResult<()> {
@@ -7904,10 +7922,17 @@ impl<'a> Engine<'a> {
         );
 
         // Globals de usuario: `var x` / `const x` top-level → sección globals.
-        // índice 0 = heap_ptr; los de usuario empiezan en 1.
+        // índice 0 = heap_ptr; los de usuario empiezan en 1. Los `pool_seed`
+        // (seed del string pool del REPL) NO crean global: sus strings se
+        // internan en el pool, pero no deben ocupar índices de globals (los
+        // índices de los vars de usuario se transfieren por posición entre
+        // instancias y deben mantenerse estables).
         let mut next_global = 1u32;
         for stmt in &module.statements {
             if let Statement::VarDecl(v) | Statement::ConstDecl(v) = stmt {
+                if v.pool_seed {
+                    continue;
+                }
                 let w = match (&v.type_ann, &v.value) {
                     (Some(ann), _) => was_type(&annotation_to_type(ann)).unwrap_or(WasTy::I64),
                     (None, Some(val)) => self.expr_was_type(val).unwrap_or(WasTy::I64),
