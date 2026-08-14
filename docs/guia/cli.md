@@ -94,9 +94,11 @@ fuente** (el AST/WASM embebido es un trabajo futuro).
 
 ## `clx repl`
 
-REPL interactivo (usando el tree-walker). Evalúa declaraciones completas;
-las expresiones sueltas se imprimen. Comandos: `exit`, `quit`, `:exit`,
-`:quit`, `:salir`, `:q`; ayuda con `:help`/`:h`. Ver `herramientas/repl.md`.
+REPL interactivo con el **JIT** (WASM + wasmtime) y **estado persistente**
+entre líneas (variables, arrays y strings sobreviven). Evalúa declaraciones
+completas; las expresiones sueltas se imprimen. Comandos: `exit`, `quit`,
+`:exit`, `:quit`, `:salir`, `:q`; ayuda con `:help`/`:h`. Ver
+`herramientas/repl.md`.
 
 ## `clx lsp [--silent]`
 

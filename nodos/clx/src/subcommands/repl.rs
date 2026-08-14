@@ -1,28 +1,49 @@
-use cls_runtime::{Intrinsics, Interpreter, ModuleResolver, Value};
+use cls_jit::repl::{ReplResult, ReplSession};
+use cls_jit::JitContext;
 use std::io::Write;
 
 pub fn execute(_args: &[String]) -> i32 {
-    println!("CLS 2.0 REPL (Ctrl+C o :salir para salir)");
+    println!("CLS 2.0 REPL (JIT) (Ctrl+C o :salir para salir)");
     println!("");
 
-    let resolver = ModuleResolver::new().with_core_stdlib();
-    let mut interpreter = Interpreter::new(Intrinsics::desktop_defaults(vec![]), resolver);
+    let ctx = JitContext {
+        native_backend: std::sync::Arc::new(crate::native::DynamicBackend),
+        module_index: None,
+        host_intrinsics: &[],
+        host_call_handler: None,
+        module_source_resolver: None,
+        output: None,
+    };
+    let mut session = match ReplSession::new() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[JIT] Error creando el REPL: {}", e);
+            return 1;
+        }
+    };
 
     loop {
         let line = match read_line("> ") {
             Some(l) => l,
-            None => { println!(""); break; }
+            None => {
+                println!("");
+                break;
+            }
         };
 
         let trimmed = line.trim().to_string();
-        if trimmed.is_empty() { continue; }
-        if matches!(trimmed.as_str(), "exit" | "quit" | ":exit" | ":quit" | ":salir" | ":q") { break; }
+        if trimmed.is_empty() {
+            continue;
+        }
+        if matches!(trimmed.as_str(), "exit" | "quit" | ":exit" | ":quit" | ":salir" | ":q") {
+            break;
+        }
         if matches!(trimmed.as_str(), ":help" | ":h") {
             println!("  exit / quit / :q / :salir  Salir");
             continue;
         }
 
-        // Detectar si es statement completo o expresión suelta
+        // Detectar si es statement completo o expresión suelta (envuelta en print).
         let is_expr = !trimmed.starts_with("var ")
             && !trimmed.starts_with("const ")
             && !trimmed.starts_with("function ")
@@ -40,7 +61,12 @@ pub fn execute(_args: &[String]) -> i32 {
             && !trimmed.starts_with("export ");
 
         let source = if is_expr {
-            format!("print({});", trimmed)
+            let expr = if trimmed.ends_with(';') {
+                trimmed.trim_end_matches(';').to_string()
+            } else {
+                trimmed.clone()
+            };
+            format!("print({});", expr)
         } else {
             if trimmed.ends_with(';') || trimmed.ends_with('}') {
                 trimmed.clone()
@@ -49,23 +75,9 @@ pub fn execute(_args: &[String]) -> i32 {
             }
         };
 
-        let mut lexer = cls_core::frontend::Lexer::new(&source);
-        let tokens = match lexer.tokenize() {
-            Ok(t) => t,
-            Err(e) => { eprintln!("Error: {}", e); continue; }
-        };
-
-        let mut parser = cls_core::frontend::Parser::new(tokens);
-        let module = match parser.parse() {
-            Ok(m) => m,
-            Err(e) => { eprintln!("Error: {}", e); continue; }
-        };
-
-        match interpreter.execute(&module) {
-            Ok(Value::Void) => {}
-            Ok(v) if is_expr => println!("{}", v),
-            Ok(_) => {}
-            Err(e) => eprintln!("Error: {}", e),
+        match session.run_line(&source, &ctx) {
+            ReplResult::Ok => {}
+            ReplResult::SyntaxError | ReplResult::CompileError | ReplResult::RuntimeError => {}
         }
     }
 

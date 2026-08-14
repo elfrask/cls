@@ -372,6 +372,10 @@ impl TypeChecker {
         }
 
         self.define(&var.name, declared.clone());
+        // Registrar el tipo declarado en el span de la declaración (REPL con
+        // estado persistente: los hoists quedan sin init y el backend necesita
+        // el tipo vía type map en el span del VarDecl).
+        self.types_by_span.insert(var.span.clone(), declared.clone());
         // Array literal vacío con anotación (p.ej. `const out: int[] = []`):
         // registrar el tipo anotado en el span del literal para que el backend
         // sepa el tipo del elemento (check_array infiere Any, sin elementos).
