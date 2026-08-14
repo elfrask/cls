@@ -1,130 +1,135 @@
 # Control de flujo
 
+Sintaxis verificada en `features/07-control-flujo.clsx` y
+`tests/all-features-jit2.clsx`. Todas las formas listadas aquí las soporta el
+JIT.
+
 ## if / elif / else
 
-```
-if (condición) {
-    ...
-} elif (otra) {
-    ...
+```clx
+var n = 7;
+if (n > 10) {
+    print("grande");
+} elif (n > 5) {
+    print("mediano");
 } else {
-    ...
+    print("pequeno");
 }
 ```
-
-La condición debe ser booleana (o convertible a `Bool`). El verificador de tipos
-advierte si no lo es.
 
 ## while
 
-```
-while (condición) {
-    ...
+```clx
+var i = 0;
+while (i < 3) {
+    print("while:", i);
+    i++;
 }
 ```
 
-## loop
+Condición vacía = `true`.
 
-Bucle infinito. Se sale con `break`.
+## loop (infinito)
 
-```
+```clx
+var j = 0;
 loop {
-    if (terminó) { break; }
+    print("loop:", j);
+    j++;
+    if (j == 2) { break; }
 }
 ```
 
-## for (tradicional)
+## for clásico
 
-```
-for (var i = 0; i < 10; i = i + 1) {
-    print(i);
+```clx
+for (var k = 0; k < 3; k++) {
+    print("for:", k);
 }
 ```
 
-El inicializador puede omitir la palabra `var` cuando es una expresión de
-asignación. La sentencia de actualización se ejecuta al final de cada iteración.
+`i++` y `++i` funcionan como actualización.
 
 ## for each
 
-Itera sobre una colección (array, tupla, record, enum u objeto iterable):
+Sobre arrays (y tuplas), con o sin índice:
 
-```
-for each item in (colección) {
-    ...
+```clx
+var arr = [5, 6, 7];
+for each v in (arr) {
+    print("each:", v);
 }
-```
 
-Con índice (usa `and`):
-
-```
-for each item and i in (colección) {
-    print(i, item);
+for each v and idx in (arr) {
+    print("each[$idx]:", v);
 }
 ```
 
 ## switch
 
-```
-switch (valor) {
-    case (patrón1) {
-        ...
-    }
-    case (patrón2) {
-        ...
-    }
-    default {
-        ...
-    }
+```clx
+var c = 2;
+switch (c) {
+    case (1) { print("uno"); }
+    case (2) { print("dos"); }
+    case default { print("otro"); }
 }
 ```
 
-Los patrones se comparan por igualdad con el valor. Si ninguno coincide, se
-ejecuta `default` (si existe).
-
-## try / catch / finally
-
-```
-try {
-    ...
-} catch (e) {
-    ...
-}
-```
-
-- El error capturado queda disponible como `e` (una cadena con el mensaje).
-- Se pueden usar varios bloques `catch`.
-- Un `finally` (si existe) se ejecuta siempre.
-
-## break / continue
-
-- `break` sale del bucle o `switch` más cercano.
-- `continue` salta a la siguiente iteración.
-
-Funcionan en `while`, `loop`, `for`, `for each` y dentro de bloques anidados.
-
-## return
-
-```
-function f() -> int {
-    return 42;
-};
-```
-
-Devuelve un valor de la función. En funciones sin retorno, `return` sin valor.
+Nota: el caso lleva paréntesis `case (patrón)`, y el caso por defecto es
+`case default` (sin paréntesis). Los bloques se terminan con `}` (sin `break`).
 
 ## with
 
-```
-with (expresión) as nombre {
-    ...   // 'nombre' disponible en el bloque
+```clx
+var obj = {x: 10, y: 20};
+with o in (obj) {
+    print("with:", o);
 }
 ```
 
-Introduce un valor en el ámbito del bloque con un nombre local.
+## break / continue / return
 
-## Propagación de señales
+Válidos en bucles y funciones respectivamente:
 
-El intérprete usa una señal de flujo interna (`Flow`) para `return`, `break` y
-`continue`. Los bucles capturan y limpian la señal tras cada bloque, de modo que
-no se "escapa" a bucles externos. Un `try/catch` restaura la profundidad de la
-pila de llamadas al capturar un error.
+```clx
+for (var m = 0; m < 5; m++) {
+    if (m == 1) { continue; }
+    if (m == 4) { break; }
+    print("bc:", m);
+}
+```
+
+## when (compile-time)
+
+`when` evalúa la arquitectura en compilación (no en runtime) y es soportado por
+el JIT:
+
+```clx
+var saludo = "generic";
+when (arch: cls-arch) {
+    saludo = "native";
+}
+```
+
+## try / catch / finally
+
+```clx
+try {
+    nivel1();
+} catch (e) {
+    print("catch:", e);
+} finally {
+    print("finally ejecutado");
+}
+```
+
+El lanzamiento se hace con la intrinsic `throw(msg)`. En el JIT (wasmtime)
+los errores llevan el caret exacto; con `CLS_JIT_RUNTIME=wasmi` no hay
+soporte de excepciones (ver `runtime/jit.md`).
+
+## Flujo interno
+
+El intérprete resuelve `return`/`break`/`continue` con señales de flujo
+(`Flow`); el JIT las maneja en la emisión WASM. No se requiere `break` al
+final de bloques en `switch` ni `;` tras `}`.

@@ -1,111 +1,128 @@
 # Sistema de errores
 
-## Tipos de error
+## Regla central
 
-Los errores se representan con `ClsError` (`cls-core/src/error/mod.rs`):
+- **Runtime y compilación** (`clx run`, `clxr`, build): **siempre** el trazo
+  completo — import_trace + call stack numerado con código fuente por frame +
+  el frame del error con caret. Prohibido mostrar solo el mensaje.
+- **Typecheck** (`clx check`): errores de **un solo nivel** (archivo
+  checado) — `file:línea:col` + línea fuente + caret, sin trace de imports.
 
-- `SyntaxError(String)` — error de sintaxis legacy (span incrustado en el texto).
-- `SyntaxErrorAt(String, Span)` — error de sintaxis con **span estructurado**.
-- `RuntimeError(String)` — error en ejecución.
-- `TypeError(String)` — error de tipos.
-- `CompileError(String)` — error de compilación.
-- `IoError(std::io::Error)` — error de entrada/salida.
-- `ConfigError(String)` — error de configuración.
+## Encabezados y labels
 
-## Fábrica de errores de sintaxis
+| Tipo | Encabezado | Label |
+|---|---|---|
+| Sintaxis | `Error en '<file>':` | `[Error de Sintaxis]` |
+| Compilación | `Error de Compilación:` | `[Error de Compilación]` |
+| Runtime | `Error de ejecución:` | `[Runtime Error]` |
+| Tipo | `Error de ejecución:` (via runtime) | `[Error de Tipo]` |
 
-Los errores de sintaxis se construyen con la fábrica centralizada:
+En consola el encabezado y el mensaje `Error:` van en rojo brillante; los
+números de la traza en cian; `→` y la función en amarillo; el label en
+magenta brillante; el caret del frame del error en rojo (los demás en gris).
 
-```
-ClsError::syntax_at("mensaje", &span)   // → SyntaxErrorAt
-```
-
-El parser y el lexer usan el helper `self.syntax_err("mensaje")`, que crea un
-`SyntaxErrorAt` con la posición del token actual. El mensaje queda limpio; la
-ubicación vive en el `Span`.
-
-`extract_line_col` es solo un fallback para los errores legacy que incrustan
-`(línea N, columna M)` en el texto (por ejemplo, algunos `RuntimeError`).
-
-## Formateo centralizado
-
-El formateo vive en `cls-runtime/src/error_report.rs`. El runtime produce un
-`ErrorReport` (error + span + call stack + import trace + archivo) y lo
-convierte a texto con el formato que el nodo elija.
-
-### Formatos
-
-```
-enum ErrorFormat {
-    Plain,     // texto plano sin decoradores
-    Console,   // texto con códigos ANSI (colores)
-    Html,      // texto HTML
-    Json,      // JSON estructurado
-}
-```
-
-El sistema es extensible: para añadir un formato, implementa el trait
-`ErrorFormatter` y agrégalo a `format_error`.
-
-### API
-
-```
-format_error(&report, &format) -> String      // el corazón
-format_runtime_error(&report, &format)        // wrapper para runtime
-format_syntax_error(&error, &source, &file, &format)
-```
-
-Los wrappers `show_runtime_error` / `show_syntax_error` imprimen por `stderr` en
-formato `Console` (compatibilidad). El nodo puede usar `format_error` para pedir
-otro formato y decidir dónde imprimir.
-
-### Colores
-
-Los códigos ANSI están centralizados en `cls_core::ansi` (`fg`, `bold`, y las
-constantes de color). El `ConsoleFormatter` los usa; ningún otro módulo define
-colores propios.
-
-## Regla obligatoria
-
-- **Typechecker** (`clx check`): los errores se limitan a fallos de un solo
-  nivel (el archivo verificado). Muestra `archivo:línea:columna` + contexto de
-  código (línea fuente + caret), sin trace de imports.
-- **Runtime/compilación** (`clx run`, `clxr`, build): debe mostrar SIEMPRE el
-  trazo completo — import trace + call stack numerado con código fuente por
-  frame + el frame del error con caret. No es opcional: está prohibido mostrar
-  solo el mensaje.
-
-## Trazo de runtime
-
-El intérprete conserva `call_stack` (pila de llamadas) y `import_trace`
-(imports en curso). Al ocurrir un error, `build_error_report` construye el
-reporte y `format_error` produce:
+## Ejemplo real de salida (runtime)
 
 ```
 Error de ejecución:
 
-1. → main (main.clsx)
-2. En main.clsx:10:20 → outer
-  10 |     return inner(y);
-     |                    ^
-3. En main.clsx:2:17 [Runtime Error]
-  2 |     return x / 0;
-    |                 ^
+1. En main.clsx:3:14 [Runtime Error]
+  3 |     return y / 0;
+    |             ^
   Error: División por cero
 ```
 
-El call stack no se "popea" al fallar (para conservarlo en el reporte); un
-`try/catch` restaura la profundidad al capturar el error.
+## Formato y construcción
 
-## En `clx check`
+Todo vive en `cls-runtime/src/error_report.rs`:
 
-Los diagnostics del verificador muestran contexto de código con colores:
+- `ErrorReport { error, span, stack, import_trace, source_file, source }`.
+- `enum ErrorFormat { Plain, Console, Html, Json }` — lo elige el **nodo**.
+- `trait ErrorFormatter` + `PlainFormatter` (sin decoradores),
+  `ConsoleFormatter` (ANSI de `cls_core::ansi`), `HtmlFormatter`
+  (`<pre class="cls-error">`), `JsonFormatter`.
+- `format_error(report, format) -> String` produce el string; el nodo decide
+  formato y destino.
+- `show_runtime_error` / `show_syntax_error` = wrappers que imprimen por
+  stderr en formato `Console` (compatibilidad).
+
+`JsonFormatter` emite:
+
+```json
+{
+  "error": "...",
+  "message": "...",
+  "file": "main.clsx",
+  "span": { "line": 3, "col": 14, "end_line": 3, "end_col": 14 },
+  "stack": [ { "function": "main", "file": "main.clsx", "span": {...} } ],
+  "imports": [ { "module": "lib", "file": "lib.clsx", "line": 1, "col": 1 } ]
+}
+```
+
+Decisiones internas:
+
+- `trace_entry` → `collect_trace` número import_trace y call stack junto con
+  el frame del error; cada entrada lee su línea del source (de `source` en
+  memoria o del archivo) para mostrar código + caret.
+- Tabulaciones → 4 espacios en el caret (`caret_for`).
+- `clean_error_msg` quita el prefijo `Error de X: ` y el `Call stack:`
+  embebido de mensajes legacy.
+
+## `ClsError`
+
+`cls-core/src/error/mod.rs`:
+
+```rust
+pub enum ClsError {
+    CompileError(String),        // "Error de compilación: {0}"
+    RuntimeError(String),        // "Error de runtime: {0}"
+    TypeError(String),           // "Error de tipo: {0}"
+    SyntaxError(String),         // "Error de sintaxis: {0}"
+    SyntaxErrorAt(String, Span), // span estructurado (no incrustado)
+    CompileErrorAt(String, Span),
+    IoError(std::io::Error),
+    ConfigError(String),
+}
+```
+
+Fábricas:
+
+- `ClsError::syntax_at(msg, span)` → `SyntaxErrorAt` (mensaje limpio, la
+  ubicación vive en el `Span`).
+- `ClsError::with_span(msg, span)` — alias de `syntax_at`.
+- `ClsError::compile_at(msg, span)` → `CompileErrorAt` (JIT y backend).
+- `extract_line_col(msg)` — fallback que extrae `(línea, columna)` de
+  mensajes legacy que incrustan el span en el string; lo usa `error_span`
+  cuando el error no trae span estructurado.
+
+Parser y lexer usan `self.syntax_err(msg)`; el JIT usa `compile_at` para
+"El JIT (subconjunto WASM) aún no soporta...".
+
+## Errores del JIT
+
+- **wasmtime** (default): el backend emite excepciones WASM (tag +
+  `try_table`); `throw` y errores de runtime llevan payload
+  `(mensaje, span empaquetado)` que el host desempaca para renderizar el
+  caret exacto.
+- **wasmi** (`CLS_JIT_RUNTIME=wasmi`): sin excepciones — `try/catch`/`throw`
+  fallan en compilación y los errores son traps con el mensaje, **sin caret**.
+- El call stack CLS se mantiene con un shadow stack (`fn_enter`/`fn_exit`)
+  de hasta 1000 frames; el stack overflow se detecta y reporta como
+  `stack overflow` limpio con los últimos 3 frames.
+
+## Typecheck (`clx check`)
+
+Formato de diagnóstico:
 
 ```
-[ERROR] Operador + no soportado entre String y Int (2:38)
-  2 |     return "Hello, " + name + "!" + 2;
-    |                                      ^
+[ERROR] mensaje (file:line:col)
+  line | código fuente
+       | ^^^ (caret, ancho del span)
 ```
 
-- `[ERROR]` rojo, `[WARN]` amarillo, éxito en verde.
-- La ubicación en gris y el caret en el color de la severidad.
+- Con `--strict` las asignaciones incompatibles son ERROR (con span real).
+- Un archivo sin problemas imprime en verde
+  `No se encontraron errores de tipo.`; un directorio imprime el resumen
+  `N errores, M advertencias en K archivos` (en `stderr`).
+- Los spans de módulos importados se desplazan (offset `100000 * n`) y cada
+  diagnóstico se renderiza contra el archivo real del módulo.

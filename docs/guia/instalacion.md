@@ -1,69 +1,96 @@
 # Instalación
 
+CLS se compila desde fuente con **Cargo**. El proyecto es un workspace Rust
+(edición 2021) con seis crates: `cls-core`, `cls-runtime`, `cls-jit` y los
+nodos `nodos/clx`, `nodos/clxb`, `nodos/clxr`.
+
 ## Requisitos
 
-- Rust estable (edition 2021). Versión mínima recomendada: 1.70 o superior.
-- `cargo` y `rustc` disponibles en el `PATH`.
-- (Opcional) un compilador C y `make` si quieres usar las herramientas de build
-  de los scripts.
+| Requisito | Detalle |
+|---|---|
+| Rust | Edición 2021 (`rustup` recomendado) |
+| Cargo | Incluido con Rust |
 
-## Compilar el proyecto
+No hay binarios precompilados: se construye localmente.
 
-El workspace contiene cuatro crates:
+## Clonar el repositorio
 
-- `cls-core` — frontend (lexer, parser, AST), middleware (type checker,
-  resolución de nombres, optimizador) y configuración.
-- `cls-runtime` — el intérprete (tree-walker), el sistema de valores, la
-  biblioteca estándar core, el VFS y los reportes de error.
-- `nodos/clx` — el CLI de desarrollo (`clx`).
-- `nodos/clxr` — el runtime ligero (`clxr`), capaz de ejecutar archivos
-  empaquetados `.clsapp`.
-
-Para compilar todo:
-
-```
-cargo build --workspace
+```ps
+git clone https://github.com/frask/cls
+cd cls
 ```
 
-Los binarios quedan en `target/debug/`:
+> El remoto `origin` del repositorio actual apunta a
+> `https://github.com/elfrask/cls.git`; el metadata del workspace
+> (`Cargo.toml`) declara `https://github.com/frask/cls` como homepage y
+> repository.
 
-- `target/debug/clx.exe` — el CLI de desarrollo.
-- `target/debug/clxr.exe` — el runtime ligero.
+## Compilar
 
-Para una compilación optimizada:
+Desde la raíz del workspace:
 
-```
-cargo build --release
-```
-
-## Scripts de ayuda
-
-El directorio `scripts/` incluye envoltorios para Windows y Unix:
-
-- `clx.cmd` / `clx.sh` — ejecuta `clx`.
-- `clxr.cmd` / `clxr.sh` — ejecuta `clxr`.
-- `clx-build.cmd` / `clx-build.sh` — compila `clx`.
-- `clxr-build.cmd` / `clxr-build.sh` — compila `clxr`.
-
-## Verificar la instalación
-
-```
-clx --help
+```ps
+cargo build -p clx     # CLI de desarrollo (clx)
+cargo build -p clxr    # runtime ligero (clxr)
+cargo build -p clxb    # bindings C (clsb.dll)
+cargo build            # todo el workspace
 ```
 
-Debe mostrar la lista de subcomandos disponibles (ver `guia/cli.md`).
+El perfil de desarrollo compila las dependencias pesadas
+(wasmtime + Cranelift) con `opt-level = 2`
+(`[profile.dev.package."*"]` en el `Cargo.toml` raíz), de modo que el JIT
+compila WASM → nativo mucho más rápido incluso en build debug.
 
-## Extensiones de archivo
+### Binarios generados
 
-- `.clsx` — código fuente.
-- `.clsapp` — aplicación empaquetada (zip con el código y los módulos).
-- `.clslib` — librería compilada (zip; planeado, requiere el backend WASM).
-- `.clbin` — binario compilado WASM (planeado).
-- `cls.json` — manifiesto de proyecto.
-- `.clsi` — interfaz de tipos (para type maps y documentación).
+| Binario | Crate | Propósito |
+|---|---|---|
+| `target/debug/clx.exe` | `clx` | CLI de desarrollo |
+| `target/debug/clxr.exe` | `clxr` | Runtime ligero |
+| `target/debug/clsb.dll` | `clxb` | Bindings C (nombre de lib `clsb`) |
 
-## Dependencias externas
+## Scripts
 
-La implementación actual no requiere dependencias del sistema para el runtime
-core. Los módulos `fs` y `http` del nodo desktop usan el sistema de archivos y
-la red del SO a través de la biblioteca estándar de Rust.
+Los scripts en `scripts/` delegan al binario de `target/debug`:
+
+| Script | Acción |
+|---|---|
+| `clx.cmd` / `clx.sh` | Ejecuta `target/debug/clx.exe %*` |
+| `clxr.cmd` / `clxr.sh` | Ejecuta `target/debug/clxr.exe %*` |
+| `clx-build.cmd` / `clx-build.sh` | `cargo build --bin clx` |
+| `clxr-build.cmd` / `clxr-build.sh` | `cargo build --bin clxr` |
+
+En **Windows** se recomienda usar los `.cmd` (delegan al `.exe` de debug):
+
+```ps
+scripts\clx.cmd run main.clsx
+scripts\clx-build.cmd
+```
+
+En Linux/macOS:
+
+```sh
+./scripts/clx.sh run main.clsx
+```
+
+## Verificación
+
+```ps
+clx -v
+```
+
+Imprime dos líneas: `clx 2.0.0` y `CLS Language Compiler & Runtime`.
+
+```ps
+clx -h
+```
+
+Muestra la ayuda completa con el encabezado `clx 2.0.0 — CLS Toolchain`.
+
+Para probar una ejecución real:
+
+```ps
+clx run examples/hello/src/main.clsx
+```
+
+Debe imprimir `Hello from CLS!` y salir con código 0.

@@ -1,98 +1,106 @@
 # Cómo agregar un módulo interno
 
-Los módulos internos son valores disponibles para `import "nombre"`. Se dividen
-en **core** (siempre disponibles, agnósticos) y **del nodo** (dependen del
-entorno).
+Un módulo interno es una biblioteca accesible vía `import "nombre"` sin
+descargar nada: vive en el resolver del nodo. Hay dos clases:
 
-## Módulo core (siempre disponible)
+- **Core** — agnóstico al entorno, siempre disponible
+  (`cls-runtime/src/stdlib/`). Hoy: `math`, `json`, `async`.
+- **Nodo desktop** — dependen del entorno (`nodos/clx/src/modules/`).
+  Hoy: `fs`, `http`, `Lib`, `os`, `path`, `process`, `time`, `random`.
 
-Los módulos core viven en `cls-runtime/src/stdlib/` (`math.rs`, `json.rs`,
-`async_.rs`). Son agnósticos: no tocan el sistema.
+Un módulo es en runtime un `Value::Record` de funciones nativas
+(`FunValue::new_native`) y constantes.
 
-### 1. Crea el archivo
+## Módulo core
 
-`cls-runtime/src/stdlib/mi_modulo.rs`:
+1. **Crear `cls-runtime/src/stdlib/mi_modulo.rs`** con una función
+   `pub fn module() -> Value` que construya el `Record`:
 
 ```rust
-use std::collections::HashMap;
 use crate::value::{FunValue, Value};
-use cls_core::error::ClsResult;
-
-fn funcion(args: &[Value]) -> ClsResult<Value> {
-    // args[0] es el primer argumento
-    Ok(Value::Int(42))
-}
+use cls_core::error::{ClsError, ClsResult};
+use std::collections::HashMap;
 
 pub fn module() -> Value {
-    let mut entries = HashMap::new();
-    entries.insert("miFuncion".to_string(), Value::Fun(FunValue::new_native(
-        "miFuncion", vec!["x".to_string()], funcion,
-    )));
-    Value::Record(entries)
+    let mut m = HashMap::new();
+    m.insert("PI".into(), Value::Float(3.14159));
+    m.insert("doble".into(), Value::Fun(FunValue::new_native("doble", vec!["x".into()], |a| {
+        let v = a.first().ok_or(ClsError::RuntimeError("doble: esperaba 1 arg".into()))?;
+        match v {
+            Value::Int(i) => Ok(Value::Int(i * 2)),
+            _ => Err(ClsError::RuntimeError("doble: esperaba int".into())),
+        }
+    })));
+    Value::Record(m)
 }
 ```
 
-### 2. Decláralo en `stdlib/mod.rs`
+Ejemplo real: `cls-runtime/src/stdlib/math.rs::module()`
+(+ `json.rs`, `async_.rs`).
 
-```
+2. **Declararlo en `cls-runtime/src/stdlib/mod.rs`**:
+
+```rust
 pub mod mi_modulo;
 ```
 
-### 3. Regístralo en el resolver
+3. **Registrarlo en `ModuleResolver::with_core_stdlib`**
+   (`cls-runtime/src/resolver.rs`):
 
-`cls-runtime/src/resolver.rs`, en `with_core_stdlib`:
-
-```
-self.internals.insert("mi_modulo".into(), crate::stdlib::mi_modulo::module());
-```
-
-### 4. Documenta
-
-- `docs/runtime/biblioteca-estandar.md` — la tabla del módulo.
-- `cls-runtime/clsi/mi_modulo.clsi` — la interfaz de tipos (para type maps):
-  ```
-  # @title mi_modulo
-  # @description Descripción.
-  function miFuncion(x: int) -> int {};
-  ```
-
-Luego regenera los type maps: `clx maptype cls-runtime/clsi -o ...`.
-
-## Módulo del nodo (entorno)
-
-Los módulos del nodo (como `fs`, `http`, `Lib`) viven en
-`nodos/clx/src/modules/`. Interactúan con el sistema operativo. El core/runtime
-no los conocen.
-
-### 1. Crea el archivo
-
-`nodos/clx/src/modules/mi_modulo.rs` con la misma estructura (`module() -> Value`).
-
-### 2. Decláralo
-
-En `nodos/clx/src/modules/mod.rs` (o `main.rs` si no hay `mod.rs`):
-
-```
-pub mod mi_modulo;
+```rust
+pub fn with_core_stdlib(mut self) -> Self {
+    self.internals.insert("math".into(), crate::stdlib::math::module());
+    self.internals.insert("json".into(), crate::stdlib::json::module());
+    self.internals.insert("async".into(), crate::stdlib::async_::module());
+    self.internals.insert("mi_modulo".into(), crate::stdlib::mi_modulo::module());
+    self
+}
 ```
 
-### 3. Inyéctalo en el resolver del nodo
-
-En `nodos/clx/src/subcommands/run.rs`, `make_desktop_resolver`:
+4. **Crear el `.clsi`** en `cls-runtime/clsi/mi_modulo.clsi` — declaración
+   de tipos que alimenta el LSP, `clx maptype` y el typeck del JIT
+   (ver `cls-runtime/clsi/math.clsi` como plantilla):
 
 ```
-resolver.add_internal("mi_modulo", crate::modules::mi_modulo::module());
+# @title mi_modulo
+# @description Descripcion del modulo.
+
+# @description Valor de prueba
+var PI: float;
+
+# @description Duplica un entero
+function doble(x: int) -> int {};
 ```
 
-### 4. Documenta y agrega el `.clsi`
+## Módulo del nodo desktop
 
-Igual que los módulos core, en `docs/runtime/biblioteca-estandar.md` y
-`nodos/clx/clsi/...` o `cls-runtime/clsi/` según corresponda.
+1. **Crear `nodos/clx/src/modules/mi_modulo.rs`** — igual que core, pero
+   puede recibir dependencias del nodo (VFS, args) por parámetro, como
+   `fs::module(vfs)` o `process::module(app_args)`.
+2. **Declararlo en `nodos/clx/src/modules/mod.rs`** (`pub mod mi_modulo;`).
+3. **Registrarlo en `make_desktop_resolver`**
+   (`nodos/clx/src/subcommands/run.rs`) con
+   `resolver.add_internal("mi_modulo", crate::modules::mi_modulo::module());`
+   — esto lo expone al **walker** (`clx run --ast-walker`).
+4. **JIT** — el walker no ejecuta el JIT: el JIT necesita sus propias host
+   functions:
+   - En `cls-jit/src/host.rs` (cuerpos genéricos) y en
+     `cls-jit/src/wasmtime_rt.rs` (`register_host_functions` registra cada
+     `env.*` en el `Linker`), o
+   - vía el canal `env.host_call(id, ptr, n)` con `HostCallHandler` del nodo.
+   - El typeck (`cls-core/src/middleware/typeck.rs`) valida los accesos:
+     `check_member_access` resuelve `mi_modulo.func()` contra las tablas de
+     miembros por módulo y `module_arity` valida la aridad de cada función.
+5. **`.clsi`** en `cls-runtime/clsi/mi_modulo.clsi` — además de LSP/maptype,
+   es la fuente de las firmas que usa el typeck del JIT (ver
+   `fs.clsi`, `os.clsi`, `time.clsi`, etc.).
 
 ## Notas
 
-- Las funciones nativas del módulo son `Fn(&[Value]) -> ClsResult<Value>`.
-- Si una función necesita estado (por ejemplo, acceso al sistema de archivos),
-  la closure puede capturar esa dependencia: `función` recibe `args` pero la
-  closure que la envuelve captura el `Arc<VfsResolver>`, etc.
-- Regenera los type maps cuando agregues funciones nuevas.
+- `ModuleResolver::resolve` (cache → internals → external hook → error):
+  un `add_internal` basta para que `import "mi_modulo"` funcione en el
+  walker; el JIT resuelve los imports con su propio mapa de hosts.
+- Los `.clsi` viven en `cls-runtime/clsi/` (uno por módulo + `types.clsi`);
+  `clx maptype` los procesa igual que `.clsx`.
+- Los errores de aridad/argumentos usan `ClsError::RuntimeError` con
+  mensaje `"<fn>: esperaba N arg(s)"` (patrón de `stdlib/math.rs`).

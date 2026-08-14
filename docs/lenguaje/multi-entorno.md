@@ -1,98 +1,52 @@
-# Directiva `when` — implementaciones multi-entorno
+# Multi-entorno: la directiva `when`
 
-La directiva `when` declara **implementaciones alternativas por entorno**
-(sistema operativo, arquitectura, ABI, plataforma/HAL). Aplica a **cualquier
-tipo de declaración** (extension, function, var, class, enum, module).
-
-> Esta es la feature oficial. Detalles de implementación (entidad multi-entorno,
-> fantasmas, portabilidad) en `agent-context/MULTI_TARGET.md`.
+La directiva `when` selecciona código por **entorno objetivo** (SO,
+arquitectura, ABI). Es una directiva compile-time/runtime: en el JIT la rama
+que matchea el target se emite y las demás se descartan; en el walker las
+ramas inactivas crean funciones "fantasma".
 
 ## Sintaxis
 
 ```clx
-when os: linux {
-    function saludo() -> String { return "hola linux"; }
-}
 when os: windows {
-    function saludo() -> String { return "hola windows"; }
-}
-when os: macos { ... }
-default { ... }              # rama que siempre matchea
+    extension "msvcrt.dll" as C { ... };
+};
+
+when os: linux { ... };
+when arch: arm64 { ... };
 ```
 
-Combinaciones de condiciones:
+- Prefijos: `os:`, `arch:`, `abi:`, `platform:`, `target:` (tripla
+  `arch-os-abi`).
+- Combinaciones con `and` / `or` / `not` y paréntesis:
 
 ```clx
-when os: none and arch: riscv32 { ... }     # bare-metal RISC-V
-when linux or macos { ... }                 # and / or / not / !
-when platform: esp32 { ... }                # por placa/HAL
-when target: "riscv32-none-elf" { ... }     # tripla de target
+when os: none and arch: arm64 {
+    # implementación nativa
+};
 ```
 
-## Selectores de condición
+- Nombres simples: un SO conocido (`windows`, `linux`, `macos`, `none`,
+  `bare-metal`, `freebsd`) o una arquitectura conocida (`x86_64`, `arm64`,
+  `aarch64` → `arm64`, `arm`, `riscv32`, `riscv64`, `avr`) se interpretan
+  según el prefijo.
+- Una tripla con guiones (`x86_64-windows-msvc`) se interpreta como `target:`.
+- `default { ... };` es la rama que siempre matchea.
 
-| Selector | Valores |
-|----------|---------|
-| `os:` | `windows`, `linux`, `macos`, `none` (bare-metal), `freebsd`, `bare-metal` |
-| `arch:` | `cls-arch` (arquitectura nativa CLS), `x86_64`, `arm64`, `aarch64`, `arm`, `riscv32`, `riscv64`, `avr` |
-| `abi:` | `gnu`, `msvc`, `eabi`, `elf` |
-| `platform:` | `pc`, `esp32`, `stm32f4`, `rp2040`, `none`, ... |
-| `target:` | tripla `arch-vendor-os-abi` (ej. `riscv32-none-elf`) |
+## Simulación de entorno
 
-También se aceptan nombres simples: `when windows` = `os: windows`,
-`when riscv32` = `arch: riscv32`.
+`clx run --target <tripla>` (o `-t`) simula el entorno para la directiva:
 
-> La arquitectura nativa de CLS es **`cls-arch`** (el target "presente" por
-> defecto tanto en el intérprete como en los builds). `wasm` queda reservado.
-
-## Entidad multi-entorno
-
-Declaraciones con el **mismo nombre** en varias ramas `when` forman una
-**entidad multi-entorno**:
-
-- El símbolo **existe siempre** (contrato); su implementación se selecciona por
-  el entorno actual.
-- Si el entorno actual **no tiene implementación** para el símbolo, llamarlo da
-  error claro: *"No hay implementación de 'x' para el entorno actual (...)"*.
-- Los **exports/imports no cambian** para el consumidor: `m.f()` es portable.
-
-```clx
-# modulo.clsx
-when linux   { export function icono() -> int { ... } }
-when windows { export function icono() -> int { ... } }
-
-# consumidor.clsx — portable
-import "modulo" as m;
-print(m.icono());   # usa la implementación del entorno actual
+```
+clx run app.clsx --target x86_64-windows-msvc
 ```
 
-## Ejecución
+## Comportamiento por intérprete
 
-```bash
-clx run app.clsx                      # usa el target del host
-clx run --target linux app.clsx       # simular un entorno
-clx run --target riscv32-none-elf app.clsx
-clx build --target <tripla> ...       # AOT embebido (futuro)
-```
+| Intérprete | Ramas inactivas |
+|---|---|
+| **Walker** | Las declaraciones se registran como "funciones fantasma": si se invocan sin que la rama activa definiera el símbolo, lanzan `No hay implementación de 'X' para el entorno actual (arch-os-abi)` |
+| **JIT** | Se descartan en compile-time: solo se emite la rama que matchea `Target` (`WasmBackend`, `Statement::When`) |
 
-- **Intérprete/JIT**: ejecuta la rama que matchea el target actual (host o
-  simulado).
-- **Binario portable**: el `.clbin` quema todas las ramas y selecciona en runtime.
-- **AOT embebido**: el target se fija en build; solo la rama aplicable se compila.
-
-## Uso típico con `extension`
-
-```clx
-when os: windows {
-    extension "user32" as C { function MessageBoxA(h: CPtr, t: CString, c: CString, u: CUInt) -> CInt; }
-}
-when os: linux {
-    extension "libX11" as C { function XOpenDisplay(d: CString) -> CPtr; }
-}
-```
-
-## Ver también
-
-- `extension.md` — FFI a librerías nativas.
-- `modulos.md` — `export`/`import` de símbolos.
-- `agent-context/MULTI_TARGET.md` — plan de implementación y entidad `Target`.
+El target por defecto es el del host (`Target::host()`); el typeck y el
+backend lo reciben para evaluar las condiciones.

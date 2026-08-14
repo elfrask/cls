@@ -1,93 +1,91 @@
-# Cómo agregar una feature al lenguaje
+# Cómo agregar una feature
 
-Este documento describe el recorrido típico para agregar una feature a CLS,
-usando como ejemplo un nuevo operador binario. Ajusta los pasos según el tipo
-de feature.
-
-## 1. Decide el alcance
-
-- ¿Afecta solo el **verificador** (compile-time), como alias/uniones/phantom?
-- ¿Afecta el **runtime** (valores, operadores, sentencias), como enums/tuplas?
-- ¿Afecta el **parseo** (nueva sintaxis), el **lexer** (nuevo token) o ambos?
-
-Esto determina qué archivos tocar.
-
-## 2. Lexer y tokens
-
-Si introduces una palabra reservada u operador nuevo:
-
-- `cls-core/src/frontend/token.rs` — agrega el `Keyword`/`Operator` y su
-  representación en `Display`.
-- `cls-core/src/frontend/lexer.rs` — agrega el mapeo en `lex_identifier_or_keyword`
-  (para palabras) o en el manejo de símbolos (para operadores).
-
-## 3. AST
-
-- `cls-core/src/frontend/ast.rs` — define el nodo del AST (struct o variant en
-  `Statement`/`Expression`/`TypeKind`). Todo debe derivar
-  `Debug, Clone, Serialize, Deserialize`. Si es un `Statement`, agrégalo al
-  `Display`.
-
-## 4. Parser
-
-- `cls-core/src/frontend/parser.rs` — agrega el dispatch en `parse_statement`
-  (para sentencias) o el manejo en la función de precedencia correspondiente
-  (para operadores), y la función `parse_...`.
-- Actualiza los constructores de nodos que cambien.
-
-## 5. Middleware (si es compile-time)
-
-- `cls-core/src/middleware/types.rs` — agrega el `Type` y las reglas de
-  `is_assignable_to`.
-- `cls-core/src/middleware/typeck.rs` — verificación, inferencia, registro de
-  tipos y resolución de anotaciones.
-- `cls-core/src/middleware/resolver.rs` — registro de símbolos nuevos.
-
-## 6. Runtime (si afecta ejecución)
-
-- `cls-runtime/src/value.rs` — agrega el `Value` (si es un valor nuevo) y su
-  `type_name`, `is_truthy`, `to_string`, `PartialEq`.
-- `cls-runtime/src/interpreter.rs` — agrega el manejador de sentencia
-  (`execute_...`) o de expresión (`evaluate_...`), y los accesos necesarios
-  (member access, index, etc.).
-- `cls-runtime/src/environment.rs` — si necesita nuevos comportamientos de scope.
-
-## 7. Nodos y herramientas
-
-- Si la feature es un módulo interno o un intrinsics, actualiza el nodo
-  (`nodos/clx/src/...`) o `cls-runtime/src/intrinsics.rs`.
-- Si introduce sintaxis, actualiza el grammar de la extensión
-  (`.vscode/extensions/ccls-lang/syntaxes/clsx.tmLanguage.json`), los snippets y
-  los type maps (`.clsi` + `clx maptype`).
-- Si introduce un tipo, agrega su interfaz en `cls-runtime/clsi/types.clsi`.
-
-## 8. Tests
-
-- **Tests unitarios**: agrega `#[test]` en el módulo de tests del archivo que
-  cambió (ver `desarrollo/testing.md`).
-- **Ejemplo**: crea o actualiza un archivo en `examples/tests/`.
-
-## 9. Documentación
-
-- Agrega la feature a `docs/` (por ejemplo, `lenguaje/tipos.md`,
-  `lenguaje/oop.md`, ...).
-- Actualiza `agent-context/` si corresponde (planes de features).
-
-## 10. Verificación
+Una feature nueva atraviesa las capas del compilador, del análisis de tipos
+y, si aplica al JIT, del emisor WASM. Estructura:
 
 ```
-cargo build --workspace
-cargo test --workspace
+cls-core/src/frontend/   lexer.rs, token.rs, parser.rs, ast.rs
+cls-core/src/middleware/ typeck.rs (check_*), types.rs, resolver.rs, optimizer.rs
+cls-core/src/backend/    wasm.rs (emit_*), json.rs, visitor.rs
+cls-runtime/src/         interpreter.rs (evaluate_*), value.rs
 ```
 
-Asegúrate de que no haya warnings nuevos.
+## Pasos por capa
 
-## Recorrido rápido (operador `in`)
+### 1. Tokens (`token.rs` / `lexer.rs`)
 
-La feature del operador `in` (contención) se implementó así:
+Solo si la feature introduce sintaxis nueva:
 
-1. `token.rs`: `Operator::In` + display.
-2. `parser.rs`: detección de `Keyword::In` en `parse_equality` → `BinaryExpr`.
-3. `interpreter.rs`: manejo de `Operator::In` en `evaluate_binary_values`
-   (nativo para arrays/tuplas/records/strings, `__contains` para objetos).
-4. Test unitario en `interpreter.rs` y ejemplo.
+- Agrega la variante de token y su `Display` legible (los errores muestran
+  el símbolo real, no el Debug).
+- En `lexer.rs`, produce el token desde la fuente.
+
+### 2. AST (`ast.rs`)
+
+Define el nodo (p. ej. `Expression::Foo(FooExpr)` o
+`Statement::Foo(...)`) con su `Span`. Los spans son obligatorios: alimentan
+el type map y los caret de error.
+
+### 3. Parser (`parser.rs`)
+
+- Crea `fn parse_foo(&mut self) -> Result<FooExpr>`.
+- Los errores de sintaxis usan `self.syntax_err(msg)` (fábrica
+  centralizada `ClsError::syntax_at`), mensaje limpio + span estructurado.
+- Si hay ambigüedad con lookahead (arrows, tuplas vs paréntesis), el
+  parser ya tiene patrones: `is_arrow_function`, check directo en LParen,
+  depth tracking.
+
+### 4. Typeck (`typeck.rs`)
+
+- `check_foo(...)` produce el `Type` de la expresión y registra
+  `types_by_span` (el type map `Span → Type`).
+- Si la feature es un miembro de módulo nuevo, actualiza las tablas de
+  miembros por módulo en `check_member_access` y `module_arity`.
+- En modo estricto las asignaciones incompatibles son ERROR con span real.
+
+### 5. Emisor WASM (`backend/wasm.rs`) — el JIT
+
+Lo que permite `clx run`:
+
+- Implementa `emit_foo(...)`; el subset homogéneo: `Int` → `i64`,
+  `Float` → `f64`, `Bool` → `i32`, `String` → `i64` `(ptr << 32) | len`,
+  referencias → `i64` (bump allocator).
+- Si el emisor no la soporta, produce un error explícito
+  `El JIT (subconjunto WASM) aún no soporta ...` con `compile_at(msg, span)`.
+- Lo que el walker soporta pero no el emisor no frena la feature: **el JIT
+  manda** (ver Directiva en `AGENTS.md`).
+
+### 6. Walker (`interpreter.rs`) — opcional
+
+Solo si quieres la referencia sintáctica en el tree-walker:
+`evaluate_foo(...)` + `Value` en `value.rs`. El walker está deprecado; no
+inviertas tiempo en paridad.
+
+### 7. Tests
+
+- Unit tests en cada capa tocada (lexer, parser, typeck, emisor).
+- QA: `examples/audit/features/NN-nombre.clsx` más
+  `examples/audit/test-features/jit-test/availible/` si entra en el subset.
+- **Si la feature es solo JIT**, va en `examples/jit-examples/` o
+  `jit-test/availible/` (no en la carpeta de paridad walker).
+
+## Reglas
+
+1. Usa fábricas de error centralizadas (`syntax_at` / `compile_at`) y
+   spans estructurados; nunca incrustes `(línea N, columna M)` en el mensaje.
+2. El typeck es la fuente de verdad del emisor (`types_by_span`); el
+   backend no re-deriva tipos.
+3. Rendimiento: sin boxing ni dispatch dinámico en el runtime del JIT; el
+   compilador debe poder monomorfizar.
+4. Documenta en `docs/` solo lo implementado; si cambia comportamiento,
+   actualiza `docs/` en el mismo cambio.
+5. Verifica con `clx check --strict` y `clx run` (JIT por defecto) antes de
+   commitear (`feat(jit): ...`, español, ver `desarrollo/contribuir.md`).
+
+## Referencia de ejemplo
+
+- CMX: tokens en `lexer.rs` (`lex_cmx`), parseo en
+  `parser.rs::parse_cmx`, evaluación en `interpreter.rs::evaluate_cmx`,
+  tipo en el typeck, emisión en `backend/wasm.rs` (`cmx_*` host functions).
+- Errores del emisor no soportado: `compile_at` en `backend/wasm.rs`
+  (p. ej. `await`, índices dinámicos en records con shape).

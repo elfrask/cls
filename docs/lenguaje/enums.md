@@ -1,15 +1,13 @@
 # Enums
 
-Los enums son **literales con identidad**: a diferencia de un `alias` de unión
-(que solo afecta al verificador), tienen valor en runtime. Cada variante es un
-índice dentro del enum, por lo que al compilar se representan en 1-2 bytes
-(`u8`/`u16`). Son ideales para estados en sistemas embebidos: en lugar de
-comparar cadenas que consumen memoria, escribes nombres representativos que se
-compilan a un índice minúsculo.
+Los enums son **literales con identidad**: a diferencia de los `alias` de
+unión (solo tipado), cada variante tiene valor en runtime. Están pensados para
+estados en sistemas embebidos: se compilan a un índice compacto (1-2 bytes,
+`u8`/`u16`).
 
 ## Declaración
 
-```
+```clx
 enum Color {
     Rojo,
     Verde,
@@ -17,62 +15,75 @@ enum Color {
 };
 ```
 
-- Las variantes son constantes con identidad única.
-- Se acceden de forma namespaced: `Color.Rojo`.
+- Variantes separadas por coma (la última también puede llevarla).
+- Cada variante tiene identidad única: `def_name` + `index: u16` dentro del
+  enum.
 
 ## Uso
 
+```clx
+function main(args: String[]) -> int {
+    var c = Color.Rojo;
+    print("valor:", c);            # Rojo
+    print("== Rojo:", c == Color.Rojo);    # true (identidad)
+    print("== Verde:", c == Color.Verde);  # false
+    print("is Color:", c is Color);        # true
+    return 0;
+};
 ```
-var c = Color.Rojo;
 
-print(c);                 // "Rojo"
-print(c == Color.Rojo);   // true
-print(c == Color.Verde);  // false
-print(c is Color);        // true
-```
-
-- **Comparación**: `==` compara por identidad (definición + índice).
-- **`is`**: `c is Color` valida que el valor pertenece al enum.
+- Acceso namespaced: `Color.Rojo`.
+- Comparación `==` por identidad (`def_name` + `index`), no por nombre.
+- `is` por identidad del `def_name`.
+- `print(c)` imprime el nombre de la variante (`Rojo`, `Verde`, ...).
+- Runtime: `Value::EnumDef` (la definición, p. ej. `Color`) y `Value::Enum`
+  (un valor: `{ def_name, variant, index }`).
 
 ## Iteración
 
-Los enums son iterables:
-
-```
+```clx
 for each v in (Color) {
-    print(v);
+    print(" -", v);          # Rojo, Verde, Azul
 }
-```
 
-Con índice:
-
-```
 for each v and i in (Color) {
-    print(i, v);
+    print(" - [$i]", v);     # i = 0, 1, 2
 }
 ```
 
-## Tipado
+Iterar un `Value::EnumDef` recorre sus variantes en orden de declaración.
 
-En el verificador, un enum define un tipo con el nombre del enum:
+## En módulos
 
+Los enums son exportables y funcionan con `include` (se inyectan sin
+namespacing — ver `modulos.md`):
+
+```clx
+# lib/colores.clsx
+export enum Color {
+    Rojo,
+    Verde,
+    Azul,
+};
 ```
-var c: Color = Color.Rojo;    // ok
-var d: Color = 5;             // error en estricto: Int no es Color
+
+```clx
+include "lib/colores";
+
+function main(args: String[]) -> int {
+    var c = Color.Azul;
+    print("color:", c, "== Azul:", c == Color.Azul, "is:", c is Color);
+    return 0;
+};
 ```
 
-## Runtime
+Ejemplo completo: `examples/jit-examples/modules/src/` y
+`examples/audit/features/10-enums.clsx`.
 
-En el intérprete, un enum tiene dos valores:
+## En el type checker
 
-- `Value::EnumDef` — la definición (nombre + lista de variantes).
-- `Value::Enum` — una variante concreta `{ def_name, variant, index }`.
-
-El `index` es lo que se compila a 1-2 bytes en un binario nativo.
-
-## Notas
-
-- Las variantes no llevan valor asociado (sin payload). La extracción de payload
-  (pattern matching) está planeada como mejora futura.
-- Los enums son exportables: `export enum Color { ... }` y se resuelven desde
-  otros módulos con `lib.Color.Rojo`.
+- Declarar `enum Color` registra el tipo `Named("Color")`.
+- `Color.Rojo` tipa como `Named("Color")` (el checker trackea los nombres de
+  enums en `enums: HashSet<String>`).
+- El pattern matching de payload (extraer datos de variantes) queda abierto
+  como mejora futura.

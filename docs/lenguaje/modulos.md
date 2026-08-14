@@ -1,111 +1,119 @@
-# Módulos
+# Módulos, imports y exports
 
-CLS tiene dos sistemas de módulos ortogonales: módulos fuente (`.clsx`) y
-librerías compiladas (`.clslib`).
+CLS tiene dos sistemas de módulos: los **módulos fuente** (`.clsx`, con
+`import`/`from import`/`include`) y las **librerías compiladas** (`.clslib` vía
+`Lib.load`, pendiente de WASM). Este documento cubre los módulos fuente.
 
-## Sistema A: módulos fuente
+## Imports
 
-### Exportar
-
-Los símbolos de un módulo se exponen con `export`:
-
+```clx
+import "lib/mathx" as mathx;              # namespaced
+from "lib/stringsx" import gritar as gritarFn, repetir;
+include "lib/colores";
 ```
-export function doble(x: int) -> int { return x * 2; };
-export var VERSION = "1.0.0";
-export enum Color { Rojo, Verde };
-export class Contador {
-    var valor: int = 0;
-    function obtener() -> int { return me.valor; }
+
+### `import "mod" as alias;`
+
+Agrupa el módulo bajo un alias. Los símbolos exportados se acceden con
+namespacing:
+
+```clx
+import "lib/mathx" as mathx;
+
+function main(args: String[]) -> int {
+    print("cuadrado:", mathx::cuadrado(5));  # NamespaceAccess (JIT)
+    print("cubo:", mathx::cubo(3));
+    print("PI:", mathx::PI);                  # export var
+    return 0;
 };
-export structure Par { a: int, b: int };
 ```
 
-Son exportables: `function`, `var`, `const`, `class`, `enum`, `structure`.
-Los símbolos sin `export` quedan privados al módulo.
+- `alias::funcion` (`NamespaceAccess`) es el acceso soportado por el JIT.
+- `alias.funcion()` y `alias.var` (member access sobre el Record del módulo)
+  funcionan en el tree-walker.
+- Si no se da alias, el runtime usa el path como nombre (`import "mod"` →
+  `mod::sym`).
 
-### Importar
+### `from "mod" import a as b, c;`
 
-```
-import "lib" as lib;
+Trae **solo** los símbolos exportados nombrados, opcionalmente renombrados:
 
-print(lib.doble(4));         // 8
-print(lib.VERSION);          // "1.0.0"
-print(lib.Color.Rojo);       // "Rojo"
-var c = lib.Contador(0);
-var p = lib.Par(1, 2);
-```
+```clx
+from "lib/stringsx" import gritar as gritarFn, repetir;
 
-- `import "path" as alias` importa todo el módulo bajo un alias.
-- El alias es opcional: `import "lib"` usa el nombre del path como alias.
-- El nodo resuelve `path` como `path.clsx` (relativo al directorio de trabajo).
-
-### from import
-
-```
-from "colores" import Color;
-
-var c: Color = Color.Rojo;
-```
-
-Importa símbolos específicos. En el verificador, los tipos del módulo se
-registran de todos modos como prelude.
-
-### Cómo se carga un módulo
-
-Cuando el intérprete encuentra `import "lib"`, el runtime:
-
-1. Pregunta al `ModuleResolver` (configurado por el nodo).
-2. El resolver busca en la caché, luego en los módulos internos (`math`, `json`,
-   `async`, y los del nodo `fs`, `http`, `Lib`), luego delega en el hook externo
-   del nodo (que lee el archivo).
-3. El runtime compila y ejecuta el módulo en un scope aislado
-   (`Interpreter::load_module_source`).
-4. Devuelve SOLO los símbolos marcados `export`, como un record.
-
-El core y el runtime son agnósticos: no saben de dónde salen los módulos. El
-nodo provee el resolver (cómo conseguirlos) y los internos del nodo.
-
-### Verificación de tipos multi-módulo
-
-`clx check` resuelve los imports de un archivo (y los imports de los módulos
-importados), los carga como AST y los pasa al verificador como *prelude*. Así,
-un tipo importado es usable en anotaciones:
-
-```
-import "colores" as colores;
-
-var c: Color = Color.Rojo;   // 'Color' viene del prelude
-```
-
-La búsqueda de módulos es relativa al directorio del archivo que se verifica.
-
-## Sistema B: librerías compiladas (planeado)
-
-`Lib.load("./lib.clslib")` carga una librería compilada:
-
-- El `.clslib` es un zip que contiene binarios `.clbin` (WASM).
-- Resuelto por el `ClsLibResolver` (separado, configurable por nodo).
-- Equivale a un `.dll`/`.so` para CLS.
-- Va junto al `.clsapp`, no dentro.
-- Busca en: directorio de trabajo, `$CLS_LIB_PATH` y las rutas del nodo.
-
-## Módulos en línea
-
-`module` y `namespace` declaran un record aislado:
-
-```
-module utilidades {
-    export function saludar() -> String { return "hola"; }
+function main(args: String[]) -> int {
+    print("gritar:", gritarFn("hola"));
+    print("repetir:", repetir("ab", 3));
+    return 0;
 };
-
-print(utilidades.saludar());
 ```
 
-El cuerpo se ejecuta en un entorno aislado y sus símbolos se recogen como un
-record.
+Solo se puede importar lo que está marcado `export`; importar algo no
+exportado da error (el typeck sugiere: `el módulo exporta: ...`).
 
-## Empaquetado (planeado)
+### `include "mod";`
 
-Al compilar, el resolver se usa para descubrir todos los módulos que se
-empaquetarán en el `.clsapp`/`.clslib`. Los módulos fuente se serializan como
-AST dentro del paquete; los módulos de librería como `.clbin`.
+Inyecta **todos** los exports del módulo en el scope actual, sin namespacing.
+Útil para enums u otros símbolos que quieras usar desnudos:
+
+```clx
+include "lib/colores";
+
+function main(args: String[]) -> int {
+    var c = Color.Azul;      # sin prefijo
+    return 0;
+};
+```
+
+## Exports
+
+Solo lo marcado `export` es visible desde otros módulos:
+
+```clx
+export function cuadrado(x: int) -> int { return x * x; };
+export var PI = "3.14159";
+export enum Color { Rojo, Verde, Azul, };
+```
+
+Declaraciones exportables: `export function`, `export var`/`const`,
+`export class`, `export enum`, `export structure`, `export extension`.
+La carga del módulo (centralizada en `Interpreter::load_module_source`)
+ejecuta el archivo en un scope aislado y devuelve únicamente los símbolos
+exportados.
+
+## Resolución de módulos
+
+El `ModuleResolver` del runtime consulta en orden:
+**caché → internals → hook externo → error**.
+
+1. **Caché** — módulos ya cargados en esta ejecución.
+2. **Internals** del core: `math`, `json`, `async`. Del nodo desktop:
+   `fs`, `http`, `Lib`, `os`, `path`, `process`, `time`, `random`.
+3. **Hook externo** — el nodo resuelve módulos de usuario; en `clx` el orden de
+   candidatos es:
+   1. `{dir del archivo}/{path}.clsx` (junto al archivo que importa)
+   2. `{workspace}/modules/{nombre}/mod.clsx`
+   3. `{cwd}/{path}.clsx`
+   4. `{cwd}/modules/{nombre}/mod.clsx`
+   5. `~/.cls/modules/{nombre}@{version}/mod.clsx` (globales versionadas;
+      filtra por el rango semver declarado en `cls.json`)
+   6. `~/.cls/modules/{nombre}/mod.clsx` (globales sin versión)
+4. **Error** — `Módulo 'X' no encontrado`.
+
+## Módulos en el JIT
+
+El JIT **aplana** los imports: compila el entry y todos sus módulos en **un
+solo** módulo WASM (`flatten_imports`), fusionando los spans con offsets de
+línea únicos. Los exports de cada import quedan namespaced bajo prefijos
+`alias::`. Editar cualquier `.clsx` del grafo invalida el caché.
+
+## `module` y `namespace`
+
+Existen las declaraciones de agrupación `module Nombre { ... };` y
+`namespace Nombre { ... };`. En runtime ambas ejecutan el body en un scope
+aislado y registran los símbolos definidos como un `Record` con el nombre dado
+en el scope actual (son equivalentes en comportamiento; ver
+`Interpreter::execute_module_decl` / `execute_namespace_decl`), accesibles
+luego vía `Nombre.miembro` / `Nombre::miembro`.
+
+Ejemplos completos: `examples/jit-examples/modules/src/`.
