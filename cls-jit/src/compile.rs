@@ -15,10 +15,37 @@ use crate::flatten::flatten_imports;
 use crate::resolve::load_import_modules_hooked;
 use crate::{JitContext, RuntimeKind};
 
+/// Descriptor recursivo de tipo de la sección custom `clx:exports` (`pt`/`rt`):
+/// permite al host decodificar arrays/records anidados (la memoria del runtime
+/// no guarda el tipo del elemento de un array).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeDesc {
+    pub kind: i64,
+    /// Tipo del elemento (`Array`).
+    pub elem: Option<Box<TypeDesc>>,
+    /// Tipo del valor (`Record<K, V>` homogéneo).
+    pub value: Option<Box<TypeDesc>>,
+    /// Tipos por clave (`Shape` heterogéneo).
+    pub shape: Vec<(String, TypeDesc)>,
+}
+
+impl TypeDesc {
+    /// Descriptor sin información de tipos anidados.
+    pub fn none() -> Self {
+        Self { kind: -1, elem: None, value: None, shape: Vec::new() }
+    }
+
+    pub fn simple(kind: i64) -> Self {
+        Self { kind, elem: None, value: None, shape: Vec::new() }
+    }
+}
+
 /// Firma tipada de un export (`export function`), del canal del host.
 /// `kind` = `cls_kind_code`: 0=int 1=float 2=bool 3=char 4=string 5=array
 /// 6=record/shape 7=tuple 8=otro-i64 9=void 10=cmx 11=función 12=null.
 /// `*_elem` = kind del elemento para los arrays (-1 si no es array).
+/// `param_types`/`ret_type` = descs recursivos (`pt`/`rt`); vacíos si el
+/// binario no los lleva (firma plana antigua).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExportSig {
     pub name: String,
@@ -26,6 +53,8 @@ pub struct ExportSig {
     pub param_elems: Vec<i64>,
     pub ret: i64,
     pub ret_elem: i64,
+    pub param_types: Vec<TypeDesc>,
+    pub ret_type: Option<TypeDesc>,
 }
 
 /// Módulo CLS compilado a WASM (sin ejecutar).
@@ -209,6 +238,19 @@ fn find_custom_section<'a>(wasm: &'a [u8], name: &str) -> Option<&'a [u8]> {
     None
 }
 
+/// Parsea un descriptor recursivo `{"k": kind, "e"?, "v"?, "s"?}`.
+fn parse_type_desc(v: &serde_json::Value) -> TypeDesc {
+    let kind = v.get("k").and_then(|x| x.as_i64()).unwrap_or(-1);
+    let elem = v.get("e").map(|e| Box::new(parse_type_desc(e)));
+    let value = v.get("v").map(|x| Box::new(parse_type_desc(x)));
+    let shape = v
+        .get("s")
+        .and_then(|s| s.as_object())
+        .map(|m| m.iter().map(|(k, d)| (k.clone(), parse_type_desc(d))).collect())
+        .unwrap_or_default();
+    TypeDesc { kind, elem, value, shape }
+}
+
 /// Parsea las firmas tipadas de los exports desde la sección custom.
 pub fn parse_clx_exports(wasm: &[u8]) -> Vec<ExportSig> {
     let Some(data) = find_custom_section(wasm, "clx:exports") else {
@@ -239,12 +281,43 @@ pub fn parse_clx_exports(wasm: &[u8]) -> Vec<ExportSig> {
                 .unwrap_or_else(|| vec![-1; params.len()]);
             let ret = e.get("ret")?.as_i64().unwrap_or(8);
             let ret_elem = e.get("re").and_then(|v| v.as_i64()).unwrap_or(-1);
+            // Descs recursivos (`pt`/`rt`); fallback: reconstruir los planos
+            // (`pe`/`re`) para binarios viejos sin `pt`/`rt`.
+            let param_types = e
+                .get("pt")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().map(parse_type_desc).collect())
+                .unwrap_or_else(|| {
+                    params
+                        .iter()
+                        .zip(param_elems.iter())
+                        .map(|(k, ek)| {
+                            if *ek != -1 {
+                                TypeDesc { kind: *k, elem: Some(Box::new(TypeDesc::simple(*ek))), value: None, shape: Vec::new() }
+                            } else {
+                                TypeDesc::simple(*k)
+                            }
+                        })
+                        .collect()
+                });
+            let ret_type = e
+                .get("rt")
+                .map(parse_type_desc)
+                .or_else(|| {
+                    if ret_elem != -1 {
+                        Some(TypeDesc { kind: ret, elem: Some(Box::new(TypeDesc::simple(ret_elem))), value: None, shape: Vec::new() })
+                    } else {
+                        Some(TypeDesc::simple(ret))
+                    }
+                });
             Some(ExportSig {
                 name,
                 params,
                 param_elems,
                 ret,
                 ret_elem,
+                param_types,
+                ret_type,
             })
         })
         .collect()

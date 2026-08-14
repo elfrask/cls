@@ -7,6 +7,7 @@
 
 use cls_jit::host::HostCtx;
 use cls_jit::state::HostState;
+use cls_jit::TypeDesc;
 use wasmtime::{Memory, Store, TypedFunc};
 
 /// Valor CLS en la frontera del host (clxb).
@@ -157,11 +158,13 @@ fn kind_to_rt_tag(kind: i64) -> i64 {
 
 /// Escribe un valor CLS en la memoria del módulo y devuelve sus bits i64
 /// (int/float-bits/bool/char directos; string → packed; array/record → ptr).
-/// `elem_kind` solo se usa para arrays (stride del layout).
+/// `desc` = descriptor recursivo del tipo estático (arrays anidados necesitan
+/// el tipo del elemento para el stride/layout); `None` = sin información
+/// (los arrays se escriben con stride 8).
 pub fn write_value(
     ctx: &mut StoreCtx,
     v: &ClsValue,
-    elem_kind: i64,
+    desc: Option<&TypeDesc>,
 ) -> Result<i64, String> {
     match v {
         ClsValue::Null => Ok(0),
@@ -170,8 +173,8 @@ pub fn write_value(
         ClsValue::Bool(b) => Ok(if *b { 1 } else { 0 }),
         ClsValue::Char(c) => Ok(*c as i64),
         ClsValue::Str(s) => Ok(ctx.write_str(s)),
-        ClsValue::Array(items) => write_array(ctx, items, elem_kind),
-        ClsValue::Record(entries) => write_record(ctx, entries),
+        ClsValue::Array(items) => write_array(ctx, items, desc.and_then(|d| d.elem.as_deref())),
+        ClsValue::Record(entries) => write_record(ctx, entries, desc),
     }
 }
 
@@ -185,8 +188,9 @@ fn elem_stride(elem_kind: i64) -> usize {
 }
 
 /// Layout de array CLS: [cap:i64][len:i64][elems...].
-fn write_array(ctx: &mut StoreCtx, items: &[ClsValue], elem_kind: i64) -> Result<i64, String> {
+fn write_array(ctx: &mut StoreCtx, items: &[ClsValue], elem: Option<&TypeDesc>) -> Result<i64, String> {
     let n = items.len() as i64;
+    let elem_kind = elem.map(|d| d.kind).unwrap_or(-1);
     let stride = elem_stride(elem_kind);
     let ptr = ctx.alloc(n * stride as i64 + 16);
     if ptr == 0 {
@@ -195,7 +199,7 @@ fn write_array(ctx: &mut StoreCtx, items: &[ClsValue], elem_kind: i64) -> Result
     ctx.write_i64(ptr as usize, n);
     ctx.write_i64(ptr as usize + 8, n);
     for (i, item) in items.iter().enumerate() {
-        let bits = write_value(ctx, item, -1)?;
+        let bits = write_value(ctx, item, elem)?;
         let addr = ptr as usize + 16 + i * stride;
         if stride == 4 {
             ctx.write_i32(addr, bits as i32);
@@ -207,7 +211,7 @@ fn write_array(ctx: &mut StoreCtx, items: &[ClsValue], elem_kind: i64) -> Result
 }
 
 /// Layout de record CLS: [cap:i64][len:i64][(key, val, tag)*24].
-fn write_record(ctx: &mut StoreCtx, entries: &[(String, ClsValue)]) -> Result<i64, String> {
+fn write_record(ctx: &mut StoreCtx, entries: &[(String, ClsValue)], desc: Option<&TypeDesc>) -> Result<i64, String> {
     let n = entries.len() as i64;
     let ptr = ctx.alloc(n * 24 + 16);
     if ptr == 0 {
@@ -217,7 +221,11 @@ fn write_record(ctx: &mut StoreCtx, entries: &[(String, ClsValue)]) -> Result<i6
     ctx.write_i64(ptr as usize + 8, n);
     for (i, (k, v)) in entries.iter().enumerate() {
         let key = ctx.write_str(k);
-        let bits = write_value(ctx, v, -1)?;
+        let v_desc = desc.and_then(|d| {
+            d.shape.iter().find(|(sk, _)| sk == k).map(|(_, d)| d)
+                .or_else(|| d.value.as_deref())
+        });
+        let bits = write_value(ctx, v, v_desc)?;
         // Los records en memoria usan la tabla de tags del RUNTIME.
         let tag = kind_to_rt_tag(v.kind());
         let base = ptr as usize + 16 + i * 24;
@@ -228,24 +236,25 @@ fn write_record(ctx: &mut StoreCtx, entries: &[(String, ClsValue)]) -> Result<i6
     Ok(ptr)
 }
 
-/// Lee un valor CLS desde la memoria del módulo (bits + kind + elem_kind).
-pub fn read_value(ctx: &mut StoreCtx, bits: i64, kind: i64, elem_kind: i64) -> Result<ClsValue, String> {
+/// Lee un valor CLS desde la memoria del módulo (bits + kind + desc).
+pub fn read_value(ctx: &mut StoreCtx, bits: i64, kind: i64, desc: Option<&TypeDesc>) -> Result<ClsValue, String> {
     match kind {
         0 => Ok(ClsValue::Int(bits)),
         1 => Ok(ClsValue::Float(f64::from_bits(bits as u64))),
         2 => Ok(ClsValue::Bool(bits != 0)),
         3 => Ok(ClsValue::Char(char::from_u32(bits as u32).unwrap_or('?'))),
         4 => Ok(ClsValue::Str(ctx.read_str(bits))),
-        5 => read_array(ctx, bits, elem_kind),
-        6 => read_record(ctx, bits),
+        5 => read_array(ctx, bits, desc.and_then(|d| d.elem.as_deref())),
+        6 => read_record(ctx, bits, desc),
         9 | 12 => Ok(ClsValue::Null),
         other => Err(format!("tipo de retorno no soportado por el binding: kind {}", other)),
     }
 }
 
-fn read_array(ctx: &mut StoreCtx, ptr: i64, elem_kind: i64) -> Result<ClsValue, String> {
+fn read_array(ctx: &mut StoreCtx, ptr: i64, elem: Option<&TypeDesc>) -> Result<ClsValue, String> {
     let p = ptr as usize;
     let len = ctx.read_i64(p + 8);
+    let elem_kind = elem.map(|d| d.kind).unwrap_or(-1);
     let stride = elem_stride(elem_kind);
     let mut items = Vec::with_capacity(len as usize);
     for i in 0..len {
@@ -255,17 +264,21 @@ fn read_array(ctx: &mut StoreCtx, ptr: i64, elem_kind: i64) -> Result<ClsValue, 
         } else {
             ctx.read_i64(addr)
         };
-        let item = if elem_kind == 4 {
-            ClsValue::Str(ctx.read_str(bits))
-        } else {
-            read_value(ctx, bits, elem_kind, -1)?
+        let item = match elem {
+            Some(d) if d.kind == 4 => ClsValue::Str(ctx.read_str(bits)),
+            Some(d) => read_value(ctx, bits, d.kind, Some(d))?,
+            None => {
+                return Err(
+                    "tipo de retorno no soportado por el binding: array sin tipo de elemento (falta el desc del export)".into(),
+                )
+            }
         };
         items.push(item);
     }
     Ok(ClsValue::Array(items))
 }
 
-fn read_record(ctx: &mut StoreCtx, ptr: i64) -> Result<ClsValue, String> {
+fn read_record(ctx: &mut StoreCtx, ptr: i64, desc: Option<&TypeDesc>) -> Result<ClsValue, String> {
     let p = ptr as usize;
     let len = ctx.read_i64(p + 8);
     let mut entries = Vec::with_capacity(len as usize);
@@ -277,7 +290,11 @@ fn read_record(ctx: &mut StoreCtx, ptr: i64) -> Result<ClsValue, String> {
         let rt_tag = ctx.read_i64(base + 16);
         // Los records en memoria usan la tabla del runtime → traducir.
         let kind = rt_tag_to_kind(rt_tag);
-        let val = read_value(ctx, bits, kind, -1)?;
+        let v_desc = desc.and_then(|d| {
+            d.shape.iter().find(|(sk, _)| sk == &key).map(|(_, d)| d)
+                .or_else(|| d.value.as_deref())
+        });
+        let val = read_value(ctx, bits, kind, v_desc)?;
         entries.push((key, val));
     }
     Ok(ClsValue::Record(entries))

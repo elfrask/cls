@@ -61,6 +61,25 @@ test("arrays y records", () => {
   e.dispose();
 });
 
+test("record con array anidado", () => {
+  const e = new clsb.Engine();
+  const m = e.compileSource(
+    "export function datos() -> Record<String, int[]> { var d: Record<String, int[]> = {x: [1,2,3]}; return d; }"
+  );
+  assert.deepStrictEqual(m.call("datos"), { x: [1, 2, 3] });
+  const m2 = e.compileSource(
+    'export function mezcla() -> Record<String, String[]> { var d: Record<String, String[]> = {a: ["x","y"], b: ["hola"]}; return d; }'
+  );
+  assert.deepStrictEqual(m2.call("mezcla"), { a: ["x", "y"], b: ["hola"] });
+  const m3 = e.compileSource(
+    'export function eco(r: Record<String, bool[]>) -> Record<String, bool[]> { return r; }'
+  );
+  assert.deepStrictEqual(m3.call("eco", { x: [true, false, true] }), {
+    x: [true, false, true],
+  });
+  e.dispose();
+});
+
 test("host functions multiples", () => {
   const e = new clsb.Engine();
   e.registerHostFunction("alpha", "i(i)", (id, args) => args[0] * 3);

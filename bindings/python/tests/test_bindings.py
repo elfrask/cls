@@ -22,6 +22,7 @@ export function doble_f(x: float) -> float { return x * 2.0; }
 export function mayor(a: int, b: int) -> bool { return a > b; }
 export function total(ns: int[]) -> int { var t: int = 0; for each n in (ns) { t += n; } return t; }
 export function datos() -> Record<String, String> { var d: Record<String, String> = {a: "1", b: "2"}; return d; }
+export function datos_anidado() -> Record<String, int[]> { var d: Record<String, int[]> = {x: [1, 2, 3]}; return d; }
 function main(args: String[]) -> int { print("main:", args[0]); return 0; }
 """
 
@@ -45,6 +46,9 @@ class TestBindings(unittest.TestCase):
 
     def test_call_record_retorno(self):
         self.assertEqual(self.module.call("datos"), {"a": "1", "b": "2"})
+
+    def test_call_record_con_array_anidado(self):
+        self.assertEqual(self.module.call("datos_anidado"), {"x": [1, 2, 3]})
 
     def test_run_main(self):
         code = self.module.run_main(["hola"])

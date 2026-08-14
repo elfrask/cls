@@ -8331,12 +8331,37 @@ impl<'a> Engine<'a> {
                     Type::Array(inner) => cls_kind_code(inner),
                     _ => -1,
                 };
+                // Descriptor recursivo de tipo para el marshalling del host:
+                // `{"k": <kind>}` escalar; `{"k":5,"e":<desc>}` array; `{"k":6,
+                // "v":<desc>}` record homogéneo; `{"k":6,"s":{key:<desc>}}`
+                // shape por clave. Permite decodificar arrays anidados en
+                // records (la memoria del runtime no guarda el tipo del
+                // elemento).
+                fn type_desc(t: &Type) -> serde_json::Value {
+                    let k = cls_kind_code(t);
+                    match t {
+                        Type::Array(inner) => {
+                            serde_json::json!({"k": k, "e": type_desc(inner)})
+                        }
+                        Type::Record(_, v) => {
+                            serde_json::json!({"k": k, "v": type_desc(v)})
+                        }
+                        Type::Shape(fields) => {
+                            let map: serde_json::Map<String, serde_json::Value> =
+                                fields.iter().map(|(n, t)| (n.clone(), type_desc(t))).collect();
+                            serde_json::json!({"k": k, "s": serde_json::Value::Object(map)})
+                        }
+                        _ => serde_json::json!({"k": k}),
+                    }
+                }
                 exports_meta.push(serde_json::json!({
                     "name": f.name,
                     "params": params.iter().map(cls_kind_code).collect::<Vec<i64>>(),
                     "pe": params.iter().map(elem_kind).collect::<Vec<i64>>(),
                     "ret": ret.as_ref().map(cls_kind_code).unwrap_or(9),
                     "re": ret.as_ref().map(elem_kind).unwrap_or(-1),
+                    "pt": params.iter().map(type_desc).collect::<Vec<_>>(),
+                    "rt": ret.as_ref().map(type_desc),
                 }));
             }
         }
