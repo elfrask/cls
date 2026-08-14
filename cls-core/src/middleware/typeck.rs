@@ -186,6 +186,17 @@ impl TypeChecker {
             Statement::Try(t) => self.check_try(t),
             Statement::With(w) => self.check_with(w),
             Statement::Return(expr) => {
+                // Literal de record en return con función declarada como
+                // Record<K,V> (o Shape): registrar el tipo esperado en el span
+                // del literal ANTES de chequearlo, para que el backend lo emita
+                // como dict (con keys) y no como shape contiguo sin claves.
+                if let (Some(expected), Some(Expression::Record(rec))) =
+                    (&self.current_return_type, expr.as_ref())
+                {
+                    if matches!(expected, Type::Record(_, _)) || matches!(expected, Type::Shape(_)) {
+                        self.types_by_span.insert(rec.span.clone(), expected.clone());
+                    }
+                }
                 let ret_type = expr.as_ref()
                     .map(|e| self.check_expression(e))
                     .unwrap_or(Type::Void);
@@ -315,6 +326,17 @@ impl TypeChecker {
     }
 
     fn check_var_decl(&mut self, var: &VarDecl, is_const: bool) -> Type {
+        // Record literal con anotación (p.ej. `var d: Record<String, Int> = {a:1}`
+        // o `var p: Persona = {nombre: "Ana", edad: 30}`): registrar el tipo
+        // anotado en el span del literal ANTES de chequearlo, para que el backend
+        // lo emita como dict (Record) o shape según lo que pida la anotación y
+        // los literales internos hereden el tipo esperado (records anidados).
+        let annotated = var.type_ann.as_ref().map(|t| self.resolve_type_annotation(t));
+        if let (Some(declared), Some(Expression::Record(rec))) = (&annotated, &var.value) {
+            if matches!(declared, Type::Record(_, _)) || matches!(declared, Type::Shape(_)) {
+                self.types_by_span.insert(rec.span.clone(), declared.clone());
+            }
+        }
         let mut inferred = var.value.as_ref()
             .map(|e| self.check_expression(e))
             .unwrap_or(Type::Null);
@@ -333,9 +355,7 @@ impl TypeChecker {
             inferred.clone()
         };
 
-        let declared = var.type_ann.as_ref()
-            .map(|t| self.resolve_type_annotation(t))
-            .unwrap_or_else(|| inferred.clone());
+        let declared = annotated.unwrap_or_else(|| inferred.clone());
 
         if self.config.strict && var.value.is_some() && !check_type.is_assignable_to(&declared) {
             return self.error(
@@ -359,17 +379,6 @@ impl TypeChecker {
             if arr.elements.is_empty() {
                 if let Some(declared_arr) = var.type_ann.as_ref().map(|t| self.resolve_type_annotation(t)) {
                     self.types_by_span.insert(arr.span.clone(), declared_arr);
-                }
-            }
-        }
-        // Record literal con anotación (p.ej. `var d: Record<String, Int> = {a:1}`
-        // o `var p: Persona = {nombre: "Ana", edad: 30}`): registrar el tipo
-        // anotado en el span del literal para que el backend lo emita como dict
-        // (Record) o shape según lo que pida la anotación (offsets consistentes).
-        if let Some(Expression::Record(rec)) = &var.value {
-            if let Some(declared_rec) = var.type_ann.as_ref().map(|t| self.resolve_type_annotation(t)) {
-                if matches!(declared_rec, Type::Record(_, _)) || matches!(declared_rec, Type::Shape(_)) {
-                    self.types_by_span.insert(rec.span.clone(), declared_rec);
                 }
             }
         }
@@ -752,7 +761,16 @@ impl TypeChecker {
             Expression::Await(expr, _) => self.check_expression(expr),
         };
         if self.config.check {
-            self.types_by_span.insert(span, t.clone());
+            // Un literal de record anotado como Record<K,V> (var/return) registra
+            // el tipo esperado en su span ANTES de chequearse; la inferencia aquí
+            // produce Shape. Mantener el Record anotado (el backend lo emite como
+            // dict con keys — necesario para el marshalling del binding).
+            let prev = self.types_by_span.get(&span).cloned();
+            if matches!(&prev, Some(Type::Record(_, _))) && matches!(&t, Type::Shape(_)) {
+                self.types_by_span.insert(span, prev.unwrap());
+            } else {
+                self.types_by_span.insert(span, t.clone());
+            }
         }
         t
     }
@@ -1529,9 +1547,29 @@ impl TypeChecker {
 
     fn check_record(&mut self, rec: &RecordExpr) -> Type {
         let mut fields: Vec<(String, Type)> = Vec::new();
+        // Si el span ya tiene un tipo esperado (p.ej. `var d: Record<K,V> = {...}`
+        // o `return {...}` con función tipada Record), propagarlo: el literal
+        // interno con valor Record hereda el tipo del valor esperado.
+        let expected = self.types_by_span.get(&rec.span).cloned();
+        let expected_value = match &expected {
+            Some(Type::Record(_, v)) => Some((**v).clone()),
+            _ => None,
+        };
         for (key, expr) in &rec.entries {
+            if let (Some(ev), Expression::Record(inner)) = (&expected_value, expr) {
+                if matches!(ev, Type::Record(_, _)) || matches!(ev, Type::Shape(_)) {
+                    self.types_by_span.insert(inner.span.clone(), ev.clone());
+                }
+            }
             let t = self.check_expression(expr);
             fields.push((key.clone(), t));
+        }
+        // Re-insertar el tipo esperado del contexto (Record<K,V>): `check_expression`
+        // de los valores puede haber sobreescrito el span con Shape (inferencia).
+        if let Some(exp) = &expected {
+            if matches!(exp, Type::Record(_, _)) {
+                self.types_by_span.insert(rec.span.clone(), exp.clone());
+            }
         }
         Type::Shape(fields)
     }

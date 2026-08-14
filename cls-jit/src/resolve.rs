@@ -264,10 +264,8 @@ pub fn load_import_modules_hooked(
             }
             // Hook del nodo: el import no está en disco → el nodo provee el source.
             if !found {
-                eprintln!("[DBG] hook check: path={} hook={}", path, hook.is_some());
                 if let Some(h) = hook {
                     if let Some(source) = h.resolve_source(&path, base_dir) {
-                        eprintln!("[DBG] hook resolvió '{}': {:?}", path, &source[..source.len().min(60)]);
                         if let Ok(toks) = cls_core::frontend::Lexer::new(&source).tokenize() {
                             if let Ok(m) = cls_core::frontend::Parser::new(toks).parse() {
                                 let key = format!("hook:{}", path);

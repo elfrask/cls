@@ -8,6 +8,7 @@ homepage.workspace = true
 repository.workspace = true
 
 [lib]
+name = "clsb"
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]

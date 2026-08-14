@@ -562,6 +562,26 @@ fn cls_kind_code(t: &Type) -> i64 {
     }
 }
 
+/// Tag del RUNTIME interno para valores dentro de records/arrays heterogéneos:
+/// 0=int 1=string 2=float 3=bool 4=char 5=cmx 6=array 7=record (tabla de
+/// `fmt_val_to_string`/`record_tag` del host). Distinto de `cls_kind_code`
+/// (tabla del binding: 4=string 5=array 6=record).
+fn runtime_tag_code(t: &Type) -> i64 {
+    match t {
+        Type::Int | Type::I8 | Type::I16 | Type::I32 | Type::I64
+        | Type::Literal(LitVal::Int(_)) => 0,
+        Type::String => 1,
+        Type::Float | Type::F32 | Type::F64 | Type::Literal(LitVal::Float(_)) => 2,
+        Type::Bool | Type::Literal(LitVal::Bool(_)) => 3,
+        Type::Char => 4,
+        Type::Cmx => 5,
+        Type::Array(_) => 6,
+        Type::Record(_, _) | Type::Shape(_) | Type::Tuple(_) => 7,
+        Type::Null => 0,
+        _ => 8,
+    }
+}
+
 /// Nombre de tipo builtin para `v is Tipo` (compile-time en el JIT).
 fn builtin_was_type(name: &str) -> Option<BuiltinTypeName> {    match name {
         "String" => Some(BuiltinTypeName::String),
@@ -2632,7 +2652,16 @@ impl<'a> FuncEmitter<'a> {
                     let ty = self.value_type(&a.target)?;
                     self.emit_ident_load(name);
                     self.emit_expression(&a.value)?;
-                    if ty == WasTy::F64 {
+                    // `s += x` con String: concatenar (StrConcat), NO sumar
+                    // los punteros empaquetados (producía bytes NUL).
+                    let cls_t = self
+                        .types
+                        .get(&expr_span(&a.target))
+                        .cloned()
+                        .unwrap_or(Type::Any);
+                    if op == Operator::PlusEqual && matches!(cls_t, Type::String) {
+                        self.host.call(HostFn::StrConcat, &mut self.body);
+                    } else if ty == WasTy::F64 {
                         self.f64_promote(&a.value)?;
                         match op {
                             Operator::PlusEqual => self.body.push(Instruction::F64Add),
@@ -6374,7 +6403,10 @@ impl<'a> FuncEmitter<'a> {
                 .get(&expr_span(val))
                 .cloned()
                 .unwrap_or(Type::Any);
-            self.body.push(Instruction::I64Const(arr_kind_code(&cls_t)));
+            // Tag del valor en el record: tag del RUNTIME interno (Record → 7,
+            // Array → 6, String → 1...). Antes usaba arr_kind_code, que devolvía
+            // 0 para records → el binding los leía como int (ptr crudo).
+            self.body.push(Instruction::I64Const(runtime_tag_code(&cls_t)));
             self.host.call(HostFn::RecordSet, &mut self.body);
             self.body.push(Instruction::Drop);
         }
