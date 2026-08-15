@@ -210,7 +210,11 @@ impl TypeChecker {
                         let span = expr.as_ref()
                             .map(|e| expr_span(e))
                             .unwrap_or_else(|| self.current_fn_span.clone());
-                        if self.config.strict {
+                        // null como centinela (p.ej. __next -> int con `return null`)
+                        // se permite con null_safety: warn, no bloquea (paridad walker).
+                        if self.config.null_safety && matches!(ret_type, Type::Null) {
+                            self.warn(&msg, span);
+                        } else if self.config.strict {
                             self.error(&msg, span);
                         } else {
                             self.warn(&msg, span);
@@ -485,6 +489,20 @@ impl TypeChecker {
             Type::Array(e) => (**e).clone(),
             Type::Tuple(s) => s.first().cloned().unwrap_or(Type::Any),
             Type::Named(n, _) if self.enums.contains(n) => iter_ty.clone(),
+            // Magic methods __iter/__next: el item es el tipo del elemento del
+            // array devuelto por __iter, o el retorno de __next del iterador.
+            Type::Named(_, _) => {
+                match self.named_magic_ret(&iter_ty, "__iter") {
+                    Some(Type::Array(e)) => (*e).clone(),
+                    Some(Type::Named(itn, _)) => self
+                        .class_members
+                        .get(&itn)
+                        .and_then(|im| im.get("__next"))
+                        .cloned()
+                        .unwrap_or(Type::Any),
+                    _ => Type::Any,
+                }
+            }
             _ => Type::Any,
         };
         self.push_scope();
@@ -796,6 +814,17 @@ impl TypeChecker {
         }
     }
 
+    /// Tipo de retorno de un magic method (`__add`, `__len`, ...) si `ty` es una
+    /// clase que lo define (incluye heredados vía `class_members`). `None` si no.
+    fn named_magic_ret(&self, ty: &Type, magic: &str) -> Option<Type> {
+        if let Type::Named(cn, _) = ty {
+            if let Some(members) = self.class_members.get(cn.as_str()) {
+                return members.get(magic).cloned();
+            }
+        }
+        None
+    }
+
     fn check_binary(&mut self, bin: &BinaryExpr) -> Type {
         use crate::frontend::token::Operator;
 
@@ -846,6 +875,13 @@ impl TypeChecker {
                 if matches!(left, Type::Float) && is_num_r {
                     return Type::Float;
                 }
+                // Magic method __add: clase con __add (left primero, luego right).
+                if let Some(ret) = self
+                    .named_magic_ret(&left, "__add")
+                    .or_else(|| self.named_magic_ret(&right, "__add"))
+                {
+                    return ret;
+                }
                 self.error(
                     &format!(
                         "Operador + no soportado entre {} y {} (en `{}`)",
@@ -868,6 +904,20 @@ impl TypeChecker {
                         return Type::Float;
                     }
                     return Type::Int;
+                }
+                // Magic methods aritméticos: __sub/__mul/__div/__mod/__pow.
+                let magic = match bin.op {
+                    Operator::Minus => "__sub",
+                    Operator::Star => "__mul",
+                    Operator::Slash => "__div",
+                    Operator::Percent => "__mod",
+                    _ => "__pow",
+                };
+                if let Some(ret) = self
+                    .named_magic_ret(&left, magic)
+                    .or_else(|| self.named_magic_ret(&right, magic))
+                {
+                    return ret;
                 }
                 self.error(
                     &format!(
@@ -1053,7 +1103,18 @@ impl TypeChecker {
                 self.substitute(&ret, &bindings)
             }
             Type::Named(_, _) => {
-                // Struct/Class constructor — devuelve el tipo
+                // ¿Constructor de clase/struct? — el callee es el NOMBRE de la
+                // clase (Identifier) → devuelve el tipo de la clase.
+                if let Expression::Identifier(n, _) = &*call.callee {
+                    if self.class_members.contains_key(n) || self.struct_members.contains_key(n) {
+                        return callee_type.clone();
+                    }
+                }
+                // Objeto callable (magic __call): el callee es una expresión cuyo
+                // tipo es una clase con __call → tipo del retorno del __call.
+                if let Some(ret) = self.named_magic_ret(&callee_type, "__call") {
+                    return ret;
+                }
                 callee_type.clone()
             }
             Type::Any => Type::Any,
@@ -1508,6 +1569,10 @@ impl TypeChecker {
                 }).collect(),
             ),
             _ => {
+                // Magic method __get: clase con __get → tipo de su retorno.
+                if let Some(ret) = self.named_magic_ret(&obj, "__get") {
+                    return ret;
+                }
                 let _ = index_type;
                 Type::Any
             }
