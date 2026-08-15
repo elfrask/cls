@@ -67,16 +67,10 @@ paquete `@cls-embed/node`), ambos sobre la ABI C `clsb_v1_*`.
 - `desarrollo/testing.md` — cómo ejecutar y escribir tests.
 - `desarrollo/agregar-feature.md` — cómo agregar una feature al lenguaje.
 - `desarrollo/agregar-modulo-interno.md` — cómo agregar un módulo interno.
-- `desarrollo/refactor-atomico.md` — **Fase 1** (plan): modularización atómica
-  del backend WASM, del AST/tokens y de la carpeta `walker/` del runtime.
-- `desarrollo/crate-internos.md` — **Fase 2** (plan): crate `cls-internals` con
-  módulos internos e intrinsics precompilados a WASM (elimina el traspaso
-  hostcall en hot paths).
-- `desarrollo/adaptacion-core.md` — **Fase 3** (plan): adaptación del emisor al
-  enfoque de internals + shadow call stack en WASM + unificación de
-  `expr_display`.
-- `desarrollo/auditoria-final.md` — **Fase 4** (plan): auditoría de rendimiento,
-  capacidad y calidad para cerrar el ciclo.
+
+> Los planes de las 4 fases de rendimiento (refactor atómico, crate
+> `cls-internals`, adaptación del core, auditoría final) viven en
+> `agent-context/plan-performance/` (fuera de git).
 
 ## Convenciones
 
