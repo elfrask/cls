@@ -1,0 +1,12 @@
+class Simetrico {
+    var v: int;
+    function main(v: int) { me.v = v; }
+    function __add(o: Int) -> Int { return me.v + o; }
+    function __repr() -> String { return "S(" + toString(me.v) + ")"; }
+};
+function main(args: String[]) -> int {
+    var s = Simetrico(10);
+    print("S + int:", s + 5);          # 15 (left.__add)
+    print("int + S:", 5 + s);          # 15 (right.__add, simetria)
+    return 0;
+}
