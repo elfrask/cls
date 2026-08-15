@@ -20,8 +20,10 @@
 #![cfg(feature = "wasm-backend")]
 
 pub mod host_fn;
+mod helpers;
 mod layout;
 mod types;
+use helpers::*;
 use host_fn::HostFn;
 use layout::*;
 use types::*;
@@ -44,28 +46,6 @@ use wasm_encoder::{
 };
 
 
-/// DeclaraciÃ³n sintÃ©tica de `main` no-op (modo librerÃ­a): `(i64 args) -> i64`,
-/// devuelve 0. Permite instanciar un mÃ³dulo sin `main` (solo exports).
-fn noop_main_decl() -> FunctionDecl {
-    let span = Span::new(1, 1, 1, 1);
-    FunctionDecl {
-        name: "main".to_string(),
-        params: vec![],
-        return_type: None,
-        body: Block {
-            statements: vec![Statement::Return(Some(Expression::Literal(Literal {
-                kind: LiteralKind::Int(0),
-                span,
-            })))],
-            span,
-        },
-        visibility: Visibility::Private,
-        modifiers: vec![],
-        span,
-        type_params: vec![],
-        is_native: false,
-    }
-}
 
 /// CÃ³digo de kind CLS para la secciÃ³n custom `clx:exports` (firma tipada que el
 
@@ -6926,93 +6906,7 @@ impl<'a> FuncEmitter<'a> {
 
 
 
-/// Tipo CLS de un literal (fallback cuando el type map no lo tiene).
-/// `math.range(...)` (posiblemente entre parÃ©ntesis) â†’ devuelve un array.
-fn is_math_range_call(expr: &Expression) -> bool {
-    let inner = match expr {
-        Expression::Parenthesized(e, _) => &**e,
-        e => e,
-    };
-    if let Expression::Call(c) = inner {
-        if let Expression::MemberAccess(m) = &*c.callee {
-            if let Expression::Identifier(obj, _) = &*m.object {
-                return obj == "math" && m.member == "range";
-            }
-        }
-    }
-    false
-}
 
-fn cmx_literal_type(e: &Expression) -> Option<Type> {
-    if let Expression::Literal(l) = e {
-        return Some(match &l.kind {
-            LiteralKind::Int(_) => Type::Int,
-            LiteralKind::Float(_) => Type::Float,
-            LiteralKind::String(_) => Type::String,
-            LiteralKind::Bool(_) => Type::Bool,
-            LiteralKind::Char(_) => Type::Char,
-            _ => Type::Any,
-        });
-    }
-    None
-}
-
-/// Tipo runtime de una uniÃ³n (monomÃ³rfica) â†’ el tipo base de sus miembros.
-fn union_base(t: &Type) -> Type {
-    if let Type::Union(members) = t {
-        if members
-            .iter()
-            .all(|m| matches!(m, Type::String | Type::Literal(LitVal::Str(_))))
-        {
-            return Type::String;
-        }
-        if members
-            .iter()
-            .all(|m| matches!(m, Type::Int | Type::Literal(LitVal::Int(_))))
-        {
-            return Type::Int;
-        }
-        if members.iter().all(|m| {
-            matches!(
-                m,
-                Type::Float | Type::F32 | Type::F64 | Type::Literal(LitVal::Float(_))
-            )
-        }) {
-            return Type::Float;
-        }
-        if members
-            .iter()
-            .all(|m| matches!(m, Type::Bool | Type::Literal(LitVal::Bool(_))))
-        {
-            return Type::Bool;
-        }
-    }
-    t.clone()
-}
-
-
-
-fn type_name_str(t: &Type) -> &'static str {
-    match t {
-        Type::Int | Type::I8 | Type::I16 | Type::I32 | Type::I64 => "Int",
-        Type::Float | Type::F32 | Type::F64 => "Float",
-        Type::String => "String",
-        Type::Bool => "Bool",
-        Type::Char => "Char",
-        Type::Array(_) => "Array",
-        _ => "Any",
-    }
-}
-
-/// Formatea una expresiÃ³n como cÃ³digo CLS legible (para mensajes de error).
-/// ImplementaciÃ³n Ãºnica en `cls_core::frontend::ast::expr_display`.
-fn expr_display(expr: &Expression) -> String {
-    crate::frontend::ast::expr_display(expr)
-}
-
-fn statement_display(stmt: &Statement) -> String {
-    format!("{}", stmt)
-}
 
 /// Opciones del backend WASM.
 #[derive(Clone, Debug)]
