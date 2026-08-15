@@ -20,53 +20,63 @@ fn main() {
     }
 
     let cmd = &args[1];
-    let result = match cmd.as_str() {
+    let result = dispatch(cmd, &args[2..]);
+    process::exit(result);
+}
+
+/// Despacha un subcomando con sus argumentos. Separado para que `--quiet`
+/// pueda preceder al subcomando (`clx --quiet run ...`).
+fn dispatch(cmd: &str, args: &[String]) -> i32 {
+    match cmd {
         // Gestión de proyectos
-        "new" => subcommands::new::execute(&args[2..]),
+        "new" => subcommands::new::execute(args),
         "init" => { eprintln!("'init' no implementado aún (usa 'clx new')"); 1 }
 
         // Gestión de paquetes
         "add" | "remove" | "rm" | "install" | "i" => {
-            subcommands::pkg::execute(cmd, &args[2..])
+            subcommands::pkg::execute(cmd, args)
         }
 
         // Desarrollo
-        "run" => subcommands::run::execute(&args[2..]),
-        "check" => subcommands::check::execute(&args[2..]),
-        "repl" => subcommands::repl::execute(&args[2..]),
+        "run" => subcommands::run::execute(args),
+        "check" => subcommands::check::execute(args),
+        "repl" => subcommands::repl::execute(args),
 
         // Compilación
-        "build" => subcommands::build::execute(&args[2..]),
+        "build" => subcommands::build::execute(args),
 
         // Servidor LSP
-        "lsp" => subcommands::lsp::execute(&args[2..]),
+        "lsp" => subcommands::lsp::execute(args),
 
         // Inspección y tipos
-        "ast" => subcommands::ast::execute(&args[2..]),
-        "maptype" => subcommands::maptype::execute(&args[2..]),
+        "ast" => subcommands::ast::execute(args),
+        "maptype" => subcommands::maptype::execute(args),
         "tree" => { eprintln!("'tree' no implementado aún"); 1 }
 
         // Caché
-        "clean" => subcommands::clean::execute(&args[2..]),
+        "clean" => subcommands::clean::execute(args),
 
         // Formateo
         "fmt" => { eprintln!("'fmt' no implementado aún"); 1 }
 
-        // Globales
+        // Globales (--quiet se acepta ANTES del subcomando: `clx --quiet run ...`)
+        "--quiet" if args.is_empty() => { print_help(); 0 }
+        "--quiet" => {
+            let rest = args;
+            dispatch(&rest[0], &rest[1..])
+        }
         "-v" | "--version" => {
             println!("clx {}", env!("CARGO_PKG_VERSION"));
             println!("CLS Language Compiler & Runtime");
             0
         }
         "-h" | "--help" => { print_help(); 0 }
-        "--quiet" => 0,
 
         _ => {
             eprintln!("Comando desconocido: '{}'. Usa 'clx -h' para ayuda.", cmd);
             1
         }
-    };
-    process::exit(result);
+    }
 }
 
 fn print_help() {
@@ -84,15 +94,16 @@ fn print_help() {
     println!("  install|i                   Instalar dependencias desde registry");
     println!();
     println!("Desarrollo:");
-    println!("  run [archivo] [-- args]     Ejecutar (usa 'entry' de cls.json si no se da archivo)");
+    println!("  run [archivo] [-- args]     Ejecutar con el JIT (default; usa 'entry' de cls.json si no se da archivo)");
+    println!("    --ast-walker              Ejecutar con el tree-walker DEPRECADO (solo referencia)");
     println!("  check [archivo|dir]         Type checking (escanea directorio si no se da archivo)");
-    println!("  repl                        REPL interactivo (placeholder)");
+    println!("  repl                        REPL interactivo JIT (estado persistente entre líneas)");
     println!();
     println!("Compilación:");
     println!("  build [archivo] -o <out>    Empaquetar a .clsapp (usa 'entry' de cls.json)");
     println!();
     println!("Servidor LSP:");
-    println!("  lsp [--tcp addr] [--silent] Language Server (stdin/stdout o TCP)");
+    println!("  lsp [--silent]              Language Server (stdin/stdout)");
     println!();
     println!("Inspección y tipos:");
     println!("  ast <archivo> --json        Dump AST como JSON");
@@ -110,5 +121,5 @@ fn print_help() {
     println!("Globales:");
     println!("  -h, --help                  Ayuda");
     println!("  -v, --version               Versión");
-    println!("  --quiet                     Silenciar logs");
+    println!("  --quiet                     Silenciar logs (antes del subcomando: 'clx --quiet run')");
 }

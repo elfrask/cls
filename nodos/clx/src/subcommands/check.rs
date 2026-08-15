@@ -5,6 +5,15 @@ use cls_core::config::ModuleManifest;
 use cls_core::frontend::ast::Module;
 
 pub fn execute(args: &[String]) -> i32 {
+    if args.iter().any(|a| a == "-h" || a == "--help") {
+        println!("clx check — Type checking");
+        println!();
+        println!("Uso: clx check [archivo.clsx|directorio] [--strict]");
+        println!();
+        println!("  Sin argumento: usa 'entry' de cls.json (o escanea el directorio)");
+        println!("  --strict     Modo estricto (los mismatches de tipos son errores)");
+        return 0;
+    }
     let strict = args.iter().any(|a| a == "--strict");
 
     // Resolver el objetivo a chequear: argumento > entry de cls.json > error de uso.

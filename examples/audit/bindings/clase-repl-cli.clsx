@@ -1,0 +1,7 @@
+function main(args: String[]) -> int {
+    class Punto { var x: int; function mover(dx: int) { x = x + dx; } }
+    var p = Punto(3);
+    p.mover(2);
+    print("x:", p.x);
+    return 0;
+}

@@ -1,0 +1,13 @@
+function main(args: String[]) -> int {
+    var b = "x";
+    print("b1:", b);
+    b = 42;
+    print("b2:", b);
+    b = 7;
+    print("b3:", b);
+    var c = 1;
+    print("c1:", c);
+    c = "texto";
+    print("c2:", c);
+    return 0;
+}

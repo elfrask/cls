@@ -16,11 +16,21 @@ pub fn execute(cmd: &str, args: &[String]) -> i32 {
 }
 
 fn cmd_add(args: &[String]) -> i32 {
+    if args.iter().any(|a| a == "-h" || a == "--help") {
+        println!("clx add — Agregar dependencia a cls.json");
+        println!();
+        println!("Uso: clx add <paquete> [--dev]");
+        return 0;
+    }
     if args.is_empty() {
         eprintln!("Uso: clx add <paquete> [--dev]");
         return 1;
     }
     let pkg = &args[0];
+    if pkg.starts_with('-') {
+        eprintln!("Error: '{}' no es un nombre de paquete válido (los nombres no empiezan con '-'; usa 'clx add -h' para ayuda)", pkg);
+        return 1;
+    }
     let is_dev = args.iter().any(|a| a == "--dev");
 
     let manifest_path = "cls.json";
@@ -50,11 +60,21 @@ fn cmd_add(args: &[String]) -> i32 {
 }
 
 fn cmd_remove(args: &[String]) -> i32 {
+    if args.iter().any(|a| a == "-h" || a == "--help") {
+        println!("clx remove — Quitar dependencia de cls.json");
+        println!();
+        println!("Uso: clx remove <paquete>");
+        return 0;
+    }
     if args.is_empty() {
         eprintln!("Uso: clx remove <paquete>");
         return 1;
     }
     let pkg = &args[0];
+    if pkg.starts_with('-') {
+        eprintln!("Error: '{}' no es un nombre de paquete válido (los nombres no empiezan con '-'; usa 'clx remove -h' para ayuda)", pkg);
+        return 1;
+    }
     let manifest_path = "cls.json";
 
     if !Path::new(manifest_path).exists() {
@@ -87,7 +107,15 @@ fn cmd_remove(args: &[String]) -> i32 {
     0
 }
 
-fn cmd_install(_args: &[String]) -> i32 {
+fn cmd_install(args: &[String]) -> i32 {
+    if args.iter().any(|a| a == "-h" || a == "--help") {
+        println!("clx install — Instalar dependencias desde registry");
+        println!();
+        println!("Uso: clx install");
+        println!();
+        println!("Descarga las dependencias de cls.json a modules/<pkg>/mod.clsx");
+        return 0;
+    }
     let manifest_path = "cls.json";
     if !Path::new(manifest_path).exists() {
         eprintln!("Error: cls.json no encontrado");

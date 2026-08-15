@@ -387,6 +387,16 @@ fn scan_and_process(dir: &Path, out_base: &Path, last: &mut HashMap<PathBuf, u64
 }
 
 pub fn execute(args: &[String]) -> i32 {
+    if args.iter().any(|a| a == "-h" || a == "--help") {
+        println!("clx maptype — Generar type maps (.type.json)");
+        println!();
+        println!("Uso: clx maptype [path] -o <dir> [--watch]");
+        println!();
+        println!("  path         Archivo .clsx/.clsi o directorio (default: .)");
+        println!("  -o, --out    Directorio de salida (default: ./.cls-types)");
+        println!("  -w, --watch  Regenerar automáticamente al detectar cambios");
+        return 0;
+    }
     let input = args.iter().find(|a| !a.starts_with("-") && *a != "." && !args.iter().position(|x| x == "-o").map_or(false, |i| args.get(i+1).map_or(false, |v| v == a.as_str()))).cloned().unwrap_or_else(|| ".".to_string());
     let output = args.iter().position(|a| a == "-o" || a == "--out").and_then(|i| args.get(i+1)).cloned().unwrap_or_else(|| "./.cls-types".to_string());
     let watch = args.iter().any(|a| a == "--watch" || a == "-w");
