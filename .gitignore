@@ -15,3 +15,4 @@ wasmdump
 __pycache__/
 *.pyc
 **/_logs
+.pytest_cache

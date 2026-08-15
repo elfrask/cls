@@ -29,9 +29,15 @@ de salida (imprime `Adiós!` al cerrar).
 
 Cada línea se clasifica así:
 
-- **Declaración**: si empieza con `var `, `const `, `function `, `for `,
-  `while `, `if `, `switch `, `try `, `import `, `from `, `include `, `with `,
-  `loop `, `return ` o `export `, se ejecuta como sentencia.
+- **Declaración/sentencia**: si empieza con una keyword de sentencia (`var `,
+  `const `, `function `, `for `, `while `, `if `, `switch `, `try `, `import `,
+  `from `, `include `, `with `, `loop `, `return `, `export `, `class `,
+  `enum `, `struct `, `interface `, `alias `, `namespace `, `extension `,
+  `config `, `meta `, `when `, `print(`) se ejecuta como sentencia.
+- **Asignación a lvalue**: una línea como `x = 5`, `arr[0] = 99` o `a.b = 1` se
+  ejecuta como sentencia (silenciosa, como en un archivo) — no se envuelve en
+  `print` (evita imprimir punteros). Las comparaciones (`==`, `!=`, `<=`, `>=`)
+  y flechas (`=>`) no se confunden con asignaciones.
 - **Expresión suelta**: cualquier otra línea se envuelve en `print(...)` y el
   valor resultante se imprime.
 
@@ -74,6 +80,38 @@ Reasignar una variable declarada antes la actualiza:
 100
 ```
 
+**Truthiness de condiciones** (paridad con el walker): `if`, `while` y `for`
+aceptan cualquier valor como condición — numéricos `!= 0`, strings no vacíos,
+arrays/records con elementos, objetos siempre verdaderos:
+
+```clx
+> if (1) { print("si"); }        # si
+> if ("") { print("no"); }       # (no imprime)
+> var rec = {a: 1}
+> if (rec) { print("ok"); }      # ok
+```
+
+**Errores de resolución**: un identificador no definido es un error con caret
+(no se evalúa como `0`):
+
+```
+> clear
+[ERROR] Variable no definida: clear (<repl>:1:12)
+  | print(clear);
+  |            ^
+```
+
+**Cambio de tipo rechazado**: reasignar una variable con otro tipo da error
+(el estado de la línea anterior queda intacto):
+
+```
+> var b = "x"
+> b = 42
+[ERROR] no se puede reasignar 'b': Int no es asignable a String ...
+> b
+x
+```
+
 ## Motor
 
 El REPL usa el **JIT** (`WasmBackend` + wasmtime, vía `cls-jit::repl`), el mismo
@@ -92,8 +130,9 @@ línea actual.
   en archivos).
 - Solo `wasmtime` (no wasmi).
 - Los campos `static` de clases se re-inicializan en cada línea.
-- El pool de strings del módulo vive bajo el heap (máx. 512 KB de datos de
-  strings por sesión acumulada).
+- Los strings de la sesión se re-sembran en el pool de cada módulo nuevo (los
+  punteros transferidos conservan su offset); el límite práctico del pool es
+  ~512 KB de datos de strings acumulados.
 
 ## Errores
 

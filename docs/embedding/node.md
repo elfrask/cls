@@ -5,9 +5,9 @@ ABI C `clsb_v1_*` (con [koffi](https://koffi.dev)). Permite compilar código
 CLS, llamar funciones exportadas, ejecutar `main`, evaluar snippets y
 construir un nodo SDK (resolver, host functions, captura de `print`).
 
-> Binding en desarrollo (Fase 4 de `agent-context/BINDINGS_PLAN.md`).
-> El intérprete objetivo es el JIT; los scripts se compilan a WASM y se
-> ejecutan con wasmtime.
+> Binding funcional (Fase 4 de `agent-context/BINDINGS_PLAN.md`): suite de
+> tests 10/10 y typecheck TS verificados. El intérprete objetivo es el JIT;
+> los scripts se compilan a WASM y se ejecutan con wasmtime.
 
 ## Instalación
 
