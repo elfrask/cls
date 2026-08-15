@@ -45,6 +45,11 @@ use wasm_encoder::{
 /// conservan su posición si las nuevas se agregan al final).
 const STRING_TABLE_BASE: u32 = 524_288; // 512KB — por debajo del heap (1MB)
 
+/// Sentinel de fin de iteración del protocolo `__next` (el `return null` de un
+/// método `__next` se emite con este valor; un iterador puede devolver 0 como
+/// valor legítimo, así que el null NO puede ser 0).
+const NULL_ITER_SENTINEL: i64 = i64::MIN;
+
 /// Funciones host (`env.*`) que el nodo JIT debe implementar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HostFn {
@@ -687,8 +692,15 @@ struct FuncEmitter<'a> {
     static_fields: &'a HashMap<String, u32>,
     class_defs: &'a HashMap<String, ClassInfo>,
     method_type_indexes: &'a HashMap<String, u32>,
+    /// Firmas tipadas de las funciones (`Clase::m` → (params, ret)) — el retorno
+    /// de los magic methods (el call_indirect lo produce según la firma).
+    func_types: &'a HashMap<String, (Vec<Type>, Option<Type>)>,
     /// clase actual (al compilar un método) — para `super` y `me`.
     current_class: Option<String>,
+    /// nombre del método que se está compilando (sin el prefijo de clase), para
+    /// el protocolo `__next` (el `null` termina la iteración con un sentinel
+    /// distinto de 0 — un iterador puede devolver 0 como valor legítimo).
+    current_method: Option<String>,
     /// Span de la función que se está compilando (para errores de statements sin
     /// span propio, p.ej. `break`/`continue` fuera de loop).
     current_fn_span: Span,
@@ -732,6 +744,7 @@ impl<'a> FuncEmitter<'a> {
         static_fields: &'a HashMap<String, u32>,
         class_defs: &'a HashMap<String, ClassInfo>,
         method_type_indexes: &'a HashMap<String, u32>,
+        func_types: &'a HashMap<String, (Vec<Type>, Option<Type>)>,
         current_class: Option<String>,
         target: &'a Target,
         tag_idx: u32,
@@ -765,7 +778,9 @@ impl<'a> FuncEmitter<'a> {
             static_fields,
             class_defs,
             method_type_indexes,
+            func_types,
             current_class,
+            current_method: None,
             current_fn_span: Span::new(1, 1, 1, 1),
             target,
             tag_idx,
@@ -1460,6 +1475,12 @@ impl<'a> FuncEmitter<'a> {
             .get(&expr_span(&fe.iterable))
             .cloned()
             .unwrap_or(Type::Any);
+        // Magic methods __iter/__next (paridad walker interpreter.rs:723-767):
+        // __iter() → Array (caso 1) u objeto iterador con __next() hasta null
+        // (caso 2). El tipo del iterable debe ser una clase con __iter.
+        if let Some(cn) = self.class_magic_method(&Some(iterable_ty.clone()), "__iter") {
+            return self.emit_foreach_magic(fe, &cn, &iterable_ty);
+        }
         let (elem_ty, elem_size) = match &iterable_ty {
             Type::Array(elem) => {
                 let w = was_type(elem)?;
@@ -1484,6 +1505,49 @@ impl<'a> FuncEmitter<'a> {
         self.emit_expression(&fe.iterable)?;
         let iter = self.fresh_local();
         self.body.push(Instruction::LocalSet(iter));
+        self.emit_foreach_array_loop(iter, elem_ty, elem_size, fe)
+    }
+
+    /// Magic __iter/__next: `it = obj.__iter()`; si devuelve Array → loop nativo;
+    /// si devuelve una clase iteradora → `it.__next()` hasta `null` (0 en el JIT).
+    fn emit_foreach_magic(
+        &mut self,
+        fe: &ForEachStatement,
+        cn: &str,
+        _iterable_ty: &Type,
+    ) -> ClsResult<()> {
+        self.emit_class_method_args("__iter", &fe.iterable, &[])?;
+        let iter = self.fresh_local();
+        self.body.push(Instruction::LocalSet(iter));
+        match self.magic_ret_type(cn, "__iter") {
+            // Caso 1: __iter devolvió un Array → iterar con el loop nativo.
+            Some(Type::Array(elem)) => {
+                let w = was_type(&*elem)?;
+                let es = if matches!(*elem, Type::Cmx) {
+                    16
+                } else {
+                    elem_size_bytes(w)
+                };
+                self.emit_foreach_array_loop(iter, w, es, fe)
+            }
+            // Caso 2: objeto iterador → __next() hasta null.
+            Some(Type::Named(it_cn, _)) => self.emit_foreach_next_loop(iter, &it_cn, fe),
+            _ => Err(crate::error::ClsError::CompileError(format!(
+                "'{}::__iter' debe anotar su retorno (Array<X> o una clase iteradora \
+                 con __next) para el for each en el JIT",
+                cn
+            ))),
+        }
+    }
+
+    /// Loop nativo de `for each`: `iter` (ptr de array ya en local) + contador.
+    fn emit_foreach_array_loop(
+        &mut self,
+        iter: u32,
+        elem_ty: WasTy,
+        elem_size: i64,
+        fe: &ForEachStatement,
+    ) -> ClsResult<()> {
         let i = self.fresh_local();
         self.body.push(Instruction::I64Const(0));
         self.body.push(Instruction::LocalSet(i));
@@ -1571,6 +1635,90 @@ impl<'a> FuncEmitter<'a> {
         self.block_depth -= 1;
         self.loop_stack.pop();
         let _ = d;
+        Ok(())
+    }
+
+    /// Loop del iterador: `v = it.__next()`; si `v == 0` (null) → break; si no,
+    /// item = v, index = i, cuerpo, i++.
+    fn emit_foreach_next_loop(&mut self, iter: u32, it_cn: &str, fe: &ForEachStatement) -> ClsResult<()> {
+        let item_was = match self.magic_ret_type(it_cn, "__next") {
+            Some(t) if t != Type::Void => was_type(&t)?,
+            _ => {
+                return Err(crate::error::ClsError::CompileError(format!(
+                    "'{}::__next' debe anotar su tipo de retorno (distinto de void) \
+                     para el for each en el JIT",
+                    it_cn
+                )))
+            }
+        };
+        let item_local = self.declare_var_ty(&fe.item_name, item_was);
+        if let Some(iname) = &fe.index_name {
+            self.declare_var_ty(iname, WasTy::I64);
+        }
+        let i = self.fresh_local();
+        self.body.push(Instruction::I64Const(0));
+        self.body.push(Instruction::LocalSet(i));
+        self.block_depth += 1;
+        self.body.push(Instruction::Block(BlockType::Empty));
+        let break_at = self.block_depth;
+        self.block_depth += 1;
+        self.body.push(Instruction::Loop(BlockType::Empty));
+        // continue block: el `continue` salta aquí y ejecuta el incremento.
+        self.block_depth += 1;
+        self.body.push(Instruction::Block(BlockType::Empty));
+        let continue_at = self.block_depth;
+        self.loop_stack.push(LoopGuard {
+            break_at,
+            continue_at,
+        });
+        // v = it.__next()
+        self.emit_class_method_call_on("__next", it_cn, iter, &[])?;
+        let v = self.fresh_local_ty(item_was);
+        self.body.push(match item_was {
+            WasTy::F64 => Instruction::LocalSet(v),
+            WasTy::I32 => Instruction::LocalSet(v),
+            WasTy::I64 => Instruction::LocalSet(v),
+        });
+        // if v == null (sentinel del protocolo __next) → break
+        self.body.push(Instruction::LocalGet(v));
+        match item_was {
+            WasTy::I32 => self.body.push(Instruction::I32Eqz),
+            _ => {
+                self.body.push(Instruction::I64Const(NULL_ITER_SENTINEL));
+                self.body.push(Instruction::I64Eq);
+            }
+        }
+        let depth = self.block_depth.saturating_sub(break_at);
+        self.body.push(Instruction::BrIf(depth));
+        // item = v; index = i
+        self.body.push(Instruction::LocalGet(v));
+        self.body.push(match item_was {
+            WasTy::F64 => Instruction::LocalSet(item_local),
+            WasTy::I32 => Instruction::LocalSet(item_local),
+            WasTy::I64 => Instruction::LocalSet(item_local),
+        });
+        if let Some(iname) = &fe.index_name {
+            let idx_local = self.local_for(iname);
+            self.body.push(Instruction::LocalGet(i));
+            self.body.push(Instruction::LocalSet(idx_local));
+        }
+        for st in &fe.block.statements {
+            self.emit_statement(st)?;
+        }
+        // cerrar el continue block → i++
+        self.body.push(Instruction::End);
+        self.block_depth -= 1;
+        self.body.push(Instruction::LocalGet(i));
+        self.body.push(Instruction::I64Const(1));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::LocalSet(i));
+        let depth = self.block_depth.saturating_sub(continue_at - 1);
+        self.body.push(Instruction::Br(depth));
+        self.body.push(Instruction::End); // loop
+        self.block_depth -= 1;
+        self.body.push(Instruction::End); // block
+        self.block_depth -= 1;
+        self.loop_stack.pop();
         Ok(())
     }
 
@@ -1984,7 +2132,16 @@ impl<'a> FuncEmitter<'a> {
                 let idx = self.intern_string(s);
                 self.emit_load_str(idx);
             }
-            LiteralKind::Null => self.body.push(Instruction::I64Const(0)),
+            LiteralKind::Null => {
+                // Dentro de `__next`, el `null` es el sentinel de fin de iteración
+                // (distinto de 0 — un iterador puede devolver 0 como valor
+                // legítimo). Fuera del protocolo, null = 0 (paridad histórica).
+                if self.current_method.as_deref() == Some("__next") {
+                    self.body.push(Instruction::I64Const(NULL_ITER_SENTINEL));
+                } else {
+                    self.body.push(Instruction::I64Const(0));
+                }
+            }
             LiteralKind::Unknown => {
                 return Err(self.unsupported_expr(&Expression::Literal(l.clone())))
             }
@@ -2138,6 +2295,70 @@ impl<'a> FuncEmitter<'a> {
         use Operator::*;
         let lt = self.value_type(&b.left)?;
         let rt = self.value_type(&b.right)?;
+        // Magic methods de clase (paridad walker `binary_magic`): aritmética,
+        // igualdad y comparación se despachan a la clase ANTES de los paths
+        // nativos (el typeck ya validó el tipo del resultado).
+        let rty = self.types.get(&expr_span(&b.right)).cloned();
+        let arith_magic = match b.op {
+            Plus => "__add",
+            Minus => "__sub",
+            Star => "__mul",
+            Slash => "__div",
+            Percent => "__mod",
+            StarStar => "__pow",
+            _ => "",
+        };
+        if !arith_magic.is_empty() {
+            if self.try_binary_magic(&b.left, &b.right, arith_magic)?.is_some() {
+                return Ok(());
+            }
+        }
+        match b.op {
+            StrictEqual | NotEqual => {
+                // __equals: left.__equals(right) → truthiness; `!=` niega.
+                if let Some(ret_was) = self.try_binary_magic(&b.left, &b.right, "__equals")? {
+                    match ret_was {
+                        WasTy::I64 => {
+                            self.body.push(Instruction::I64Const(0));
+                            self.body.push(Instruction::I64Ne);
+                        }
+                        WasTy::F64 => {
+                            self.body
+                                .push(Instruction::F64Const(Ieee64::new(0.0f64.to_bits())));
+                            self.body.push(Instruction::F64Ne);
+                        }
+                        WasTy::I32 => {}
+                    }
+                    if b.op == NotEqual {
+                        self.body.push(Instruction::I32Eqz);
+                    }
+                    return Ok(());
+                }
+            }
+            LessThan | LessEqual | GreaterThan | GreaterEqual => {
+                // __compare: resultado int → c <0/<=0/>0/>=0 según el operador.
+                if let Some(ret_was) = self.try_binary_magic(&b.left, &b.right, "__compare")? {
+                    match ret_was {
+                        WasTy::I32 => self.body.push(Instruction::I64ExtendI32S),
+                        WasTy::F64 => self.body.push(Instruction::I64TruncF64S),
+                        WasTy::I64 => {}
+                    }
+                    let c = self.fresh_local_ty(WasTy::I64);
+                    self.body.push(Instruction::LocalSet(c));
+                    self.body.push(Instruction::LocalGet(c));
+                    self.body.push(Instruction::I64Const(0));
+                    let cmp = match b.op {
+                        LessThan => Instruction::I64LtS,
+                        LessEqual => Instruction::I64LeS,
+                        GreaterThan => Instruction::I64GtS,
+                        _ => Instruction::I64GeS,
+                    };
+                    self.body.push(cmp);
+                    return Ok(());
+                }
+            }
+            _ => {}
+        }
         match b.op {
             Plus if lt == WasTy::I64 && rt == WasTy::I64 => {
                 let is_str = |e: &Expression| {
@@ -2386,6 +2607,12 @@ impl<'a> FuncEmitter<'a> {
                 self.block_depth -= 1;
             }
             In => {
+                // __contains: container.__contains(needle) si la clase lo define.
+                if let Some(cn) = self.class_magic_method(&rty, "__contains") {
+                    let _ = self.magic_ret_was(&cn, "__contains")?;
+                    self.emit_class_method_args("__contains", &b.right, &[(*b.left).clone()])?;
+                    return Ok(());
+                }
                 // `x in "texto"` → substring (arrays en A4). StrContains(container, needle)
                 self.emit_expression(&b.right)?;
                 self.emit_expression(&b.left)?;
@@ -2666,6 +2893,13 @@ impl<'a> FuncEmitter<'a> {
     fn emit_unary(&mut self, u: &UnaryExpr) -> ClsResult<()> {
         match u.op {
             UnaryOp::Negate => {
+                // Magic __neg: clase con __neg → call sin args (paridad walker).
+                let oty = self.types.get(&expr_span(&u.operand)).cloned();
+                if let Some(cn) = self.class_magic_method(&oty, "__neg") {
+                    let _ = self.magic_ret_was(&cn, "__neg")?;
+                    self.emit_class_method_args("__neg", &u.operand, &[])?;
+                    return Ok(());
+                }
                 let w = self.value_type(&u.operand)?;
                 match w {
                     WasTy::F64 => {
@@ -2686,7 +2920,16 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
             UnaryOp::Not => {
+                // Magic __not: clase con __not → call sin args; si no, truthiness
+                // (paridad walker: `!obj` → __not() o !is_truthy()).
+                let oty = self.types.get(&expr_span(&u.operand)).cloned();
+                if let Some(cn) = self.class_magic_method(&oty, "__not") {
+                    let _ = self.magic_ret_was(&cn, "__not")?;
+                    self.emit_class_method_args("__not", &u.operand, &[])?;
+                    return Ok(());
+                }
                 self.emit_expression(&u.operand)?;
+                self.coerce_to_bool(&u.operand)?;
                 self.body.push(Instruction::I32Eqz);
             }
             UnaryOp::TypeOf => {
@@ -2764,6 +3007,33 @@ impl<'a> FuncEmitter<'a> {
         match &*a.target {
             Expression::Identifier(name, _) => {
                 if is_compound(op) {
+                    // Magic: `a += b` → a = a.__add(b) (paridad walker apply_compound).
+                    let compound_magic = match op {
+                        Operator::PlusEqual => "__add",
+                        Operator::MinusEqual => "__sub",
+                        Operator::StarEqual => "__mul",
+                        Operator::SlashEqual => "__div",
+                        Operator::PercentEqual => "__mod",
+                        _ => "",
+                    };
+                    if !compound_magic.is_empty() {
+                        let ty = self.types.get(&expr_span(&a.target)).cloned();
+                        if let Some(cn) = self.class_magic_method(&ty, compound_magic) {
+                            let _ = self.magic_ret_was(&cn, compound_magic)?;
+                            self.emit_ident_load(name);
+                            let obj_tmp = self.fresh_local();
+                            self.body.push(Instruction::LocalSet(obj_tmp));
+                            self.emit_class_method_call_on(
+                                compound_magic,
+                                &cn,
+                                obj_tmp,
+                                &[(*a.value).clone()],
+                            )?;
+                            self.emit_ident_store(name);
+                            self.emit_ident_load(name);
+                            return Ok(());
+                        }
+                    }
                     // Elegir operación según el tipo del identificador (int vs float).
                     let ty = self.value_type(&a.target)?;
                     self.emit_ident_load(name);
@@ -2925,6 +3195,41 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             Expression::Index(i) => {
+                // Magic __set: obj[i] = v → obj.__set(index, value) con write-back
+                // del objeto mutado (paridad walker interpreter.rs:2120-2128).
+                let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
+                if let Some(cn) = self.class_magic_method(&obj_ty, "__set") {
+                    if is_compound(op) {
+                        return Err(crate::error::ClsError::CompileError(
+                            "Operadores compuestos (+=) sobre objetos con __set no soportados en el JIT"
+                                .to_string(),
+                        ));
+                    }
+                    self.emit_expression(&i.object)?;
+                    let obj_tmp = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(obj_tmp));
+                    self.emit_class_method_call_on(
+                        "__set",
+                        &cn,
+                        obj_tmp,
+                        &[(*i.index).clone(), (*a.value).clone()],
+                    )?;
+                    // El retorno del __set (si lo hay) se descarta.
+                    if let Some(t) = self.magic_ret_type(&cn, "__set") {
+                        if t != Type::Void {
+                            self.body.push(Instruction::Drop);
+                        }
+                    }
+                    // write-back del objeto (el ptr no cambia en mutación in-place,
+                    // pero la reasignación del slot es paridad walker).
+                    if let Expression::Identifier(name, _) = &*i.object {
+                        self.body.push(Instruction::LocalGet(obj_tmp));
+                        self.emit_ident_store(name);
+                    }
+                    // Valor del assignment = el objeto (para el Drop del statement).
+                    self.body.push(Instruction::LocalGet(obj_tmp));
+                    return Ok(());
+                }
                 if is_compound(op) {
                     let elem_ty = self.index_elem_type(i)?;
                     let ptr = self.fresh_local();
@@ -4399,6 +4704,10 @@ impl<'a> FuncEmitter<'a> {
                 }
                 "len" => {
                     let arg = &c.args[0];
+                    // Magic __len: clase con __len → call sin args (paridad walker).
+                    if self.emit_class_method("__len", arg)? {
+                        return Ok(());
+                    }
                     self.emit_expression(arg)?;
                     // String → decodifica el pack (ptr<<32|len); array/tuple/record
                     // → lee el header. Despachar por el tipo del argumento.
@@ -4432,18 +4741,30 @@ impl<'a> FuncEmitter<'a> {
                 }
                 "int" => {
                     let arg = &c.args[0];
+                    // Magic __int: clase con __int → call sin args (paridad walker).
+                    if self.emit_class_method("__int", arg)? {
+                        return Ok(());
+                    }
                     self.emit_expression(arg)?;
                     self.emit_to_int(arg)?;
                     return Ok(());
                 }
                 "float" => {
                     let arg = &c.args[0];
+                    // Magic __float: clase con __float → call sin args.
+                    if self.emit_class_method("__float", arg)? {
+                        return Ok(());
+                    }
                     self.emit_expression(arg)?;
                     self.emit_to_float(arg)?;
                     return Ok(());
                 }
                 "bool" => {
                     let arg = &c.args[0];
+                    // Magic __bool: clase con __bool → call sin args.
+                    if self.emit_class_method("__bool", arg)? {
+                        return Ok(());
+                    }
                     self.emit_expression(arg)?;
                     self.emit_to_bool(arg)?;
                     return Ok(());
@@ -4633,44 +4954,156 @@ impl<'a> FuncEmitter<'a> {
             self.block_depth -= 1;
             return Ok(());
         }
+        // Magic __call: el callee es un objeto de clase con __call →
+        // obj(args...) = __call(obj, args...) (paridad walker interpreter.rs:1644).
+        let callee_ty = self.types.get(&expr_span(&c.callee)).cloned();
+        if let Some(cn) = self.class_magic_method(&callee_ty, "__call") {
+            let _ = self.magic_ret_was(&cn, "__call")?;
+            self.emit_expression(&c.callee)?;
+            let obj_tmp = self.fresh_local();
+            self.body.push(Instruction::LocalSet(obj_tmp));
+            self.emit_class_method_call_on("__call", &cn, obj_tmp, &c.args)?;
+            return Ok(());
+        }
+        // Objeto sin __call invocado como función → error claro (paridad walker).
+        if let Some(Type::Named(cn2, _)) = callee_ty {
+            if self.class_defs.contains_key(cn2.as_str()) {
+                return Err(crate::error::ClsError::compile_at(
+                    &format!(
+                        "El objeto de tipo '{}' no es callable (falta __call)",
+                        cn2
+                    ),
+                    &c.span,
+                ));
+            }
+        }
         Err(self.unsupported_expr(&Expression::Call(c.clone())))
     }
 
     /// Llama un método de clase por nombre (p.ej. `__type`/`__toJson`) sobre el
     /// objeto expresado. Devuelve `false` si la clase no define ese método.
     fn emit_class_method(&mut self, name: &str, object: &Expression) -> ClsResult<bool> {
+        self.emit_class_method_args(name, object, &[])
+    }
+
+    /// Como [`Self::emit_class_method`] pero con argumentos: emite el objeto,
+    /// lo guarda en un local, pushea `me`, emite los args y hace el
+    /// call_indirect `(me, args...)` vía vtable. El orden de evaluación es
+    /// objeto → args (paridad walker). El stack del call_indirect es
+    /// `[me, args..., fnptr]` (me al fondo).
+    fn emit_class_method_args(
+        &mut self,
+        name: &str,
+        object: &Expression,
+        args: &[Expression],
+    ) -> ClsResult<bool> {
         let obj_ty = self.types.get(&expr_span(object)).cloned();
         if let Some(Type::Named(cn, _)) = obj_ty {
-            if let Some(info) = self.class_defs.get(cn.as_str()) {
-                if let Some(slot) = info.methods.iter().position(|m| m == name) {
-                    let method_key = format!("{}::{}", cn, name);
-                    if let Some(&ty) = self.method_type_indexes.get(&method_key) {
-                        self.emit_expression(object)?;
-                        let obj_tmp = self.fresh_local();
-                        self.body.push(Instruction::LocalSet(obj_tmp));
-                        // receiver (me)
-                        self.body.push(Instruction::LocalGet(obj_tmp));
-                        // vtable(obj[0]) + slot
-                        self.body.push(Instruction::LocalGet(obj_tmp));
-                        self.body.push(Instruction::I32WrapI64);
-                        self.body.push(Instruction::I64Load(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        }));
-                        self.body.push(Instruction::I64Const(slot as i64));
-                        self.body.push(Instruction::I64Add);
-                        self.body.push(Instruction::I32WrapI64);
-                        self.body.push(Instruction::CallIndirect {
-                            type_index: ty,
-                            table_index: 0,
-                        });
-                        return Ok(true);
+            self.emit_expression(object)?;
+            let obj_tmp = self.fresh_local();
+            self.body.push(Instruction::LocalSet(obj_tmp));
+            return self.emit_class_method_call_on(name, cn.as_str(), obj_tmp, args);
+        }
+        Ok(false)
+    }
+
+    /// Emite el call_indirect de un método de clase sobre el objeto en el local
+    /// `obj_ptr`: pushea `me` (al fondo del stack), emite los args y despacha
+    /// por vtable. El call_indirect espera `[me, args..., fnptr]`.
+    fn emit_class_method_call_on(
+        &mut self,
+        name: &str,
+        class_name: &str,
+        obj_ptr: u32,
+        args: &[Expression],
+    ) -> ClsResult<bool> {
+        if let Some(info) = self.class_defs.get(class_name) {
+            if let Some(slot) = info.methods.iter().position(|m| m == name) {
+                let method_key = format!("{}::{}", class_name, name);
+                if let Some(&ty) = self.method_type_indexes.get(&method_key) {
+                    // receiver (me) — al fondo; los args van DESPUÉS (el
+                    // call_indirect los espera en orden: me, args...).
+                    self.body.push(Instruction::LocalGet(obj_ptr));
+                    for a in args {
+                        self.emit_expression(a)?;
                     }
+                    // vtable(obj[0]) + slot
+                    self.body.push(Instruction::LocalGet(obj_ptr));
+                    self.body.push(Instruction::I32WrapI64);
+                    self.body.push(Instruction::I64Load(MemArg {
+                        offset: 0,
+                        align: 3,
+                        memory_index: 0,
+                    }));
+                    self.body.push(Instruction::I64Const(slot as i64));
+                    self.body.push(Instruction::I64Add);
+                    self.body.push(Instruction::I32WrapI64);
+                    self.body.push(Instruction::CallIndirect {
+                        type_index: ty,
+                        table_index: 0,
+                    });
+                    return Ok(true);
                 }
             }
         }
         Ok(false)
+    }
+
+    /// ¿El tipo (estático) es una clase que define el magic `name`? Devuelve el
+    /// nombre de la clase (incluye métodos heredados). `None` si no.
+    fn class_magic_method(&self, ty: &Option<Type>, name: &str) -> Option<String> {
+        if let Some(Type::Named(cn, _)) = ty {
+            if let Some(info) = self.class_defs.get(cn.as_str()) {
+                if info.methods.iter().any(|m| m == name) {
+                    return Some(cn.clone());
+                }
+            }
+        }
+        None
+    }
+
+    /// Tipo CLS del retorno anotado de un método de clase (o `None` si no tiene).
+    fn magic_ret_type(&self, class_name: &str, name: &str) -> Option<Type> {
+        self.func_types
+            .get(&format!("{}::{}", class_name, name))
+            .and_then(|(_, r)| r.clone())
+    }
+
+    /// WasTy del retorno de un magic: el JIT necesita el tipo anotado (distinto
+    /// de void) para el dispatch (el call_indirect devuelve según la firma).
+    fn magic_ret_was(&self, class_name: &str, name: &str) -> ClsResult<WasTy> {
+        match self.magic_ret_type(class_name, name) {
+            Some(t) if t != Type::Void => was_type(&t),
+            _ => Err(crate::error::ClsError::CompileError(format!(
+                "'{}::{}' debe anotar su tipo de retorno (distinto de void) para \
+                 el dispatch del magic en el JIT",
+                class_name, name
+            ))),
+        }
+    }
+
+    /// Dispatch de un magic binario: `left.__op(right)`, luego `right.__op(left)`
+    /// (paridad walker `binary_magic`). Devuelve `Ok(Some(WasTy))` del retorno
+    /// del método si se emitió, `Ok(None)` si ningún lado define el magic.
+    fn try_binary_magic(
+        &mut self,
+        left: &Expression,
+        right: &Expression,
+        magic: &str,
+    ) -> ClsResult<Option<WasTy>> {
+        let lty = self.types.get(&expr_span(left)).cloned();
+        let rty = self.types.get(&expr_span(right)).cloned();
+        if let Some(cn) = self.class_magic_method(&lty, magic) {
+            let ret = self.magic_ret_was(&cn, magic)?;
+            self.emit_class_method_args(magic, left, &[right.clone()])?;
+            return Ok(Some(ret));
+        }
+        if let Some(cn) = self.class_magic_method(&rty, magic) {
+            let ret = self.magic_ret_was(&cn, magic)?;
+            self.emit_class_method_args(magic, right, &[left.clone()])?;
+            return Ok(Some(ret));
+        }
+        Ok(None)
     }
 
     /// Carga un campo del CmxValue (tag/props/children) — el ptr está en el stack.
@@ -6704,6 +7137,13 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::Drop);
             return Ok(());
         }
+        // Magic __get: clase con __get → obj.__get(index) (paridad walker:
+        // "Indexado no soportado en objeto (falta __get)" si no lo define).
+        if let Some(cn) = self.class_magic_method(&obj_ty, "__get") {
+            let _ = self.magic_ret_was(&cn, "__get")?;
+            self.emit_class_method_args("__get", &i.object, &[(*i.index).clone()])?;
+            return Ok(());
+        }
         if matches!(obj_ty, Some(Type::Record(_, _))) {
             self.emit_expression(&i.object)?;
             self.emit_expression(&i.index)?;
@@ -6973,6 +7413,49 @@ impl<'a> FuncEmitter<'a> {
         if let Expression::Identifier(name, _) = obj {
             self.emit_ident_store(name);
             self.emit_ident_load(name);
+            return Ok(());
+        }
+        // `me.items.push(...)` / `obj.items.push(...)`: el array pudo
+        // reallocarse → re-escribir el ptr en el campo (y dejar el ptr como
+        // valor del receiver, paridad con el path de identifiers).
+        if let Expression::MemberAccess(m) = obj {
+            let obj_ty = self.types.get(&expr_span(&m.object)).cloned();
+            if let Some(Type::Named(cls, _)) = obj_ty {
+                if let Some(info) = self.class_defs.get(cls.as_str()) {
+                    if let Some((_, _t, w, off, _vis)) =
+                        info.fields.iter().find(|(n, _, _, _, _)| n == &m.member)
+                    {
+                        if *w == WasTy::I64 {
+                            // El store espera `[addr, value]` (value al tope):
+                            // guardar el ptr del array (ya en el stack) y
+                            // pushear addr abajo, luego el value.
+                            let arr_tmp = self.fresh_local();
+                            self.body.push(Instruction::LocalSet(arr_tmp));
+                            self.emit_expression(&m.object)?;
+                            self.body.push(Instruction::I64Const(*off));
+                            self.body.push(Instruction::I64Add);
+                            self.body.push(Instruction::I32WrapI64);
+                            self.body.push(Instruction::LocalGet(arr_tmp));
+                            self.body.push(Instruction::I64Store(MemArg {
+                                offset: 0,
+                                align: 3,
+                                memory_index: 0,
+                            }));
+                            // Valor del receiver = el ptr del array (reallocado).
+                            self.emit_expression(&m.object)?;
+                            self.body.push(Instruction::I64Const(*off));
+                            self.body.push(Instruction::I64Add);
+                            self.body.push(Instruction::I32WrapI64);
+                            self.body.push(Instruction::I64Load(MemArg {
+                                offset: 0,
+                                align: 3,
+                                memory_index: 0,
+                            }));
+                            return Ok(());
+                        }
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -7578,11 +8061,6 @@ impl<'a> Engine<'a> {
         m
     }
 
-    /// String pool final del módulo (orden de interning, append-only).
-    fn string_pool(&self) -> &[String] {
-        &self.string_pool
-    }
-
     fn collect_functions(&mut self, module: &Module) -> ClsResult<()> {
         for stmt in &module.statements {
             if let Statement::FunctionDecl(f) = stmt {
@@ -8174,6 +8652,7 @@ impl<'a> Engine<'a> {
                 &self.static_fields,
                 &self.class_defs,
                 &self.method_type_indexes,
+                &self.func_types,
                 None,
                 &self.target,
                 self.tag_idx,
@@ -8519,7 +8998,8 @@ impl<'a> Engine<'a> {
             &self.static_fields,
             &self.class_defs,
             &self.method_type_indexes,
-            None,
+                &self.func_types,
+                None,
             &self.target,
             self.tag_idx,
             self.eh_handler_ty,
@@ -8546,6 +9026,11 @@ impl<'a> Engine<'a> {
             None
         };
         fe.current_class = current_class;
+        fe.current_method = if is_method {
+            f.name.split("::").nth(1).map(|s| s.to_string())
+        } else {
+            None
+        };
         fe.current_fn_span = f.span.clone();
         let is_main = f.name == "main";
         // Promover al heap las variables locales capturadas por arrows del body:
@@ -8671,7 +9156,8 @@ impl<'a> Engine<'a> {
             &self.static_fields,
             &self.class_defs,
             &self.method_type_indexes,
-            None,
+                &self.func_types,
+                None,
             &self.target,
             self.tag_idx,
             self.eh_handler_ty,

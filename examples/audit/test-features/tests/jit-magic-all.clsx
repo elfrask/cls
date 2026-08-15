@@ -1,0 +1,93 @@
+# Magic methods del JIT - test integral (paridad walker).
+class Vector {
+    var x: int;
+    var y: int;
+    function main(x: int, y: int) { me.x = x; me.y = y; }
+    function __add(o: Vector) -> Vector { return Vector(me.x + o.x, me.y + o.y); }
+    function __sub(o: Vector) -> Vector { return Vector(me.x - o.x, me.y - o.y); }
+    function __mul(o: Vector) -> Vector { return Vector(me.x * o.x, me.y * o.y); }
+    function __div(o: Vector) -> Vector { return Vector(me.x / o.x, me.y / o.y); }
+    function __mod(o: Vector) -> Vector { return Vector(me.x % o.x, me.y % o.y); }
+    function __neg() -> Vector { return Vector(-me.x, -me.y); }
+    function __equals(o: Vector) -> bool { return me.x == o.x && me.y == o.y; }
+    function __compare(o: Vector) -> int { if (me.x < o.x) { return -1; } if (me.x > o.x) { return 1; } return 0; }
+    function __repr() -> String { return "Vector(" + toString(me.x) + "," + toString(me.y) + ")"; }
+};
+
+class Box {
+    var v: int;
+    function main(v: int) { me.v = v; }
+    function __int() -> int { return me.v * 2; }
+    function __float() -> float { return me.v * 1.5; }
+    function __bool() -> bool { return me.v > 0; }
+    function __len() -> int { return 42; }
+    function __not() -> bool { return me.v == 0; }
+    function __call(x: int) -> int { return me.v * x; }
+    function __contains(n: int) -> bool { return n == me.v; }
+    function __get(i: int) -> int { return me.v + i; }
+    function __set(i: int, val: int) { me.v = i + val; }
+    function __toJson() -> String { return "{\"v\":" + toString(me.v) + "}"; }
+};
+
+class Rango {
+    var max: int;
+    var i: int = 0;
+    function main(max: int) { me.max = max; }
+    function __iter() -> Rango { return me; }
+    function __next() -> int {
+        if (me.i >= me.max) { return null; }
+        var v = me.i;
+        me.i = me.i + 1;
+        return v;
+    }
+};
+
+class Lista {
+    var items: int[];
+    function main() { me.items = []; }
+    function __iter() -> int[] { return me.items; }
+    function push(x: int) { me.items.push(x); }
+};
+
+function main(args: String[]) -> int {
+    var a = Vector(1, 2);
+    var b = Vector(3, 4);
+
+    print("add:", a + b);          # Vector(4,6)
+    print("sub:", a - b);          # Vector(-2,-2)
+    print("mul:", a * b);          # Vector(3,8)
+    print("div:", b / a);          # Vector(3,2)
+    print("mod:", b % a);          # Vector(0,0)
+    print("neg:", -a);             # Vector(-1,-2)
+    print("eq:", a == Vector(1, 2));   # true
+    print("neq:", a != Vector(1, 2));  # false
+    print("lt:", a < b);               # true
+    print("le:", a <= Vector(1, 2));   # true
+    print("gt:", b > a);               # true
+    print("ge:", a >= b);              # false
+
+    var bo = Box(5);
+    print("int:", int(bo));        # 10
+    print("float:", float(bo));    # 7.5
+    print("bool:", bool(bo));      # true
+    print("not:", !bo);            # false
+    print("len:", len(bo));        # 42
+    print("call:", bo(7));         # 35
+    print("contains:", 5 in bo);   # true
+    print("nocont:", 9 in bo);     # false
+    print("get:", bo[3]);          # 8
+    bo[2] = 10;
+    print("set:", bo.v);           # 12
+    print("json:", json.stringify(bo));  # {"v":12}
+
+    print("iter-array:", "");
+    var l = Lista();
+    l.push(7); l.push(8); l.push(9);
+    for each x in (l) { print(x); }  # 7 8 9
+
+    print("iter-next:", "");
+    for each x in (Rango(3)) { print(x); }  # 0 1 2
+    for each v and i in (Rango(2)) { print(i, v); }  # 0 0, 1 1
+
+    return 0;
+}

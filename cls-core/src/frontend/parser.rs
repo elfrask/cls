@@ -1879,12 +1879,18 @@ impl Parser {
                 Operator::Tilde => UnaryOp::BitwiseNot,
                 _ => return self.parse_call(),
             };
+            // Span del operador: el unario usa el span del operador (no el del
+            // token siguiente) para que NO colisione con el span del operando
+            // (el typeck registra ambos tipos por span; si colisionan, el tipo
+            // del unario pisa al del operando y el dispatch de magic methods
+            // no encuentra la clase).
+            let op_span = self.current_span.clone();
             self.advance();
             let operand = self.parse_unary()?;
             return Ok(Expression::Unary(UnaryExpr {
                 op,
                 operand: Box::new(operand),
-                span: self.span(),
+                span: op_span,
             }));
         }
         
