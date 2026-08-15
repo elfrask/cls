@@ -1,0 +1,29 @@
+class Vec {
+    var x: int;
+    function main(x: int) { me.x = x; }
+    function __add(o: Vec) -> Vec { return Vec(me.x + o.x); }
+    function __mul(o: Vec) -> Vec { return Vec(me.x * o.x); }
+    function __repr() -> String { return "Vec(" + toString(me.x) + ")"; }
+};
+
+class Simetrico {
+    var v: int;
+    function main(v: int) { me.v = v; }
+    function __add(o: Int) -> Int { return me.v + o; }
+    function __repr() -> String { return "S(" + toString(me.v) + ")"; }
+};
+
+function main(args: String[]) -> int {
+    var a = Vec(5);
+    var b = Vec(2);
+    print("simetria derecha (2 * Vec):", 2 * b);    # right.__mul(left) → Vec(4)
+    print("simetria izquierda (Vec * 2):", a * 2);  # left.__mul(right) → Vec(10)
+
+    var s = Simetrico(10);
+    print("S + int:", s + 5);          # 15 (left.__add)
+    print("int + S:", 5 + s);          # 15 (right.__add, simetria)
+
+    print("equals diff:", a == Vec(5));   # true
+    print("equals types:", Vec(1) == Vec(1));  # true (sin __equals → identidad? verificar)
+    return 0;
+}

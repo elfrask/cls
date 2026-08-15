@@ -1,0 +1,11 @@
+class Vec2 {
+    var x: int;
+    function main(x: int) { me.x = x; }
+    function __mul(o: Vec2) -> Vec2 { return Vec2(me.x * o.x); }
+    function __repr() -> String { return "V2(" + toString(me.x) + ")"; }
+};
+function main(args: String[]) -> int {
+    var b = Vec2(2);
+    print("2 * b:", 2 * b);
+    return 0;
+}

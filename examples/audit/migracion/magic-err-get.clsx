@@ -1,0 +1,18 @@
+class Simple {
+    var v: int;
+    function main(v: int) { me.v = v; }
+    function __repr() -> String { return "Simple(" + toString(me.v) + ")"; }
+};
+class ConCall {
+    var v: int;
+    function main(v: int) { me.v = v; }
+    function __call(x: int) -> int { return me.v + x; }
+    function __get(i: int) -> int { return me.v + i; }
+    function __set(i: int, val: int) { me.v = i + val; }
+    function __repr() -> String { return "CC(" + toString(me.v) + ")"; }
+};
+function main(args: String[]) -> int {
+    var s = Simple(1);
+    print("1:", s[0]);       # error: sin __get
+    return 0;
+}

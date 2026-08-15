@@ -1,0 +1,16 @@
+class ConCall {
+    var v: int;
+    function main(v: int) { me.v = v; }
+    function __get(i: int) -> int { return me.v + i; }
+    function __set(i: int, val: int) { me.v = i + val; }
+    function __repr() -> String { return "CC(" + toString(me.v) + ")"; }
+};
+function main(args: String[]) -> int {
+    var c = ConCall(10);
+    print("1:", c[1]);       # 11
+    c[0] = 5;                # ok → v = 5
+    print("2:", c.v);        # 5
+    c[0] += 3;               # compuesto sobre __set → error esperado
+    print("3:", c.v);
+    return 0;
+}
