@@ -269,13 +269,16 @@ impl ReplSession {
             span: Span::new(1, 1, 1, 1),
         };
 
-        // 4) Typeck de la sesión (con imports como prelude). Config PERMISIVA:
-        //    el REPL es un playground (como el walker): sin anotaciones, los
-        //    params/funciones caen a Any y el JIT despacha en runtime.
+        // 4) Typeck de la sesión (con imports como prelude). Config casi
+        //    PERMISIVA: el REPL es un playground (como el walker), sin
+        //    anotaciones los params/funciones caen a Any y el JIT despacha en
+        //    runtime. PERO `no_implicit_any: true`: un identificador NO
+        //    definido es un error (antes caía a Any y `print(clear)` emitía 0
+        //    silenciosamente).
         let types_config = TypesConfig {
             check: true,
             strict: false,
-            no_implicit_any: false,
+            no_implicit_any: true,
             null_safety: false,
         };
         let mut checker = TypeChecker::new(types_config);

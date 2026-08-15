@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    class T { function __type() -> String { return "MiTipo"; } }
+    print("type:", type(T()));
+    return 0;
+}
