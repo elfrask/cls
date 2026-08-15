@@ -31,6 +31,13 @@ pub struct TypeChecker {
     types_by_span: HashMap<Span, Type>,
     /// Miembros de cada clase: nombre → tipo del campo o del retorno del método.
     class_members: HashMap<String, HashMap<String, Type>>,
+    /// Parámetros de los métodos de cada clase: `Clase` → método → tipos de
+    /// params (incluye heredados, como `class_members`). Para validar los
+    /// operandos del dispatch de magic methods (M1: tipos incompatibles → basura).
+    magic_params: HashMap<String, HashMap<String, Vec<Type>>>,
+    /// Padre de cada clase (`Hijo` → `Base`), para la asignabilidad por herencia
+    /// en la validación de operandos de magics (M2).
+    class_parents: HashMap<String, String>,
     /// Campos de cada structure: nombre → tipo. Para tipar `p.campo` (member access).
     struct_members: HashMap<String, HashMap<String, Type>>,
     /// Módulos importados (prelude) — para resolver símbolos de `import`/`from`/`include`.
@@ -52,7 +59,9 @@ impl TypeChecker {
             enums: std::collections::HashSet::new(),
             types_by_span: HashMap::new(),
             class_members: HashMap::new(),
-        struct_members: HashMap::new(),
+            magic_params: HashMap::new(),
+            class_parents: HashMap::new(),
+            struct_members: HashMap::new(),
             prelude: Vec::new(),
             import_aliases: HashMap::new(),
         };
@@ -565,9 +574,13 @@ impl TypeChecker {
         // 1ª pasada: recolectar los tipos de los miembros ANTES de chequear los
         // bodies, para que `me.campo`/`me.metodo()` resuelvan dentro del check.
         let mut members: HashMap<String, Type> = HashMap::new();
+        let mut params_map: HashMap<String, Vec<Type>> = HashMap::new();
         if let Some(parent) = &c.extends {
             if let Some(pm) = self.class_members.get(parent) {
                 members.extend(pm.clone());
+            }
+            if let Some(pp) = self.magic_params.get(parent) {
+                params_map.extend(pp.clone());
             }
         }
         for member in &c.body {
@@ -579,6 +592,18 @@ impl TypeChecker {
                             .as_ref()
                             .map(|t| self.resolve_type_annotation(t))
                             .unwrap_or(Type::Void),
+                    );
+                    params_map.insert(
+                        f.name.clone(),
+                        f.params
+                            .iter()
+                            .map(|p| {
+                                p.type_ann
+                                    .as_ref()
+                                    .map(|t| self.resolve_type_annotation(t))
+                                    .unwrap_or(Type::Any)
+                            })
+                            .collect(),
                     );
                 }
                 ClassMember::Property(v) => {
@@ -593,6 +618,10 @@ impl TypeChecker {
             }
         }
         self.class_members.insert(c.name.clone(), members);
+        self.magic_params.insert(c.name.clone(), params_map);
+        if let Some(parent) = &c.extends {
+            self.class_parents.insert(c.name.clone(), parent.clone());
+        }
         // 2ª pasada: chequear los bodies.
         for member in &c.body {
             match member {
@@ -825,6 +854,74 @@ impl TypeChecker {
         None
     }
 
+    /// Parámetros de un método de clase (`ty` puede ser una subclase — se
+    /// resuelven vía `magic_params`, que copia los del padre).
+    fn magic_params_for(&self, ty: &Type, magic: &str) -> Option<Vec<Type>> {
+        if let Type::Named(cn, _) = ty {
+            if let Some(params) = self.magic_params.get(cn.as_str()) {
+                return params.get(magic).cloned();
+            }
+        }
+        None
+    }
+
+    /// Tipo del parámetro `idx` de un magic method, o `None`.
+    fn magic_param(&self, ty: &Type, magic: &str, idx: usize) -> Option<Type> {
+        self.magic_params_for(ty, magic)
+            .and_then(|ps| ps.get(idx).cloned())
+    }
+
+    /// ¿`ty` es asignable a `expected`, considerando la herencia de clases?
+    /// (`Hijo` es asignable a `Base` — M2: un magic de la base recibe subclases).
+    fn is_assignable_with_inheritance(&self, ty: &Type, expected: &Type) -> bool {
+        if ty.is_assignable_to(expected) {
+            return true;
+        }
+        if let (Type::Named(cn, _), Type::Named(en, _)) = (ty, expected) {
+            let mut cur = self.class_parents.get(cn).cloned();
+            while let Some(p) = cur {
+                if p == *en {
+                    return true;
+                }
+                cur = self.class_parents.get(&p).cloned();
+            }
+        }
+        false
+    }
+
+    /// Valida el operando de un dispatch binario mágico: (a) el tipo debe ser
+    /// asignable al parámetro del magic (si no → error claro, en vez de basura
+    /// de memoria al interpretar el valor como ptr de objeto — M1/M4), y (b) el
+    /// magic debe declarar exactamente 1 parámetro para un operador binario.
+    fn validate_magic_binary_operand(&mut self, obj: &Type, operand: &Type, magic: &str, span: Span) {
+        if let Some(param) = self.magic_param(obj, magic, 0) {
+            if !self.is_assignable_with_inheritance(operand, &param) {
+                self.error(
+                    &format!(
+                        "el operando {} no es asignable al parámetro de '{}' (esperaba {}, recibió {})",
+                        operand,
+                        magic,
+                        param,
+                        operand
+                    ),
+                    span,
+                );
+            }
+        }
+        if let Some(params) = self.magic_params_for(obj, magic) {
+            if params.len() != 1 {
+                self.error(
+                    &format!(
+                        "el magic '{}' debe declarar exactamente 1 parámetro para el operador binario (declaró {})",
+                        magic,
+                        params.len()
+                    ),
+                    span,
+                );
+            }
+        }
+    }
+
     fn check_binary(&mut self, bin: &BinaryExpr) -> Type {
         use crate::frontend::token::Operator;
 
@@ -876,11 +973,15 @@ impl TypeChecker {
                     return Type::Float;
                 }
                 // Magic method __add: clase con __add (left primero, luego right).
-                if let Some(ret) = self
-                    .named_magic_ret(&left, "__add")
-                    .or_else(|| self.named_magic_ret(&right, "__add"))
-                {
-                    return ret;
+                // El operando se valida contra el parámetro del magic (M1: tipos
+                // incompatibles producían basura de memoria).
+                if self.named_magic_ret(&left, "__add").is_some() {
+                    self.validate_magic_binary_operand(&left, &right, "__add", bin.span.clone());
+                    return self.named_magic_ret(&left, "__add").unwrap();
+                }
+                if self.named_magic_ret(&right, "__add").is_some() {
+                    self.validate_magic_binary_operand(&right, &left, "__add", bin.span.clone());
+                    return self.named_magic_ret(&right, "__add").unwrap();
                 }
                 self.error(
                     &format!(
@@ -913,11 +1014,14 @@ impl TypeChecker {
                     Operator::Percent => "__mod",
                     _ => "__pow",
                 };
-                if let Some(ret) = self
-                    .named_magic_ret(&left, magic)
-                    .or_else(|| self.named_magic_ret(&right, magic))
-                {
-                    return ret;
+                // El operando se valida contra el parámetro del magic (M1).
+                if self.named_magic_ret(&left, magic).is_some() {
+                    self.validate_magic_binary_operand(&left, &right, magic, bin.span.clone());
+                    return self.named_magic_ret(&left, magic).unwrap();
+                }
+                if self.named_magic_ret(&right, magic).is_some() {
+                    self.validate_magic_binary_operand(&right, &left, magic, bin.span.clone());
+                    return self.named_magic_ret(&right, magic).unwrap();
                 }
                 self.error(
                     &format!(
@@ -947,6 +1051,31 @@ impl TypeChecker {
             | Operator::LessThan | Operator::LessEqual
             | Operator::GreaterThan | Operator::GreaterEqual
             | Operator::In | Operator::Is => {
+                // Validar los operandos del dispatch mágico (M1/M4): tipos
+                // incompatibles producían basura de memoria o WASM inválido.
+                match bin.op {
+                    Operator::StrictEqual | Operator::NotEqual => {
+                        if self.named_magic_ret(&left, "__equals").is_some() {
+                            self.validate_magic_binary_operand(&left, &right, "__equals", bin.span.clone());
+                        } else if self.named_magic_ret(&right, "__equals").is_some() {
+                            self.validate_magic_binary_operand(&right, &left, "__equals", bin.span.clone());
+                        }
+                    }
+                    Operator::LessThan | Operator::LessEqual
+                    | Operator::GreaterThan | Operator::GreaterEqual => {
+                        if self.named_magic_ret(&left, "__compare").is_some() {
+                            self.validate_magic_binary_operand(&left, &right, "__compare", bin.span.clone());
+                        } else if self.named_magic_ret(&right, "__compare").is_some() {
+                            self.validate_magic_binary_operand(&right, &left, "__compare", bin.span.clone());
+                        }
+                    }
+                    Operator::In => {
+                        if self.named_magic_ret(&right, "__contains").is_some() {
+                            self.validate_magic_binary_operand(&right, &left, "__contains", bin.span.clone());
+                        }
+                    }
+                    _ => {}
+                }
                 Type::Bool
             }
             Operator::And | Operator::Or => {
@@ -1112,7 +1241,25 @@ impl TypeChecker {
                 }
                 // Objeto callable (magic __call): el callee es una expresión cuyo
                 // tipo es una clase con __call → tipo del retorno del __call.
+                // Aridad validada contra la firma declarada (M3: args extra
+                // producían basura de memoria).
                 if let Some(ret) = self.named_magic_ret(&callee_type, "__call") {
+                    if let Some(params) = self.magic_params_for(&callee_type, "__call") {
+                        if params.len() != call.args.len() {
+                            self.error(
+                                &format!(
+                                    "'__call' de '{}' esperaba {} argumento(s), recibió {}",
+                                    match &callee_type {
+                                        Type::Named(cn, _) => cn.as_str(),
+                                        _ => "?",
+                                    },
+                                    params.len(),
+                                    call.args.len()
+                                ),
+                                call.span.clone(),
+                            );
+                        }
+                    }
                     return ret;
                 }
                 callee_type.clone()

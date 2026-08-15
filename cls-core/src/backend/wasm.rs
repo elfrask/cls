@@ -4998,11 +4998,13 @@ impl<'a> FuncEmitter<'a> {
         args: &[Expression],
     ) -> ClsResult<bool> {
         let obj_ty = self.types.get(&expr_span(object)).cloned();
-        if let Some(Type::Named(cn, _)) = obj_ty {
+        // M2: resolver la clase que DEFINE el método (sube por ancestors) —
+        // un magic heredado vive como `Base::__add`, no `Hijo::__add`.
+        if let Some(dn) = self.class_magic_method(&obj_ty, name) {
             self.emit_expression(object)?;
             let obj_tmp = self.fresh_local();
             self.body.push(Instruction::LocalSet(obj_tmp));
-            return self.emit_class_method_call_on(name, cn.as_str(), obj_tmp, args);
+            return self.emit_class_method_call_on(name, dn.as_str(), obj_tmp, args);
         }
         Ok(false)
     }
@@ -5010,6 +5012,7 @@ impl<'a> FuncEmitter<'a> {
     /// Emite el call_indirect de un método de clase sobre el objeto en el local
     /// `obj_ptr`: pushea `me` (al fondo del stack), emite los args y despacha
     /// por vtable. El call_indirect espera `[me, args..., fnptr]`.
+    /// Sube por `ancestors` para resolver la clase que define el método (M2).
     fn emit_class_method_call_on(
         &mut self,
         name: &str,
@@ -5017,45 +5020,58 @@ impl<'a> FuncEmitter<'a> {
         obj_ptr: u32,
         args: &[Expression],
     ) -> ClsResult<bool> {
-        if let Some(info) = self.class_defs.get(class_name) {
-            if let Some(slot) = info.methods.iter().position(|m| m == name) {
-                let method_key = format!("{}::{}", class_name, name);
-                if let Some(&ty) = self.method_type_indexes.get(&method_key) {
-                    // receiver (me) — al fondo; los args van DESPUÉS (el
-                    // call_indirect los espera en orden: me, args...).
-                    self.body.push(Instruction::LocalGet(obj_ptr));
-                    for a in args {
-                        self.emit_expression(a)?;
+        let mut cur = Some(class_name.to_string());
+        while let Some(c) = cur {
+            if let Some(info) = self.class_defs.get(&c) {
+                if let Some(slot) = info.methods.iter().position(|m| m == name) {
+                    let method_key = format!("{}::{}", c, name);
+                    if let Some(&ty) = self.method_type_indexes.get(&method_key) {
+                        // receiver (me) — al fondo; los args van DESPUÉS (el
+                        // call_indirect los espera en orden: me, args...).
+                        self.body.push(Instruction::LocalGet(obj_ptr));
+                        for a in args {
+                            self.emit_expression(a)?;
+                        }
+                        // vtable(obj[0]) + slot
+                        self.body.push(Instruction::LocalGet(obj_ptr));
+                        self.body.push(Instruction::I32WrapI64);
+                        self.body.push(Instruction::I64Load(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        }));
+                        self.body.push(Instruction::I64Const(slot as i64));
+                        self.body.push(Instruction::I64Add);
+                        self.body.push(Instruction::I32WrapI64);
+                        self.body.push(Instruction::CallIndirect {
+                            type_index: ty,
+                            table_index: 0,
+                        });
+                        return Ok(true);
                     }
-                    // vtable(obj[0]) + slot
-                    self.body.push(Instruction::LocalGet(obj_ptr));
-                    self.body.push(Instruction::I32WrapI64);
-                    self.body.push(Instruction::I64Load(MemArg {
-                        offset: 0,
-                        align: 3,
-                        memory_index: 0,
-                    }));
-                    self.body.push(Instruction::I64Const(slot as i64));
-                    self.body.push(Instruction::I64Add);
-                    self.body.push(Instruction::I32WrapI64);
-                    self.body.push(Instruction::CallIndirect {
-                        type_index: ty,
-                        table_index: 0,
-                    });
-                    return Ok(true);
                 }
+                cur = info.ancestors.first().cloned();
+            } else {
+                break;
             }
         }
         Ok(false)
     }
 
     /// ¿El tipo (estático) es una clase que define el magic `name`? Devuelve el
-    /// nombre de la clase (incluye métodos heredados). `None` si no.
+    /// nombre de la clase que LO DEFINE (sube por `ancestors` — M2: un magic
+    /// heredado se registra como `Base::__add`, no `Hijo::__add`). `None` si no.
     fn class_magic_method(&self, ty: &Option<Type>, name: &str) -> Option<String> {
         if let Some(Type::Named(cn, _)) = ty {
-            if let Some(info) = self.class_defs.get(cn.as_str()) {
-                if info.methods.iter().any(|m| m == name) {
-                    return Some(cn.clone());
+            let mut cur = Some(cn.clone());
+            while let Some(c) = cur {
+                if let Some(info) = self.class_defs.get(&c) {
+                    if info.methods.iter().any(|m| m == name) {
+                        return Some(c);
+                    }
+                    cur = info.ancestors.first().cloned();
+                } else {
+                    break;
                 }
             }
         }
@@ -5063,10 +5079,20 @@ impl<'a> FuncEmitter<'a> {
     }
 
     /// Tipo CLS del retorno anotado de un método de clase (o `None` si no tiene).
+    /// Sube por `ancestors` para los métodos heredados (M2).
     fn magic_ret_type(&self, class_name: &str, name: &str) -> Option<Type> {
-        self.func_types
-            .get(&format!("{}::{}", class_name, name))
-            .and_then(|(_, r)| r.clone())
+        let mut cur = Some(class_name.to_string());
+        while let Some(c) = cur {
+            if let Some(t) = self
+                .func_types
+                .get(&format!("{}::{}", c, name))
+                .and_then(|(_, r)| r.clone())
+            {
+                return Some(t);
+            }
+            cur = self.class_defs.get(&c).and_then(|i| i.ancestors.first().cloned());
+        }
+        None
     }
 
     /// WasTy del retorno de un magic: el JIT necesita el tipo anotado (distinto
