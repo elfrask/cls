@@ -1,0 +1,13 @@
+[workspace]
+
+[package]
+name = "bench-ops"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "operadores"
+path = "operadores.rs"
+
+[profile.release]
+opt-level = 3

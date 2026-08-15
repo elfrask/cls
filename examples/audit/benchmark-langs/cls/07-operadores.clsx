@@ -1,0 +1,43 @@
+function main(args: String[]) -> int {
+    var N: int = 10000000;
+    var i: int = 0;
+
+    var t0 = now();
+    var s: int = 0;
+    for (i = 0; i < N; i++) { s = s + i; }
+    var t1 = now();
+    print("op_add_ms:", t1 - t0);
+
+    t0 = now();
+    s = 1000000;
+    for (i = 0; i < N; i++) { s = s - 1; }
+    t1 = now();
+    print("op_sub_ms:", t1 - t0);
+
+    t0 = now();
+    s = 1;
+    for (i = 0; i < N; i++) { s = s * 2; }
+    t1 = now();
+    print("op_mul_ms:", t1 - t0);
+
+    t0 = now();
+    s = 1000000000;
+    for (i = 0; i < N; i++) { s = s / 2; }
+    t1 = now();
+    print("op_div_ms:", t1 - t0);
+
+    t0 = now();
+    s = 999999;
+    for (i = 0; i < N; i++) { s = s % 2; }
+    t1 = now();
+    print("op_mod_ms:", t1 - t0);
+
+    t0 = now();
+    var b: bool = true;
+    for (i = 0; i < N; i++) { b = i > 0; }
+    t1 = now();
+    print("op_cmp_ms:", t1 - t0);
+
+    print("op_sanity:", s);
+    return 0;
+}
