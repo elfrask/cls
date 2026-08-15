@@ -102,7 +102,6 @@ pub(super) fn type_name_str(t: &Type) -> &'static str {
         _ => "Any",
     }
 }
-pub(super) use crate::frontend::ast::expr_display;
 
 pub(super) fn statement_display(stmt: &Statement) -> String {
     format!("{}", stmt)
