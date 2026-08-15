@@ -1713,6 +1713,7 @@ impl<'a> FuncEmitter<'a> {
 
     fn emit_if(&mut self, i: &IfStatement) -> ClsResult<()> {
         self.emit_expression(&i.condition)?;
+        self.coerce_to_bool(&i.condition)?;
         self.block_depth += 1;
         self.body.push(Instruction::If(BlockType::Empty));
         for s in &i.then_block.statements {
@@ -1726,6 +1727,7 @@ impl<'a> FuncEmitter<'a> {
         // Cadena de elifs anidados dentro del else; el último cede al else final.
         for (k, branch) in i.elif_branches.iter().enumerate() {
             self.emit_expression(&branch.condition)?;
+            self.coerce_to_bool(&branch.condition)?;
             self.block_depth += 1;
             self.body.push(Instruction::If(BlockType::Empty));
             for s in &branch.block.statements {
@@ -1770,6 +1772,7 @@ impl<'a> FuncEmitter<'a> {
         });
         let _ = d;
         self.emit_expression(&w.condition)?;
+        self.coerce_to_bool(&w.condition)?;
         self.body.push(Instruction::I32Eqz);
         let depth = self.block_depth.saturating_sub(break_at);
         self.body.push(Instruction::BrIf(depth));
@@ -1834,6 +1837,7 @@ impl<'a> FuncEmitter<'a> {
         });
         if let Some(cond) = &f.condition {
             self.emit_expression(cond)?;
+            self.coerce_to_bool(cond)?;
             self.body.push(Instruction::I32Eqz);
             let depth = self.block_depth.saturating_sub(break_at);
             self.body.push(Instruction::BrIf(depth));
@@ -2516,6 +2520,75 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::F64ConvertI64S);
         }
         Ok(())
+    }
+
+    /// Coacciona el valor en el stack (emitido por `emit_expression`) a un
+    /// bool i32, con paridad a `Value::is_truthy` del walker. `expr` se usa
+    /// solo para consultar el tipo estático (el valor ya está en el stack).
+    /// Numéricos: != 0. String: len != 0 (los bits bajos del packed). Array/
+    /// Tuple/Record/Shape: len del header (ptr+8) != 0. Char/Bool: ya son i32.
+    /// Cmx/Named/objetos: true (paridad walker). Any/Unknown/Null: error claro
+    /// (antes emitía WASM inválido "expected i32, found i64").
+    fn coerce_to_bool(&mut self, expr: &Expression) -> ClsResult<()> {
+        let ty = self
+            .types
+            .get(&expr_span(expr))
+            .cloned()
+            .unwrap_or(Type::Any);
+        match &ty {
+            Type::Bool | Type::Char => Ok(()),
+            Type::Int | Type::I8 | Type::I16 | Type::I32 | Type::I64 => {
+                self.body.push(Instruction::I64Const(0));
+                self.body.push(Instruction::I64Ne);
+                Ok(())
+            }
+            Type::Float | Type::F32 | Type::F64 => {
+                self.body.push(Instruction::F64Const(Ieee64::new(0.0f64.to_bits())));
+                self.body.push(Instruction::F64Ne);
+                Ok(())
+            }
+            Type::String => {
+                // packed = (ptr << 32) | len → truthy si len != 0.
+                self.body.push(Instruction::I64Const(0xffff_ffff));
+                self.body.push(Instruction::I64And);
+                self.body.push(Instruction::I64Const(0));
+                self.body.push(Instruction::I64Ne);
+                Ok(())
+            }
+            Type::Array(_) | Type::Tuple(_) | Type::Record(_, _) => {
+                // Header CLS: [cap:i64][len:i64] → truthy si len (ptr+8) != 0.
+                self.body.push(Instruction::I64Const(8));
+                self.body.push(Instruction::I64Add);
+                self.body.push(Instruction::I32WrapI64);
+                self.body.push(Instruction::I64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                }));
+                self.body.push(Instruction::I64Const(0));
+                self.body.push(Instruction::I64Ne);
+                Ok(())
+            }
+            // Shape: se emite como struct contiguo SIN header [cap][len] (los
+            // campos van directos) → no se puede leer el len; un shape con
+            // campos declarados siempre es truthy (paridad walker).
+            Type::Shape(_) => {
+                self.body.push(Instruction::I32Const(1));
+                Ok(())
+            }
+            Type::Cmx | Type::Named(_, _) | Type::Null => {
+                // Objetos/valores con identidad: siempre truthy (paridad walker).
+                self.body.push(Instruction::I32Const(1));
+                Ok(())
+            }
+            other => Err(crate::error::ClsError::compile_at(
+                &format!(
+                    "la condición debe ser Bool, encontró {} (usa bool(...) para convertir)",
+                    other
+                ),
+                &expr_span(expr),
+            )),
+        }
     }
 
     fn push_eq(&mut self, ty: WasTy) -> ClsResult<()> {
@@ -5803,23 +5876,11 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn emit_to_bool(&mut self, arg: &Expression) -> ClsResult<()> {
-        let span = expr_span(arg);
-        let t = self.types.get(&span).cloned().unwrap_or(Type::Any);
-        match t {
-            Type::Bool => {}
-            Type::Int => {
-                self.body.push(Instruction::I64Eqz);
-                self.body.push(Instruction::I32Eqz);
-            }
-            Type::Float => {
-                self.body
-                    .push(Instruction::F64Const(Ieee64::new(0.0f64.to_bits())));
-                self.body.push(Instruction::F64Ne);
-            }
-            Type::String => self.host.call(HostFn::ParseBool, &mut self.body),
-            _ => {}
-        }
-        Ok(())
+        // Reutiliza coerce_to_bool: la misma semántica de truthiness del walker
+        // (int/float ≠ 0, string len ≠ 0, array/record len ≠ 0, cmx/objetos
+        // true). Antes los compuestos (cmx/array/record/any) caían en `_` y
+        // dejaban el ptr i64 en el stack → `if (bool(x))` emitía WASM inválido.
+        self.coerce_to_bool(arg)
     }
 
     fn emit_tuple(&mut self, t: &TupleExpr) -> ClsResult<()> {

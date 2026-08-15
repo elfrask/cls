@@ -1,0 +1,7 @@
+interface MiShape { a: int, b: String }
+function main(args: String[]) -> int {
+    var s: MiShape = {a: 1, b: "x"};
+    print("s.a:", s.a);
+    if (s) { print("shape truthy"); } else { print("shape falsy"); }
+    return 0;
+}

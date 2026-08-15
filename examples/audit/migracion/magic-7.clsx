@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    class A { function __add(o: Any) -> int { return 7; } }
+    print("add:", A() + A());
+    return 0;
+}

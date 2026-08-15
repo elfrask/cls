@@ -1,0 +1,5 @@
+class L { function __len() -> int { return 42; } }
+function main(args: String[]) -> int {
+    print("len:", len(L()));
+    return 0;
+}

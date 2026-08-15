@@ -1,0 +1,8 @@
+function main(args: String[]) -> int {
+    var arr = [1, 2];
+    if (arr.length > 0) { print("usando length: ok"); }
+    if ([1, 2]) { print("literal array truthy"); }
+    var rec = {a: 1};
+    if (rec) { print("record truthy"); }
+    return 0;
+}

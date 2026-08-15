@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    if ("x") { print("string truthy"); }
+    if ("") { print("string falsy (no)"); }
+    return 0;
+}

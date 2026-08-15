@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    class E { function __equals(o: Any) -> bool { return true; } }
+    print("equals:", E() == E());
+    return 0;
+}
