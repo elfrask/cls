@@ -1,9 +1,0 @@
-﻿=== C:\Users\Frask\Documents\cls\examples\audit\fase-1\c2-index-write-float.clsx ===
-MODE=walk
-EXITCODE=0
-TIME_MS=1047
---- STDOUT ---
-b = [2.5, 2, 3]
-
---- STDERR ---
-================

@@ -1,3 +1,0 @@
-[[1m[91mERROR[0m[0m] [91mTipo de retorno String no coincide con el declarado Int[0m (C:\Users\Frask\Documents\cls\examples\audit\fase-2\a6-typeck\a6-return-mismatch.clsx:3:15)
-  |     return "x";
-  |               ^

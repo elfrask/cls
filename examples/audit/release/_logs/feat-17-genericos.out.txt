@@ -1,5 +1,0 @@
-color: red
-par: (1, "dos")
-dict: {a: 1, b: 2}
-type access: 1
-fin

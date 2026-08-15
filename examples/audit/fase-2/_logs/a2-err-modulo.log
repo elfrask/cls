@@ -1,8 +1,0 @@
-llamando al modulo...
-[91mError de ejecuci+¦n:[0m
-System.Management.Automation.RemoteException
-[36m1[0m. En err-lib-modulo:2:15 [95m[Runtime Error][0m
-  2 |     return 10 / 0;
-    | [31m              ^[0m
-  [1m[91mError:[0m[0m Divisi+¦n por cero
-System.Management.Automation.RemoteException

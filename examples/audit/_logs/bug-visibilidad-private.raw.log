@@ -1,8 +1,0 @@
-=== bug-visibilidad-private === EXITCODE=0
---- STDOUT ---
-lectura: 5
-tras write externo: 99
-
---- STDERR ---
-
-================

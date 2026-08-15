@@ -1,5 +1,0 @@
-a[0] type: Float
-a[1] type: Float
-a[1] == 2.0: true
-a[1] == 2: true
-sum: 3

@@ -1,3 +1,0 @@
-antes: 1 2.5 a
-float: 3.14 nombre: texto
-anidado: 99 88.5 b caja

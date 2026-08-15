@@ -1,8 +1,0 @@
-[91mError de ejecuci├│n:[0m
-
-[36m1[0m. [33mÔåÆ[0m main
-[36m2[0m. En C:\Users\Frask\Documents\cls\examples\audit\fase-1-r2\r11-iso-int-abc.clsx:2:22 [95m[Runtime Error][0m
-  2 |     var x = int("abc");
-    | [31m                     ^[0m
-  [1m[91mError:[0m[0m int: no se puede convertir 'abc'
-

@@ -1,9 +1,0 @@
-﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\bug-float-cmp-int.clsx ===
-MODE=jit
-EXITCODE=
-TIME_MS=742
---- STDOUT ---
-cmp: true
-
---- STDERR ---
-================

@@ -1,5 +1,0 @@
-﻿EXIT=0
-int: 2
-float: 2
-arr: 2
-

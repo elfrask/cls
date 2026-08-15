@@ -1,1 +1,0 @@
-VALOR_MODULO: 4

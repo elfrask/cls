@@ -1,3 +1,0 @@
-p.x: 3 p.y: 4
-p2: Punto { x: 1, y: 1 }
-tipo: Struct

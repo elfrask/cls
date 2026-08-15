@@ -1,5 +1,0 @@
-[91mError de ejecuci+¦n:[0m
-System.Management.Automation.RemoteException
-[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-throw-no-capturado.clsx:3:31 [95m[Runtime Error][0m
-  [1m[91mError:[0m[0m mensaje de prueba
-System.Management.Automation.RemoteException

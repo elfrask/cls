@@ -1,3 +1,0 @@
-[[1m[91mERROR[0m[0m] [91mTipo Float no asignable a Int[0m (C:\Users\Frask\Documents\cls\examples\audit\release\x2-int-float.clsx:4:10)
-  |     b[1] += 1.5;
-  |          ^

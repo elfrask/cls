@@ -1,4 +1,0 @@
-pow: 8
-abs: 4
-json: {a: 1}
-cwd: C:\Users\Frask\Documents\cls

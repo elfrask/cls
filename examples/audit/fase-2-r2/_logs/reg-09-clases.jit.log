@@ -1,9 +1,0 @@
-hablar: Rex hace ruido y ladra
-is Perro: true
-is Animal: true
-is String: false
-saldo: 100.5
-titular: Ana
-creadoEn: 2024
-chequear: true
-fin

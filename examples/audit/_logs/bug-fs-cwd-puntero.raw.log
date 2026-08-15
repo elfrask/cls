@@ -1,7 +1,0 @@
-=== bug-fs-cwd-puntero === EXITCODE=0
---- STDOUT ---
-cwd: 4503702706585628
-
---- STDERR ---
-
-================

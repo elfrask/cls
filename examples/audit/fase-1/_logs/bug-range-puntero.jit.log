@@ -1,9 +1,0 @@
-﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\bug-range-puntero.clsx ===
-MODE=jit
-EXITCODE=0
-TIME_MS=3123
---- STDOUT ---
-range: [0, 1, 2, 3, 4]
-
---- STDERR ---
-================

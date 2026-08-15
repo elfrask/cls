@@ -1,7 +1,0 @@
-[91mError de ejecuci+¶n:[0m
-System.Management.Automation.RemoteException
-[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-index-fuera.clsx:7:1 [33m‘Â∆[0m main
-[36m2[0m. En C:\Users\Frask\Documents\cls\examples\audit\errores\err-index-fuera.clsx:4:26 [95m[Runtime Error][0m
-  [1m[91mError:[0m[0m +Ïndice fuera de rango
-System.Management.Automation.RemoteException
-fuera:

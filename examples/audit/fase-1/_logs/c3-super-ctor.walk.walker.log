@@ -1,9 +1,0 @@
-﻿=== C:\Users\Frask\Documents\cls\examples\audit\fase-1\c3-super-ctor.clsx ===
-MODE=walk
-EXITCODE=0
-TIME_MS=1063
---- STDOUT ---
-saludar: Hola mundo
-
---- STDERR ---
-================

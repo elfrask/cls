@@ -1,9 +1,0 @@
-﻿=== C:\Users\Frask\Documents\cls\examples\audit\fase-1\c3-protected-subclase.clsx ===
-MODE=jit
-EXITCODE=0
-TIME_MS=3253
---- STDOUT ---
-leer desde subclase: hijo
-
---- STDERR ---
-================

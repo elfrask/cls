@@ -1,1 +1,0 @@
-super a metodo publico: 42

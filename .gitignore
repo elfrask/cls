@@ -14,3 +14,4 @@ wasmdump
 *.exe
 __pycache__/
 *.pyc
+**/_logs

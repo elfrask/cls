@@ -1,9 +1,0 @@
-﻿=== C:\Users\Frask\Documents\cls\examples\audit\cmx\cmx-div-vacio.clsx ===
-MODE=jit
-EXITCODE=0
-TIME_MS=1063
---- STDOUT ---
-tag: div children: []
-
---- STDERR ---
-================

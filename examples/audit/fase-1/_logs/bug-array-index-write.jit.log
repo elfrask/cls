@@ -1,9 +1,0 @@
-﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\bug-array-index-write.clsx ===
-MODE=jit
-EXITCODE=0
-TIME_MS=2055
---- STDOUT ---
-writeback: [100, 1, 2]
-
---- STDERR ---
-================

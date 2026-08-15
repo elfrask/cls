@@ -1,4 +1,0 @@
-dentro de try
-catch: Error de runtime: error interno
-indice fuera: catch indice: Error de runtime: ├ìndice fuera de rango
-tras los try

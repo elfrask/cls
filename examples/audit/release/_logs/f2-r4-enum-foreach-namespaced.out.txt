@@ -1,2 +1,0 @@
-variante: Rojo
-variante: Verde
