@@ -3,11 +3,24 @@ use std::path::Path;
 use cls_core::config::ModuleManifest;
 
 pub fn execute(args: &[String]) -> i32 {
+    if args.iter().any(|a| a == "-h" || a == "--help") {
+        println!("clx new — Crear proyecto CLS");
+        println!();
+        println!("Uso: clx new <nombre> [--lib]");
+        println!();
+        println!("  <nombre>   Nombre del proyecto (se crea como directorio)");
+        println!("  --lib      Crear una librería (sin main.clsx, entry vacío)");
+        return 0;
+    }
     if args.is_empty() {
         eprintln!("Uso: clx new <nombre> [--lib]");
         return 1;
     }
     let name = &args[0];
+    if name.starts_with('-') {
+        eprintln!("Error: '{}' no es un nombre de proyecto válido (los nombres no empiezan con '-'; usa 'clx new -h' para ayuda)", name);
+        return 1;
+    }
     let is_lib = args.iter().any(|a| a == "--lib");
 
     let dir = Path::new(name);

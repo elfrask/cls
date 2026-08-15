@@ -1,0 +1,7 @@
+function main(args: String[]) -> int {
+    var r1: Record<String, Record<String, int>> = {a: {b: 1}};
+    print("anidado:", r1);
+    var r2: Record<String, int>[] = [{a: 1}, {b: 2}];
+    print("arr records:", r2);
+    return 0;
+}
