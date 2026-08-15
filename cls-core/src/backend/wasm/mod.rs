@@ -1,8 +1,8 @@
-//! Backend WASM: compila AST tipado → módulo WebAssembly.
+﻿//! Backend WASM: compila AST tipado â†’ mÃ³dulo WebAssembly.
 //!
 //! Estrategia: el emisor camina el AST directamente (WASM es stack-based, por lo
 //! que las expresiones se emiten en post-order y dejan su valor en el stack).
-//! El type map (Span → Type) del TypeChecker determina las representaciones:
+//! El type map (Span â†’ Type) del TypeChecker determina las representaciones:
 //!
 //! | Type CLS  | WASM             | Notas                                  |
 //! |-----------|------------------|----------------------------------------|
@@ -13,7 +13,7 @@
 //! | String    | i64 (ptr<<32|len)| ptr = offset en memoria lineal         |
 //! | Array<T>  | i64 (ptr)        | header [len:i64][elem...]              |
 //!
-//! El allocator es bump (sin free) con la memoria embebida en el módulo; el host
+//! El allocator es bump (sin free) con la memoria embebida en el mÃ³dulo; el host
 //! solo inyecta funciones `env.*` (print, conversiones, trap) y `alloc` para los
 //! args de `main`.
 
@@ -36,447 +36,24 @@ use wasm_encoder::{
     TagSection, TagType, TypeSection, ValType,
 };
 
-/// Base de la tabla de índices de strings (8 bytes por entrada: offset, len).
+/// Base de la tabla de Ã­ndices de strings (8 bytes por entrada: offset, len).
 /// Layout de memoria: `[0 .. data_len)` = bytes de los strings (append-only,
 /// en orden de interning) y `[STRING_TABLE_BASE .. + 8N)` = tabla. Con base
-/// FIJA, los offsets de los datos no dependen del tamaño total del pool: el
+/// FIJA, los offsets de los datos no dependen del tamaÃ±o total del pool: el
 /// REPL JIT (estado persistente) transfiere punteros de strings entre
-/// instancias y estos siguen siendo válidos (las entradas compartidas
-/// conservan su posición si las nuevas se agregan al final).
-const STRING_TABLE_BASE: u32 = 524_288; // 512KB — por debajo del heap (1MB)
+/// instancias y estos siguen siendo vÃ¡lidos (las entradas compartidas
+/// conservan su posiciÃ³n si las nuevas se agregan al final).
+const STRING_TABLE_BASE: u32 = 524_288; // 512KB â€” por debajo del heap (1MB)
 
-/// Sentinel de fin de iteración del protocolo `__next` (el `return null` de un
-/// método `__next` se emite con este valor; un iterador puede devolver 0 como
-/// valor legítimo, así que el null NO puede ser 0).
+/// Sentinel de fin de iteraciÃ³n del protocolo `__next` (el `return null` de un
+/// mÃ©todo `__next` se emite con este valor; un iterador puede devolver 0 como
+/// valor legÃ­timo, asÃ­ que el null NO puede ser 0).
 const NULL_ITER_SENTINEL: i64 = i64::MIN;
 
-/// Funciones host (`env.*`) que el nodo JIT debe implementar.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum HostFn {
-    PrintInt,
-    PrintFloat,
-    PrintBool,
-    PrintChar,
-    PrintStr,
-    PrintEnd,
-    Now,
-    Exit,
-    Sleep,
-    Trap,
-    ParseInt,
-    ParseFloat,
-    ParseBool,
-    StrConcat,
-    StrInt,
-    StrFloat,
-    StrBool,
-    StrChar,
-    PowNum,
-    Fmod,
-    Input,
-    StrUpper,
-    StrLower,
-    StrTrim,
-    StrContains,
-    StrStartsWith,
-    StrEndsWith,
-    StrIsEmpty,
-    StrLength,
-    StrRepr,
-    IntAbs,
-    FloatAbs,
-    ArrPush,
-    ArrPop,
-    ArrShift,
-    ArrUnshift,
-    ArrIndexOf,
-    ArrIncludes,
-    ArrJoin,
-    ArrReverse,
-    ArrToString,
-    MathSqrt,
-    MathPow,
-    MathMin,
-    MathMax,
-    MathFloor,
-    MathCeil,
-    MathRound,
-    MathRandom,
-    MathSin,
-    MathCos,
-    MathTan,
-    MathLog,
-    MathRange,
-    JsonStringify,
-    JsonParse,
-    FsExists,
-    FsCwd,
-    FsReadFile,
-    FsWriteFile,
-    FsListDir,
-    FsMkdir,
-    FsRm,
-    RecordNew,
-    RecordSet,
-    RecordGet,
-    RecordHas,
-    RecordTag,
-    RecordLen,
-    RecordKeys,
-    RecordValues,
-    RecordToString,
-    HttpGet,
-    HttpPost,
-    CmxNew,
-    CmxSetProp,
-    CmxAddChild,
-    CmxToString,
-    PrintAny,
-    AnyMember,
-    AnyIndex,
-    FnHandle,
-    FnToString,
-    FnEnter,
-    FnExit,
-    CallSite,
-    /// Canal genérico de funciones host del nodo: `host_call(id, ptr, n) -> i64`
-    /// con args empaquetados `[n:i64][(val:i64, tag:i64)*n]`.
-    HostCall,
-    // Módulo os
-    OsPlatform,
-    OsArch,
-    OsVersion,
-    OsHostname,
-    OsHome,
-    OsTempdir,
-    OsCpus,
-    OsPid,
-    OsUptime,
-    OsEnv,
-    OsSep,
-    OsIsWindows,
-    OsIsUnix,
-    // Módulo path
-    PathJoin,
-    PathBasename,
-    PathDirname,
-    PathExtname,
-    PathResolve,
-    PathNormalize,
-    PathIsAbsolute,
-    PathSep,
-    // Módulo process
-    ProcessArgs,
-    ProcessCwd,
-    ProcessEnv,
-    ProcessExit,
-    ProcessPid,
-    ProcessPlatform,
-    ProcessTitle,
-    // Módulo time
-    TimeNow,
-    TimeSeconds,
-    TimeIso,
-    TimeDate,
-    TimeClock,
-    TimeYear,
-    TimeMonth,
-    TimeDay,
-    TimeHour,
-    TimeMinute,
-    TimeSecond,
-    TimeSleep,
-    // Módulo random
-    RandomRandom,
-    RandomInt,
-    RandomFloat,
-    RandomUuid,
-}
+pub mod host_fn;
+pub use host_fn::HostFn;
 
-impl HostFn {
-    pub fn import_name(&self) -> &'static str {
-        use HostFn::*;
-        match self {
-            PrintInt => "print_int",
-            PrintFloat => "print_float",
-            PrintBool => "print_bool",
-            PrintChar => "print_char",
-            PrintStr => "print_str",
-            PrintEnd => "print_end",
-            Now => "now",
-            Exit => "exit",
-            Sleep => "sleep",
-            Trap => "trap",
-            ParseInt => "parse_int",
-            ParseFloat => "parse_float",
-            ParseBool => "parse_bool",
-            StrConcat => "str_concat",
-            StrInt => "str_int",
-            StrFloat => "str_float",
-            StrBool => "str_bool",
-            StrChar => "str_char",
-            PowNum => "pow_num",
-            Fmod => "fmod",
-            Input => "input",
-            StrUpper => "str_upper",
-            StrLower => "str_lower",
-            StrTrim => "str_trim",
-            StrContains => "str_contains",
-            StrStartsWith => "str_starts_with",
-            StrEndsWith => "str_ends_with",
-            StrIsEmpty => "str_is_empty",
-            StrLength => "str_length",
-            StrRepr => "str_repr",
-            IntAbs => "int_abs",
-            FloatAbs => "float_abs",
-            ArrPush => "arr_push",
-            ArrPop => "arr_pop",
-            ArrShift => "arr_shift",
-            ArrUnshift => "arr_unshift",
-            ArrIndexOf => "arr_index_of",
-            ArrIncludes => "arr_includes",
-            ArrJoin => "arr_join",
-            ArrReverse => "arr_reverse",
-            ArrToString => "arr_to_string",
-            MathSqrt => "math_sqrt",
-            MathPow => "math_pow",
-            MathMin => "math_min",
-            MathMax => "math_max",
-            MathFloor => "math_floor",
-            MathCeil => "math_ceil",
-            MathRound => "math_round",
-            MathRandom => "math_random",
-            MathSin => "math_sin",
-            MathCos => "math_cos",
-            MathTan => "math_tan",
-            MathLog => "math_log",
-            MathRange => "math_range",
-            JsonStringify => "json_stringify",
-            JsonParse => "json_parse",
-            FsExists => "fs_exists",
-            FsCwd => "fs_cwd",
-            FsReadFile => "fs_read_file",
-            FsWriteFile => "fs_write_file",
-            FsListDir => "fs_list_dir",
-            FsMkdir => "fs_mkdir",
-            FsRm => "fs_rm",
-            RecordNew => "record_new",
-            RecordSet => "record_set",
-            RecordGet => "record_get",
-            RecordHas => "record_has",
-            RecordTag => "record_tag",
-            RecordLen => "record_len",
-            RecordKeys => "record_keys",
-            RecordValues => "record_values",
-            RecordToString => "record_to_string",
-            HttpGet => "http_get",
-            HttpPost => "http_post",
-            CmxNew => "cmx_new",
-            CmxSetProp => "cmx_set_prop",
-            CmxAddChild => "cmx_add_child",
-            CmxToString => "cmx_to_string",
-            PrintAny => "print_any",
-            AnyMember => "any_member",
-            AnyIndex => "any_index",
-            FnHandle => "fn_handle",
-            FnToString => "fn_to_string",
-            FnEnter => "fn_enter",
-            FnExit => "fn_exit",
-            CallSite => "fn_call_site",
-            HostCall => "host_call",
-            OsPlatform => "os_platform",
-            OsArch => "os_arch",
-            OsVersion => "os_version",
-            OsHostname => "os_hostname",
-            OsHome => "os_home",
-            OsTempdir => "os_tempdir",
-            OsCpus => "os_cpus",
-            OsPid => "os_pid",
-            OsUptime => "os_uptime",
-            OsEnv => "os_env",
-            OsSep => "os_sep",
-            OsIsWindows => "os_is_windows",
-            OsIsUnix => "os_is_unix",
-            PathJoin => "path_join",
-            PathBasename => "path_basename",
-            PathDirname => "path_dirname",
-            PathExtname => "path_extname",
-            PathResolve => "path_resolve",
-            PathNormalize => "path_normalize",
-            PathIsAbsolute => "path_is_absolute",
-            PathSep => "path_sep",
-            ProcessArgs => "process_args",
-            ProcessCwd => "process_cwd",
-            ProcessEnv => "process_env",
-            ProcessExit => "process_exit",
-            ProcessPid => "process_pid",
-            ProcessPlatform => "process_platform",
-            ProcessTitle => "process_title",
-            TimeNow => "time_now",
-            TimeSeconds => "time_seconds",
-            TimeIso => "time_iso",
-            TimeDate => "time_date",
-            TimeClock => "time_clock",
-            TimeYear => "time_year",
-            TimeMonth => "time_month",
-            TimeDay => "time_day",
-            TimeHour => "time_hour",
-            TimeMinute => "time_minute",
-            TimeSecond => "time_second",
-            TimeSleep => "time_sleep",
-            RandomRandom => "random_random",
-            RandomInt => "random_int",
-            RandomFloat => "random_float",
-            RandomUuid => "random_uuid",
-        }
-    }
-
-    fn signature(&self) -> (Vec<ValType>, Vec<ValType>) {
-        use HostFn::*;
-        let i64p = vec![ValType::I64];
-        match self {
-            PrintInt | PrintStr => (i64p.clone(), vec![]),
-            PrintFloat => (vec![ValType::F64], vec![]),
-            PrintBool | PrintChar => (vec![ValType::I32], vec![]),
-            PrintEnd => (vec![], vec![]),
-            Now => (vec![], vec![ValType::I64]),
-            Exit | Sleep => (i64p.clone(), vec![]),
-            Trap => (vec![ValType::I64, ValType::I64], vec![]),
-            ParseInt | StrInt => (i64p.clone(), vec![ValType::I64]),
-            ParseBool => (i64p.clone(), vec![ValType::I32]),
-            ParseFloat => (i64p.clone(), vec![ValType::F64]),
-            StrFloat => (vec![ValType::F64], vec![ValType::I64]),
-            StrBool | StrChar => (vec![ValType::I32], vec![ValType::I64]),
-            StrConcat => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            PowNum => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            Fmod => (vec![ValType::F64, ValType::F64], vec![ValType::F64]),
-            Input => (vec![], vec![ValType::I64]),
-            StrUpper | StrLower | StrTrim | StrLength | StrRepr => {
-                (i64p.clone(), vec![ValType::I64])
-            }
-            StrContains | StrStartsWith | StrEndsWith => {
-                (vec![ValType::I64, ValType::I64], vec![ValType::I32])
-            }
-            StrIsEmpty => (i64p.clone(), vec![ValType::I32]),
-            IntAbs => (i64p.clone(), vec![ValType::I64]),
-            FloatAbs => (vec![ValType::F64], vec![ValType::F64]),
-            ArrPush | ArrUnshift => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            ArrPop | ArrShift | ArrReverse => {
-                (vec![ValType::I64, ValType::I64], vec![ValType::I64])
-            }
-            ArrIndexOf => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            ArrIncludes => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I32],
-            ),
-            ArrJoin => (
-                vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            ArrToString => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            MathSqrt | MathFloor | MathCeil | MathRound | MathSin | MathCos | MathTan | MathLog => {
-                (vec![ValType::F64], vec![ValType::F64])
-            }
-            MathPow | MathMin | MathMax => (vec![ValType::F64, ValType::F64], vec![ValType::F64]),
-            MathRandom => (vec![], vec![ValType::F64]),
-            MathRange => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            JsonStringify => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            JsonParse => (i64p.clone(), vec![ValType::I64]),
-            FsExists => (i64p.clone(), vec![ValType::I32]),
-            FsCwd => (vec![], vec![ValType::I64]),
-            FsReadFile => (i64p.clone(), vec![ValType::I64]),
-            FsWriteFile => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            FsListDir | FsMkdir | FsRm => (i64p.clone(), vec![ValType::I64]),
-            RecordNew => (i64p.clone(), vec![ValType::I64]),
-            RecordSet => (
-                vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            RecordGet => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            RecordHas => (vec![ValType::I64, ValType::I64], vec![ValType::I32]),
-            RecordTag => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            RecordLen => (i64p.clone(), vec![ValType::I64]),
-            RecordKeys | RecordValues => (i64p.clone(), vec![ValType::I64]),
-            RecordToString => (i64p.clone(), vec![ValType::I64]),
-            HttpGet => (i64p.clone(), vec![ValType::I64]),
-            HttpPost => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            CmxNew => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            CmxSetProp => (
-                vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            CmxAddChild => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            CmxToString => (i64p.clone(), vec![ValType::I64]),
-            PrintAny => (vec![ValType::I64, ValType::I64], vec![]),
-            AnyMember => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64, ValType::I64],
-            ),
-            AnyIndex => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64, ValType::I64],
-            ),
-            FnHandle => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            FnToString => (i64p.clone(), vec![ValType::I64]),
-            FnEnter => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![],
-            ),
-            FnExit => (vec![], vec![]),
-            CallSite => (
-                vec![ValType::I64, ValType::I64],
-                vec![],
-            ),
-            HostCall => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
-            // Módulo os: sin args → i64 (string) o i32 (bool); env(key) → i64
-            OsPlatform | OsArch | OsVersion | OsHostname | OsHome | OsTempdir
-            | OsCpus | OsPid | OsUptime | OsSep => (vec![], vec![ValType::I64]),
-            OsEnv => (i64p.clone(), vec![ValType::I64]),
-            OsIsWindows | OsIsUnix => (vec![], vec![ValType::I32]),
-            // Módulo path
-            PathBasename | PathDirname | PathExtname | PathResolve | PathNormalize => {
-                (i64p.clone(), vec![ValType::I64])
-            }
-            PathJoin => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            PathIsAbsolute => (i64p.clone(), vec![ValType::I32]),
-            PathSep => (vec![], vec![ValType::I64]),
-            // Módulo process
-            ProcessArgs | ProcessCwd | ProcessPid | ProcessPlatform | ProcessTitle => {
-                (vec![], vec![ValType::I64])
-            }
-            ProcessEnv => (i64p.clone(), vec![ValType::I64]),
-            ProcessExit => (i64p.clone(), vec![]),
-            // Módulo time
-            TimeNow | TimeSeconds | TimeIso | TimeDate | TimeClock | TimeYear
-            | TimeMonth | TimeDay | TimeHour | TimeMinute | TimeSecond => {
-                (vec![], vec![ValType::I64])
-            }
-            TimeSleep => (i64p.clone(), vec![]),
-            // Módulo random
-            RandomRandom => (vec![], vec![ValType::F64]),
-            RandomInt => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            RandomFloat => (vec![ValType::F64, ValType::F64], vec![ValType::F64]),
-            RandomUuid => (vec![], vec![ValType::I64]),
-        }
-    }
-}
-
-/// Tipo WASM de un valor (los que dejan un único valor en el stack).
+/// Tipo WASM de un valor (los que dejan un Ãºnico valor en el stack).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WasTy {
     I64,
@@ -494,7 +71,7 @@ impl WasTy {
     }
 }
 
-/// Convierte un Type CLS a su representación WASM.
+/// Convierte un Type CLS a su representaciÃ³n WASM.
 fn was_type(t: &Type) -> ClsResult<WasTy> {
     match t {
         Type::Int | Type::I8 | Type::I16 | Type::I32 | Type::I64 => Ok(WasTy::I64),
@@ -530,8 +107,8 @@ fn was_type(t: &Type) -> ClsResult<WasTy> {
     }
 }
 
-/// Declaración sintética de `main` no-op (modo librería): `(i64 args) -> i64`,
-/// devuelve 0. Permite instanciar un módulo sin `main` (solo exports).
+/// DeclaraciÃ³n sintÃ©tica de `main` no-op (modo librerÃ­a): `(i64 args) -> i64`,
+/// devuelve 0. Permite instanciar un mÃ³dulo sin `main` (solo exports).
 fn noop_main_decl() -> FunctionDecl {
     let span = Span::new(1, 1, 1, 1);
     FunctionDecl {
@@ -553,7 +130,7 @@ fn noop_main_decl() -> FunctionDecl {
     }
 }
 
-/// Código de kind CLS para la sección custom `clx:exports` (firma tipada que el
+/// CÃ³digo de kind CLS para la secciÃ³n custom `clx:exports` (firma tipada que el
 /// host usa para el marshalling de valores):
 /// 0=int 1=float 2=bool 3=char 4=string 5=array 6=record/shape 7=tuple
 /// 8=otro i64 (enum/struct/clase/named/union) 9=void 10=cmx 11=funcion 12=null.
@@ -576,7 +153,7 @@ fn cls_kind_code(t: &Type) -> i64 {
     }
 }
 
-/// Tag del RUNTIME interno para valores dentro de records/arrays heterogéneos:
+/// Tag del RUNTIME interno para valores dentro de records/arrays heterogÃ©neos:
 /// 0=int 1=string 2=float 3=bool 4=char 5=cmx 6=array 7=record (tabla de
 /// `fmt_val_to_string`/`record_tag` del host). Distinto de `cls_kind_code`
 /// (tabla del binding: 4=string 5=array 6=record).
@@ -628,7 +205,7 @@ enum BuiltinTypeName {
     Void,
 }
 
-/// ¿El Type CLS del lado izquierdo coincide con el nombre builtin a la derecha?
+/// Â¿El Type CLS del lado izquierdo coincide con el nombre builtin a la derecha?
 fn builtin_type_matches(t: &Type, name: &BuiltinTypeName) -> bool {
     match (name, t) {
         (BuiltinTypeName::String, Type::String) => true,
@@ -664,7 +241,7 @@ impl HostCaller {
     }
 }
 
-/// Emisor con el estado de compilación de una función.
+/// Emisor con el estado de compilaciÃ³n de una funciÃ³n.
 struct FuncEmitter<'a> {
     types: &'a HashMap<Span, Type>,
     body: Vec<Instruction<'static>>,
@@ -681,7 +258,7 @@ struct FuncEmitter<'a> {
     fn_table_idx: &'a HashMap<String, u32>,
     arrow_names: &'a HashMap<Span, String>,
     arrow_captures: &'a HashMap<Span, Vec<String>>,
-    /// Registro de types dinámicos (call_indirect de funciones como valor).
+    /// Registro de types dinÃ¡micos (call_indirect de funciones como valor).
     type_count: &'a mut u32,
     types_sec: &'a mut TypeSection,
     enum_defs: &'a HashMap<String, (u32, Vec<String>)>,
@@ -692,20 +269,20 @@ struct FuncEmitter<'a> {
     static_fields: &'a HashMap<String, u32>,
     class_defs: &'a HashMap<String, ClassInfo>,
     method_type_indexes: &'a HashMap<String, u32>,
-    /// Firmas tipadas de las funciones (`Clase::m` → (params, ret)) — el retorno
-    /// de los magic methods (el call_indirect lo produce según la firma).
+    /// Firmas tipadas de las funciones (`Clase::m` â†’ (params, ret)) â€” el retorno
+    /// de los magic methods (el call_indirect lo produce segÃºn la firma).
     func_types: &'a HashMap<String, (Vec<Type>, Option<Type>)>,
-    /// clase actual (al compilar un método) — para `super` y `me`.
+    /// clase actual (al compilar un mÃ©todo) â€” para `super` y `me`.
     current_class: Option<String>,
-    /// nombre del método que se está compilando (sin el prefijo de clase), para
-    /// el protocolo `__next` (el `null` termina la iteración con un sentinel
-    /// distinto de 0 — un iterador puede devolver 0 como valor legítimo).
+    /// nombre del mÃ©todo que se estÃ¡ compilando (sin el prefijo de clase), para
+    /// el protocolo `__next` (el `null` termina la iteraciÃ³n con un sentinel
+    /// distinto de 0 â€” un iterador puede devolver 0 como valor legÃ­timo).
     current_method: Option<String>,
-    /// Span de la función que se está compilando (para errores de statements sin
+    /// Span de la funciÃ³n que se estÃ¡ compilando (para errores de statements sin
     /// span propio, p.ej. `break`/`continue` fuera de loop).
     current_fn_span: Span,
     target: &'a Target,
-    /// Índice del tag de excepción CLS (para `Instruction::Throw`).
+    /// Ãndice del tag de excepciÃ³n CLS (para `Instruction::Throw`).
     tag_idx: u32,
     /// Type `[] -> [i64, i64]` del block handler del try_table.
     eh_handler_ty: u32,
@@ -715,11 +292,11 @@ struct FuncEmitter<'a> {
     exceptions: bool,
     /// Funciones host del nodo por nombre (canal `env.host_call`).
     intrinsics: &'a HashMap<String, HostIntrinsic>,
-    /// Closures (B5): nombre de variable capturada → índice 1-based en el bloque
+    /// Closures (B5): nombre de variable capturada â†’ Ã­ndice 1-based en el bloque
     /// de capturas `[n, v1, v2, ...]`. El param 0 del frame es `__capturas` (ptr).
     captures: HashMap<String, u32>,
     /// Variables promovidas al heap (capturadas por una arrow del scope): el
-    /// local guarda un PTR a un slot `[valor]`; los accesos pasan por ahí.
+    /// local guarda un PTR a un slot `[valor]`; los accesos pasan por ahÃ­.
     promoted: HashSet<String>,
 }
 
@@ -799,7 +376,7 @@ impl<'a> FuncEmitter<'a> {
         l
     }
 
-    /// Registra un type de función (para `call_indirect` de funciones como valor).
+    /// Registra un type de funciÃ³n (para `call_indirect` de funciones como valor).
     fn register_func_type(&mut self, params: Vec<ValType>, results: Vec<ValType>) -> u32 {
         let idx = *self.type_count;
         *self.type_count += 1;
@@ -824,7 +401,7 @@ impl<'a> FuncEmitter<'a> {
         if name == "super" && self.current_class.is_some() {
             self.body.push(Instruction::LocalGet(0));
         } else if let Some(&ti) = self.fn_table_idx.get(name) {
-            // Función CLS como valor → handle [tabla_idx][capturas=0][nombre]
+            // FunciÃ³n CLS como valor â†’ handle [tabla_idx][capturas=0][nombre]
             // con tag-bit (ptr<<1)|1. El nombre se guarda para fn_to_string.
             let n = self.intern_string(&format!("<function {}>", name));
             self.body.push(Instruction::I64Const(ti as i64));
@@ -832,17 +409,17 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Const(0));
             self.host.call(HostFn::FnHandle, &mut self.body);
         } else if let Some((def_id, _)) = self.enum_defs.get(name) {
-            // Enum def como valor → marker `def_id<<32 | 0xffff_ffff` (imprime `<enum X>`).
+            // Enum def como valor â†’ marker `def_id<<32 | 0xffff_ffff` (imprime `<enum X>`).
             let v = ((*def_id as i64) << 32) | 0xffff_ffff;
             self.body.push(Instruction::I64Const(v));
         } else if self.struct_defs.contains_key(name) {
-            // Struct def como valor → ptr 0 (marker: imprime `<function X>`).
+            // Struct def como valor â†’ ptr 0 (marker: imprime `<function X>`).
             self.body.push(Instruction::I64Const(0));
         } else if let Some(g) = self.globals.get(name) {
             self.body.push(Instruction::GlobalGet(*g));
         } else if let Some(fidx) = self.intrinsic_handle_idx(name) {
-            // Intrinsic (print/input/now/...) como valor → handle de función con
-            // índice de tabla sintético (negativo, estable por nombre): se
+            // Intrinsic (print/input/now/...) como valor â†’ handle de funciÃ³n con
+            // Ã­ndice de tabla sintÃ©tico (negativo, estable por nombre): se
             // imprime `<function print>` (paridad walker). Un var/global de
             // usuario con el mismo nombre gana (shadowing).
             let n = self.intern_string(&format!("<function {}>", name));
@@ -888,12 +465,12 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-    /// Índice de tabla "sintético" (negativo, estable por nombre) para el handle
-    /// de función de un intrinsic, o `None` si el nombre no es intrinsic.
+    /// Ãndice de tabla "sintÃ©tico" (negativo, estable por nombre) para el handle
+    /// de funciÃ³n de un intrinsic, o `None` si el nombre no es intrinsic.
     /// Los builtins se resuelven por nombre (el emisor los despacha en los
     /// calls); los host intrinsics del nodo (canal `env.host_call`) se indexan
-    /// con claves ordenadas para que el índice no dependa del orden de
-    /// iteración del HashMap (REPL: sesión a sesión).
+    /// con claves ordenadas para que el Ã­ndice no dependa del orden de
+    /// iteraciÃ³n del HashMap (REPL: sesiÃ³n a sesiÃ³n).
     fn intrinsic_handle_idx(&self, name: &str) -> Option<i64> {
         const BUILTINS: &[&str] = &[
             "print", "len", "toString", "str", "input", "int", "float", "bool",
@@ -955,7 +532,7 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Add);
             self.body.push(Instruction::I32WrapI64);
             if self.promoted.contains(name) {
-                // El bloque guarda un ptr al slot: store en `[ptr_al_slot]` → valor.
+                // El bloque guarda un ptr al slot: store en `[ptr_al_slot]` â†’ valor.
                 self.body.push(Instruction::I64Load(MemArg {
                     offset: 0,
                     align: 3,
@@ -996,7 +573,7 @@ impl<'a> FuncEmitter<'a> {
 
     fn value_type(&self, expr: &Expression) -> ClsResult<WasTy> {
         // Literales: el kind ES el tipo (los spans del parser colisionan entre
-        // un literal y la expresión que lo contiene, así que el type map puede
+        // un literal y la expresiÃ³n que lo contiene, asÃ­ que el type map puede
         // estar contaminado). Esto mantiene el tipo real del valor emitido.
         if let Expression::Literal(l) = expr {
             return Ok(match &l.kind {
@@ -1007,7 +584,7 @@ impl<'a> FuncEmitter<'a> {
                 _ => WasTy::I64,
             });
         }
-        // Llamadas a funciones nativas (extensión) → tipo de retorno codificado.
+        // Llamadas a funciones nativas (extensiÃ³n) â†’ tipo de retorno codificado.
         if let Expression::Call(c) = expr {
             if let Expression::Identifier(name, _) = &*c.callee {
                 if let Some(rc) = self.native_ret.get(name) {
@@ -1015,14 +592,14 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
         }
-        // Llamadas a módulos stdlib → tipo de retorno conocido.
+        // Llamadas a mÃ³dulos stdlib â†’ tipo de retorno conocido.
         if let Some(w) = self.module_call_ret(expr) {
             return Ok(w);
         }
         let span = expr_span(expr);
         let t = self.types.get(&span).ok_or_else(|| {
             crate::error::ClsError::CompileError(format!(
-                "Expresión sin tipo ({}:{}:{}): el JIT requiere el type checker",
+                "ExpresiÃ³n sin tipo ({}:{}:{}): el JIT requiere el type checker",
                 span.start_line,
                 span.start_col,
                 expr_display(expr)
@@ -1030,7 +607,7 @@ impl<'a> FuncEmitter<'a> {
         })?;
         match t {
             Type::Any | Type::Unknown => Err(crate::error::ClsError::CompileError(format!(
-                "Expresión sin tipo concreto ({}:{}): {}",
+                "ExpresiÃ³n sin tipo concreto ({}:{}): {}",
                 span.start_line,
                 span.start_col,
                 expr_display(expr)
@@ -1050,7 +627,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    // ── Emisión de statements ────────────────────────────────────────────
+    // â”€â”€ EmisiÃ³n de statements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     fn emit_statement(&mut self, stmt: &Statement) -> ClsResult<()> {
         match stmt {
@@ -1058,7 +635,7 @@ impl<'a> FuncEmitter<'a> {
                 let ty = match (&v.type_ann, &v.value) {
                     (Some(ann), Some(val)) => match was_type(&annotation_to_type(ann)) {
                         Ok(w) => w,
-                        // Anotación no resuelta (alias/unioón) → tipo del valor.
+                        // AnotaciÃ³n no resuelta (alias/unioÃ³n) â†’ tipo del valor.
                         Err(_) => self.value_type(val)?,
                     },
                     (Some(ann), None) => was_type(&annotation_to_type(ann))?,
@@ -1150,7 +727,7 @@ impl<'a> FuncEmitter<'a> {
             Statement::ForEach(fe) => self.emit_foreach(fe),
             Statement::Switch(s) => self.emit_switch(s),
             Statement::With(w) => self.emit_with(w),
-            // `when` → compile-time: emitir solo la rama que matchea el target actual.
+            // `when` â†’ compile-time: emitir solo la rama que matchea el target actual.
             Statement::When(w) => {
                 if let Some(branch) = w.branches.iter().find(|b| self.target.matches(&b.cond)) {
                     for st in &branch.block.statements {
@@ -1178,14 +755,14 @@ impl<'a> FuncEmitter<'a> {
 
     fn unsupported_stmt(&self, stmt: &Statement) -> crate::error::ClsError {
         crate::error::ClsError::CompileError(format!(
-            "El JIT (subconjunto WASM) aún no soporta este statement: {}",
+            "El JIT (subconjunto WASM) aÃºn no soporta este statement: {}",
             statement_display(stmt)
         ))
     }
 
-    /// `arr.map(f)` — aplica la función (handle) a cada elemento y devuelve un
-    /// array nuevo con los resultados. El array original YA está en el stack
-    /// (lo emitió el dispatch del método).
+    /// `arr.map(f)` â€” aplica la funciÃ³n (handle) a cada elemento y devuelve un
+    /// array nuevo con los resultados. El array original YA estÃ¡ en el stack
+    /// (lo emitiÃ³ el dispatch del mÃ©todo).
     fn emit_array_map(
         &mut self,
         _member: &MemberAccessExpr,
@@ -1198,7 +775,7 @@ impl<'a> FuncEmitter<'a> {
         self.emit_expression(&c.args[0])?;
         let f_handle = self.fresh_local();
         self.body.push(Instruction::LocalSet(f_handle));
-        // tipo de f → Fun(params, ret)
+        // tipo de f â†’ Fun(params, ret)
         let ft = self
             .types
             .get(&expr_span(&c.args[0]))
@@ -1208,7 +785,7 @@ impl<'a> FuncEmitter<'a> {
             Type::Fun(p, r) => (p, *r),
             _ => {
                 return Err(crate::error::ClsError::CompileError(
-                    "map: el argumento debe ser una función".to_string(),
+                    "map: el argumento debe ser una funciÃ³n".to_string(),
                 ))
             }
         };
@@ -1222,7 +799,7 @@ impl<'a> FuncEmitter<'a> {
             Type::Void => vec![],
             r => vec![was_type(&r)?.val_type()],
         };
-        // nuevo array [cap][len][ret...] del mismo tamaño que el original.
+        // nuevo array [cap][len][ret...] del mismo tamaÃ±o que el original.
         let i = self.fresh_local();
         let new_ptr = self.fresh_local();
         self.body.push(Instruction::LocalGet(arr_ptr));
@@ -1269,7 +846,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64GeS);
         let depth = self.block_depth.saturating_sub(break_at);
         self.body.push(Instruction::BrIf(depth));
-        // addr del destino en el nuevo array → guardar en local.
+        // addr del destino en el nuevo array â†’ guardar en local.
         self.body.push(Instruction::LocalGet(new_ptr));
         self.body.push(Instruction::LocalGet(i));
         self.body.push(Instruction::I64Const(es_ret));
@@ -1279,7 +856,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Add);
         let addr_tmp = self.fresh_local();
         self.body.push(Instruction::LocalSet(addr_tmp));
-        // elem = arr[16 + i*elem_size] → guardar en local.
+        // elem = arr[16 + i*elem_size] â†’ guardar en local.
         self.body.push(Instruction::LocalGet(arr_ptr));
         self.body.push(Instruction::LocalGet(i));
         self.body.push(Instruction::I64Const(elem_size));
@@ -1407,7 +984,7 @@ impl<'a> FuncEmitter<'a> {
     /// `for each x [and i] in (col)` sobre array/tuple.
     fn emit_foreach(&mut self, fe: &ForEachStatement) -> ClsResult<()> {
         // Enum: `for each v in (Nivel)` o `for each v in (lib::Color)` (namespaced)
-        // → loop 0..variants.len()
+        // â†’ loop 0..variants.len()
         let enum_key = match &fe.iterable {
             Expression::Identifier(name, _) => Some(name.clone()),
             Expression::NamespaceAccess(ns, name, _) => Some(format!("{}::{}", ns, name)),
@@ -1428,7 +1005,7 @@ impl<'a> FuncEmitter<'a> {
                 let break_at = self.block_depth;
                 self.block_depth += 1;
                 self.body.push(Instruction::Loop(BlockType::Empty));
-                // continue block: el `continue` salta aquí y ejecuta el incremento.
+                // continue block: el `continue` salta aquÃ­ y ejecuta el incremento.
                 self.block_depth += 1;
                 self.body.push(Instruction::Block(BlockType::Empty));
                 let continue_at = self.block_depth;
@@ -1453,7 +1030,7 @@ impl<'a> FuncEmitter<'a> {
                 for st in &fe.block.statements {
                     self.emit_statement(st)?;
                 }
-                // cerrar el continue block → incremento
+                // cerrar el continue block â†’ incremento
                 self.body.push(Instruction::End);
                 self.block_depth -= 1;
                 self.body.push(Instruction::LocalGet(i));
@@ -1476,7 +1053,7 @@ impl<'a> FuncEmitter<'a> {
             .cloned()
             .unwrap_or(Type::Any);
         // Magic methods __iter/__next (paridad walker interpreter.rs:723-767):
-        // __iter() → Array (caso 1) u objeto iterador con __next() hasta null
+        // __iter() â†’ Array (caso 1) u objeto iterador con __next() hasta null
         // (caso 2). El tipo del iterable debe ser una clase con __iter.
         if let Some(cn) = self.class_magic_method(&Some(iterable_ty.clone()), "__iter") {
             return self.emit_foreach_magic(fe, &cn, &iterable_ty);
@@ -1484,7 +1061,7 @@ impl<'a> FuncEmitter<'a> {
         let (elem_ty, elem_size) = match &iterable_ty {
             Type::Array(elem) => {
                 let w = was_type(elem)?;
-                // Array de Cmx → entradas `[val, tag]` stride 16.
+                // Array de Cmx â†’ entradas `[val, tag]` stride 16.
                 let es = if matches!(**elem, Type::Cmx) {
                     16
                 } else {
@@ -1508,8 +1085,8 @@ impl<'a> FuncEmitter<'a> {
         self.emit_foreach_array_loop(iter, elem_ty, elem_size, fe)
     }
 
-    /// Magic __iter/__next: `it = obj.__iter()`; si devuelve Array → loop nativo;
-    /// si devuelve una clase iteradora → `it.__next()` hasta `null` (0 en el JIT).
+    /// Magic __iter/__next: `it = obj.__iter()`; si devuelve Array â†’ loop nativo;
+    /// si devuelve una clase iteradora â†’ `it.__next()` hasta `null` (0 en el JIT).
     fn emit_foreach_magic(
         &mut self,
         fe: &ForEachStatement,
@@ -1520,7 +1097,7 @@ impl<'a> FuncEmitter<'a> {
         let iter = self.fresh_local();
         self.body.push(Instruction::LocalSet(iter));
         match self.magic_ret_type(cn, "__iter") {
-            // Caso 1: __iter devolvió un Array → iterar con el loop nativo.
+            // Caso 1: __iter devolviÃ³ un Array â†’ iterar con el loop nativo.
             Some(Type::Array(elem)) => {
                 let w = was_type(&*elem)?;
                 let es = if matches!(*elem, Type::Cmx) {
@@ -1530,7 +1107,7 @@ impl<'a> FuncEmitter<'a> {
                 };
                 self.emit_foreach_array_loop(iter, w, es, fe)
             }
-            // Caso 2: objeto iterador → __next() hasta null.
+            // Caso 2: objeto iterador â†’ __next() hasta null.
             Some(Type::Named(it_cn, _)) => self.emit_foreach_next_loop(iter, &it_cn, fe),
             _ => Err(crate::error::ClsError::CompileError(format!(
                 "'{}::__iter' debe anotar su retorno (Array<X> o una clase iteradora \
@@ -1561,7 +1138,7 @@ impl<'a> FuncEmitter<'a> {
         let break_at = self.block_depth;
         self.block_depth += 1;
         self.body.push(Instruction::Loop(BlockType::Empty));
-        // continue block: el `continue` salta aquí y ejecuta el incremento.
+        // continue block: el `continue` salta aquÃ­ y ejecuta el incremento.
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::Empty));
         let continue_at = self.block_depth;
@@ -1620,7 +1197,7 @@ impl<'a> FuncEmitter<'a> {
         for st in &fe.block.statements {
             self.emit_statement(st)?;
         }
-        // cerrar el continue block → i++
+        // cerrar el continue block â†’ i++
         self.body.push(Instruction::End);
         self.block_depth -= 1;
         self.body.push(Instruction::LocalGet(i));
@@ -1638,7 +1215,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// Loop del iterador: `v = it.__next()`; si `v == 0` (null) → break; si no,
+    /// Loop del iterador: `v = it.__next()`; si `v == 0` (null) â†’ break; si no,
     /// item = v, index = i, cuerpo, i++.
     fn emit_foreach_next_loop(&mut self, iter: u32, it_cn: &str, fe: &ForEachStatement) -> ClsResult<()> {
         let item_was = match self.magic_ret_type(it_cn, "__next") {
@@ -1663,7 +1240,7 @@ impl<'a> FuncEmitter<'a> {
         let break_at = self.block_depth;
         self.block_depth += 1;
         self.body.push(Instruction::Loop(BlockType::Empty));
-        // continue block: el `continue` salta aquí y ejecuta el incremento.
+        // continue block: el `continue` salta aquÃ­ y ejecuta el incremento.
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::Empty));
         let continue_at = self.block_depth;
@@ -1679,7 +1256,7 @@ impl<'a> FuncEmitter<'a> {
             WasTy::I32 => Instruction::LocalSet(v),
             WasTy::I64 => Instruction::LocalSet(v),
         });
-        // if v == null (sentinel del protocolo __next) → break
+        // if v == null (sentinel del protocolo __next) â†’ break
         self.body.push(Instruction::LocalGet(v));
         match item_was {
             WasTy::I32 => self.body.push(Instruction::I32Eqz),
@@ -1705,7 +1282,7 @@ impl<'a> FuncEmitter<'a> {
         for st in &fe.block.statements {
             self.emit_statement(st)?;
         }
-        // cerrar el continue block → i++
+        // cerrar el continue block â†’ i++
         self.body.push(Instruction::End);
         self.block_depth -= 1;
         self.body.push(Instruction::LocalGet(i));
@@ -1766,7 +1343,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// `with x in (expr) { ... }` → local temporal + bloque.
+    /// `with x in (expr) { ... }` â†’ local temporal + bloque.
     fn emit_with(&mut self, w: &WithStatement) -> ClsResult<()> {
         self.emit_expression(&w.value)?;
         let ty = self.value_type(&w.value)?;
@@ -1778,13 +1355,13 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// `try { ... } catch (e) { ... } finally { ... }` — excepciones WASM (try_table).
+    /// `try { ... } catch (e) { ... } finally { ... }` â€” excepciones WASM (try_table).
     /// Paridad con el walker: el finally solo se ejecuta si NO hubo catch; el catch
     /// recibe `e = "Error de runtime: " + msg` (e.to_string() del walker).
     fn emit_try(&mut self, stmt: &TryStatement) -> ClsResult<()> {
         if !self.exceptions {
             return Err(crate::error::ClsError::compile_at(
-                "try/catch no soportado en este runtime: el backend se compiló sin \
+                "try/catch no soportado en este runtime: el backend se compilÃ³ sin \
                  excepciones WASM (wasmi). Usa el runtime wasmtime o el WASM nativo del navegador.",
                 &stmt.span,
             ));
@@ -1793,14 +1370,14 @@ impl<'a> FuncEmitter<'a> {
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::Empty));
         let outer = self.block_depth;
-        // block $handler (result [i64, i64]) — su label (continuation, tras su End)
+        // block $handler (result [i64, i64]) â€” su label (continuation, tras su End)
         // es donde aterriza el catch con el payload [msg, span].
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::FunctionType(
             self.eh_handler_ty,
         )));
         let handler = self.block_depth;
-        // try_table: captura nuestro tag → br al label del $handler con [msg, span]
+        // try_table: captura nuestro tag â†’ br al label del $handler con [msg, span]
         // El label del catch NO cuenta el try_table como scope (br 0 = $handler).
         self.block_depth += 1;
         let catch_label = self.block_depth - handler - 1;
@@ -1816,10 +1393,10 @@ impl<'a> FuncEmitter<'a> {
         }
         self.body.push(Instruction::End); // cierra try_table
         self.block_depth -= 1;
-        // flujo normal (sin excepción) → br al $outer (salta el handler)
+        // flujo normal (sin excepciÃ³n) â†’ br al $outer (salta el handler)
         let br_outer = self.block_depth - outer;
         self.body.push(Instruction::Br(br_outer));
-        self.body.push(Instruction::End); // cierra $handler → el catch aterriza AQUÍ con [msg, span]
+        self.body.push(Instruction::End); // cierra $handler â†’ el catch aterriza AQUÃ con [msg, span]
         self.block_depth -= 1;
         // handler: payload [msg, span] en el stack (span arriba, msg debajo)
         if stmt.catch_clauses.is_empty() {
@@ -1872,7 +1449,7 @@ impl<'a> FuncEmitter<'a> {
         if has_elif || has_else {
             self.body.push(Instruction::Else);
         }
-        // Cadena de elifs anidados dentro del else; el último cede al else final.
+        // Cadena de elifs anidados dentro del else; el Ãºltimo cede al else final.
         for (k, branch) in i.elif_branches.iter().enumerate() {
             self.emit_expression(&branch.condition)?;
             self.coerce_to_bool(&branch.condition)?;
@@ -1974,7 +1551,7 @@ impl<'a> FuncEmitter<'a> {
         // loop
         self.block_depth += 1;
         self.body.push(Instruction::Loop(BlockType::Empty));
-        // continue block: el `continue` salta aquí y ejecuta el update (evita
+        // continue block: el `continue` salta aquÃ­ y ejecuta el update (evita
         // que se salte el incremento y produzca un loop infinito).
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::Empty));
@@ -1993,14 +1570,14 @@ impl<'a> FuncEmitter<'a> {
         for s in &f.block.statements {
             self.emit_statement(s)?;
         }
-        // cerrar el continue block → se ejecuta el update
+        // cerrar el continue block â†’ se ejecuta el update
         self.body.push(Instruction::End);
         self.block_depth -= 1;
         if let Some(update) = &f.update {
             self.emit_expression(update)?;
             self.emit_drop(update)?;
         }
-        // volver al loop (que está en continue_at - 1)
+        // volver al loop (que estÃ¡ en continue_at - 1)
         let depth = self.block_depth.saturating_sub(continue_at - 1);
         self.body.push(Instruction::Br(depth));
         self.body.push(Instruction::End); // loop
@@ -2011,7 +1588,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    // ── Emisión de expresiones ───────────────────────────────────────────
+    // â”€â”€ EmisiÃ³n de expresiones â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     fn emit_expression(&mut self, expr: &Expression) -> ClsResult<()> {
         match expr {
@@ -2029,12 +1606,12 @@ impl<'a> FuncEmitter<'a> {
             Expression::Record(r) => self.emit_record(r),
             Expression::Cmx(c) => self.emit_cmx(c),
             Expression::ArrowFunction(a) => {
-                // Arrow → handle de su función sintética `__arrow_<n>`.
+                // Arrow â†’ handle de su funciÃ³n sintÃ©tica `__arrow_<n>`.
                 // Si captura variables (closure): evaluarlas en un bloque
                 // `[n, v1, v2, ...]` y pasar el ptr como tercer arg del handle.
                 let name = self.arrow_names.get(&a.span).ok_or_else(|| {
                     crate::error::ClsError::CompileError(
-                        "Arrow function sin función sintética (recolección)".to_string(),
+                        "Arrow function sin funciÃ³n sintÃ©tica (recolecciÃ³n)".to_string(),
                     )
                 })?;
                 let ti = self.fn_table_idx[name];
@@ -2043,7 +1620,7 @@ impl<'a> FuncEmitter<'a> {
                     .get(&a.span)
                     .cloned()
                     .unwrap_or_default();
-                // Bloque de capturas `[n, v1, v2, ...]` (se evalúa primero).
+                // Bloque de capturas `[n, v1, v2, ...]` (se evalÃºa primero).
                 let cap_ptr = self.fresh_local();
                 if captures.is_empty() {
                     self.body.push(Instruction::I64Const(0));
@@ -2087,7 +1664,7 @@ impl<'a> FuncEmitter<'a> {
             Expression::Assignment(a) => self.emit_assignment(a),
             Expression::Parenthesized(inner, _) => self.emit_expression(inner),
             Expression::StringInterpolation(s) => self.emit_interpolation(s),
-            // `x::miembro` (módulo/namespace importado): global `x::miembro`.
+            // `x::miembro` (mÃ³dulo/namespace importado): global `x::miembro`.
             Expression::NamespaceAccess(ns, member, span) => {
                 let key = format!("{}::{}", ns, member);
                 if let Some(g) = self.globals.get(&key).copied() {
@@ -2096,7 +1673,7 @@ impl<'a> FuncEmitter<'a> {
                 } else {
                     Err(crate::error::ClsError::compile_at(
                         &format!(
-                            "El miembro '{}' no existe o no se exporta en el módulo '{}' (fase de emisión).",
+                            "El miembro '{}' no existe o no se exporta en el mÃ³dulo '{}' (fase de emisiÃ³n).",
                             member, ns
                         ),
                         span,
@@ -2111,7 +1688,7 @@ impl<'a> FuncEmitter<'a> {
         let span = expr_span(expr);
         crate::error::ClsError::compile_at(
             &format!(
-                "El JIT (subconjunto WASM) aún no soporta esta expresión: `{}`",
+                "El JIT (subconjunto WASM) aÃºn no soporta esta expresiÃ³n: `{}`",
                 expr_display(expr)
             ),
             &span,
@@ -2133,9 +1710,9 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_load_str(idx);
             }
             LiteralKind::Null => {
-                // Dentro de `__next`, el `null` es el sentinel de fin de iteración
-                // (distinto de 0 — un iterador puede devolver 0 como valor
-                // legítimo). Fuera del protocolo, null = 0 (paridad histórica).
+                // Dentro de `__next`, el `null` es el sentinel de fin de iteraciÃ³n
+                // (distinto de 0 â€” un iterador puede devolver 0 como valor
+                // legÃ­timo). Fuera del protocolo, null = 0 (paridad histÃ³rica).
                 if self.current_method.as_deref() == Some("__next") {
                     self.body.push(Instruction::I64Const(NULL_ITER_SENTINEL));
                 } else {
@@ -2149,10 +1726,10 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// Emite `env.fn_enter(nombre, line, col)` al inicio de una función CLS.
-    /// Registra la función en el shadow call stack del host (para el trace de
-    /// errores de runtime). `main` (la entrada) se registra sin ubicación
-    /// (línea 0): el formateador lo muestra como `→ main` sin línea.
+    /// Emite `env.fn_enter(nombre, line, col)` al inicio de una funciÃ³n CLS.
+    /// Registra la funciÃ³n en el shadow call stack del host (para el trace de
+    /// errores de runtime). `main` (la entrada) se registra sin ubicaciÃ³n
+    /// (lÃ­nea 0): el formateador lo muestra como `â†’ main` sin lÃ­nea.
     fn emit_fn_enter(&mut self, f: &FunctionDecl) -> ClsResult<()> {
         let display = f
             .name
@@ -2183,13 +1760,13 @@ impl<'a> FuncEmitter<'a> {
         self.host.call(HostFn::CallSite, &mut self.body);
     }
 
-    /// Emite una llamada a una función host del nodo (intrinsic) vía el canal
-    /// genérico `env.host_call(id, ptr, n)`. Los args viajan empaquetados en
+    /// Emite una llamada a una funciÃ³n host del nodo (intrinsic) vÃ­a el canal
+    /// genÃ©rico `env.host_call(id, ptr, n)`. Los args viajan empaquetados en
     /// memoria: `[n:i64][(val:i64, tag:i64)*n]` (tag = `cls_kind_code`).
     fn emit_host_call(&mut self, intr: &HostIntrinsic, c: &CallExpr) -> ClsResult<()> {
         let n = c.args.len() as i64;
         // 1. Evaluar cada arg y guardarlo en un temporal (bits uniformes i64:
-        //    float → reinterpret bits; bool/char → extender a i64).
+        //    float â†’ reinterpret bits; bool/char â†’ extender a i64).
         let mut tmps: Vec<u32> = Vec::with_capacity(c.args.len());
         for (i, arg) in c.args.iter().enumerate() {
             self.emit_expression(arg)?;
@@ -2223,7 +1800,7 @@ impl<'a> FuncEmitter<'a> {
             align: 3,
             memory_index: 0,
         }));
-        // 4. Por arg: val + tag. (El addr de los memory ops es i32 → wrap.)
+        // 4. Por arg: val + tag. (El addr de los memory ops es i32 â†’ wrap.)
         for (i, tmp) in tmps.iter().enumerate() {
             let base = 8 + (i as i64) * 16;
             self.body.push(Instruction::LocalGet(ptr));
@@ -2270,7 +1847,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// Emite `env.fn_exit()` antes de salir de una función CLS.
+    /// Emite `env.fn_exit()` antes de salir de una funciÃ³n CLS.
     fn emit_fn_exit(&mut self) {
         self.host.call(HostFn::FnExit, &mut self.body);
     }
@@ -2295,9 +1872,9 @@ impl<'a> FuncEmitter<'a> {
         use Operator::*;
         let lt = self.value_type(&b.left)?;
         let rt = self.value_type(&b.right)?;
-        // Magic methods de clase (paridad walker `binary_magic`): aritmética,
-        // igualdad y comparación se despachan a la clase ANTES de los paths
-        // nativos (el typeck ya validó el tipo del resultado).
+        // Magic methods de clase (paridad walker `binary_magic`): aritmÃ©tica,
+        // igualdad y comparaciÃ³n se despachan a la clase ANTES de los paths
+        // nativos (el typeck ya validÃ³ el tipo del resultado).
         let rty = self.types.get(&expr_span(&b.right)).cloned();
         let arith_magic = match b.op {
             Plus => "__add",
@@ -2315,7 +1892,7 @@ impl<'a> FuncEmitter<'a> {
         }
         match b.op {
             StrictEqual | NotEqual => {
-                // __equals: left.__equals(right) → truthiness; `!=` niega.
+                // __equals: left.__equals(right) â†’ truthiness; `!=` niega.
                 if let Some(ret_was) = self.try_binary_magic(&b.left, &b.right, "__equals")? {
                     match ret_was {
                         WasTy::I64 => {
@@ -2336,7 +1913,7 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
             LessThan | LessEqual | GreaterThan | GreaterEqual => {
-                // __compare: resultado int → c <0/<=0/>0/>=0 según el operador.
+                // __compare: resultado int â†’ c <0/<=0/>0/>=0 segÃºn el operador.
                 if let Some(ret_was) = self.try_binary_magic(&b.left, &b.right, "__compare")? {
                     match ret_was {
                         WasTy::I32 => self.body.push(Instruction::I64ExtendI32S),
@@ -2613,14 +2190,14 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_class_method_args("__contains", &b.right, &[(*b.left).clone()])?;
                     return Ok(());
                 }
-                // `x in "texto"` → substring (arrays en A4). StrContains(container, needle)
+                // `x in "texto"` â†’ substring (arrays en A4). StrContains(container, needle)
                 self.emit_expression(&b.right)?;
                 self.emit_expression(&b.left)?;
                 self.host.call(HostFn::StrContains, &mut self.body);
             }
             Is => {
                 // `v is Nivel` (enum), `p is Punto` (struct) o `o is Clase` (herencia)
-                // `v is String`/`Int`/... (tipo builtin) → se evalúa estáticamente
+                // `v is String`/`Int`/... (tipo builtin) â†’ se evalÃºa estÃ¡ticamente
                 // con el tipo del lado izquierdo.
                 if let Expression::Identifier(right_name, _) = &*b.right {
                     if let Some(t) = builtin_was_type(right_name) {
@@ -2751,11 +2328,11 @@ impl<'a> FuncEmitter<'a> {
 
     /// Coacciona el valor en el stack (emitido por `emit_expression`) a un
     /// bool i32, con paridad a `Value::is_truthy` del walker. `expr` se usa
-    /// solo para consultar el tipo estático (el valor ya está en el stack).
-    /// Numéricos: != 0. String: len != 0 (los bits bajos del packed). Array/
+    /// solo para consultar el tipo estÃ¡tico (el valor ya estÃ¡ en el stack).
+    /// NumÃ©ricos: != 0. String: len != 0 (los bits bajos del packed). Array/
     /// Tuple/Record/Shape: len del header (ptr+8) != 0. Char/Bool: ya son i32.
     /// Cmx/Named/objetos: true (paridad walker). Any/Unknown/Null: error claro
-    /// (antes emitía WASM inválido "expected i32, found i64").
+    /// (antes emitÃ­a WASM invÃ¡lido "expected i32, found i64").
     fn coerce_to_bool(&mut self, expr: &Expression) -> ClsResult<()> {
         let ty = self
             .types
@@ -2775,7 +2352,7 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             Type::String => {
-                // packed = (ptr << 32) | len → truthy si len != 0.
+                // packed = (ptr << 32) | len â†’ truthy si len != 0.
                 self.body.push(Instruction::I64Const(0xffff_ffff));
                 self.body.push(Instruction::I64And);
                 self.body.push(Instruction::I64Const(0));
@@ -2783,7 +2360,7 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             Type::Array(_) | Type::Tuple(_) | Type::Record(_, _) => {
-                // Header CLS: [cap:i64][len:i64] → truthy si len (ptr+8) != 0.
+                // Header CLS: [cap:i64][len:i64] â†’ truthy si len (ptr+8) != 0.
                 self.body.push(Instruction::I64Const(8));
                 self.body.push(Instruction::I64Add);
                 self.body.push(Instruction::I32WrapI64);
@@ -2797,7 +2374,7 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             // Shape: se emite como struct contiguo SIN header [cap][len] (los
-            // campos van directos) → no se puede leer el len; un shape con
+            // campos van directos) â†’ no se puede leer el len; un shape con
             // campos declarados siempre es truthy (paridad walker).
             Type::Shape(_) => {
                 self.body.push(Instruction::I32Const(1));
@@ -2810,7 +2387,7 @@ impl<'a> FuncEmitter<'a> {
             }
             other => Err(crate::error::ClsError::compile_at(
                 &format!(
-                    "la condición debe ser Bool, encontró {} (usa bool(...) para convertir)",
+                    "la condiciÃ³n debe ser Bool, encontrÃ³ {} (usa bool(...) para convertir)",
                     other
                 ),
                 &expr_span(expr),
@@ -2867,7 +2444,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Eqz);
         self.block_depth += 1;
         self.body.push(Instruction::If(BlockType::Empty));
-        self.emit_throw("División por cero", span);
+        self.emit_throw("DivisiÃ³n por cero", span);
         self.body.push(Instruction::Unreachable);
         self.body.push(Instruction::End);
         self.block_depth -= 1;
@@ -2875,8 +2452,8 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// Lanza la excepción CLS: `throw(tag)` con payload (msg, span_empaquetado).
-    /// En modo sin excepciones (wasmi): `unreachable` (trap) — el host muestra el
+    /// Lanza la excepciÃ³n CLS: `throw(tag)` con payload (msg, span_empaquetado).
+    /// En modo sin excepciones (wasmi): `unreachable` (trap) â€” el host muestra el
     /// error como trap con el shadow call stack (sin caret del span CLS).
     fn emit_throw(&mut self, msg: &str, span: &Span) {
         if !self.exceptions {
@@ -2893,7 +2470,7 @@ impl<'a> FuncEmitter<'a> {
     fn emit_unary(&mut self, u: &UnaryExpr) -> ClsResult<()> {
         match u.op {
             UnaryOp::Negate => {
-                // Magic __neg: clase con __neg → call sin args (paridad walker).
+                // Magic __neg: clase con __neg â†’ call sin args (paridad walker).
                 let oty = self.types.get(&expr_span(&u.operand)).cloned();
                 if let Some(cn) = self.class_magic_method(&oty, "__neg") {
                     let _ = self.magic_ret_was(&cn, "__neg")?;
@@ -2920,8 +2497,8 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
             UnaryOp::Not => {
-                // Magic __not: clase con __not → call sin args; si no, truthiness
-                // (paridad walker: `!obj` → __not() o !is_truthy()).
+                // Magic __not: clase con __not â†’ call sin args; si no, truthiness
+                // (paridad walker: `!obj` â†’ __not() o !is_truthy()).
                 let oty = self.types.get(&expr_span(&u.operand)).cloned();
                 if let Some(cn) = self.class_magic_method(&oty, "__not") {
                     let _ = self.magic_ret_was(&cn, "__not")?;
@@ -2942,7 +2519,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_incdec(&u.operand, u.op.clone())?
             }
             UnaryOp::BitwiseNot => {
-                // ~x → x ^ -1 (en i64)
+                // ~x â†’ x ^ -1 (en i64)
                 self.emit_expression(&u.operand)?;
                 self.body.push(Instruction::I64Const(-1));
                 self.body.push(Instruction::I64Xor);
@@ -3007,7 +2584,7 @@ impl<'a> FuncEmitter<'a> {
         match &*a.target {
             Expression::Identifier(name, _) => {
                 if is_compound(op) {
-                    // Magic: `a += b` → a = a.__add(b) (paridad walker apply_compound).
+                    // Magic: `a += b` â†’ a = a.__add(b) (paridad walker apply_compound).
                     let compound_magic = match op {
                         Operator::PlusEqual => "__add",
                         Operator::MinusEqual => "__sub",
@@ -3034,12 +2611,12 @@ impl<'a> FuncEmitter<'a> {
                             return Ok(());
                         }
                     }
-                    // Elegir operación según el tipo del identificador (int vs float).
+                    // Elegir operaciÃ³n segÃºn el tipo del identificador (int vs float).
                     let ty = self.value_type(&a.target)?;
                     self.emit_ident_load(name);
                     self.emit_expression(&a.value)?;
                     // `s += x` con String: concatenar (StrConcat), NO sumar
-                    // los punteros empaquetados (producía bytes NUL).
+                    // los punteros empaquetados (producÃ­a bytes NUL).
                     let cls_t = self
                         .types
                         .get(&expr_span(&a.target))
@@ -3054,7 +2631,7 @@ impl<'a> FuncEmitter<'a> {
                             Operator::MinusEqual => self.body.push(Instruction::F64Sub),
                             Operator::StarEqual => self.body.push(Instruction::F64Mul),
                             Operator::SlashEqual => self.body.push(Instruction::F64Div),
-                            // `%=` float: WASM no tiene resto float → host fmod.
+                            // `%=` float: WASM no tiene resto float â†’ host fmod.
                             _ => self.host.call(HostFn::Fmod, &mut self.body),
                         }
                     } else {
@@ -3090,7 +2667,7 @@ impl<'a> FuncEmitter<'a> {
                             .to_string(),
                     ));
                 }
-                // r["key"] = val → record_set(ptr, key, val_bits)
+                // r["key"] = val â†’ record_set(ptr, key, val_bits)
                 let elem_ty = self.index_elem_type(i)?;
                 let val_tmp = self.fresh_local_ty(elem_ty);
                 self.emit_expression(&i.object)?;
@@ -3139,7 +2716,7 @@ impl<'a> FuncEmitter<'a> {
                         "Operadores compuestos (+=) sobre records con shape no soportados en el JIT".to_string(),
                     ));
                 }
-                // r["campo"] = val → store por offset (solo campos existentes).
+                // r["campo"] = val â†’ store por offset (solo campos existentes).
                 let shape = self.types.get(&expr_span(&i.object)).cloned();
                 let fields = match &shape {
                     Some(Type::Shape(f)) => f.clone(),
@@ -3151,7 +2728,7 @@ impl<'a> FuncEmitter<'a> {
                     }
                     _ => {
                         return Err(crate::error::ClsError::compile_at(
-                            "Índice dinámico no soportado en un record con shape (usa Record<K,V> o any)",
+                            "Ãndice dinÃ¡mico no soportado en un record con shape (usa Record<K,V> o any)",
                             &i.span,
                         ))
                     }
@@ -3195,7 +2772,7 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             Expression::Index(i) => {
-                // Magic __set: obj[i] = v → obj.__set(index, value) con write-back
+                // Magic __set: obj[i] = v â†’ obj.__set(index, value) con write-back
                 // del objeto mutado (paridad walker interpreter.rs:2120-2128).
                 let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
                 if let Some(cn) = self.class_magic_method(&obj_ty, "__set") {
@@ -3220,8 +2797,8 @@ impl<'a> FuncEmitter<'a> {
                             self.body.push(Instruction::Drop);
                         }
                     }
-                    // write-back del objeto (el ptr no cambia en mutación in-place,
-                    // pero la reasignación del slot es paridad walker).
+                    // write-back del objeto (el ptr no cambia en mutaciÃ³n in-place,
+                    // pero la reasignaciÃ³n del slot es paridad walker).
                     if let Expression::Identifier(name, _) = &*i.object {
                         self.body.push(Instruction::LocalGet(obj_tmp));
                         self.emit_ident_store(name);
@@ -3273,7 +2850,7 @@ impl<'a> FuncEmitter<'a> {
                         WasTy::I64 => Instruction::LocalGet(v),
                     });
                     if elem_ty == WasTy::F64 && op == Operator::PercentEqual {
-                        // `farr[i] %= v` float: WASM no tiene resto float → host fmod.
+                        // `farr[i] %= v` float: WASM no tiene resto float â†’ host fmod.
                         self.host.call(HostFn::Fmod, &mut self.body);
                     } else {
                         apply_compound_ty(&mut self.body, op, elem_ty)?;
@@ -3297,7 +2874,7 @@ impl<'a> FuncEmitter<'a> {
                         WasTy::I64 => Instruction::LocalGet(res),
                     });
                 } else {
-                    // Las tuplas son inmutables: escritura → error.
+                    // Las tuplas son inmutables: escritura â†’ error.
                     let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
                     if matches!(obj_ty, Some(Type::Tuple(_))) {
                         return Err(crate::error::ClsError::compile_at(
@@ -3311,7 +2888,7 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_expression(&i.index)?;
                     self.emit_expression(&a.value)?;
                     // Array de float con valor int: promover el RHS a f64 antes
-                    // del store (el layout del array es homogéneo).
+                    // del store (el layout del array es homogÃ©neo).
                     if elem_ty == WasTy::F64 {
                         self.f64_promote(&a.value)?;
                     }
@@ -3323,12 +2900,12 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             Expression::MemberAccess(m) => {
-                // `Clase.campo = v` (campo estático) → global.set.
+                // `Clase.campo = v` (campo estÃ¡tico) â†’ global.set.
                 if let Expression::Identifier(cn, _) = &*m.object {
                     if let Some(&g) = self.static_fields.get(&format!("{}::{}", cn, m.member)) {
                         if is_compound(op) {
                             return Err(crate::error::ClsError::CompileError(
-                                "Operadores compuestos sobre campos estáticos no soportados en el JIT"
+                                "Operadores compuestos sobre campos estÃ¡ticos no soportados en el JIT"
                                     .to_string(),
                             ));
                         }
@@ -3429,7 +3006,7 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(());
                     }
                 }
-                // Struct: `p.campo = val` → store por offset del campo.
+                // Struct: `p.campo = val` â†’ store por offset del campo.
                 if let Some(Type::Named(sn, _)) = self.types.get(&expr_span(&m.object)).cloned() {
                     if let Some(info) = self.struct_defs.get(sn.as_str()) {
                         if is_compound(op) {
@@ -3494,7 +3071,7 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(());
                     }
                 }
-                // Record con shape: r.campo = val → store por offset (campo existente).
+                // Record con shape: r.campo = val â†’ store por offset (campo existente).
                 if let Some(Type::Shape(fields)) = self.types.get(&expr_span(&m.object)).cloned() {                    if is_compound(op) {
                         return Err(crate::error::ClsError::CompileError(
                             "Operadores compuestos sobre campos de record con shape no soportados en el JIT".to_string(),
@@ -3556,7 +3133,7 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-    /// `.join(sep)` sobre una tupla: unroll estático (slots conocidos en compile-time).
+    /// `.join(sep)` sobre una tupla: unroll estÃ¡tico (slots conocidos en compile-time).
     fn emit_tuple_join(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         let obj_ty = self
             .types
@@ -3624,7 +3201,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// `math.X(...)` → host del módulo math.
+    /// `math.X(...)` â†’ host del mÃ³dulo math.
     fn emit_math_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
         match member.member.as_str() {
@@ -3722,7 +3299,7 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-    /// `fs.X(...)` → host del módulo fs (básico: exists/cwd/readFile/writeFile/listDir/mkdir/rm).
+    /// `fs.X(...)` â†’ host del mÃ³dulo fs (bÃ¡sico: exists/cwd/readFile/writeFile/listDir/mkdir/rm).
     fn emit_fs_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
         match member.member.as_str() {
@@ -3765,7 +3342,7 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-    /// `http.X(...)` → host del módulo http.
+    /// `http.X(...)` â†’ host del mÃ³dulo http.
     fn emit_http_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
         match member.member.as_str() {
@@ -3784,7 +3361,7 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-    /// `os.X(...)` → host del módulo os.
+    /// `os.X(...)` â†’ host del mÃ³dulo os.
     fn emit_os_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
         match member.member.as_str() {
@@ -3809,7 +3386,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// `path.X(...)` → host del módulo path.
+    /// `path.X(...)` â†’ host del mÃ³dulo path.
     fn emit_path_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
         match member.member.as_str() {
@@ -3848,7 +3425,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// `process.X(...)` → host del módulo process.
+    /// `process.X(...)` â†’ host del mÃ³dulo process.
     fn emit_process_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
         match member.member.as_str() {
@@ -3870,7 +3447,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// `time.X(...)` → host del módulo time.
+    /// `time.X(...)` â†’ host del mÃ³dulo time.
     fn emit_time_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
         match member.member.as_str() {
@@ -3894,7 +3471,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// `random.X(...)` → host del módulo random.
+    /// `random.X(...)` â†’ host del mÃ³dulo random.
     fn emit_random_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
         match member.member.as_str() {
@@ -3919,18 +3496,18 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// Valida la aridad de una llamada a host de módulo y devuelve el arg `i`.
-    /// Evita `c.args[i]` con índice fuera de rango (panic → error de compilación).
+    /// Valida la aridad de una llamada a host de mÃ³dulo y devuelve el arg `i`.
+    /// Evita `c.args[i]` con Ã­ndice fuera de rango (panic â†’ error de compilaciÃ³n).
     fn call_arg<'e>(&self, c: &'e CallExpr, i: usize, fn_name: &str) -> ClsResult<&'e Expression> {
         c.args.get(i).ok_or_else(|| {
             crate::error::ClsError::compile_at(
-                &format!("{} esperaba {} argumento(s), recibió {}", fn_name, i + 1, c.args.len()),
+                &format!("{} esperaba {} argumento(s), recibiÃ³ {}", fn_name, i + 1, c.args.len()),
                 &c.span,
             )
         })
     }
 
-    /// Tipo de retorno de una llamada o miembro de un módulo stdlib.
+    /// Tipo de retorno de una llamada o miembro de un mÃ³dulo stdlib.
     fn module_call_ret(&self, expr: &Expression) -> Option<WasTy> {
         if let Expression::Call(c) = expr {
             if let Expression::MemberAccess(member) = &*c.callee {
@@ -3983,7 +3560,7 @@ impl<'a> FuncEmitter<'a> {
                         };
                     }
                     if obj == "process" {
-                        // exit es void: no reportar valor (rompería `print(exit(0))`).
+                        // exit es void: no reportar valor (romperÃ­a `print(exit(0))`).
                         return match member.member.as_str() {
                             "exit" => None,
                             _ => Some(WasTy::I64),
@@ -4006,7 +3583,7 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
         }
-        // Miembros de módulos sin llamada: math.PI / math.E
+        // Miembros de mÃ³dulos sin llamada: math.PI / math.E
         if let Expression::MemberAccess(member) = expr {
             if let Expression::Identifier(obj, _) = &*member.object {
                 if obj == "math" && (member.member == "PI" || member.member == "E") {
@@ -4018,7 +3595,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn emit_call(&mut self, c: &CallExpr) -> ClsResult<()> {
-        // Constructor de structure: `Punto(3, 4)` → alloc + stores.
+        // Constructor de structure: `Punto(3, 4)` â†’ alloc + stores.
         if let Expression::Identifier(name, _) = &*c.callee {
             if let Some(info) = self.struct_defs.get(name).cloned() {
                 self.body.push(Instruction::I64Const(info.total));
@@ -4079,7 +3656,7 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
         }
-        // Constructor de clase: `Clase(args)` → alloc + vtable + init fields + ctor.
+        // Constructor de clase: `Clase(args)` â†’ alloc + vtable + init fields + ctor.
         if let Expression::Identifier(name, _) = &*c.callee {
             if let Some(info) = self.class_defs.get(name).cloned() {
                 self.body.push(Instruction::I64Const(info.total));
@@ -4128,9 +3705,9 @@ impl<'a> FuncEmitter<'a> {
                 }
                 // call Clase::__ctor (o el del padre si no se define) con me.
                 // Solo se pushea `me`+args si EXISTE el ctor: si la clase no lo
-                // define, el stack debe quedar limpio (el leftover rompía la
-                // validación WASM en `__init_globals`, que no tiene resultado
-                // que lo consuma — el modo archivo lo enmascaraba con `return`).
+                // define, el stack debe quedar limpio (el leftover rompÃ­a la
+                // validaciÃ³n WASM en `__init_globals`, que no tiene resultado
+                // que lo consuma â€” el modo archivo lo enmascaraba con `return`).
                 let callsite = c.span.clone();
                 let mut cur = Some(name.to_string());
                 while let Some(cls) = cur {
@@ -4149,7 +3726,7 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
         }
-        // Llamada a función nativa (extensión): import `env.<sym>__<sig>@<lib>`.
+        // Llamada a funciÃ³n nativa (extensiÃ³n): import `env.<sym>__<sig>@<lib>`.
         if let Expression::Identifier(name, _) = &*c.callee {
             if let Some(idx) = self.native_indexes.get(name) {
                 for a in &c.args {
@@ -4159,17 +3736,17 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
         }
-        // Métodos de primitivos (callee MemberAccess)
+        // MÃ©todos de primitivos (callee MemberAccess)
         if let Expression::MemberAccess(member) = &*c.callee {
-            // `super.m(args)` → call directo al método del padre (sin vtable).
+            // `super.m(args)` â†’ call directo al mÃ©todo del padre (sin vtable).
             if let Expression::Identifier(sn, _) = &*member.object {
                 if sn == "super" {
                     if let Some(cur) = &self.current_class {
                         if let Some(parent) =
                             self.class_defs.get(cur).and_then(|i| i.parent.clone())
                         {
-                            // `super.main(...)` → ctor del padre (ClassDef.ctor se
-                            // emite como `__ctor`). `super.metodo(...)` → método.
+                            // `super.main(...)` â†’ ctor del padre (ClassDef.ctor se
+                            // emite como `__ctor`). `super.metodo(...)` â†’ mÃ©todo.
                             let key = if member.member == "main" {
                                 format!("{}::__ctor", parent)
                             } else {
@@ -4187,11 +3764,11 @@ impl<'a> FuncEmitter<'a> {
                         }
                     }
                     return Err(crate::error::ClsError::CompileError(
-                        "super solo se puede usar dentro de métodos de clase (JIT)".to_string(),
+                        "super solo se puede usar dentro de mÃ©todos de clase (JIT)".to_string(),
                     ));
                 }
             }
-            // Módulos stdlib: math / json / fs
+            // MÃ³dulos stdlib: math / json / fs
             if let Expression::Identifier(obj_name, _) = &*member.object {
                 if obj_name == "math" {
                     return self.emit_math_call(member, c);
@@ -4208,7 +3785,7 @@ impl<'a> FuncEmitter<'a> {
                             .get(&expr_span(&c.args[0]))
                             .cloned()
                             .unwrap_or(Type::Any);
-                        // Objeto de clase: __toJson si lo define; si no → "null" (paridad walker).
+                        // Objeto de clase: __toJson si lo define; si no â†’ "null" (paridad walker).
                         if let Type::Named(cn, _) = &t {
                             if self.class_defs.contains_key(cn.as_str()) {
                                 if self.emit_class_method("__toJson", &c.args[0])? {
@@ -4220,7 +3797,7 @@ impl<'a> FuncEmitter<'a> {
                                 self.emit_load_str(n);
                                 return Ok(());
                             }
-                            // struct/enum sin serialización → "null" (paridad walker).
+                            // struct/enum sin serializaciÃ³n â†’ "null" (paridad walker).
                             if self.struct_defs.contains_key(cn.as_str())
                                 || self.enum_defs.contains_key(cn.as_str())
                             {
@@ -4231,7 +3808,7 @@ impl<'a> FuncEmitter<'a> {
                                 return Ok(());
                             }
                         }
-                        // Shape → stringify inline (json.stringify({x:1}) → '{"x":1}').
+                        // Shape â†’ stringify inline (json.stringify({x:1}) â†’ '{"x":1}').
                         if let Type::Shape(fields) = &t {
                             return self.emit_shape_to_json_string(&c.args[0], fields);
                         }
@@ -4267,7 +3844,7 @@ impl<'a> FuncEmitter<'a> {
                 if obj_name == "random" {
                     return self.emit_random_call(member, c);
                 }
-                // `Clase.metodo()` con método static → call directo (sin me).
+                // `Clase.metodo()` con mÃ©todo static â†’ call directo (sin me).
                 if self.class_defs.contains_key(obj_name.as_str()) {
                     let skey = format!("{}::__s__{}", obj_name, member.member);
                     if let Some(&idx) = self.func_indexes.get(&skey) {
@@ -4407,7 +3984,7 @@ impl<'a> FuncEmitter<'a> {
                 Type::Shape(fields) => {
                     match member.member.as_str() {
                         "has" => {
-                            // Compile-time: si la clave (literal) está en el shape.
+                            // Compile-time: si la clave (literal) estÃ¡ en el shape.
                             let has = match &c.args[0] {
                                 Expression::Literal(l)
                                     if matches!(l.kind, LiteralKind::String(_)) =>
@@ -4419,7 +3996,7 @@ impl<'a> FuncEmitter<'a> {
                                         _ => false,
                                     }
                                 }
-                                _ => true, // clave dinámica → se asume que puede existir
+                                _ => true, // clave dinÃ¡mica â†’ se asume que puede existir
                             };
                             self.body
                                 .push(Instruction::I32Const(if has { 1 } else { 0 }));
@@ -4463,7 +4040,7 @@ impl<'a> FuncEmitter<'a> {
                             return Ok(());
                         }
                         "values" => {
-                            // Construir array con los valores (según el tipo de cada campo).
+                            // Construir array con los valores (segÃºn el tipo de cada campo).
                             self.emit_expression(&member.object)?;
                             let ptr = self.fresh_local();
                             self.body.push(Instruction::LocalSet(ptr));
@@ -4513,7 +4090,7 @@ impl<'a> FuncEmitter<'a> {
                                         memory_index: 0,
                                     })),
                                 }
-                                // bits a i64 (f64 → reinterpret; i32 → extend)
+                                // bits a i64 (f64 â†’ reinterpret; i32 â†’ extend)
                                 match *w {
                                     WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
                                     WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
@@ -4540,14 +4117,14 @@ impl<'a> FuncEmitter<'a> {
                             .ok_or_else(|| {
                                 crate::error::ClsError::compile_at(
                                     &format!(
-                                        "El método '{}' no existe en la clase '{}'",
+                                        "El mÃ©todo '{}' no existe en la clase '{}'",
                                         member.member, name
                                     ),
                                     &member.span,
                                 )
                             })? as u32;
-                        // Visibilidad del método: private/protected desde fuera → error.
-                        // Se resuelve subiendo por ancestors (un método puede venir
+                        // Visibilidad del mÃ©todo: private/protected desde fuera â†’ error.
+                        // Se resuelve subiendo por ancestors (un mÃ©todo puede venir
                         // del padre sin override).
                         let mut vis_cls = name.to_string();
                         let vis = loop {
@@ -4570,8 +4147,8 @@ impl<'a> FuncEmitter<'a> {
                         if let Some(v) = vis {
                             self.check_method_access(&name, &member.member, v, &member.span)?;
                         }
-                        // Método heredado sin override: buscar el índice en la clase
-                        // que lo declara (no fallar con "Método sin tipo WASM").
+                        // MÃ©todo heredado sin override: buscar el Ã­ndice en la clase
+                        // que lo declara (no fallar con "MÃ©todo sin tipo WASM").
                         let mut fn_cls = name.to_string();
                         let ty = loop {
                             let key = format!("{}::{}", fn_cls, member.member);
@@ -4587,7 +4164,7 @@ impl<'a> FuncEmitter<'a> {
                                 None => {
                                     return Err(crate::error::ClsError::compile_at(
                                         &format!(
-                                            "El método '{}' no existe en la clase '{}'",
+                                            "El mÃ©todo '{}' no existe en la clase '{}'",
                                             member.member, name
                                         ),
                                         &member.span,
@@ -4675,10 +4252,10 @@ impl<'a> FuncEmitter<'a> {
         if let Expression::Identifier(name, _) = &*c.callee {
             match name.as_str() {
                 "throw" => {
-                    // throw(msg) → excepción CLS (tag con payload msg + span).
+                    // throw(msg) â†’ excepciÃ³n CLS (tag con payload msg + span).
                     if !self.exceptions {
                         return Err(crate::error::ClsError::compile_at(
-                            "'throw' no soportado en este runtime: el backend se compiló sin \
+                            "'throw' no soportado en este runtime: el backend se compilÃ³ sin \
                              excepciones WASM (wasmi).",
                             &c.span,
                         ));
@@ -4704,13 +4281,13 @@ impl<'a> FuncEmitter<'a> {
                 }
                 "len" => {
                     let arg = &c.args[0];
-                    // Magic __len: clase con __len → call sin args (paridad walker).
+                    // Magic __len: clase con __len â†’ call sin args (paridad walker).
                     if self.emit_class_method("__len", arg)? {
                         return Ok(());
                     }
                     self.emit_expression(arg)?;
-                    // String → decodifica el pack (ptr<<32|len); array/tuple/record
-                    // → lee el header. Despachar por el tipo del argumento.
+                    // String â†’ decodifica el pack (ptr<<32|len); array/tuple/record
+                    // â†’ lee el header. Despachar por el tipo del argumento.
                     let t = self.types.get(&expr_span(arg)).cloned().unwrap_or(Type::Any);
                     match t {
                         Type::String => {
@@ -4741,7 +4318,7 @@ impl<'a> FuncEmitter<'a> {
                 }
                 "int" => {
                     let arg = &c.args[0];
-                    // Magic __int: clase con __int → call sin args (paridad walker).
+                    // Magic __int: clase con __int â†’ call sin args (paridad walker).
                     if self.emit_class_method("__int", arg)? {
                         return Ok(());
                     }
@@ -4751,7 +4328,7 @@ impl<'a> FuncEmitter<'a> {
                 }
                 "float" => {
                     let arg = &c.args[0];
-                    // Magic __float: clase con __float → call sin args.
+                    // Magic __float: clase con __float â†’ call sin args.
                     if self.emit_class_method("__float", arg)? {
                         return Ok(());
                     }
@@ -4761,7 +4338,7 @@ impl<'a> FuncEmitter<'a> {
                 }
                 "bool" => {
                     let arg = &c.args[0];
-                    // Magic __bool: clase con __bool → call sin args.
+                    // Magic __bool: clase con __bool â†’ call sin args.
                     if self.emit_class_method("__bool", arg)? {
                         return Ok(());
                     }
@@ -4771,13 +4348,13 @@ impl<'a> FuncEmitter<'a> {
                 }
                 "type" => {
                     let arg = &c.args[0];
-                    // Si la clase define __type → llamarla (paridad con el walker).
+                    // Si la clase define __type â†’ llamarla (paridad con el walker).
                     if self.emit_class_method("__type", arg)? {
                         return Ok(());
                     }
                     let span = expr_span(arg);
                     let t = self.types.get(&span).cloned().unwrap_or(Type::Any);
-                    // type_name del walker: clase→"Object", struct→"Struct", enum→"Enum".
+                    // type_name del walker: claseâ†’"Object", structâ†’"Struct", enumâ†’"Enum".
                     let name = match &t {
                         Type::Named(cn, _) if self.class_defs.contains_key(cn.as_str()) => "Object",
                         Type::Named(cn, _) if self.struct_defs.contains_key(cn.as_str()) => {
@@ -4808,7 +4385,7 @@ impl<'a> FuncEmitter<'a> {
                 _ => {}
             }
         }
-        // `x::f(...)` — módulo/namespace importado: call directo a `x::f`.
+        // `x::f(...)` â€” mÃ³dulo/namespace importado: call directo a `x::f`.
         if let Expression::NamespaceAccess(ns, member, _) = &*c.callee {
             let key = format!("{}::{}", ns, member);
             if let Some(fidx) = self.func_indexes.get(&key).copied() {
@@ -4822,7 +4399,7 @@ impl<'a> FuncEmitter<'a> {
             }
             return Err(crate::error::ClsError::compile_at(
                 &format!(
-                    "El miembro '{}' no existe o no se exporta en el módulo '{}' (fase de emisión).",
+                    "El miembro '{}' no existe o no se exporta en el mÃ³dulo '{}' (fase de emisiÃ³n).",
                     member, ns
                 ),
                 &expr_span(&c.callee),
@@ -4838,7 +4415,7 @@ impl<'a> FuncEmitter<'a> {
                 for arg in &c.args {
                     self.emit_expression(arg)?;
                 }
-                // Args faltantes → valores por defecto (en el call site)
+                // Args faltantes â†’ valores por defecto (en el call site)
                 if let Some(defaults) = self.func_defaults.get(name) {
                     let provided = c.args.len();
                     for d in defaults.iter().skip(provided) {
@@ -4852,13 +4429,13 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::Call(fidx));
                 return Ok(());
             }
-            // Función host del nodo (intrinsic): canal `env.host_call(id, ptr, n)`.
+            // FunciÃ³n host del nodo (intrinsic): canal `env.host_call(id, ptr, n)`.
             if let Some(intr) = self.intrinsics.get(name) {
                 self.emit_host_call(intr, c)?;
                 return Ok(());
             }
         }
-        // Función como valor (variable con handle) → call_indirect por tipo.
+        // FunciÃ³n como valor (variable con handle) â†’ call_indirect por tipo.
         let callee_ty = self.types.get(&expr_span(&c.callee)).cloned();
         if let Some(Type::Fun(params, ret)) = callee_ty {
             let mut pv: Vec<ValType> = Vec::new();
@@ -4870,9 +4447,9 @@ impl<'a> FuncEmitter<'a> {
                 r => vec![was_type(r)?.val_type()],
             };
             // Firma uniforme (B5): closure = [capturas(i64), params...].
-            // Toda función CLS (top-level y arrows) se compila con el capturas
+            // Toda funciÃ³n CLS (top-level y arrows) se compila con el capturas
             // como primer param. El dispatch usa tag-bit: impar = closure (lee
-            // el ptr de capturas del handle en memoria); par = función simple
+            // el ptr de capturas del handle en memoria); par = funciÃ³n simple
             // (capturas = 0 literal, sin handle).
             let mut pv_closure = vec![ValType::I64];
             pv_closure.extend(pv.iter().copied());
@@ -4881,13 +4458,13 @@ impl<'a> FuncEmitter<'a> {
             self.emit_expression(&c.callee)?;
             let v = self.fresh_local();
             self.body.push(Instruction::LocalSet(v));
-            // block $done (resultado del call) → cada rama hace call_indirect + br.
+            // block $done (resultado del call) â†’ cada rama hace call_indirect + br.
             let ret_block = if rv.is_empty() {
                 BlockType::Empty
             } else {
                 BlockType::Result(rv[0])
             };
-            // tag = v & 1 → condición del if (impar = closure). Convertir a i32.
+            // tag = v & 1 â†’ condiciÃ³n del if (impar = closure). Convertir a i32.
             self.body.push(Instruction::LocalGet(v));
             self.body.push(Instruction::I64Const(1));
             self.body.push(Instruction::I64And);
@@ -4913,7 +4490,7 @@ impl<'a> FuncEmitter<'a> {
             for arg in &c.args {
                 self.emit_expression(arg)?;
             }
-            // Params faltantes → Null (0), como el walker (default o Null).
+            // Params faltantes â†’ Null (0), como el walker (default o Null).
             for _ in c.args.len()..params.len() {
                 self.body.push(Instruction::I64Const(0));
             }
@@ -4954,7 +4531,7 @@ impl<'a> FuncEmitter<'a> {
             self.block_depth -= 1;
             return Ok(());
         }
-        // Magic __call: el callee es un objeto de clase con __call →
+        // Magic __call: el callee es un objeto de clase con __call â†’
         // obj(args...) = __call(obj, args...) (paridad walker interpreter.rs:1644).
         let callee_ty = self.types.get(&expr_span(&c.callee)).cloned();
         if let Some(cn) = self.class_magic_method(&callee_ty, "__call") {
@@ -4965,7 +4542,7 @@ impl<'a> FuncEmitter<'a> {
             self.emit_class_method_call_on("__call", &cn, obj_tmp, &c.args)?;
             return Ok(());
         }
-        // Objeto sin __call invocado como función → error claro (paridad walker).
+        // Objeto sin __call invocado como funciÃ³n â†’ error claro (paridad walker).
         if let Some(Type::Named(cn2, _)) = callee_ty {
             if self.class_defs.contains_key(cn2.as_str()) {
                 return Err(crate::error::ClsError::compile_at(
@@ -4980,16 +4557,16 @@ impl<'a> FuncEmitter<'a> {
         Err(self.unsupported_expr(&Expression::Call(c.clone())))
     }
 
-    /// Llama un método de clase por nombre (p.ej. `__type`/`__toJson`) sobre el
-    /// objeto expresado. Devuelve `false` si la clase no define ese método.
+    /// Llama un mÃ©todo de clase por nombre (p.ej. `__type`/`__toJson`) sobre el
+    /// objeto expresado. Devuelve `false` si la clase no define ese mÃ©todo.
     fn emit_class_method(&mut self, name: &str, object: &Expression) -> ClsResult<bool> {
         self.emit_class_method_args(name, object, &[])
     }
 
     /// Como [`Self::emit_class_method`] pero con argumentos: emite el objeto,
     /// lo guarda en un local, pushea `me`, emite los args y hace el
-    /// call_indirect `(me, args...)` vía vtable. El orden de evaluación es
-    /// objeto → args (paridad walker). El stack del call_indirect es
+    /// call_indirect `(me, args...)` vÃ­a vtable. El orden de evaluaciÃ³n es
+    /// objeto â†’ args (paridad walker). El stack del call_indirect es
     /// `[me, args..., fnptr]` (me al fondo).
     fn emit_class_method_args(
         &mut self,
@@ -4998,7 +4575,7 @@ impl<'a> FuncEmitter<'a> {
         args: &[Expression],
     ) -> ClsResult<bool> {
         let obj_ty = self.types.get(&expr_span(object)).cloned();
-        // M2: resolver la clase que DEFINE el método (sube por ancestors) —
+        // M2: resolver la clase que DEFINE el mÃ©todo (sube por ancestors) â€”
         // un magic heredado vive como `Base::__add`, no `Hijo::__add`.
         if let Some(dn) = self.class_magic_method(&obj_ty, name) {
             self.emit_expression(object)?;
@@ -5009,10 +4586,10 @@ impl<'a> FuncEmitter<'a> {
         Ok(false)
     }
 
-    /// Emite el call_indirect de un método de clase sobre el objeto en el local
+    /// Emite el call_indirect de un mÃ©todo de clase sobre el objeto en el local
     /// `obj_ptr`: pushea `me` (al fondo del stack), emite los args y despacha
     /// por vtable. El call_indirect espera `[me, args..., fnptr]`.
-    /// Sube por `ancestors` para resolver la clase que define el método (M2).
+    /// Sube por `ancestors` para resolver la clase que define el mÃ©todo (M2).
     fn emit_class_method_call_on(
         &mut self,
         name: &str,
@@ -5026,7 +4603,7 @@ impl<'a> FuncEmitter<'a> {
                 if let Some(slot) = info.methods.iter().position(|m| m == name) {
                     let method_key = format!("{}::{}", c, name);
                     if let Some(&ty) = self.method_type_indexes.get(&method_key) {
-                        // receiver (me) — al fondo; los args van DESPUÉS (el
+                        // receiver (me) â€” al fondo; los args van DESPUÃ‰S (el
                         // call_indirect los espera en orden: me, args...).
                         self.body.push(Instruction::LocalGet(obj_ptr));
                         for a in args {
@@ -5058,8 +4635,8 @@ impl<'a> FuncEmitter<'a> {
         Ok(false)
     }
 
-    /// ¿El tipo (estático) es una clase que define el magic `name`? Devuelve el
-    /// nombre de la clase que LO DEFINE (sube por `ancestors` — M2: un magic
+    /// Â¿El tipo (estÃ¡tico) es una clase que define el magic `name`? Devuelve el
+    /// nombre de la clase que LO DEFINE (sube por `ancestors` â€” M2: un magic
     /// heredado se registra como `Base::__add`, no `Hijo::__add`). `None` si no.
     fn class_magic_method(&self, ty: &Option<Type>, name: &str) -> Option<String> {
         if let Some(Type::Named(cn, _)) = ty {
@@ -5078,8 +4655,8 @@ impl<'a> FuncEmitter<'a> {
         None
     }
 
-    /// Tipo CLS del retorno anotado de un método de clase (o `None` si no tiene).
-    /// Sube por `ancestors` para los métodos heredados (M2).
+    /// Tipo CLS del retorno anotado de un mÃ©todo de clase (o `None` si no tiene).
+    /// Sube por `ancestors` para los mÃ©todos heredados (M2).
     fn magic_ret_type(&self, class_name: &str, name: &str) -> Option<Type> {
         let mut cur = Some(class_name.to_string());
         while let Some(c) = cur {
@@ -5096,7 +4673,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
     /// WasTy del retorno de un magic: el JIT necesita el tipo anotado (distinto
-    /// de void) para el dispatch (el call_indirect devuelve según la firma).
+    /// de void) para el dispatch (el call_indirect devuelve segÃºn la firma).
     fn magic_ret_was(&self, class_name: &str, name: &str) -> ClsResult<WasTy> {
         match self.magic_ret_type(class_name, name) {
             Some(t) if t != Type::Void => was_type(&t),
@@ -5110,7 +4687,7 @@ impl<'a> FuncEmitter<'a> {
 
     /// Dispatch de un magic binario: `left.__op(right)`, luego `right.__op(left)`
     /// (paridad walker `binary_magic`). Devuelve `Ok(Some(WasTy))` del retorno
-    /// del método si se emitió, `Ok(None)` si ningún lado define el magic.
+    /// del mÃ©todo si se emitiÃ³, `Ok(None)` si ningÃºn lado define el magic.
     fn try_binary_magic(
         &mut self,
         left: &Expression,
@@ -5132,7 +4709,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(None)
     }
 
-    /// Carga un campo del CmxValue (tag/props/children) — el ptr está en el stack.
+    /// Carga un campo del CmxValue (tag/props/children) â€” el ptr estÃ¡ en el stack.
     fn emit_cmx_field(&mut self, offset: i64) -> ClsResult<()> {
         self.body.push(Instruction::I64Const(offset));
         self.body.push(Instruction::I64Add);
@@ -5145,7 +4722,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// Despacha el print de un campo de record heterogéneo según su tag.
+    /// Despacha el print de un campo de record heterogÃ©neo segÃºn su tag.
     fn emit_print_record_field(&mut self, ptr_tmp: u32, key_tmp: u32) {
         self.body.push(Instruction::LocalGet(ptr_tmp));
         self.body.push(Instruction::LocalGet(key_tmp));
@@ -5163,7 +4740,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
     /// Formatea una tupla `(e0, e1, ...)` con repr (strings entre comillas), como
-    /// el walker. El ptr de la tupla ya está en el stack.
+    /// el walker. El ptr de la tupla ya estÃ¡ en el stack.
     fn emit_tuple_to_string(&mut self, slots: &[Type], _arg: &Expression) -> ClsResult<()> {
         let ptr = self.fresh_local();
         self.body.push(Instruction::LocalSet(ptr));
@@ -5247,7 +4824,7 @@ impl<'a> FuncEmitter<'a> {
 
     /// Variantes de un enum por nombre. Resuelve exacto (`Color`) o por sufijo
     /// (`lib::Color` cuando el typeck tipa la variante como `Named("Color")` pero
-    /// el flatten registró el enum prefijado).
+    /// el flatten registrÃ³ el enum prefijado).
     fn enum_variants(&self, name: &str) -> Option<&Vec<String>> {
         if let Some((_, v)) = self.enum_defs.get(name) {
             return Some(v);
@@ -5259,8 +4836,8 @@ impl<'a> FuncEmitter<'a> {
             .map(|(_, (_, v))| v)
     }
 
-    fn emit_print_arg(&mut self, arg: &Expression) -> ClsResult<()> {        // `u.values()` sobre un record con shape → imprimir `[v1, v2, ...]` inline
-        // (el typeck da Array<Any>, no imprimible por el backend genérico).
+    fn emit_print_arg(&mut self, arg: &Expression) -> ClsResult<()> {        // `u.values()` sobre un record con shape â†’ imprimir `[v1, v2, ...]` inline
+        // (el typeck da Array<Any>, no imprimible por el backend genÃ©rico).
         if let Expression::Call(c) = arg {
             if let Expression::MemberAccess(m) = &*c.callee {
                 if m.member == "values" {
@@ -5283,7 +4860,7 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::LocalSet(idx));
                 self.body.push(Instruction::LocalSet(ptr));
                 self.bounds_check(ptr, idx, &ix.span);
-                // addr = 16 + idx*16 → val y tag
+                // addr = 16 + idx*16 â†’ val y tag
                 self.body.push(Instruction::LocalGet(ptr));
                 self.body.push(Instruction::LocalGet(idx));
                 self.body.push(Instruction::I64Const(16));
@@ -5320,7 +4897,7 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
         }
-        // Index sobre un record heterogéneo (value Any): imprimir según el tag del valor.
+        // Index sobre un record heterogÃ©neo (value Any): imprimir segÃºn el tag del valor.
         if let Expression::Index(i) = arg {
             let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
             if matches!(obj_ty, Some(Type::Record(_, _))) {
@@ -5334,7 +4911,7 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
         }
-        // Member access `record.campo` con value heterogéneo → igual, por tag.
+        // Member access `record.campo` con value heterogÃ©neo â†’ igual, por tag.
         if let Expression::MemberAccess(m) = arg {
             let obj_ty = self.types.get(&expr_span(&m.object)).cloned();
             if matches!(obj_ty, Some(Type::Record(_, _)))
@@ -5350,15 +4927,15 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_print_record_field(ptr_tmp, key_tmp);
                 return Ok(());
             }
-            // `app.tag`: puede ser un string (tag minúscula) o un handle de función
-            // (tag mayúscula). Despachar por tag-bit: handle (par O impar) =
+            // `app.tag`: puede ser un string (tag minÃºscula) o un handle de funciÃ³n
+            // (tag mayÃºscula). Despachar por tag-bit: handle (par O impar) =
             // bits altos cero; string CLS = (off<<32)|len (bits altos != 0).
             if matches!(obj_ty, Some(Type::Cmx)) && m.member == "tag" {
                 self.emit_expression(&m.object)?;
                 self.emit_cmx_field(0)?;
                 let v = self.fresh_local();
                 self.body.push(Instruction::LocalSet(v));
-                // if (v>>32 == 0) && (v != 0) → handle → FnToString
+                // if (v>>32 == 0) && (v != 0) â†’ handle â†’ FnToString
                 self.body.push(Instruction::LocalGet(v));
                 self.body.push(Instruction::I64Const(32));
                 self.body.push(Instruction::I64ShrU);
@@ -5411,7 +4988,7 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
         }
-        // Llamadas a funciones nativas (extensión) → tipo de retorno codificado.
+        // Llamadas a funciones nativas (extensiÃ³n) â†’ tipo de retorno codificado.
         if let Expression::Call(c) = arg {
             if let Expression::Identifier(name, _) = &*c.callee {
                 if let Some(rc) = self.native_ret.get(name) {
@@ -5425,7 +5002,7 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
         }
-        // Llamadas a módulos stdlib → tipo de retorno conocido (print float/int).
+        // Llamadas a mÃ³dulos stdlib â†’ tipo de retorno conocido (print float/int).
         // math.range devuelve un array (el typeck no lo tipa): formatear `[..]`.
         if is_math_range_call(arg) {
             self.emit_expression(arg)?;
@@ -5447,8 +5024,8 @@ impl<'a> FuncEmitter<'a> {
                 Type::Array(_) | Type::Record(_, _) | Type::Cmx | Type::Tuple(_)
             );
             if !is_container {
-                // El tipo real del span decide (String → PrintStr; Float → PrintFloat;
-                // Bool → PrintBool); para tipos sin información, usar el WasTy.
+                // El tipo real del span decide (String â†’ PrintStr; Float â†’ PrintFloat;
+                // Bool â†’ PrintBool); para tipos sin informaciÃ³n, usar el WasTy.
                 match &t {
                     Type::String => {
                         self.host.call(HostFn::PrintStr, &mut self.body);
@@ -5492,7 +5069,7 @@ impl<'a> FuncEmitter<'a> {
             Type::Char => self.host.call(HostFn::PrintChar, &mut self.body),
             Type::Float => self.host.call(HostFn::PrintFloat, &mut self.body),
             Type::Null => {
-                // `null` → imprimir "null" (paridad walker).
+                // `null` â†’ imprimir "null" (paridad walker).
                 self.body.push(Instruction::Drop);
                 let n = self.intern_string("null");
                 self.emit_load_str(n);
@@ -5518,7 +5095,7 @@ impl<'a> FuncEmitter<'a> {
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
             Type::Shape(fields) => {
-                // Formatear `{k: v, ...}` (keys ordenadas alfabéticamente, paridad walker).
+                // Formatear `{k: v, ...}` (keys ordenadas alfabÃ©ticamente, paridad walker).
                 let layout = self.shape_layout(&fields)?;
                 let ptr = self.fresh_local();
                 self.body.push(Instruction::LocalSet(ptr));
@@ -5548,7 +5125,7 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::LocalGet(lt));
                     self.host.call(HostFn::StrConcat, &mut self.body);
                     self.body.push(Instruction::LocalSet(res));
-                    // valor del campo: load por offset + a string según el tipo del campo
+                    // valor del campo: load por offset + a string segÃºn el tipo del campo
                     self.body.push(Instruction::LocalGet(ptr));
                     self.body.push(Instruction::I64Const(*off));
                     self.body.push(Instruction::I64Add);
@@ -5618,7 +5195,7 @@ impl<'a> FuncEmitter<'a> {
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
             Type::Named(name, _) if self.class_defs.contains_key(&name) => {
-                // Si la clase define __repr → usarlo (el ptr ya está en el stack).
+                // Si la clase define __repr â†’ usarlo (el ptr ya estÃ¡ en el stack).
                 if let Some(idx) = self.func_indexes.get(&format!("{}::__repr", name)) {
                     self.body.push(Instruction::Call(*idx));
                     self.host.call(HostFn::PrintStr, &mut self.body);
@@ -5706,14 +5283,14 @@ impl<'a> FuncEmitter<'a> {
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
             Type::Fun(..) => {
-                // Handle de función → `<function X>` (el nombre está en el handle).
+                // Handle de funciÃ³n â†’ `<function X>` (el nombre estÃ¡ en el handle).
                 self.host.call(HostFn::FnToString, &mut self.body);
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
             Type::Named(name, _) if self.struct_defs.contains_key(&name) => {
                 let ptr = self.fresh_local();
                 self.body.push(Instruction::LocalSet(ptr));
-                // Struct def como valor (ptr 0) → `<function X>` (paridad walker).
+                // Struct def como valor (ptr 0) â†’ `<function X>` (paridad walker).
                 self.body.push(Instruction::LocalGet(ptr));
                 self.body.push(Instruction::I64Eqz);
                 self.block_depth += 1;
@@ -5730,12 +5307,12 @@ impl<'a> FuncEmitter<'a> {
             }
             Type::Named(name, _) if self.enum_variants(&name).is_some() => {
                 let variants = self.enum_variants(&name).unwrap().clone();
-                // index = v & 0xffffffff → seleccionar el string de la variante
+                // index = v & 0xffffffff â†’ seleccionar el string de la variante
                 self.body.push(Instruction::I64Const(0xffff_ffff));
                 self.body.push(Instruction::I64And);
                 let idx = self.fresh_local();
                 self.body.push(Instruction::LocalSet(idx));
-                // Enum def como valor (index 0xffffffff) → `<enum X>` (paridad walker).
+                // Enum def como valor (index 0xffffffff) â†’ `<enum X>` (paridad walker).
                 self.body.push(Instruction::LocalGet(idx));
                 self.body.push(Instruction::I64Const(0xffff_ffff));
                 self.body.push(Instruction::I64Eq);
@@ -5805,7 +5382,7 @@ impl<'a> FuncEmitter<'a> {
                 _ => self.host.call(HostFn::PrintInt, &mut self.body),
             },
             Type::Void | Type::Empty => {
-                // `print("x", time.sleep(5))` → imprime "void" (paridad walker).
+                // `print("x", time.sleep(5))` â†’ imprime "void" (paridad walker).
                 // La llamada void no deja valor en el stack: solo imprimir la etiqueta.
                 let n = self.intern_string("void");
                 self.emit_load_str(n);
@@ -5816,8 +5393,8 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// Construye la representación `Punto { x: 3, y: 4 }` de un struct y la deja
-    /// en el stack (el ptr del struct está en `ptr`).
+    /// Construye la representaciÃ³n `Punto { x: 3, y: 4 }` de un struct y la deja
+    /// en el stack (el ptr del struct estÃ¡ en `ptr`).
     fn emit_struct_to_string(&mut self, name: &str, ptr: u32) -> ClsResult<()> {
         let info = self.struct_defs[name].clone();
         let open = format!("{} {{ ", name);
@@ -5923,7 +5500,7 @@ impl<'a> FuncEmitter<'a> {
             Type::Char => self.host.call(HostFn::StrChar, &mut self.body),
             Type::Float => self.host.call(HostFn::StrFloat, &mut self.body),
             Type::Null => {
-                // null → string "null"
+                // null â†’ string "null"
                 self.body.push(Instruction::Drop);
                 let n = self.intern_string("null");
                 self.emit_load_str(n);
@@ -5934,7 +5511,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_struct_to_string(&name, ptr)?;
             }
             Type::Named(name, _) if self.class_defs.contains_key(&name) => {
-                // toString(obj) → __toString si existe; si no, __repr; el ptr está en stack.
+                // toString(obj) â†’ __toString si existe; si no, __repr; el ptr estÃ¡ en stack.
                 if let Some(idx) = self.func_indexes.get(&format!("{}::__toString", name)) {
                     self.body.push(Instruction::Call(*idx));
                 } else if let Some(idx) = self.func_indexes.get(&format!("{}::__repr", name)) {
@@ -5944,7 +5521,7 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
             Type::Array(elem) => {
-                // `[e1, e2, ...]` como el walker (paridad en interpolación).
+                // `[e1, e2, ...]` como el walker (paridad en interpolaciÃ³n).
                 let w = was_type(&*elem)?;
                 let kind = arr_kind_code(&*elem);
                 let es = if matches!(*elem, Type::Cmx) {
@@ -5957,7 +5534,7 @@ impl<'a> FuncEmitter<'a> {
                 self.host.call(HostFn::ArrToString, &mut self.body);
             }
             Type::Fun(..) => {
-                // Handle de función → `<function X>` (el nombre está en el handle).
+                // Handle de funciÃ³n â†’ `<function X>` (el nombre estÃ¡ en el handle).
                 self.host.call(HostFn::FnToString, &mut self.body);
             }
             _ => self.host.call(HostFn::StrInt, &mut self.body),
@@ -5965,7 +5542,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// Convierte un valor WASM (ya en el stack) a string según su tipo CLS.
+    /// Convierte un valor WASM (ya en el stack) a string segÃºn su tipo CLS.
     /// No consume el ptr; lo usa directo para hosts de string.
     fn emit_was_to_string(&mut self, w: WasTy, cls_t: &Type) -> ClsResult<()> {
         match cls_t {
@@ -6002,7 +5579,7 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-    /// `u.values()` sobre un shape → string `[v1, v2, ...]` (keys ordenadas alf.).
+    /// `u.values()` sobre un shape â†’ string `[v1, v2, ...]` (keys ordenadas alf.).
     fn emit_shape_values_to_string(
         &mut self,
         m: &MemberAccessExpr,
@@ -6094,7 +5671,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// `json.stringify(shape)` → string JSON `{"k": v, ...}` (deja el string en stack).
+    /// `json.stringify(shape)` â†’ string JSON `{"k": v, ...}` (deja el string en stack).
     fn emit_shape_to_json_string(
         &mut self,
         expr: &Expression,
@@ -6205,7 +5782,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// `[ptr]` en stack → string del shape (recursivo para shapes anidados).
+    /// `[ptr]` en stack â†’ string del shape (recursivo para shapes anidados).
     fn emit_shape_field_to_string(&mut self, ptr: u32, fields: &[(String, Type)]) -> ClsResult<()> {
         let layout = self.shape_layout(fields)?;
         let open = self.intern_string("{");
@@ -6335,10 +5912,10 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn emit_to_bool(&mut self, arg: &Expression) -> ClsResult<()> {
-        // Reutiliza coerce_to_bool: la misma semántica de truthiness del walker
-        // (int/float ≠ 0, string len ≠ 0, array/record len ≠ 0, cmx/objetos
-        // true). Antes los compuestos (cmx/array/record/any) caían en `_` y
-        // dejaban el ptr i64 en el stack → `if (bool(x))` emitía WASM inválido.
+        // Reutiliza coerce_to_bool: la misma semÃ¡ntica de truthiness del walker
+        // (int/float â‰  0, string len â‰  0, array/record len â‰  0, cmx/objetos
+        // true). Antes los compuestos (cmx/array/record/any) caÃ­an en `_` y
+        // dejaban el ptr i64 en el stack â†’ `if (bool(x))` emitÃ­a WASM invÃ¡lido.
         self.coerce_to_bool(arg)
     }
 
@@ -6455,8 +6032,8 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// Enforca la visibilidad de un método: private → solo desde la clase;
-    /// protected → desde la clase o subclases. Paridad con el walker.
+    /// Enforca la visibilidad de un mÃ©todo: private â†’ solo desde la clase;
+    /// protected â†’ desde la clase o subclases. Paridad con el walker.
     fn check_method_access(
         &self,
         class_name: &str,
@@ -6472,7 +6049,7 @@ impl<'a> FuncEmitter<'a> {
                 .unwrap_or(false);
             if !inside {
                 return Err(crate::error::ClsError::compile_at(
-                    &format!("El método '{}' es private (solo accesible desde la clase)", method),
+                    &format!("El mÃ©todo '{}' es private (solo accesible desde la clase)", method),
                     span,
                 ));
             }
@@ -6495,7 +6072,7 @@ impl<'a> FuncEmitter<'a> {
             if !allowed {
                 return Err(crate::error::ClsError::compile_at(
                     &format!(
-                        "El método '{}' es protected (solo accesible desde la clase o sus subclases)",
+                        "El mÃ©todo '{}' es protected (solo accesible desde la clase o sus subclases)",
                         method
                     ),
                     span,
@@ -6505,7 +6082,7 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// Tag runtime estático de un tipo (paridad con `fmt_val_to_string` del host):
+    /// Tag runtime estÃ¡tico de un tipo (paridad con `fmt_val_to_string` del host):
     /// 0=int,1=string,2=float,3=bool,4=char,5=cmx,6=array,7=record.
     fn any_static_tag(&self, t: &Type) -> i64 {
         match t {
@@ -6520,9 +6097,9 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-    /// Evalúa una cadena de acceso `o.a.c`, `o.x[0]`, `o.a.b[0]` sobre valores
+    /// EvalÃºa una cadena de acceso `o.a.c`, `o.x[0]`, `o.a.b[0]` sobre valores
     /// `Any`/Record de json.parse, despachando por tag en runtime. Deja `(val, tag)`
-    /// en el stack. La base (raíz de la cadena) se emite con su tag estático.
+    /// en el stack. La base (raÃ­z de la cadena) se emite con su tag estÃ¡tico.
     fn emit_any_chain(&mut self, expr: &Expression) -> ClsResult<()> {
         match expr {
             Expression::MemberAccess(m) => {
@@ -6568,7 +6145,7 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Const(val));
                 return Ok(());
             }
-            // Constantes de módulos stdlib: math.PI / math.E
+            // Constantes de mÃ³dulos stdlib: math.PI / math.E
             if obj_name == "math" {
                 match m.member.as_str() {
                     "PI" => {
@@ -6588,7 +6165,7 @@ impl<'a> FuncEmitter<'a> {
             }
         }
         // `lib::Color.Rojo`: el objeto es un access namespaced cuyo prefijo apunta
-        // a un enum del módulo importado (flattened como `lib::Color`).
+        // a un enum del mÃ³dulo importado (flattened como `lib::Color`).
         if let Expression::NamespaceAccess(ns, name, _) = &*m.object {
             let key = format!("{}::{}", ns, name);
             if let Some((def_id, variants)) = self.enum_defs.get(&key).cloned() {
@@ -6606,7 +6183,7 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
         }
-        // `Clase.campo` (campo estático): el objeto es el nombre de la clase.
+        // `Clase.campo` (campo estÃ¡tico): el objeto es el nombre de la clase.
         if let Expression::Identifier(cn, _) = &*m.object {
             if let Some(&g) = self.static_fields.get(&format!("{}::{}", cn, m.member)) {
                 self.body.push(Instruction::GlobalGet(g));
@@ -6640,7 +6217,7 @@ impl<'a> FuncEmitter<'a> {
                     Ok(())
                 }
                 _ => {
-                    // acceso por nombre de campo: r.campo → record_get(ptr, "campo")
+                    // acceso por nombre de campo: r.campo â†’ record_get(ptr, "campo")
                     let k = self.intern_string(&m.member);
                     self.emit_load_str(k);
                     self.host.call(HostFn::RecordGet, &mut self.body);
@@ -6649,7 +6226,7 @@ impl<'a> FuncEmitter<'a> {
             },
             Type::Shape(fields) => match m.member.as_str() {
                 "length" | "size" => {
-                    // Compile-time: el shape tiene un nº de campos fijo.
+                    // Compile-time: el shape tiene un nÂº de campos fijo.
                     self.body.push(Instruction::I64Const(fields.len() as i64));
                     Ok(())
                 }
@@ -6781,7 +6358,7 @@ impl<'a> FuncEmitter<'a> {
                 // `o.a.c` donde `o.a` es Any (json.parse anidado): despachar por tag.
                 let expr = Expression::MemberAccess(m.clone());
                 self.emit_any_chain(&expr)?;
-                // Resultado (val, tag) en el stack → dejar solo el val (el tag se
+                // Resultado (val, tag) en el stack â†’ dejar solo el val (el tag se
                 // pierde en un valor Any; los prints usan emit_print_arg con PrintAny).
                 self.body.push(Instruction::Drop);
                 Ok(())
@@ -6790,7 +6367,7 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-    /// `"Hola $nombre ${expr}"` → concatenación de las partes (toString de cada expr).
+    /// `"Hola $nombre ${expr}"` â†’ concatenaciÃ³n de las partes (toString de cada expr).
     fn emit_interpolation(&mut self, s: &StringInterpolation) -> ClsResult<()> {
         let empty = self.intern_string("");
         self.emit_load_str(empty);
@@ -6820,7 +6397,7 @@ impl<'a> FuncEmitter<'a> {
 
     fn emit_array(&mut self, a: &ArrayExpr) -> ClsResult<()> {
         let elem_ty = self.array_elem_type(a)?;
-        // Array de Cmx → entradas `[val, tag]` stride 16 (children del Cmx, etc.).
+        // Array de Cmx â†’ entradas `[val, tag]` stride 16 (children del Cmx, etc.).
         let is_cmx = a
             .elements
             .first()
@@ -6881,8 +6458,8 @@ impl<'a> FuncEmitter<'a> {
             } else {
                 let val_tmp = self.fresh_local_ty(elem_ty);
                 let addr_tmp = self.fresh_local();
-                // Si el array es f64 y el elemento es un literal/expresión int,
-                // promoverlo a f64 para el store (layout homogéneo).
+                // Si el array es f64 y el elemento es un literal/expresiÃ³n int,
+                // promoverlo a f64 para el store (layout homogÃ©neo).
                 if elem_ty == WasTy::F64 {
                     self.f64_promote(el)?;
                 }
@@ -6920,8 +6497,8 @@ impl<'a> FuncEmitter<'a> {
 
     fn array_elem_type(&self, a: &ArrayExpr) -> ClsResult<WasTy> {
         if let Some(first) = a.elements.first() {
-            // Promoción: si CUALQUIER elemento es float, el array es de f64
-            // (p.ej. `[1, 2.0]` → f64). El store promueve los ints a f64.
+            // PromociÃ³n: si CUALQUIER elemento es float, el array es de f64
+            // (p.ej. `[1, 2.0]` â†’ f64). El store promueve los ints a f64.
             let has_float = a
                 .elements
                 .iter()
@@ -6931,7 +6508,7 @@ impl<'a> FuncEmitter<'a> {
             }
             return self.value_type(first);
         }
-        // Array vacío: usar el tipo anotado registrado por el typeck (span del literal),
+        // Array vacÃ­o: usar el tipo anotado registrado por el typeck (span del literal),
         // p.ej. `const out: int[] = []`.
         if let Some(Type::Array(elem)) = self.types.get(&a.span) {
             if let Ok(w) = was_type(elem) {
@@ -6939,14 +6516,14 @@ impl<'a> FuncEmitter<'a> {
             }
         }
         Err(crate::error::ClsError::compile_at(
-            "Array literal vacío sin tipo: agrega la anotación del elemento (p.ej. `int[] = []`)",
+            "Array literal vacÃ­o sin tipo: agrega la anotaciÃ³n del elemento (p.ej. `int[] = []`)",
             &a.span,
         ))
     }
 
-    /// Literal de record `{ a: 1, b: "x" }` → record_new + record_set.
+    /// Literal de record `{ a: 1, b: "x" }` â†’ record_new + record_set.
     fn emit_record(&mut self, r: &RecordExpr) -> ClsResult<()> {
-        // Si el type map dice Shape → emitir como struct contiguo (offsets fijos).
+        // Si el type map dice Shape â†’ emitir como struct contiguo (offsets fijos).
         // Es el caso de `var x = {a: 1, b: "1"}` (inferido) o anotado con
         // interface/alias de shape. Sin hashmap, sin keys en memoria, sin tags.
         if let Some(shape) = self.types.get(&r.span).cloned() {
@@ -6974,9 +6551,9 @@ impl<'a> FuncEmitter<'a> {
                 .get(&expr_span(val))
                 .cloned()
                 .unwrap_or(Type::Any);
-            // Tag del valor en el record: tag del RUNTIME interno (Record → 7,
-            // Array → 6, String → 1...). Antes usaba arr_kind_code, que devolvía
-            // 0 para records → el binding los leía como int (ptr crudo).
+            // Tag del valor en el record: tag del RUNTIME interno (Record â†’ 7,
+            // Array â†’ 6, String â†’ 1...). Antes usaba arr_kind_code, que devolvÃ­a
+            // 0 para records â†’ el binding los leÃ­a como int (ptr crudo).
             self.body.push(Instruction::I64Const(runtime_tag_code(&cls_t)));
             self.host.call(HostFn::RecordSet, &mut self.body);
             self.body.push(Instruction::Drop);
@@ -7053,14 +6630,14 @@ impl<'a> FuncEmitter<'a> {
 
     /// Construye un `CmxValue` en memoria: [tag][props_ptr][children_ptr].
     fn emit_cmx(&mut self, c: &CmxElement) -> ClsResult<()> {
-        // tag mayúscula → resolver la variable/valor SIEMPRE (debe existir; si no, error).
-        // tag minúscula → String.
+        // tag mayÃºscula â†’ resolver la variable/valor SIEMPRE (debe existir; si no, error).
+        // tag minÃºscula â†’ String.
         if c.tag.starts_with(|ch: char| ch.is_uppercase()) {
             let name = c.tag.clone();
             if self.globals.contains_key(&name) || self.locals.contains_key(&name) {
                 self.emit_ident_load(&name);
             } else if self.fn_table_idx.contains_key(&name) {
-                // Función como tag → handle de función (tag-bit) para que
+                // FunciÃ³n como tag â†’ handle de funciÃ³n (tag-bit) para que
                 // `app.tag` sea invocable y se imprima `<function X>` (paridad walker).
                 let ti = self.fn_table_idx[&name];
                 let n = self.intern_string(&format!("<function {}>", name));
@@ -7070,8 +6647,8 @@ impl<'a> FuncEmitter<'a> {
                 self.host.call(HostFn::FnHandle, &mut self.body);
             } else {
                 return Err(crate::error::ClsError::CompileError(format!(
-                    "El tag '<{}>' usa mayúscula pero '{}' no está definido: \
-                     los tags con inicial mayúscula deben ser una función/valor existente",
+                    "El tag '<{}>' usa mayÃºscula pero '{}' no estÃ¡ definido: \
+                     los tags con inicial mayÃºscula deben ser una funciÃ³n/valor existente",
                     c.tag, name
                 )));
             }
@@ -7079,7 +6656,7 @@ impl<'a> FuncEmitter<'a> {
             let t = self.intern_string(&c.tag);
             self.emit_load_str(t);
         }
-        self.body.push(Instruction::I64Const(0)); // kind=0 → elemento
+        self.body.push(Instruction::I64Const(0)); // kind=0 â†’ elemento
         self.host.call(HostFn::CmxNew, &mut self.body);
         let ptr = self.fresh_local();
         self.body.push(Instruction::LocalSet(ptr));
@@ -7095,7 +6672,7 @@ impl<'a> FuncEmitter<'a> {
                 }
                 Some(CmxAttributeValue::Expression(expr)) => {
                     self.emit_expression(expr)?;
-                    // Literales → su tipo real (el type map puede dar Any).
+                    // Literales â†’ su tipo real (el type map puede dar Any).
                     cmx_literal_type(expr).or_else(|| self.types.get(&expr_span(expr)).cloned())
                 }
                 Some(CmxAttributeValue::Shorthand(name)) => {
@@ -7126,7 +6703,7 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::LocalGet(ptr));
             match child {
                 CmxChild::Text(s) => {
-                    // Texto → CmxValue de texto (kind=1): el print lo muestra plano.
+                    // Texto â†’ CmxValue de texto (kind=1): el print lo muestra plano.
                     let s = self.intern_string(s);
                     self.emit_load_str(s);
                     self.body.push(Instruction::I64Const(1));
@@ -7153,17 +6730,17 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn emit_index_get(&mut self, i: &IndexExpr) -> ClsResult<()> {
-        // Record: r["key"] → record_get(ptr, key)
+        // Record: r["key"] â†’ record_get(ptr, key)
         let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
         // `o.x[0]` con `o.x` Any (json.parse anidado): indexar despachando por tag.
         if matches!(obj_ty, Some(Type::Any)) {
             let expr = Expression::Index(i.clone());
             self.emit_any_chain(&expr)?;
-            // Resultado (val, tag) → dejar solo el val.
+            // Resultado (val, tag) â†’ dejar solo el val.
             self.body.push(Instruction::Drop);
             return Ok(());
         }
-        // Magic __get: clase con __get → obj.__get(index) (paridad walker:
+        // Magic __get: clase con __get â†’ obj.__get(index) (paridad walker:
         // "Indexado no soportado en objeto (falta __get)" si no lo define).
         if let Some(cn) = self.class_magic_method(&obj_ty, "__get") {
             let _ = self.magic_ret_was(&cn, "__get")?;
@@ -7178,7 +6755,7 @@ impl<'a> FuncEmitter<'a> {
             self.bits_to_elem(elem_ty)?;
             return Ok(());
         }
-        // Shape: r["campo"] con clave literal → load por offset (como member access).
+        // Shape: r["campo"] con clave literal â†’ load por offset (como member access).
         if let Some(Type::Shape(fields)) = &obj_ty {
             if let Expression::Literal(l) = &*i.index {
                 if let LiteralKind::String(key) = &l.kind {
@@ -7217,14 +6794,14 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
             return Err(crate::error::ClsError::compile_at(
-                "Índice dinámico no soportado en un record con shape (usa Record<K,V> o any)",
+                "Ãndice dinÃ¡mico no soportado en un record con shape (usa Record<K,V> o any)",
                 &i.span,
             ));
         }
         let elem_ty = self.index_elem_type(i)?;
         self.emit_expression(&i.object)?;
         self.emit_expression(&i.index)?;
-        // Array de Cmx → entradas `[val, tag]` stride 16 (children del Cmx, etc.).
+        // Array de Cmx â†’ entradas `[val, tag]` stride 16 (children del Cmx, etc.).
         let is_cmx = matches!(&obj_ty, Some(Type::Array(e)) if matches!(**e, Type::Cmx));
         let elem_size = if is_cmx {
             16
@@ -7293,7 +6870,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I32Or);
         self.block_depth += 1;
         self.body.push(Instruction::If(BlockType::Empty));
-        self.emit_throw("Índice fuera de rango", span);
+        self.emit_throw("Ãndice fuera de rango", span);
         self.body.push(Instruction::Unreachable);
         self.body.push(Instruction::End);
         self.block_depth -= 1;
@@ -7308,7 +6885,7 @@ impl<'a> FuncEmitter<'a> {
             Type::Array(elem) => was_type(elem),
             Type::Record(_, v) => was_type(v),
             Type::Tuple(slots) => {
-                // índice literal → slot exacto; dinámico → primer slot (o i64)
+                // Ã­ndice literal â†’ slot exacto; dinÃ¡mico â†’ primer slot (o i64)
                 match &*i.index {
                     Expression::Literal(l) => match &l.kind {
                         LiteralKind::Int(v) if *v >= 0 && (*v as usize) < slots.len() => {
@@ -7329,8 +6906,8 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-    /// Tamaño de slot de un contenedor: tuplas usan slots de 8 bytes; arrays el
-    /// tamaño del tipo del elemento.
+    /// TamaÃ±o de slot de un contenedor: tuplas usan slots de 8 bytes; arrays el
+    /// tamaÃ±o del tipo del elemento.
     fn container_elem_size(&self, i: &IndexExpr, elem_ty: WasTy) -> i64 {
         let span = expr_span(&i.object);
         match self.types.get(&span) {
@@ -7382,7 +6959,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn emit_array_len(&mut self) {
-        // ptr está en stack → len = i64.load(ptr+8)
+        // ptr estÃ¡ en stack â†’ len = i64.load(ptr+8)
         self.body.push(Instruction::I32WrapI64);
         self.body.push(Instruction::I64Load(MemArg {
             offset: 8,
@@ -7442,7 +7019,7 @@ impl<'a> FuncEmitter<'a> {
             return Ok(());
         }
         // `me.items.push(...)` / `obj.items.push(...)`: el array pudo
-        // reallocarse → re-escribir el ptr en el campo (y dejar el ptr como
+        // reallocarse â†’ re-escribir el ptr en el campo (y dejar el ptr como
         // valor del receiver, paridad con el path de identifiers).
         if let Expression::MemberAccess(m) = obj {
             let obj_ty = self.types.get(&expr_span(&m.object)).cloned();
@@ -7487,7 +7064,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
     fn emit_i64_store(&mut self, offset: u32) {
-        // stack: [addr(i64), value] → reordenar con wrap
+        // stack: [addr(i64), value] â†’ reordenar con wrap
         let v = self.fresh_local();
         self.body.push(Instruction::LocalSet(v));
         self.body.push(Instruction::I32WrapI64);
@@ -7511,7 +7088,7 @@ fn is_compound(op: Operator) -> bool {
     )
 }
 
-/// Código del tipo de elemento para `arr_join`/`arr_to_string`
+/// CÃ³digo del tipo de elemento para `arr_join`/`arr_to_string`
 /// (0=int, 1=string, 2=float, 3=bool, 4=char, 5=cmx).
 fn arr_kind_code(t: &Type) -> i64 {
     match t {
@@ -7540,7 +7117,7 @@ fn cmx_tag_for_type(t: &Type) -> i64 {
 }
 
 /// Tipo CLS de un literal (fallback cuando el type map no lo tiene).
-/// `math.range(...)` (posiblemente entre paréntesis) → devuelve un array.
+/// `math.range(...)` (posiblemente entre parÃ©ntesis) â†’ devuelve un array.
 fn is_math_range_call(expr: &Expression) -> bool {
     let inner = match expr {
         Expression::Parenthesized(e, _) => &**e,
@@ -7570,7 +7147,7 @@ fn cmx_literal_type(e: &Expression) -> Option<Type> {
     None
 }
 
-/// Tipo runtime de una unión (monomórfica) → el tipo base de sus miembros.
+/// Tipo runtime de una uniÃ³n (monomÃ³rfica) â†’ el tipo base de sus miembros.
 fn union_base(t: &Type) -> Type {
     if let Type::Union(members) = t {
         if members
@@ -7603,7 +7180,7 @@ fn union_base(t: &Type) -> Type {
     t.clone()
 }
 
-/// Aplica el operador compuesto a los dos valores del stack (según el tipo).
+/// Aplica el operador compuesto a los dos valores del stack (segÃºn el tipo).
 fn apply_compound_ty(
     body: &mut Vec<Instruction>,
     op: Operator,
@@ -7653,8 +7230,8 @@ fn type_name_str(t: &Type) -> &'static str {
     }
 }
 
-/// Formatea una expresión como código CLS legible (para mensajes de error).
-/// Implementación única en `cls_core::frontend::ast::expr_display`.
+/// Formatea una expresiÃ³n como cÃ³digo CLS legible (para mensajes de error).
+/// ImplementaciÃ³n Ãºnica en `cls_core::frontend::ast::expr_display`.
 fn expr_display(expr: &Expression) -> String {
     crate::frontend::ast::expr_display(expr)
 }
@@ -7684,8 +7261,8 @@ fn annotation_to_type(ann: &TypeAnnotation) -> Type {
                 .map(|(n, t)| (n.clone(), annotation_to_type(t)))
                 .collect(),
         ),
-        // Nombrados: los builtins genéricos (`Record<K,V>`, `Array<T>`, alias
-        // básicos) se resuelven aquí (el typeck los resuelve en su propio
+        // Nombrados: los builtins genÃ©ricos (`Record<K,V>`, `Array<T>`, alias
+        // bÃ¡sicos) se resuelven aquÃ­ (el typeck los resuelve en su propio
         // resolve_type_annotation; el emisor debe hacer lo mismo).
         TypeKind::Named(name, args) => match name.as_str() {
             "Record" | "Dict" | "Map" if args.len() == 2 => Type::Record(
@@ -7711,16 +7288,16 @@ fn annotation_to_type(ann: &TypeAnnotation) -> Type {
 /// Opciones del backend WASM.
 #[derive(Clone, Debug)]
 pub struct WasmBackendOptions {
-    /// `true` = emite el tag de excepción CLS + try_table/throw (wasmtime).
+    /// `true` = emite el tag de excepciÃ³n CLS + try_table/throw (wasmtime).
     /// `false` = modo sin excepciones (wasmi): sin tag, errores de runtime como
     /// `unreachable` y `try/catch`/`throw` fallan con error claro.
     pub exceptions: bool,
-    /// `true` = el módulo DEBE tener `main(args: String[])` (modo app).
-    /// `false` = modo librería: si no hay main se sintetiza un main no-op
-    /// (para `.clx`-librería que solo expone `export function`).
+    /// `true` = el mÃ³dulo DEBE tener `main(args: String[])` (modo app).
+    /// `false` = modo librerÃ­a: si no hay main se sintetiza un main no-op
+    /// (para `.clx`-librerÃ­a que solo expone `export function`).
     pub require_main: bool,
     /// Funciones host del NODO (intrinsics): las llamadas a esos nombres se
-    /// compilan vía el canal `env.host_call(id, ptr, n)`.
+    /// compilan vÃ­a el canal `env.host_call(id, ptr, n)`.
     pub intrinsics: Vec<HostIntrinsic>,
 }
 
@@ -7735,9 +7312,9 @@ impl Default for WasmBackendOptions {
 }
 
 /// Compila un Module tipado a un binario WASM.
-/// Backend WASM. Toma el type map `Span → Type` por referencia (el caller —
-/// `jit.rs` — mantiene el `TypeChecker` vivo durante la emisión) para no clonar
-/// el mapa en cada compilación.
+/// Backend WASM. Toma el type map `Span â†’ Type` por referencia (el caller â€”
+/// `jit.rs` â€” mantiene el `TypeChecker` vivo durante la emisiÃ³n) para no clonar
+/// el mapa en cada compilaciÃ³n.
 pub struct WasmBackend<'a> {
     types: &'a HashMap<Span, Type>,
     target: Target,
@@ -7751,12 +7328,12 @@ impl<'a> WasmBackend<'a> {
         Self::with_target(types, Target::host())
     }
 
-    /// Backend con un target explícito (para `when` compile-time).
+    /// Backend con un target explÃ­cito (para `when` compile-time).
     pub fn with_target(types: &'a HashMap<Span, Type>, target: Target) -> Self {
         Self::with_options(types, target, WasmBackendOptions::default())
     }
 
-    /// Backend con opciones explícitas.
+    /// Backend con opciones explÃ­citas.
     pub fn with_options(
         types: &'a HashMap<Span, Type>,
         target: Target,
@@ -7784,7 +7361,7 @@ impl<'a> WasmBackend<'a> {
         )
     }
 
-    /// Backend en modo librería (sin `main` obligatorio): útil para `.clx`
+    /// Backend en modo librerÃ­a (sin `main` obligatorio): Ãºtil para `.clx`
     /// que solo exponen `export function` (futuro nodo de bindings).
     pub fn library_mode(types: &'a HashMap<Span, Type>, target: Target) -> Self {
         Self::with_options(
@@ -7797,7 +7374,7 @@ impl<'a> WasmBackend<'a> {
         )
     }
 
-    /// Backend en modo librería Y sin excepciones (bindings browser).
+    /// Backend en modo librerÃ­a Y sin excepciones (bindings browser).
     pub fn library_without_exceptions(types: &'a HashMap<Span, Type>, target: Target) -> Self {
         Self::with_options(
             types,
@@ -7814,10 +7391,10 @@ impl<'a> WasmBackend<'a> {
         self.emit_with_pool(module).map(|(bytes, _)| bytes)
     }
 
-    /// Igual que [`Self::emit`] pero además devuelve el string pool final del
-    /// módulo (orden de interning, append-only). El REPL JIT lo usa para
-    /// re-sembrar los mismos offsets en la sesión siguiente (los punteros de
-    /// strings transferidos entre instancias apuntan a esta región).
+    /// Igual que [`Self::emit`] pero ademÃ¡s devuelve el string pool final del
+    /// mÃ³dulo (orden de interning, append-only). El REPL JIT lo usa para
+    /// re-sembrar los mismos offsets en la sesiÃ³n siguiente (los punteros de
+    /// strings transferidos entre instancias apuntan a esta regiÃ³n).
     pub fn emit_with_pool(&self, module: &Module) -> ClsResult<(Vec<u8>, Vec<String>)> {
         let mut engine = Engine::new(self.types, self.target.clone());
         engine.exceptions = self.exceptions;
@@ -7832,10 +7409,10 @@ impl<'a> WasmBackend<'a> {
     }
 }
 
-/// Motor de emisión a nivel de módulo.
+/// Motor de emisiÃ³n a nivel de mÃ³dulo.
 struct Engine<'a> {
     types: &'a HashMap<Span, Type>,
-    // Builders de sección persistentes: se agregan al módulo en el orden WASM.
+    // Builders de secciÃ³n persistentes: se agregan al mÃ³dulo en el orden WASM.
     types_sec: TypeSection,
     imports_sec: ImportSection,
     funcs_sec: FunctionSection,
@@ -7848,18 +7425,18 @@ struct Engine<'a> {
     code_sec: CodeSection,
     type_count: u32,
     func_count: u32,
-    /// `true` = el módulo lleva el tag de excepción CLS (payload: msg + span) y
+    /// `true` = el mÃ³dulo lleva el tag de excepciÃ³n CLS (payload: msg + span) y
     /// los try/catch/throw funcionan (wasmtime). `false` = modo sin excepciones
     /// (wasmi): sin tag; errores de runtime como traps.
     exceptions: bool,
     /// `true` = main obligatorio (modo app); `false` = se sintetiza main no-op
-    /// (modo librería, solo exports).
+    /// (modo librerÃ­a, solo exports).
     require_main: bool,
     /// Funciones host del nodo por nombre (canal `env.host_call`).
     intrinsics: HashMap<String, HostIntrinsic>,
-    /// Metadatos de los exports tipados (JSON, sección custom `clx:exports`).
+    /// Metadatos de los exports tipados (JSON, secciÃ³n custom `clx:exports`).
     exports_meta: Vec<u8>,
-    /// Índice del tag de excepción CLS (payload: msg + span).
+    /// Ãndice del tag de excepciÃ³n CLS (payload: msg + span).
     tag_idx: u32,
     /// Type `[] -> [i64, i64]` del block handler del try_table.
     eh_handler_ty: u32,
@@ -7869,7 +7446,7 @@ struct Engine<'a> {
     // B5: funciones como valor. Handle = [tabla_idx][capturas] (16 bytes).
     fn_table_idx: HashMap<String, u32>,
     fn_type_indexes: HashMap<String, u32>,
-    /// arrow functions → nombre sintético `__arrow_<n>` (por span).
+    /// arrow functions â†’ nombre sintÃ©tico `__arrow_<n>` (por span).
     arrow_names: HashMap<Span, String>,
     /// Variables libres capturadas por cada arrow (por span del ArrowFunctionExpr).
     arrow_captures: HashMap<Span, Vec<String>>,
@@ -7882,25 +7459,25 @@ struct Engine<'a> {
     native_ret: HashMap<String, char>,
     globals: HashMap<String, u32>,
     global_inits: Vec<(u32, Expression)>,
-    /// Índices WASM de las globals de usuario (var/const top-level y static
-    /// fields), en orden de declaración; el host las exporta como `__g_{idx}`
+    /// Ãndices WASM de las globals de usuario (var/const top-level y static
+    /// fields), en orden de declaraciÃ³n; el host las exporta como `__g_{idx}`
     /// (0 = heap_ptr) para transferir estado entre instancias (REPL).
     user_global_idxs: Vec<u32>,
-    /// Campos estáticos de clase: `Clase::campo` → global WASM (mutable).
+    /// Campos estÃ¡ticos de clase: `Clase::campo` â†’ global WASM (mutable).
     static_fields: HashMap<String, u32>,
     elements_sec: ElementSection,
     class_defs: HashMap<String, ClassInfo>,
     next_table_slot: u32,
     /// Funciones de clase a compilar: (clave `Clase::m`, FunctionDecl).
     cls_funcs_extra: Vec<(String, FunctionDecl)>,
-    /// type index WASM de cada método de clase (para `call_indirect`).
+    /// type index WASM de cada mÃ©todo de clase (para `call_indirect`).
     method_type_indexes: HashMap<String, u32>,
-    /// Métodos de clase pendientes de declarar (tras alloc/load_str).
+    /// MÃ©todos de clase pendientes de declarar (tras alloc/load_str).
     pending_class_methods: Vec<(String, FunctionDecl)>,
     target: Target,
 }
 
-/// Definición de una clase compilada: layout de objeto + vtable.
+/// DefiniciÃ³n de una clase compilada: layout de objeto + vtable.
 struct FieldVis {
     is_private: bool,
     is_protected: bool,
@@ -7923,24 +7500,24 @@ impl FieldVis {
 #[derive(Clone)]
 struct ClassInfo {
     parent: Option<String>,
-    /// id de clase (índice en orden de declaración) para `is` por herencia.
+    /// id de clase (Ã­ndice en orden de declaraciÃ³n) para `is` por herencia.
     class_id: u32,
     /// cadena de ancestors: [padre, abuelo, ...].
     ancestors: Vec<String>,
     /// campos (nombre, tipo CLS, tipo WASM, offset en bytes desde 16, visibilidad).
     fields: Vec<(String, Type, WasTy, i64, FieldVis)>,
-    /// nombres de métodos en orden canónico (posición = slot de la vtable).
+    /// nombres de mÃ©todos en orden canÃ³nico (posiciÃ³n = slot de la vtable).
     methods: Vec<String>,
-    /// visibilidad de cada método (private/protected/public) para enforzarla en
+    /// visibilidad de cada mÃ©todo (private/protected/public) para enforzarla en
     /// llamadas desde fuera de la clase.
     method_vis: std::collections::HashMap<String, FieldVis>,
-    /// índice de la tabla donde empieza la vtable de esta clase.
+    /// Ã­ndice de la tabla donde empieza la vtable de esta clase.
     vtable_start: u32,
-    /// tamaño total del objeto (16 + campos).
+    /// tamaÃ±o total del objeto (16 + campos).
     total: i64,
 }
 
-/// Código de tipo nativo para la firma de extensiones: i=int, f=float, b=bool,
+/// CÃ³digo de tipo nativo para la firma de extensiones: i=int, f=float, b=bool,
 /// c=char, s=string, v=void. El nombre del import codifica ret+params.
 fn ty_code(t: &Type) -> (char, WasTy) {
     match t {
@@ -7969,7 +7546,7 @@ fn was_to_val(w: WasTy) -> ValType {
     }
 }
 
-/// Definición de un structure compilada: campos con tipos, offsets y tamaño.
+/// DefiniciÃ³n de un structure compilada: campos con tipos, offsets y tamaÃ±o.
 #[derive(Clone)]
 struct StructInfo {
     def_id: u32,
@@ -8058,7 +7635,7 @@ impl<'a> Engine<'a> {
         idx
     }
 
-    /// Agrega las secciones al módulo en el orden WASM correcto.
+    /// Agrega las secciones al mÃ³dulo en el orden WASM correcto.
     fn build_module(&mut self) -> WasmModule {
         let mut m = WasmModule::new();
         m.section(&self.types_sec);
@@ -8066,8 +7643,8 @@ impl<'a> Engine<'a> {
         m.section(&self.funcs_sec);
         m.section(&self.tables_sec);
         m.section(&self.memories_sec);
-        // Solo en modo con excepciones: sin tag (wasmi) la sección debe omitirse
-        // (una sección de tags vacía sigue siendo sintaxis de exception-handling).
+        // Solo en modo con excepciones: sin tag (wasmi) la secciÃ³n debe omitirse
+        // (una secciÃ³n de tags vacÃ­a sigue siendo sintaxis de exception-handling).
         if self.exceptions {
             m.section(&self.tags_sec);
         }
@@ -8076,7 +7653,7 @@ impl<'a> Engine<'a> {
         m.section(&self.elements_sec);
         m.section(&self.code_sec);
         m.section(&self.data_sec);
-        // Sección custom con las firmas tipadas de los exports (para el host
+        // SecciÃ³n custom con las firmas tipadas de los exports (para el host
         // de bindings). Solo si hay `export function`.
         if !self.exports_meta.is_empty() {
             m.section(&CustomSection {
@@ -8096,10 +7673,10 @@ impl<'a> Engine<'a> {
         if !self.func_types.contains_key("main") {
             if self.require_main {
                 return Err(crate::error::ClsError::CompileError(
-                    "No se encontró function main(args: String[]) para el JIT".to_string(),
+                    "No se encontrÃ³ function main(args: String[]) para el JIT".to_string(),
                 ));
             }
-            // Modo librería: main no-op sintetizado (el host lo llama con args=0).
+            // Modo librerÃ­a: main no-op sintetizado (el host lo llama con args=0).
             self.func_types.insert(
                 "main".to_string(),
                 (vec![Type::Array(Box::new(Type::String))], Some(Type::Int)),
@@ -8115,7 +7692,7 @@ impl<'a> Engine<'a> {
         for p in &f.params {
             let t = p.type_ann.as_ref().ok_or_else(|| {
                 crate::error::ClsError::CompileError(format!(
-                    "Parámetro '{}' de '{}' sin anotación de tipo (requerido por el JIT)",
+                    "ParÃ¡metro '{}' de '{}' sin anotaciÃ³n de tipo (requerido por el JIT)",
                     p.name, f.name
                 ))
             })?;
@@ -8135,13 +7712,13 @@ impl<'a> Engine<'a> {
         let t = annotation_to_type(ann);
         match t {
             Type::Any | Type::Unknown => Err(crate::error::ClsError::CompileError(
-                "Anotación de tipo no soportada por el JIT (se requiere tipo concreto)".to_string(),
+                "AnotaciÃ³n de tipo no soportada por el JIT (se requiere tipo concreto)".to_string(),
             )),
             other => Ok(other),
         }
     }
 
-    /// Tipo concreto de un campo de struct/clase. Si la anotación no resuelve a
+    /// Tipo concreto de un campo de struct/clase. Si la anotaciÃ³n no resuelve a
     /// un tipo concreto (`Any`/`Unknown`), se intenta el type map (el campo tiene
     /// un span); si el kind es un tipo nombrado (struct/clase/enum) se trata como
     /// puntero (i64); si nada resuelve, error claro en vez de asumir i64.
@@ -8175,7 +7752,7 @@ impl<'a> Engine<'a> {
     fn emit(&mut self, module: &Module) -> ClsResult<Vec<u8>> {
         self.collect_functions(module)?;
 
-        // Recolectar enums → (def_id, variantes) para constantes `Nivel.Alto`.
+        // Recolectar enums â†’ (def_id, variantes) para constantes `Nivel.Alto`.
         let mut def_id = 0u32;
         for stmt in &module.statements {
             if let Statement::EnumDecl(e) = stmt {
@@ -8184,7 +7761,7 @@ impl<'a> Engine<'a> {
                 def_id += 1;
             }
         }
-        // Recolectar structures → offsets de campos (layout [def_id][len][campos]).
+        // Recolectar structures â†’ offsets de campos (layout [def_id][len][campos]).
         let mut sdef_id = 0u32;
         for stmt in &module.statements {
             if let Statement::StructureDecl(s) = stmt {
@@ -8210,7 +7787,7 @@ impl<'a> Engine<'a> {
                 sdef_id += 1;
             }
         }
-        // Recolectar clases → class_defs (layout de objeto) + declarar métodos/ctor.
+        // Recolectar clases â†’ class_defs (layout de objeto) + declarar mÃ©todos/ctor.
         let mut next_class_id = 0u32;
         for stmt in &module.statements {
             if let Statement::ClassDecl(c) = stmt {
@@ -8261,7 +7838,7 @@ impl<'a> Engine<'a> {
                             total = off;
                         }
                         ClassMember::Method(m) => {
-                            // Los métodos static NO van en la vtable (no reciben me).
+                            // Los mÃ©todos static NO van en la vtable (no reciben me).
                             if !m
                                 .modifiers
                                 .contains(&crate::frontend::ast::FunctionModifier::Static)
@@ -8291,7 +7868,7 @@ impl<'a> Engine<'a> {
                 }
                 let cid = next_class_id;
                 next_class_id += 1;
-                // El vtable_start se asigna AQUÍ (antes de compilar cuerpos): el
+                // El vtable_start se asigna AQUÃ (antes de compilar cuerpos): el
                 // ctor del objeto lo lee al emitir, y no debe depender del orden
                 // (no determinista) del HashMap.
                 let vs = self.next_table_slot;
@@ -8311,7 +7888,7 @@ impl<'a> Engine<'a> {
                 );
             }
         }
-        // Recolectar extensiones → imports `env.<sym>__<sig>@<lib>`.
+        // Recolectar extensiones â†’ imports `env.<sym>__<sig>@<lib>`.
         for stmt in &module.statements {
             if let Statement::Extension(e) = stmt {
                 for d in &e.declarations {
@@ -8490,7 +8067,7 @@ impl<'a> Engine<'a> {
             self.register_host(h);
         }
 
-        // Tag de excepción CLS: payload (msg: i64, span: i64). Solo en modo con
+        // Tag de excepciÃ³n CLS: payload (msg: i64, span: i64). Solo en modo con
         // excepciones (wasmtime); en modo sin excepciones (wasmi) no hay tag, no
         // hay try_table y los `Throw` se emiten como `unreachable` (trap).
         if self.exceptions {
@@ -8503,9 +8080,9 @@ impl<'a> Engine<'a> {
             });
         }
 
-        // Memoria (1 página = 64KB). Mínimo 16 páginas (1MB): el string pool
-        // (datos + tabla de índices) vive bajo el heap, que arranca en 1MB; el
-        // allocator hace grow para el heap a partir de ahí.
+        // Memoria (1 pÃ¡gina = 64KB). MÃ­nimo 16 pÃ¡ginas (1MB): el string pool
+        // (datos + tabla de Ã­ndices) vive bajo el heap, que arranca en 1MB; el
+        // allocator hace grow para el heap a partir de ahÃ­.
         self.memories_sec.memory(MemoryType {
             minimum: 16,
             maximum: None,
@@ -8524,11 +8101,11 @@ impl<'a> Engine<'a> {
             &ConstExpr::i64_const(1048576),
         );
 
-        // Globals de usuario: `var x` / `const x` top-level → sección globals.
-        // índice 0 = heap_ptr; los de usuario empiezan en 1. Los `pool_seed`
+        // Globals de usuario: `var x` / `const x` top-level â†’ secciÃ³n globals.
+        // Ã­ndice 0 = heap_ptr; los de usuario empiezan en 1. Los `pool_seed`
         // (seed del string pool del REPL) NO crean global: sus strings se
-        // internan en el pool, pero no deben ocupar índices de globals (los
-        // índices de los vars de usuario se transfieren por posición entre
+        // internan en el pool, pero no deben ocupar Ã­ndices de globals (los
+        // Ã­ndices de los vars de usuario se transfieren por posiciÃ³n entre
         // instancias y deben mantenerse estables).
         let mut next_global = 1u32;
         for stmt in &module.statements {
@@ -8539,9 +8116,9 @@ impl<'a> Engine<'a> {
                 let w = match (&v.type_ann, &v.value) {
                     (Some(ann), _) => was_type(&annotation_to_type(ann)).unwrap_or(WasTy::I64),
                     (None, Some(val)) => self.expr_was_type(val).unwrap_or(WasTy::I64),
-                    // Sin anotación ni init (REPL con estado persistente): el
+                    // Sin anotaciÃ³n ni init (REPL con estado persistente): el
                     // tipo viene del type map (registrado por el typeck en el
-                    // span de la declaración original).
+                    // span de la declaraciÃ³n original).
                     (None, None) => self
                         .types
                         .get(&v.span)
@@ -8579,7 +8156,7 @@ impl<'a> Engine<'a> {
             }
         }
 
-        // Campos estáticos de clase: cada `static var` → un global WASM mutable
+        // Campos estÃ¡ticos de clase: cada `static var` â†’ un global WASM mutable
         // (accesible como `Clase.campo`). Se declaran tras los globals de usuario.
         for stmt in &module.statements {
             if let Statement::ClassDecl(c) = stmt {
@@ -8633,7 +8210,7 @@ impl<'a> Engine<'a> {
         let ls_idx = self.declare_wasm_function(vec![ValType::I64], vec![ValType::I64]);
         self.func_indexes.insert("__load_str".to_string(), ls_idx);
 
-        // __init_globals: se declara DESPUÉS de alloc/load_str para que el code_sec
+        // __init_globals: se declara DESPUÃ‰S de alloc/load_str para que el code_sec
         // quede alineado (alloc, load_str, init, cls...).
         if !self.global_inits.is_empty() {
             let ig_idx = self.declare_wasm_function(vec![], vec![]);
@@ -8643,10 +8220,10 @@ impl<'a> Engine<'a> {
 
         // Seed del string pool (REPL con estado persistente): los inits de TODAS
         // las declaraciones top-level (reales y pool-only) se emiten a un buffer
-        // descartado ANTES de compilar los cuerpos. Así el pool queda con el
-        // prefijo [inits de decls en orden de statements] idéntico entre sesiones
+        // descartado ANTES de compilar los cuerpos. AsÃ­ el pool queda con el
+        // prefijo [inits de decls en orden de statements] idÃ©ntico entre sesiones
         // y los punteros de strings transferidos entre instancias siguen
-        // siendo válidos (los cuerpos/init reales re-internan como no-op).
+        // siendo vÃ¡lidos (los cuerpos/init reales re-internan como no-op).
         let seed: Vec<Expression> = module
             .statements
             .iter()
@@ -8690,8 +8267,8 @@ impl<'a> Engine<'a> {
                 let _ = fe.emit_expression(init);
             }
         }
-        // Métodos/ctor de clase: se declaran aquí (tras alloc/load_str/init) para
-        // que el code_sec (que los compila después) quede alineado.
+        // MÃ©todos/ctor de clase: se declaran aquÃ­ (tras alloc/load_str/init) para
+        // que el code_sec (que los compila despuÃ©s) quede alineado.
         let pending: Vec<(String, FunctionDecl)> = std::mem::take(&mut self.pending_class_methods);
         for (class, f) in pending {
             self.declare_class_function(&class, &f);
@@ -8715,15 +8292,15 @@ impl<'a> Engine<'a> {
                     Some(r) if *r != Type::Void => vec![was_type(r)?.val_type()],
                     _ => vec![],
                 };
-                // type index (para call_indirect) + índice de función.
+                // type index (para call_indirect) + Ã­ndice de funciÃ³n.
                 let tidx = self.register_func_type(pv.clone(), rv.clone());
                 let fidx = self.func_count;
                 self.func_count += 1;
                 self.funcs_sec.function(tidx);
                 self.func_indexes.insert(f.name.clone(), fidx);
                 self.fn_type_indexes.insert(f.name.clone(), tidx);
-                // Módulo importado (`mod::fn`): registrar el nombre base como
-                // alias para que las llamadas internas del módulo (`nivel1()`)
+                // MÃ³dulo importado (`mod::fn`): registrar el nombre base como
+                // alias para que las llamadas internas del mÃ³dulo (`nivel1()`)
                 // resuelvan sin prefijo (el body se fusiona tal cual).
                 if let Some((_, base)) = f.name.split_once("::") {
                     if !self.func_indexes.contains_key(base) {
@@ -8734,7 +8311,7 @@ impl<'a> Engine<'a> {
                 cls_funcs.push(f.clone());
             }
         }
-        // Modo librería: declarar el main no-op sintetizado (firma (i64) -> i64).
+        // Modo librerÃ­a: declarar el main no-op sintetizado (firma (i64) -> i64).
         if !self.func_indexes.contains_key("main") {
             let tidx = self.register_func_type(vec![ValType::I64], vec![ValType::I64]);
             let fidx = self.func_count;
@@ -8744,7 +8321,7 @@ impl<'a> Engine<'a> {
             self.fn_type_indexes.insert("main".to_string(), tidx);
             cls_funcs.push(noop_main_decl());
         }
-        // Índices de tabla de las funciones CLS (para handles de función) — se
+        // Ãndices de tabla de las funciones CLS (para handles de funciÃ³n) â€” se
         // calculan ANTES de compilar cuerpos (el emisor los usa en emit_ident_load).
         let mut cls_names: Vec<String> = self.func_types.keys().cloned().collect();
         cls_names.sort();
@@ -8756,8 +8333,8 @@ impl<'a> Engine<'a> {
             }
         }
 
-        // Arrow functions (B5): recolectar de los cuerpos → funciones sintéticas
-        // `__arrow_<n>`, declarar y asignarles índice de tabla.
+        // Arrow functions (B5): recolectar de los cuerpos â†’ funciones sintÃ©ticas
+        // `__arrow_<n>`, declarar y asignarles Ã­ndice de tabla.
         let mut arrow_funcs: Vec<FunctionDecl> = Vec::new();
         {
             let mut arrows: Vec<ArrowFunctionExpr> = Vec::new();
@@ -8834,7 +8411,7 @@ impl<'a> Engine<'a> {
         }
 
         // Compilar cuerpos (internan strings). El orden del code_sec DEBE coincidir
-        // con el orden de declaración: alloc, load_str, [init], métodos, cls.
+        // con el orden de declaraciÃ³n: alloc, load_str, [init], mÃ©todos, cls.
         let mut bodies: Vec<(String, Function)> = Vec::new();
         let extras: Vec<(String, FunctionDecl)> = self.cls_funcs_extra.clone();
         for (key, f) in &extras {
@@ -8852,17 +8429,17 @@ impl<'a> Engine<'a> {
             bodies.push((f.name.clone(), body));
         }
 
-        // __alloc y __load_str (el pool de strings ya está completo).
+        // __alloc y __load_str (el pool de strings ya estÃ¡ completo).
         let alloc_body = self.build_allocator();
         let load_str_body = self.build_load_str();
         // __init_globals se construye ANTES del data segment: sus strings (valores
         // iniciales de las globals) deben internarse en el pool antes del data.
         let init_body = self.build_global_init()?;
 
-        // Tabla de vtables: segmento con los funcref de los métodos de cada clase
-        // (los vtable_start ya se asignaron en la recolección, en orden).
-        // La ranura 0 se RESERVA (dummy) para que ningún handle par valga 0
-        // (colisión con Null); `next_table_slot` empieza en 1.
+        // Tabla de vtables: segmento con los funcref de los mÃ©todos de cada clase
+        // (los vtable_start ya se asignaron en la recolecciÃ³n, en orden).
+        // La ranura 0 se RESERVA (dummy) para que ningÃºn handle par valga 0
+        // (colisiÃ³n con Null); `next_table_slot` empieza en 1.
         let mut table_funcs: Vec<u32> = Vec::new();
         table_funcs.push(self.func_indexes["__alloc"]);
         let mut ordered: Vec<(u32, String)> = self
@@ -8879,7 +8456,7 @@ impl<'a> Engine<'a> {
                 }
             }
         }
-        // Funciones CLS → handles (B5): los índices de tabla ya se calcularon.
+        // Funciones CLS â†’ handles (B5): los Ã­ndices de tabla ya se calcularon.
         let mut cls_names: Vec<String> = self.fn_table_idx.keys().cloned().collect();
         cls_names.sort_by_key(|n| self.fn_table_idx[n]);
         for name in cls_names {
@@ -8931,7 +8508,7 @@ impl<'a> Engine<'a> {
 
         // Globals de usuario exportadas como `__g_{idx}` (0 = heap_ptr, 1.. =
         // vars/consts/static fields). El host las usa para transferir estado
-        // persistente entre instancias (REPL): leer del módulo anterior y
+        // persistente entre instancias (REPL): leer del mÃ³dulo anterior y
         // escribir en el nuevo antes de llamar a `main`.
         self.exports_sec
             .export("__g_0", ExportKind::Global, 0);
@@ -8940,10 +8517,10 @@ impl<'a> Engine<'a> {
             self.exports_sec.export(&name, ExportKind::Global, idx);
         }
 
-        // `export function f(...)` top-level → export WASM con su firma concreta
+        // `export function f(...)` top-level â†’ export WASM con su firma concreta
         // (el host la llama pasando `__capturas=0` como primer param). La firma
-        // tipada viaja en la sección custom `clx:exports` (JSON) para que el
-        // host sepa el marshalling exacto de cada parámetro/retorno.
+        // tipada viaja en la secciÃ³n custom `clx:exports` (JSON) para que el
+        // host sepa el marshalling exacto de cada parÃ¡metro/retorno.
         let mut exports_meta: Vec<serde_json::Value> = Vec::new();
         for stmt in &module.statements {
             if let Statement::FunctionDecl(f) = stmt {
@@ -8962,7 +8539,7 @@ impl<'a> Engine<'a> {
                 };
                 // Descriptor recursivo de tipo para el marshalling del host:
                 // `{"k": <kind>}` escalar; `{"k":5,"e":<desc>}` array; `{"k":6,
-                // "v":<desc>}` record homogéneo; `{"k":6,"s":{key:<desc>}}`
+                // "v":<desc>}` record homogÃ©neo; `{"k":6,"s":{key:<desc>}}`
                 // shape por clave. Permite decodificar arrays anidados en
                 // records (la memoria del runtime no guarda el tipo del
                 // elemento).
@@ -9032,17 +8609,17 @@ impl<'a> Engine<'a> {
             self.exceptions,
             &self.intrinsics,
         );
-        // Métodos de clase: `me` (la instancia) es el primer param implícito.
-        // `Clase::metodo` es método si el prefijo es una clase conocida; si no,
-        // es un símbolo de módulo importado (`mod::fn`, sin `me`).
+        // MÃ©todos de clase: `me` (la instancia) es el primer param implÃ­cito.
+        // `Clase::metodo` es mÃ©todo si el prefijo es una clase conocida; si no,
+        // es un sÃ­mbolo de mÃ³dulo importado (`mod::fn`, sin `me`).
         let is_method = f
             .name
             .split("::")
             .next()
             .map(|c| self.class_defs.contains_key(c))
             .unwrap_or(false);
-        // Un método static NO recibe `me` ni establece la clase actual (así que
-        // `me.` dentro de él da error de variable no definida, paridad walker).
+        // Un mÃ©todo static NO recibe `me` ni establece la clase actual (asÃ­ que
+        // `me.` dentro de Ã©l da error de variable no definida, paridad walker).
         let is_static = f
             .modifiers
             .contains(&crate::frontend::ast::FunctionModifier::Static);
@@ -9060,8 +8637,8 @@ impl<'a> Engine<'a> {
         fe.current_fn_span = f.span.clone();
         let is_main = f.name == "main";
         // Promover al heap las variables locales capturadas por arrows del body:
-        // para que la mutación del closure sea visible en el scope externo (paridad
-        // con el walker, que captura por referencia). Aplica también a main (que
+        // para que la mutaciÃ³n del closure sea visible en el scope externo (paridad
+        // con el walker, que captura por referencia). Aplica tambiÃ©n a main (que
         // puede declarar arrows locales).
         if !is_method {
             let mut arrows: Vec<ArrowFunctionExpr> = Vec::new();
@@ -9073,7 +8650,7 @@ impl<'a> Engine<'a> {
                     }
                 }
             }
-            // Si esta función ES una arrow con capturas, sus capturas son
+            // Si esta funciÃ³n ES una arrow con capturas, sus capturas son
             // referencias a slots promovidos (para doble deref en el acceso).
             if let Some(caps) = self.arrow_captures.get(&f.span) {
                 for c in caps {
@@ -9113,19 +8690,19 @@ impl<'a> Engine<'a> {
                 fe.body.push(Instruction::Call(*idx));
             }
         }
-        // Shadow call stack: registrar la entrada de la función (nombre + span)
+        // Shadow call stack: registrar la entrada de la funciÃ³n (nombre + span)
         // y des-registrarla al salir (antes de cada End).
         fe.emit_fn_enter(f)?;
         for s in &f.body.statements {
             fe.emit_statement(s)?;
         }
         fe.emit_fn_exit();
-        // End final del cuerpo de la función (wasm-encoder no lo añade).
+        // End final del cuerpo de la funciÃ³n (wasm-encoder no lo aÃ±ade).
         fe.body.push(Instruction::End);
-        // locals: cada índice con su tipo (fallback I64).
-        // Importante: los params ocupan los índices 0..param_types.len(); los
-        // locals declarados empiezan después. Cada local = un grupo de 1 para
-        // preservar los índices exactos (agrupar reordenaría y rompería tipos
+        // locals: cada Ã­ndice con su tipo (fallback I64).
+        // Importante: los params ocupan los Ã­ndices 0..param_types.len(); los
+        // locals declarados empiezan despuÃ©s. Cada local = un grupo de 1 para
+        // preservar los Ã­ndices exactos (agrupar reordenarÃ­a y romperÃ­a tipos
         // mixtos).
         let nparams = (param_types.len() + param_offset) as u32;
         let local_types: Vec<ValType> = (nparams..fe.next_local)
@@ -9145,7 +8722,7 @@ impl<'a> Engine<'a> {
         Ok(func)
     }
 
-    /// Tipo WASM de una expresión desde el type map (fallback I64).
+    /// Tipo WASM de una expresiÃ³n desde el type map (fallback I64).
     fn expr_was_type(&self, e: &Expression) -> ClsResult<WasTy> {
         let span = expr_span(e);
         if let Some(t) = self.types.get(&span) {
@@ -9195,7 +8772,7 @@ impl<'a> Engine<'a> {
             fe.body.push(Instruction::GlobalSet(*idx));
         }
         fe.body.push(Instruction::End);
-        // Declarar los temporales que la emisión pudo crear (emit_array, etc.).
+        // Declarar los temporales que la emisiÃ³n pudo crear (emit_array, etc.).
         let local_types: Vec<ValType> = (0..fe.next_local)
             .map(|i| {
                 fe.local_tys
@@ -9213,8 +8790,8 @@ impl<'a> Engine<'a> {
         Ok(Some(func))
     }
 
-    /// Declara una función de clase (`Clase::m` o ctor) con `me` como primer param.
-    /// Los métodos `static` NO reciben `me` (se registran como `Clase::__s__m`).
+    /// Declara una funciÃ³n de clase (`Clase::m` o ctor) con `me` como primer param.
+    /// Los mÃ©todos `static` NO reciben `me` (se registran como `Clase::__s__m`).
     fn declare_class_function(&mut self, class: &str, f: &FunctionDecl) {
         let is_static = f
             .modifiers
@@ -9261,7 +8838,7 @@ impl<'a> Engine<'a> {
         self.cls_funcs_extra.push((key, f.clone()));
     }
 
-    /// Índice de función de un método: en la clase o subiendo por ancestors.
+    /// Ãndice de funciÃ³n de un mÃ©todo: en la clase o subiendo por ancestors.
     fn resolve_method_index(&self, class: &str, m: &str) -> Option<u32> {
         let mut cur = Some(class.to_string());
         while let Some(c) = cur {
@@ -9278,7 +8855,7 @@ impl<'a> Engine<'a> {
         //   local 0 = n (param), local 1 = ptr, local 2 = end
         //   ptr = global 0
         //   end = (ptr + n + 8) & -8
-        //   if end > memsize*65536 → grow las páginas exactas para cubrir `end`
+        //   if end > memsize*65536 â†’ grow las pÃ¡ginas exactas para cubrir `end`
         //   global 0 = end
         //   ptr)
         let mut b = vec![
@@ -9293,7 +8870,7 @@ impl<'a> Engine<'a> {
             Instruction::I64And,
             Instruction::LocalSet(2),
             Instruction::Block(BlockType::Empty),
-            // if end <= memsize*65536 → skip grow
+            // if end <= memsize*65536 â†’ skip grow
             Instruction::LocalGet(2),
             Instruction::MemorySize(0),
             Instruction::I64ExtendI32U,
@@ -9380,13 +8957,13 @@ impl<'a> Engine<'a> {
         let data_bytes: usize = self.string_pool.iter().map(|s| s.len()).sum();
         // El layout es: [0 .. data_len) = bytes de los strings (en orden de
         // interning, append-only) y [STRING_TABLE_BASE .. + 8N) = tabla de
-        // índices (offset, len). Con base FIJA, los offsets de los datos NO
-        // dependen del tamaño total del pool: el REPL (estado persistente)
-        // transfiere punteros entre instancias y estos siguen siendo válidos
-        // mientras las entradas compartidas conserven su posición (prefix).
+        // Ã­ndices (offset, len). Con base FIJA, los offsets de los datos NO
+        // dependen del tamaÃ±o total del pool: el REPL (estado persistente)
+        // transfiere punteros entre instancias y estos siguen siendo vÃ¡lidos
+        // mientras las entradas compartidas conserven su posiciÃ³n (prefix).
         assert!(
             data_bytes <= STRING_TABLE_BASE as usize,
-            "el string pool excede la región de datos ({} > {} bytes)",
+            "el string pool excede la regiÃ³n de datos ({} > {} bytes)",
             data_bytes,
             STRING_TABLE_BASE
         );
@@ -9410,7 +8987,7 @@ impl<'a> Engine<'a> {
     }
 }
 
-/// B5 — recolección de arrow functions (funciones anónimas como valor).
+/// B5 â€” recolecciÃ³n de arrow functions (funciones anÃ³nimas como valor).
 fn collect_arrows_in_block(block: &Block, out: &mut Vec<ArrowFunctionExpr>) {
     for stmt in &block.statements {
         collect_arrows_in_stmt(stmt, out);
@@ -9694,7 +9271,7 @@ fn collect_free_vars_in_expr(expr: &Expression, locals: &mut Vec<String>, free: 
             }
         }
         Expression::ArrowFunction(a) => {
-            // Arrow anidada: sus variables libres también son libres para la arrow
+            // Arrow anidada: sus variables libres tambiÃ©n son libres para la arrow
             // externa (el padre debe capturarlas para construir el handle interno).
             // Los params de la arrow interna se excluyen.
             let mut inner_locals: Vec<String> = a.params.iter().map(|p| p.name.clone()).collect();
