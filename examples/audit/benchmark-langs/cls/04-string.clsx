@@ -1,0 +1,13 @@
+function main(args: String[]) -> int {
+    var t0 = now();
+    var N: int = 10000;
+    var s: String = "";
+    var i: int = 0;
+    for (i = 0; i < N; i++) {
+        s = s + "x";
+    }
+    var t1 = now();
+    print("str_len:", s.length);
+    print("str_ms:", t1 - t0);
+    return 0;
+}

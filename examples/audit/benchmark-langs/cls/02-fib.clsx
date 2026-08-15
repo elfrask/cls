@@ -1,0 +1,12 @@
+function fib(n: int) -> int {
+    if (n < 2) { return n; }
+    return fib(n - 1) + fib(n - 2);
+}
+function main(args: String[]) -> int {
+    var t0 = now();
+    var r = fib(30);
+    var t1 = now();
+    print("fib_result:", r);
+    print("fib_ms:", t1 - t0);
+    return 0;
+}

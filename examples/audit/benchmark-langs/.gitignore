@@ -1,0 +1,4 @@
+﻿rust/target/
+rust/Cargo.lock
+cpp/*.exe
+__pycache__/
