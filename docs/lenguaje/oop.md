@@ -117,7 +117,8 @@ El acceso se valida en `evaluate_member_access`, `evaluate_call` y
 ## Magic methods
 
 Los objetos pueden personalizar intrinsics y operadores definiendo métodos con
-nombres `__xxx` dentro de la clase. Catálogo completo (tree-walker):
+nombres `__xxx` dentro de la clase. **Catálogo completo soportado por el JIT
+(24/24)**:
 
 | Magic method | Se invoca con |
 |---|---|
@@ -130,36 +131,87 @@ nombres `__xxx` dentro de la clase. Catálogo completo (tree-walker):
 | `__iter` / `__next` | `for each x in (obj)` |
 | `__get` / `__set` | `obj[i]` / `obj[i] = v` |
 | `__contains` | `x in obj` |
-| `__equals` / `__compare` | `==` / `<` `>` sobre objetos |
+| `__equals` / `__compare` | `==` `!=` / `<` `>` `<=` `>=` sobre objetos |
 | `__add` `__sub` `__mul` `__div` `__mod` `__pow` | operadores aritméticos |
 | `__neg` / `__not` | unario `-` / `!` |
 
-El **JIT** compila el subconjunto `__toString` / `__type` / `__toJson`
-(verificado en `examples/audit/features/16-magic-methods.clsx`):
+> Catálogo detallado con contratos por intérprete: `agent-context/magics.md`.
+
+### Ejemplo integral (JIT)
 
 ```clx
-class Numero {
-    var valor: int;
-    function main(v: int) { me.valor = v; }
-    function __toString() -> String { return "Numero(" + toString(me.valor) + ")"; }
-    function __type() -> String { return "TipoNumero"; }
-    function __toJson() -> String { return "{\"valor\":" + toString(me.valor) + "}"; }
+class Vector {
+    var x: int;
+    var y: int;
+    function main(x: int, y: int) { me.x = x; me.y = y; }
+    function __add(o: Vector) -> Vector { return Vector(me.x + o.x, me.y + o.y); }
+    function __equals(o: Vector) -> bool { return me.x == o.x && me.y == o.y; }
+    function __compare(o: Vector) -> int {
+        if (me.x < o.x) { return -1; }
+        if (me.x > o.x) { return 1; }
+        return 0;
+    }
+    function __repr() -> String {
+        return "Vector(" + toString(me.x) + "," + toString(me.y) + ")";
+    }
+};
+
+class Rango {
+    var max: int;
+    var i: int = 0;
+    function main(max: int) { me.max = max; }
+    function __iter() -> Rango { return me; }
+    function __next() -> int {
+        if (me.i >= me.max) { return null; }   # null termina la iteración
+        var v = me.i;
+        me.i = me.i + 1;
+        return v;
+    }
 };
 
 function main(args: String[]) -> int {
-    var a = Numero(5);
-    print("toString fn:", toString(a));   # Numero(5)
-    print("interpolacion: ${a}");          # Numero(5)
-    print("type:", type(a));               # TipoNumero
-    import "json" as json;
-    print("json:", json.stringify(a));     # {"valor":5}
+    var a = Vector(1, 2);
+    var b = Vector(3, 4);
+    print(a + b);        # Vector(4,6)  — __add
+    print(a == Vector(1, 2));  # true      — __equals
+    print(a < b);        # true           — __compare
+    for each x in (Rango(3)) { print(x); }  # 0 1 2 — __iter/__next
     return 0;
-};
+}
 ```
 
-- Objetos **callables**: definen `__call` y se invocan como función.
-- Objetos **iterables**: definen `__iter` (devuelve un Array o un iterador con
-  `__next`, que retorna `null` al terminar) y se recorren con `for each`.
+Verificado en `examples/audit/test-features/tests/jit-magic-all.clsx` (24
+magics: aritmética, unarios, conversiones, contenedores, callable, iteración).
 
-Referencia de ejemplos: `examples/audit/features/09-clases.clsx` y
-`examples/audit/features/16-magic-methods.clsx`.
+### Contratos de comportamiento
+
+- **Aritmética binaria** (`__add` … `__pow`): `left.__op(right)`; si el lado
+  izquierdo no lo define, se prueba `right.__op(left)` (simetría, paridad
+  walker).
+- **Igualdad y orden**: `__equals` → el resultado se usa como truthy (`!=`
+  lo niega); `__compare` → devuelve un entero (`<0`, `0`, `>0`) comparado
+  contra 0 según el operador.
+- **Iteración** (`__iter`/`__next`): `__iter()` puede devolver un **Array**
+  (se itera directamente) o un **objeto iterador** con `__next()` que devuelve
+  los valores y `null` al terminar.
+- **Indexado** (`__get`/`__set`): `obj[i]` llama `__get(index)`; `obj[i] = v`
+  llama `__set(index, value)` y re-escribe el objeto en la variable (write-back).
+
+### Notas del JIT
+
+- **Anotación obligatoria**: los magic methods deben anotar su tipo de retorno
+  (y el de los parámetros de clase). El JIT despacha estáticamente por la firma
+  declarada del método — un parámetro sin anotar tipa `Any` y no se puede
+  despachar (el walker sí lo tolera).
+- **Sentinel de iteración**: `return null` dentro de `__next` termina el `for
+  each` con un sentinel interno distinto de `0` — un iterador puede devolver
+  `0` como valor legítimo (p. ej. `Rango(3)` → `0 1 2`).
+- **Mutación de arrays en campos**: `me.items.push(x)` re-escribe el array
+  (que puede reallocarse) en el campo automáticamente.
+- **Campos**: el JIT zero-inicializa los campos al instanciar; el inicializador
+  `var items: int[] = []` no se ejecuta — inicializar en el constructor
+  (`function main() { me.items = []; }`).
+
+Referencia de ejemplos: `examples/audit/features/09-clases.clsx`,
+`examples/audit/features/16-magic-methods.clsx` y
+`examples/audit/test-features/tests/jit-magic-all.clsx`.

@@ -44,7 +44,7 @@ magic methods, genéricos, shapes.
 |---|---|
 | `test-features/jit-test/availible/` | Features disponibles del JIT (25 scripts, `01-operadores.clsx` … `25-bitops.clsx`) |
 | `test-features/jit-test/units/` | Unit tests del JIT (`a1`–`a11`, `b1`–`b9`, `f64arr`, `synerr`, `bench_fib`, ...) + `.wat`/`.js` de referencia |
-| `test-features/tests/` | Suite de features (imports, VFS, async, errores, magic, clases, ...) |
+| `test-features/tests/` | Suite de features (imports, VFS, async, errores, magic, clases, ...) — incluye `jit-magic-all.clsx` (test integral de los 24 magic methods con `clx run`) |
 
 Logs de corridas: `examples/audit/_logs/*.jit.log` (cada script de QA escribe
 `<nombre>.jit.log` con stdout/stderr/exit/time).
