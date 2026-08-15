@@ -1,0 +1,21 @@
+class V2 {
+    var x: int;
+    var y: int;
+    function main(x: int, y: int) { me.x = x; me.y = y; }
+    function __add(o: V2) -> V2 { return V2(me.x + o.x, me.y + o.y); }
+    function __sub(o: V2) -> V2 { return V2(me.x - o.x, me.y - o.y); }
+    function __mul(o: V2) -> V2 { return V2(me.x * o.x, me.y * o.y); }
+    function __div(o: V2) -> V2 { return V2(me.x / o.x, me.y / o.y); }
+    function __mod(o: V2) -> V2 { return V2(me.x % o.x, me.y % o.y); }
+    function __repr() -> String { return "V2(" + toString(me.x) + "," + toString(me.y) + ")"; }
+};
+function main(args: String[]) -> int {
+    var a = V2(1, 2);
+    var b = V2(3, 4);
+    print("add:", a + b);
+    print("sub:", a - b);
+    print("mul:", a * b);
+    print("div:", b / a);
+    print("mod:", b % a);
+    return 0;
+}

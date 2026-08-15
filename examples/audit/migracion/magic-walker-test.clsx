@@ -1,0 +1,15 @@
+class Vector {
+    var x: int;
+    var y: int;
+    function main(x: int, y: int) { me.x = x; me.y = y; }
+    function __add(o: Vector) -> Vector { return Vector(me.x + o.x, me.y + o.y); }
+    function __equals(o: Vector) -> bool { return me.x == o.x && me.y == o.y; }
+    function __repr() -> String { return "Vector(" + toString(me.x) + "," + toString(me.y) + ")"; }
+};
+function main(args: String[]) -> int {
+    var a = Vector(1, 2);
+    var b = Vector(3, 4);
+    print("add:", a + b);
+    print("eq:", a == Vector(1, 2));
+    return 0;
+}

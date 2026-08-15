@@ -1,0 +1,11 @@
+class Caja {
+    var v: int;
+    function main(v: int) { me.v = v; }
+    function __contains(n: int) -> bool { return n == me.v; }
+    function __repr() -> String { return "Caja(" + toString(me.v) + ")"; }
+};
+function main(args: String[]) -> int {
+    var c = Caja(5);
+    print("in int:", 5 in c);
+    return 0;
+}

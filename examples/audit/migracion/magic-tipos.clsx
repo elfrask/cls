@@ -1,0 +1,15 @@
+class V {
+    var x: int;
+    function main(x: int) { me.x = x; }
+    function __add(o: V) -> V { return V(me.x + o.x); }
+    function __equals(o: V) -> bool { return me.x == o.x; }
+    function __compare(o: V) -> int { if (me.x < o.x) { return -1; } if (me.x > o.x) { return 1; } return 0; }
+    function __repr() -> String { return "V(" + toString(me.x) + ")"; }
+};
+function main(args: String[]) -> int {
+    var a = V(5);
+    print("V + 2:", a + 2);          # __add(o: V) recibe int → ?
+    print("V == 2:", a == 2);        # __equals(o: V) recibe int → ?
+    print("V < 2:", a < 2);          # __compare(o: V) recibe int → ?
+    return 0;
+}

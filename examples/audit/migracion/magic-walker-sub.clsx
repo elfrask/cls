@@ -1,0 +1,12 @@
+class V3 {
+    var x: int;
+    function main(x: int) { me.x = x; }
+    function __sub(o: V3) -> V3 { return V3(me.x - o.x); }
+    function __repr() -> String { return "V3(" + toString(me.x) + ")"; }
+};
+function main(args: String[]) -> int {
+    var a = V3(5);
+    var b = V3(2);
+    print("sub:", a - b);
+    return 0;
+}

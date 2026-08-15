@@ -1,0 +1,29 @@
+class Num {
+    var v: int;
+    function main(v: int) { me.v = v; }
+    function __pow(o: Num) -> Num { return Num(me.v ** o.v); }
+    function __toString() -> String { return "Num(" + toString(me.v) + ")"; }
+    function __repr() -> String { return "REPR(" + toString(me.v) + ")"; }
+    function __type() -> String { return "TipoNum"; }
+    function __toJson() -> String { return "{\"v\":" + toString(me.v) + "}"; }
+};
+
+class SoloRepr {
+    var v: int;
+    function main(v: int) { me.v = v; }
+    function __repr() -> String { return "SR(" + toString(me.v) + ")"; }
+};
+
+function main(args: String[]) -> int {
+    var a = Num(2);
+    var b = Num(3);
+    print("pow:", a ** b);              # Num(8)
+    print("repr:", a);                  # REPR(2)  (print prioriza __repr)
+    print("toString:", toString(a));    # Num(2)   (toString prioriza __toString)
+    print("type:", type(a));            # TipoNum
+    print("json:", json.stringify(a));  # {"v":2}
+    var sr = SoloRepr(7);
+    print("solo-repr:", sr);            # SR(7)
+    print("solo-repr-str:", toString(sr));  # SR(7) (fallback __repr)
+    return 0;
+}
