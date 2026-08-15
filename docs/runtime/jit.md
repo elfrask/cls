@@ -94,9 +94,26 @@ asignaciones (incl. compuestas e `++`/`--`), ternario, `if/elif/else`,
 `while`, `loop`, `for`, `for each`, `switch`, `with`, `try/catch` (solo
 wasmtime), `return`/`break`/`continue`, arrays, tuplas, records (dinámicos y
 con shape), strings e interpolación, CMX, enums, structs, clases (herencia,
-visibilidad, static, `super`, `is`, magic `__toString`/`__type`/`__toJson`),
+visibilidad, static, `super`, `is`, **magic methods completos 24/24**:
+`__toString`/`__repr`/`__type`/`__toJson`/`__len`/`__int`/`__float`/`__bool`/
+`__call`/`__iter`/`__next`/`__get`/`__set`/`__contains`/`__equals`/
+`__compare`/`__add`/`__sub`/`__mul`/`__div`/`__mod`/`__pow`/`__neg`/`__not`),
 arrow functions con capturas, funciones como valor, `when` (compile-time),
 módulos aplanados, `extension` (nativa, ≤ 4 args) y `main`.
+
+Los magic methods se despachan por la **vtable de la clase** con la firma
+declarada del método (`call_indirect`): el emisor busca el magic en el tipo
+estático del objeto y emite `me` + args + dispatch. Los magics deben **anotar
+su retorno** (el JIT no puede tipar `Any`); la iteración usa el protocolo
+`__iter` → Array u objeto iterador con `__next` hasta `null`. Verificado en
+`examples/audit/test-features/tests/jit-magic-all.clsx`.
+
+**Truthiness de condiciones** (paridad walker): `if`/`while`/`for`/`elif`
+coaccionan la condición a bool — numéricos `!= 0`, strings no vacíos
+(`len != 0`), arrays/records/tuplas con elementos (`len` del header), shapes y
+objetos siempre verdaderos; tipos sin definir (`Any`) dan error de compilación
+claro ("la condición debe ser Bool"). El intrínseco `bool(x)` usa la misma
+semántica (`bool(cmx)`, `bool(record)`, ... válidos).
 
 Errores explícitos del emisor ("El JIT (subconjunto WASM) aún no soporta...")
 para lo que no entra en el subset: tipos `Any`/`Unknown` sin anotar,
