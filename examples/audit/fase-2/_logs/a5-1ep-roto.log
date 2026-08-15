@@ -1,6 +1,0 @@
-[91mError en 'C:\Users\Frask\Documents\cls\examples\audit\fase-2\a5-cientifica\a5-1ep-roto.clsx':[0m
-[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\fase-2\a5-cientifica\a5-1ep-roto.clsx:3:16 [95m[Error de Sintaxis][0m
-  3 |     var x = 1e+;
-    | [31m               ^[0m
-  [1m[91mError:[0m[0m Token inesperado: ';'
-System.Management.Automation.RemoteException

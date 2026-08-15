@@ -1,6 +1,0 @@
-[91mError en 'C:\Users\Frask\Documents\cls\examples\audit\validacion\F-arrow-noparen.clsx':[0m
-[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\validacion\F-arrow-noparen.clsx:2:16 [95m[Error de Sintaxis][0m
-  2 |     var g = x => x + 1;
-    | [31m               ^[0m
-  [1m[91mError:[0m[0m Token inesperado: '>'
-

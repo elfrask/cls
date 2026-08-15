@@ -1,8 +1,0 @@
-﻿=== C:\Users\Frask\Documents\cls\examples\audit\errores\bug-array-string-puntero.clsx ===
-EXITCODE=0
-TIME_MS=2093
---- STDOUT ---
-arr: [1, 68719476739, 3]
-
---- STDERR ---
-================

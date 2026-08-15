@@ -1,9 +1,0 @@
-=== bug-bool-string === EXITCODE=0
---- STDOUT ---
-bool(''): false
-bool('x'): false
-expect: false / true
-
---- STDERR ---
-
-================

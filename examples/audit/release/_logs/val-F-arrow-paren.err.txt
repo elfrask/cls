@@ -1,6 +1,0 @@
-[91mError en 'C:\Users\Frask\Documents\cls\examples\audit\validacion\F-arrow-paren.clsx':[0m
-[36m1[0m. En C:\Users\Frask\Documents\cls\examples\audit\validacion\F-arrow-paren.clsx:5:33 [95m[Error de Sintaxis][0m
-  5 |     print("f:", lib::apply((x) => x * 2, 21));
-    | [31m                                ^[0m
-  [1m[91mError:[0m[0m Token inesperado: '>'
-

@@ -1,4 +1,0 @@
-toString fn: Numero(5)
-interpolacion: Numero(5)
-type: TipoNumero
-json: {"valor":5}

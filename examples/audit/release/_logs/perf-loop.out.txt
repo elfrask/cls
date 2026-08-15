@@ -1,2 +1,0 @@
-resultado: 199999990000000
-tiempo_ms: 42

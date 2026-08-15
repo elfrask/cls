@@ -1,7 +1,0 @@
-﻿C:\Users\Frask\Documents\cls\examples\test-features\jit-test\availible\23-import-namespaced.clsx
-EXIT=0
-=== import as (namespaced) ===
-saludar: Hola CLS
-suma: 30
-version: 2.0
-

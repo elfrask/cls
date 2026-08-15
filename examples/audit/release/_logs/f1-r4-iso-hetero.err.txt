@@ -1,3 +1,0 @@
-[[1m[91mERROR[0m[0m] [91mArray heterog├®neo: los elementos son de tipos incompatibles (Int y String). Usa `Record<String, any>` o un array homog├®neo.[0m (C:\Users\Frask\Documents\cls\examples\audit\fase-1-r2\r4-iso-hetero.clsx:2:28)
-  |     var a = [1, "dos", 3.0];
-  |                            ^

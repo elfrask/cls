@@ -1,7 +1,0 @@
-=== bug-array-string-puntero === EXITCODE=0
---- STDOUT ---
-arr: [1, 68719476739, 3]
-
---- STDERR ---
-
-================

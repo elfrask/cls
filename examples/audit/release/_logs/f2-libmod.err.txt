@@ -1,4 +1,0 @@
-[91mError de Compilaci├│n:[0m
-
-  [1m[91mError:[0m[0m No se encontr├│ function main(args: String[]) para el JIT
-

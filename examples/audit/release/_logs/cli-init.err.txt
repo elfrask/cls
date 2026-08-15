@@ -1,1 +1,0 @@
-'init' no implementado a├║n (usa 'clx new')

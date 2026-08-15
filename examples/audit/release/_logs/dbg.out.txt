@@ -1,2 +1,0 @@
-clx 2.0.0
-CLS Language Compiler & Runtime

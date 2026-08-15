@@ -1,2 +1,0 @@
-nombre: CLS
-version: 2

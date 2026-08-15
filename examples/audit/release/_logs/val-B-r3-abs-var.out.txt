@@ -1,4 +1,0 @@
-x: 2.5
-arr: [2.5]
-arr[0]: 2.5
-x is Float: true
