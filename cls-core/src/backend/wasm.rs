@@ -825,6 +825,16 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Const(0));
         } else if let Some(g) = self.globals.get(name) {
             self.body.push(Instruction::GlobalGet(*g));
+        } else if let Some(fidx) = self.intrinsic_handle_idx(name) {
+            // Intrinsic (print/input/now/...) como valor → handle de función con
+            // índice de tabla sintético (negativo, estable por nombre): se
+            // imprime `<function print>` (paridad walker). Un var/global de
+            // usuario con el mismo nombre gana (shadowing).
+            let n = self.intern_string(&format!("<function {}>", name));
+            self.body.push(Instruction::I64Const(fidx));
+            self.emit_load_str(n);
+            self.body.push(Instruction::I64Const(0));
+            self.host.call(HostFn::FnHandle, &mut self.body);
         } else if let Some(&ci) = self.captures.get(name) {
             // Variable capturada (closure): el bloque guarda el valor (si no es
             // promovida) o el PTR al slot (si es promovida). Acceder al slot.
@@ -861,6 +871,30 @@ impl<'a> FuncEmitter<'a> {
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalGet(idx));
         }
+    }
+
+    /// Índice de tabla "sintético" (negativo, estable por nombre) para el handle
+    /// de función de un intrinsic, o `None` si el nombre no es intrinsic.
+    /// Los builtins se resuelven por nombre (el emisor los despacha en los
+    /// calls); los host intrinsics del nodo (canal `env.host_call`) se indexan
+    /// con claves ordenadas para que el índice no dependa del orden de
+    /// iteración del HashMap (REPL: sesión a sesión).
+    fn intrinsic_handle_idx(&self, name: &str) -> Option<i64> {
+        const BUILTINS: &[&str] = &[
+            "print", "len", "toString", "str", "input", "int", "float", "bool",
+            "type", "now", "exit", "sleep", "throw",
+        ];
+        if let Some(i) = BUILTINS.iter().position(|b| *b == name) {
+            return Some(-(i as i64 + 1));
+        }
+        if self.intrinsics.contains_key(name) {
+            let mut keys: Vec<&String> = self.intrinsics.keys().collect();
+            keys.sort();
+            if let Some(i) = keys.iter().position(|k| k.as_str() == name) {
+                return Some(-(1000 + i as i64));
+            }
+        }
+        None
     }
 
     /// Carga el PTR al slot de una variable promovida (para capturarla por ref).
@@ -5389,6 +5423,10 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Const(es));
                 self.body.push(Instruction::I64Const(kind));
                 self.host.call(HostFn::ArrToString, &mut self.body);
+            }
+            Type::Fun(..) => {
+                // Handle de función → `<function X>` (el nombre está en el handle).
+                self.host.call(HostFn::FnToString, &mut self.body);
             }
             _ => self.host.call(HostFn::StrInt, &mut self.body),
         }
