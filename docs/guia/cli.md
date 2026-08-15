@@ -13,7 +13,10 @@ clx <subcomando> [opciones] [argumentos]
 |---|---|
 | `new`, `add`, `remove`/`rm`, `install`/`i`, `run`, `check`, `repl`, `build`, `lsp`, `ast`, `maptype`, `clean`, `-v`/`--version`, `-h`/`--help` | Implementados |
 | `init`, `tree`, `fmt` | **Placeholder** — imprimen "no implementado" y salen con código 1 |
-| `--quiet` | No hace nada (retorna 0) |
+| `--quiet` | Silencia logs; se usa **antes** del subcomando: `clx --quiet run ...` |
+
+Todos los subcomandos aceptan `-h`/`--help` (imprimen su ayuda y salen con 0,
+sin efectos colaterales).
 
 ## `clx new <nombre> [--lib]`
 
@@ -30,6 +33,8 @@ Crea un proyecto nuevo con la estructura mínima:
 
 - `--lib` — proyecto librería: `entry` vacío, `target: "library"` y no genera
   `main.clsx`.
+- El nombre no puede empezar con `-` (los flags se interpretan como opciones);
+  `clx new -h` muestra la ayuda del subcomando.
 
 ## `clx add <paquete> [--dev]` · `clx remove|rm <paquete>` · `clx install|i`
 
@@ -102,8 +107,8 @@ completas; las expresiones sueltas se imprimen. Comandos: `exit`, `quit`,
 
 ## `clx lsp [--silent]`
 
-Lanza el servidor LSP sobre **stdin/stdout** (no existe transporte TCP pese a
-que el help global lo mencione). Ver `herramientas/lsp.md`.
+Lanza el servidor LSP sobre **stdin/stdout**. `-s`/`--silent` suprime el banner
+de inicio. Ver `herramientas/lsp.md`.
 
 ## `clx ast <archivo> [--json]`
 

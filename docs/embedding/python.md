@@ -5,9 +5,9 @@ El paquete `clsb` embebe el motor CLS (JIT/WASM) en Python vía la ABI C
 ejecutar `main`, evaluar snippets y construir un nodo SDK (resolver, host
 functions, captura de `print`).
 
-> Binding en desarrollo (Fase 3 de `agent-context/BINDINGS_PLAN.md`).
-> El intérprete objetivo es el JIT; los scripts se compilan a WASM y se
-> ejecutan con wasmtime.
+> Binding funcional (Fase 3 de `agent-context/BINDINGS_PLAN.md`): suite de
+> tests 8/8 verificada. El intérprete objetivo es el JIT; los scripts se
+> compilan a WASM y se ejecutan con wasmtime.
 
 ## Instalación
 

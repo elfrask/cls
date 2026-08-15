@@ -4,7 +4,8 @@ CLS es un lenguaje de programación con verificación de tipos (compile-time),
 compilado a **WASM** y ejecutado con un **JIT** (`clx run`: CLS → WASM →
 wasmtime). El proyecto es un workspace Rust con seis crates — `cls-core`,
 `cls-runtime`, `cls-jit`, `nodos/clx`, `nodos/clxb`, `nodos/clxr` — y bindings
-de Python (`bindings/python`, paquete `clsb`).
+de Python (`bindings/python`, paquete `clsb`) y Node.js (`bindings/js`,
+paquete `@cls-embed/node`), ambos sobre la ABI C `clsb_v1_*`.
 
 > **JIT = intérprete objetivo.** El tree-walker (`clx run --ast-walker`) está
 > **DEPRECADO**: es solo referencia sintáctica y se eliminará tras
@@ -56,6 +57,8 @@ de Python (`bindings/python`, paquete `clsb`).
 - `herramientas/clxr.md` — runtime ligero para ejecutar apps.
 - `herramientas/clxb.md` — bindings C para embedding (`clsb.h`).
 - `herramientas/python.md` — bindings de Python (paquete `clsb`).
+- `embedding/node.md` — embedding en Node.js (`@cls-embed/node`, koffi).
+- `embedding/python.md` — embedding en Python (`clsb`, ctypes).
 
 ### Desarrollo
 
