@@ -1,13 +1,18 @@
-﻿//! Emisor de funciones CLS a WASM (Fase 1: extraido de wasm/mod.rs).
+//! Emisor de funciones CLS a WASM (Fase 1: extraido de wasm/mod.rs).
 
 use super::*;
 
+mod assignment;
 mod binary;
 mod calls;
 mod classes;
 mod containers;
 mod expressions;
+mod foreach;
 mod member;
+mod module_calls;
+mod print;
+mod primitives;
 mod statements;
 mod strings;
 

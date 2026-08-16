@@ -24,7 +24,7 @@ impl FieldVis {
 #[derive(Clone)]
 pub(crate) struct ClassInfo {
     pub(crate)parent: Option<String>,
-    /// id de clase (índice en orden de declaraci�n) para `is` por herencia.
+    /// id de clase (índice en orden de declaración) para `is` por herencia.
     pub(crate)class_id: u32,
     /// cadena de ancestors: [padre, abuelo, ...].
     pub(crate)ancestors: Vec<String>,
