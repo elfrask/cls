@@ -130,3 +130,24 @@ pub(super) const STRING_TABLE_BASE: u32 = 524_288; // 512KB - por debajo del hea
 /// método `__next` se emite con este valor; un iterador puede devolver 0 como
 /// valor legítimo, así que el null NO puede ser 0).
 pub(super) const NULL_ITER_SENTINEL: i64 = i64::MIN;
+
+// ── Shadow call stack en memoria lineal (plan-performance/shadow-stack-wasm.md) ──
+// Región fija FUERA del heap del usuario (HEAP_START = 1 MB). Todo queda por
+// debajo de 1 MB: data (strings) en [0..512KB+8N], slots de error/call-site y
+// frames del shadow stack por debajo del heap. El REPL (`transfer_state`) copia
+// solo `[HEAP_START..]`, así que estas regiones NO se transfieren entre líneas.
+
+/// Base de la región de frames del shadow stack (768 KB).
+pub(super) const SHADOW_STACK_BASE: u32 = 786_432;
+/// Tamaño de cada frame (name_idx:u32 + line:u16 + col:u16).
+pub(super) const FRAME_SIZE: u32 = 8;
+/// Tope de frames (igual al límite de `call_stack` del host actual).
+pub(super) const SHADOW_MAX_FRAMES: u32 = 1000;
+/// `shadow_ptr` alcanzó el tope → no escribir más frames.
+pub(super) const SHADOW_LIMIT: u32 = SHADOW_STACK_BASE + FRAME_SIZE * SHADOW_MAX_FRAMES;
+/// Call site pendiente del llamador (line:u16, col:u16) — el `fn_enter` del
+/// callee lo usa como span del frame (paridad con `pending_call_site` del host).
+pub(super) const PENDING_CALL_SLOT_ADDR: u32 = 778_240; // 760 KB
+/// Slot del reporte del error no capturado (futuro wrapper try_table).
+#[allow(dead_code)]
+pub(super) const ERROR_SLOT_ADDR: u32 = 770_048; // 752 KB

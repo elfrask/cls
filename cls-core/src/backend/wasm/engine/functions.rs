@@ -149,6 +149,7 @@ impl<'a> Engine<'a> {
             None
         };
         fe.current_fn_span = f.span.clone();
+        fe.shadow_ptr_global = self.shadow_ptr_global;
         let is_main = f.name == "main";
         // Promover al heap las variables locales capturadas por arrows del body:
         // para que la mutació del closure sea visible en el scope externo (paridad

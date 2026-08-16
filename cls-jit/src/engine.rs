@@ -284,6 +284,46 @@ pub(crate) fn maybe_write_module_index(
     }
 }
 
+/// Lee el shadow call stack desde la memoria lineal del módulo (escrito por el
+/// emisor: frames de 8 B `[name_idx:u32][line:u16][col:u16]` en la región
+/// `[base .. shadow_ptr]`). Devuelve los frames en orden de ejecución
+/// (main -> ... -> última función).
+pub(crate) fn read_shadow_stack(
+    shadow_ptr: u32,
+    base: u32,
+    read_u32: impl Fn(usize) -> u32,
+    read_u16: impl Fn(usize) -> u16,
+    name_at: impl Fn(u32) -> String,
+) -> Vec<(String, Span)> {
+    let mut stack = Vec::new();
+    let count = if shadow_ptr < base { 0 } else { ((shadow_ptr - base) / 8) as usize };
+    for i in 0..count {
+        let addr = (base + (i as u32) * 8) as usize;
+        let name_idx = read_u32(addr);
+        let line = read_u16(addr + 4);
+        let col = read_u16(addr + 6);
+        let name = name_at(name_idx);
+        stack.push((name, Span::new(line as u32, col as u32, line as u32, col as u32)));
+    }
+    stack
+}
+
+/// Resuelve `idx → nombre` contra la tabla de strings exportada del módulo
+/// (entrada `[off:u32, len:u32]` en `string_table_base + idx*8`; el texto vive
+/// en `[off .. off+len]` del pool).
+pub(crate) fn name_at(
+    string_table_base: u32,
+    idx: u32,
+    read_u32: impl Fn(usize) -> u32,
+    read_bytes: impl Fn(usize, usize) -> Vec<u8>,
+) -> String {
+    let entry = (string_table_base + idx * 8) as usize;
+    let off = read_u32(entry);
+    let len = read_u32(entry + 4);
+    let bytes = read_bytes(off as usize, len as usize);
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 /// Construye el reporte de un error de runtime como string (trace completo).
 /// Recibe las piezas que cada runtime extrae de su error:
 /// - `msg`: mensaje de la excepción CLS (vacío si el error fue un trap del host).

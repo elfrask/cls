@@ -271,9 +271,9 @@ impl<'a> Engine<'a> {
             AnyIndex,
             FnHandle,
             FnToString,
-            FnEnter,
-            FnExit,
-            CallSite,
+            // Nota: FnEnter/FnExit/CallSite ya NO se importan — el shadow call
+            // stack vive en la memoria lineal del módulo (plan-performance/
+            // shadow-stack-wasm.md).
             HostCall,
             OsPlatform,
             OsArch,
@@ -459,6 +459,32 @@ impl<'a> Engine<'a> {
                 }
             }
         }
+
+        // Globals del shadow call stack (plan-performance/shadow-stack-wasm.md):
+        // `shadow_ptr` (tope del stack en memoria) + consts que el host lee para
+        // resolver `idx → nombre` (tabla de strings) y la región de frames.
+        // Todos por debajo del heap (1 MB): NO se transfieren en el REPL.
+        let shadow_ptr_idx = next_global;
+        next_global += 1;
+        self.shadow_ptr_global = shadow_ptr_idx;
+        self.globals_sec.global(
+            GlobalType {
+                val_type: ValType::I32,
+                mutable: true,
+                shared: false,
+            },
+            &ConstExpr::i32_const(SHADOW_STACK_BASE as i32),
+        );
+        for (gtype, init) in [
+            (GlobalType { val_type: ValType::I32, mutable: false, shared: false }, SHADOW_STACK_BASE as i32),
+            (GlobalType { val_type: ValType::I32, mutable: false, shared: false }, STRING_TABLE_BASE as i32),
+            (GlobalType { val_type: ValType::I32, mutable: false, shared: false }, self.string_pool.len() as i32),
+        ] {
+            self.globals_sec.global(gtype, &ConstExpr::i32_const(init));
+        }
+        self.shadow_base_global = next_global;
+        self.string_table_base_global = next_global + 1;
+        self.string_pool_len_global = next_global + 2;
 
         // Internas __alloc y __load_str.
         let alloc_idx = self.declare_wasm_function(vec![ValType::I64], vec![ValType::I64]);
@@ -761,6 +787,16 @@ impl<'a> Engine<'a> {
         self.exports_sec
             .export("alloc", ExportKind::Func, self.func_indexes["__alloc"]);
         self.exports_sec.export("memory", ExportKind::Memory, 0);
+        // Shadow call stack: `__shadow_ptr` (tope de la región, mutable — el
+        // host lo lee en el error) y consts para resolver idx → nombre.
+        self.exports_sec
+            .export("__shadow_ptr", ExportKind::Global, self.shadow_ptr_global);
+        self.exports_sec
+            .export("__shadow_base", ExportKind::Global, self.shadow_base_global);
+        self.exports_sec
+            .export("__string_table_base", ExportKind::Global, self.string_table_base_global);
+        self.exports_sec
+            .export("__string_pool_len", ExportKind::Global, self.string_pool_len_global);
 
         // Globals de usuario exportadas como `__g_{idx}` (0 = heap_ptr, 1.. =
         // vars/consts/static fields). El host las usa para transferir estado

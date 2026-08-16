@@ -45,7 +45,7 @@ use crate::engine::{build_error_string, unpack_span};
 use crate::flatten::flatten_imports;
 use crate::host::host_trap_message;
 use crate::state::HostState;
-use crate::wasmtime_rt::{register_host_functions_opt, register_native_hosts, HOST};
+use crate::wasmtime_rt::{read_shadow_trace, register_host_functions_opt, register_native_hosts, HOST};
 use crate::JitContext;
 
 /// Offset de línea base para los spans de cada línea del REPL (y de los
@@ -490,8 +490,7 @@ impl ReplSession {
                     .map(|packed| read_packed_str(&mut store, &memory, packed))
                     .unwrap_or_default();
                 let span = payload.get(1).and_then(|v| v.i64()).map(unpack_span);
-                let call_stack = store.data().call_stack.clone();
-                let pending = store.data().pending_call_site;
+                let (call_stack, pending) = read_shadow_trace(&mut store, &instance, &memory);
                 let trap_text = if root.contains("__clsb_trap__:") {
                     root.trim_start_matches("__clsb_trap__:").to_string()
                 } else if root.is_empty() {

@@ -10,10 +10,11 @@
 
 #![cfg(feature = "wasmi-runtime")]
 
+use cls_core::error::Span;
 use cls_core::frontend::ast::Module as ClsModule;
 use std::sync::Arc;
 use std::time::Instant;
-use wasmi::{Caller, Engine, Linker, Memory, Module, Store, Val};
+use wasmi::{Caller, Engine, Instance, Linker, Memory, Module, Store, Val};
 
 use crate::engine::{finish_run_error, module_offsets};
 use crate::host::{self, HostCtx};
@@ -710,8 +711,7 @@ pub(crate) fn run_wasm_wasmi(
             // El shadow call stack (fn_enter) da el trace; el span del CLS no
             // viaja (los errores de runtime se emitieron como `unreachable`).
             let short = e.to_string();
-            let call_stack = store.data().call_stack.clone();
-            let pending = store.data().pending_call_site;
+            let (call_stack, pending) = read_shadow_trace(&store, &instance, &memory);
             let modules = store.data().modules.clone();
             finish_run_error(
                 String::new(),
@@ -834,4 +834,42 @@ mod tests {
             }
         }
     }
+}
+
+
+/// Lee el shadow call stack del modulo (escrito por el emisor en la memoria
+/// lineal). pending siempre es None (el fn_enter del callee consumio el pending
+/// como span de su frame - paridad con pending_call_site.take()).
+fn read_shadow_trace(
+    store: &Store<HostState>,
+    instance: &Instance,
+    memory: &Memory,
+) -> (Vec<(String, Span)>, Option<Span>) {
+    let gi32 = |name: &str| -> u32 {
+        instance
+            .get_export(store, name)
+            .and_then(|e| e.into_global())
+            .map(|g| g.get(store).i32().unwrap_or(0))
+            .unwrap_or(0) as u32
+    };
+    let shadow_ptr = gi32("__shadow_ptr");
+    let base = gi32("__shadow_base");
+    let stb = gi32("__string_table_base");
+    let data = memory.data(store);
+    let read_u32 = |addr: usize| -> u32 {
+        let mut b = [0u8; 4];
+        let _ = data.get(addr..addr.saturating_add(4)).map(|s| b.copy_from_slice(s));
+        u32::from_le_bytes(b)
+    };
+    let read_u16 = |addr: usize| -> u16 {
+        let mut b = [0u8; 2];
+        let _ = data.get(addr..addr.saturating_add(2)).map(|s| b.copy_from_slice(s));
+        u16::from_le_bytes(b)
+    };
+    let read_bytes = |addr: usize, len: usize| -> Vec<u8> {
+        data.get(addr..addr.saturating_add(len)).map(|s| s.to_vec()).unwrap_or_default()
+    };
+    let name_at = |idx: u32| crate::engine::name_at(stb, idx, read_u32, read_bytes);
+    let stack = crate::engine::read_shadow_stack(shadow_ptr, base, read_u32, read_u16, name_at);
+    (stack, None)
 }
