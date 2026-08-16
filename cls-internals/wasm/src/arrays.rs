@@ -2,6 +2,7 @@
 //! `cls-jit/src/host.rs` — `host_arr_*`).
 //! Layout: `[cap:i64][len:i64][elems*es]` con `es` = 4 (i32) u 8 (i64/f64).
 
+use alloc::string::{String, ToString};
 use crate::mem;
 
 pub(crate) unsafe fn arr_len(ptr: usize) -> i64 {
@@ -57,6 +58,16 @@ pub extern "C" fn __intr_arr_push(ptr: i64, val: i64, es: i64) -> i64 {
         arr_set(new_p, len as usize, es as usize, val);
         mem::write_i64(new_p + 8, len + 1);
         new_p as i64
+    }
+}
+
+/// Realloc de array: copia a un bloque de `new_cap` (para el `push` inline del
+/// emisor: el caso común sin realloc se emite como store + len++, solo el
+/// crecimiento llama acá). Paridad con `arr_realloc` del host.
+#[no_mangle]
+pub extern "C" fn __intr_arr_realloc(ptr: i64, new_cap: i64, es: i64) -> i64 {
+    unsafe {
+        arr_realloc(ptr as usize, new_cap as usize, es as usize) as i64
     }
 }
 

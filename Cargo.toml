@@ -4,6 +4,7 @@ members = [
     "cls-core",
     "cls-runtime",
     "cls-jit",
+    "cls-internals",
     "nodos/clx",
     "nodos/clxb",
     "nodos/clxr",

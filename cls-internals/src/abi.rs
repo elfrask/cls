@@ -34,6 +34,7 @@ pub static INTERNALS_FUNCTIONS: &[InternalsFn] = &[
     InternalsFn { name: "__intr_arr_includes", params: &[I64, I64, I64], results: &[I32] },
     InternalsFn { name: "__intr_arr_join", params: &[I64, I64, I64, I64], results: &[I64] },
     InternalsFn { name: "__intr_arr_to_string", params: &[I64, I64, I64], results: &[I64] },
+    InternalsFn { name: "__intr_arr_realloc", params: &[I64, I64, I64], results: &[I64] },
     // ── strings ───────────────────────────────────────────────────────────
     InternalsFn { name: "__intr_str_concat", params: &[I64, I64], results: &[I64] },
     InternalsFn { name: "__intr_str_int", params: &[I64], results: &[I64] },
@@ -74,6 +75,8 @@ pub static INTERNALS_FUNCTIONS: &[InternalsFn] = &[
     InternalsFn { name: "__intr_math_fmod", params: &[F64, F64], results: &[F64] },
     InternalsFn { name: "__intr_pow_num", params: &[I64, I64], results: &[I64] },
     InternalsFn { name: "__intr_math_range", params: &[I64, I64], results: &[I64] },
+    // abs entero: i64.abs no existe como instrucción WASM (el float es inline F64Abs).
+    InternalsFn { name: "__intr_int_abs", params: &[I64], results: &[I64] },
     // ── conversiones / intrinsics puros ────────────────────────────────────
     InternalsFn { name: "__intr_parse_int", params: &[I64], results: &[I64] },
     InternalsFn { name: "__intr_parse_float", params: &[I64], results: &[F64] },

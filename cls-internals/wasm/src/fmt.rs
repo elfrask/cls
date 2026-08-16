@@ -2,6 +2,9 @@
 //! `format_float`/`json_escape`/`fmt_val_to_string`/`arr_to_string`/
 //! `record_to_string`/`cmx_format`).
 
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use crate::arrays::{arr_elem, arr_len};
 use crate::mem;
 

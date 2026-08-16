@@ -10,6 +10,9 @@ description = "CLS internals compilados a wasm32-unknown-unknown (sub-crate de c
 [lib]
 crate-type = ["cdylib"]
 
+[dependencies]
+libm = "0.2"
+
 # Tamaño mínimo: el módulo se embebe en el binario del JIT.
 [profile.release]
 opt-level = "z"

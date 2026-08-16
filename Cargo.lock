@@ -194,10 +194,20 @@ dependencies = [
 name = "cls-core"
 version = "2.0.0"
 dependencies = [
+ "cls-internals",
  "serde",
  "serde_json",
  "thiserror 2.0.19",
  "wasm-encoder 0.255.0",
+ "wasmparser 0.255.0",
+]
+
+[[package]]
+name = "cls-internals"
+version = "2.0.0"
+dependencies = [
+ "wasm-encoder 0.255.0",
+ "wasmi",
 ]
 
 [[package]]
@@ -857,6 +867,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 dependencies = [
  "foldhash",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -2243,8 +2255,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8e329ef4b5d46e73b91d3ac6924417cad55a8cbbf869c199283383427c3320b"
 dependencies = [
  "bitflags 2.13.1",
+ "hashbrown 0.17.1",
  "indexmap",
  "semver",
+ "serde",
 ]
 
 [[package]]

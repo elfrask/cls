@@ -3,6 +3,12 @@
 //! - string: `(ptr<<32)|len`
 //! - array: `[cap:i64][len:i64][elems*es]`
 //! - record: `[cap:i64][len:i64][(key,val,tag)*24]`
+//!
+//! La alocación usa el bump allocator de `crate::allocator` (global `heap_ptr`
+//! compartido con el módulo CLS tras la fusión — mismo layout que `__alloc`).
+
+use alloc::string::String;
+use crate::allocator::bump_alloc;
 
 /// Lee i64 (sin alinear).
 pub unsafe fn read_i64(addr: usize) -> i64 {
@@ -37,19 +43,15 @@ pub unsafe fn read_str(packed: i64) -> String {
 
 /// Aloca + escribe un string en la memoria lineal y lo empaqueta.
 pub unsafe fn write_str(s: &str) -> i64 {
-    let mut v: Vec<u8> = s.as_bytes().to_vec();
-    let ptr = v.as_mut_ptr() as i64;
-    core::mem::forget(v);
-    (ptr << 32) | (s.len() as i64)
-}
-
-/// Aloca `n` bytes con capacity exacta y devuelve el offset (0 si n <= 0).
-pub unsafe fn alloc(n: i64) -> usize {
-    if n <= 0 {
+    let ptr = bump_alloc(s.len());
+    if ptr == 0 {
         return 0;
     }
-    let v: Vec<u8> = vec![0u8; n as usize];
-    let ptr = v.as_ptr() as usize;
-    core::mem::forget(v);
-    ptr
+    core::ptr::copy_nonoverlapping(s.as_ptr(), ptr as *mut u8, s.len());
+    ((ptr as i64) << 32) | (s.len() as i64)
+}
+
+/// Aloca `n` bytes (bump) y devuelve el offset (0 si n <= 0).
+pub unsafe fn alloc(n: i64) -> usize {
+    bump_alloc(n.max(0) as usize)
 }

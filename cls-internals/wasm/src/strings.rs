@@ -2,6 +2,8 @@
 //! Strings empaquetadas `(ptr<<32)|len`; las de salida se escriben en la
 //! memoria lineal (bump del allocator del módulo).
 
+use alloc::format;
+use alloc::string::ToString;
 use crate::mem;
 
 #[no_mangle]
