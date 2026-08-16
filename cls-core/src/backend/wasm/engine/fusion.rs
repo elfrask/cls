@@ -39,9 +39,12 @@ pub(crate) struct FusionResult {
 }
 
 impl<'a> Engine<'a> {
-    /// Inyecta las secciones de `INTERNALS_WASM` en el módulo CLS. Se llama al
-    /// final de `emit`, tras declarar todas las funciones/globals del CLS y
-    /// agregar sus bodies al code_sec (los de internals van después).
+    /// FASE 1 — Declara las internals en el módulo CLS (types/funcs/globals/
+    /// tabla/data/exports) y registra los `__intr_*` en `func_indexes`. Se
+    /// llama DESPUÉS de declarar todas las funciones/globals del CLS pero
+    /// ANTES de compilar los bodies del CLS: así el emisor ya puede emitir
+    /// `call __intr_*` (Paso 3). Los bodies de internals se GUARDAN en
+    /// `self.internals_bodies` para emitirlos al final del code_sec (fase 2).
     pub(crate) fn fuse_internals(&mut self) -> ClsResult<FusionResult> {
         let wasm = cls_internals::INTERNALS_WASM;
         let mut result = FusionResult { internals: HashMap::new() };
@@ -186,9 +189,10 @@ impl<'a> Engine<'a> {
             self.func_count += 1;
             self.funcs_sec.function(tidx);
             func_map.push(fidx);
-            // Los bodies de internals van al code_sec tras los del CLS.
+            // Los bodies de internals se guardan para emitirlos al FINAL del
+            // code_sec (tras los bodies del CLS) en `fuse_internals_emit`.
             if i < bodies.len() {
-                self.code_sec.function(&bodies[i]);
+                self.internals_bodies.push(bodies[i].clone());
             }
         }
 
@@ -197,14 +201,13 @@ impl<'a> Engine<'a> {
             self.globals_sec.global(gt.clone(), init);
         }
 
-        // ── 5. Tabla de internals (índice 1): el CLS ya declaró su tabla 0 ────
+        // ── 5. Tabla de internals (se declara en `emit` como índice 1) ────────
         // El CLS usa la tabla 0 (vtables + handles); las internals necesitan la
-        // suya para el call_indirect de fmt dispatch. Se agrega como tabla 1 y
-        // los call_indirect de internals se re-mapean a `table_index: 1`.
+        // suya para el call_indirect de fmt dispatch. La tabla de internals se
+        // declara en `emit` DESPUÉS de la del CLS (orden de secciones), por eso
+        // aquí SOLO se guardan los elems mapeados. El elem de internals original
+        // se aplica en OFFSET 1 (la ranura 0 es dummy, como en el CLS).
         if !internals_elem.is_empty() {
-            // Mapear los índices de función del elem (dentro de internals) al
-            // módulo fusionado: 0 = __cls_alloc (NO se exporta a la tabla),
-            // 1.. = funcs definidos.
             let mapped: Vec<u32> = internals_elem
                 .iter()
                 .filter_map(|f| {
@@ -216,19 +219,7 @@ impl<'a> Engine<'a> {
                 })
                 .collect();
             if !mapped.is_empty() {
-                // Tabla 1 (la 0 es del CLS). El elem va en offset 0 de la 1.
-                self.tables_sec.table(TableType {
-                    element_type: RefType::FUNCREF,
-                    table64: false,
-                    minimum: mapped.len() as u64,
-                    maximum: None,
-                    shared: false,
-                });
-                self.elements_sec.active(
-                    Some(1),
-                    &ConstExpr::i32_const(0),
-                    Elements::Functions(std::borrow::Cow::Owned(mapped)),
-                );
+                self.internals_elem = mapped;
             }
         }
 
@@ -256,6 +247,15 @@ impl<'a> Engine<'a> {
 
         let _ = (internals_table_min, INTERNALS_WINDOW_END);
         Ok(result)
+    }
+
+    /// FASE 2 — Agrega los bodies de las internals al code_sec. Se llama tras
+    /// agregar los bodies del CLS (el orden del code_sec DEBE coincidir con el
+    /// orden de declaración: alloc, load_str, [init], cls, ..., internals).
+    pub(crate) fn fuse_internals_emit(&mut self) {
+        for body in self.internals_bodies.drain(..) {
+            self.code_sec.function(&body);
+        }
     }
 }
 

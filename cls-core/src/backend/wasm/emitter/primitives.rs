@@ -474,7 +474,11 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(true);
                     }
                     "abs" => {
-                        self.host.call(HostFn::IntAbs, &mut self.body);
+                        if let Some(&idx) = self.func_indexes.get("__intr_int_abs") {
+                            self.body.push(Instruction::Call(idx));
+                        } else {
+                            self.host.call(HostFn::IntAbs, &mut self.body);
+                        }
                         return Ok(true);
                     }
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
@@ -488,7 +492,7 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(true);
                     }
                     "abs" => {
-                        self.host.call(HostFn::FloatAbs, &mut self.body);
+                        self.body.push(Instruction::F64Abs);
                         return Ok(true);
                     }
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),

@@ -153,7 +153,11 @@ impl<'a> FuncEmitter<'a> {
                 self.f64_promote(&b.left)?;
                 self.emit_expression(&b.right)?;
                 self.f64_promote(&b.right)?;
-                self.host.call(HostFn::Fmod, &mut self.body);
+                if let Some(&idx) = self.func_indexes.get("__intr_math_fmod") {
+                    self.body.push(Instruction::Call(idx));
+                } else {
+                    self.host.call(HostFn::Fmod, &mut self.body);
+                }
             }
             Percent => {
                 self.emit_expression(&b.left)?;
@@ -167,12 +171,20 @@ impl<'a> FuncEmitter<'a> {
                 self.f64_promote(&b.left)?;
                 self.emit_expression(&b.right)?;
                 self.f64_promote(&b.right)?;
-                self.host.call(HostFn::MathPow, &mut self.body);
+                if let Some(&idx) = self.func_indexes.get("__intr_math_pow") {
+                    self.body.push(Instruction::Call(idx));
+                } else {
+                    self.host.call(HostFn::MathPow, &mut self.body);
+                }
             }
             StarStar => {
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;
-                self.host.call(HostFn::PowNum, &mut self.body);
+                if let Some(&idx) = self.func_indexes.get("__intr_pow_num") {
+                    self.body.push(Instruction::Call(idx));
+                } else {
+                    self.host.call(HostFn::PowNum, &mut self.body);
+                }
             }
             // Operadores bit a bit (enteros): ^ << >>
             Caret => {
