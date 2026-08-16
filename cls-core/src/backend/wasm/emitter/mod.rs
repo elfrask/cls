@@ -93,6 +93,12 @@ pub(crate) struct FuncEmitter<'a> {
     /// setea el engine después de `new` (el índice se conoce al emitir los
     /// globals). 0 mientras no se instrumente.
     pub(crate) shadow_ptr_global: u32,
+    /// `true` = el flujo ya no puede continuar (return/break/continue o if con
+    /// todas las ramas terminadas). Los statements siguientes se omiten y el
+    /// cierre de la función emite `unreachable` (evita código muerto inválido
+    /// tras un `end` de if/switch/try con todas las ramas terminadas, que
+    /// cranelift rechaza con "expected i64 but nothing on stack").
+    pub(crate) dead_flow: bool,
 }
 
 impl<'a> FuncEmitter<'a> {
@@ -162,6 +168,7 @@ impl<'a> FuncEmitter<'a> {
             captures: HashMap::new(),
             promoted: HashSet::new(),
             shadow_ptr_global: 0,
+            dead_flow: false,
         }
     }
 

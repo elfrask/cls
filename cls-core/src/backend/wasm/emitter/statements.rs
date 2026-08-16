@@ -8,6 +8,12 @@ impl<'a> FuncEmitter<'a> {
     // == Emisión de statements ============================================
 
     pub(crate) fn emit_statement(&mut self, stmt: &Statement) -> ClsResult<()> {
+        // Código muerto (después de un return/break/continue o de un if con
+        // todas las ramas terminadas): se omite. Emitirlo genera código muerto
+        // inválido para cranelift tras el `end` de frames (if/switch/try).
+        if self.dead_flow {
+            return Ok(());
+        }
         match stmt {
             Statement::VarDecl(v) | Statement::ConstDecl(v) => {
                 let ty = match (&v.type_ann, &v.value) {
@@ -64,12 +70,15 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::LocalSet(idx));
                     }
                 }
+                self.dead_flow = false;
                 Ok(())
             }
             Statement::FunctionDecl(_) => Ok(()),
             Statement::Expression(e) => {
                 self.emit_expression(e)?;
-                self.emit_drop(e)
+                self.emit_drop(e)?;
+                self.dead_flow = false;
+                Ok(())
             }
             Statement::Return(e) => {
                 if e.is_some() {
@@ -79,6 +88,7 @@ impl<'a> FuncEmitter<'a> {
                 // salta al final sin pasar por el `fn_exit` del cuerpo.
                 self.emit_fn_exit();
                 self.body.push(Instruction::Return);
+                self.dead_flow = true;
                 Ok(())
             }
             Statement::Break(bspan) => {
@@ -87,6 +97,7 @@ impl<'a> FuncEmitter<'a> {
                 })?;
                 let depth = self.block_depth.saturating_sub(ctx.break_at);
                 self.body.push(Instruction::Br(depth));
+                self.dead_flow = true;
                 Ok(())
             }
             Statement::Continue(cspan) => {
@@ -95,6 +106,7 @@ impl<'a> FuncEmitter<'a> {
                 })?;
                 let depth = self.block_depth.saturating_sub(ctx.continue_at);
                 self.body.push(Instruction::Br(depth));
+                self.dead_flow = true;
                 Ok(())
             }
             Statement::If(i) => self.emit_if(i),
@@ -125,7 +137,9 @@ impl<'a> FuncEmitter<'a> {
             | Statement::Config(_) => Ok(()),
             Statement::Cmx(c) => {
                 self.emit_cmx(c)?;
-                self.emit_drop(&Expression::Cmx(c.clone()))
+                self.emit_drop(&Expression::Cmx(c.clone()))?;
+                self.dead_flow = false;
+                Ok(())
             }
             other => Err(self.unsupported_stmt(other)),
         }
@@ -167,6 +181,9 @@ impl<'a> FuncEmitter<'a> {
             self.push_eq(WasTy::I64)?;
             self.block_depth += 1;
             self.body.push(Instruction::If(BlockType::Empty));
+            // Cada case es una rama independiente (alcanzable por el else del
+            // case anterior): el flujo muerto de un case no se propaga al otro.
+            self.dead_flow = false;
             for st in &case.block.statements {
                 self.emit_statement(st)?;
             }
@@ -176,6 +193,7 @@ impl<'a> FuncEmitter<'a> {
             self.block_depth -= 1;
         }
         if let Some(def) = &s.default {
+            self.dead_flow = false;
             for st in &def.statements {
                 self.emit_statement(st)?;
             }
@@ -183,6 +201,10 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::End); // block done
         self.block_depth -= 1;
         let _ = d;
+        // Sin default, o default con caída -> flujo vivo (los casos br al done).
+        if s.default.is_none() {
+            self.dead_flow = false;
+        }
         Ok(())
     }
 
@@ -213,6 +235,7 @@ impl<'a> FuncEmitter<'a> {
                 &stmt.span,
             ));
         }
+        let was_dead = self.dead_flow;
         // block $outer (Empty)
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::Empty));
@@ -235,9 +258,11 @@ impl<'a> FuncEmitter<'a> {
                 label: catch_label,
             }]),
         ));
+        self.dead_flow = false;
         for s in &stmt.try_block.statements {
             self.emit_statement(s)?;
         }
+        let try_dead = self.dead_flow;
         self.body.push(Instruction::End); // cierra try_table
         self.block_depth -= 1;
         // flujo normal (sin excepción) -> br al $outer (salta el handler)
@@ -246,12 +271,14 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::End); // cierra $handler -> el catch aterriza AQUÍ con [msg, span]
         self.block_depth -= 1;
         // handler: payload [msg, span] en el stack (span arriba, msg debajo)
+        let mut catch_dead = true;
         if stmt.catch_clauses.is_empty() {
             let span_tmp = self.fresh_local();
             self.body.push(Instruction::LocalSet(span_tmp));
             let msg_tmp = self.fresh_local();
             self.body.push(Instruction::LocalSet(msg_tmp));
             if let Some(f) = &stmt.finally_block {
+                self.dead_flow = false;
                 for s in &f.statements {
                     self.emit_statement(s)?;
                 }
@@ -261,6 +288,7 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::LocalGet(span_tmp));
             self.body.push(Instruction::Throw(self.tag_idx));
             self.body.push(Instruction::Unreachable);
+            catch_dead = true;
         } else {
             let catch = &stmt.catch_clauses[0];
             let span_tmp = self.fresh_local();
@@ -274,46 +302,59 @@ impl<'a> FuncEmitter<'a> {
             self.host.call(HostFn::StrConcat, &mut self.body);
             let e_local = self.declare_var_ty(&catch.param_name, WasTy::I64);
             self.body.push(Instruction::LocalSet(e_local));
+            self.dead_flow = false;
             for s in &catch.block.statements {
                 self.emit_statement(s)?;
             }
+            catch_dead = self.dead_flow;
         }
         self.body.push(Instruction::End); // cierra $outer
         self.block_depth -= 1;
+        self.dead_flow = was_dead || (try_dead && catch_dead);
         Ok(())
     }
 
 
 
     pub(crate) fn emit_if(&mut self, i: &IfStatement) -> ClsResult<()> {
+        let was_dead = self.dead_flow;
         self.emit_expression(&i.condition)?;
         self.coerce_to_bool(&i.condition)?;
         self.block_depth += 1;
         self.body.push(Instruction::If(BlockType::Empty));
+        self.dead_flow = false;
         for s in &i.then_block.statements {
             self.emit_statement(s)?;
         }
+        let then_dead = self.dead_flow;
         let has_elif = !i.elif_branches.is_empty();
         let has_else = i.else_block.is_some();
         if has_elif || has_else {
             self.body.push(Instruction::Else);
         }
         // Cadena de elifs anidados dentro del else; el último cede al else final.
+        let mut branch_deads: Vec<bool> = Vec::new();
+        let mut else_dead = false;
         for (k, branch) in i.elif_branches.iter().enumerate() {
+            self.dead_flow = false;
             self.emit_expression(&branch.condition)?;
             self.coerce_to_bool(&branch.condition)?;
             self.block_depth += 1;
             self.body.push(Instruction::If(BlockType::Empty));
+            self.dead_flow = false;
             for s in &branch.block.statements {
                 self.emit_statement(s)?;
             }
+            branch_deads.push(self.dead_flow);
             let last = k == i.elif_branches.len() - 1;
             if last {
                 if let Some(else_b) = &i.else_block {
                     self.body.push(Instruction::Else);
+                    self.dead_flow = false;
                     for s in &else_b.statements {
                         self.emit_statement(s)?;
                     }
+                    else_dead = self.dead_flow;
                 }
             } else {
                 self.body.push(Instruction::Else);
@@ -322,13 +363,25 @@ impl<'a> FuncEmitter<'a> {
             self.block_depth -= 1;
         }
         if !has_elif && has_else {
+            self.dead_flow = false;
             let else_b = i.else_block.as_ref().unwrap();
             for s in &else_b.statements {
                 self.emit_statement(s)?;
             }
+            else_dead = self.dead_flow;
         }
         self.body.push(Instruction::End);
         self.block_depth -= 1;
+        // Flujo muerto tras el if: todas las ramas terminaron (then + toda la
+        // cadena elif + else final cuando existe).
+        let chain_dead = if has_elif {
+            branch_deads.iter().all(|d| *d) && (if has_else { else_dead } else { false })
+        } else if has_else {
+            else_dead
+        } else {
+            false
+        };
+        self.dead_flow = was_dead || (then_dead && chain_dead);
         Ok(())
     }
 
@@ -352,6 +405,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I32Eqz);
         let depth = self.block_depth.saturating_sub(break_at);
         self.body.push(Instruction::BrIf(depth));
+        self.dead_flow = false;
         for s in &w.block.statements {
             self.emit_statement(s)?;
         }
@@ -362,6 +416,8 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::End); // block
         self.block_depth -= 1;
         self.loop_stack.pop();
+        // El loop siempre puede salir (condición/break) -> flujo vivo tras él.
+        self.dead_flow = false;
         Ok(())
     }
 
@@ -380,6 +436,7 @@ impl<'a> FuncEmitter<'a> {
             continue_at,
         });
         let _ = d;
+        self.dead_flow = false;
         for s in &b.statements {
             self.emit_statement(s)?;
         }
@@ -390,6 +447,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::End); // block
         self.block_depth -= 1;
         self.loop_stack.pop();
+        self.dead_flow = false;
         Ok(())
     }
 
@@ -422,12 +480,16 @@ impl<'a> FuncEmitter<'a> {
             let depth = self.block_depth.saturating_sub(break_at);
             self.body.push(Instruction::BrIf(depth));
         }
+        self.dead_flow = false;
         for s in &f.block.statements {
             self.emit_statement(s)?;
         }
         // cerrar el continue block -> se ejecuta el update
         self.body.push(Instruction::End);
         self.block_depth -= 1;
+        // El update se alcanza vía el `continue` (back-edge) aunque el body
+        // haya terminado el flujo: es código vivo sintácticamente.
+        self.dead_flow = false;
         if let Some(update) = &f.update {
             self.emit_expression(update)?;
             self.emit_drop(update)?;
@@ -440,6 +502,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::End); // block
         self.block_depth -= 1;
         self.loop_stack.pop();
+        self.dead_flow = false;
         Ok(())
     }
 
