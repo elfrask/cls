@@ -2,6 +2,7 @@
 
 mod emit;
 mod functions;
+mod fusion;
 mod metadata;
 pub(crate) use metadata::{ClassInfo, FieldVis, StructInfo};
 mod globals;

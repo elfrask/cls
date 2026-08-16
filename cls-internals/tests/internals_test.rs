@@ -32,14 +32,14 @@ fn instantiate() -> Rt {
     // En los tests standalone lo proveemos con un bump local (empieza en BUF
     // hacia arriba) para que las funciones `__intr_*` puedan alocar.
     linker
-        .func_wrap("env", "__cls_alloc", |mut caller: wasmi::Caller<'_, TestState>, size: i32| -> i32 {
+        .func_wrap("env", "__cls_alloc", |mut caller: wasmi::Caller<'_, TestState>, size: i64| -> i64 {
             let heap: &mut i32 = caller.data_mut().heap.as_mut().expect("heap");
             if size <= 0 {
                 return 0;
             }
             let ptr = *heap;
-            *heap = ptr + size;
-            ptr
+            *heap = ptr + (size as i32);
+            ptr as i64
         })
         .expect("link __cls_alloc");
     let instance = linker
@@ -507,12 +507,12 @@ fn manifest_matcher_exported_functions() {
     let mut store = Store::new(&engine, TestState { heap: Some(TEST_HEAP) });
     let mut linker = Linker::new(&engine);
     linker
-        .func_wrap("env", "__cls_alloc", |mut caller: wasmi::Caller<'_, TestState>, size: i32| -> i32 {
+        .func_wrap("env", "__cls_alloc", |mut caller: wasmi::Caller<'_, TestState>, size: i64| -> i64 {
             let heap: &mut i32 = caller.data_mut().heap.as_mut().expect("heap");
             if size <= 0 { return 0; }
             let ptr = *heap;
-            *heap = ptr + size;
-            ptr
+            *heap = ptr + (size as i32);
+            ptr as i64
         })
         .expect("link __cls_alloc");
     let instance = linker

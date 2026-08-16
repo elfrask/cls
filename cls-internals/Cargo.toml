@@ -10,3 +10,5 @@ wasm-encoder = { version = "0.255" }
 
 [dev-dependencies]
 wasmi = { version = "0.38" }
+wasmprinter = "0.255"
+wasmparser = "0.255"
