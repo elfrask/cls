@@ -5,7 +5,7 @@ use crate::frontend::ast::*;
 use crate::middleware::types::{LitVal, Type};
 use wasm_encoder::ValType;
 
-/// Tipo WASM de un valor (los que dejan un Ãºnico valor en el stack).
+/// Tipo WASM de un valor (los que dejan un único valor en el stack).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum WasTy {
     I64,
@@ -22,7 +22,7 @@ impl WasTy {
         }
     }
 }
-/// Convierte un Type CLS a su representaciÃ³n WASM.
+/// Convierte un Type CLS a su representación WASM.
 pub(super) fn was_type(t: &Type) -> ClsResult<WasTy> {
     match t {
         Type::Int | Type::I8 | Type::I16 | Type::I32 | Type::I64 => Ok(WasTy::I64),
@@ -89,7 +89,7 @@ pub(super) enum BuiltinTypeName {
     Void,
 }
 
-/// Â¿El Type CLS del lado izquierdo coincide con el nombre builtin a la derecha?
+/// ¿El Type CLS del lado izquierdo coincide con el nombre builtin a la derecha?
 pub(super) fn builtin_type_matches(t: &Type, name: &BuiltinTypeName) -> bool {
     match (name, t) {
         (BuiltinTypeName::String, Type::String) => true,
@@ -130,8 +130,8 @@ pub(super) fn annotation_to_type(ann: &TypeAnnotation) -> Type {
                 .map(|(n, t)| (n.clone(), annotation_to_type(t)))
                 .collect(),
         ),
-        // Nombrados: los builtins genÃ©ricos (`Record<K,V>`, `Array<T>`, alias
-        // bÃ¡sicos) se resuelven aquÃ­ (el typeck los resuelve en su propio
+        // Nombrados: los builtins genéricos (`Record<K,V>`, `Array<T>`, alias
+        // básicos) se resuelven aquí (el typeck los resuelve en su propio
         // resolve_type_annotation; el emisor debe hacer lo mismo).
         TypeKind::Named(name, args) => match name.as_str() {
             "Record" | "Dict" | "Map" if args.len() == 2 => Type::Record(
@@ -153,7 +153,7 @@ pub(super) fn annotation_to_type(ann: &TypeAnnotation) -> Type {
         _ => Type::Any,
     }
 }
-/// CÃ³digo de tipo nativo para la firma de extensiones: i=int, f=float, b=bool,
+/// Código de tipo nativo para la firma de extensiones: i=int, f=float, b=bool,
 /// c=char, s=string, v=void. El nombre del import codifica ret+params.
 pub(super) fn ty_code(t: &Type) -> (char, WasTy) {
     match t {

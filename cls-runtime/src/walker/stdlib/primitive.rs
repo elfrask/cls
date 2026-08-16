@@ -1,7 +1,7 @@
 //! Métodos de tipos primitivos vía dispatch tables estáticas.
 //!
 //! Los primitivos (String, Int, Array, etc.) NO se envuelven en objetos.
-//! Los métodos se resuelven por una tabla global `tipo → {nombre → PrimitiveMethod}`.
+//! Los métodos se resuelven por una tabla global `tipo -> {nombre -> PrimitiveMethod}`.
 //! El receiver viaja como `args[0]` (plano, sin boxing).
 //!
 //! Esto es compatible con compilación nativa/WASM: el tipo del receiver se
@@ -29,9 +29,9 @@ pub enum PrimitiveType {
 
 /// Método o propiedad computada de un tipo primitivo.
 pub enum PrimitiveMethod {
-    /// Método invocable: `"hola".upper()` → fn([recv, ...args])
+    /// Método invocable: `"hola".upper()` -> fn([recv, ...args])
     Method(MethodFn),
-    /// Propiedad computada: `"hola".length` → fn([recv])
+    /// Propiedad computada: `"hola".length` -> fn([recv])
     Getter(MethodFn),
 }
 

@@ -1,7 +1,7 @@
 //! Motor JIT: delegación al crate `cls-jit` (motor reusable).
 //!
 //! `clx run --jit <archivo> [-- args...]` compila el archivo con el motor
-//! centralizado de `cls-jit` (CLS → WASM → wasmtime), inyectando el backend
+//! centralizado de `cls-jit` (CLS -> WASM -> wasmtime), inyectando el backend
 //! nativo del nodo (`DynamicBackend`) y los hooks del índice de módulos del
 //! workspace. El motor vive en `cls-jit` para que el nodo de bindings lo
 //! reutilice sin duplicar.
@@ -23,7 +23,7 @@ impl cls_jit::ModuleIndexHook for ClxModuleIndexHook {
     }
 }
 
-/// Ejecuta un programa CLS con el JIT (CLS → WASM → wasmtime).
+/// Ejecuta un programa CLS con el JIT (CLS -> WASM -> wasmtime).
 /// Devuelve el exit code (0 = OK, 1 = error).
 pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i32 {
     let ctx = cls_jit::JitContext {
@@ -34,7 +34,7 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
         module_source_resolver: None,
         output: None,
     };
-    // `CLS_JIT_RUNTIME=wasmi` → ejecutar con wasmi (intérprete puro, sin
+    // `CLS_JIT_RUNTIME=wasmi` -> ejecutar con wasmi (intérprete puro, sin
     // excepciones CLS). Útil para validar el runtime del navegador desde el CLI.
     let runtime = match std::env::var("CLS_JIT_RUNTIME").as_deref() {
         Ok("wasmi") => cls_jit::RuntimeKind::Wasmi,

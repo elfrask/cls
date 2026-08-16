@@ -1,4 +1,4 @@
-//! AST — TypeParam (Fase 1: extraido de frontend/ast.rs).
+//! AST - TypeParam (Fase 1: extraido de frontend/ast.rs).
 
 use crate::frontend::ast::*;
 use crate::error::diagnostic::Span;

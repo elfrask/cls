@@ -16,14 +16,14 @@ class Simetrico {
 function main(args: String[]) -> int {
     var a = Vec(5);
     var b = Vec(2);
-    print("simetria derecha (2 * Vec):", 2 * b);    # right.__mul(left) → Vec(4)
-    print("simetria izquierda (Vec * 2):", a * 2);  # left.__mul(right) → Vec(10)
+    print("simetria derecha (2 * Vec):", 2 * b);    # right.__mul(left) -> Vec(4)
+    print("simetria izquierda (Vec * 2):", a * 2);  # left.__mul(right) -> Vec(10)
 
     var s = Simetrico(10);
     print("S + int:", s + 5);          # 15 (left.__add)
     print("int + S:", 5 + s);          # 15 (right.__add, simetria)
 
     print("equals diff:", a == Vec(5));   # true
-    print("equals types:", Vec(1) == Vec(1));  # true (sin __equals → identidad? verificar)
+    print("equals types:", Vec(1) == Vec(1));  # true (sin __equals -> identidad? verificar)
     return 0;
 }

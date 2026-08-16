@@ -224,7 +224,7 @@ pub fn host_trap_message<C: HostCtx>(ctx: &mut C, msg: i64, span: i64) -> String
     }
 }
 
-// ── conversiones (errores con trap → mensaje claro) ─────────────────────────
+// ── conversiones (errores con trap -> mensaje claro) ─────────────────────────
 
 pub fn host_parse_int<C: HostCtx>(ctx: &mut C, v: i64) -> Result<i64, String> {
     let s = ctx.read_str(v);
@@ -241,7 +241,7 @@ pub fn host_parse_float<C: HostCtx>(ctx: &mut C, v: i64) -> Result<f64, String> 
 }
 
 pub fn host_parse_bool<C: HostCtx>(ctx: &mut C, v: i64) -> i32 {
-    // Truthiness de string (paridad walker): vacío → false, no vacío → true.
+    // Truthiness de string (paridad walker): vacío -> false, no vacío -> true.
     let s = ctx.read_str(v);
     if s.is_empty() {
         0
@@ -588,7 +588,7 @@ fn rng_state() -> &'static std::sync::Mutex<u64> {
     })
 }
 
-/// Siguiente valor del LCG (u64) — avanza el estado compartido.
+/// Siguiente valor del LCG (u64) - avanza el estado compartido.
 fn rng_next_u64() -> u64 {
     let mut s = rng_state().lock().unwrap();
     *s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
@@ -1118,7 +1118,7 @@ fn epoch_fields(secs: i64) -> (i64, i64, i64, i64, i64, i64) {
     let hour = rem / 3600;
     let minute = (rem % 3600) / 60;
     let second = rem % 60;
-    // Algoritmo civil (Howard Hinnant): días desde 1970-01-01 → (y, m, d).
+    // Algoritmo civil (Howard Hinnant): días desde 1970-01-01 -> (y, m, d).
     let z = days + 719468;
     let era = z.div_euclid(146097);
     let doe = z.rem_euclid(146097);
@@ -1532,8 +1532,8 @@ pub fn host_cmx_to_string<C: HostCtx>(ctx: &mut C, ptr: i64) -> i64 {
 
 pub fn host_fn_handle<C: HostCtx>(ctx: &mut C, table_idx: i64, nombre: i64, capturas: i64) -> i64 {
     // Contrato con el backend (dispatch tag-bit en wasm.rs):
-    //  - capturas == 0 → handle PAR = (tabla_idx << 1): sin alocar.
-    //  - capturas != 0 → handle IMPAR = (ptr << 1) | 1: bloque de 24B.
+    //  - capturas == 0 -> handle PAR = (tabla_idx << 1): sin alocar.
+    //  - capturas != 0 -> handle IMPAR = (ptr << 1) | 1: bloque de 24B.
     if capturas == 0 {
         if nombre != 0 {
             let name = ctx.read_str(nombre);
@@ -1638,7 +1638,7 @@ fn fmt_val_to_string<C: HostCtx>(ctx: &mut C, val: i64, tag: i64) -> String {
     }
 }
 
-/// `[e1, e2, ...]` — kind 5 = array de Cmx (entradas `[val, tag]` stride 16).
+/// `[e1, e2, ...]` - kind 5 = array de Cmx (entradas `[val, tag]` stride 16).
 fn arr_to_string<C: HostCtx>(ctx: &mut C, ptr: i64, es: i64, kind: i64) -> String {
     if ptr == 0 {
         return String::from("[]");
@@ -1689,7 +1689,7 @@ fn arr_to_string<C: HostCtx>(ctx: &mut C, ptr: i64, es: i64, kind: i64) -> Strin
     out
 }
 
-/// `{k: v, ...}` — formatea cada valor por su tag (claves ordenadas, como el walker).
+/// `{k: v, ...}` - formatea cada valor por su tag (claves ordenadas, como el walker).
 fn record_to_string<C: HostCtx>(ctx: &mut C, ptr: i64) -> String {
     if ptr == 0 {
         return String::from("{}");

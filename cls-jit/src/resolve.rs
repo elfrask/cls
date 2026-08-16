@@ -1,4 +1,4 @@
-//! Caché CLS→WASM en disco y resolución de imports de módulos de usuario.
+//! Caché CLS->WASM en disco y resolución de imports de módulos de usuario.
 
 use cls_core::frontend::ast::Module as ClsModule;
 
@@ -75,7 +75,7 @@ fn cmp_semver(a: &str, b: &str) -> std::cmp::Ordering {
 fn semver_matches(range: &str, version: &str) -> bool {
     let range = range.trim();
     if range.starts_with('^') {
-        // ^1.2.0 → >=1.2.0 y major == 1
+        // ^1.2.0 -> >=1.2.0 y major == 1
         let min = &range[1..];
         if cmp_semver(version, min) == std::cmp::Ordering::Less {
             return false;
@@ -262,7 +262,7 @@ pub fn load_import_modules_hooked(
                     }
                 }
             }
-            // Hook del nodo: el import no está en disco → el nodo provee el source.
+            // Hook del nodo: el import no está en disco -> el nodo provee el source.
             if !found {
                 if let Some(h) = hook {
                     if let Some(source) = h.resolve_source(&path, base_dir) {

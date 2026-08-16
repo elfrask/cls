@@ -24,7 +24,7 @@ La librería se busca en orden: `CLS_LIB_PATH` > `lib/` (junto al paquete) > PAT
 const clsb = require("@cls-embed/node");
 
 const engine = new clsb.Engine();
-engine.setOutput(console.log);      // print del script → Node
+engine.setOutput(console.log);      // print del script -> Node
 
 const module = engine.compileSource(
   "export function suma(a: int, b: int) -> int { return a + b; }"
@@ -51,7 +51,7 @@ engine.eval('export function hola() -> String { return "hi"; }');  // "hi"
 ```js
 engine.setResolver((path, baseDir) => {
   if (path === "virt") return 'export function v() -> int { return 9; };';
-  return null;                        // → error "módulo no encontrado"
+  return null;                        // -> error "módulo no encontrado"
 });
 
 engine.registerHostFunction("triple", "i(i)", (id, args) => args[0] * 3);
@@ -73,16 +73,16 @@ el proceso de Node.
 
 ## API
 
-- `new Engine(opts?)` — motor (un hilo por engine). `opts.fs` / `opts.http`
+- `new Engine(opts?)` - motor (un hilo por engine). `opts.fs` / `opts.http`
   (`boolean`, default `false`) habilitan los módulos del sistema.
-- `engine.version` — versión de la ABI (`clsb_version`).
+- `engine.version` - versión de la ABI (`clsb_version`).
 - `engine.setOutput(cb(line))` / `engine.setResolver(cb(path, baseDir) -> string|null)`
   / `engine.registerHostFunction(name, sig, fn(id, args) -> ClsValue)`.
 - `engine.compileSource(src, name?, baseDir?) -> Module` / `engine.compileFile(path)`.
 - `engine.eval(src) -> ClsValue`.
 - `Module.call(name, ...args) -> ClsValue` / `Module.runMain(args?) -> int`.
-- `Module.dispose()` / `Engine.dispose()` — libera los handles nativos.
-- `clsb.ClsError` — error con `.message` y `.trace` (trace completo).
+- `Module.dispose()` / `Engine.dispose()` - libera los handles nativos.
+- `clsb.ClsError` - error con `.message` y `.trace` (trace completo).
 - Constantes de kind: `CLSB_INT`, `CLSB_FLOAT`, `CLSB_BOOL`, `CLSB_CHAR`,
   `CLSB_STRING`, `CLSB_ARRAY`, `CLSB_RECORD`, `CLSB_NULL`.
 

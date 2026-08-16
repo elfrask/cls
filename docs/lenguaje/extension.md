@@ -1,4 +1,4 @@
-# Extensiones nativas (`extension` — FFI)
+# Extensiones nativas (`extension` - FFI)
 
 `extension` declara símbolos de librerías del sistema (C ABI) para llamarlos
 desde CLS. Las funciones se declaran **sin cuerpo** (terminan en `;`).
@@ -34,7 +34,7 @@ Ejemplos: `examples/audit/test-features/extension-demo.clsx`,
 
 | Tipo | ABI |
 |---|---|
-| `CString` | `char*` (String CLS → buffer null-terminated) |
+| `CString` | `char*` (String CLS -> buffer null-terminated) |
 | `CInt` / `CUInt` | `i32` / `u32` |
 | `CShort` / `CUShort` | `i16` / `u16` |
 | `CLong` / `CULong` | `i64` / `u64` (long de 64 bits) |
@@ -78,7 +78,7 @@ nodo no registró backend para el tipo.
 ## Límites y mapeo de librerías
 
 - Hasta **4 argumentos** por función nativa (dispatcher `arity0`–`arity4`;
-  más de 4 → error claro).
+  más de 4 -> error claro).
 - Mapeo de nombres de librería por SO:
 
 | Nombre | Windows | Linux | macOS |
@@ -93,5 +93,5 @@ nodo no registró backend para el tipo.
 - **Tree-walker**: sí, vía el backend nativo inyectado por el nodo.
 - **JIT**: sí; el emisor compila las llamadas a host functions
   `env.<sym>__<sig>@<lib>` que delegan en el backend del nodo.
-- **clxb** (bindings): **no** — backend dummy con error claro
+- **clxb** (bindings): **no** - backend dummy con error claro
   (`extension nativa 'lib.sym' no soportada por el binding (clxb)`).

@@ -5,7 +5,7 @@ use super::*;
 impl<'a> FuncEmitter<'a> {
 
 
-    /// Despacha el print de un campo de record heterogÃƒÂ©neo segÃƒÂºn su tag.
+    /// Despacha el print de un campo de record heterogéneo según su tag.
     pub(crate) fn emit_print_record_field(&mut self, ptr_tmp: u32, key_tmp: u32) {
         self.body.push(Instruction::LocalGet(ptr_tmp));
         self.body.push(Instruction::LocalGet(key_tmp));
@@ -24,7 +24,7 @@ impl<'a> FuncEmitter<'a> {
 
 
     /// Formatea una tupla `(e0, e1, ...)` con repr (strings entre comillas), como
-    /// el walker. El ptr de la tupla ya estÃƒÂ¡ en el stack.
+    /// el walker. El ptr de la tupla ya está en el stack.
     pub(crate) fn emit_tuple_to_string(&mut self, slots: &[Type], _arg: &Expression) -> ClsResult<()> {
         let ptr = self.fresh_local();
         self.body.push(Instruction::LocalSet(ptr));
@@ -107,8 +107,8 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    pub(crate) fn emit_print_arg(&mut self, arg: &Expression) -> ClsResult<()> {        // `u.values()` sobre un record con shape Ã¢â€ â€™ imprimir `[v1, v2, ...]` inline
-        // (el typeck da Array<Any>, no imprimible por el backend genÃƒÂ©rico).
+    pub(crate) fn emit_print_arg(&mut self, arg: &Expression) -> ClsResult<()> {        // `u.values()` sobre un record con shape -> imprimir `[v1, v2, ...]` inline
+        // (el typeck da Array<Any>, no imprimible por el backend genérico).
         if let Expression::Call(c) = arg {
             if let Expression::MemberAccess(m) = &*c.callee {
                 if m.member == "values" {
@@ -131,7 +131,7 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::LocalSet(idx));
                 self.body.push(Instruction::LocalSet(ptr));
                 self.bounds_check(ptr, idx, &ix.span);
-                // addr = 16 + idx*16 Ã¢â€ â€™ val y tag
+                // addr = 16 + idx*16 -> val y tag
                 self.body.push(Instruction::LocalGet(ptr));
                 self.body.push(Instruction::LocalGet(idx));
                 self.body.push(Instruction::I64Const(16));
@@ -168,7 +168,7 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
         }
-        // Index sobre un record heterogÃƒÂ©neo (value Any): imprimir segÃƒÂºn el tag del valor.
+        // Index sobre un record heterogéneo (value Any): imprimir según el tag del valor.
         if let Expression::Index(i) = arg {
             let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
             if matches!(obj_ty, Some(Type::Record(_, _))) {
@@ -182,7 +182,7 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
         }
-        // Member access `record.campo` con value heterogÃƒÂ©neo Ã¢â€ â€™ igual, por tag.
+        // Member access `record.campo` con value heterogéneo -> igual, por tag.
         if let Expression::MemberAccess(m) = arg {
             let obj_ty = self.types.get(&expr_span(&m.object)).cloned();
             if matches!(obj_ty, Some(Type::Record(_, _)))
@@ -198,15 +198,15 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_print_record_field(ptr_tmp, key_tmp);
                 return Ok(());
             }
-            // `app.tag`: puede ser un string (tag minÃƒÂºscula) o un handle de funciÃƒÂ³n
-            // (tag mayÃƒÂºscula). Despachar por tag-bit: handle (par O impar) =
+            // `app.tag`: puede ser un string (tag minúscula) o un handle de función
+            // (tag mayúscula). Despachar por tag-bit: handle (par O impar) =
             // bits altos cero; string CLS = (off<<32)|len (bits altos != 0).
             if matches!(obj_ty, Some(Type::Cmx)) && m.member == "tag" {
                 self.emit_expression(&m.object)?;
                 self.emit_cmx_field(0)?;
                 let v = self.fresh_local();
                 self.body.push(Instruction::LocalSet(v));
-                // if (v>>32 == 0) && (v != 0) Ã¢â€ â€™ handle Ã¢â€ â€™ FnToString
+                // if (v>>32 == 0) && (v != 0) -> handle -> FnToString
                 self.body.push(Instruction::LocalGet(v));
                 self.body.push(Instruction::I64Const(32));
                 self.body.push(Instruction::I64ShrU);
@@ -259,7 +259,7 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
         }
-        // Llamadas a funciones nativas (extensiÃƒÂ³n) Ã¢â€ â€™ tipo de retorno codificado.
+        // Llamadas a funciones nativas (extensión) -> tipo de retorno codificado.
         if let Expression::Call(c) = arg {
             if let Expression::Identifier(name, _) = &*c.callee {
                 if let Some(rc) = self.native_ret.get(name) {
@@ -273,7 +273,7 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
         }
-        // Llamadas a mÃƒÂ³dulos stdlib Ã¢â€ â€™ tipo de retorno conocido (print float/int).
+        // Llamadas a módulos stdlib -> tipo de retorno conocido (print float/int).
         // math.range devuelve un array (el typeck no lo tipa): formatear `[..]`.
         if is_math_range_call(arg) {
             self.emit_expression(arg)?;
@@ -295,8 +295,8 @@ impl<'a> FuncEmitter<'a> {
                 Type::Array(_) | Type::Record(_, _) | Type::Cmx | Type::Tuple(_)
             );
             if !is_container {
-                // El tipo real del span decide (String Ã¢â€ â€™ PrintStr; Float Ã¢â€ â€™ PrintFloat;
-                // Bool Ã¢â€ â€™ PrintBool); para tipos sin informaciÃƒÂ³n, usar el WasTy.
+                // El tipo real del span decide (String -> PrintStr; Float -> PrintFloat;
+                // Bool -> PrintBool); para tipos sin información, usar el WasTy.
                 match &t {
                     Type::String => {
                         self.host.call(HostFn::PrintStr, &mut self.body);
@@ -340,7 +340,7 @@ impl<'a> FuncEmitter<'a> {
             Type::Char => self.host.call(HostFn::PrintChar, &mut self.body),
             Type::Float => self.host.call(HostFn::PrintFloat, &mut self.body),
             Type::Null => {
-                // `null` Ã¢â€ â€™ imprimir "null" (paridad walker).
+                // `null` -> imprimir "null" (paridad walker).
                 self.body.push(Instruction::Drop);
                 let n = self.intern_string("null");
                 self.emit_load_str(n);
@@ -366,7 +366,7 @@ impl<'a> FuncEmitter<'a> {
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
             Type::Shape(fields) => {
-                // Formatear `{k: v, ...}` (keys ordenadas alfabÃƒÂ©ticamente, paridad walker).
+                // Formatear `{k: v, ...}` (keys ordenadas alfabéticamente, paridad walker).
                 let layout = self.shape_layout(&fields)?;
                 let ptr = self.fresh_local();
                 self.body.push(Instruction::LocalSet(ptr));
@@ -396,7 +396,7 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::LocalGet(lt));
                     self.host.call(HostFn::StrConcat, &mut self.body);
                     self.body.push(Instruction::LocalSet(res));
-                    // valor del campo: load por offset + a string segÃƒÂºn el tipo del campo
+                    // valor del campo: load por offset + a string según el tipo del campo
                     self.body.push(Instruction::LocalGet(ptr));
                     self.body.push(Instruction::I64Const(*off));
                     self.body.push(Instruction::I64Add);
@@ -466,7 +466,7 @@ impl<'a> FuncEmitter<'a> {
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
             Type::Named(name, _) if self.class_defs.contains_key(&name) => {
-                // Si la clase define __repr Ã¢â€ â€™ usarlo (el ptr ya estÃƒÂ¡ en el stack).
+                // Si la clase define __repr -> usarlo (el ptr ya está en el stack).
                 if let Some(idx) = self.func_indexes.get(&format!("{}::__repr", name)) {
                     self.body.push(Instruction::Call(*idx));
                     self.host.call(HostFn::PrintStr, &mut self.body);
@@ -554,14 +554,14 @@ impl<'a> FuncEmitter<'a> {
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
             Type::Fun(..) => {
-                // Handle de funciÃƒÂ³n Ã¢â€ â€™ `<function X>` (el nombre estÃƒÂ¡ en el handle).
+                // Handle de función -> `<function X>` (el nombre está en el handle).
                 self.host.call(HostFn::FnToString, &mut self.body);
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
             Type::Named(name, _) if self.struct_defs.contains_key(&name) => {
                 let ptr = self.fresh_local();
                 self.body.push(Instruction::LocalSet(ptr));
-                // Struct def como valor (ptr 0) Ã¢â€ â€™ `<function X>` (paridad walker).
+                // Struct def como valor (ptr 0) -> `<function X>` (paridad walker).
                 self.body.push(Instruction::LocalGet(ptr));
                 self.body.push(Instruction::I64Eqz);
                 self.block_depth += 1;
@@ -578,12 +578,12 @@ impl<'a> FuncEmitter<'a> {
             }
             Type::Named(name, _) if self.enum_variants(&name).is_some() => {
                 let variants = self.enum_variants(&name).unwrap().clone();
-                // index = v & 0xffffffff Ã¢â€ â€™ seleccionar el string de la variante
+                // index = v & 0xffffffff -> seleccionar el string de la variante
                 self.body.push(Instruction::I64Const(0xffff_ffff));
                 self.body.push(Instruction::I64And);
                 let idx = self.fresh_local();
                 self.body.push(Instruction::LocalSet(idx));
-                // Enum def como valor (index 0xffffffff) Ã¢â€ â€™ `<enum X>` (paridad walker).
+                // Enum def como valor (index 0xffffffff) -> `<enum X>` (paridad walker).
                 self.body.push(Instruction::LocalGet(idx));
                 self.body.push(Instruction::I64Const(0xffff_ffff));
                 self.body.push(Instruction::I64Eq);
@@ -653,7 +653,7 @@ impl<'a> FuncEmitter<'a> {
                 _ => self.host.call(HostFn::PrintInt, &mut self.body),
             },
             Type::Void | Type::Empty => {
-                // `print("x", time.sleep(5))` Ã¢â€ â€™ imprime "void" (paridad walker).
+                // `print("x", time.sleep(5))` -> imprime "void" (paridad walker).
                 // La llamada void no deja valor en el stack: solo imprimir la etiqueta.
                 let n = self.intern_string("void");
                 self.emit_load_str(n);
@@ -665,8 +665,8 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Construye la representaciÃƒÂ³n `Punto { x: 3, y: 4 }` de un struct y la deja
-    /// en el stack (el ptr del struct estÃƒÂ¡ en `ptr`).
+    /// Construye la representación `Punto { x: 3, y: 4 }` de un struct y la deja
+    /// en el stack (el ptr del struct está en `ptr`).
     pub(crate) fn emit_struct_to_string(&mut self, name: &str, ptr: u32) -> ClsResult<()> {
         let info = self.struct_defs[name].clone();
         let open = format!("{} {{ ", name);
@@ -773,7 +773,7 @@ impl<'a> FuncEmitter<'a> {
             Type::Char => self.host.call(HostFn::StrChar, &mut self.body),
             Type::Float => self.host.call(HostFn::StrFloat, &mut self.body),
             Type::Null => {
-                // null Ã¢â€ â€™ string "null"
+                // null -> string "null"
                 self.body.push(Instruction::Drop);
                 let n = self.intern_string("null");
                 self.emit_load_str(n);
@@ -784,7 +784,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_struct_to_string(&name, ptr)?;
             }
             Type::Named(name, _) if self.class_defs.contains_key(&name) => {
-                // toString(obj) Ã¢â€ â€™ __toString si existe; si no, __repr; el ptr estÃƒÂ¡ en stack.
+                // toString(obj) -> __toString si existe; si no, __repr; el ptr está en stack.
                 if let Some(idx) = self.func_indexes.get(&format!("{}::__toString", name)) {
                     self.body.push(Instruction::Call(*idx));
                 } else if let Some(idx) = self.func_indexes.get(&format!("{}::__repr", name)) {
@@ -794,7 +794,7 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
             Type::Array(elem) => {
-                // `[e1, e2, ...]` como el walker (paridad en interpolaciÃƒÂ³n).
+                // `[e1, e2, ...]` como el walker (paridad en interpolación).
                 let w = was_type(&*elem)?;
                 let kind = arr_kind_code(&*elem);
                 let es = if matches!(*elem, Type::Cmx) {
@@ -807,7 +807,7 @@ impl<'a> FuncEmitter<'a> {
                 self.host.call(HostFn::ArrToString, &mut self.body);
             }
             Type::Fun(..) => {
-                // Handle de funciÃƒÂ³n Ã¢â€ â€™ `<function X>` (el nombre estÃƒÂ¡ en el handle).
+                // Handle de función -> `<function X>` (el nombre está en el handle).
                 self.host.call(HostFn::FnToString, &mut self.body);
             }
             _ => self.host.call(HostFn::StrInt, &mut self.body),
@@ -816,7 +816,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Convierte un valor WASM (ya en el stack) a string segÃƒÂºn su tipo CLS.
+    /// Convierte un valor WASM (ya en el stack) a string según su tipo CLS.
     /// No consume el ptr; lo usa directo para hosts de string.
     pub(crate) fn emit_was_to_string(&mut self, w: WasTy, cls_t: &Type) -> ClsResult<()> {
         match cls_t {
@@ -854,7 +854,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// `u.values()` sobre un shape Ã¢â€ â€™ string `[v1, v2, ...]` (keys ordenadas alf.).
+    /// `u.values()` sobre un shape -> string `[v1, v2, ...]` (keys ordenadas alf.).
     pub(crate) fn emit_shape_values_to_string(
         &mut self,
         m: &MemberAccessExpr,
@@ -947,7 +947,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// `json.stringify(shape)` Ã¢â€ â€™ string JSON `{"k": v, ...}` (deja el string en stack).
+    /// `json.stringify(shape)` -> string JSON `{"k": v, ...}` (deja el string en stack).
     pub(crate) fn emit_shape_to_json_string(
         &mut self,
         expr: &Expression,
@@ -1059,7 +1059,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// `[ptr]` en stack Ã¢â€ â€™ string del shape (recursivo para shapes anidados).
+    /// `[ptr]` en stack -> string del shape (recursivo para shapes anidados).
     pub(crate) fn emit_shape_field_to_string(&mut self, ptr: u32, fields: &[(String, Type)]) -> ClsResult<()> {
         let layout = self.shape_layout(fields)?;
         let open = self.intern_string("{");
@@ -1192,10 +1192,10 @@ impl<'a> FuncEmitter<'a> {
 
 
     pub(crate) fn emit_to_bool(&mut self, arg: &Expression) -> ClsResult<()> {
-        // Reutiliza coerce_to_bool: la misma semÃƒÂ¡ntica de truthiness del walker
-        // (int/float Ã¢â€°Â  0, string len Ã¢â€°Â  0, array/record len Ã¢â€°Â  0, cmx/objetos
-        // true). Antes los compuestos (cmx/array/record/any) caÃƒÂ­an en `_` y
-        // dejaban el ptr i64 en el stack Ã¢â€ â€™ `if (bool(x))` emitÃƒÂ­a WASM invÃƒÂ¡lido.
+        // Reutiliza coerce_to_bool: la misma semántica de truthiness del walker
+        // (int/float != 0, string len != 0, array/record len != 0, cmx/objetos
+        // true). Antes los compuestos (cmx/array/record/any) caían en `_` y
+        // dejaban el ptr i64 en el stack -> `if (bool(x))` emitía WASM inv�lido.
         self.coerce_to_bool(arg)
     }
 

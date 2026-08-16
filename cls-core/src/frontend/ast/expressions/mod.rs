@@ -1,4 +1,4 @@
-﻿//! AST â€” expressions (Fase 1: extraido de frontend/ast.rs).
+﻿//! AST - expressions (Fase 1: extraido de frontend/ast.rs).
 
 mod array_expr;
 mod arrow_function_expr;
@@ -76,19 +76,19 @@ pub enum Expression {
     // Funciones flecha
     ArrowFunction(ArrowFunctionExpr),
 
-    // If como expresiÃ³n
+    // If como expresión
     Conditional(ConditionalExpr),
 
-    // AsignaciÃ³n
+    // Asignación
     Assignment(AssignmentExpr),
 
     // CMX (JSX)
     Cmx(CmxElement),
 
-    // ParÃ©ntesis
+    // Paréntesis
     Parenthesized(Box<Expression>, Span),
 
-    // InterpolaciÃ³n de strings
+    // Interpolación de strings
     StringInterpolation(StringInterpolation),
 
     // Namespace access

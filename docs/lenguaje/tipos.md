@@ -23,7 +23,7 @@ y `tests/test-types.clsx`.
 
 Acrónimos numéricos: `i32`, `i64`, `i16`, `i8`, `f32`, `f64`.
 
-Conversión implícita: `Int → Float`.
+Conversión implícita: `Int -> Float`.
 
 ## Arrays
 
@@ -38,8 +38,8 @@ var a: Int[] = [1, 2, 3];
 
 ```clx
 var a: (Int, String) = (1, "x");
-a[0];   # Int (índice literal → slot exacto)
-a[i];   # Int | String (índice dinámico → unión de slots)
+a[0];   # Int (índice literal -> slot exacto)
+a[i];   # Int | String (índice dinámico -> unión de slots)
 ```
 
 ## Records tipados
@@ -100,7 +100,7 @@ var t: (Int, String)[1];            # String
 ```
 
 La extracción `T["clave"]` / `T[índice]` aplica los genéricos dados (o sus
-defaults) y resuelve campos de interfaces (también métodos → tipo función),
+defaults) y resuelve campos de interfaces (también métodos -> tipo función),
 tuplas, arrays, records y uniones.
 
 ## Genéricos
@@ -141,8 +141,8 @@ interface Marcador<T> {
 
 ## Typechecking
 
-- `clx check` — chequea un nivel (un solo archivo).
-- `clx check --strict` — asignaciones incompatibles son error;
+- `clx check` - chequea un nivel (un solo archivo).
+- `clx check --strict` - asignaciones incompatibles son error;
   `no_implicit_any` aborta variables sin tipo.
 - El JIT (`clx run`) compila siempre con typeck estricto (`strict`,
   `no_implicit_any`, `null_safety`); los errores de tipo abortan antes de

@@ -214,7 +214,7 @@ fn line_pad(line: u32) -> String {
     " ".repeat(line.to_string().len())
 }
 
-/// Construye el caret visual para una línea (tabulaciones → 4 espacios).
+/// Construye el caret visual para una línea (tabulaciones -> 4 espacios).
 fn caret_for(line_text: &str, col: u32) -> String {
     let col = col as usize;
     if col > 0 && col <= line_text.chars().count() {
@@ -280,8 +280,8 @@ fn entry_plain(e: &TraceEntry) -> String {
     match e.kind {
         EntryKind::Import => s.push_str(&format!("{}. En {}\n", e.num, e.location())),
         EntryKind::Call => match &e.function {
-            Some(f) if e.line == 0 => s.push_str(&format!("{}. → {} ({})\n", e.num, f, e.file)),
-            Some(f) => s.push_str(&format!("{}. En {} → {}\n", e.num, e.location(), f)),
+            Some(f) if e.line == 0 => s.push_str(&format!("{}. -> {} ({})\n", e.num, f, e.file)),
+            Some(f) => s.push_str(&format!("{}. En {} -> {}\n", e.num, e.location(), f)),
             None => s.push_str(&format!("{}. En {}\n", e.num, e.location())),
         },
         EntryKind::Error => {
@@ -330,10 +330,10 @@ fn entry_console(e: &TraceEntry) -> String {
         EntryKind::Import => s.push_str(&format!("{}. En {}\n", num, e.location())),
         EntryKind::Call => match &e.function {
             Some(f) if e.line == 0 => {
-                s.push_str(&format!("{}. {} {}\n", num, ansi::fg(true, ansi::codes::YELLOW, "→"), f));
+                s.push_str(&format!("{}. {} {}\n", num, ansi::fg(true, ansi::codes::YELLOW, "->"), f));
             }
             Some(f) => {
-                s.push_str(&format!("{}. En {} {} {}\n", num, e.location(), ansi::fg(true, ansi::codes::YELLOW, "→"), f));
+                s.push_str(&format!("{}. En {} {} {}\n", num, e.location(), ansi::fg(true, ansi::codes::YELLOW, "->"), f));
             }
             None => s.push_str(&format!("{}. En {}\n", num, e.location())),
         },
@@ -383,8 +383,8 @@ fn entry_html(e: &TraceEntry) -> String {
     match e.kind {
         EntryKind::Import => s.push_str(&format!("<span style=\"color:#56b6c2\">{}</span>. En {}<br/>", e.num, html_escape(&e.location()))),
         EntryKind::Call => match &e.function {
-            Some(f) if e.line == 0 => s.push_str(&format!("<span style=\"color:#56b6c2\">{}</span>. → {}<br/>", e.num, html_escape(f))),
-            Some(f) => s.push_str(&format!("<span style=\"color:#56b6c2\">{}</span>. En {} → {}<br/>", e.num, html_escape(&e.location()), html_escape(f))),
+            Some(f) if e.line == 0 => s.push_str(&format!("<span style=\"color:#56b6c2\">{}</span>. -> {}<br/>", e.num, html_escape(f))),
+            Some(f) => s.push_str(&format!("<span style=\"color:#56b6c2\">{}</span>. En {} -> {}<br/>", e.num, html_escape(&e.location()), html_escape(f))),
             None => s.push_str(&format!("<span style=\"color:#56b6c2\">{}</span>. En {}<br/>", e.num, html_escape(&e.location()))),
         },
         EntryKind::Error => s.push_str(&format!("<span style=\"color:#56b6c2\">{}</span>. En {} {}<br/>", e.num, html_escape(&e.location()), e.label.unwrap_or(""))),

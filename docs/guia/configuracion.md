@@ -8,16 +8,16 @@ Toda la configuración de un proyecto vive en `cls.json`
 
 | Campo | Tipo | Default | Descripción |
 |---|---|---|---|
-| `name` | string | — | Nombre del proyecto (obligatorio) |
-| `version` | string | — | Versión semver (obligatorio) |
+| `name` | string | - | Nombre del proyecto (obligatorio) |
+| `version` | string | - | Versión semver (obligatorio) |
 | `description` | string | `""` | Descripción |
 | `authors` | string[] | `[]` | Autores |
 | `license` | string | `"MIT"` | Licencia |
 | `registry` | string | `https://registry.cls-lang.org` | Registry para dependencias |
 | `entry` | string | `"src/main.clsx"` | Punto de entrada principal |
-| `project` | object | — | Ver `project` |
-| `compiler` | object | — | Ver `compiler` |
-| `interpreter` | object | — | Ver `interpreter` |
+| `project` | object | - | Ver `project` |
+| `compiler` | object | - | Ver `compiler` |
+| `interpreter` | object | - | Ver `interpreter` |
 | `dependencies` | map | `{}` | Dependencias (`"<pkg>": "^1.0.0"`) |
 | `devDependencies` | map | `{}` | Dependencias de desarrollo (renombrada de `devDependencies`) |
 | `lockfileVersion` | number | ausente | Versión del lockfile |
@@ -122,11 +122,11 @@ Toda la configuración de un proyecto vive en `cls.json`
 
 ## Caché de compilación
 
-- `~/.cache/cls/` — binarios WASM compilados; la clave es un hash de la
+- `~/.cache/cls/` - binarios WASM compilados; la clave es un hash de la
   fuente del entry + versión de `cls-core` + target + runtime + fuentes de
   todos los módulos importados. Editar cualquier `.clsx` del grafo invalida
   el caché.
-- `[workspace]/.cls-cache/module-index.json` — índice de integridad
+- `[workspace]/.cls-cache/module-index.json` - índice de integridad
   informativo (hashes SHA-256 de cada `.clsx` del workspace; el JIT no lo
   usa para invalidar).
 
@@ -163,4 +163,4 @@ busca en este orden:
 1. Path directo (si el nombre contiene `/`, `\` o termina en `.clslib`).
 2. `./libs/{name}.clslib`.
 3. `~/.cls/clslibs/names/{name}.clslib`.
-4. `~/.cls/clslibs/index.json` → entry por nombre → `~/.cls/clslibs/by-hash/{hash}/{name}.clslib`.
+4. `~/.cls/clslibs/index.json` -> entry por nombre -> `~/.cls/clslibs/by-hash/{hash}/{name}.clslib`.

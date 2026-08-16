@@ -15,7 +15,7 @@ El servidor se identifica como `clx-lsp 2.0.0`.
 
 | Capacidad | Detalle |
 |---|---|
-| Text document sync | `FULL` — el documento completo se envía en cada cambio. |
+| Text document sync | `FULL` - el documento completo se envía en cada cambio. |
 | Completion | Trigger chars: `.`, `"`, `/`. |
 | Hover | Docs de las type definitions (`.clsi`). |
 | Go-to-definition | Símbolos declarados en el documento actual. |
@@ -26,10 +26,10 @@ El servidor se identifica como `clx-lsp 2.0.0`.
 
 Pipeline por documento abierto o cambiado (`did_open` / `did_change`):
 
-1. **Lexer** → errores de sintaxis.
-2. **Parser** → errores de sintaxis/estructurales.
-3. **NameResolver** → errores de nombres.
-4. **TypeChecker** → errores y warnings de tipos.
+1. **Lexer** -> errores de sintaxis.
+2. **Parser** -> errores de sintaxis/estructurales.
+3. **NameResolver** -> errores de nombres.
+4. **TypeChecker** -> errores y warnings de tipos.
 
 La configuración de tipos se toma de `cls.json` del workspace
 (`compiler.types`); si no existe, se usa el default
@@ -53,17 +53,17 @@ La configuración de tipos se toma de `cls.json` del workspace
 Busca la palabra bajo el cursor en las type definitions y devuelve markdown con
 la firma y los tags documentados del `.clsi`:
 
-- `@description` → párrafo.
-- `@params nombre desc` → ítem de lista.
-- `@return ...` → flecha `→`.
-- `@deprecated ...` → texto tachado.
+- `@description` -> párrafo.
+- `@params nombre desc` -> ítem de lista.
+- `@return ...` -> flecha `->`.
+- `@deprecated ...` -> texto tachado.
 
 Si la palabra no está en las definiciones, devuelve el nombre entre backticks.
 
 ## Type definitions
 
 - **Builtins embebidos** (12): `core`, `math`, `json`, `fs`, `http`, `Lib`,
-  `async`, `os`, `path`, `process`, `time`, `random` — los `.clsi` de
+  `async`, `os`, `path`, `process`, `time`, `random` - los `.clsi` de
   `cls-runtime/clsi/` se distribuyen dentro del binario (`include_str!`).
 - **Override de usuario**: los `.clsi` del directorio `clsi/` del workspace
   tienen prioridad y se cargan además de los builtins.

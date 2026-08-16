@@ -9,9 +9,9 @@ impl<'a> FuncEmitter<'a> {
         use Operator::*;
         let lt = self.value_type(&b.left)?;
         let rt = self.value_type(&b.right)?;
-        // Magic methods de clase (paridad walker `binary_magic`): aritmÃƒÂ©tica,
-        // igualdad y comparaciÃƒÂ³n se despachan a la clase ANTES de los paths
-        // nativos (el typeck ya validÃƒÂ³ el tipo del resultado).
+        // Magic methods de clase (paridad walker `binary_magic`): aritmética,
+        // igualdad y comparación se despachan a la clase ANTES de los paths
+        // nativos (el typeck ya validó el tipo del resultado).
         let rty = self.types.get(&expr_span(&b.right)).cloned();
         let arith_magic = match b.op {
             Plus => "__add",
@@ -29,7 +29,7 @@ impl<'a> FuncEmitter<'a> {
         }
         match b.op {
             StrictEqual | NotEqual => {
-                // __equals: left.__equals(right) Ã¢â€ â€™ truthiness; `!=` niega.
+                // __equals: left.__equals(right) -> truthiness; `!=` niega.
                 if let Some(ret_was) = self.try_binary_magic(&b.left, &b.right, "__equals")? {
                     match ret_was {
                         WasTy::I64 => {
@@ -50,7 +50,7 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
             LessThan | LessEqual | GreaterThan | GreaterEqual => {
-                // __compare: resultado int Ã¢â€ â€™ c <0/<=0/>0/>=0 segÃƒÂºn el operador.
+                // __compare: resultado int -> c <0/<=0/>0/>=0 según el operador.
                 if let Some(ret_was) = self.try_binary_magic(&b.left, &b.right, "__compare")? {
                     match ret_was {
                         WasTy::I32 => self.body.push(Instruction::I64ExtendI32S),
@@ -327,14 +327,14 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_class_method_args("__contains", &b.right, &[(*b.left).clone()])?;
                     return Ok(());
                 }
-                // `x in "texto"` Ã¢â€ â€™ substring (arrays en A4). StrContains(container, needle)
+                // `x in "texto"` -> substring (arrays en A4). StrContains(container, needle)
                 self.emit_expression(&b.right)?;
                 self.emit_expression(&b.left)?;
                 self.host.call(HostFn::StrContains, &mut self.body);
             }
             Is => {
                 // `v is Nivel` (enum), `p is Punto` (struct) o `o is Clase` (herencia)
-                // `v is String`/`Int`/... (tipo builtin) Ã¢â€ â€™ se evalÃƒÂºa estÃƒÂ¡ticamente
+                // `v is String`/`Int`/... (tipo builtin) -> se evalúa estáticamente
                 // con el tipo del lado izquierdo.
                 if let Expression::Identifier(right_name, _) = &*b.right {
                     if let Some(t) = builtin_was_type(right_name) {
@@ -467,11 +467,11 @@ impl<'a> FuncEmitter<'a> {
 
     /// Coacciona el valor en el stack (emitido por `emit_expression`) a un
     /// bool i32, con paridad a `Value::is_truthy` del walker. `expr` se usa
-    /// solo para consultar el tipo estÃƒÂ¡tico (el valor ya estÃƒÂ¡ en el stack).
-    /// NumÃƒÂ©ricos: != 0. String: len != 0 (los bits bajos del packed). Array/
+    /// solo para consultar el tipo estático (el valor ya está en el stack).
+    /// Numéricos: != 0. String: len != 0 (los bits bajos del packed). Array/
     /// Tuple/Record/Shape: len del header (ptr+8) != 0. Char/Bool: ya son i32.
     /// Cmx/Named/objetos: true (paridad walker). Any/Unknown/Null: error claro
-    /// (antes emitÃƒÂ­a WASM invÃƒÂ¡lido "expected i32, found i64").
+    /// (antes emitía WASM inv�lido "expected i32, found i64").
     pub(crate) fn coerce_to_bool(&mut self, expr: &Expression) -> ClsResult<()> {
         let ty = self
             .types
@@ -491,7 +491,7 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             Type::String => {
-                // packed = (ptr << 32) | len Ã¢â€ â€™ truthy si len != 0.
+                // packed = (ptr << 32) | len -> truthy si len != 0.
                 self.body.push(Instruction::I64Const(0xffff_ffff));
                 self.body.push(Instruction::I64And);
                 self.body.push(Instruction::I64Const(0));
@@ -499,7 +499,7 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             Type::Array(_) | Type::Tuple(_) | Type::Record(_, _) => {
-                // Header CLS: [cap:i64][len:i64] Ã¢â€ â€™ truthy si len (ptr+8) != 0.
+                // Header CLS: [cap:i64][len:i64] -> truthy si len (ptr+8) != 0.
                 self.body.push(Instruction::I64Const(8));
                 self.body.push(Instruction::I64Add);
                 self.body.push(Instruction::I32WrapI64);
@@ -513,7 +513,7 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             // Shape: se emite como struct contiguo SIN header [cap][len] (los
-            // campos van directos) Ã¢â€ â€™ no se puede leer el len; un shape con
+            // campos van directos) -> no se puede leer el len; un shape con
             // campos declarados siempre es truthy (paridad walker).
             Type::Shape(_) => {
                 self.body.push(Instruction::I32Const(1));
@@ -526,7 +526,7 @@ impl<'a> FuncEmitter<'a> {
             }
             other => Err(crate::error::ClsError::compile_at(
                 &format!(
-                    "la condiciÃƒÂ³n debe ser Bool, encontrÃƒÂ³ {} (usa bool(...) para convertir)",
+                    "la condición debe ser Bool, encontró {} (usa bool(...) para convertir)",
                     other
                 ),
                 &expr_span(expr),
@@ -586,7 +586,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Eqz);
         self.block_depth += 1;
         self.body.push(Instruction::If(BlockType::Empty));
-        self.emit_throw("DivisiÃƒÂ³n por cero", span);
+        self.emit_throw("División por cero", span);
         self.body.push(Instruction::Unreachable);
         self.body.push(Instruction::End);
         self.block_depth -= 1;
@@ -595,8 +595,8 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Lanza la excepciÃƒÂ³n CLS: `throw(tag)` con payload (msg, span_empaquetado).
-    /// En modo sin excepciones (wasmi): `unreachable` (trap) Ã¢â‚¬â€ el host muestra el
+    /// Lanza la excepción CLS: `throw(tag)` con payload (msg, span_empaquetado).
+    /// En modo sin excepciones (wasmi): `unreachable` (trap) - el host muestra el
     /// error como trap con el shadow call stack (sin caret del span CLS).
     pub(crate) fn emit_throw(&mut self, msg: &str, span: &Span) {
         if !self.exceptions {
@@ -614,7 +614,7 @@ impl<'a> FuncEmitter<'a> {
     pub(crate) fn emit_unary(&mut self, u: &UnaryExpr) -> ClsResult<()> {
         match u.op {
             UnaryOp::Negate => {
-                // Magic __neg: clase con __neg Ã¢â€ â€™ call sin args (paridad walker).
+                // Magic __neg: clase con __neg -> call sin args (paridad walker).
                 let oty = self.types.get(&expr_span(&u.operand)).cloned();
                 if let Some(cn) = self.class_magic_method(&oty, "__neg") {
                     let _ = self.magic_ret_was(&cn, "__neg")?;
@@ -641,8 +641,8 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
             UnaryOp::Not => {
-                // Magic __not: clase con __not Ã¢â€ â€™ call sin args; si no, truthiness
-                // (paridad walker: `!obj` Ã¢â€ â€™ __not() o !is_truthy()).
+                // Magic __not: clase con __not -> call sin args; si no, truthiness
+                // (paridad walker: `!obj` -> __not() o !is_truthy()).
                 let oty = self.types.get(&expr_span(&u.operand)).cloned();
                 if let Some(cn) = self.class_magic_method(&oty, "__not") {
                     let _ = self.magic_ret_was(&cn, "__not")?;
@@ -663,7 +663,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_incdec(&u.operand, u.op.clone())?
             }
             UnaryOp::BitwiseNot => {
-                // ~x Ã¢â€ â€™ x ^ -1 (en i64)
+                // ~x -> x ^ -1 (en i64)
                 self.emit_expression(&u.operand)?;
                 self.body.push(Instruction::I64Const(-1));
                 self.body.push(Instruction::I64Xor);
@@ -716,7 +716,7 @@ impl<'a> FuncEmitter<'a> {
         match &*a.target {
             Expression::Identifier(name, _) => {
                 if is_compound(op) {
-                    // Magic: `a += b` Ã¢â€ â€™ a = a.__add(b) (paridad walker apply_compound).
+                    // Magic: `a += b` -> a = a.__add(b) (paridad walker apply_compound).
                     let compound_magic = match op {
                         Operator::PlusEqual => "__add",
                         Operator::MinusEqual => "__sub",
@@ -743,12 +743,12 @@ impl<'a> FuncEmitter<'a> {
                             return Ok(());
                         }
                     }
-                    // Elegir operaciÃƒÂ³n segÃƒÂºn el tipo del identificador (int vs float).
+                    // Elegir operación según el tipo del identificador (int vs float).
                     let ty = self.value_type(&a.target)?;
                     self.emit_ident_load(name);
                     self.emit_expression(&a.value)?;
                     // `s += x` con String: concatenar (StrConcat), NO sumar
-                    // los punteros empaquetados (producÃƒÂ­a bytes NUL).
+                    // los punteros empaquetados (producía bytes NUL).
                     let cls_t = self
                         .types
                         .get(&expr_span(&a.target))
@@ -763,7 +763,7 @@ impl<'a> FuncEmitter<'a> {
                             Operator::MinusEqual => self.body.push(Instruction::F64Sub),
                             Operator::StarEqual => self.body.push(Instruction::F64Mul),
                             Operator::SlashEqual => self.body.push(Instruction::F64Div),
-                            // `%=` float: WASM no tiene resto float Ã¢â€ â€™ host fmod.
+                            // `%=` float: WASM no tiene resto float -> host fmod.
                             _ => self.host.call(HostFn::Fmod, &mut self.body),
                         }
                     } else {
@@ -799,7 +799,7 @@ impl<'a> FuncEmitter<'a> {
                             .to_string(),
                     ));
                 }
-                // r["key"] = val Ã¢â€ â€™ record_set(ptr, key, val_bits)
+                // r["key"] = val -> record_set(ptr, key, val_bits)
                 let elem_ty = self.index_elem_type(i)?;
                 let val_tmp = self.fresh_local_ty(elem_ty);
                 self.emit_expression(&i.object)?;
@@ -848,7 +848,7 @@ impl<'a> FuncEmitter<'a> {
                         "Operadores compuestos (+=) sobre records con shape no soportados en el JIT".to_string(),
                     ));
                 }
-                // r["campo"] = val Ã¢â€ â€™ store por offset (solo campos existentes).
+                // r["campo"] = val -> store por offset (solo campos existentes).
                 let shape = self.types.get(&expr_span(&i.object)).cloned();
                 let fields = match &shape {
                     Some(Type::Shape(f)) => f.clone(),
@@ -860,7 +860,7 @@ impl<'a> FuncEmitter<'a> {
                     }
                     _ => {
                         return Err(crate::error::ClsError::compile_at(
-                            "ÃƒÂndice dinÃƒÂ¡mico no soportado en un record con shape (usa Record<K,V> o any)",
+                            "Índice dinámico no soportado en un record con shape (usa Record<K,V> o any)",
                             &i.span,
                         ))
                     }
@@ -904,7 +904,7 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             Expression::Index(i) => {
-                // Magic __set: obj[i] = v Ã¢â€ â€™ obj.__set(index, value) con write-back
+                // Magic __set: obj[i] = v -> obj.__set(index, value) con write-back
                 // del objeto mutado (paridad walker interpreter.rs:2120-2128).
                 let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
                 if let Some(cn) = self.class_magic_method(&obj_ty, "__set") {
@@ -929,8 +929,8 @@ impl<'a> FuncEmitter<'a> {
                             self.body.push(Instruction::Drop);
                         }
                     }
-                    // write-back del objeto (el ptr no cambia en mutaciÃƒÂ³n in-place,
-                    // pero la reasignaciÃƒÂ³n del slot es paridad walker).
+                    // write-back del objeto (el ptr no cambia en mutación in-place,
+                    // pero la reasignación del slot es paridad walker).
                     if let Expression::Identifier(name, _) = &*i.object {
                         self.body.push(Instruction::LocalGet(obj_tmp));
                         self.emit_ident_store(name);
@@ -982,7 +982,7 @@ impl<'a> FuncEmitter<'a> {
                         WasTy::I64 => Instruction::LocalGet(v),
                     });
                     if elem_ty == WasTy::F64 && op == Operator::PercentEqual {
-                        // `farr[i] %= v` float: WASM no tiene resto float Ã¢â€ â€™ host fmod.
+                        // `farr[i] %= v` float: WASM no tiene resto float -> host fmod.
                         self.host.call(HostFn::Fmod, &mut self.body);
                     } else {
                         apply_compound_ty(&mut self.body, op, elem_ty)?;
@@ -1006,7 +1006,7 @@ impl<'a> FuncEmitter<'a> {
                         WasTy::I64 => Instruction::LocalGet(res),
                     });
                 } else {
-                    // Las tuplas son inmutables: escritura Ã¢â€ â€™ error.
+                    // Las tuplas son inmutables: escritura -> error.
                     let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
                     if matches!(obj_ty, Some(Type::Tuple(_))) {
                         return Err(crate::error::ClsError::compile_at(
@@ -1020,7 +1020,7 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_expression(&i.index)?;
                     self.emit_expression(&a.value)?;
                     // Array de float con valor int: promover el RHS a f64 antes
-                    // del store (el layout del array es homogÃƒÂ©neo).
+                    // del store (el layout del array es homogéneo).
                     if elem_ty == WasTy::F64 {
                         self.f64_promote(&a.value)?;
                     }
@@ -1032,12 +1032,12 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             Expression::MemberAccess(m) => {
-                // `Clase.campo = v` (campo estÃƒÂ¡tico) Ã¢â€ â€™ global.set.
+                // `Clase.campo = v` (campo estático) -> global.set.
                 if let Expression::Identifier(cn, _) = &*m.object {
                     if let Some(&g) = self.static_fields.get(&format!("{}::{}", cn, m.member)) {
                         if is_compound(op) {
                             return Err(crate::error::ClsError::CompileError(
-                                "Operadores compuestos sobre campos estÃƒÂ¡ticos no soportados en el JIT"
+                                "Operadores compuestos sobre campos estáticos no soportados en el JIT"
                                     .to_string(),
                             ));
                         }
@@ -1138,7 +1138,7 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(());
                     }
                 }
-                // Struct: `p.campo = val` Ã¢â€ â€™ store por offset del campo.
+                // Struct: `p.campo = val` -> store por offset del campo.
                 if let Some(Type::Named(sn, _)) = self.types.get(&expr_span(&m.object)).cloned() {
                     if let Some(info) = self.struct_defs.get(sn.as_str()) {
                         if is_compound(op) {
@@ -1203,7 +1203,7 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(());
                     }
                 }
-                // Record con shape: r.campo = val Ã¢â€ â€™ store por offset (campo existente).
+                // Record con shape: r.campo = val -> store por offset (campo existente).
                 if let Some(Type::Shape(fields)) = self.types.get(&expr_span(&m.object)).cloned() {                    if is_compound(op) {
                         return Err(crate::error::ClsError::CompileError(
                             "Operadores compuestos sobre campos de record con shape no soportados en el JIT".to_string(),

@@ -14,7 +14,7 @@ clx maptype [path] -o <dir> [--watch|-w]
 |---|---|---|
 | `path` | `.` | Archivo `.clsx`/`.clsi` o directorio a procesar (recursivo). |
 | `-o` / `--out` | `./.cls-types` | Directorio de salida. |
-| `-w` / `--watch` | — | Modo vigilancia: polling cada 2s, regenera si el mtime cambió. |
+| `-w` / `--watch` | - | Modo vigilancia: polling cada 2s, regenera si el mtime cambió. |
 
 En modo directorio se respeta la estructura relativa al CWD: cada
 `sub/dir/arch.clsx` produce `sub/dir/arch.type.json` bajo la salida. Se omiten
@@ -66,7 +66,7 @@ Cada archivo genera un JSON:
 | `params` | `{ name, type_, doc }` por parámetro. |
 | `return_type` | Tipo de retorno (funciones). |
 | `return_doc` | Texto de `@return`. |
-| `fields` | `{ name, type_ }` — campos de `structure` y propiedades de `class`. |
+| `fields` | `{ name, type_ }` - campos de `structure` y propiedades de `class`. |
 | `members` | Métodos de `interface`/`class`; funciones y variables de `module`/`namespace`. |
 | `type_` | Anotación de tipo (variables/constantes). |
 | `value` | Siempre `null` (reservado). |

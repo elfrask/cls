@@ -1,4 +1,4 @@
-//! AST — CmxAttributeValue (Fase 1: extraido de frontend/ast.rs).
+//! AST - CmxAttributeValue (Fase 1: extraido de frontend/ast.rs).
 
 use crate::frontend::ast::*;
 use serde::{Deserialize, Serialize};
@@ -8,5 +8,5 @@ use serde::{Deserialize, Serialize};
 pub enum CmxAttributeValue {
     String(String),
     Expression(Box<Expression>),
-    Shorthand(String), // {value} → value={value}
+    Shorthand(String), // {value} -> value={value}
 }

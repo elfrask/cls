@@ -1,4 +1,4 @@
-//! AST — TargetCond (Fase 1: extraido de frontend/ast.rs).
+//! AST - TargetCond (Fase 1: extraido de frontend/ast.rs).
 
 use serde::{Deserialize, Serialize};
 

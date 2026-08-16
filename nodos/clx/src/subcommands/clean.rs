@@ -1,6 +1,6 @@
 use std::fs;
 
-/// `clx clean` — limpia el caché de compilación CLS→WASM (`~/.cache/cls/`).
+/// `clx clean` - limpia el caché de compilación CLS->WASM (`~/.cache/cls/`).
 pub fn execute(args: &[String]) -> i32 {
     let all = args.iter().any(|a| a == "--all");
     let dir = crate::jit::cache_dir();

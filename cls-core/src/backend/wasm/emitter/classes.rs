@@ -5,8 +5,8 @@ use super::*;
 impl<'a> FuncEmitter<'a> {
 
 
-    /// Llama un mÃƒÂ©todo de clase por nombre (p.ej. `__type`/`__toJson`) sobre el
-    /// objeto expresado. Devuelve `false` si la clase no define ese mÃƒÂ©todo.
+    /// Llama un método de clase por nombre (p.ej. `__type`/`__toJson`) sobre el
+    /// objeto expresado. Devuelve `false` si la clase no define ese método.
     pub(crate) fn emit_class_method(&mut self, name: &str, object: &Expression) -> ClsResult<bool> {
         self.emit_class_method_args(name, object, &[])
     }
@@ -14,8 +14,8 @@ impl<'a> FuncEmitter<'a> {
 
     /// Como [`Self::emit_class_method`] pero con argumentos: emite el objeto,
     /// lo guarda en un local, pushea `me`, emite los args y hace el
-    /// call_indirect `(me, args...)` vÃƒÂ­a vtable. El orden de evaluaciÃƒÂ³n es
-    /// objeto Ã¢â€ â€™ args (paridad walker). El stack del call_indirect es
+    /// call_indirect `(me, args...)` vía vtable. El orden de evaluaci�n es
+    /// objeto -> args (paridad walker). El stack del call_indirect es
     /// `[me, args..., fnptr]` (me al fondo).
     pub(crate) fn emit_class_method_args(
         &mut self,
@@ -24,7 +24,7 @@ impl<'a> FuncEmitter<'a> {
         args: &[Expression],
     ) -> ClsResult<bool> {
         let obj_ty = self.types.get(&expr_span(object)).cloned();
-        // M2: resolver la clase que DEFINE el mÃƒÂ©todo (sube por ancestors) Ã¢â‚¬â€
+        // M2: resolver la clase que DEFINE el método (sube por ancestors) -
         // un magic heredado vive como `Base::__add`, no `Hijo::__add`.
         if let Some(dn) = self.class_magic_method(&obj_ty, name) {
             self.emit_expression(object)?;
@@ -36,10 +36,10 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Emite el call_indirect de un mÃƒÂ©todo de clase sobre el objeto en el local
+    /// Emite el call_indirect de un método de clase sobre el objeto en el local
     /// `obj_ptr`: pushea `me` (al fondo del stack), emite los args y despacha
     /// por vtable. El call_indirect espera `[me, args..., fnptr]`.
-    /// Sube por `ancestors` para resolver la clase que define el mÃƒÂ©todo (M2).
+    /// Sube por `ancestors` para resolver la clase que define el método (M2).
     pub(crate) fn emit_class_method_call_on(
         &mut self,
         name: &str,
@@ -53,7 +53,7 @@ impl<'a> FuncEmitter<'a> {
                 if let Some(slot) = info.methods.iter().position(|m| m == name) {
                     let method_key = format!("{}::{}", c, name);
                     if let Some(&ty) = self.method_type_indexes.get(&method_key) {
-                        // receiver (me) Ã¢â‚¬â€ al fondo; los args van DESPUÃƒâ€°S (el
+                        // receiver (me) - al fondo; los args van DESPU�0S (el
                         // call_indirect los espera en orden: me, args...).
                         self.body.push(Instruction::LocalGet(obj_ptr));
                         for a in args {
@@ -86,8 +86,8 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Ã‚Â¿El tipo (estÃƒÂ¡tico) es una clase que define el magic `name`? Devuelve el
-    /// nombre de la clase que LO DEFINE (sube por `ancestors` Ã¢â‚¬â€ M2: un magic
+    /// ��El tipo (est�tico) es una clase que define el magic `name`? Devuelve el
+    /// nombre de la clase que LO DEFINE (sube por `ancestors` - M2: un magic
     /// heredado se registra como `Base::__add`, no `Hijo::__add`). `None` si no.
     pub(crate) fn class_magic_method(&self, ty: &Option<Type>, name: &str) -> Option<String> {
         if let Some(Type::Named(cn, _)) = ty {
@@ -107,8 +107,8 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Tipo CLS del retorno anotado de un mÃƒÂ©todo de clase (o `None` si no tiene).
-    /// Sube por `ancestors` para los mÃƒÂ©todos heredados (M2).
+    /// Tipo CLS del retorno anotado de un método de clase (o `None` si no tiene).
+    /// Sube por `ancestors` para los métodos heredados (M2).
     pub(crate) fn magic_ret_type(&self, class_name: &str, name: &str) -> Option<Type> {
         let mut cur = Some(class_name.to_string());
         while let Some(c) = cur {
@@ -126,7 +126,7 @@ impl<'a> FuncEmitter<'a> {
 
 
     /// WasTy del retorno de un magic: el JIT necesita el tipo anotado (distinto
-    /// de void) para el dispatch (el call_indirect devuelve segÃƒÂºn la firma).
+    /// de void) para el dispatch (el call_indirect devuelve según la firma).
     pub(crate) fn magic_ret_was(&self, class_name: &str, name: &str) -> ClsResult<WasTy> {
         match self.magic_ret_type(class_name, name) {
             Some(t) if t != Type::Void => was_type(&t),
@@ -141,7 +141,7 @@ impl<'a> FuncEmitter<'a> {
 
     /// Dispatch de un magic binario: `left.__op(right)`, luego `right.__op(left)`
     /// (paridad walker `binary_magic`). Devuelve `Ok(Some(WasTy))` del retorno
-    /// del mÃƒÂ©todo si se emitiÃƒÂ³, `Ok(None)` si ningÃƒÂºn lado define el magic.
+    /// del método si se emitió, `Ok(None)` si ningún lado define el magic.
     pub(crate) fn try_binary_magic(
         &mut self,
         left: &Expression,
@@ -166,7 +166,7 @@ impl<'a> FuncEmitter<'a> {
 
     /// Variantes de un enum por nombre. Resuelve exacto (`Color`) o por sufijo
     /// (`lib::Color` cuando el typeck tipa la variante como `Named("Color")` pero
-    /// el flatten registrÃƒÂ³ el enum prefijado).
+    /// el flatten registró el enum prefijado).
     pub(crate) fn enum_variants(&self, name: &str) -> Option<&Vec<String>> {
         if let Some((_, v)) = self.enum_defs.get(name) {
             return Some(v);

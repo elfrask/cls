@@ -1,4 +1,4 @@
-//! AST — NativeDecl (Fase 1: extraido de frontend/ast.rs).
+//! AST - NativeDecl (Fase 1: extraido de frontend/ast.rs).
 
 use crate::frontend::ast::*;
 use serde::{Deserialize, Serialize};

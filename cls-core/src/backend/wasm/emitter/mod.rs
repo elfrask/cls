@@ -27,7 +27,7 @@ impl HostCaller {
     }
 }
 
-/// Emisor con el estado de compilaciÃ³n de una funciÃ³n.
+/// Emisor con el estado de compilación de una función.
 pub(crate) struct FuncEmitter<'a> {
     types: &'a HashMap<Span, Type>,
     pub(crate) body: Vec<Instruction<'static>>,
@@ -44,7 +44,7 @@ pub(crate) struct FuncEmitter<'a> {
     fn_table_idx: &'a HashMap<String, u32>,
     arrow_names: &'a HashMap<Span, String>,
     arrow_captures: &'a HashMap<Span, Vec<String>>,
-    /// Registro de types dinÃ¡micos (call_indirect de funciones como valor).
+    /// Registro de types dinámicos (call_indirect de funciones como valor).
     type_count: &'a mut u32,
     types_sec: &'a mut TypeSection,
     enum_defs: &'a HashMap<String, (u32, Vec<String>)>,
@@ -55,20 +55,20 @@ pub(crate) struct FuncEmitter<'a> {
     static_fields: &'a HashMap<String, u32>,
     class_defs: &'a HashMap<String, ClassInfo>,
     method_type_indexes: &'a HashMap<String, u32>,
-    /// Firmas tipadas de las funciones (`Clase::m` â†’ (params, ret)) â€” el retorno
-    /// de los magic methods (el call_indirect lo produce segÃºn la firma).
+    /// Firmas tipadas de las funciones (`Clase::m` -> (params, ret)) - el retorno
+    /// de los magic methods (el call_indirect lo produce según la firma).
     func_types: &'a HashMap<String, (Vec<Type>, Option<Type>)>,
-    /// clase actual (al compilar un mÃ©todo) â€” para `super` y `me`.
+    /// clase actual (al compilar un método) - para `super` y `me`.
     pub(crate) current_class: Option<String>,
-    /// nombre del mÃ©todo que se estÃ¡ compilando (sin el prefijo de clase), para
-    /// el protocolo `__next` (el `null` termina la iteraciÃ³n con un sentinel
-    /// distinto de 0 â€” un iterador puede devolver 0 como valor legÃ­timo).
+    /// nombre del método que se está compilando (sin el prefijo de clase), para
+    /// el protocolo `__next` (el `null` termina la iteración con un sentinel
+    /// distinto de 0 - un iterador puede devolver 0 como valor legítimo).
     pub(crate) current_method: Option<String>,
-    /// Span de la funciÃ³n que se estÃ¡ compilando (para errores de statements sin
+    /// Span de la función que se está compilando (para errores de statements sin
     /// span propio, p.ej. `break`/`continue` fuera de loop).
     pub(crate) current_fn_span: Span,
     target: &'a Target,
-    /// Ãndice del tag de excepciÃ³n CLS (para `Instruction::Throw`).
+    /// Índice del tag de excepción CLS (para `Instruction::Throw`).
     tag_idx: u32,
     /// Type `[] -> [i64, i64]` del block handler del try_table.
     eh_handler_ty: u32,
@@ -78,11 +78,11 @@ pub(crate) struct FuncEmitter<'a> {
     exceptions: bool,
     /// Funciones host del nodo por nombre (canal `env.host_call`).
     intrinsics: &'a HashMap<String, HostIntrinsic>,
-    /// Closures (B5): nombre de variable capturada â†’ Ã­ndice 1-based en el bloque
+    /// Closures (B5): nombre de variable capturada -> índice 1-based en el bloque
     /// de capturas `[n, v1, v2, ...]`. El param 0 del frame es `__capturas` (ptr).
     pub(crate) captures: HashMap<String, u32>,
     /// Variables promovidas al heap (capturadas por una arrow del scope): el
-    /// local guarda un PTR a un slot `[valor]`; los accesos pasan por ahÃ­.
+    /// local guarda un PTR a un slot `[valor]`; los accesos pasan por ahí.
     pub(crate) promoted: HashSet<String>,
 }
 
@@ -164,7 +164,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Registra un type de funciÃ³n (para `call_indirect` de funciones como valor).
+    /// Registra un type de función (para `call_indirect` de funciones como valor).
     pub(crate) fn register_func_type(&mut self, params: Vec<ValType>, results: Vec<ValType>) -> u32 {
         let idx = *self.type_count;
         *self.type_count += 1;
@@ -192,7 +192,7 @@ impl<'a> FuncEmitter<'a> {
         if name == "super" && self.current_class.is_some() {
             self.body.push(Instruction::LocalGet(0));
         } else if let Some(&ti) = self.fn_table_idx.get(name) {
-            // FunciÃ³n CLS como valor â†’ handle [tabla_idx][capturas=0][nombre]
+            // Función CLS como valor -> handle [tabla_idx][capturas=0][nombre]
             // con tag-bit (ptr<<1)|1. El nombre se guarda para fn_to_string.
             let n = self.intern_string(&format!("<function {}>", name));
             self.body.push(Instruction::I64Const(ti as i64));
@@ -200,17 +200,17 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Const(0));
             self.host.call(HostFn::FnHandle, &mut self.body);
         } else if let Some((def_id, _)) = self.enum_defs.get(name) {
-            // Enum def como valor â†’ marker `def_id<<32 | 0xffff_ffff` (imprime `<enum X>`).
+            // Enum def como valor -> marker `def_id<<32 | 0xffff_ffff` (imprime `<enum X>`).
             let v = ((*def_id as i64) << 32) | 0xffff_ffff;
             self.body.push(Instruction::I64Const(v));
         } else if self.struct_defs.contains_key(name) {
-            // Struct def como valor â†’ ptr 0 (marker: imprime `<function X>`).
+            // Struct def como valor -> ptr 0 (marker: imprime `<function X>`).
             self.body.push(Instruction::I64Const(0));
         } else if let Some(g) = self.globals.get(name) {
             self.body.push(Instruction::GlobalGet(*g));
         } else if let Some(fidx) = self.intrinsic_handle_idx(name) {
-            // Intrinsic (print/input/now/...) como valor â†’ handle de funciÃ³n con
-            // Ã­ndice de tabla sintÃ©tico (negativo, estable por nombre): se
+            // Intrinsic (print/input/now/...) como valor -> handle de función con
+            // índice de tabla sintético (negativo, estable por nombre): se
             // imprime `<function print>` (paridad walker). Un var/global de
             // usuario con el mismo nombre gana (shadowing).
             let n = self.intern_string(&format!("<function {}>", name));
@@ -257,12 +257,12 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Ãndice de tabla "sintÃ©tico" (negativo, estable por nombre) para el handle
-    /// de funciÃ³n de un intrinsic, o `None` si el nombre no es intrinsic.
+    /// Índice de tabla "sintético" (negativo, estable por nombre) para el handle
+    /// de función de un intrinsic, o `None` si el nombre no es intrinsic.
     /// Los builtins se resuelven por nombre (el emisor los despacha en los
     /// calls); los host intrinsics del nodo (canal `env.host_call`) se indexan
-    /// con claves ordenadas para que el Ã­ndice no dependa del orden de
-    /// iteraciÃ³n del HashMap (REPL: sesiÃ³n a sesiÃ³n).
+    /// con claves ordenadas para que el índice no dependa del orden de
+    /// iteración del HashMap (REPL: sesión a sesión).
     fn intrinsic_handle_idx(&self, name: &str) -> Option<i64> {
         const BUILTINS: &[&str] = &[
             "print", "len", "toString", "str", "input", "int", "float", "bool",
@@ -326,7 +326,7 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Add);
             self.body.push(Instruction::I32WrapI64);
             if self.promoted.contains(name) {
-                // El bloque guarda un ptr al slot: store en `[ptr_al_slot]` â†’ valor.
+                // El bloque guarda un ptr al slot: store en `[ptr_al_slot]` -> valor.
                 self.body.push(Instruction::I64Load(MemArg {
                     offset: 0,
                     align: 3,
@@ -369,7 +369,7 @@ impl<'a> FuncEmitter<'a> {
 
     pub(crate) fn value_type(&self, expr: &Expression) -> ClsResult<WasTy> {
         // Literales: el kind ES el tipo (los spans del parser colisionan entre
-        // un literal y la expresiÃ³n que lo contiene, asÃ­ que el type map puede
+        // un literal y la expresión que lo contiene, así que el type map puede
         // estar contaminado). Esto mantiene el tipo real del valor emitido.
         if let Expression::Literal(l) = expr {
             return Ok(match &l.kind {
@@ -380,7 +380,7 @@ impl<'a> FuncEmitter<'a> {
                 _ => WasTy::I64,
             });
         }
-        // Llamadas a funciones nativas (extensiÃ³n) â†’ tipo de retorno codificado.
+        // Llamadas a funciones nativas (extensión) -> tipo de retorno codificado.
         if let Expression::Call(c) = expr {
             if let Expression::Identifier(name, _) = &*c.callee {
                 if let Some(rc) = self.native_ret.get(name) {
@@ -388,14 +388,14 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
         }
-        // Llamadas a mÃ³dulos stdlib â†’ tipo de retorno conocido.
+        // Llamadas a módulos stdlib -> tipo de retorno conocido.
         if let Some(w) = self.module_call_ret(expr) {
             return Ok(w);
         }
         let span = expr_span(expr);
         let t = self.types.get(&span).ok_or_else(|| {
             crate::error::ClsError::CompileError(format!(
-                "ExpresiÃ³n sin tipo ({}:{}:{}): el JIT requiere el type checker",
+                "Expresión sin tipo ({}:{}:{}): el JIT requiere el type checker",
                 span.start_line,
                 span.start_col,
                 expr_display(expr)
@@ -403,7 +403,7 @@ impl<'a> FuncEmitter<'a> {
         })?;
         match t {
             Type::Any | Type::Unknown => Err(crate::error::ClsError::CompileError(format!(
-                "ExpresiÃ³n sin tipo concreto ({}:{}): {}",
+                "Expresión sin tipo concreto ({}:{}): {}",
                 span.start_line,
                 span.start_col,
                 expr_display(expr)

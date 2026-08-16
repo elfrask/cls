@@ -24,25 +24,25 @@ impl FieldVis {
 #[derive(Clone)]
 pub(crate) struct ClassInfo {
     pub(crate)parent: Option<String>,
-    /// id de clase (ÃƒÂ­ndice en orden de declaraciÃƒÂ³n) para `is` por herencia.
+    /// id de clase (índice en orden de declaraci�n) para `is` por herencia.
     pub(crate)class_id: u32,
     /// cadena de ancestors: [padre, abuelo, ...].
     pub(crate)ancestors: Vec<String>,
     /// campos (nombre, tipo CLS, tipo WASM, offset en bytes desde 16, visibilidad).
     pub(crate)fields: Vec<(String, Type, WasTy, i64, FieldVis)>,
-    /// nombres de mÃƒÂ©todos en orden canÃƒÂ³nico (posiciÃƒÂ³n = slot de la vtable).
+    /// nombres de métodos en orden canónico (posición = slot de la vtable).
     pub(crate)methods: Vec<String>,
-    /// visibilidad de cada mÃƒÂ©todo (private/protected/public) para enforzarla en
+    /// visibilidad de cada método (private/protected/public) para enforzarla en
     /// llamadas desde fuera de la clase.
     pub(crate)method_vis: std::collections::HashMap<String, FieldVis>,
-    /// ÃƒÂ­ndice de la tabla donde empieza la vtable de esta clase.
+    //Índice de la tabla donde empieza la vtable de esta clase.
     pub(crate)vtable_start: u32,
-    /// tamaÃƒÂ±o total del objeto (16 + campos).
+    /// tamaño total del objeto (16 + campos).
     pub(crate)total: i64,
 }
 
 
-/// DefiniciÃƒÂ³n de un structure compilada: campos con tipos, offsets y tamaÃƒÂ±o.
+/// Definición de un structure compilada: campos con tipos, offsets y tamaño.
 #[derive(Clone)]
 pub(crate) struct StructInfo {
     pub(crate)def_id: u32,

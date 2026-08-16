@@ -13,25 +13,25 @@ clxr <archivo.clsx|app.clsapp> [args...]
 Sin argumentos imprime la ayuda:
 
 ```
-clxr 2.0 — CLS Runtime Executor
+clxr 2.0 - CLS Runtime Executor
 Uso: clxr <archivo> [args...]
-  .clsx  → ejecucion directa
-  .clsapp → extrae y ejecuta (formato zip)
+  .clsx  -> ejecucion directa
+  .clsapp -> extrae y ejecuta (formato zip)
 ```
 
 ## Entradas
 
-### `.clsx` — ejecución directa
+### `.clsx` - ejecución directa
 
 El archivo se lee como texto y se ejecuta. Es lo mismo que el walker de
 `clx run`, sin los flags.
 
-### `.clsapp` — app empaquetada
+### `.clsapp` - app empaquetada
 
 Es un **zip** con un `manifest.json`:
 
 1. Se abre el zip (vía `ZipFs`) y se registra en el VFS como `res://`.
-2. Se lee `manifest.json` → campo `entry` (default: `source.clsx`).
+2. Se lee `manifest.json` -> campo `entry` (default: `source.clsx`).
 3. Se ejecuta el source del entry desde el zip.
 
 Si el zip es inválido o el entry no existe, error y exit 1.

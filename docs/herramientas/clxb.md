@@ -2,7 +2,7 @@
 
 `clxb` es el nodo de **embedding**: expone una ABI C versionada (`clsb_v1_*`)
 para embeber CLS en programas escritos en C/C++. Internamente usa el JIT
-(CLS → WASM → wasmtime), el mismo motor de `clx run`.
+(CLS -> WASM -> wasmtime), el mismo motor de `clx run`.
 
 ## Compilación
 
@@ -33,7 +33,7 @@ gcc harness.c -I ../include -L ../../target/debug -lclsb -o harness.exe
 | `clsb_engine` | Motor; **single-thread por handle** (no compartir entre threads). |
 | `clsb_module` | Módulo compilado (modo librería: `main` opcional). |
 | `clsb_error` | Error con trace; las cadenas viven mientras el error. |
-| `clsb_config` | `{ enable_fs, enable_http }` — reservado para sandbox. |
+| `clsb_config` | `{ enable_fs, enable_http }` - reservado para sandbox. |
 | `clsb_status` | `CLSB_OK` = 0; distinto de 0 = error. |
 
 ### `clsb_value`
@@ -83,7 +83,7 @@ void clsb_module_free(clsb_module* m);
 
 ```c
 int64_t clsb_run_main(clsb_module* m, const clsb_value* args, size_t args_len,
-                      clsb_error** err);   /* → exit code de main; -1 si error */
+                      clsb_error** err);   /* -> exit code de main; -1 si error */
 clsb_status clsb_call(clsb_module* m, const char* name,
                       const clsb_value* args, size_t args_len,
                       clsb_value* out, clsb_error** err);
@@ -189,8 +189,8 @@ int main(void) {
 `clsb_engine_new` con `enable_fs = 0` **y** `enable_http = 0` (o `cfg = NULL`)
 activa el sandbox:
 
-- Los módulos del nodo desktop — `fs`, `http`, `os`, `path`, `process`,
-  `time`, `random` — **no se registran**: los imports desconocidos se definen
+- Los módulos del nodo desktop - `fs`, `http`, `os`, `path`, `process`,
+  `time`, `random` - **no se registran**: los imports desconocidos se definen
   como traps (la instanciación es OK; acceder a ellos da error de runtime).
 - Solo queda el core: print/math/json/strings.
 

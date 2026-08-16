@@ -103,7 +103,7 @@ impl Type {
                         .unwrap_or(false)
                 })
             }
-            // Shape → Record<K,V>: permitido si todos los valores son assignables a V
+            // Shape -> Record<K,V>: permitido si todos los valores son assignables a V
             // (el literal `{a:1,b:2}` se usa como diccionario homogéneo tipado).
             (Type::Shape(src), Type::Record(k2, v2)) => {
                 k2.is_assignable_to(&Type::String)

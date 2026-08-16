@@ -1,6 +1,6 @@
 "use strict";
 
-// clsb — bindings de CLS para Node.js (embedding vía ABI C `clsb_v1_*`).
+// clsb - bindings de CLS para Node.js (embedding vía ABI C `clsb_v1_*`).
 //
 // API síncrona (los calls CLS son síncronos hoy): un Engine por thread; para
 // concurrencia usa worker_threads (un engine por worker).
@@ -107,7 +107,7 @@ class ClsError extends Error {
   }
 }
 
-// koffi: clsb_error** → pasar [null]; koffi escribe el puntero en [0].
+// koffi: clsb_error** -> pasar [null]; koffi escribe el puntero en [0].
 function newErrPtr(k) {
   return [k._koffi.null];
 }

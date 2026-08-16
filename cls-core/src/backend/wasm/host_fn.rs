@@ -91,10 +91,10 @@ pub enum HostFn {
     FnEnter,
     FnExit,
     CallSite,
-    /// Canal genÃ©rico de funciones host del nodo: `host_call(id, ptr, n) -> i64`
+    /// Canal genérico de funciones host del nodo: `host_call(id, ptr, n) -> i64`
     /// con args empaquetados `[n:i64][(val:i64, tag:i64)*n]`.
     HostCall,
-    // MÃ³dulo os
+    // Módulo os
     OsPlatform,
     OsArch,
     OsVersion,
@@ -108,7 +108,7 @@ pub enum HostFn {
     OsSep,
     OsIsWindows,
     OsIsUnix,
-    // MÃ³dulo path
+    // Módulo path
     PathJoin,
     PathBasename,
     PathDirname,
@@ -117,7 +117,7 @@ pub enum HostFn {
     PathNormalize,
     PathIsAbsolute,
     PathSep,
-    // MÃ³dulo process
+    // Módulo process
     ProcessArgs,
     ProcessCwd,
     ProcessEnv,
@@ -125,7 +125,7 @@ pub enum HostFn {
     ProcessPid,
     ProcessPlatform,
     ProcessTitle,
-    // MÃ³dulo time
+    // Módulo time
     TimeNow,
     TimeSeconds,
     TimeIso,
@@ -138,7 +138,7 @@ pub enum HostFn {
     TimeMinute,
     TimeSecond,
     TimeSleep,
-    // MÃ³dulo random
+    // Módulo random
     RandomRandom,
     RandomInt,
     RandomFloat,
@@ -395,31 +395,31 @@ impl HostFn {
                 vec![],
             ),
             HostCall => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
-            // MÃ³dulo os: sin args â†’ i64 (string) o i32 (bool); env(key) â†’ i64
+            // Módulo os: sin args -> i64 (string) o i32 (bool); env(key) -> i64
             OsPlatform | OsArch | OsVersion | OsHostname | OsHome | OsTempdir
             | OsCpus | OsPid | OsUptime | OsSep => (vec![], vec![ValType::I64]),
             OsEnv => (i64p.clone(), vec![ValType::I64]),
             OsIsWindows | OsIsUnix => (vec![], vec![ValType::I32]),
-            // MÃ³dulo path
+            // Módulo path
             PathBasename | PathDirname | PathExtname | PathResolve | PathNormalize => {
                 (i64p.clone(), vec![ValType::I64])
             }
             PathJoin => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             PathIsAbsolute => (i64p.clone(), vec![ValType::I32]),
             PathSep => (vec![], vec![ValType::I64]),
-            // MÃ³dulo process
+            // Módulo process
             ProcessArgs | ProcessCwd | ProcessPid | ProcessPlatform | ProcessTitle => {
                 (vec![], vec![ValType::I64])
             }
             ProcessEnv => (i64p.clone(), vec![ValType::I64]),
             ProcessExit => (i64p.clone(), vec![]),
-            // MÃ³dulo time
+            // Módulo time
             TimeNow | TimeSeconds | TimeIso | TimeDate | TimeClock | TimeYear
             | TimeMonth | TimeDay | TimeHour | TimeMinute | TimeSecond => {
                 (vec![], vec![ValType::I64])
             }
             TimeSleep => (i64p.clone(), vec![]),
-            // MÃ³dulo random
+            // Módulo random
             RandomRandom => (vec![], vec![ValType::F64]),
             RandomInt => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             RandomFloat => (vec![ValType::F64, ValType::F64], vec![ValType::F64]),

@@ -4,7 +4,7 @@ use cls_core::config::ModuleManifest;
 
 pub fn execute(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!("clx new — Crear proyecto CLS");
+        println!("clx new - Crear proyecto CLS");
         println!();
         println!("Uso: clx new <nombre> [--lib]");
         println!();

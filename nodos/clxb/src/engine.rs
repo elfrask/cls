@@ -74,7 +74,7 @@ pub struct ClsEngine {
     output: Arc<SharedSink>,
     next_id: u32,
     /// Sandbox: oculta los módulos del nodo desktop (fs/http/os/path/process/
-    /// time/random) — solo core. Por defecto `true` (seguro para embeds).
+    /// time/random) - solo core. Por defecto `true` (seguro para embeds).
     sandbox: bool,
 }
 impl Default for ClsEngine {
@@ -261,7 +261,7 @@ impl ClsModule {
             .map_err(ClsError::new)?;
         if sandbox {
             // Sandbox: los imports no registrados (fs/http/os/path/process/
-            // time/random y exit/trap) se definen como traps → el script recibe
+            // time/random y exit/trap) se definen como traps -> el script recibe
             // error de runtime si intenta acceder (instanciación OK).
             linker
                 .define_unknown_imports_as_traps(&module)
@@ -293,7 +293,7 @@ impl ClsModule {
                 .map_err(|e| e.to_string())
                 .map_err(ClsError::new)?;
         }
-        // Extensiones nativas: el backend del engine (NoNative → error claro).
+        // Extensiones nativas: el backend del engine (NoNative -> error claro).
         cls_jit::wasmtime_rt::register_native_hosts(&mut linker, &module, ctx.native_backend.clone())
             .map_err(ClsError::new)?;
         let instance = linker
@@ -386,7 +386,7 @@ impl ClsModule {
             }
         }
 
-        // Resultados según el tipo del retorno (void → ninguno).
+        // Resultados según el tipo del retorno (void -> ninguno).
         let mut results = if sig.ret == 9 {
             Vec::new()
         } else {

@@ -3,7 +3,7 @@
 Los primitivos (`String`, `Int`, `Float`, `Bool`, `Char`, `Array`, `Tuple`,
 `Record`) **no se envuelven en objetos**. Sus métodos se resuelven por
 **dispatch tables estáticas** (`cls-runtime/src/stdlib/primitive.rs`): por tipo
-primitivo hay una tabla `nombre → método`, y el receiver viaja como `args[0]`
+primitivo hay una tabla `nombre -> método`, y el receiver viaja como `args[0]`
 (plano, sin boxing).
 
 Esto es compatible con compilación nativa/WASM: el tipo del receiver se conoce
@@ -12,9 +12,9 @@ método (monomorfización).
 
 ## Getters vs métodos
 
-- **Getter** (`@kind getter`): propiedad computada, se lee **sin paréntesis** —
+- **Getter** (`@kind getter`): propiedad computada, se lee **sin paréntesis** -
   `"hola".length`.
-- **Método**: se invoca **con paréntesis** — `"hola".upper()`.
+- **Método**: se invoca **con paréntesis** - `"hola".upper()`.
 
 Las firmas canónicas viven en `cls-runtime/clsi/types.clsi`.
 
@@ -85,7 +85,7 @@ arr.length;        # 3
 
 ## `Tuple` (inmutable)
 
-Sin mutadores y sin asignación por índice (`t[0] = 99` → error). Solo lectura
+Sin mutadores y sin asignación por índice (`t[0] = 99` -> error). Solo lectura
 por índice y `for each`.
 
 | Miembro | Tipo | Firma | Descripción |

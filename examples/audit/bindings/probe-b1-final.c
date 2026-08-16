@@ -5,7 +5,7 @@
 static void on_output(void* ud, const char* text, int is_end) { (void)ud; if (is_end) printf("[print] %s\n", text ? text : ""); }
 
 int main(void) {
-    /* B1: sandbox — engine con config NULL (sandbox ON) */
+    /* B1: sandbox - engine con config NULL (sandbox ON) */
     clsb_engine* engine = clsb_engine_new(NULL);
     clsb_error* err = NULL;
     clsb_set_output(engine, on_output, NULL);

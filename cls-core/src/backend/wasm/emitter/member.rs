@@ -58,8 +58,8 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Enforca la visibilidad de un mÃƒÂ©todo: private Ã¢â€ â€™ solo desde la clase;
-    /// protected Ã¢â€ â€™ desde la clase o subclases. Paridad con el walker.
+    /// Enforca la visibilidad de un método: private -> solo desde la clase;
+    /// protected -> desde la clase o subclases. Paridad con el walker.
     pub(crate) fn check_method_access(
         &self,
         class_name: &str,
@@ -75,7 +75,7 @@ impl<'a> FuncEmitter<'a> {
                 .unwrap_or(false);
             if !inside {
                 return Err(crate::error::ClsError::compile_at(
-                    &format!("El mÃƒÂ©todo '{}' es private (solo accesible desde la clase)", method),
+                    &format!("El método '{}' es private (solo accesible desde la clase)", method),
                     span,
                 ));
             }
@@ -98,7 +98,7 @@ impl<'a> FuncEmitter<'a> {
             if !allowed {
                 return Err(crate::error::ClsError::compile_at(
                     &format!(
-                        "El mÃƒÂ©todo '{}' es protected (solo accesible desde la clase o sus subclases)",
+                        "El método '{}' es protected (solo accesible desde la clase o sus subclases)",
                         method
                     ),
                     span,
@@ -109,7 +109,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Tag runtime estÃƒÂ¡tico de un tipo (paridad con `fmt_val_to_string` del host):
+    /// Tag runtime estático de un tipo (paridad con `fmt_val_to_string` del host):
     /// 0=int,1=string,2=float,3=bool,4=char,5=cmx,6=array,7=record.
     pub(crate) fn any_static_tag(&self, t: &Type) -> i64 {
         match t {
@@ -125,9 +125,9 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// EvalÃƒÂºa una cadena de acceso `o.a.c`, `o.x[0]`, `o.a.b[0]` sobre valores
+    /// Evalúa una cadena de acceso `o.a.c`, `o.x[0]`, `o.a.b[0]` sobre valores
     /// `Any`/Record de json.parse, despachando por tag en runtime. Deja `(val, tag)`
-    /// en el stack. La base (raÃƒÂ­z de la cadena) se emite con su tag estÃƒÂ¡tico.
+    /// en el stack. La base (raíz de la cadena) se emite con su tag est�tico.
     pub(crate) fn emit_any_chain(&mut self, expr: &Expression) -> ClsResult<()> {
         match expr {
             Expression::MemberAccess(m) => {
@@ -174,7 +174,7 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Const(val));
                 return Ok(());
             }
-            // Constantes de mÃƒÂ³dulos stdlib: math.PI / math.E
+            // Constantes de módulos stdlib: math.PI / math.E
             if obj_name == "math" {
                 match m.member.as_str() {
                     "PI" => {
@@ -194,7 +194,7 @@ impl<'a> FuncEmitter<'a> {
             }
         }
         // `lib::Color.Rojo`: el objeto es un access namespaced cuyo prefijo apunta
-        // a un enum del mÃƒÂ³dulo importado (flattened como `lib::Color`).
+        // a un enum del módulo importado (flattened como `lib::Color`).
         if let Expression::NamespaceAccess(ns, name, _) = &*m.object {
             let key = format!("{}::{}", ns, name);
             if let Some((def_id, variants)) = self.enum_defs.get(&key).cloned() {
@@ -212,7 +212,7 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
         }
-        // `Clase.campo` (campo estÃƒÂ¡tico): el objeto es el nombre de la clase.
+        // `Clase.campo` (campo estático): el objeto es el nombre de la clase.
         if let Expression::Identifier(cn, _) = &*m.object {
             if let Some(&g) = self.static_fields.get(&format!("{}::{}", cn, m.member)) {
                 self.body.push(Instruction::GlobalGet(g));
@@ -246,7 +246,7 @@ impl<'a> FuncEmitter<'a> {
                     Ok(())
                 }
                 _ => {
-                    // acceso por nombre de campo: r.campo Ã¢â€ â€™ record_get(ptr, "campo")
+                    // acceso por nombre de campo: r.campo -> record_get(ptr, "campo")
                     let k = self.intern_string(&m.member);
                     self.emit_load_str(k);
                     self.host.call(HostFn::RecordGet, &mut self.body);
@@ -255,7 +255,7 @@ impl<'a> FuncEmitter<'a> {
             },
             Type::Shape(fields) => match m.member.as_str() {
                 "length" | "size" => {
-                    // Compile-time: el shape tiene un nÃ‚Âº de campos fijo.
+                    // Compile-time: el shape tiene un n�� de campos fijo.
                     self.body.push(Instruction::I64Const(fields.len() as i64));
                     Ok(())
                 }
@@ -387,7 +387,7 @@ impl<'a> FuncEmitter<'a> {
                 // `o.a.c` donde `o.a` es Any (json.parse anidado): despachar por tag.
                 let expr = Expression::MemberAccess(m.clone());
                 self.emit_any_chain(&expr)?;
-                // Resultado (val, tag) en el stack Ã¢â€ â€™ dejar solo el val (el tag se
+                // Resultado (val, tag) en el stack -> dejar solo el val (el tag se
                 // pierde en un valor Any; los prints usan emit_print_arg con PrintAny).
                 self.body.push(Instruction::Drop);
                 Ok(())

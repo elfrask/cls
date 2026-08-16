@@ -3,8 +3,8 @@
 use crate::error::Span;
 use crate::frontend::ast::*;
 use crate::middleware::types::{LitVal, Type};
-/// DeclaraciÃƒÂ³n sintÃƒÂ©tica de `main` no-op (modo librerÃƒÂ­a): `(i64 args) -> i64`,
-/// devuelve 0. Permite instanciar un mÃƒÂ³dulo sin `main` (solo exports).
+/// Declaraci�n sint�tica de `main` no-op (modo librería): `(i64 args) -> i64`,
+/// devuelve 0. Permite instanciar un módulo sin `main` (solo exports).
 pub(super) fn noop_main_decl() -> FunctionDecl {
     let span = Span::new(1, 1, 1, 1);
     FunctionDecl {
@@ -26,7 +26,7 @@ pub(super) fn noop_main_decl() -> FunctionDecl {
     }
 }
 /// Tipo CLS de un literal (fallback cuando el type map no lo tiene).
-/// `math.range(...)` (posiblemente entre parÃƒÂ©ntesis) Ã¢â€ â€™ devuelve un array.
+/// `math.range(...)` (posiblemente entre paréntesis) -> devuelve un array.
 pub(super) fn is_math_range_call(expr: &Expression) -> bool {
     let inner = match expr {
         Expression::Parenthesized(e, _) => &**e,
@@ -56,7 +56,7 @@ pub(super) fn cmx_literal_type(e: &Expression) -> Option<Type> {
     None
 }
 
-/// Tipo runtime de una uniÃƒÂ³n (monomÃƒÂ³rfica) Ã¢â€ â€™ el tipo base de sus miembros.
+/// Tipo runtime de una unión (monomórfica) -> el tipo base de sus miembros.
 pub(super) fn union_base(t: &Type) -> Type {
     if let Type::Union(members) = t {
         if members

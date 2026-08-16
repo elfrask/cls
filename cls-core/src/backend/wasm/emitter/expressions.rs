@@ -5,7 +5,7 @@ use super::*;
 impl<'a> FuncEmitter<'a> {
 
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ EmisiÃƒÂ³n de expresiones Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // == Emisión de expresiones ===========================================
 
     pub(crate) fn emit_expression(&mut self, expr: &Expression) -> ClsResult<()> {
         match expr {
@@ -23,12 +23,12 @@ impl<'a> FuncEmitter<'a> {
             Expression::Record(r) => self.emit_record(r),
             Expression::Cmx(c) => self.emit_cmx(c),
             Expression::ArrowFunction(a) => {
-                // Arrow Ã¢â€ â€™ handle de su funciÃƒÂ³n sintÃƒÂ©tica `__arrow_<n>`.
+                // Arrow -> handle de su función sintética `__arrow_<n>`.
                 // Si captura variables (closure): evaluarlas en un bloque
                 // `[n, v1, v2, ...]` y pasar el ptr como tercer arg del handle.
                 let name = self.arrow_names.get(&a.span).ok_or_else(|| {
                     crate::error::ClsError::CompileError(
-                        "Arrow function sin funciÃƒÂ³n sintÃƒÂ©tica (recolecciÃƒÂ³n)".to_string(),
+                        "Arrow function sin función sintética (recolección)".to_string(),
                     )
                 })?;
                 let ti = self.fn_table_idx[name];
@@ -37,7 +37,7 @@ impl<'a> FuncEmitter<'a> {
                     .get(&a.span)
                     .cloned()
                     .unwrap_or_default();
-                // Bloque de capturas `[n, v1, v2, ...]` (se evalÃƒÂºa primero).
+                // Bloque de capturas `[n, v1, v2, ...]` (se evalúa primero).
                 let cap_ptr = self.fresh_local();
                 if captures.is_empty() {
                     self.body.push(Instruction::I64Const(0));
@@ -81,7 +81,7 @@ impl<'a> FuncEmitter<'a> {
             Expression::Assignment(a) => self.emit_assignment(a),
             Expression::Parenthesized(inner, _) => self.emit_expression(inner),
             Expression::StringInterpolation(s) => self.emit_interpolation(s),
-            // `x::miembro` (mÃƒÂ³dulo/namespace importado): global `x::miembro`.
+            // `x::miembro` (módulo/namespace importado): global `x::miembro`.
             Expression::NamespaceAccess(ns, member, span) => {
                 let key = format!("{}::{}", ns, member);
                 if let Some(g) = self.globals.get(&key).copied() {
@@ -90,7 +90,7 @@ impl<'a> FuncEmitter<'a> {
                 } else {
                     Err(crate::error::ClsError::compile_at(
                         &format!(
-                            "El miembro '{}' no existe o no se exporta en el mÃƒÂ³dulo '{}' (fase de emisiÃƒÂ³n).",
+                            "El miembro '{}' no existe o no se exporta en el módulo '{}' (fase de emisión).",
                             member, ns
                         ),
                         span,
@@ -106,7 +106,7 @@ impl<'a> FuncEmitter<'a> {
         let span = expr_span(expr);
         crate::error::ClsError::compile_at(
             &format!(
-                "El JIT (subconjunto WASM) aÃƒÂºn no soporta esta expresiÃƒÂ³n: `{}`",
+                "El JIT (subconjunto WASM) aún no soporta esta expresión: `{}`",
                 expr_display(expr)
             ),
             &span,
@@ -129,9 +129,9 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_load_str(idx);
             }
             LiteralKind::Null => {
-                // Dentro de `__next`, el `null` es el sentinel de fin de iteraciÃƒÂ³n
-                // (distinto de 0 Ã¢â‚¬â€ un iterador puede devolver 0 como valor
-                // legÃƒÂ­timo). Fuera del protocolo, null = 0 (paridad histÃƒÂ³rica).
+                // Dentro de `__next`, el `null` es el sentinel de fin de iteración
+                // (distinto de 0 - un iterador puede devolver 0 como valor
+                // legítimo). Fuera del protocolo, null = 0 (paridad hist�rica).
                 if self.current_method.as_deref() == Some("__next") {
                     self.body.push(Instruction::I64Const(NULL_ITER_SENTINEL));
                 } else {
@@ -146,10 +146,10 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Emite `env.fn_enter(nombre, line, col)` al inicio de una funciÃƒÂ³n CLS.
-    /// Registra la funciÃƒÂ³n en el shadow call stack del host (para el trace de
-    /// errores de runtime). `main` (la entrada) se registra sin ubicaciÃƒÂ³n
-    /// (lÃƒÂ­nea 0): el formateador lo muestra como `Ã¢â€ â€™ main` sin lÃƒÂ­nea.
+    /// Emite `env.fn_enter(nombre, line, col)` al inicio de una función CLS.
+    /// Registra la función en el shadow call stack del host (para el trace de
+    /// errores de runtime). `main` (la entrada) se registra sin ubicación
+    /// (línea 0): el formateador lo muestra como `-> main` sin línea.
     pub(crate) fn emit_fn_enter(&mut self, f: &FunctionDecl) -> ClsResult<()> {
         let display = f
             .name
@@ -182,13 +182,13 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Emite una llamada a una funciÃƒÂ³n host del nodo (intrinsic) vÃƒÂ­a el canal
-    /// genÃƒÂ©rico `env.host_call(id, ptr, n)`. Los args viajan empaquetados en
+    /// Emite una llamada a una funci�n host del nodo (intrinsic) vía el canal
+    /// genérico `env.host_call(id, ptr, n)`. Los args viajan empaquetados en
     /// memoria: `[n:i64][(val:i64, tag:i64)*n]` (tag = `cls_kind_code`).
     pub(crate) fn emit_host_call(&mut self, intr: &HostIntrinsic, c: &CallExpr) -> ClsResult<()> {
         let n = c.args.len() as i64;
         // 1. Evaluar cada arg y guardarlo en un temporal (bits uniformes i64:
-        //    float Ã¢â€ â€™ reinterpret bits; bool/char Ã¢â€ â€™ extender a i64).
+        //    float -> reinterpret bits; bool/char -> extender a i64).
         let mut tmps: Vec<u32> = Vec::with_capacity(c.args.len());
         for (i, arg) in c.args.iter().enumerate() {
             self.emit_expression(arg)?;
@@ -222,7 +222,7 @@ impl<'a> FuncEmitter<'a> {
             align: 3,
             memory_index: 0,
         }));
-        // 4. Por arg: val + tag. (El addr de los memory ops es i32 Ã¢â€ â€™ wrap.)
+        // 4. Por arg: val + tag. (El addr de los memory ops es i32 -> wrap.)
         for (i, tmp) in tmps.iter().enumerate() {
             let base = 8 + (i as i64) * 16;
             self.body.push(Instruction::LocalGet(ptr));
@@ -270,7 +270,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Emite `env.fn_exit()` antes de salir de una funciÃƒÂ³n CLS.
+    /// Emite `env.fn_exit()` antes de salir de una función CLS.
     pub(crate) fn emit_fn_exit(&mut self) {
         self.host.call(HostFn::FnExit, &mut self.body);
     }
@@ -371,7 +371,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// `"Hola $nombre ${expr}"` Ã¢â€ â€™ concatenaciÃƒÂ³n de las partes (toString de cada expr).
+    /// `"Hola $nombre ${expr}"` -> concatenación de las partes (toString de cada expr).
     pub(crate) fn emit_interpolation(&mut self, s: &StringInterpolation) -> ClsResult<()> {
         let empty = self.intern_string("");
         self.emit_load_str(empty);

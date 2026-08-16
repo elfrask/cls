@@ -282,9 +282,9 @@ pub enum CmxToken {
     Text { content: String },
     /// Atributo string: name="value"
     AttrString { name: String, value: String },
-    /// Inicio de atributo expresión: name={ → el parser lee expresión hasta ExprEnd
+    /// Inicio de atributo expresión: name={ -> el parser lee expresión hasta ExprEnd
     AttrExpr { name: String },
-    /// Fin de expresión dentro de CMX ({ → ... → })
+    /// Fin de expresión dentro de CMX ({ -> ... -> })
     ExprEnd,
 }
 

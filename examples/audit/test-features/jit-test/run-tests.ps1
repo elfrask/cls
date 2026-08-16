@@ -1,4 +1,4 @@
-# run-tests.ps1 — Prueba cada feature del JIT comparando salidas JIT vs walker (paridad).
+# run-tests.ps1 - Prueba cada feature del JIT comparando salidas JIT vs walker (paridad).
 # Uso: powershell -File run-tests.ps1
 $ErrorActionPreference = "SilentlyContinue"
 $clx = Join-Path $PSScriptRoot "..\..\..\target\debug\clx.exe"

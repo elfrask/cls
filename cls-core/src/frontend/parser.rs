@@ -230,7 +230,7 @@ impl Parser {
 
     fn parse_function_decl(&mut self) -> ClsResult<Statement> {
         // Span del inicio de la función (token `function`): apuntar aquí en vez
-        // de `self.span()` tras el `;` (que apunta al token siguiente → frames
+        // de `self.span()` tras el `;` (que apunta al token siguiente -> frames
         // de call stack con línea off-by-one).
         let fn_span = self.span();
         self.expect_keyword(Keyword::Function)?;
@@ -478,7 +478,7 @@ impl Parser {
             _ => {}
         }
 
-        // Phantom: !T — el type param no participa en el tipo (no se unifica)
+        // Phantom: !T - el type param no participa en el tipo (no se unifica)
         if self.consume_operator(Operator::Not) {
             let inner = self.parse_base_type()?;
             return Ok(TypeKind::Phantom(Box::new(TypeAnnotation {
@@ -1171,7 +1171,7 @@ impl Parser {
         Ok(params)
     }
 
-    /// `alias <Name>[<T=Int>] = <tipo>;` — alias de tipos (compile-time).
+    /// `alias <Name>[<T=Int>] = <tipo>;` - alias de tipos (compile-time).
     fn parse_alias_decl(&mut self) -> ClsResult<Statement> {
         self.expect_keyword(Keyword::Alias)?;
         let name = self.expect_identifier()?;
@@ -1187,7 +1187,7 @@ impl Parser {
         }))
     }
 
-    /// `enum Nombre { Var1, Var2, Var3, };` — variantes constantes con identidad.
+    /// `enum Nombre { Var1, Var2, Var3, };` - variantes constantes con identidad.
     fn parse_enum_decl(&mut self) -> ClsResult<Statement> {
         self.expect_keyword(Keyword::Enum)?;
         let name = self.expect_identifier()?;
@@ -1316,7 +1316,7 @@ impl Parser {
         }))
     }
 
-    /// `extension "<lib>" [as <Tipo>] { function ...; structure ...; var ...; }` — FFI nativo.
+    /// `extension "<lib>" [as <Tipo>] { function ...; structure ...; var ...; }` - FFI nativo.
     fn parse_extension_decl(&mut self) -> ClsResult<Statement> {
         self.expect_keyword(Keyword::Extension)?;
         let library = self.expect_string()?;
@@ -1457,7 +1457,7 @@ impl Parser {
                 });
             }
         }
-        // Nombre simple: SO conocido → Os; tripla (contiene '-') → Target; arch → Arch.
+        // Nombre simple: SO conocido -> Os; tripla (contiene '-') -> Target; arch -> Arch.
         if let Token::Identifier(name) = &self.current_token {
             let name = name.clone();
             self.advance();
@@ -1574,7 +1574,7 @@ impl Parser {
                     children.push(CmxChild::Element(Box::new(el)));
                 }
             } else if matches!(&self.current_token, Token::Symbol(Symbol::LBrace)) {
-                // Interpolación en el cuerpo: `{expr}` → CmxChild::Expression.
+                // Interpolación en el cuerpo: `{expr}` -> CmxChild::Expression.
                 self.advance();
                 let expr = self.parse_expression()?;
                 self.expect_symbol(Symbol::RBrace)?;
@@ -2222,7 +2222,7 @@ impl Parser {
         while i < chars.len() {
             if chars[i] == '$' && i + 1 < chars.len() {
                 if chars[i + 1] == '{' {
-                    // ${expr} — parsear expresión
+                    // ${expr} - parsear expresión
                     let mut depth = 1;
                     let mut expr_str = String::new();
                     let mut j = i + 2;
@@ -2253,7 +2253,7 @@ impl Parser {
                     parts.push(InterpolationPart::Expr(expr));
                     i = j; // saltar }
                 } else if chars[i + 1].is_alphabetic() || chars[i + 1] == '_' {
-                    // $var — variable lookup
+                    // $var - variable lookup
                     let mut var_name = String::new();
                     let mut j = i + 1;
                     while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_') {

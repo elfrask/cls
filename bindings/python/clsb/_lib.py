@@ -2,7 +2,7 @@
 
 La librería se busca en orden:
 1. `CLS_LIB_PATH` (variable de entorno)
-2. `clsb/bin/` (junto a este paquete — wheels la llevan)
+2. `clsb/bin/` (junto a este paquete - wheels la llevan)
 3. Rutas del sistema (PATH, rutas estándar)
 
 Los valores de `clsb_value` se construyen SIEMPRE con los constructores de la

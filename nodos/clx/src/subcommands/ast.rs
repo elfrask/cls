@@ -2,7 +2,7 @@ use std::fs;
 
 pub fn execute(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!("clx ast — Dump del AST");
+        println!("clx ast - Dump del AST");
         println!();
         println!("Uso: clx ast <archivo> [--json]");
         println!();

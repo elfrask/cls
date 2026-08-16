@@ -1,4 +1,4 @@
-# jit-subset.clsx — Micro-benchmark SOLO con features del subconjunto JIT.
+# jit-subset.clsx - Micro-benchmark SOLO con features del subconjunto JIT.
 # Mismo trabajo que benchmark.clsx (fib/primos/collatz) sin arrays/strings/methods.
 
 function fib(n: int) -> int {

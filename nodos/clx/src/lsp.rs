@@ -479,7 +479,7 @@ fn format_doc_content(tm: &TypeModule, m: &type_defs::TypeMember) -> String {
         let l = line.trim_start_matches('#').trim();
         if l.starts_with("@description") { parts.push(l.trim_start_matches("@description ").to_string()); }
         else if l.starts_with("@params") { parts.push(format!("- `{}`", l.trim_start_matches("@params "))); }
-        else if l.starts_with("@return") { parts.push(format!("→ {}", l.trim_start_matches("@return "))); }
+        else if l.starts_with("@return") { parts.push(format!("-> {}", l.trim_start_matches("@return "))); }
         else if l.starts_with("@deprecated") { parts.push(format!("~~DEPRECATED: {}~~", l.trim_start_matches("@deprecated "))); }
     }
     parts.join("\n\n")

@@ -39,7 +39,7 @@ cargo build            # todo el workspace
 El perfil de desarrollo compila las dependencias pesadas
 (wasmtime + Cranelift) con `opt-level = 2`
 (`[profile.dev.package."*"]` en el `Cargo.toml` raíz), de modo que el JIT
-compila WASM → nativo mucho más rápido incluso en build debug.
+compila WASM -> nativo mucho más rápido incluso en build debug.
 
 ### Binarios generados
 
@@ -85,7 +85,7 @@ Imprime dos líneas: `clx 2.0.0` y `CLS Language Compiler & Runtime`.
 clx -h
 ```
 
-Muestra la ayuda completa con el encabezado `clx 2.0.0 — CLS Toolchain`.
+Muestra la ayuda completa con el encabezado `clx 2.0.0 - CLS Toolchain`.
 
 Para probar una ejecución real:
 

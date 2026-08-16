@@ -1,13 +1,13 @@
-﻿//! TypeChecker â€” imports y módulos (prelude) (Fase 1: extraido de middleware/typeck.rs).
+﻿//! TypeChecker - imports y módulos (prelude) (Fase 1: extraido de middleware/typeck.rs).
 
 use super::*;
 
 impl TypeChecker {
 
 
-    /// `import "path" as x` â†’ define el alias como módulo (acceso `x::f`).
+    /// `import "path" as x` -> define el alias como módulo (acceso `x::f`).
     pub(crate) fn check_import(&mut self, imp: &ImportStatement) -> Type {
-        // `import "math"`/`import "json"` (internals del nodo) â†’ namespace.
+        // `import "math"`/`import "json"` (internals del nodo) -> namespace.
         let alias = imp.alias.as_deref().unwrap_or(&imp.path);
         self.import_aliases.insert(alias.to_string(), imp.path.clone());
         self.define(alias, Type::Named(alias.to_string(), vec![]));
@@ -15,7 +15,7 @@ impl TypeChecker {
     }
 
 
-    /// `from "path" import a as fa, b` â†’ define cada nombre en el scope actual.
+    /// `from "path" import a as fa, b` -> define cada nombre en el scope actual.
     pub(crate) fn check_from_import(&mut self, fi: &FromImportStatement) -> Type {
         for im in &fi.names {
             if let Some(t) = self.find_export_type(&fi.path, &im.name) {
@@ -25,7 +25,7 @@ impl TypeChecker {
                 let available = self.module_export_names(&fi.path);
                 let hint = if available.is_empty() {
                     format!(
-                        "El módulo '{}' no exporta ningíºn sí­mbolo (usa `export` en cada declaración).",
+                        "El módulo '{}' no exporta ningún símbolo (usa `export` en cada declaración).",
                         fi.path
                     )
                 } else {
@@ -48,7 +48,7 @@ impl TypeChecker {
     }
 
 
-    /// Nombres de los sí­mbolos exportados de un módulo del prelude.
+    /// Nombres de los símbolos exportados de un módulo del prelude.
     pub(crate) fn module_export_names(&self, path: &str) -> Vec<String> {
         let mut names = Vec::new();
         if let Some(m) = self.find_prelude_module(path) {
@@ -73,7 +73,7 @@ impl TypeChecker {
     }
 
 
-    /// `include "path"` â†’ define TODOS los exports en el scope actual.
+    /// `include "path"` -> define TODOS los exports en el scope actual.
     pub(crate) fn check_include(&mut self, inc: &IncludeStatement) -> Type {
         let m = match self.find_prelude_module(&inc.path) {
             Some(m) => m.clone(),

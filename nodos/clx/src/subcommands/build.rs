@@ -50,7 +50,7 @@ pub fn execute(args: &[String]) -> i32 {
     // Crear .clsapp (zip)
     //
     // PROVISIONAL (deuda 7.3): empaqueta el source .clsx crudo en el zip hasta que
-    // exista un formato estable de AST serializado. Ver AGENTS.md → "Sistema de
+    // exista un formato estable de AST serializado. Ver AGENTS.md -> "Sistema de
     // módulos": el plan es empaquetar AST serializado (módulos fuente como .ast) y,
     // más adelante, .clbin (WASM) dentro del .clsapp/.clslib. NO implementar ahora:
     // no hay formato estable y el runtime clxr aún espera source.

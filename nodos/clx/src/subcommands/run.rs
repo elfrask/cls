@@ -11,9 +11,9 @@ pub fn execute(args: &[String]) -> i32 {
         return 0;
     }
 
-    // `clx run` → JIT por defecto (el intérprete objetivo). `--jit`/`-j` se
+    // `clx run` -> JIT por defecto (el intérprete objetivo). `--jit`/`-j` se
     // aceptan por compatibilidad (sin efecto: ya es el default).
-    // `clx run --ast-walker` → tree-walker DEPRECADO (solo referencia sintáctica;
+    // `clx run --ast-walker` -> tree-walker DEPRECADO (solo referencia sintáctica;
     // será eliminado tras CLS 2.0-dev1). Imprime una advertencia en stderr.
     let ast_walker = args.iter().take_while(|a| *a != "--").any(|a| a == "--ast-walker");
     if ast_walker {
@@ -110,7 +110,7 @@ pub fn execute(args: &[String]) -> i32 {
     interpreter.set_source_file(entry);
     interpreter.set_config(config);
     interpreter.set_native_backend(native.clone());
-    // `clx run --target <tripla>` → simula el entorno para la directiva `when`
+    // `clx run --target <tripla>` -> simula el entorno para la directiva `when`
     if let Some(t) = args.iter()
         .take_while(|a| *a != "--")
         .position(|a| a == "--target" || a == "-t")
@@ -135,7 +135,7 @@ pub fn execute(args: &[String]) -> i32 {
 }
 
 fn print_help() {
-    println!("clx run — Ejecutar un programa CLS");
+    println!("clx run - Ejecutar un programa CLS");
     println!();
     println!("Uso: clx run [archivo] [--] [args...]");
     println!();
@@ -148,7 +148,7 @@ fn print_help() {
     println!();
     println!("Sin archivo, usa el 'entry' de cls.json (o busca main.clsx).");
     println!();
-    println!("El JIT (CLS → WASM) es el intérprete objetivo; el AST-walker será");
+    println!("El JIT (CLS -> WASM) es el intérprete objetivo; el AST-walker será");
     println!("eliminado tras CLS 2.0-dev1.");
 }
 

@@ -55,7 +55,7 @@ impl Default for ClsLibIndex {
     }
 }
 
-/// Resolvedor de .clslib — cada nodo implementa con su propio VFS/filesystem.
+/// Resolvedor de .clslib - cada nodo implementa con su propio VFS/filesystem.
 /// Nunca usa std::fs; los nodos inyectan la lógica de I/O.
 pub trait ClsLibResolver: Send + Sync {
     /// Resuelve un nombre de librería (sin extensión, ej: "foo") y devuelve

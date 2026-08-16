@@ -1,4 +1,4 @@
-﻿//! TypeChecker â€” tests (Fase 1: extraido de middleware/typeck.rs).
+﻿//! TypeChecker - tests (Fase 1: extraido de middleware/typeck.rs).
 
 #[cfg(test)]
 mod tests {
@@ -107,7 +107,7 @@ use crate::config::types::TypesConfig;
 
     #[test]
     fn tuple_dynamic_index_union() {
-        // í­ndice diní¡mico sobre tupla â†’ unión; no debe dar error en estricto
+        // índice dinámico sobre tupla -> unión; no debe dar error en estricto
         let src = "function f() { var a: (Int, String) = (1, \"x\"); var i = 0; var v = a[i]; };";
         let d = check_source(src, true);
         assert_eq!(count_errors(&d), 0, "indice dinamico: {:?}", d);
@@ -115,7 +115,7 @@ use crate::config::types::TypesConfig;
 
     #[test]
     fn tuple_access_by_literal() {
-        // t[1] con í­ndice literal â†’ slot exacto
+        // t[1] con índice literal -> slot exacto
         let src = "function f() { var a: (Int, String) = (1, \"x\"); var n: Int = a[0]; };";
         let d = check_source(src, true);
         assert_eq!(count_errors(&d), 0, "indice literal: {:?}", d);
@@ -123,7 +123,7 @@ use crate::config::types::TypesConfig;
 
     #[test]
     fn call_arg_type_mismatch() {
-        // Tarea 1: arg Int a param String â†’ error en estricto (con firma conocida)
+        // Tarea 1: arg Int a param String -> error en estricto (con firma conocida)
         let src = "function f(x: String) -> String { return x; }; function g() { var y = f(123); };";
         let d = check_source(src, true);
         assert_eq!(count_errors(&d), 1, "Int a param String: {:?}", d);
@@ -138,7 +138,7 @@ use crate::config::types::TypesConfig;
 
     #[test]
     fn call_arg_promotion_int_to_float() {
-        // int â†’ float es asignable; no debe dar error
+        // int -> float es asignable; no debe dar error
         let src = "function f(x: Float) -> Float { return x; }; function g() { var y = f(5); };";
         let d = check_source(src, true);
         assert_eq!(count_errors(&d), 0, "int a param Float: {:?}", d);
@@ -146,7 +146,7 @@ use crate::config::types::TypesConfig;
 
     #[test]
     fn generic_array_param_no_false_positive() {
-        // T[] sin binding (param anidado en contenedor) â†’ no validar (sin falso positivo)
+        // T[] sin binding (param anidado en contenedor) -> no validar (sin falso positivo)
         let src = "function first<T>(a: T[]) -> T { return a[0]; }; function g() { var y = first([1,2,3]); };";
         let d = check_source(src, true);
         assert_eq!(count_errors(&d), 0, "T[] no debe false-positivar: {:?}", d);

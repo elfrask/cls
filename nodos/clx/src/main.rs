@@ -1,4 +1,4 @@
-//! clx — CLS Toolchain
+//! clx - CLS Toolchain
 //! CLI de desarrollo para el lenguaje CLS.
 mod modules;
 mod lsp;
@@ -80,7 +80,7 @@ fn dispatch(cmd: &str, args: &[String]) -> i32 {
 }
 
 fn print_help() {
-    println!("clx {} — CLS Toolchain", env!("CARGO_PKG_VERSION"));
+    println!("clx {} - CLS Toolchain", env!("CARGO_PKG_VERSION"));
     println!();
     println!("Uso: clx <subcomando> [opciones] [argumentos]");
     println!();

@@ -13,7 +13,7 @@ function dirname(path: String) -> String {};
 # @description Extension del archivo con punto (.txt; "" si no tiene)
 function extname(path: String) -> String {};
 
-# @description Ruta absoluta (relativa → unida al cwd)
+# @description Ruta absoluta (relativa -> unida al cwd)
 function resolve(path: String) -> String {};
 
 # @description Normaliza . y .. sin tocar el sistema de archivos

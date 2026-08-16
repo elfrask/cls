@@ -1,6 +1,6 @@
 //! CLS Core Library
 //!
-//! El compilador de CLS: frontend (lexer/parser) → middleware (análisis) → backend (salida).
+//! El compilador de CLS: frontend (lexer/parser) -> middleware (análisis) -> backend (salida).
 //! También compila a WASM para ser usado desde cualquier lenguaje host.
 
 pub mod config;

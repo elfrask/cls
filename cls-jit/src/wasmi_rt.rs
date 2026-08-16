@@ -627,7 +627,7 @@ pub(crate) fn run_wasm_wasmi(
     };
     t = tick(timing, "Module::new (wasmi)", t);
 
-    // El WASM es válido: persistirlo en el caché CLS→WASM (fallo silencioso).
+    // El WASM es válido: persistirlo en el caché CLS->WASM (fallo silencioso).
     if let Some(p) = &cache_path {
         let _ = std::fs::create_dir_all(crate::resolve::cache_dir())
             .and_then(|_| crate::resolve::atomic_write(p, wasm_bytes));

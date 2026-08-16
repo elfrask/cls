@@ -65,7 +65,7 @@ function main(args: String[]) -> int {
 $code = Run-Jit "dx-error-modulo" $mainFile
 $err4 = Get-Content (Join-Path $logDir "dx-error-modulo.err.txt") -Raw
 $hasTrap = $err4 -match "Trap WASM"
-$hasTrace = $err4 -match "→"
+$hasTrace = $err4 -match "->"
 $hasCaret = $err4 -match "\^"
 $hasArchivo = $err4 -match "util.clsx"
 $hasError = $err4 -match "Error"

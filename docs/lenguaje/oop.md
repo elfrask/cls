@@ -104,8 +104,8 @@ function main(args: String[]) -> int {
     var c = Cuenta("Ana", "ES1234");
     c.depositar(100.5);
     print("saldo:", c.verSaldo());
-    print("titular:", c.titular);        # public → ok
-    print("creadoEn:", c.creadoEn);      # readonly → lectura ok
+    print("titular:", c.titular);        # public -> ok
+    print("creadoEn:", c.creadoEn);      # readonly -> lectura ok
     print("tasa:", Cuenta.tasa);         # static vía la clase
     return 0;
 };
@@ -127,7 +127,7 @@ nombres `__xxx` dentro de la clase. **Catálogo completo soportado por el JIT
 | `__int` / `__float` / `__bool` | `int(obj)` / `float(obj)` / `bool(obj)` |
 | `__type` | `type(obj)` |
 | `__toJson` | `json.stringify(obj)` |
-| `__call` | `obj(args)` — objetos callables |
+| `__call` | `obj(args)` - objetos callables |
 | `__iter` / `__next` | `for each x in (obj)` |
 | `__get` / `__set` | `obj[i]` / `obj[i] = v` |
 | `__contains` | `x in obj` |
@@ -172,10 +172,10 @@ class Rango {
 function main(args: String[]) -> int {
     var a = Vector(1, 2);
     var b = Vector(3, 4);
-    print(a + b);        # Vector(4,6)  — __add
-    print(a == Vector(1, 2));  # true      — __equals
-    print(a < b);        # true           — __compare
-    for each x in (Rango(3)) { print(x); }  # 0 1 2 — __iter/__next
+    print(a + b);        # Vector(4,6)  - __add
+    print(a == Vector(1, 2));  # true      - __equals
+    print(a < b);        # true           - __compare
+    for each x in (Rango(3)) { print(x); }  # 0 1 2 - __iter/__next
     return 0;
 }
 ```
@@ -188,8 +188,8 @@ magics: aritmética, unarios, conversiones, contenedores, callable, iteración).
 - **Aritmética binaria** (`__add` … `__pow`): `left.__op(right)`; si el lado
   izquierdo no lo define, se prueba `right.__op(left)` (simetría, paridad
   walker).
-- **Igualdad y orden**: `__equals` → el resultado se usa como truthy (`!=`
-  lo niega); `__compare` → devuelve un entero (`<0`, `0`, `>0`) comparado
+- **Igualdad y orden**: `__equals` -> el resultado se usa como truthy (`!=`
+  lo niega); `__compare` -> devuelve un entero (`<0`, `0`, `>0`) comparado
   contra 0 según el operador.
 - **Iteración** (`__iter`/`__next`): `__iter()` puede devolver un **Array**
   (se itera directamente) o un **objeto iterador** con `__next()` que devuelve
@@ -201,15 +201,15 @@ magics: aritmética, unarios, conversiones, contenedores, callable, iteración).
 
 - **Anotación obligatoria**: los magic methods deben anotar su tipo de retorno
   (y el de los parámetros de clase). El JIT despacha estáticamente por la firma
-  declarada del método — un parámetro sin anotar tipa `Any` y no se puede
+  declarada del método - un parámetro sin anotar tipa `Any` y no se puede
   despachar (el walker sí lo tolera).
 - **Sentinel de iteración**: `return null` dentro de `__next` termina el `for
-  each` con un sentinel interno distinto de `0` — un iterador puede devolver
-  `0` como valor legítimo (p. ej. `Rango(3)` → `0 1 2`).
+  each` con un sentinel interno distinto de `0` - un iterador puede devolver
+  `0` como valor legítimo (p. ej. `Rango(3)` -> `0 1 2`).
 - **Mutación de arrays en campos**: `me.items.push(x)` re-escribe el array
   (que puede reallocarse) en el campo automáticamente.
 - **Campos**: el JIT zero-inicializa los campos al instanciar; el inicializador
-  `var items: int[] = []` no se ejecuta — inicializar en el constructor
+  `var items: int[] = []` no se ejecuta - inicializar en el constructor
   (`function main() { me.items = []; }`).
 
 Referencia de ejemplos: `examples/audit/features/09-clases.clsx`,

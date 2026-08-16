@@ -157,7 +157,7 @@ fn kind_to_rt_tag(kind: i64) -> i64 {
 }
 
 /// Escribe un valor CLS en la memoria del módulo y devuelve sus bits i64
-/// (int/float-bits/bool/char directos; string → packed; array/record → ptr).
+/// (int/float-bits/bool/char directos; string -> packed; array/record -> ptr).
 /// `desc` = descriptor recursivo del tipo estático (arrays anidados necesitan
 /// el tipo del elemento para el stride/layout); `None` = sin información
 /// (los arrays se escriben con stride 8).
@@ -288,7 +288,7 @@ fn read_record(ctx: &mut StoreCtx, ptr: i64, desc: Option<&TypeDesc>) -> Result<
         let key = ctx.read_str(kbits);
         let bits = ctx.read_i64(base + 8);
         let rt_tag = ctx.read_i64(base + 16);
-        // Los records en memoria usan la tabla del runtime → traducir.
+        // Los records en memoria usan la tabla del runtime -> traducir.
         let kind = rt_tag_to_kind(rt_tag);
         let v_desc = desc.and_then(|d| {
             d.shape.iter().find(|(sk, _)| sk == &key).map(|(_, d)| d)

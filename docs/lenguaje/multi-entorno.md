@@ -28,7 +28,7 @@ when os: none and arch: arm64 {
 
 - Nombres simples: un SO conocido (`windows`, `linux`, `macos`, `none`,
   `bare-metal`, `freebsd`) o una arquitectura conocida (`x86_64`, `arm64`,
-  `aarch64` → `arm64`, `arm`, `riscv32`, `riscv64`, `avr`) se interpretan
+  `aarch64` -> `arm64`, `arm`, `riscv32`, `riscv64`, `avr`) se interpretan
   según el prefijo.
 - Una tripla con guiones (`x86_64-windows-msvc`) se interpreta como `target:`.
 - `default { ... };` es la rama que siempre matchea.

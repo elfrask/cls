@@ -1,4 +1,4 @@
-# run-bench.ps1 — Benchmarks CLS con múltiples módulos (walker vs JIT).
+# run-bench.ps1 - Benchmarks CLS con múltiples módulos (walker vs JIT).
 # El proyecto está en examples/benchmarks-modules (src/main.clsx + lib/).
 # Uso: powershell -File run-bench.ps1
 $ErrorActionPreference = "SilentlyContinue"

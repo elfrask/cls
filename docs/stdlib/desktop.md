@@ -9,7 +9,7 @@ nodo) como con el walker. Las firmas canónicas viven en `cls-runtime/clsi/`
 (`fs.clsi`, `http.clsi`, `os.clsi`, `path.clsi`, `process.clsi`, `time.clsi`,
 `random.clsi`, `Lib.clsi`).
 
-## `fs` — sistema de archivos
+## `fs` - sistema de archivos
 
 ```clx
 import "fs" as fs;
@@ -31,14 +31,14 @@ print(fs.readFile("a.txt"));
 Los paths con protocolo (`app://`, `user://`, `tmp://`) se resuelven contra el
 VFS del nodo (ver `runtime/vfs.md`); los demás van al filesystem real.
 
-## `http` — cliente HTTP
+## `http` - cliente HTTP
 
 | Función | Firma | Descripción |
 |---|---|---|
 | `get` | `get(url: String) -> String` | GET; devuelve el body de la respuesta. |
 | `post` | `post(url: String, body: String) -> String` | POST; devuelve el body de la respuesta. |
 
-## `os` — sistema operativo
+## `os` - sistema operativo
 
 | Función | Firma | Descripción |
 |---|---|---|
@@ -56,7 +56,7 @@ VFS del nodo (ver `runtime/vfs.md`); los demás van al filesystem real.
 | `isWindows` | `isWindows() -> bool` | ¿El sistema es Windows? |
 | `isUnix` | `isUnix() -> bool` | ¿El sistema es Unix? |
 
-## `path` — rutas de archivo
+## `path` - rutas de archivo
 
 | Función | Firma | Descripción |
 |---|---|---|
@@ -64,12 +64,12 @@ VFS del nodo (ver `runtime/vfs.md`); los demás van al filesystem real.
 | `basename` | `basename(path: String) -> String` | Último componente de la ruta. |
 | `dirname` | `dirname(path: String) -> String` | Directorio padre (`"."` si no tiene). |
 | `extname` | `extname(path: String) -> String` | Extensión con punto (`.txt`; `""` si no tiene). |
-| `resolve` | `resolve(path: String) -> String` | Ruta absoluta (relativa → unida al cwd). |
+| `resolve` | `resolve(path: String) -> String` | Ruta absoluta (relativa -> unida al cwd). |
 | `normalize` | `normalize(path: String) -> String` | Normaliza `.` y `..` sin tocar el filesystem. |
 | `isAbsolute` | `isAbsolute(path: String) -> bool` | ¿La ruta es absoluta? |
 | `sep` | `sep() -> String` | Separador de rutas del sistema. |
 
-## `process` — proceso actual
+## `process` - proceso actual
 
 | Función | Firma | Descripción |
 |---|---|---|
@@ -81,7 +81,7 @@ VFS del nodo (ver `runtime/vfs.md`); los demás van al filesystem real.
 | `platform` | `platform() -> String` | Nombre del sistema operativo. |
 | `title` | `title() -> String` | Título del proceso (`""` si no disponible; la implementación actual siempre devuelve `""`). |
 
-## `time` — fecha y hora (UTC)
+## `time` - fecha y hora (UTC)
 
 | Función | Firma | Descripción |
 |---|---|---|
@@ -98,7 +98,7 @@ VFS del nodo (ver `runtime/vfs.md`); los demás van al filesystem real.
 | `second` | `second() -> int` | Segundo UTC (0-59). |
 | `sleep` | `sleep(ms: int)` | Duerme el hilo actual `ms` milisegundos. |
 
-## `random` — aleatoriedad
+## `random` - aleatoriedad
 
 | Función | Firma | Descripción |
 |---|---|---|
@@ -107,7 +107,7 @@ VFS del nodo (ver `runtime/vfs.md`); los demás van al filesystem real.
 | `float` | `float(min: float, max: float) -> float` | Float aleatorio en `[min, max)`. |
 | `uuid` | `uuid() -> String` | UUID v4. |
 
-## `Lib` — librerías compiladas
+## `Lib` - librerías compiladas
 
 ```clx
 import "Lib" as Lib;
@@ -127,11 +127,11 @@ nombre de la librería en lugar de `N`). No ejecuta el binario.
 
 Orden del resolver desktop (`DesktopLibResolver`):
 
-1. **Path directo** — si `name` contiene `/`, `\` o termina en `.clslib`, se
+1. **Path directo** - si `name` contiene `/`, `\` o termina en `.clslib`, se
    lee tal cual (VFS o filesystem).
-2. `./libs/{name}.clslib` — librería local del proyecto.
+2. `./libs/{name}.clslib` - librería local del proyecto.
 3. `~/.cls/clslibs/names/{name}.clslib` (home = `HOME`/`USERPROFILE`).
-4. Índice `~/.cls/clslibs/index.json` → entrada por nombre → archivo
+4. Índice `~/.cls/clslibs/index.json` -> entrada por nombre -> archivo
    `~/.cls/clslibs/by-hash/{hash}/{name}.clslib`.
 
 Si no se encuentra: error `Lib.load: '<name>' no encontrado`.

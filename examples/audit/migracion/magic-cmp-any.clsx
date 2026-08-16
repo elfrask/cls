@@ -18,7 +18,7 @@ function main(args: String[]) -> int {
     print("le:", c1 <= c1);            # true
     print("ge:", c1 >= c2);            # false
     var a = AnyEq(5);
-    print("eq any-param:", a == AnyEq(7));  # param Any → se permite, true
-    print("eq int:", a == 9);               # param Any → se permite
+    print("eq any-param:", a == AnyEq(7));  # param Any -> se permite, true
+    print("eq int:", a == 9);               # param Any -> se permite
     return 0;
 }

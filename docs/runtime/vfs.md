@@ -25,7 +25,7 @@ pub trait VfsProtocol: Send + Sync {
 
 Filesystem local para `app://`, `user://` y `tmp://`.
 
-- `LocalFs::new(name, base, read_only)` — base es el directorio raíz.
+- `LocalFs::new(name, base, read_only)` - base es el directorio raíz.
 - `write` crea los directorios padre con `create_dir_all` y falla si es
   read-only.
 - `list_dir` devuelve nombres de entrada (no rutas completas).
@@ -48,7 +48,7 @@ Filesystem local para `app://`, `user://` y `tmp://`.
 |---|---|
 | `register(name, protocol)` | Registra un protocolo |
 | `add_route(name, target)` | Ruta personalizada; **no sobrescribe** los reservados `res`, `app`, `user`, `tmp` |
-| `resolve(path)` | `proto://ruta` → protocolo + ruta; sin protocolo → relativo a `app://` |
+| `resolve(path)` | `proto://ruta` -> protocolo + ruta; sin protocolo -> relativo a `app://` |
 | `read_file` / `read_to_string` / `write_file` / `exists` / `list_dir` | Delegan al protocolo resuelto |
 | `remove(path)` | Borra archivo o directorio (falla si el protocolo es read-only) |
 | `create_dir(path)` | `create_dir_all` (falla si read-only) |

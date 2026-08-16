@@ -1,8 +1,8 @@
-﻿//! Backend WASM: compila AST tipado â†’ mÃ³dulo WebAssembly.
+﻿//! Backend WASM: compila AST tipado -> módulo WebAssembly.
 //!
 //! Estrategia: el emisor camina el AST directamente (WASM es stack-based, por lo
 //! que las expresiones se emiten en post-order y dejan su valor en el stack).
-//! El type map (Span â†’ Type) del TypeChecker determina las representaciones:
+//! El type map (Span -> Type) del TypeChecker determina las representaciones:
 //!
 //! | Type CLS  | WASM             | Notas                                  |
 //! |-----------|------------------|----------------------------------------|
@@ -13,7 +13,7 @@
 //! | String    | i64 (ptr<<32|len)| ptr = offset en memoria lineal         |
 //! | Array<T>  | i64 (ptr)        | header [len:i64][elem...]              |
 //!
-//! El allocator es bump (sin free) con la memoria embebida en el mÃ³dulo; el host
+//! El allocator es bump (sin free) con la memoria embebida en el módulo; el host
 //! solo inyecta funciones `env.*` (print, conversiones, trap) y `alloc` para los
 //! args de `main`.
 
@@ -53,22 +53,22 @@ use wasm_encoder::{
 
 
 
-/// CÃ³digo de kind CLS para la secciÃ³n custom `clx:exports` (firma tipada que el
+/// Código de kind CLS para la sección custom `clx:exports` (firma tipada que el
 
 
 
 #[derive(Clone, Debug)]
 pub struct WasmBackendOptions {
-    /// `true` = emite el tag de excepciÃ³n CLS + try_table/throw (wasmtime).
+    /// `true` = emite el tag de excepción CLS + try_table/throw (wasmtime).
     /// `false` = modo sin excepciones (wasmi): sin tag, errores de runtime como
     /// `unreachable` y `try/catch`/`throw` fallan con error claro.
     pub exceptions: bool,
-    /// `true` = el mÃ³dulo DEBE tener `main(args: String[])` (modo app).
-    /// `false` = modo librerÃ­a: si no hay main se sintetiza un main no-op
-    /// (para `.clx`-librerÃ­a que solo expone `export function`).
+    /// `true` = el módulo DEBE tener `main(args: String[])` (modo app).
+    /// `false` = modo librería: si no hay main se sintetiza un main no-op
+    /// (para `.clx`-librería que solo expone `export function`).
     pub require_main: bool,
     /// Funciones host del NODO (intrinsics): las llamadas a esos nombres se
-    /// compilan vÃ­a el canal `env.host_call(id, ptr, n)`.
+    /// compilan vía el canal `env.host_call(id, ptr, n)`.
     pub intrinsics: Vec<HostIntrinsic>,
 }
 
@@ -83,9 +83,9 @@ impl Default for WasmBackendOptions {
 }
 
 /// Compila un Module tipado a un binario WASM.
-/// Backend WASM. Toma el type map `Span â†’ Type` por referencia (el caller â€”
-/// `jit.rs` â€” mantiene el `TypeChecker` vivo durante la emisiÃ³n) para no clonar
-/// el mapa en cada compilaciÃ³n.
+/// Backend WASM. Toma el type map `Span -> Type` por referencia (el caller -
+/// `jit.rs` - mantiene el `TypeChecker` vivo durante la emisión) para no clonar
+/// el mapa en cada compilación.
 pub struct WasmBackend<'a> {
     types: &'a HashMap<Span, Type>,
     target: Target,
@@ -99,12 +99,12 @@ impl<'a> WasmBackend<'a> {
         Self::with_target(types, Target::host())
     }
 
-    /// Backend con un target explÃ­cito (para `when` compile-time).
+    /// Backend con un target explícito (para `when` compile-time).
     pub fn with_target(types: &'a HashMap<Span, Type>, target: Target) -> Self {
         Self::with_options(types, target, WasmBackendOptions::default())
     }
 
-    /// Backend con opciones explÃ­citas.
+    /// Backend con opciones explícitas.
     pub fn with_options(
         types: &'a HashMap<Span, Type>,
         target: Target,
@@ -132,7 +132,7 @@ impl<'a> WasmBackend<'a> {
         )
     }
 
-    /// Backend en modo librerÃ­a (sin `main` obligatorio): Ãºtil para `.clx`
+    /// Backend en modo librería (sin `main` obligatorio): útil para `.clx`
     /// que solo exponen `export function` (futuro nodo de bindings).
     pub fn library_mode(types: &'a HashMap<Span, Type>, target: Target) -> Self {
         Self::with_options(
@@ -145,7 +145,7 @@ impl<'a> WasmBackend<'a> {
         )
     }
 
-    /// Backend en modo librerÃ­a Y sin excepciones (bindings browser).
+    /// Backend en modo librería Y sin excepciones (bindings browser).
     pub fn library_without_exceptions(types: &'a HashMap<Span, Type>, target: Target) -> Self {
         Self::with_options(
             types,
@@ -162,10 +162,10 @@ impl<'a> WasmBackend<'a> {
         self.emit_with_pool(module).map(|(bytes, _)| bytes)
     }
 
-    /// Igual que [`Self::emit`] pero ademÃ¡s devuelve el string pool final del
-    /// mÃ³dulo (orden de interning, append-only). El REPL JIT lo usa para
-    /// re-sembrar los mismos offsets en la sesiÃ³n siguiente (los punteros de
-    /// strings transferidos entre instancias apuntan a esta regiÃ³n).
+    /// Igual que [`Self::emit`] pero además devuelve el string pool final del
+    /// módulo (orden de interning, append-only). El REPL JIT lo usa para
+    /// re-sembrar los mismos offsets en la sesión siguiente (los punteros de
+    /// strings transferidos entre instancias apuntan a esta región).
     pub fn emit_with_pool(&self, module: &Module) -> ClsResult<(Vec<u8>, Vec<String>)> {
         let mut engine = Engine::new(self.types, self.target.clone());
         engine.exceptions = self.exceptions;

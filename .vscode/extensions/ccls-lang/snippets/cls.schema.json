@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "CLS Manifest",
-  "description": "Schema for cls.json — CLS project manifest",
+  "description": "Schema for cls.json - CLS project manifest",
   "type": "object",
   "required": ["name", "version"],
   "properties": {

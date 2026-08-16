@@ -1,10 +1,10 @@
 @echo off
-REM run-all.cmd — Ejecuta los tres benchmarks y deja que cada uno imprima sus tiempos.
+REM run-all.cmd - Ejecuta los tres benchmarks y deja que cada uno imprima sus tiempos.
 REM Cada script usa los mismos parámetros (N_*) y la misma lógica.
 
 echo.
 echo ============================================
-echo  1/3  CLS (JIT — intérprete objetivo)
+echo  1/3  CLS (JIT - intérprete objetivo)
 echo ============================================
 "%~dp0..\..\scripts\clx.cmd" run benchmark.clsx
 echo.

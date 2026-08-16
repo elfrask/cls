@@ -1,8 +1,8 @@
-//! Timing del pipeline (CLS_JIT_TIMING=1 → tiempos por fase a stderr).
+//! Timing del pipeline (CLS_JIT_TIMING=1 -> tiempos por fase a stderr).
 
 use std::time::Instant;
 
-/// `CLS_JIT_TIMING=1` → imprime el tiempo de cada fase del pipeline a stderr.
+/// `CLS_JIT_TIMING=1` -> imprime el tiempo de cada fase del pipeline a stderr.
 pub fn jit_timing() -> bool {
     std::env::var("CLS_JIT_TIMING")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))

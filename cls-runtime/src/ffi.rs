@@ -13,16 +13,16 @@ use crate::walker::value::Value;
 pub enum NativeType {
     /// Sin anotación: el backend decide (valor dinámico).
     Any,
-    /// `int` → `i64`
+    /// `int` -> `i64`
     Int,
-    /// `float` → `f64`
+    /// `float` -> `f64`
     Float,
-    /// `bool` → `i32` (0/1)
+    /// `bool` -> `i32` (0/1)
     Bool,
     Void,
-    /// `CString` → `char*` (CLS String → buffer null-terminated, copia)
+    /// `CString` -> `char*` (CLS String -> buffer null-terminated, copia)
     CString,
-    /// `CPtr<T>` → `void*` / puntero a `T`
+    /// `CPtr<T>` -> `void*` / puntero a `T`
     CPtr,
     CInt,
     CUInt,

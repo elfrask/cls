@@ -1,4 +1,4 @@
-﻿//! TypeChecker â€” check_expression y chequeos de expresiones (Fase 1: extraido de middleware/typeck.rs).
+﻿//! TypeChecker - check_expression y chequeos de expresiones (Fase 1: extraido de middleware/typeck.rs).
 
 use super::*;
 
@@ -11,7 +11,7 @@ impl TypeChecker {
         let t = match expr {
             Expression::Literal(l) => self.check_literal(l),
             Expression::Identifier(name, span) => {
-                // Primero: Â¿es una variable local declarada (incluso si se llama
+                // Primero: ¿es una variable local declarada (incluso si se llama
                 // `fs`, `math`, `json`)? El scope local gana sobre los módulos
                 // internos del nodo (json/math/fs/http).
                 if let Some(t) = self.lookup(name) {
@@ -61,7 +61,7 @@ impl TypeChecker {
             }
             Expression::Cmx(c) => {
                 // Chequear las subexpresiones internas (attrs y children) para que
-                // sus spans queden en el type map (el emisor las evalíºa).
+                // sus spans queden en el type map (el emisor las evalúa).
                 for attr in &c.attributes {
                     if let Some(CmxAttributeValue::Expression(expr)) = &attr.value {
                         self.check_expression(expr);
@@ -81,13 +81,13 @@ impl TypeChecker {
                 Type::Cmx
             }
             Expression::NamespaceAccess(ns, name, span) => {
-                // `x::miembro` de un módulo importado â†’ tipo del export.
+                // `x::miembro` de un módulo importado -> tipo del export.
                 match self.module_member_type(ns, name) {
                     Some(t) => t,
                     None => {
                         let available = self.module_export_names(ns);
                         let hint = if available.is_empty() {
-                            "el módulo no exporta ningíºn sí­mbolo (usa `export` en cada declaración)".to_string()
+                            "el módulo no exporta ningún símbolo (usa `export` en cada declaración)".to_string()
                         } else {
                             format!("el módulo exporta: {}", available.join(", "))
                         };
@@ -105,9 +105,9 @@ impl TypeChecker {
         };
         if self.config.check {
             // Un literal de record anotado como Record<K,V> (var/return) registra
-            // el tipo esperado en su span ANTES de chequearse; la inferencia aquí­
+            // el tipo esperado en su span ANTES de chequearse; la inferencia aquí
             // produce Shape. Mantener el Record anotado (el backend lo emite como
-            // dict con keys â€” necesario para el marshalling del binding).
+            // dict con keys - necesario para el marshalling del binding).
             let prev = self.types_by_span.get(&span).cloned();
             if matches!(&prev, Some(Type::Record(_, _))) && matches!(&t, Type::Shape(_)) {
                 self.types_by_span.insert(span, prev.unwrap());
@@ -175,7 +175,7 @@ impl TypeChecker {
                     }
                     return Type::Int;
                 }
-                // Int + Float â†’ Float
+                // Int + Float -> Float
                 if is_num_l && matches!(right, Type::Float) {
                     return Type::Float;
                 }
@@ -183,8 +183,8 @@ impl TypeChecker {
                     return Type::Float;
                 }
                 // Magic method __add: clase con __add (left primero, luego right).
-                // El operando se valida contra el parí¡metro del magic (M1: tipos
-                // incompatibles producí­an basura de memoria).
+                // El operando se valida contra el parámetro del magic (M1: tipos
+                // incompatibles producían basura de memoria).
                 if self.named_magic_ret(&left, "__add").is_some() {
                     self.validate_magic_binary_operand(&left, &right, "__add", bin.span.clone());
                     return self.named_magic_ret(&left, "__add").unwrap();
@@ -224,7 +224,7 @@ impl TypeChecker {
                     Operator::Percent => "__mod",
                     _ => "__pow",
                 };
-                // El operando se valida contra el parí¡metro del magic (M1).
+                // El operando se valida contra el parámetro del magic (M1).
                 if self.named_magic_ret(&left, magic).is_some() {
                     self.validate_magic_binary_operand(&left, &right, magic, bin.span.clone());
                     return self.named_magic_ret(&left, magic).unwrap();
@@ -261,8 +261,8 @@ impl TypeChecker {
             | Operator::LessThan | Operator::LessEqual
             | Operator::GreaterThan | Operator::GreaterEqual
             | Operator::In | Operator::Is => {
-                // Validar los operandos del dispatch mí¡gico (M1/M4): tipos
-                // incompatibles producí­an basura de memoria o WASM inví¡lido.
+                // Validar los operandos del dispatch mágico (M1/M4): tipos
+                // incompatibles producían basura de memoria o WASM inválido.
                 match bin.op {
                     Operator::StrictEqual | Operator::NotEqual => {
                         if self.named_magic_ret(&left, "__equals").is_some() {
@@ -316,9 +316,9 @@ impl TypeChecker {
         let callee_type = self.check_expression(&call.callee);
 
         // Métodos de primitivos (callee MemberAccess): el tipo del miembro ES el
-        // resultado (`.join(sep)` â†’ String, `.contains(x)` â†’ Bool, ...).
+        // resultado (`.join(sep)` -> String, `.contains(x)` -> Bool, ...).
         if let Expression::MemberAccess(m) = &*call.callee {
-            // Array.map(f) â†’ Array(retorno de f)
+            // Array.map(f) -> Array(retorno de f)
             let obj_ty = self.check_expression(&m.object);
             if matches!(&obj_ty, Type::Array(_)) && m.member == "map" {
                 for arg in &call.args {
@@ -334,13 +334,13 @@ impl TypeChecker {
             for arg in &call.args {
                 self.check_expression(arg);
             }
-            // `math.abs` devuelve el tipo del primer argumento (intâ†’Int, floatâ†’Float);
+            // `math.abs` devuelve el tipo del primer argumento (int->Int, float->Float);
             // `math.pow` SIEMPRE devuelve Float (el walker usa `powf` incondicional
             // y el emisor emite MathPow f64). Paridad con module_call_ret del backend.
             if let Expression::Identifier(obj, _) = &*m.object {
                 // Validar aridad de los módulos internos del nodo (os/path/process/
-                // time/random): el emisor accede a c.args[i] y un í­ndice fuera de
-                // rango paniquea. Error de tipo claro aquí­, antes de emitir.
+                // time/random): el emisor accede a c.args[i] y un índice fuera de
+                // rango paniquea. Error de tipo claro aquí, antes de emitir.
                 if matches!(obj.as_str(), "os" | "path" | "process" | "time" | "random") {
                     if let Some(arity) = module_arity(obj.as_str(), m.member.as_str()) {
                         if call.args.len() != arity {
@@ -387,7 +387,7 @@ impl TypeChecker {
 
         match callee_type {
             Type::Fun(params, ret) => {
-                // print es varií¡dico; no validar arity
+                // print es variádico; no validar arity
                 let is_print = matches!(&*call.callee, Expression::Identifier(n, _) if n == "print");
                 if self.config.strict && !is_print && params.len() != call.args.len() {
                     self.warn(
@@ -399,7 +399,7 @@ impl TypeChecker {
                         call.span.clone(),
                     );
                 }
-                // Inferir genéricos desde los args: param Named("T") â†’ arg
+                // Inferir genéricos desde los args: param Named("T") -> arg
                 let mut bindings = HashMap::new();
                 for (param, arg) in params.iter().zip(arg_types.iter()) {
                     if let Type::Named(n, ps) = param {
@@ -408,12 +408,12 @@ impl TypeChecker {
                         }
                     }
                 }
-                // Validar que cada argumento sea asignable a su parí¡metro
-                // (firma conocida). No aplica a print (varií¡dico) ni a los
+                // Validar que cada argumento sea asignable a su parámetro
+                // (firma conocida). No aplica a print (variádico) ni a los
                 // métodos de primitivos (MemberAccess ya retornó arriba).
                 for (i, (param, arg_ty)) in params.iter().zip(arg_types.iter()).enumerate() {
                     let param_subst = self.substitute(param, &bindings);
-                    // Sin firma íºtil (Any/huecos/genérico sin binding) â†’ no validar.
+                    // Sin firma útil (Any/huecos/genérico sin binding) -> no validar.
                     if matches!(param_subst, Type::Any | Type::Unknown)
                         || matches!(arg_ty, Type::Any | Type::Unknown)
                         || self.has_unbound_generic(&param_subst, &bindings)
@@ -421,7 +421,7 @@ impl TypeChecker {
                         continue;
                     }
                     // El tipo del literal se usa como literal type para respetar
-                    // uniones de literales y promociones implí­citas (intâ†’float).
+                    // uniones de literales y promociones implícitas (int->float).
                     let arg_check = match &call.args[i] {
                         Expression::Literal(l) => self.literal_type(&l.kind),
                         _ => arg_ty.clone(),
@@ -444,17 +444,17 @@ impl TypeChecker {
                 self.substitute(&ret, &bindings)
             }
             Type::Named(_, _) => {
-                // Â¿Constructor de clase/struct? â€” el callee es el NOMBRE de la
-                // clase (Identifier) â†’ devuelve el tipo de la clase.
+                // ¿Constructor de clase/struct? - el callee es el NOMBRE de la
+                // clase (Identifier) -> devuelve el tipo de la clase.
                 if let Expression::Identifier(n, _) = &*call.callee {
                     if self.class_members.contains_key(n) || self.struct_members.contains_key(n) {
                         return callee_type.clone();
                     }
                 }
                 // Objeto callable (magic __call): el callee es una expresión cuyo
-                // tipo es una clase con __call â†’ tipo del retorno del __call.
+                // tipo es una clase con __call -> tipo del retorno del __call.
                 // Aridad validada contra la firma declarada (M3: args extra
-                // producí­an basura de memoria).
+                // producían basura de memoria).
                 if let Some(ret) = self.named_magic_ret(&callee_type, "__call") {
                     if let Some(params) = self.magic_params_for(&callee_type, "__call") {
                         if params.len() != call.args.len() {
@@ -487,7 +487,7 @@ impl TypeChecker {
 
     pub(crate) fn check_member_access(&mut self, member: &MemberAccessExpr) -> Type {
         // Módulos internos del nodo (resueltos por nombre en el JIT): se manejan
-        // ANTES de evaluar el object (que no estí¡ definido como variable).
+        // ANTES de evaluar el object (que no está definido como variable).
         if let Expression::Identifier(name, _) = &*member.object {
             if self.enums.contains(name) {
                 return Type::Named(name.clone(), vec![]);
@@ -509,7 +509,7 @@ impl TypeChecker {
             if name == "json" {
                 return match member.member.as_str() {
                     // parse devuelve un Record<String, any> (para acceso por
-                    // í­ndice obj["k"] y print). El layout del host es compatible.
+                    // índice obj["k"] y print). El layout del host es compatible.
                     "parse" => Type::Record(Box::new(Type::String), Box::new(Type::Any)),
                     "stringify" => Type::String,
                     _ => Type::Any,
@@ -570,7 +570,7 @@ impl TypeChecker {
             }
         }
         let obj_type = self.check_expression(&member.object);
-        // Color.Rojo â†’ el tipo del enum (si member.object es un nombre de enum)
+        // Color.Rojo -> el tipo del enum (si member.object es un nombre de enum)
         // Métodos/getters de primitivos (sin boxing): tipo conocido por miembro.
         match obj_type {
             Type::String => match member.member.as_str() {
@@ -637,13 +637,13 @@ impl TypeChecker {
                         return t.clone();
                     }
                 }
-                // Campo de structure: `p.campo` â†’ tipo anotado del campo.
+                // Campo de structure: `p.campo` -> tipo anotado del campo.
                 if let Some(members) = self.struct_members.get(name.as_str()) {
                     if let Some(t) = members.get(&member.member) {
                         return t.clone();
                     }
                 }
-                // `Color.Rojo` / `lib::Color.Rojo` â†’ la variante de enum es
+                // `Color.Rojo` / `lib::Color.Rojo` -> la variante de enum es
                 // del mismo tipo (identidad con nombre del enum).
                 if self.enums.contains(name.as_str()) {
                     return Type::Named(name.clone(), vec![]);
@@ -665,8 +665,8 @@ impl TypeChecker {
         match obj {
             Type::Array(inner) => *inner,
             Type::Record(_k, v) => *v,
-            // Shape: í­ndice literal con clave conocida â†’ tipo del campo; clave
-            // desconocida â†’ error (la estructura del record es fija).
+            // Shape: índice literal con clave conocida -> tipo del campo; clave
+            // desconocida -> error (la estructura del record es fija).
             Type::Shape(fields) => {
                 match idx.index.as_ref() {
                     Expression::Literal(l) if matches!(l.kind, LiteralKind::String(_)) => {
@@ -682,7 +682,7 @@ impl TypeChecker {
                     _ => Type::Any,
                 }
             }
-            // Tupla: í­ndice literal â†’ slot exacto; diní¡mico â†’ unión de slots
+            // Tupla: índice literal -> slot exacto; dinámico -> unión de slots
             Type::Tuple(ts) => {
                 match idx.index.as_ref() {
                     Expression::Literal(l) if matches!(l.kind, LiteralKind::Int(_)) => {
@@ -703,7 +703,7 @@ impl TypeChecker {
                 }).collect(),
             ),
             _ => {
-                // Magic method __get: clase con __get â†’ tipo de su retorno.
+                // Magic method __get: clase con __get -> tipo de su retorno.
                 if let Some(ret) = self.named_magic_ret(&obj, "__get") {
                     return ret;
                 }
@@ -734,8 +734,8 @@ impl TypeChecker {
                 );
                 elem_type = t;
             } else if !t.is_assignable_to(&elem_type) && elem_type.is_assignable_to(&t) {
-                // Compatible por promoción: `[1, 2.0]` â†’ el array es de Float
-                // (el Int se promueve en emisión). íšltimo tipo mí¡s especí­fico.
+                // Compatible por promoción: `[1, 2.0]` -> el array es de Float
+                // (el Int se promueve en emisión). íšltimo tipo más específico.
                 elem_type = t;
             }
         }
@@ -788,7 +788,7 @@ impl TypeChecker {
                 .unwrap_or(Type::Any))
             .collect();
 
-        // Chequear params y body PRIMERO: así­ las variables declaradas dentro
+        // Chequear params y body PRIMERO: así las variables declaradas dentro
         // del body (p.ej. `var inner = () -> ...`) quedan tipadas antes de
         // inferir el retorno (necesario para arrow-de-arrow con captura).
         // El retorno de la arrow se INFIERE del body: no debe validarse contra

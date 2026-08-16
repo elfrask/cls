@@ -1,4 +1,4 @@
-//! AST — TypeKind (Fase 1: extraido de frontend/ast.rs).
+//! AST - TypeKind (Fase 1: extraido de frontend/ast.rs).
 
 use crate::frontend::ast::*;
 use serde::{Deserialize, Serialize};
@@ -28,7 +28,7 @@ pub enum TypeKind {
     Fun(Vec<TypeAnnotation>, Box<TypeAnnotation>),     // (Int, String) -> Bool
     Literal(LiteralKind),              // "d", 5, true (literal type)
     Access(Box<TypeAnnotation>, TypeAccess), // T["key"] | T[0]
-    Phantom(Box<TypeAnnotation>),      // !T — param que no participa en el tipo
+    Phantom(Box<TypeAnnotation>),      // !T - param que no participa en el tipo
 
     // Tipo nombrado (definido por usuario)
     Named(String, Vec<TypeAnnotation>), // Persona, Array<String>

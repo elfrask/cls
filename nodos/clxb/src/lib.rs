@@ -1,6 +1,6 @@
-//! clxb — nodo de bindings de CLS (embedding).
+//! clxb - nodo de bindings de CLS (embedding).
 //!
-//! Compila CLS → WASM (motor `cls-jit`) y expone la ejecución embebida:
+//! Compila CLS -> WASM (motor `cls-jit`) y expone la ejecución embebida:
 //! `run_main`, `call` a `export function`, `eval`, captura de `print` y el SDK
 //! de nodo (intrinsics vía `env.host_call`, resolver de módulos). La capa C
 //! (`clsb_v1_*`) vive en `capi.rs` (F2b).

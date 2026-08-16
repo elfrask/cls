@@ -1,4 +1,4 @@
-//! AST — StructureDecl (Fase 1: extraido de frontend/ast.rs).
+//! AST - StructureDecl (Fase 1: extraido de frontend/ast.rs).
 
 use crate::frontend::ast::*;
 use crate::error::diagnostic::Span;
@@ -10,7 +10,7 @@ pub struct StructureDecl {
     pub name: String,
     pub fields: Vec<FieldDecl>,
     pub span: Span,
-    /// Visibilidad (export → disponible en módulos importados)
+    /// Visibilidad (export -> disponible en módulos importados)
     #[serde(default)]
     pub visibility: Visibility,
 }

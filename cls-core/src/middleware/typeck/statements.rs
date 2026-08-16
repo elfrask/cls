@@ -1,4 +1,4 @@
-﻿//! TypeChecker â€” check_statement y chequeos de statements (Fase 1: extraido de middleware/typeck.rs).
+﻿//! TypeChecker - check_statement y chequeos de statements (Fase 1: extraido de middleware/typeck.rs).
 
 use super::*;
 
@@ -120,7 +120,7 @@ impl TypeChecker {
             Statement::FromImport(fi) => self.check_from_import(fi),
             Statement::Include(inc) => self.check_include(inc),
             Statement::When(w) => {
-                // Cada rama se chequea en su propio scope (sí­mbolos condicionales).
+                // Cada rama se chequea en su propio scope (símbolos condicionales).
                 for branch in &w.branches {
                     self.push_scope();
                     self.check_block(&branch.block);
@@ -129,7 +129,7 @@ impl TypeChecker {
                 Type::Void
             }
             Statement::Extension(e) => {
-                // Funciones/structs/variables nativas se registran como sí­mbolos.
+                // Funciones/structs/variables nativas se registran como símbolos.
                 for decl in &e.declarations {
                     match decl {
                         NativeDecl::Function(f) => {
@@ -171,7 +171,7 @@ impl TypeChecker {
         // Record literal con anotación (p.ej. `var d: Record<String, Int> = {a:1}`
         // o `var p: Persona = {nombre: "Ana", edad: 30}`): registrar el tipo
         // anotado en el span del literal ANTES de chequearlo, para que el backend
-        // lo emita como dict (Record) o shape segíºn lo que pida la anotación y
+        // lo emita como dict (Record) o shape según lo que pida la anotación y
         // los literales internos hereden el tipo esperado (records anidados).
         let annotated = var.type_ann.as_ref().map(|t| self.resolve_type_annotation(t));
         if let (Some(declared), Some(Expression::Record(rec))) = (&annotated, &var.value) {
@@ -216,9 +216,9 @@ impl TypeChecker {
         self.define(&var.name, declared.clone());
         // Registrar el tipo declarado en el span de la declaración (REPL con
         // estado persistente: los hoists quedan sin init y el backend necesita
-        // el tipo ví­a type map en el span del VarDecl).
+        // el tipo vía type map en el span del VarDecl).
         self.types_by_span.insert(var.span.clone(), declared.clone());
-        // Array literal vací­o con anotación (p.ej. `const out: int[] = []`):
+        // Array literal vacío con anotación (p.ej. `const out: int[] = []`):
         // registrar el tipo anotado en el span del literal para que el backend
         // sepa el tipo del elemento (check_array infiere Any, sin elementos).
         if let Some(Expression::Array(arr)) = &var.value {
@@ -264,7 +264,7 @@ impl TypeChecker {
         for (name, typ) in &param_types {
             self.define(name, typ.clone());
         }
-        // Registrar la función ANTES de chequear el cuerpo â†’ permite recursión
+        // Registrar la función ANTES de chequear el cuerpo -> permite recursión
         self.define(&func.name, fn_type.clone());
         self.check_block(&func.body);
         self.pop_scope();
@@ -409,7 +409,7 @@ impl TypeChecker {
         for tp in &c.type_params {
             self.define(&tp.name, Type::Named(tp.name.clone(), vec![]));
         }
-        // 1Âª pasada: recolectar los tipos de los miembros ANTES de chequear los
+        // 1. pasada: recolectar los tipos de los miembros ANTES de chequear los
         // bodies, para que `me.campo`/`me.metodo()` resuelvan dentro del check.
         let mut members: HashMap<String, Type> = HashMap::new();
         let mut params_map: HashMap<String, Vec<Type>> = HashMap::new();
@@ -460,7 +460,7 @@ impl TypeChecker {
         if let Some(parent) = &c.extends {
             self.class_parents.insert(c.name.clone(), parent.clone());
         }
-        // 2Âª pasada: chequear los bodies.
+        // 2. pasada: chequear los bodies.
         for member in &c.body {
             match member {
                 ClassMember::Method(f) | ClassMember::Constructor(f) => {
@@ -471,7 +471,7 @@ impl TypeChecker {
                 }
             }
         }
-        // 3Âª pasada: verificar conformidad con las interfaces `implements`.
+        // 3. pasada: verificar conformidad con las interfaces `implements`.
         for iface in &c.implements {
             self.check_implements(&c.name, iface, c.span.clone());
         }
@@ -487,7 +487,7 @@ impl TypeChecker {
             None => {
                 self.error(
                     &format!(
-                        "La clase '{}' implementa la interface '{}', que no estí¡ definida",
+                        "La clase '{}' implementa la interface '{}', que no está definida",
                         class_name, iface_name
                     ),
                     span,

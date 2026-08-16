@@ -7,7 +7,7 @@ class Caja {
 function main(args: String[]) -> int {
     var c = Caja(5);
     print("in int:", 5 in c);        # true
-    print("in str:", "x" in c);      # __contains(n: int) recibe string → ?
-    print("in float:", 5.0 in c);    # __contains(n: int) recibe float → ?
+    print("in str:", "x" in c);      # __contains(n: int) recibe string -> ?
+    print("in float:", 5.0 in c);    # __contains(n: int) recibe float -> ?
     return 0;
 }

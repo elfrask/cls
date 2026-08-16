@@ -12,10 +12,10 @@ impl<'a> Engine<'a> {
         if !self.func_types.contains_key("main") {
             if self.require_main {
                 return Err(crate::error::ClsError::CompileError(
-                    "No se encontrÃƒÆ’Ã‚Â³ function main(args: String[]) para el JIT".to_string(),
+                    "No se encontrí³ function main(args: String[]) para el JIT".to_string(),
                 ));
             }
-            // Modo librerÃƒÆ’Ã‚Â­a: main no-op sintetizado (el host lo llama con args=0).
+            // Modo librería: main no-op sintetizado (el host lo llama con args=0).
             self.func_types.insert(
                 "main".to_string(),
                 (vec![Type::Array(Box::new(Type::String))], Some(Type::Int)),
@@ -31,7 +31,7 @@ impl<'a> Engine<'a> {
         for p in &f.params {
             let t = p.type_ann.as_ref().ok_or_else(|| {
                 crate::error::ClsError::CompileError(format!(
-                    "ParÃƒÆ’Ã‚Â¡metro '{}' de '{}' sin anotaciÃƒÆ’Ã‚Â³n de tipo (requerido por el JIT)",
+                    "Parámetro '{}' de '{}' sin anotació de tipo (requerido por el JIT)",
                     p.name, f.name
                 ))
             })?;
@@ -51,13 +51,13 @@ impl<'a> Engine<'a> {
         let t = annotation_to_type(ann);
         match t {
             Type::Any | Type::Unknown => Err(crate::error::ClsError::CompileError(
-                "AnotaciÃƒÆ’Ã‚Â³n de tipo no soportada por el JIT (se requiere tipo concreto)".to_string(),
+                "Anotació de tipo no soportada por el JIT (se requiere tipo concreto)".to_string(),
             )),
             other => Ok(other),
         }
     }
 
-    /// Tipo concreto de un campo de struct/clase. Si la anotaciÃƒÆ’Ã‚Â³n no resuelve a
+    /// Tipo concreto de un campo de struct/clase. Si la anotació no resuelve a
     /// un tipo concreto (`Any`/`Unknown`), se intenta el type map (el campo tiene
     /// un span); si el kind es un tipo nombrado (struct/clase/enum) se trata como
     /// puntero (i64); si nada resuelve, error claro en vez de asumir i64.
@@ -91,7 +91,7 @@ impl<'a> Engine<'a> {
     pub(crate) fn emit(&mut self, module: &Module) -> ClsResult<Vec<u8>> {
         self.collect_functions(module)?;
 
-        // Recolectar enums ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ (def_id, variantes) para constantes `Nivel.Alto`.
+        // Recolectar enums -> (def_id, variantes) para constantes `Nivel.Alto`.
         let mut def_id = 0u32;
         for stmt in &module.statements {
             if let Statement::EnumDecl(e) = stmt {
@@ -100,7 +100,7 @@ impl<'a> Engine<'a> {
                 def_id += 1;
             }
         }
-        // Recolectar structures ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ offsets de campos (layout [def_id][len][campos]).
+        // Recolectar structures -> offsets de campos (layout [def_id][len][campos]).
         let mut sdef_id = 0u32;
         for stmt in &module.statements {
             if let Statement::StructureDecl(s) = stmt {
@@ -126,7 +126,7 @@ impl<'a> Engine<'a> {
                 sdef_id += 1;
             }
         }
-        // Recolectar clases ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ class_defs (layout de objeto) + declarar mÃƒÆ’Ã‚Â©todos/ctor.
+        // Recolectar clases -> class_defs (layout de objeto) + declarar mí©todos/ctor.
         let mut next_class_id = 0u32;
         for stmt in &module.statements {
             if let Statement::ClassDecl(c) = stmt {
@@ -177,7 +177,7 @@ impl<'a> Engine<'a> {
                             total = off;
                         }
                         ClassMember::Method(m) => {
-                            // Los mÃƒÆ’Ã‚Â©todos static NO van en la vtable (no reciben me).
+                            // Los mí©todos static NO van en la vtable (no reciben me).
                             if !m
                                 .modifiers
                                 .contains(&crate::frontend::ast::FunctionModifier::Static)
@@ -207,7 +207,7 @@ impl<'a> Engine<'a> {
                 }
                 let cid = next_class_id;
                 next_class_id += 1;
-                // El vtable_start se asigna AQUÃƒÆ’Ã‚Â (antes de compilar cuerpos): el
+                // El vtable_start se asigna AQUí (antes de compilar cuerpos): el
                 // ctor del objeto lo lee al emitir, y no debe depender del orden
                 // (no determinista) del HashMap.
                 let vs = self.next_table_slot;
@@ -227,7 +227,7 @@ impl<'a> Engine<'a> {
                 );
             }
         }
-        // Recolectar extensiones ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ imports `env.<sym>__<sig>@<lib>`.
+        // Recolectar extensiones -> imports `env.<sym>__<sig>@<lib>`.
         for stmt in &module.statements {
             if let Statement::Extension(e) = stmt {
                 for d in &e.declarations {
@@ -406,7 +406,7 @@ impl<'a> Engine<'a> {
             self.register_host(h);
         }
 
-        // Tag de excepciÃƒÆ’Ã‚Â³n CLS: payload (msg: i64, span: i64). Solo en modo con
+        // Tag de excepció CLS: payload (msg: i64, span: i64). Solo en modo con
         // excepciones (wasmtime); en modo sin excepciones (wasmi) no hay tag, no
         // hay try_table y los `Throw` se emiten como `unreachable` (trap).
         if self.exceptions {
@@ -419,9 +419,9 @@ impl<'a> Engine<'a> {
             });
         }
 
-        // Memoria (1 pÃƒÆ’Ã‚Â¡gina = 64KB). MÃƒÆ’Ã‚Â­nimo 16 pÃƒÆ’Ã‚Â¡ginas (1MB): el string pool
-        // (datos + tabla de ÃƒÆ’Ã‚Â­ndices) vive bajo el heap, que arranca en 1MB; el
-        // allocator hace grow para el heap a partir de ahÃƒÆ’Ã‚Â­.
+        // Memoria (1 página = 64KB). Mínimo 16 páginas (1MB): el string pool
+        // (datos + tabla de índices) vive bajo el heap, que arranca en 1MB; el
+        // allocator hace grow para el heap a partir de ahí.
         self.memories_sec.memory(MemoryType {
             minimum: 16,
             maximum: None,
@@ -440,11 +440,11 @@ impl<'a> Engine<'a> {
             &ConstExpr::i64_const(1048576),
         );
 
-        // Globals de usuario: `var x` / `const x` top-level ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ secciÃƒÆ’Ã‚Â³n globals.
-        // ÃƒÆ’Ã‚Â­ndice 0 = heap_ptr; los de usuario empiezan en 1. Los `pool_seed`
+        // Globals de usuario: `var x` / `const x` top-level -> secció globals.
+        // índice 0 = heap_ptr; los de usuario empiezan en 1. Los `pool_seed`
         // (seed del string pool del REPL) NO crean global: sus strings se
-        // internan en el pool, pero no deben ocupar ÃƒÆ’Ã‚Â­ndices de globals (los
-        // ÃƒÆ’Ã‚Â­ndices de los vars de usuario se transfieren por posiciÃƒÆ’Ã‚Â³n entre
+        // internan en el pool, pero no deben ocupar índices de globals (los
+        // índices de los vars de usuario se transfieren por posició entre
         // instancias y deben mantenerse estables).
         let mut next_global = 1u32;
         for stmt in &module.statements {
@@ -455,9 +455,9 @@ impl<'a> Engine<'a> {
                 let w = match (&v.type_ann, &v.value) {
                     (Some(ann), _) => was_type(&annotation_to_type(ann)).unwrap_or(WasTy::I64),
                     (None, Some(val)) => self.expr_was_type(val).unwrap_or(WasTy::I64),
-                    // Sin anotaciÃƒÆ’Ã‚Â³n ni init (REPL con estado persistente): el
+                    // Sin anotació ni init (REPL con estado persistente): el
                     // tipo viene del type map (registrado por el typeck en el
-                    // span de la declaraciÃƒÆ’Ã‚Â³n original).
+                    // span de la declaració original).
                     (None, None) => self
                         .types
                         .get(&v.span)
@@ -495,7 +495,7 @@ impl<'a> Engine<'a> {
             }
         }
 
-        // Campos estÃƒÆ’Ã‚Â¡ticos de clase: cada `static var` ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ un global WASM mutable
+        // Campos estáticos de clase: cada `static var` -> un global WASM mutable
         // (accesible como `Clase.campo`). Se declaran tras los globals de usuario.
         for stmt in &module.statements {
             if let Statement::ClassDecl(c) = stmt {
@@ -549,7 +549,7 @@ impl<'a> Engine<'a> {
         let ls_idx = self.declare_wasm_function(vec![ValType::I64], vec![ValType::I64]);
         self.func_indexes.insert("__load_str".to_string(), ls_idx);
 
-        // __init_globals: se declara DESPUÃƒÆ’Ã¢â‚¬Â°S de alloc/load_str para que el code_sec
+        // __init_globals: se declara DESPUÉS de alloc/load_str para que el code_sec
         // quede alineado (alloc, load_str, init, cls...).
         if !self.global_inits.is_empty() {
             let ig_idx = self.declare_wasm_function(vec![], vec![]);
@@ -559,10 +559,10 @@ impl<'a> Engine<'a> {
 
         // Seed del string pool (REPL con estado persistente): los inits de TODAS
         // las declaraciones top-level (reales y pool-only) se emiten a un buffer
-        // descartado ANTES de compilar los cuerpos. AsÃƒÆ’Ã‚Â­ el pool queda con el
-        // prefijo [inits de decls en orden de statements] idÃƒÆ’Ã‚Â©ntico entre sesiones
+        // descartado ANTES de compilar los cuerpos. Así el pool queda con el
+        // prefijo [inits de decls en orden de statements] idí©ntico entre sesiones
         // y los punteros de strings transferidos entre instancias siguen
-        // siendo vÃƒÆ’Ã‚Â¡lidos (los cuerpos/init reales re-internan como no-op).
+        // siendo válidos (los cuerpos/init reales re-internan como no-op).
         let seed: Vec<Expression> = module
             .statements
             .iter()
@@ -606,8 +606,8 @@ impl<'a> Engine<'a> {
                 let _ = fe.emit_expression(init);
             }
         }
-        // MÃƒÆ’Ã‚Â©todos/ctor de clase: se declaran aquÃƒÆ’Ã‚Â­ (tras alloc/load_str/init) para
-        // que el code_sec (que los compila despuÃƒÆ’Ã‚Â©s) quede alineado.
+        // Mí©todos/ctor de clase: se declaran aquí (tras alloc/load_str/init) para
+        // que el code_sec (que los compila despuí©s) quede alineado.
         let pending: Vec<(String, FunctionDecl)> = std::mem::take(&mut self.pending_class_methods);
         for (class, f) in pending {
             self.declare_class_function(&class, &f);
@@ -631,15 +631,15 @@ impl<'a> Engine<'a> {
                     Some(r) if *r != Type::Void => vec![was_type(r)?.val_type()],
                     _ => vec![],
                 };
-                // type index (para call_indirect) + ÃƒÆ’Ã‚Â­ndice de funciÃƒÆ’Ã‚Â³n.
+                // type index (para call_indirect) + índice de funció.
                 let tidx = self.register_func_type(pv.clone(), rv.clone());
                 let fidx = self.func_count;
                 self.func_count += 1;
                 self.funcs_sec.function(tidx);
                 self.func_indexes.insert(f.name.clone(), fidx);
                 self.fn_type_indexes.insert(f.name.clone(), tidx);
-                // MÃƒÆ’Ã‚Â³dulo importado (`mod::fn`): registrar el nombre base como
-                // alias para que las llamadas internas del mÃƒÆ’Ã‚Â³dulo (`nivel1()`)
+                // Mí³dulo importado (`mod::fn`): registrar el nombre base como
+                // alias para que las llamadas internas del mí³dulo (`nivel1()`)
                 // resuelvan sin prefijo (el body se fusiona tal cual).
                 if let Some((_, base)) = f.name.split_once("::") {
                     if !self.func_indexes.contains_key(base) {
@@ -650,7 +650,7 @@ impl<'a> Engine<'a> {
                 cls_funcs.push(f.clone());
             }
         }
-        // Modo librerÃƒÆ’Ã‚Â­a: declarar el main no-op sintetizado (firma (i64) -> i64).
+        // Modo librería: declarar el main no-op sintetizado (firma (i64) -> i64).
         if !self.func_indexes.contains_key("main") {
             let tidx = self.register_func_type(vec![ValType::I64], vec![ValType::I64]);
             let fidx = self.func_count;
@@ -660,7 +660,7 @@ impl<'a> Engine<'a> {
             self.fn_type_indexes.insert("main".to_string(), tidx);
             cls_funcs.push(noop_main_decl());
         }
-        // ÃƒÆ’Ã‚Ândices de tabla de las funciones CLS (para handles de funciÃƒÆ’Ã‚Â³n) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â se
+        // índices de tabla de las funciones CLS (para handles de funció) - se
         // calculan ANTES de compilar cuerpos (el emisor los usa en emit_ident_load).
         let mut cls_names: Vec<String> = self.func_types.keys().cloned().collect();
         cls_names.sort();
@@ -672,8 +672,8 @@ impl<'a> Engine<'a> {
             }
         }
 
-        // Arrow functions (B5): recolectar de los cuerpos ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ funciones sintÃƒÆ’Ã‚Â©ticas
-        // `__arrow_<n>`, declarar y asignarles ÃƒÆ’Ã‚Â­ndice de tabla.
+        // Arrow functions (B5): recolectar de los cuerpos -> funciones sintí©ticas
+        // `__arrow_<n>`, declarar y asignarles índice de tabla.
         let mut arrow_funcs: Vec<FunctionDecl> = Vec::new();
         {
             let mut arrows: Vec<ArrowFunctionExpr> = Vec::new();
@@ -750,7 +750,7 @@ impl<'a> Engine<'a> {
         }
 
         // Compilar cuerpos (internan strings). El orden del code_sec DEBE coincidir
-        // con el orden de declaraciÃƒÆ’Ã‚Â³n: alloc, load_str, [init], mÃƒÆ’Ã‚Â©todos, cls.
+        // con el orden de declaració: alloc, load_str, [init], mí©todos, cls.
         let mut bodies: Vec<(String, Function)> = Vec::new();
         let extras: Vec<(String, FunctionDecl)> = self.cls_funcs_extra.clone();
         for (key, f) in &extras {
@@ -768,17 +768,17 @@ impl<'a> Engine<'a> {
             bodies.push((f.name.clone(), body));
         }
 
-        // __alloc y __load_str (el pool de strings ya estÃƒÆ’Ã‚Â¡ completo).
+        // __alloc y __load_str (el pool de strings ya está completo).
         let alloc_body = self.build_allocator();
         let load_str_body = self.build_load_str();
         // __init_globals se construye ANTES del data segment: sus strings (valores
         // iniciales de las globals) deben internarse en el pool antes del data.
         let init_body = self.build_global_init()?;
 
-        // Tabla de vtables: segmento con los funcref de los mÃƒÆ’Ã‚Â©todos de cada clase
-        // (los vtable_start ya se asignaron en la recolecciÃƒÆ’Ã‚Â³n, en orden).
-        // La ranura 0 se RESERVA (dummy) para que ningÃƒÆ’Ã‚Âºn handle par valga 0
-        // (colisiÃƒÆ’Ã‚Â³n con Null); `next_table_slot` empieza en 1.
+        // Tabla de vtables: segmento con los funcref de los mí©todos de cada clase
+        // (los vtable_start ya se asignaron en la recolecció, en orden).
+        // La ranura 0 se RESERVA (dummy) para que ningíºn handle par valga 0
+        // (colisió con Null); `next_table_slot` empieza en 1.
         let mut table_funcs: Vec<u32> = Vec::new();
         table_funcs.push(self.func_indexes["__alloc"]);
         let mut ordered: Vec<(u32, String)> = self
@@ -795,7 +795,7 @@ impl<'a> Engine<'a> {
                 }
             }
         }
-        // Funciones CLS ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ handles (B5): los ÃƒÆ’Ã‚Â­ndices de tabla ya se calcularon.
+        // Funciones CLS -> handles (B5): los índices de tabla ya se calcularon.
         let mut cls_names: Vec<String> = self.fn_table_idx.keys().cloned().collect();
         cls_names.sort_by_key(|n| self.fn_table_idx[n]);
         for name in cls_names {
@@ -847,7 +847,7 @@ impl<'a> Engine<'a> {
 
         // Globals de usuario exportadas como `__g_{idx}` (0 = heap_ptr, 1.. =
         // vars/consts/static fields). El host las usa para transferir estado
-        // persistente entre instancias (REPL): leer del mÃƒÆ’Ã‚Â³dulo anterior y
+        // persistente entre instancias (REPL): leer del mí³dulo anterior y
         // escribir en el nuevo antes de llamar a `main`.
         self.exports_sec
             .export("__g_0", ExportKind::Global, 0);
@@ -856,10 +856,10 @@ impl<'a> Engine<'a> {
             self.exports_sec.export(&name, ExportKind::Global, idx);
         }
 
-        // `export function f(...)` top-level ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ export WASM con su firma concreta
+        // `export function f(...)` top-level -> export WASM con su firma concreta
         // (el host la llama pasando `__capturas=0` como primer param). La firma
-        // tipada viaja en la secciÃƒÆ’Ã‚Â³n custom `clx:exports` (JSON) para que el
-        // host sepa el marshalling exacto de cada parÃƒÆ’Ã‚Â¡metro/retorno.
+        // tipada viaja en la secció custom `clx:exports` (JSON) para que el
+        // host sepa el marshalling exacto de cada parámetro/retorno.
         let mut exports_meta: Vec<serde_json::Value> = Vec::new();
         for stmt in &module.statements {
             if let Statement::FunctionDecl(f) = stmt {
@@ -878,7 +878,7 @@ impl<'a> Engine<'a> {
                 };
                 // Descriptor recursivo de tipo para el marshalling del host:
                 // `{"k": <kind>}` escalar; `{"k":5,"e":<desc>}` array; `{"k":6,
-                // "v":<desc>}` record homogÃƒÆ’Ã‚Â©neo; `{"k":6,"s":{key:<desc>}}`
+                // "v":<desc>}` record homogí©neo; `{"k":6,"s":{key:<desc>}}`
                 // shape por clave. Permite decodificar arrays anidados en
                 // records (la memoria del runtime no guarda el tipo del
                 // elemento).
@@ -948,17 +948,17 @@ impl<'a> Engine<'a> {
             self.exceptions,
             &self.intrinsics,
         );
-        // MÃƒÆ’Ã‚Â©todos de clase: `me` (la instancia) es el primer param implÃƒÆ’Ã‚Â­cito.
-        // `Clase::metodo` es mÃƒÆ’Ã‚Â©todo si el prefijo es una clase conocida; si no,
-        // es un sÃƒÆ’Ã‚Â­mbolo de mÃƒÆ’Ã‚Â³dulo importado (`mod::fn`, sin `me`).
+        // Mí©todos de clase: `me` (la instancia) es el primer param implícito.
+        // `Clase::metodo` es mí©todo si el prefijo es una clase conocida; si no,
+        // es un símbolo de mí³dulo importado (`mod::fn`, sin `me`).
         let is_method = f
             .name
             .split("::")
             .next()
             .map(|c| self.class_defs.contains_key(c))
             .unwrap_or(false);
-        // Un mÃƒÆ’Ã‚Â©todo static NO recibe `me` ni establece la clase actual (asÃƒÆ’Ã‚Â­ que
-        // `me.` dentro de ÃƒÆ’Ã‚Â©l da error de variable no definida, paridad walker).
+        // Un mí©todo static NO recibe `me` ni establece la clase actual (así que
+        // `me.` dentro de í©l da error de variable no definida, paridad walker).
         let is_static = f
             .modifiers
             .contains(&crate::frontend::ast::FunctionModifier::Static);
@@ -976,8 +976,8 @@ impl<'a> Engine<'a> {
         fe.current_fn_span = f.span.clone();
         let is_main = f.name == "main";
         // Promover al heap las variables locales capturadas por arrows del body:
-        // para que la mutaciÃƒÆ’Ã‚Â³n del closure sea visible en el scope externo (paridad
-        // con el walker, que captura por referencia). Aplica tambiÃƒÆ’Ã‚Â©n a main (que
+        // para que la mutació del closure sea visible en el scope externo (paridad
+        // con el walker, que captura por referencia). Aplica tambií©n a main (que
         // puede declarar arrows locales).
         if !is_method {
             let mut arrows: Vec<ArrowFunctionExpr> = Vec::new();
@@ -989,7 +989,7 @@ impl<'a> Engine<'a> {
                     }
                 }
             }
-            // Si esta funciÃƒÆ’Ã‚Â³n ES una arrow con capturas, sus capturas son
+            // Si esta funció ES una arrow con capturas, sus capturas son
             // referencias a slots promovidos (para doble deref en el acceso).
             if let Some(caps) = self.arrow_captures.get(&f.span) {
                 for c in caps {
@@ -1029,19 +1029,19 @@ impl<'a> Engine<'a> {
                 fe.body.push(Instruction::Call(*idx));
             }
         }
-        // Shadow call stack: registrar la entrada de la funciÃƒÆ’Ã‚Â³n (nombre + span)
+        // Shadow call stack: registrar la entrada de la funció (nombre + span)
         // y des-registrarla al salir (antes de cada End).
         fe.emit_fn_enter(f)?;
         for s in &f.body.statements {
             fe.emit_statement(s)?;
         }
         fe.emit_fn_exit();
-        // End final del cuerpo de la funciÃƒÆ’Ã‚Â³n (wasm-encoder no lo aÃƒÆ’Ã‚Â±ade).
+        // End final del cuerpo de la funció (wasm-encoder no lo añade).
         fe.body.push(Instruction::End);
-        // locals: cada ÃƒÆ’Ã‚Â­ndice con su tipo (fallback I64).
-        // Importante: los params ocupan los ÃƒÆ’Ã‚Â­ndices 0..param_types.len(); los
-        // locals declarados empiezan despuÃƒÆ’Ã‚Â©s. Cada local = un grupo de 1 para
-        // preservar los ÃƒÆ’Ã‚Â­ndices exactos (agrupar reordenarÃƒÆ’Ã‚Â­a y romperÃƒÆ’Ã‚Â­a tipos
+        // locals: cada índice con su tipo (fallback I64).
+        // Importante: los params ocupan los índices 0..param_types.len(); los
+        // locals declarados empiezan despuí©s. Cada local = un grupo de 1 para
+        // preservar los índices exactos (agrupar reordenaría y rompería tipos
         // mixtos).
         let nparams = (param_types.len() + param_offset) as u32;
         let local_types: Vec<ValType> = (nparams..fe.next_local)
@@ -1061,7 +1061,7 @@ impl<'a> Engine<'a> {
         Ok(func)
     }
 
-    /// Tipo WASM de una expresiÃƒÆ’Ã‚Â³n desde el type map (fallback I64).
+    /// Tipo WASM de una expresió desde el type map (fallback I64).
     fn expr_was_type(&self, e: &Expression) -> ClsResult<WasTy> {
         let span = expr_span(e);
         if let Some(t) = self.types.get(&span) {
@@ -1118,7 +1118,7 @@ impl<'a> Engine<'a> {
         self.cls_funcs_extra.push((key, f.clone()));
     }
 
-    /// ÃƒÆ’Ã‚Ândice de funciÃƒÆ’Ã‚Â³n de un mÃƒÆ’Ã‚Â©todo: en la clase o subiendo por ancestors.
+    /// índice de funció de un mí©todo: en la clase o subiendo por ancestors.
     pub(crate) fn resolve_method_index(&self, class: &str, m: &str) -> Option<u32> {
         let mut cur = Some(class.to_string());
         while let Some(c) = cur {

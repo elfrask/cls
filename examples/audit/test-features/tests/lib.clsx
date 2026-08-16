@@ -1,4 +1,4 @@
-# lib.ccls — Módulo de usuario exportable
+# lib.ccls - Módulo de usuario exportable
 
 export function greet(name: String) -> String {
     return "Hello, " + name + "!";

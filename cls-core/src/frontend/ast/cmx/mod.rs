@@ -1,4 +1,4 @@
-//! AST — cmx (Fase 1: extraido de frontend/ast.rs).
+//! AST - cmx (Fase 1: extraido de frontend/ast.rs).
 
 mod cmx_attribute;
 mod cmx_attribute_value;

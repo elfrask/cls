@@ -12,8 +12,8 @@ class Cmp {
 };
 function main(args: String[]) -> int {
     var a = AnyEq(5);
-    print("eq any:", a == AnyEq(5));   # true (param Any → se permite)
-    print("eq int:", a == 5);          # param Any → se permite, compara
+    print("eq any:", a == AnyEq(5));   # true (param Any -> se permite)
+    print("eq int:", a == 5);          # param Any -> se permite, compara
     var c1 = Cmp(1);
     var c2 = Cmp(2);
     print("lt:", c1 < c2);             # true

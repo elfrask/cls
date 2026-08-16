@@ -56,7 +56,7 @@ fn make_dir(path: &str, vfs: &VfsResolver) -> ClsResult<()> {
     }
 }
 
-/// `fs.listDir` — CONTRATO (deuda 7.5).
+/// `fs.listDir` - CONTRATO (deuda 7.5).
 ///
 /// Debe devolver un **array real** de nombres de entrada (cada uno un `String`):
 /// aquí (walker) se construye `Value::Array([Value::String(entry), ...])`.

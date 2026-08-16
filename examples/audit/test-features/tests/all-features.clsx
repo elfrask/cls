@@ -1,6 +1,6 @@
 
 # ═══════════════════════════════════════════════
-# CLS 2.0 — All Features Demo
+# CLS 2.0 - All Features Demo
 # ═══════════════════════════════════════════════
 
 import "math" as math;
@@ -45,7 +45,7 @@ var user = {
 # MAIN
 # ═══════════════════════════════════════════════
 function main(args: String[]) -> int {
-    print("═══ CLS 2.0 — All Features ═══");
+    print("═══ CLS 2.0 - All Features ═══");
     print("");
 
     print("── Variables ──");

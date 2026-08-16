@@ -38,7 +38,7 @@ fn wasmi_smoke() {
 
 /// Smoke con `Memory::read`/`Memory::write` DESDE UN HOST (el patrón que usan
 /// los hosts de cls-jit). `Memory::data/data_mut` desde un caller crashea en
-/// wasmi 2.0-beta → solo se usan las APIs seguras.
+/// wasmi 2.0-beta -> solo se usan las APIs seguras.
 #[cfg(feature = "wasmi-runtime")]
 #[test]
 fn wasmi_host_read_write() {

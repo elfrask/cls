@@ -1,4 +1,4 @@
-﻿//! AST â€” statements (Fase 1: extraido de frontend/ast.rs).
+﻿//! AST - statements (Fase 1: extraido de frontend/ast.rs).
 
 mod block;
 mod case_clause;
@@ -109,9 +109,9 @@ pub enum Statement {
     Try(TryStatement),
     With(WithStatement),
     Return(Option<Expression>),
-    /// `Break(Span)` â€” el span permite ubicar el `break;` en errores.
+    /// `Break(Span)` - el span permite ubicar el `break;` en errores.
     Break(Span),
-    /// `Continue(Span)` â€” el span permite ubicar el `continue;` en errores.
+    /// `Continue(Span)` - el span permite ubicar el `continue;` en errores.
     Continue(Span),
 
     // Clases y estructuras
@@ -132,7 +132,7 @@ pub enum Statement {
     FromImport(FromImportStatement),
     Include(IncludeStatement),
 
-    // Nativo (FFI a librerÃ­as del sistema)
+    // Nativo (FFI a librerías del sistema)
     Extension(ExtensionDecl),
 
     // Directiva multi-entorno (implementaciones por plataforma/arquitectura)

@@ -1,6 +1,6 @@
 //! REPL JIT: sesión interactiva de CLS con estado persistente entre líneas.
 //!
-//! Cada línea se compila como un módulo CLS completo (CLS → WASM → wasmtime) y
+//! Cada línea se compila como un módulo CLS completo (CLS -> WASM -> wasmtime) y
 //! se ejecuta como el `main` de ese módulo. El estado sobrevive entre líneas
 //! porque el host transfiere las globals WASM (`__g_{idx}`) y la región de heap
 //! del módulo anterior al nuevo antes de llamar a `main`.
@@ -93,7 +93,7 @@ pub struct ReplSession {
     /// Nombres de vars/consts hoisted (redeclarar = asignar).
     var_names: HashSet<String>,
     /// Tipos hoisted de los vars/consts: validan las reasignaciones entre
-    /// líneas (B2 — el typeck permisivo no rechaza el cambio de tipo y la
+    /// líneas (B2 - el typeck permisivo no rechaza el cambio de tipo y la
     /// transferencia de bytes corrompería el slot).
     var_types: HashMap<String, Type>,
     /// String pool de la sesión (orden de interning, append-only): se re-siembra
@@ -203,8 +203,8 @@ impl ReplSession {
         }
         // Seed del string pool de la sesión (B1): los literales de líneas
         // previas (asignaciones, prints, bodies de funciones, ...) se re-internan
-        // como decls pool-only ANTES de los decls de esta línea — posición
-        // idéntica al orden de interning de la sesión anterior — para que los
+        // como decls pool-only ANTES de los decls de esta línea - posición
+        // idéntica al orden de interning de la sesión anterior - para que los
         // punteros de strings transferidos entre instancias conserven su offset.
         let pool_base = LINE_BASE * 3000;
         for (i, s) in self.pool_strings.iter().enumerate() {
@@ -231,7 +231,7 @@ impl ReplSession {
         let mut main_body: Vec<Statement> = Vec::new();
         for (is_const, v) in &current_decls {
             if self.var_names.contains(&v.name) {
-                // Redeclaración → asignación en main (el tipo lo valida el typeck).
+                // Redeclaración -> asignación en main (el tipo lo valida el typeck).
                 if let Some(value) = &v.value {
                     let span = v.span.clone();
                     reassign_checks.push((v.name.clone(), expr_span(value)));
@@ -329,7 +329,7 @@ impl ReplSession {
         }
         // B2: rechazar cambios de tipo en reasignaciones (a vars hoisted con
         // tipo conocido). El typeck PERMISIVO los deja pasar, pero la
-        // transferencia de estado copia bytes crudos sin migrar el tipo → el
+        // transferencia de estado copia bytes crudos sin migrar el tipo -> el
         // slot se lee con el tipo declarado viejo (basura).
         for (name, value_span) in &reassign_checks {
             if let (Some(new_t), Some(old_t)) =
@@ -417,7 +417,7 @@ impl ReplSession {
             eprintln!("[JIT] Error registrando hosts de extensiones: {}", e);
             return ReplResult::CompileError;
         }
-        // exit()/trap() → traps codificados (no matan el proceso del REPL).
+        // exit()/trap() -> traps codificados (no matan el proceso del REPL).
         if let Err(e) = linker.func_wrap(
             HOST,
             "exit",
@@ -471,7 +471,7 @@ impl ReplSession {
         if let Err(e) = main.call(&mut store, 0) {
             let root = e.root_cause().to_string();
             if root.contains("__clsb_exit__:") {
-                // exit() → silencio; la línea se commitea igual.
+                // exit() -> silencio; la línea se commitea igual.
             } else {
                 let payload: Vec<Val> = {
                     let exn = store.take_pending_exception();

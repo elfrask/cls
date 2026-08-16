@@ -39,24 +39,24 @@ pub struct TypeChecker {
     current_fn_span: Span,
     interfaces: HashMap<String, InterfaceInfo>,
     enums: std::collections::HashSet<String>,
-    /// Mapa Span â†’ Type de TODAS las expresiones visitadas (para backends).
+    /// Mapa Span -> Type de TODAS las expresiones visitadas (para backends).
     /// Se llena solo cuando `config.check` es true.
     types_by_span: HashMap<Span, Type>,
-    /// Miembros de cada clase: nombre â†’ tipo del campo o del retorno del método.
+    /// Miembros de cada clase: nombre -> tipo del campo o del retorno del método.
     class_members: HashMap<String, HashMap<String, Type>>,
-    /// Parí¡metros de los métodos de cada clase: `Clase` â†’ método â†’ tipos de
+    /// Parámetros de los métodos de cada clase: `Clase` -> método -> tipos de
     /// params (incluye heredados, como `class_members`). Para validar los
-    /// operandos del dispatch de magic methods (M1: tipos incompatibles â†’ basura).
+    /// operandos del dispatch de magic methods (M1: tipos incompatibles -> basura).
     magic_params: HashMap<String, HashMap<String, Vec<Type>>>,
-    /// Padre de cada clase (`Hijo` â†’ `Base`), para la asignabilidad por herencia
+    /// Padre de cada clase (`Hijo` -> `Base`), para la asignabilidad por herencia
     /// en la validación de operandos de magics (M2).
     class_parents: HashMap<String, String>,
-    /// Campos de cada structure: nombre â†’ tipo. Para tipar `p.campo` (member access).
+    /// Campos de cada structure: nombre -> tipo. Para tipar `p.campo` (member access).
     struct_members: HashMap<String, HashMap<String, Type>>,
-    /// Módulos importados (prelude) â€” para resolver sí­mbolos de `import`/`from`/`include`.
+    /// Módulos importados (prelude) - para resolver símbolos de `import`/`from`/`include`.
     /// Cada entrada: (path del import, módulo parseado).
     prelude: Vec<(String, Module)>,
-    /// Alias de `import "path" as x` â†’ path (para `x::miembro`).
+    /// Alias de `import "path" as x` -> path (para `x::miembro`).
     import_aliases: HashMap<String, String>,
 }
 
@@ -161,7 +161,7 @@ impl TypeChecker {
 
     /// Registra las firmas de las funciones host del NODO (intrinsics) en el
     /// scope global: las llamadas a esos nombres se tipan contra la firma y el
-    /// emisor las compila ví­a el canal `env.host_call`.
+    /// emisor las compila vía el canal `env.host_call`.
     pub fn register_host_intrinsics(&mut self, intrinsics: &[crate::middleware::types::HostIntrinsic]) {
         for i in intrinsics {
             self.define(&i.name, Type::Fun(i.params.clone(), Box::new(i.ret.clone())));

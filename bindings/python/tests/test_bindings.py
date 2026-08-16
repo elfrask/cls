@@ -1,4 +1,4 @@
-"""Tests del binding Python de CLS (F3) — paridad con el harness C.
+"""Tests del binding Python de CLS (F3) - paridad con el harness C.
 
 Correr:
     $env:CLS_LIB_PATH = "<repo>/target/debug"
