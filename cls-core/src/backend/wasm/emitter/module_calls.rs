@@ -91,7 +91,11 @@ impl<'a> FuncEmitter<'a> {
             "sqrt" => {
                 self.emit_expression(&c.args[0])?;
                 self.f64_promote(&c.args[0])?;
-                self.host.call(MathSqrt, &mut self.body);
+                if let Some(&idx) = self.func_indexes.get("__intr_math_sqrt") {
+                    self.body.push(Instruction::Call(idx));
+                } else {
+                    self.host.call(MathSqrt, &mut self.body);
+                }
                 Ok(())
             }
             "floor" => {

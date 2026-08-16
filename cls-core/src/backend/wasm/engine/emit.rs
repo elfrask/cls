@@ -783,6 +783,11 @@ impl<'a> Engine<'a> {
             self.code_sec.function(&body);
         }
 
+        // Fusión de internals: inyecta las funciones `__intr_*` en este módulo
+        // (cero imports), compartiendo la memoria lineal. Registra sus índices
+        // en func_indexes para que el emisor las llame por nombre (Paso 3).
+        self.fuse_internals()?;
+
         // Exports.
         self.exports_sec
             .export("main", ExportKind::Func, self.func_indexes["main"]);

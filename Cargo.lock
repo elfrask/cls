@@ -208,6 +208,8 @@ version = "2.0.0"
 dependencies = [
  "wasm-encoder 0.255.0",
  "wasmi",
+ "wasmparser 0.255.0",
+ "wasmprinter 0.255.0",
 ]
 
 [[package]]
@@ -2289,6 +2291,17 @@ dependencies = [
  "anyhow",
  "termcolor",
  "wasmparser 0.246.2",
+]
+
+[[package]]
+name = "wasmprinter"
+version = "0.255.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6765bb702ec2a3e84c228c0343d179f32bd0c7326d710d83c80cff6ecce987ae"
+dependencies = [
+ "anyhow",
+ "termcolor",
+ "wasmparser 0.255.0",
 ]
 
 [[package]]

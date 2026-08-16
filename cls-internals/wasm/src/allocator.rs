@@ -11,8 +11,10 @@
 //! de fusión inserta un adaptador que convierte a la firma i64->i64 de `__alloc`.
 
 extern "C" {
-    /// Bump allocator del CLS: `(size: i32) -> ptr: i32` (0 si size <= 0).
-    fn __cls_alloc(size: i32) -> i32;
+    /// Bump allocator del CLS: `(size: i64) -> ptr: i64` (0 si size <= 0).
+    /// Misma firma que `__alloc` del backend → el linker de fusión resuelve el
+    /// import directo a la función interna del CLS (sin adaptador).
+    fn __cls_alloc(size: i64) -> i64;
 }
 
 /// Aloca `size` bytes vía el bump allocator del CLS (0 si size <= 0).
@@ -20,7 +22,7 @@ pub(crate) unsafe fn bump_alloc(size: usize) -> usize {
     if size == 0 {
         return 0;
     }
-    __cls_alloc(size as i32) as usize
+    __cls_alloc(size as i64) as usize
 }
 
 pub struct ClsAlloc;
