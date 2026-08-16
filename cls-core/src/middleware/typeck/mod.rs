@@ -1,8 +1,15 @@
 ﻿//! Type checker configurable de CLS (Fase 1: extraido de middleware/typeck.rs).
 
+mod binary;
+mod calls;
+mod classes;
+mod containers;
+mod decls;
 mod expressions;
+mod flow;
 mod helpers;
 mod magics;
+mod member;
 mod modules;
 mod statements;
 mod tests;
