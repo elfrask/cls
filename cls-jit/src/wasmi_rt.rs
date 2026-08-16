@@ -386,6 +386,11 @@ pub fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), Str
 /// Registra hosts para las extensiones (`env.<sym>__<sig>@<lib>`) que delegan en
 /// el backend nativo del nodo. En wasmi (browser) el nodo puede pasar un backend
 /// que rechaza el acceso (o no registrar extensiones).
+///
+/// Usa `Linker::func_new` con la firma dinámica `(Caller, &[Val], &mut [Val])`
+/// y el `FuncType` real del import: un solo wrapper genérico soporta aridad
+/// 0..4 y cualquier mezcla de float/int/string, con el retorno tipado por la
+/// letra (`f` → f64 siempre).
 fn register_native_hosts(
     linker: &mut Linker<HostState>,
     module: &wasmi::Module,
@@ -394,11 +399,14 @@ fn register_native_hosts(
     use cls_runtime::ffi::NativeType;
     use cls_runtime::Value;
     let mut count = 0;
-    let imports: Vec<(String, String)> = module
+    let imports: Vec<(String, String, wasmi::FuncType)> = module
         .imports()
-        .map(|it| (it.module().to_string(), it.name().to_string()))
+        .filter_map(|it| {
+            let ft = it.ty().func().cloned()?;
+            Some((it.module().to_string(), it.name().to_string(), ft))
+        })
         .collect();
-    for (m, n) in imports {
+    for (m, n, ft) in imports {
         if m != "env" {
             continue;
         }
@@ -419,6 +427,7 @@ fn register_native_hosts(
             'b' => NativeType::Bool,
             'c' => NativeType::CInt,
             's' => NativeType::CString,
+            'I' => NativeType::CInt,
             _ => NativeType::Int,
         };
         let ret_to_i64 = |v: Result<Value, cls_core::error::ClsError>| -> i64 {
@@ -445,156 +454,74 @@ fn register_native_hosts(
                 Err(_) => 0.0,
             }
         };
+        let ret_to_i32 = |v: Result<Value, cls_core::error::ClsError>| -> i32 {
+            match v {
+                Ok(Value::Int(n)) => n as i32,
+                Ok(Value::Bool(b)) => {
+                    if b {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                Ok(Value::Char(ch)) => ch as i32,
+                Ok(_) => 0,
+                Err(_) => 0,
+            }
+        };
         let params: Vec<char> = sig.chars().skip(1).collect();
         let rcode = sig.chars().next().unwrap_or('i');
         let lib2 = lib.clone();
         let sym2 = sym.clone();
-        match params.as_slice() {
-            [] => {
-                let ret = rcode;
-                let lib3 = lib2.clone();
-                let sym3 = sym2.clone();
-                let backend = backend.clone();
-                linker
-                    .func_wrap(HOST, &name, move |_: Caller<'_, HostState>| -> i64 {
-                        let _ = &lib3;
-                        let _ = &sym3;
-                        let r = backend.call_function(&lib3, &sym3, &[], &[], native_type(ret));
-                        ret_to_i64(r)
-                    })
-                    .map_err(|e| e.to_string())?;
-            }
-            [p0] if *p0 == 'f' => {
-                let ret = rcode;
-                let lib3 = lib2.clone();
-                let sym3 = sym2.clone();
-                let backend = backend.clone();
-                linker
-                    .func_wrap(HOST, &name, move |_: Caller<'_, HostState>, a: f64| -> f64 {
-                        let r = backend.call_function(
-                            &lib3,
-                            &sym3,
-                            &[Value::Float(a)],
-                            &[NativeType::Float],
-                            native_type(ret),
-                        );
-                        ret_to_f64(r)
-                    })
-                    .map_err(|e| e.to_string())?;
-            }
-            [p0] => {
-                let p0 = *p0;
-                let ret = rcode;
-                let lib3 = lib2.clone();
-                let sym3 = sym2.clone();
-                let backend = backend.clone();
-                linker
-                    .func_wrap(HOST, &name, move |mut caller: Caller<'_, HostState>, a: i64| -> i64 {
-                        let arg = match p0 {
-                            's' => Value::String(caller.read_str(a)),
-                            _ => Value::Int(a),
-                        };
-                        let r = backend.call_function(&lib3, &sym3, &[arg], &[native_type(p0)], native_type(ret));
-                        match r {
-                            Ok(Value::String(s)) => caller.write_str(&s),
-                            Ok(v) => match v {
-                                Value::Float(f) => f as i64,
-                                Value::Int(n) => n,
-                                _ => 0,
-                            },
-                            Err(_) => 0,
-                        }
-                    })
-                    .map_err(|e| e.to_string())?;
-            }
-            [p0, p1] if *p0 == 'f' || *p1 == 'f' => {
-                let p0 = *p0;
-                let p1 = *p1;
-                let ret = rcode;
-                let lib3 = lib2.clone();
-                let sym3 = sym2.clone();
-                if p0 == 'f' && p1 == 'f' {
-                    let backend = backend.clone();
-                    linker
-                        .func_wrap(HOST, &name, move |_: Caller<'_, HostState>, a: f64, b: f64| -> f64 {
-                            let r = backend.call_function(
-                                &lib3,
-                                &sym3,
-                                &[Value::Float(a), Value::Float(b)],
-                                &[NativeType::Float, NativeType::Float],
-                                native_type(ret),
-                            );
-                            ret_to_f64(r)
-                        })
-                        .map_err(|e| e.to_string())?;
-                } else if p0 == 'f' {
-                    let lib4 = lib2.clone();
-                    let sym4 = sym2.clone();
-                    let backend = backend.clone();
-                    linker
-                        .func_wrap(HOST, &name, move |_: Caller<'_, HostState>, a: f64, b: i64| -> f64 {
-                            let r = backend.call_function(
-                                &lib4,
-                                &sym4,
-                                &[Value::Float(a), Value::Int(b)],
-                                &[NativeType::Float, NativeType::Int],
-                                native_type(ret),
-                            );
-                            ret_to_f64(r)
-                        })
-                        .map_err(|e| e.to_string())?;
-                } else {
-                    let lib4 = lib2.clone();
-                    let sym4 = sym2.clone();
-                    let backend = backend.clone();
-                    linker
-                        .func_wrap(HOST, &name, move |_: Caller<'_, HostState>, a: i64, b: f64| -> f64 {
-                            let r = backend.call_function(
-                                &lib4,
-                                &sym4,
-                                &[Value::Int(a), Value::Float(b)],
-                                &[NativeType::Int, NativeType::Float],
-                                native_type(ret),
-                            );
-                            ret_to_f64(r)
-                        })
-                        .map_err(|e| e.to_string())?;
+        let letters = params.clone();
+        let backend = backend.clone();
+        let res = linker.func_new(
+            HOST,
+            &name,
+            ft,
+            move |mut caller: Caller<'_, HostState>, args: &[Val], results: &mut [Val]| {
+                let mut vals: Vec<Value> = Vec::with_capacity(args.len());
+                let mut ptypes: Vec<NativeType> = Vec::with_capacity(args.len());
+                for (i, a) in args.iter().enumerate() {
+                    let letter = letters.get(i).copied().unwrap_or('i');
+                    let v = match letter {
+                        's' => Value::String(caller.read_str(a.i64().unwrap_or(0))),
+                        'f' => Value::Float(a.f64().map(|f| f.into()).unwrap_or(0.0)),
+                        'b' => Value::Bool(a.i32().unwrap_or(0) != 0),
+                        'c' => Value::Int(a.i32().unwrap_or(0) as i64),
+                        _ => Value::Int(a.i64().unwrap_or(0)),
+                    };
+                    vals.push(v);
+                    ptypes.push(native_type(letter));
                 }
-            }
-            [p0, p1] => {
-                let p0 = *p0;
-                let p1 = *p1;
-                let ret = rcode;
-                let lib3 = lib2.clone();
-                let sym3 = sym2.clone();
-                let backend = backend.clone();
-                linker
-                    .func_wrap(HOST, &name, move |mut caller: Caller<'_, HostState>, a: i64, b: i64| -> i64 {
-                        let arg0 = match p0 {
-                            's' => Value::String(caller.read_str(a)),
-                            _ => Value::Int(a),
+                let r = backend.call_function(&lib2, &sym2, &vals, &ptypes, native_type(rcode));
+                match rcode {
+                    'v' => Ok(()),
+                    's' => {
+                        let s = match r {
+                            Ok(Value::String(s)) => s,
+                            _ => String::new(),
                         };
-                        let arg1 = match p1 {
-                            's' => Value::String(caller.read_str(b)),
-                            _ => Value::Int(b),
-                        };
-                        let r = backend.call_function(
-                            &lib3,
-                            &sym3,
-                            &[arg0, arg1],
-                            &[native_type(p0), native_type(p1)],
-                            native_type(ret),
-                        );
-                        ret_to_i64(r)
-                    })
-                    .map_err(|e| e.to_string())?;
-            }
-            _ => {
-                return Err(format!(
-                    "[JIT] Extensión '{}': el JIT soporta natives de hasta 2 argumentos por ahora",
-                    n
-                ))
-            }
+                        results[0] = Val::I64(caller.write_str(&s));
+                        Ok(())
+                    }
+                    'f' => {
+                        results[0] = Val::F64(ret_to_f64(r).into());
+                        Ok(())
+                    }
+                    'b' | 'c' => {
+                        results[0] = Val::I32(ret_to_i32(r));
+                        Ok(())
+                    }
+                    _ => {
+                        results[0] = Val::I64(ret_to_i64(r));
+                        Ok(())
+                    }
+                }
+            },
+        );
+        if let Err(e) = res {
+            return Err(format!("[JIT] Extensión '{}': no se pudo registrar el host: {}", n, e));
         }
         count += 1;
     }
