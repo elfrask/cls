@@ -53,10 +53,11 @@ use crate::JitContext;
 /// 100000*(n+2+i).
 const LINE_BASE: u32 = 100000;
 
-/// Inicio del heap del módulo (heap_ptr global inicial = 1MB, tras el string
-/// pool). Solo se transfiere la región [1MB, len): los datos bajo 1MB son el
-/// string pool del módulo NUEVO (data segments re-emitidos).
-const HEAP_START: usize = 1048576;
+/// Inicio del heap del módulo (constante de layout del backend — tras la
+/// ventana de internals + string pool + tabla). Solo se transfiere la región
+/// [HEAP_START, len): bajo ese límite viven el string pool del módulo NUEVO
+/// (data segments re-emitidos) y la ventana de internals (no se transfiere).
+const HEAP_START: usize = cls_core::backend::wasm::HEAP_START as usize;
 
 /// Resultado de procesar una línea del REPL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

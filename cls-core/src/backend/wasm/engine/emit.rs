@@ -336,25 +336,25 @@ impl<'a> Engine<'a> {
             });
         }
 
-        // Memoria (1 página = 64KB). Mínimo 16 páginas (1MB): el string pool
-        // (datos + tabla de índices) vive bajo el heap, que arranca en 1MB; el
-        // allocator hace grow para el heap a partir de ahí.
+        // Memoria (1 página = 64KB). Mínimo 32 páginas (2MB): la ventana de
+        // internals ocupa [0..1.11MB) + strings [1.11..1.56MB] + tabla
+        // [1.56..1.81MB] + heap [1.81MB..] con grow a partir de ahí.
         self.memories_sec.memory(MemoryType {
-            minimum: 16,
+            minimum: 32,
             maximum: None,
             memory64: false,
             shared: false,
             page_size_log2: None,
         });
 
-        // Global: heap_ptr, mut, inicial 1MB (tras el string pool).
+        // Global: heap_ptr, mut, inicial HEAP_START (tras strings+tabla).
         self.globals_sec.global(
             GlobalType {
                 val_type: ValType::I64,
                 mutable: true,
                 shared: false,
             },
-            &ConstExpr::i64_const(1048576),
+            &ConstExpr::i64_const(HEAP_START as i64),
         );
 
         // Globals de usuario: `var x` / `const x` top-level -> secció globals.
@@ -761,12 +761,14 @@ impl<'a> Engine<'a> {
             );
         }
 
-        // Data segment con la tabla de strings.
+        // Data segment con la tabla de strings: se coloca en STRING_DATA_BASE
+        // (tras la ventana de internals [0..INTERNALS_WINDOW_END) — la fusión
+        // de internals escribe su propio data segment en esa ventana).
         let data_bytes = self.build_string_data();
         self.data_sec.segment(DataSegment {
             mode: DataSegmentMode::Active {
                 memory_index: 0,
-                offset: &ConstExpr::i32_const(0),
+                offset: &ConstExpr::i32_const(STRING_DATA_BASE as i32),
             },
             data: data_bytes,
         });

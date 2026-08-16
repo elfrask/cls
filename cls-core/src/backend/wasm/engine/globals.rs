@@ -168,30 +168,40 @@ impl<'a> Engine<'a> {
 
     pub(crate) fn build_string_data(&self) -> Vec<u8> {
         let data_bytes: usize = self.string_pool.iter().map(|s| s.len()).sum();
-        // El layout es: [0 .. data_len) = bytes de los strings (en orden de
-        // interning, append-only) y [STRING_TABLE_BASE .. + 8N) = tabla de
-        // índices (offset, len). Con base FIJA, los offsets de los datos NO
-        // dependen del tamaño total del pool: el REPL (estado persistente)
-        // transfiere punteros entre instancias y estos siguen siendo válidos
-        // mientras las entradas compartidas conserven su posició (prefix).
+        // El layout es: [STRING_DATA_BASE .. +data_len) = bytes de los strings
+        // (en orden de interning, append-only) y [STRING_TABLE_BASE .. + 8N) =
+        // tabla de índices (offset, len). Con bases FIJAS, los offsets de los
+        // datos NO dependen del tamaño total del pool: el REPL (estado
+        // persistente) transfiere punteros entre instancias y estos siguen
+        // siendo válidos mientras las entradas compartidas conserven su
+        // posición (prefix).
+        //
+        // El buffer es RELATIVO a 0: el data segment se coloca en
+        // `STRING_DATA_BASE` (emit.rs), así que la dirección de cada string es
+        // `STRING_DATA_BASE + data_off`. La ventana de internals [0..1.11MB)
+        // queda INTACTA (el segmento empieza tras ella).
+        let pool_capacity = (STRING_TABLE_BASE - STRING_DATA_BASE) as usize;
         assert!(
-            data_bytes <= STRING_TABLE_BASE as usize,
+            data_bytes <= pool_capacity,
             "el string pool excede la regió de datos ({} > {} bytes)",
             data_bytes,
-            STRING_TABLE_BASE
+            pool_capacity
         );
-        let mut bytes: Vec<u8> =
-            vec![0u8; STRING_TABLE_BASE as usize + self.string_pool.len() * 8];
+        let table_bytes = self.string_pool.len() * 8;
+        let mut bytes: Vec<u8> = vec![0u8; pool_capacity + table_bytes];
         let mut data_off = 0u32;
         for s in self.string_pool.iter() {
             bytes[data_off as usize..data_off as usize + s.len()].copy_from_slice(s.as_bytes());
             data_off += s.len() as u32;
         }
-        let mut entry = STRING_TABLE_BASE as usize;
+        let mut entry = pool_capacity;
         let mut off = 0u32;
         for s in self.string_pool.iter() {
             let len = s.len() as u32;
-            bytes[entry..entry + 4].copy_from_slice(&off.to_le_bytes());
+            // La tabla guarda el offset ABSOLUTO (STRING_DATA_BASE + data_off):
+            // `build_load_str` lo usa como puntero directo al string en memoria.
+            let abs = STRING_DATA_BASE + off;
+            bytes[entry..entry + 4].copy_from_slice(&abs.to_le_bytes());
             bytes[entry + 4..entry + 8].copy_from_slice(&len.to_le_bytes());
             off += len;
             entry += 8;

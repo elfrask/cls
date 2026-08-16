@@ -118,39 +118,47 @@ pub(super) fn cls_kind_code(t: &Type) -> i64 {
     }
 }
 /// Base de la tabla de índices de strings (8 bytes por entrada: offset, len).
-/// Layout de memoria: `[0 .. data_len)` = bytes de los strings (append-only,
-/// en orden de interning) y `[STRING_TABLE_BASE .. + 8N)` = tabla. Con base
-/// FIJA, los offsets de los datos no dependen del tamaño total del pool: el
-/// REPL JIT (estado persistente) transfiere punteros de strings entre
-/// instancias y estos siguen siendo válidos (las entradas compartidas
-/// conservan su posición si las nuevas se agregan al final).
-pub(super) const STRING_TABLE_BASE: u32 = 524_288; // 512KB - por debajo del heap (1MB)
+/// Layout de memoria:
+///   `[STRING_DATA_BASE .. +data_len)`  = bytes de los strings (append-only)
+///   `[STRING_TABLE_BASE .. +8N)`       = tabla: cada entrada (offset, len)
+/// Con bases FIJAS, los offsets de los datos no dependen del tamaño total del
+/// pool: el REPL JIT (estado persistente) transfiere punteros de strings entre
+/// instancias y estos siguen siendo válidos.
+pub const STRING_DATA_BASE: u32 = INTERNALS_WINDOW_END; // justo tras la ventana de internals
+pub const STRING_TABLE_BASE: u32 = STRING_DATA_BASE + 512 * 1024; // 1.5625MB
+pub const HEAP_START: u32 = STRING_TABLE_BASE + 256 * 1024; // 1.8125MB - tras la tabla
 
 /// Sentinel de fin de iteración del protocolo `__next` (el `return null` de un
 /// método `__next` se emite con este valor; un iterador puede devolver 0 como
 /// valor legítimo, así que el null NO puede ser 0).
-pub(super) const NULL_ITER_SENTINEL: i64 = i64::MIN;
+pub const NULL_ITER_SENTINEL: i64 = i64::MIN;
 
 // ── Shadow call stack en memoria lineal (plan-performance/shadow-stack-wasm.md) ──
-// Región fija FUERA del heap del usuario (HEAP_START = 1 MB). Todo queda por
-// debajo de 1 MB: data (strings) en [0..512KB+8N], slots de error/call-site y
-// frames del shadow stack por debajo del heap. El REPL (`transfer_state`) copia
+// Región fija FUERA del heap del usuario. El REPL (`transfer_state`) copia
 // solo `[HEAP_START..]`, así que estas regiones NO se transfieren entre líneas.
 
-/// Base de la región de frames del shadow stack (768 KB).
-pub(super) const SHADOW_STACK_BASE: u32 = 786_432;
+/// Fin de la ventana de las internals WASM (el sub-crate compila a 17 páginas =
+/// 1_114_112 bytes; vive en `[0..INTERNALS_WINDOW_END)` con sus direcciones
+/// internas INTACTAS — data/bss/shadow stack del runtime de Rust). Todo el CLS
+/// queda por ENCIMA de esta ventana para no colisionar (ver fusion.rs).
+pub const INTERNALS_WINDOW_END: u32 = 1_114_112;
+
+/// Base de la región de frames del shadow stack (tras el heap, en [2MB..)).
+/// El heap del CLS arranca en HEAP_START; el shadow stack y sus slots quedan
+/// por encima (el heap crece hacia arriba con memory.grow).
+pub const SHADOW_STACK_BASE: u32 = HEAP_START + 128 * 1024; // HEAP_START + 128KB
 /// Tamaño de cada frame (name_idx:u32 + line:u32 + col:u32). line/col en u32 y
 /// NO en u16: los spans de los módulos importados se desplazan a `100000*n +
 /// línea` y u16 los truncaría (perdían el offset del módulo -> trace 65535:N).
-pub(super) const FRAME_SIZE: u32 = 12;
+pub const FRAME_SIZE: u32 = 12;
 /// Tope de frames (igual al límite de `call_stack` del host actual).
-pub(super) const SHADOW_MAX_FRAMES: u32 = 1000;
+pub const SHADOW_MAX_FRAMES: u32 = 1000;
 /// `shadow_ptr` alcanzó el tope → no escribir más frames.
-pub(super) const SHADOW_LIMIT: u32 = SHADOW_STACK_BASE + FRAME_SIZE * SHADOW_MAX_FRAMES;
+pub const SHADOW_LIMIT: u32 = SHADOW_STACK_BASE + FRAME_SIZE * SHADOW_MAX_FRAMES;
 /// Call site pendiente del llamador (line:u32, col:u32) — el `fn_enter` del
 /// callee lo usa como span del frame (paridad con `pending_call_site` del host).
 /// En u32 (no u16) por los spans desplazados de módulos importados (100000*n).
-pub(super) const PENDING_CALL_SLOT_ADDR: u32 = 778_240; // 760 KB
+pub const PENDING_CALL_SLOT_ADDR: u32 = SHADOW_STACK_BASE - 8 * 1024;
 /// Slot del reporte del error no capturado (futuro wrapper try_table).
 #[allow(dead_code)]
-pub(super) const ERROR_SLOT_ADDR: u32 = 770_048; // 752 KB
+pub const ERROR_SLOT_ADDR: u32 = SHADOW_STACK_BASE - 16 * 1024;
