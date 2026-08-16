@@ -3,7 +3,7 @@
 use crate::error::Span;
 use crate::frontend::ast::*;
 use crate::middleware::types::{LitVal, Type};
-/// Declaraci�n sint�tica de `main` no-op (modo librería): `(i64 args) -> i64`,
+/// Declaración sintética de `main` no-op (modo librería): `(i64 args) -> i64`,
 /// devuelve 0. Permite instanciar un módulo sin `main` (solo exports).
 pub(super) fn noop_main_decl() -> FunctionDecl {
     let span = Span::new(1, 1, 1, 1);

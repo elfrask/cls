@@ -14,7 +14,7 @@ impl<'a> FuncEmitter<'a> {
 
     /// Como [`Self::emit_class_method`] pero con argumentos: emite el objeto,
     /// lo guarda en un local, pushea `me`, emite los args y hace el
-    /// call_indirect `(me, args...)` vía vtable. El orden de evaluaci�n es
+    /// call_indirect `(me, args...)` vía vtable. El orden de evaluación es
     /// objeto -> args (paridad walker). El stack del call_indirect es
     /// `[me, args..., fnptr]` (me al fondo).
     pub(crate) fn emit_class_method_args(
@@ -53,7 +53,7 @@ impl<'a> FuncEmitter<'a> {
                 if let Some(slot) = info.methods.iter().position(|m| m == name) {
                     let method_key = format!("{}::{}", c, name);
                     if let Some(&ty) = self.method_type_indexes.get(&method_key) {
-                        // receiver (me) - al fondo; los args van DESPU�0S (el
+                        // receiver (me) — al fondo; los args van DESPUÉS (el
                         // call_indirect los espera en orden: me, args...).
                         self.body.push(Instruction::LocalGet(obj_ptr));
                         for a in args {
@@ -86,7 +86,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// ��El tipo (est�tico) es una clase que define el magic `name`? Devuelve el
+    /// ¿El tipo (estático) es una clase que define el magic `name`? Devuelve el
     /// nombre de la clase que LO DEFINE (sube por `ancestors` - M2: un magic
     /// heredado se registra como `Base::__add`, no `Hijo::__add`). `None` si no.
     pub(crate) fn class_magic_method(&self, ty: &Option<Type>, name: &str) -> Option<String> {

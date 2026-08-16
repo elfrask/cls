@@ -141,7 +141,7 @@ impl<'a> FuncEmitter<'a> {
             }
         }
         Err(crate::error::ClsError::compile_at(
-            "Array literal vacío sin tipo: agrega la anotaci�n del elemento (p.ej. `int[] = []`)",
+            "Array literal vacío sin tipo: agrega la anotación del elemento (p.ej. `int[] = []`)",
             &a.span,
         ))
     }
@@ -518,7 +518,7 @@ impl<'a> FuncEmitter<'a> {
             Type::Array(elem) => was_type(elem),
             Type::Record(_, v) => was_type(v),
             Type::Tuple(slots) => {
-                /Índice literal -> slot exacto; din�mico -> primer slot (o i64)
+                // índice literal → slot exacto; dinámico → primer slot (o i64)
                 match &*i.index {
                     Expression::Literal(l) => match &l.kind {
                         LiteralKind::Int(v) if *v >= 0 && (*v as usize) < slots.len() => {

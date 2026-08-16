@@ -131,7 +131,7 @@ impl<'a> FuncEmitter<'a> {
             LiteralKind::Null => {
                 // Dentro de `__next`, el `null` es el sentinel de fin de iteración
                 // (distinto de 0 - un iterador puede devolver 0 como valor
-                // legítimo). Fuera del protocolo, null = 0 (paridad hist�rica).
+                // legítimo). Fuera del protocolo, null = 0 (paridad histórica).
                 if self.current_method.as_deref() == Some("__next") {
                     self.body.push(Instruction::I64Const(NULL_ITER_SENTINEL));
                 } else {
@@ -182,7 +182,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Emite una llamada a una funci�n host del nodo (intrinsic) vía el canal
+    /// Emite una llamada a una función host del nodo (intrinsic) vía el canal
     /// genérico `env.host_call(id, ptr, n)`. Los args viajan empaquetados en
     /// memoria: `[n:i64][(val:i64, tag:i64)*n]` (tag = `cls_kind_code`).
     pub(crate) fn emit_host_call(&mut self, intr: &HostIntrinsic, c: &CallExpr) -> ClsResult<()> {

@@ -127,7 +127,7 @@ impl<'a> FuncEmitter<'a> {
 
     /// Evalúa una cadena de acceso `o.a.c`, `o.x[0]`, `o.a.b[0]` sobre valores
     /// `Any`/Record de json.parse, despachando por tag en runtime. Deja `(val, tag)`
-    /// en el stack. La base (raíz de la cadena) se emite con su tag est�tico.
+    /// en el stack. La base (raíz de la cadena) se emite con su tag estático.
     pub(crate) fn emit_any_chain(&mut self, expr: &Expression) -> ClsResult<()> {
         match expr {
             Expression::MemberAccess(m) => {
@@ -255,7 +255,7 @@ impl<'a> FuncEmitter<'a> {
             },
             Type::Shape(fields) => match m.member.as_str() {
                 "length" | "size" => {
-                    // Compile-time: el shape tiene un n�� de campos fijo.
+                    // Compile-time: el shape tiene un nº de campos fijo.
                     self.body.push(Instruction::I64Const(fields.len() as i64));
                     Ok(())
                 }

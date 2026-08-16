@@ -1,5 +1,6 @@
 ﻿//! Motor de emision a nivel de modulo (Fase 1: extraido de wasm/mod.rs).
 
+mod emit;
 mod functions;
 mod metadata;
 pub(crate) use metadata::{ClassInfo, FieldVis, StructInfo};
@@ -162,7 +163,7 @@ impl<'a> Engine<'a> {
         m.section(&self.tables_sec);
         m.section(&self.memories_sec);
         // Solo en modo con excepciones: sin tag (wasmi) la sección debe omitirse
-        // (una secci�n de tags vacía sigue siendo sintaxis de exception-handling).
+        // (una sección de tags vacía sigue siendo sintaxis de exception-handling).
         if self.exceptions {
             m.section(&self.tags_sec);
         }

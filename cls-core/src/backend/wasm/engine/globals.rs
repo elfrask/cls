@@ -61,7 +61,7 @@ impl<'a> Engine<'a> {
     }
 
     /// Declara una funció de clase (`Clase::m` o ctor) con `me` como primer param.
-    /// Los mí©todos `static` NO reciben `me` (se registran como `Clase::__s__m`).
+    /// Los métodos `static` NO reciben `me` (se registran como `Clase::__s__m`).
     pub(crate) fn build_allocator(&self) -> Function {
         // (func (param $n i64) (result i64)
         //   local 0 = n (param), local 1 = ptr, local 2 = end
