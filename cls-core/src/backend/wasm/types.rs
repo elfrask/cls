@@ -154,7 +154,10 @@ pub(super) fn annotation_to_type(ann: &TypeAnnotation) -> Type {
     }
 }
 /// Código de tipo nativo para la firma de extensiones: i=int, f=float, b=bool,
-/// c=char, s=string, v=void. El nombre del import codifica ret+params.
+/// c=char, s=string, v=void, I=int C de 32 bits (CInt/CChar/...: en WASM viaja
+/// como i64; el host lo convierte a `NativeType::CInt` para el transmute i32).
+/// El nombre del import codifica ret+params. Paridad con `native_type_from_ann`
+/// del walker (cls-runtime/src/walker/interpreter.rs).
 pub(super) fn ty_code(t: &Type) -> (char, WasTy) {
     match t {
         Type::String => ('s', WasTy::I64),
@@ -162,6 +165,23 @@ pub(super) fn ty_code(t: &Type) -> (char, WasTy) {
         Type::Bool => ('b', WasTy::I32),
         Type::Char => ('c', WasTy::I32),
         Type::Void => ('v', WasTy::I64),
+        Type::Named(n, _) => match n.as_str() {
+            // CDouble -> f64 (antes caía al default 'i': el import salía
+            // `sqrt__ii@libm` y cranelift rechazaba el f64 del literal).
+            "CDouble" | "Double" => ('f', WasTy::F64),
+            // Enteros C de 32 bits: viajan en i64 por WASM; el host los tipa
+            // como CInt (transmute a i32 real, paridad con el walker).
+            "CInt" | "CUInt" | "CShort" | "CUShort" | "CChar" | "CUChar" => ('I', WasTy::I64),
+            // CString: igual que String (i64 empaquetado ptr<<32|len); la letra
+            // 's' hace que el wrapper lea el string del caller.
+            "CString" => ('s', WasTy::I64),
+            // CPtr / CLong / CULong: punteros y enteros nativos de 64 bits.
+            "CPtr" | "CLong" | "CULong" => ('i', WasTy::I64),
+            // CFloat (f32) no está soportado por el dispatcher: error claro al
+            // registrar el host (native.rs da el error para args).
+            "CFloat" => ('i', WasTy::I64),
+            _ => ('i', WasTy::I64), // estructura o desconocido
+        },
         _ => ('i', WasTy::I64),
     }
 }
