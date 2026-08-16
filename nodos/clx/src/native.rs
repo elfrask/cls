@@ -19,10 +19,57 @@ use std::sync::Arc;
 /// Caché de librerías nativas cargadas (por path resuelto). Abrir la librería
 /// (dlopen/LoadLibrary) en cada llamada es caro; `Library` es `Send + Sync`, y
 /// los punteros de símbolo extraídos siguen siendo válidos mientras la librería
-/// viva. Nunca se descarga: el proceso la mantiene abierta.
+/// viva. Nunca se descarga: el proceso la mantiene abierta. Se usa `RwLock`:
+/// las lecturas (hot path) no se bloquean entre sí; la escritura ocurre una vez
+/// por librería.
 static NATIVE_LIBS: std::sync::LazyLock<
-    std::sync::Mutex<std::collections::HashMap<String, Arc<Library>>>,
-> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    std::sync::RwLock<std::collections::HashMap<String, Arc<Library>>>,
+> = std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashMap::new()));
+
+/// Símbolo nativo resuelto: el puntero (`addr`) se obtiene UNA vez y se
+/// reutiliza en cada llamada. `lib` (Arc) mantiene viva la librería mientras el
+/// símbolo exista (mismo contrato actual: nunca se descarga).
+#[derive(Clone)]
+struct NativeSym {
+    // Mantiene viva la librería mientras el símbolo exista (nunca se descarga).
+    // No se lee: el Arc clonado conserva la `Library` (drop = cerrar librería).
+    #[allow(dead_code)]
+    lib: Arc<Library>,
+    addr: usize,
+}
+
+/// Caché de símbolos resueltos, clave = (path resuelto, nombre del símbolo).
+/// `lib.get(symbol)` (lookup en la tabla de símbolos) es caro (~50-300 ns); se
+/// ejecuta una vez por símbolo. `RwLock`: lecturas concurrentes sin bloqueo.
+static NATIVE_SYMS: std::sync::LazyLock<
+    std::sync::RwLock<std::collections::HashMap<(String, String), NativeSym>>,
+> = std::sync::LazyLock::new(|| {
+    std::sync::RwLock::new(std::collections::HashMap::new())
+});
+
+/// Obtiene (o resuelve y cachea) el símbolo `symbol` de `lib` (ya resuelta).
+/// El `addr` es `usize` (puntero crudo del símbolo): los macros `arityN!` lo
+/// reinterpretan por firma (patrón dlsym). Seguro porque la lib nunca se
+/// descarga y el Arc clonado la mantiene viva durante la llamada.
+fn get_symbol(lib: Arc<Library>, resolved: &str, symbol: &str) -> ClsResult<NativeSym> {
+    let key = (resolved.to_string(), symbol.to_string());
+    if let Some(s) = NATIVE_SYMS.read().unwrap().get(&key) {
+        return Ok(s.clone());
+    }
+    let sym: libloading::Symbol<'_, unsafe extern "C" fn()> =
+        unsafe { lib.get(symbol.as_bytes()) }.map_err(|e| {
+            ClsError::RuntimeError(format!(
+                "Símbolo nativo '{}' no encontrado en '{}': {}",
+                symbol, resolved, e
+            ))
+        })?;
+    let s = NativeSym {
+        lib: lib.clone(),
+        addr: *sym as usize,
+    };
+    NATIVE_SYMS.write().unwrap().insert(key, s.clone());
+    Ok(s)
+}
 
 // ── Shapes de registro del ABI C ─────────────────────────────────────────────
 
@@ -305,33 +352,38 @@ impl NativeBackend for DynamicBackend {
         let resolved = resolve_library(library);
         // Librería cacheadas por path (get-or-insert): no re-abrir dlopen en
         // cada llamada. El `Arc` clonado mantiene la librería viva durante la
-        // llamada, así el puntero del símbolo extraído es válido.
+        // llamada, así el puntero del símbolo extraído es válido. `RwLock`:
+        // doble-check tras adquirir write (otro hilo pudo insertar).
         let lib = {
-            let mut cache = NATIVE_LIBS.lock().unwrap();
+            let cache = NATIVE_LIBS.read().unwrap();
             match cache.get(&resolved) {
                 Some(l) => l.clone(),
                 None => {
-                    let l = Arc::new(unsafe { Library::new(&resolved) }.map_err(|e| {
-                        ClsError::RuntimeError(format!(
-                            "No se pudo cargar la librería nativa '{}' (resuelta a '{}'): {}",
-                            library, resolved, e
-                        ))
-                    })?);
-                    cache.insert(resolved.clone(), l.clone());
-                    l
+                    drop(cache);
+                    let mut w = NATIVE_LIBS.write().unwrap();
+                    match w.get(&resolved) {
+                        Some(l) => l.clone(),
+                        None => {
+                            let l = Arc::new(
+                                unsafe { Library::new(&resolved) }.map_err(|e| {
+                                    ClsError::RuntimeError(format!(
+                                        "No se pudo cargar la librería nativa '{}' (resuelta a '{}'): {}",
+                                        library, resolved, e
+                                    ))
+                                })?,
+                            );
+                            w.insert(resolved.clone(), l.clone());
+                            l
+                        }
+                    }
                 }
             }
         };
 
-        // Símbolo como puntero crudo (la firma se elige en el dispatcher).
-        let sym: libloading::Symbol<'_, unsafe extern "C" fn()> =
-            unsafe { lib.get(symbol.as_bytes()) }.map_err(|e| {
-                ClsError::RuntimeError(format!(
-                    "Símbolo nativo '{}' no encontrado en '{}': {}",
-                    symbol, resolved, e
-                ))
-            })?;
-        let base = *sym as usize;
+        // Símbolo como puntero crudo, cacheado (get-or-insert): no hacer
+        // `lib.get(symbol)` en cada llamada. La firma se elige en el dispatcher.
+        let sym = get_symbol(lib, &resolved, symbol)?;
+        let base = sym.addr;
 
         // Convertir args -> registros; los CString viven en buffers durante la llamada.
         let mut buffers: Vec<CString> = Vec::new();
