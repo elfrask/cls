@@ -1,4 +1,4 @@
-use crate::value::{FunValue, Value};
+use crate::walker::value::{FunValue, Value};
 use std::collections::HashMap;
 
 /// Funciones y valores top-level inyectados por el nodo.

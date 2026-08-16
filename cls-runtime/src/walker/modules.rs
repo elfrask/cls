@@ -1,5 +1,5 @@
 use crate::error::ClsResult;
-use crate::value::Value;
+use crate::walker::value::Value;
 use std::collections::HashMap;
 
 /// Gestor de módulos WASM y .clsapp

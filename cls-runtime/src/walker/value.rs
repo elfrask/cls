@@ -16,7 +16,7 @@ pub enum PollState {
 /// como los state machines WASM (futuro) implementan esto.
 /// Corre en un solo thread (el scheduler de clxr), por eso no requiere Send/Sync.
 pub trait Pollable {
-    fn poll(&mut self, interp: &mut crate::interpreter::Interpreter) -> PollState;
+    fn poll(&mut self, interp: &mut crate::walker::interpreter::Interpreter) -> PollState;
 }
 
 /// Promise — puente entre intérprete y WASM. Compartido vía Arc (como JS).
@@ -56,7 +56,7 @@ impl Promise {
     }
 
     /// Intenta resolver (poll). Devuelve el estado actual.
-    pub fn poll(&mut self, interp: &mut crate::interpreter::Interpreter) -> PollState {
+    pub fn poll(&mut self, interp: &mut crate::walker::interpreter::Interpreter) -> PollState {
         let mut inner = self.inner.lock().unwrap();
         if let Some(ref result) = inner.result {
             return result.clone();
@@ -408,7 +408,7 @@ pub enum FunKind {
         params: Vec<cls_core::frontend::ast::Parameter>,
         body: Block,
         /// Entorno léxico capturado (closures). None = usa el env global actual.
-        closure: Option<std::sync::Arc<std::sync::Mutex<crate::environment::Environment>>>,
+        closure: Option<std::sync::Arc<std::sync::Mutex<crate::walker::environment::Environment>>>,
     },
 }
 
@@ -468,7 +468,7 @@ impl FunValue {
         }
     }
 
-    pub fn new_user_with_closure(name: &str, params: Vec<cls_core::frontend::ast::Parameter>, body: Block, closure: std::sync::Arc<std::sync::Mutex<crate::environment::Environment>>) -> Self {
+    pub fn new_user_with_closure(name: &str, params: Vec<cls_core::frontend::ast::Parameter>, body: Block, closure: std::sync::Arc<std::sync::Mutex<crate::walker::environment::Environment>>) -> Self {
         Self {
             name: name.to_string(),
             is_async: false,
@@ -484,7 +484,7 @@ impl FunValue {
         }
     }
 
-    pub fn new_async_user_with_closure(name: &str, params: Vec<cls_core::frontend::ast::Parameter>, body: Block, closure: std::sync::Arc<std::sync::Mutex<crate::environment::Environment>>) -> Self {
+    pub fn new_async_user_with_closure(name: &str, params: Vec<cls_core::frontend::ast::Parameter>, body: Block, closure: std::sync::Arc<std::sync::Mutex<crate::walker::environment::Environment>>) -> Self {
         Self {
             name: name.to_string(),
             is_async: true,

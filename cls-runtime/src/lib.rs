@@ -1,30 +1,24 @@
-pub mod value;
-pub mod environment;
-pub mod interpreter;
-pub mod intrinsics;
-pub mod resolver;
-pub mod vfs;
-pub mod clslib;
-pub mod error_report;
-pub mod gc;
-pub mod sandbox;
-pub mod modules;
-pub mod stdlib;
-pub mod host_api;
-pub mod ffi;
 pub mod error;
+pub mod error_report;
+pub mod ffi;
+pub mod walker;
 
-pub use value::{Value, Promise, Pollable, PollState, ClassDef, ClassInstance};
-pub use environment::Environment;
-pub use interpreter::{Interpreter, ImportFrame};
-pub use intrinsics::Intrinsics;
-pub use resolver::{ModuleResolver, user_modules_dir, global_modules_dir};
-pub use vfs::{VfsResolver, VfsProtocol, LocalFs, ZipFs, resolve_safe};
-pub use clslib::{ClsLibIndex, ClsLibEntry, ClsLibResolver, compute_hash_bytes};
-pub use error_report::{ErrorReport, ErrorFormat, ErrorFormatter, format_error, format_runtime_error, format_syntax_error, show_runtime_error, show_syntax_error, show_config_error};
-pub use gc::GarbageCollector;
-pub use sandbox::Sandbox;
+// Compat transitoria: paths de módulo que los nodos usan directamente
+// (se eliminan junto con el walker tras 2.0-dev1).
+pub use walker::stdlib;
+pub use walker::value;
+
 pub use error::{ClsError, ClsResult};
+pub use error_report::{ErrorReport, ErrorFormat, ErrorFormatter, format_error, format_runtime_error, format_syntax_error, show_runtime_error, show_syntax_error, show_config_error};
+pub use walker::{Value, Promise, Pollable, PollState, ClassDef, ClassInstance};
+pub use walker::Environment;
+pub use walker::{Interpreter, ImportFrame};
+pub use walker::Intrinsics;
+pub use walker::{ModuleResolver, user_modules_dir, global_modules_dir};
+pub use walker::{VfsResolver, VfsProtocol, LocalFs, ZipFs, resolve_safe};
+pub use walker::{ClsLibIndex, ClsLibEntry, ClsLibResolver, compute_hash_bytes};
+pub use walker::GarbageCollector;
+pub use walker::Sandbox;
 
 /// Version del runtime CLS
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

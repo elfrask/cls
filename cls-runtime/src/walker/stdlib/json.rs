@@ -1,4 +1,4 @@
-use crate::value::{FunValue, Value};
+use crate::walker::value::{FunValue, Value};
 use cls_core::error::ClsError;
 use std::collections::HashMap;
 
@@ -46,7 +46,7 @@ fn value_to_json(v: &Value) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::FunKind;
+    use crate::walker::value::FunKind;
     use cls_core::error::ClsResult;
 
     fn get_fn(name: &str) -> std::sync::Arc<dyn Fn(&[Value]) -> ClsResult<Value>> {

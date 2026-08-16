@@ -1,5 +1,5 @@
-use crate::value::Value;
-use crate::environment::Environment;
+use crate::walker::value::Value;
+use crate::walker::environment::Environment;
 use cls_core::error::{ClsError, ClsResult};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -45,9 +45,9 @@ impl ModuleResolver {
     }
 
     pub fn with_core_stdlib(mut self) -> Self {
-        self.internals.insert("math".into(), crate::stdlib::math::module());
-        self.internals.insert("json".into(), crate::stdlib::json::module());
-        self.internals.insert("async".into(), crate::stdlib::async_::module());
+        self.internals.insert("math".into(), crate::walker::stdlib::math::module());
+        self.internals.insert("json".into(), crate::walker::stdlib::json::module());
+        self.internals.insert("async".into(), crate::walker::stdlib::async_::module());
         self
     }
 
