@@ -163,7 +163,7 @@ impl<'a> FuncEmitter<'a> {
         let (line, col) = if f.name == "main" {
             (0u32, 0u32)
         } else {
-            (f.span.start_line.min(65535), f.span.start_col.min(65535))
+            (f.span.start_line, f.span.start_col)
         };
         if self.shadow_ptr_global == 0 {
             // No instrumentado (sin global del shadow stack): no-op.
@@ -195,16 +195,16 @@ impl<'a> FuncEmitter<'a> {
         if f.name == "main" {
             self.body.push(Instruction::LocalGet(addr));
             self.body.push(Instruction::I32Const(0));
-            self.body.push(Instruction::I32Store16(MemArg {
+            self.body.push(Instruction::I32Store(MemArg {
                 offset: 4,
-                align: 1,
+                align: 2,
                 memory_index: 0,
             }));
             self.body.push(Instruction::LocalGet(addr));
             self.body.push(Instruction::I32Const(0));
-            self.body.push(Instruction::I32Store16(MemArg {
-                offset: 6,
-                align: 1,
+            self.body.push(Instruction::I32Store(MemArg {
+                offset: 8,
+                align: 2,
                 memory_index: 0,
             }));
         } else {
@@ -214,9 +214,9 @@ impl<'a> FuncEmitter<'a> {
             // then solo si la condicion es != 0, por eso I32Eqz).
             let tl = self.fresh_local_ty(WasTy::I32);
             self.body.push(Instruction::I32Const(PENDING_CALL_SLOT_ADDR as i32));
-            self.body.push(Instruction::I32Load16U(MemArg {
+            self.body.push(Instruction::I32Load(MemArg {
                 offset: 0,
-                align: 1,
+                align: 2,
                 memory_index: 0,
             }));
             self.body.push(Instruction::LocalSet(tl));
@@ -227,10 +227,10 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::LocalSet(tl));
             self.body.push(Instruction::End);
             let tc = self.fresh_local_ty(WasTy::I32);
-            self.body.push(Instruction::I32Const((PENDING_CALL_SLOT_ADDR + 2) as i32));
-            self.body.push(Instruction::I32Load16U(MemArg {
+            self.body.push(Instruction::I32Const((PENDING_CALL_SLOT_ADDR + 4) as i32));
+            self.body.push(Instruction::I32Load(MemArg {
                 offset: 0,
-                align: 1,
+                align: 2,
                 memory_index: 0,
             }));
             self.body.push(Instruction::LocalSet(tc));
@@ -242,16 +242,16 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::End);
             self.body.push(Instruction::LocalGet(addr));
             self.body.push(Instruction::LocalGet(tl));
-            self.body.push(Instruction::I32Store16(MemArg {
+            self.body.push(Instruction::I32Store(MemArg {
                 offset: 4,
-                align: 1,
+                align: 2,
                 memory_index: 0,
             }));
             self.body.push(Instruction::LocalGet(addr));
             self.body.push(Instruction::LocalGet(tc));
-            self.body.push(Instruction::I32Store16(MemArg {
-                offset: 6,
-                align: 1,
+            self.body.push(Instruction::I32Store(MemArg {
+                offset: 8,
+                align: 2,
                 memory_index: 0,
             }));
         }
@@ -268,17 +268,17 @@ impl<'a> FuncEmitter<'a> {
             return;
         }
         self.body.push(Instruction::I32Const(PENDING_CALL_SLOT_ADDR as i32));
-        self.body.push(Instruction::I32Const(span.start_line.min(65535) as i32));
-        self.body.push(Instruction::I32Store16(MemArg {
+        self.body.push(Instruction::I32Const(span.start_line as i32));
+        self.body.push(Instruction::I32Store(MemArg {
             offset: 0,
-            align: 1,
+            align: 2,
             memory_index: 0,
         }));
-        self.body.push(Instruction::I32Const((PENDING_CALL_SLOT_ADDR + 2) as i32));
-        self.body.push(Instruction::I32Const(span.start_col.min(65535) as i32));
-        self.body.push(Instruction::I32Store16(MemArg {
+        self.body.push(Instruction::I32Const((PENDING_CALL_SLOT_ADDR + 4) as i32));
+        self.body.push(Instruction::I32Const(span.start_col as i32));
+        self.body.push(Instruction::I32Store(MemArg {
             offset: 0,
-            align: 1,
+            align: 2,
             memory_index: 0,
         }));
     }

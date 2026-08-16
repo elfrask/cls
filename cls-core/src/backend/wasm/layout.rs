@@ -139,14 +139,17 @@ pub(super) const NULL_ITER_SENTINEL: i64 = i64::MIN;
 
 /// Base de la región de frames del shadow stack (768 KB).
 pub(super) const SHADOW_STACK_BASE: u32 = 786_432;
-/// Tamaño de cada frame (name_idx:u32 + line:u16 + col:u16).
-pub(super) const FRAME_SIZE: u32 = 8;
+/// Tamaño de cada frame (name_idx:u32 + line:u32 + col:u32). line/col en u32 y
+/// NO en u16: los spans de los módulos importados se desplazan a `100000*n +
+/// línea` y u16 los truncaría (perdían el offset del módulo -> trace 65535:N).
+pub(super) const FRAME_SIZE: u32 = 12;
 /// Tope de frames (igual al límite de `call_stack` del host actual).
 pub(super) const SHADOW_MAX_FRAMES: u32 = 1000;
 /// `shadow_ptr` alcanzó el tope → no escribir más frames.
 pub(super) const SHADOW_LIMIT: u32 = SHADOW_STACK_BASE + FRAME_SIZE * SHADOW_MAX_FRAMES;
-/// Call site pendiente del llamador (line:u16, col:u16) — el `fn_enter` del
+/// Call site pendiente del llamador (line:u32, col:u32) — el `fn_enter` del
 /// callee lo usa como span del frame (paridad con `pending_call_site` del host).
+/// En u32 (no u16) por los spans desplazados de módulos importados (100000*n).
 pub(super) const PENDING_CALL_SLOT_ADDR: u32 = 778_240; // 760 KB
 /// Slot del reporte del error no capturado (futuro wrapper try_table).
 #[allow(dead_code)]
