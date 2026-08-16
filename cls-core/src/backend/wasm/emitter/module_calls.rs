@@ -76,68 +76,91 @@ impl<'a> FuncEmitter<'a> {
 
 
 
-    /// `math.X(...)` -> host del módulo math.
+    /// `math.X(...)` -> instrucción WASM nativa o función interna `__intr_math_*`
+    /// (fallback: host del módulo math si las internals no están fusionadas).
     pub(crate) fn emit_math_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
+        let call = |m: &mut Self, name: &str, host: HostFn| -> ClsResult<()> {
+            if let Some(&idx) = m.func_indexes.get(name) {
+                m.body.push(Instruction::Call(idx));
+            } else {
+                m.host.call(host, &mut m.body);
+            }
+            Ok(())
+        };
         match member.member.as_str() {
             "abs" => {
                 self.emit_expression(&c.args[0])?;
                 match self.value_type(&c.args[0])? {
-                    WasTy::F64 => self.host.call(FloatAbs, &mut self.body),
-                    _ => self.host.call(IntAbs, &mut self.body),
+                    // float: F64Abs (instrucción nativa, bit-exacta)
+                    WasTy::F64 => self.body.push(Instruction::F64Abs),
+                    // int: i64.abs NO existe en WASM -> __intr_int_abs
+                    _ => call(self, "__intr_int_abs", IntAbs)?,
                 }
                 Ok(())
             }
             "sqrt" => {
                 self.emit_expression(&c.args[0])?;
                 self.f64_promote(&c.args[0])?;
-                if let Some(&idx) = self.func_indexes.get("__intr_math_sqrt") {
-                    self.body.push(Instruction::Call(idx));
-                } else {
-                    self.host.call(MathSqrt, &mut self.body);
-                }
+                self.body.push(Instruction::F64Sqrt);
                 Ok(())
             }
             "floor" => {
                 self.emit_expression(&c.args[0])?;
                 self.f64_promote(&c.args[0])?;
-                self.host.call(MathFloor, &mut self.body);
+                self.body.push(Instruction::F64Floor);
                 Ok(())
             }
             "ceil" => {
                 self.emit_expression(&c.args[0])?;
                 self.f64_promote(&c.args[0])?;
-                self.host.call(MathCeil, &mut self.body);
+                self.body.push(Instruction::F64Ceil);
                 Ok(())
             }
             "round" => {
                 self.emit_expression(&c.args[0])?;
                 self.f64_promote(&c.args[0])?;
-                self.host.call(MathRound, &mut self.body);
+                self.body.push(Instruction::F64Nearest);
                 Ok(())
             }
             "sin" => {
                 self.emit_expression(&c.args[0])?;
                 self.f64_promote(&c.args[0])?;
-                self.host.call(MathSin, &mut self.body);
+                if let Some(&idx) = self.func_indexes.get("__intr_math_sin") {
+                    self.body.push(Instruction::Call(idx));
+                } else {
+                    self.host.call(MathSin, &mut self.body);
+                }
                 Ok(())
             }
             "cos" => {
                 self.emit_expression(&c.args[0])?;
                 self.f64_promote(&c.args[0])?;
-                self.host.call(MathCos, &mut self.body);
+                if let Some(&idx) = self.func_indexes.get("__intr_math_cos") {
+                    self.body.push(Instruction::Call(idx));
+                } else {
+                    self.host.call(MathCos, &mut self.body);
+                }
                 Ok(())
             }
             "tan" => {
                 self.emit_expression(&c.args[0])?;
                 self.f64_promote(&c.args[0])?;
-                self.host.call(MathTan, &mut self.body);
+                if let Some(&idx) = self.func_indexes.get("__intr_math_tan") {
+                    self.body.push(Instruction::Call(idx));
+                } else {
+                    self.host.call(MathTan, &mut self.body);
+                }
                 Ok(())
             }
             "log" => {
                 self.emit_expression(&c.args[0])?;
                 self.f64_promote(&c.args[0])?;
-                self.host.call(MathLog, &mut self.body);
+                if let Some(&idx) = self.func_indexes.get("__intr_math_log") {
+                    self.body.push(Instruction::Call(idx));
+                } else {
+                    self.host.call(MathLog, &mut self.body);
+                }
                 Ok(())
             }
             "pow" => {
@@ -145,7 +168,7 @@ impl<'a> FuncEmitter<'a> {
                 self.f64_promote(&c.args[0])?;
                 self.emit_expression(&c.args[1])?;
                 self.f64_promote(&c.args[1])?;
-                self.host.call(MathPow, &mut self.body);
+                call(self, "__intr_math_pow", MathPow)?;
                 Ok(())
             }
             "min" => {
@@ -153,7 +176,7 @@ impl<'a> FuncEmitter<'a> {
                 self.f64_promote(&c.args[0])?;
                 self.emit_expression(&c.args[1])?;
                 self.f64_promote(&c.args[1])?;
-                self.host.call(MathMin, &mut self.body);
+                self.body.push(Instruction::F64Min);
                 Ok(())
             }
             "max" => {
@@ -161,7 +184,7 @@ impl<'a> FuncEmitter<'a> {
                 self.f64_promote(&c.args[0])?;
                 self.emit_expression(&c.args[1])?;
                 self.f64_promote(&c.args[1])?;
-                self.host.call(MathMax, &mut self.body);
+                self.body.push(Instruction::F64Max);
                 Ok(())
             }
             "random" => {
@@ -171,7 +194,11 @@ impl<'a> FuncEmitter<'a> {
             "range" => {
                 self.emit_expression(&c.args[0])?;
                 self.emit_expression(&c.args[1])?;
-                self.host.call(MathRange, &mut self.body);
+                if let Some(&idx) = self.func_indexes.get("__intr_math_range") {
+                    self.body.push(Instruction::Call(idx));
+                } else {
+                    self.host.call(MathRange, &mut self.body);
+                }
                 Ok(())
             }
             _ => Err(self.unsupported_expr(&Expression::Call(c.clone()))),

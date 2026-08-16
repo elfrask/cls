@@ -79,6 +79,15 @@ pub(super) struct Engine<'a> {
     method_type_indexes: HashMap<String, u32>,
     /// Métodos de clase pendientes de declarar (tras alloc/load_str).
     pending_class_methods: Vec<(String, FunctionDecl)>,
+    /// Bodies de las internals fusionadas (fase 2): se agregan al code_sec
+    /// DESPUÉS de los bodies del CLS. La declaración (types/funcs/globals/
+    /// exports) ocurre ANTES de compilar los bodies del CLS para que el emisor
+    /// ya pueda llamar a los `__intr_*` por índice (fase 1 de la fusión).
+    internals_bodies: Vec<Function>,
+    /// Elementos de la tabla de internals (fase 1): se declara como tabla 1 en
+    /// `emit` DESPUÉS de la tabla del CLS (0) — el `call_indirect` de internals
+    /// se re-mapea a table_index 1.
+    internals_elem: Vec<u32>,
     target: Target,
 }
 
@@ -133,6 +142,8 @@ impl<'a> Engine<'a> {
             cls_funcs_extra: Vec::new(),
             method_type_indexes: HashMap::new(),
             pending_class_methods: Vec::new(),
+            internals_bodies: Vec::new(),
+            internals_elem: Vec::new(),
             target,
         }
     }

@@ -694,6 +694,12 @@ impl<'a> Engine<'a> {
 
         // Compilar cuerpos (internan strings). El orden del code_sec DEBE coincidir
         // con el orden de declaració: alloc, load_str, [init], métodos, cls.
+        //
+        // FASE 1 de la fusión: declara las internals (types/funcs/globals/tabla/
+        // exports) y registra los `__intr_*` en func_indexes ANTES de compilar
+        // los bodies del CLS (el emisor ya puede emitir `call __intr_*`). Los
+        // bodies de internals se guardan para emitirse al final del code_sec.
+        self.fuse_internals()?;
         let mut bodies: Vec<(String, Function)> = Vec::new();
         let extras: Vec<(String, FunctionDecl)> = self.cls_funcs_extra.clone();
         for (key, f) in &extras {
@@ -761,6 +767,27 @@ impl<'a> Engine<'a> {
             );
         }
 
+        // Tabla de internals (índice 1): para el call_indirect de fmt dispatch.
+        // Se declara DESPUÉS de la tabla 0 del CLS (orden de secciones). El elem
+        // va en offset 1 (la ranura 0 es dummy, como en el CLS) — los
+        // call_indirect de internals usan índices [1..n].
+        if !self.internals_elem.is_empty() {
+            let n = self.internals_elem.len();
+            self.tables_sec.table(TableType {
+                element_type: RefType::FUNCREF,
+                table64: false,
+                minimum: n as u64 + 1,
+                maximum: None,
+                shared: false,
+            });
+            let elems = std::mem::take(&mut self.internals_elem);
+            self.elements_sec.active(
+                Some(1),
+                &ConstExpr::i32_const(1),
+                Elements::Functions(std::borrow::Cow::Owned(elems)),
+            );
+        }
+
         // Data segment con la tabla de strings: se coloca en STRING_DATA_BASE
         // (tras la ventana de internals [0..INTERNALS_WINDOW_END) — la fusión
         // de internals escribe su propio data segment en esa ventana).
@@ -783,10 +810,9 @@ impl<'a> Engine<'a> {
             self.code_sec.function(&body);
         }
 
-        // Fusión de internals: inyecta las funciones `__intr_*` en este módulo
-        // (cero imports), compartiendo la memoria lineal. Registra sus índices
-        // en func_indexes para que el emisor las llame por nombre (Paso 3).
-        self.fuse_internals()?;
+        // FASE 2 de la fusión: los bodies de las internals van al final del
+        // code_sec (tras los del CLS), alineados con su declaración.
+        self.fuse_internals_emit();
 
         // Exports.
         self.exports_sec
