@@ -139,26 +139,26 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "upper" | "lower" | "trim" => {
-                        let h = match member.member.as_str() {
-                            "upper" => HostFn::StrUpper,
-                            "lower" => HostFn::StrLower,
-                            _ => HostFn::StrTrim,
+                        let (name, h) = match member.member.as_str() {
+                            "upper" => ("__intr_str_upper", HostFn::StrUpper),
+                            "lower" => ("__intr_str_lower", HostFn::StrLower),
+                            _ => ("__intr_str_trim", HostFn::StrTrim),
                         };
-                        self.host.call(h, &mut self.body);
+                        self.emit_str_host(name, h);
                         return Ok(true);
                     }
                     "contains" | "startsWith" | "endsWith" => {
                         self.emit_expression(&c.args[0])?;
-                        let h = match member.member.as_str() {
-                            "contains" => HostFn::StrContains,
-                            "startsWith" => HostFn::StrStartsWith,
-                            _ => HostFn::StrEndsWith,
+                        let (name, h) = match member.member.as_str() {
+                            "contains" => ("__intr_str_contains", HostFn::StrContains),
+                            "startsWith" => ("__intr_str_starts_with", HostFn::StrStartsWith),
+                            _ => ("__intr_str_ends_with", HostFn::StrEndsWith),
                         };
-                        self.host.call(h, &mut self.body);
+                        self.emit_str_host(name, h);
                         return Ok(true);
                     }
                     "isEmpty" => {
-                        self.host.call(HostFn::StrIsEmpty, &mut self.body);
+                        self.emit_str_host("__intr_str_is_empty", HostFn::StrIsEmpty);
                         return Ok(true);
                     }
                     "toString" => { return Ok(true); },
@@ -470,7 +470,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "toString" => {
-                        self.host.call(HostFn::StrInt, &mut self.body);
+                        self.emit_str_host("__intr_str_int", HostFn::StrInt);
                         return Ok(true);
                     }
                     "abs" => {
@@ -488,7 +488,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "toString" => {
-                        self.host.call(HostFn::StrFloat, &mut self.body);
+                        self.emit_str_host("__intr_str_float", HostFn::StrFloat);
                         return Ok(true);
                     }
                     "abs" => {
@@ -502,7 +502,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "toString" => {
-                        self.host.call(HostFn::StrBool, &mut self.body);
+                        self.emit_str_host("__intr_str_bool", HostFn::StrBool);
                         return Ok(true);
                     }
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
@@ -512,7 +512,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "toString" => {
-                        self.host.call(HostFn::StrChar, &mut self.body);
+                        self.emit_str_host("__intr_str_char", HostFn::StrChar);
                         return Ok(true);
                     }
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
@@ -563,7 +563,7 @@ impl<'a> FuncEmitter<'a> {
                 let t = self.types.get(&expr_span(arg)).cloned().unwrap_or(Type::Any);
                 match t {
                     Type::String => {
-                        self.host.call(HostFn::StrLength, &mut self.body);
+                        self.emit_str_host("__intr_str_length", HostFn::StrLength);
                     }
                     Type::Record(_, _) | Type::Shape(_) => {
                         self.host.call(HostFn::RecordLen, &mut self.body);
