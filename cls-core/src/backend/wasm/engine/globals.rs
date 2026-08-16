@@ -37,6 +37,7 @@ impl<'a> Engine<'a> {
             self.exceptions,
             &self.intrinsics,
         );
+        fe.shadow_ptr_global = self.shadow_ptr_global;
         for (idx, val) in &self.global_inits {
             fe.emit_expression(val)?;
             fe.body.push(Instruction::GlobalSet(*idx));

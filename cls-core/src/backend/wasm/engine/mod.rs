@@ -37,6 +37,13 @@ pub(super) struct Engine<'a> {
     tag_idx: u32,
     /// Type `[] -> [i64, i64]` del block handler del try_table.
     eh_handler_ty: u32,
+    /// Índice del global WASM `shadow_ptr` (tope del shadow call stack).
+    shadow_ptr_global: u32,
+    /// Índices de los globals const exportados para el host (resolución de
+    /// `idx → nombre` y región de frames en el error).
+    shadow_base_global: u32,
+    string_table_base_global: u32,
+    string_pool_len_global: u32,
     func_indexes: HashMap<String, u32>,
     func_types: HashMap<String, (Vec<Type>, Option<Type>)>,
     func_defaults: HashMap<String, Vec<Option<Expression>>>,
@@ -115,6 +122,10 @@ impl<'a> Engine<'a> {
             tags_sec: TagSection::new(),
             tag_idx: 0,
             eh_handler_ty: 0,
+            shadow_ptr_global: 0,
+            shadow_base_global: 0,
+            string_table_base_global: 0,
+            string_pool_len_global: 0,
             elements_sec: ElementSection::new(),
             class_defs: HashMap::new(),
             next_table_slot: 1,

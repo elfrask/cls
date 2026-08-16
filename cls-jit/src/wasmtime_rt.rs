@@ -2,10 +2,11 @@
 //! host functions (adaptadores de una línea a los cuerpos genéricos de
 //! `crate::host`) y la ejecución del módulo WASM.
 
+use cls_core::error::Span;
 use cls_core::frontend::ast::Module as ClsModule;
 use std::sync::Arc;
 use std::time::Instant;
-use wasmtime::{Caller, Engine, Linker, Memory, Module, Store, Val};
+use wasmtime::{Caller, Engine, Instance, Linker, Memory, Module, Store, Val};
 
 use crate::engine::{finish_run_error, module_offsets, unpack_span};
 use crate::host::{self, HostCtx};
@@ -756,8 +757,7 @@ pub(crate) fn run_wasm_wasmtime(
             let span = payload.get(1).and_then(|v| v.i64()).map(unpack_span);
             let root = _e.root_cause().to_string();
             let short = if root.is_empty() { _e.to_string() } else { root };
-            let call_stack = store.data().call_stack.clone();
-            let pending = store.data().pending_call_site;
+            let (call_stack, pending) = read_shadow_trace(&mut store, &instance, &memory);
             finish_run_error(msg, span, call_stack, pending, short, entry, &store.data().modules)
         }
     };
@@ -799,4 +799,40 @@ fn read_packed_str(store: &mut Store<HostState>, memory: &Memory, packed: i64) -
         .get(ptr..ptr.saturating_add(len))
         .map(|b| String::from_utf8_lossy(b).into_owned())
         .unwrap_or_default()
+}
+
+/// Lee el shadow call stack del módulo (escrito por el emisor en la memoria
+/// lineal). `pending` siempre es `None`: el `fn_enter` del callee ya consumió
+/// el pending como span de su frame (paridad con `pending_call_site.take()`).
+pub(crate) fn read_shadow_trace(
+    store: &mut Store<HostState>,
+    instance: &Instance,
+    memory: &Memory,
+) -> (Vec<(String, Span)>, Option<Span>) {
+    let gi32 = |store: &mut Store<HostState>, name: &str| -> u32 {
+        instance
+            .get_global(&mut *store, name)
+            .and_then(|g| g.get(&mut *store).i32())
+            .unwrap_or(0) as u32
+    };
+    let shadow_ptr = gi32(&mut *store, "__shadow_ptr");
+    let base = gi32(&mut *store, "__shadow_base");
+    let stb = gi32(&mut *store, "__string_table_base");
+    let data = memory.data(&mut *store);
+    let read_u32 = |addr: usize| -> u32 {
+        let mut b = [0u8; 4];
+        let _ = data.get(addr..addr.saturating_add(4)).map(|s| b.copy_from_slice(s));
+        u32::from_le_bytes(b)
+    };
+    let read_u16 = |addr: usize| -> u16 {
+        let mut b = [0u8; 2];
+        let _ = data.get(addr..addr.saturating_add(2)).map(|s| b.copy_from_slice(s));
+        u16::from_le_bytes(b)
+    };
+    let read_bytes = |addr: usize, len: usize| -> Vec<u8> {
+        data.get(addr..addr.saturating_add(len)).map(|s| s.to_vec()).unwrap_or_default()
+    };
+    let name_at = |idx: u32| crate::engine::name_at(stb, idx, read_u32, read_bytes);
+    let stack = crate::engine::read_shadow_stack(shadow_ptr, base, read_u32, read_u16, name_at);
+    (stack, None)
 }

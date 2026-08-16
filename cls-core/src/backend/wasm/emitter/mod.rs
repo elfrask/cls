@@ -89,6 +89,10 @@ pub(crate) struct FuncEmitter<'a> {
     /// Variables promovidas al heap (capturadas por una arrow del scope): el
     /// local guarda un PTR a un slot `[valor]`; los accesos pasan por ahí.
     pub(crate) promoted: HashSet<String>,
+    /// Índice del global WASM `shadow_ptr` (tope del shadow call stack). Lo
+    /// setea el engine después de `new` (el índice se conoce al emitir los
+    /// globals). 0 mientras no se instrumente.
+    pub(crate) shadow_ptr_global: u32,
 }
 
 impl<'a> FuncEmitter<'a> {
@@ -157,6 +161,7 @@ impl<'a> FuncEmitter<'a> {
             intrinsics,
             captures: HashMap::new(),
             promoted: HashSet::new(),
+            shadow_ptr_global: 0,
         }
     }
 

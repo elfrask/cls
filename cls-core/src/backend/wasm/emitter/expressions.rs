@@ -151,6 +151,7 @@ impl<'a> FuncEmitter<'a> {
     /// errores de runtime). `main` (la entrada) se registra sin ubicación
     /// (línea 0): el formateador lo muestra como `-> main` sin línea.
     pub(crate) fn emit_fn_enter(&mut self, f: &FunctionDecl) -> ClsResult<()> {
+        use crate::backend::wasm::layout::{FRAME_SIZE, PENDING_CALL_SLOT_ADDR, SHADOW_LIMIT};
         let display = f
             .name
             .rsplit("::")
@@ -159,26 +160,127 @@ impl<'a> FuncEmitter<'a> {
             .trim_start_matches("__s__")
             .to_string();
         let name_idx = self.intern_string(&display);
-        self.emit_load_str(name_idx);
         let (line, col) = if f.name == "main" {
-            (0, 0)
+            (0u32, 0u32)
         } else {
-            (f.span.start_line, f.span.start_col)
+            (f.span.start_line.min(65535), f.span.start_col.min(65535))
         };
-        self.body.push(Instruction::I64Const(line as i64));
-        self.body.push(Instruction::I64Const(col as i64));
-        self.host.call(HostFn::FnEnter, &mut self.body);
+        if self.shadow_ptr_global == 0 {
+            // No instrumentado (sin global del shadow stack): no-op.
+            return Ok(());
+        }
+        // Shadow call stack en memoria lineal (plan-performance/shadow-stack-wasm.md):
+        // if shadow_ptr < SHADOW_LIMIT { shadow_ptr += 8; frame = {name_idx, line, col} }
+        self.body.push(Instruction::GlobalGet(self.shadow_ptr_global));
+        self.body.push(Instruction::I32Const(SHADOW_LIMIT as i32));
+        self.body.push(Instruction::I32LtU);
+        self.body.push(Instruction::If(BlockType::Empty));
+        self.body.push(Instruction::GlobalGet(self.shadow_ptr_global));
+        self.body.push(Instruction::I32Const(FRAME_SIZE as i32));
+        self.body.push(Instruction::I32Add);
+        self.body.push(Instruction::GlobalSet(self.shadow_ptr_global));
+        let addr = self.fresh_local_ty(WasTy::I32);
+        self.body.push(Instruction::GlobalGet(self.shadow_ptr_global));
+        self.body.push(Instruction::I32Const(FRAME_SIZE as i32));
+        self.body.push(Instruction::I32Sub);
+        self.body.push(Instruction::LocalSet(addr));
+        // name_idx (u32 -> i32 store).
+        self.body.push(Instruction::LocalGet(addr));
+        self.body.push(Instruction::I32Const(name_idx as i32));
+        self.body.push(Instruction::I32Store(MemArg {
+            offset: 0,
+            align: 2,
+            memory_index: 0,
+        }));
+        if f.name == "main" {
+            self.body.push(Instruction::LocalGet(addr));
+            self.body.push(Instruction::I32Const(0));
+            self.body.push(Instruction::I32Store16(MemArg {
+                offset: 4,
+                align: 1,
+                memory_index: 0,
+            }));
+            self.body.push(Instruction::LocalGet(addr));
+            self.body.push(Instruction::I32Const(0));
+            self.body.push(Instruction::I32Store16(MemArg {
+                offset: 6,
+                align: 1,
+                memory_index: 0,
+            }));
+        } else {
+            // line = pending_call_site.line si != 0 (call site del llamador),
+            // si no f.span.line (paridad con host_fn_enter).
+            // En WASM: `if pending == 0 { line = f.span.line }` (If entra al
+            // then solo si la condicion es != 0, por eso I32Eqz).
+            let tl = self.fresh_local_ty(WasTy::I32);
+            self.body.push(Instruction::I32Const(PENDING_CALL_SLOT_ADDR as i32));
+            self.body.push(Instruction::I32Load16U(MemArg {
+                offset: 0,
+                align: 1,
+                memory_index: 0,
+            }));
+            self.body.push(Instruction::LocalSet(tl));
+            self.body.push(Instruction::LocalGet(tl));
+            self.body.push(Instruction::I32Eqz);
+            self.body.push(Instruction::If(BlockType::Empty));
+            self.body.push(Instruction::I32Const(line as i32));
+            self.body.push(Instruction::LocalSet(tl));
+            self.body.push(Instruction::End);
+            let tc = self.fresh_local_ty(WasTy::I32);
+            self.body.push(Instruction::I32Const((PENDING_CALL_SLOT_ADDR + 2) as i32));
+            self.body.push(Instruction::I32Load16U(MemArg {
+                offset: 0,
+                align: 1,
+                memory_index: 0,
+            }));
+            self.body.push(Instruction::LocalSet(tc));
+            self.body.push(Instruction::LocalGet(tc));
+            self.body.push(Instruction::I32Eqz);
+            self.body.push(Instruction::If(BlockType::Empty));
+            self.body.push(Instruction::I32Const(col as i32));
+            self.body.push(Instruction::LocalSet(tc));
+            self.body.push(Instruction::End);
+            self.body.push(Instruction::LocalGet(addr));
+            self.body.push(Instruction::LocalGet(tl));
+            self.body.push(Instruction::I32Store16(MemArg {
+                offset: 4,
+                align: 1,
+                memory_index: 0,
+            }));
+            self.body.push(Instruction::LocalGet(addr));
+            self.body.push(Instruction::LocalGet(tc));
+            self.body.push(Instruction::I32Store16(MemArg {
+                offset: 6,
+                align: 1,
+                memory_index: 0,
+            }));
+        }
+        self.body.push(Instruction::End);
         Ok(())
     }
 
 
-    /// Emite `env.fn_call_site(line, col)` con el span del call site (la llamada
-    /// dentro del llamador). El host lo guarda como pendiente; el `fn_enter` del
-    /// callee lo consume como span del frame.
+    /// Emite el call site pendiente (line, col) del llamador en el slot fijo.
+    /// El `fn_enter` del callee lo lee como span del frame.
     pub(crate) fn emit_call_site(&mut self, span: &Span) {
-        self.body.push(Instruction::I64Const(span.start_line as i64));
-        self.body.push(Instruction::I64Const(span.start_col as i64));
-        self.host.call(HostFn::CallSite, &mut self.body);
+        use crate::backend::wasm::layout::PENDING_CALL_SLOT_ADDR;
+        if self.shadow_ptr_global == 0 {
+            return;
+        }
+        self.body.push(Instruction::I32Const(PENDING_CALL_SLOT_ADDR as i32));
+        self.body.push(Instruction::I32Const(span.start_line.min(65535) as i32));
+        self.body.push(Instruction::I32Store16(MemArg {
+            offset: 0,
+            align: 1,
+            memory_index: 0,
+        }));
+        self.body.push(Instruction::I32Const((PENDING_CALL_SLOT_ADDR + 2) as i32));
+        self.body.push(Instruction::I32Const(span.start_col.min(65535) as i32));
+        self.body.push(Instruction::I32Store16(MemArg {
+            offset: 0,
+            align: 1,
+            memory_index: 0,
+        }));
     }
 
 
@@ -270,9 +372,16 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Emite `env.fn_exit()` antes de salir de una función CLS.
+    /// Decrementa el shadow call stack al salir de una función CLS.
     pub(crate) fn emit_fn_exit(&mut self) {
-        self.host.call(HostFn::FnExit, &mut self.body);
+        use crate::backend::wasm::layout::FRAME_SIZE;
+        if self.shadow_ptr_global == 0 {
+            return;
+        }
+        self.body.push(Instruction::GlobalGet(self.shadow_ptr_global));
+        self.body.push(Instruction::I32Const(FRAME_SIZE as i32));
+        self.body.push(Instruction::I32Sub);
+        self.body.push(Instruction::GlobalSet(self.shadow_ptr_global));
     }
 
 
