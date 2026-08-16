@@ -133,7 +133,7 @@ impl VfsResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vfs::protocol::LocalFs;
+    use crate::walker::vfs::protocol::LocalFs;
     use std::sync::Arc;
 
     fn test_resolver() -> VfsResolver {

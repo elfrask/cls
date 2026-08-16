@@ -1,4 +1,4 @@
-use crate::value::{FunValue, Value, Promise, Pollable, PollState};
+use crate::walker::value::{FunValue, Value, Promise, Pollable, PollState};
 use std::collections::HashMap;
 
 /// Pollable que resuelve después de un delay (thread separado).
@@ -18,7 +18,7 @@ impl DelayTask {
 }
 
 impl Pollable for DelayTask {
-    fn poll(&mut self, _interp: &mut crate::interpreter::Interpreter) -> PollState {
+    fn poll(&mut self, _interp: &mut crate::walker::interpreter::Interpreter) -> PollState {
         if self.done {
             return PollState::Ready(Value::Void);
         }
@@ -51,7 +51,7 @@ impl AllTask {
 }
 
 impl Pollable for AllTask {
-    fn poll(&mut self, interp: &mut crate::interpreter::Interpreter) -> PollState {
+    fn poll(&mut self, interp: &mut crate::walker::interpreter::Interpreter) -> PollState {
         while self.index < self.promises.len() {
             let mut p = self.promises[self.index].clone();
             match p.poll(interp) {
@@ -80,7 +80,7 @@ impl RaceTask {
 }
 
 impl Pollable for RaceTask {
-    fn poll(&mut self, interp: &mut crate::interpreter::Interpreter) -> PollState {
+    fn poll(&mut self, interp: &mut crate::walker::interpreter::Interpreter) -> PollState {
         while self.index < self.promises.len() {
             let mut p = self.promises[self.index].clone();
             match p.poll(interp) {

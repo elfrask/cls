@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use cls_core::error::{ClsError, ClsResult};
-use crate::value::Value;
+use crate::walker::value::Value;
 
 pub type MethodFn = Arc<dyn Fn(&[Value]) -> ClsResult<Value>>;
 

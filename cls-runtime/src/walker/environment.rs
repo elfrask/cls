@@ -1,4 +1,4 @@
-use crate::value::Value;
+use crate::walker::value::Value;
 use std::collections::{HashMap, HashSet};
 
 /// Entorno de ejecución: scopes anidados con variables

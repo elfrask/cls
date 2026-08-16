@@ -6,7 +6,7 @@
 //! CLS no hace dlopen/LoadLibrary.
 
 use crate::error::ClsResult;
-use crate::value::Value;
+use crate::walker::value::Value;
 
 /// Tipo nativo (ABI C) de un parámetro/retorno/variable de `extension`.
 #[derive(Debug, Clone, PartialEq, Eq)]

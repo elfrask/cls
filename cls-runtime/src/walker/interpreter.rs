@@ -1,8 +1,8 @@
-use crate::environment::Environment;
+use crate::walker::environment::Environment;
 use crate::ffi::{NativeBackend, NativeType};
-use crate::intrinsics::Intrinsics;
-use crate::resolver::ModuleResolver;
-use crate::value::{FunValue, Value, StructDef, StructField, StructInstance, Pollable, PollState, Promise, ClassDef, ClassInstance, EnumDef, EnumValue};
+use crate::walker::intrinsics::Intrinsics;
+use crate::walker::resolver::ModuleResolver;
+use crate::walker::value::{FunValue, Value, StructDef, StructField, StructInstance, Pollable, PollState, Promise, ClassDef, ClassInstance, EnumDef, EnumValue};
 use cls_core::config::ModuleManifest;
 use cls_core::error::{ClsError, ClsResult, Diagnostic, Span, StackFrame};
 use cls_core::frontend::ast::*;
@@ -68,7 +68,7 @@ pub struct Interpreter {
     classes: HashMap<String, ClassDef>,
     self_stack: Vec<SelfFrame>,
     /// Métodos de tipos primitivos (String, Array, ...) — sin boxing
-    method_tables: HashMap<crate::stdlib::primitive::PrimitiveType, HashMap<&'static str, crate::stdlib::primitive::PrimitiveMethod>>,
+    method_tables: HashMap<crate::walker::stdlib::primitive::PrimitiveType, HashMap<&'static str, crate::walker::stdlib::primitive::PrimitiveMethod>>,
     /// Backends nativos por tipo de extensión (`extension "lib" as <kind>`).
     /// El nodo registra cada backend (C hoy; Python, Wasm... en el futuro).
     native_backends: HashMap<String, Arc<dyn NativeBackend>>,
@@ -104,7 +104,7 @@ impl Interpreter {
             structs: HashMap::new(),
             classes: HashMap::new(),
             self_stack: Vec::new(),
-            method_tables: crate::stdlib::primitive::build_method_tables(),
+            method_tables: crate::walker::stdlib::primitive::build_method_tables(),
             native_backends: HashMap::new(),
             target: Target::host(),
             when_declared: HashSet::new(),
@@ -1584,7 +1584,7 @@ impl Interpreter {
 
         let result = match callee {
             Value::Fun(fun) => match &fun.kind {
-                crate::value::FunKind::Native { params: _, func } => {
+                crate::walker::value::FunKind::Native { params: _, func } => {
                     // Interceptar intrinsics que necesitan magic methods
                     match fun.name.as_str() {
                         "toString" => self.native_to_string(&args, call_span),
@@ -1596,7 +1596,7 @@ impl Interpreter {
                         _ => func(&args),
                     }
                 }
-                crate::value::FunKind::User { params, body, closure } => {
+                crate::walker::value::FunKind::User { params, body, closure } => {
                     if is_async {
                         // Función async: crear Promise lazy, NO ejecutar el cuerpo aún
                         let task = CoroutineTask::new(&fun.name, body.clone(), params.clone(), args);
@@ -1852,8 +1852,8 @@ impl Interpreter {
     /// Resuelve un método/getter de tipo primitivo (String, Array, Tuple, ...).
     /// Devuelve `None` si el tipo no tiene el miembro (para fallback del caller).
     fn resolve_primitive_method(&mut self, recv: &Value, member: &str, _span: &Span) -> ClsResult<Option<Value>> {
-        use crate::stdlib::primitive::PrimitiveMethod;
-        let ptype = match crate::stdlib::primitive::primitive_type_of(recv) {
+        use crate::walker::stdlib::primitive::PrimitiveMethod;
+        let ptype = match crate::walker::stdlib::primitive::primitive_type_of(recv) {
             Some(t) => t,
             None => return Ok(None),
         };
@@ -2354,7 +2354,7 @@ impl Interpreter {
                 CmxChild::Element(el) => self.evaluate_cmx(el)?,
             });
         }
-        Ok(Value::Cmx(Box::new(crate::value::CmxValue { tag, props, children })))
+        Ok(Value::Cmx(Box::new(crate::walker::value::CmxValue { tag, props, children })))
     }
 
     fn eval_cmx_attr(&mut self, attr: &CmxAttribute) -> ClsResult<Value> {
