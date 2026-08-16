@@ -36,6 +36,10 @@ pub(crate) fn cache_key(
     let mut h = std::collections::hash_map::DefaultHasher::new();
     source.hash(&mut h);
     cls_core::VERSION.hash(&mut h);
+    // Hash de los fuentes del backend WASM: editar el emisor invalida los .wasm
+    // cacheados (sin esto, módulos viejos se reutilizan y confunden el debug —
+    // HANDOFF-FASE3 Paso 0).
+    cls_core::BACKEND_HASH.hash(&mut h);
     target_str.unwrap_or("").hash(&mut h);
     runtime.hash(&mut h);
     // Integridad de los módulos importados: se hashean los SOURCES de los módulos
