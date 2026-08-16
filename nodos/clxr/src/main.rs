@@ -9,10 +9,10 @@ use cls_runtime::{VfsResolver, LocalFs, ZipFs};
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("clxr 2.0 — CLS Runtime Executor");
+        eprintln!("clxr 2.0 - CLS Runtime Executor");
         eprintln!("Uso: clxr <archivo> [args...]");
-        eprintln!("  .clsx  → ejecucion directa");
-        eprintln!("  .clsapp → extrae y ejecuta (formato zip)");
+        eprintln!("  .clsx  -> ejecucion directa");
+        eprintln!("  .clsapp -> extrae y ejecuta (formato zip)");
         process::exit(1);
     }
 

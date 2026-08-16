@@ -27,13 +27,13 @@ pub fn flatten_imports(module: &ClsModule, imports: &[(String, ClsModule)]) -> C
                 }
             }
             Statement::Import(imp) => {
-                // `import "m" as x` → exports bajo el prefijo `x::` (namespaced).
+                // `import "m" as x` -> exports bajo el prefijo `x::` (namespaced).
                 let m = imports.iter().find(|(p, _)| *p == imp.path).map(|(_, m)| m);
                 if let Some(m) = m {
                     let prefix = imp.alias.clone().unwrap_or_else(|| imp.path.clone());
                     push_prefixed_exports(&mut statements, m, &prefix);
-                    // Módulo→módulo: el módulo importado puede importar otros a su
-                    // vez (nested_b → nested_a). Sus referencias internas (na::base)
+                    // Módulo->módulo: el módulo importado puede importar otros a su
+                    // vez (nested_b -> nested_a). Sus referencias internas (na::base)
                     // necesitan que esos exports existan en el WASM merged.
                     flatten_nested_imports(&mut statements, m, imports);
                 }

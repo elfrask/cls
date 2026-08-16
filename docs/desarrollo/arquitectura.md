@@ -10,19 +10,19 @@ CLS es un workspace Rust (edición 2021) con 3 crates de librería y 3 nodos.
 | `cls-runtime` | Tree-walker (`interpreter.rs`), `Value`, stdlib core, VFS, `error_report`, `.clslib`/`ClsLibIndex`, FFI (`extension`) |
 | `cls-jit` | Motor JIT reusable: compile/engine/flatten/host/resolve + `wasmtime_rt` / `wasmi_rt` |
 | `nodos/clx` | CLI de desarrollo + LSP + `maptype` + backend nativo + módulos desktop (`fs`, `http`, `Lib`, `os`, `path`, `process`, `time`, `random`) |
-| `nodos/clxb` | Bindings C (`clsb`) — motor de embedding (compile, call, run_main, eval) |
+| `nodos/clxb` | Bindings C (`clsb`) - motor de embedding (compile, call, run_main, eval) |
 | `nodos/clxr` | Runtime ligero (solo `cls-core` + `cls-runtime`) |
 
 ## Pipeline del compilador
 
 ```
-.clsx → Lexer → Parser → AST → TypeChecker → WasmBackend → WASM → wasmtime/wasmi
+.clsx -> Lexer -> Parser -> AST -> TypeChecker -> WasmBackend -> WASM -> wasmtime/wasmi
 ```
 
-El JIT (`cls-jit/src/engine.rs`) orquesta: lectura → lexer → parser →
-imports (recursivos) → caché (`~/.cache/cls/`) → desplazamiento de spans
-(`span_shift`, offset `100000 * n` por módulo) → typecheck estricto →
-flatten → emisión WASM → ejecución (ver `runtime/jit.md`).
+El JIT (`cls-jit/src/engine.rs`) orquesta: lectura -> lexer -> parser ->
+imports (recursivos) -> caché (`~/.cache/cls/`) -> desplazamiento de spans
+(`span_shift`, offset `100000 * n` por módulo) -> typecheck estricto ->
+flatten -> emisión WASM -> ejecución (ver `runtime/jit.md`).
 
 ### `cls-core` (`cls-core/src/lib.rs`)
 
@@ -36,7 +36,7 @@ Módulos expuestos: `config`, `frontend`, `middleware`, `backend`, `error`,
   ~8900 líneas), `json.rs` (`JsonBackend`), `visitor.rs` (`AstVisitor`).
 
 **El typeck es la fuente de verdad del emisor**: produce el type map
-`Span → Type` (`types_by_span`) que el `WasmBackend` consume por referencia
+`Span -> Type` (`types_by_span`) que el `WasmBackend` consume por referencia
 sin clonar. El JIT corre el checker con `strict: true`,
 `no_implicit_any: true` y `null_safety: true`.
 
@@ -67,12 +67,12 @@ Constructores:
 `resolve`, `state`, `timing`, `wasmtime_rt`, `wasmi_rt` (feature
 `wasmi-runtime`).
 
-- `compile.rs` — `compile_file`/`compile_source`/`CompiledModule`/`ExportSig`.
-- `engine.rs` — `run_jit`/`run_jit_with`; `RuntimeKind { Wasmtime, Wasmi }`.
-- `host.rs` + `wasmtime_rt.rs` — cuerpos genéricos de las host functions
+- `compile.rs` - `compile_file`/`compile_source`/`CompiledModule`/`ExportSig`.
+- `engine.rs` - `run_jit`/`run_jit_with`; `RuntimeKind { Wasmtime, Wasmi }`.
+- `host.rs` + `wasmtime_rt.rs` - cuerpos genéricos de las host functions
   `env.*` y `register_host_functions` en el `Linker`; canal
   `env.host_call(id, ptr, n)` para intrinsics del nodo (`HostCallHandler`).
-- `resolve.rs` — `cache_dir()`, `load_import_modules`, `module_candidates`.
+- `resolve.rs` - `cache_dir()`, `load_import_modules`, `module_candidates`.
 - El nodo inyecta `JitContext { native_backend, module_index, host_intrinsics,
   host_call_handler, module_source_resolver, output }`.
 
@@ -86,18 +86,18 @@ Constructores:
 
 ## Reglas de arquitectura
 
-1. **Core/runtime agnósticos al entorno** — el nodo inyecta resolvers de
+1. **Core/runtime agnósticos al entorno** - el nodo inyecta resolvers de
    módulos, internals (`fs`, `http`, ...), VFS y backends nativos. El
    runtime centraliza la carga/ejecución/exports
    (`Interpreter::load_module_source`).
-2. **Errores runtime con trace completo** — `build_error_report` →
+2. **Errores runtime con trace completo** - `build_error_report` ->
    `error_report.rs` (formatos Plain/Console/Html/Json; el nodo elige).
    Typecheck de un solo nivel (ver `runtime/errores.md`).
-3. **Colores centralizados** — `cls_core::ansi`.
-4. **Rendimiento** — el JIT no boxea ni usa dispatch dinámico en runtime;
+3. **Colores centralizados** - `cls_core::ansi`.
+4. **Rendimiento** - el JIT no boxea ni usa dispatch dinámico en runtime;
    los métodos de primitivos se compilan a llamadas directas a host
    functions; el typeck es la fuente de tipos para la emisión.
-5. **Sin paridad con el walker** — el walker (`cls-runtime/interpreter.rs`)
+5. **Sin paridad con el walker** - el walker (`cls-runtime/interpreter.rs`)
    está deprecado (se elimina tras 2.0-dev1) y solo sirve de referencia
    sintáctica.
 

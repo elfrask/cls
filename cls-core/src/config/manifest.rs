@@ -160,9 +160,9 @@ impl ModuleManifest {
         None
     }
 
-    /// La versión exacta de una dependencia declarada (nombre → semver).
+    /// La versión exacta de una dependencia declarada (nombre -> semver).
     /// Devuelve el rango declarado (p.ej. `^1.2.0`); la resolución exacta del
-    /// semver se hace contra el almacén global. Si no está declarada → None.
+    /// semver se hace contra el almacén global. Si no está declarada -> None.
     pub fn dependency_version(&self, name: &str) -> Option<&str> {
         self.dependencies
             .get(name)

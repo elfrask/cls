@@ -37,7 +37,7 @@ pub fn show_type_diag(
     let sev = ansi::bold(true, ansi::fg(true, ansi::codes::BRIGHT_RED, "ERROR"));
     let msg = ansi::fg(true, ansi::codes::BRIGHT_RED, &diag.message);
 
-    // Determinar el archivo real del span (desplazado → módulo importado).
+    // Determinar el archivo real del span (desplazado -> módulo importado).
     let raw_line = diag.span.start_line;
     let col = diag.span.start_col;
     let (file_label, source, real_line) = if raw_line >= 100000 {

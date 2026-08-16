@@ -328,7 +328,7 @@ impl Lexer {
         }
     }
 
-    /// Parsea un elemento CMX completo → Vec de tokens en orden
+    /// Parsea un elemento CMX completo -> Vec de tokens en orden
     fn lex_cmx_element_tokens(&mut self) -> ClsResult<(String, Vec<SpannedToken>)> {
         let mut tokens = Vec::new();
         let tag_span = self.current_span();

@@ -157,7 +157,7 @@ fn compile_module(
         .collect();
     checker.check_with_prelude(module, &prelude)?;
 
-    // Diagnostics de tipo → error estructurado (el primero).
+    // Diagnostics de tipo -> error estructurado (el primero).
     for diag in checker.diagnostics() {
         if matches!(diag.severity, cls_core::error::diagnostic::Severity::Error) {
             return Err(ClsError::compile_at(&diag.message, &diag.span));

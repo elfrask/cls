@@ -1,4 +1,4 @@
-# _runner.ps1 — runner de re-auditoria Fase 1 (v2)
+# _runner.ps1 - runner de re-auditoria Fase 1 (v2)
 # Uso: powershell -File _runner.ps1 <ruta.clsx> [-HangTimeoutMs N] [-Walk]
 # Captura stdout/stderr a archivos UTF-8, devuelve exit code, mide tiempo y
 # detecta cuelgues (matando el proceso si supera el timeout).

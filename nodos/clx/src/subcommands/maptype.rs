@@ -388,7 +388,7 @@ fn scan_and_process(dir: &Path, out_base: &Path, last: &mut HashMap<PathBuf, u64
 
 pub fn execute(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!("clx maptype — Generar type maps (.type.json)");
+        println!("clx maptype - Generar type maps (.type.json)");
         println!();
         println!("Uso: clx maptype [path] -o <dir> [--watch]");
         println!();

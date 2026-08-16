@@ -11,12 +11,12 @@ examples/benchmarks-modules/
 ├── cls.json               (proyecto CLS)
 ├── run-bench.ps1          (corre walker y JIT, compara)
 └── src/
-    ├── main.clsx          (entry — importa los 4 módulos)
+    ├── main.clsx          (entry - importa los 4 módulos)
     └── lib/
-        ├── fib.clsx       (recursión — fib(26))
-        ├── primos.clsx    (bucles + % — primos hasta 10000)
-        ├── collatz.clsx   (bucles + aritmética — secuencia más larga hasta 5000)
-        └── arrays.clsx    (push + suma de array — 5000 elementos)
+        ├── fib.clsx       (recursión - fib(26))
+        ├── primos.clsx    (bucles + % - primos hasta 10000)
+        ├── collatz.clsx   (bucles + aritmética - secuencia más larga hasta 5000)
+        └── arrays.clsx    (push + suma de array - 5000 elementos)
 ```
 
 ## Cómo correr
@@ -42,4 +42,4 @@ powershell -File examples/benchmarks-modules/run-bench.ps1
   módulos y main; se resolvió **desplazando los spans** de cada módulo importado
   con un offset de línea único (`cls-core/src/frontend/span_shift.rs` + `run_jit`).
   Nota: en los módulos, los loops deben declarar la variable (`for (var i = ...)`)
-  — la asignación implícita sin `var` no se soporta en el typeck estricto del JIT.
+  - la asignación implícita sin `var` no se soporta en el typeck estricto del JIT.

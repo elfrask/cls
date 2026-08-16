@@ -1,4 +1,4 @@
-// benchmark.js — Micro-benchmark de Node.js.
+// benchmark.js - Micro-benchmark de Node.js.
 // Mide las MISMAS 5 cargas de trabajo que benchmark.clsx y benchmark.py.
 //
 // Cómo correr:

@@ -4,7 +4,7 @@ La stdlib core es la que existe **siempre** (con `clx run`, `clxr` y el REPL),
 tanto en el JIT como en el tree-walker. Se compone de dos partes:
 
 - **Intrinsics globales**: funciones sin módulo, disponibles directamente.
-- **Módulos core**: `math`, `json` y `async` (este último solo en el walker —
+- **Módulos core**: `math`, `json` y `async` (este último solo en el walker -
   el JIT no compila `await`).
 
 Las firmas canónicas viven en `cls-runtime/clsi/` (`core.clsi`, `math.clsi`,
@@ -22,7 +22,7 @@ el walker.
 | `print` | `print(val...)` | Imprime en consola. Une múltiples args con un espacio. |
 | `input` | `input(prompt) -> String` | Lee una línea desde la entrada estándar. |
 | `toString` | `toString(val: Any) -> String` | Convierte cualquier valor a string. |
-| `int` | `int(val: Any) -> int` | Convierte a entero (float → truncado, string → parseo). |
+| `int` | `int(val: Any) -> int` | Convierte a entero (float -> truncado, string -> parseo). |
 | `float` | `float(val: Any) -> float` | Convierte a flotante. |
 | `str` | `str(val: Any) -> String` | Alias de `toString`. |
 | `bool` | `bool(val: Any) -> bool` | Verdad del valor (`is_truthy`). |
@@ -86,7 +86,7 @@ json.stringify(d);                  # "{\"a\":1}"
 
 | Función | Firma | Descripción |
 |---|---|---|
-| `parse` | `parse(text: String) -> Any` | Parsea un string JSON: objetos → `Record`, arrays → `Array`, además de los escalares. |
+| `parse` | `parse(text: String) -> Any` | Parsea un string JSON: objetos -> `Record`, arrays -> `Array`, además de los escalares. |
 | `stringify` | `stringify(value: Any) -> String` | Convierte un valor a JSON string. |
 
 `stringify` respeta el magic method `__toJson`: si el objeto lo define, lo usa

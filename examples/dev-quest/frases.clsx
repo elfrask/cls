@@ -1,4 +1,4 @@
-# frases.clsx — Mi dosis diaria de motivación.
+# frases.clsx - Mi dosis diaria de motivación.
 # Intenta traer una frase real desde internet y, si la red falla,
 # usa mis frases favoritas guardadas aquí. Nunca me quedo sin ánimos.
 # El módulo http NO se puede importar aquí (los internos del nodo solo
@@ -36,7 +36,7 @@ export function fraseDelDia(httpMod: Any) -> String {
         var objeto: Any = json.parse(respuesta);
         var texto: Any = objeto.content;
         var autor: Any = objeto.author;
-        return "\"$texto\" — $autor";
+        return "\"$texto\" - $autor";
     } catch (e) {
         return fraseLocal();
     }

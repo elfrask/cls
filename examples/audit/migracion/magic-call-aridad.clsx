@@ -8,6 +8,6 @@ class ConCall {
 function main(args: String[]) -> int {
     var c = ConCall(10);
     print("1:", c(5));         # 15
-    print("2:", c(1, 2));      # aridad incorrecta → ?
+    print("2:", c(1, 2));      # aridad incorrecta -> ?
     return 0;
 }

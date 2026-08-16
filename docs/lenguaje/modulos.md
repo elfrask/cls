@@ -31,7 +31,7 @@ function main(args: String[]) -> int {
 - `alias::funcion` (`NamespaceAccess`) es el acceso soportado por el JIT.
 - `alias.funcion()` y `alias.var` (member access sobre el Record del módulo)
   funcionan en el tree-walker.
-- Si no se da alias, el runtime usa el path como nombre (`import "mod"` →
+- Si no se da alias, el runtime usa el path como nombre (`import "mod"` ->
   `mod::sym`).
 
 ### `from "mod" import a as b, c;`
@@ -84,12 +84,12 @@ exportados.
 ## Resolución de módulos
 
 El `ModuleResolver` del runtime consulta en orden:
-**caché → internals → hook externo → error**.
+**caché -> internals -> hook externo -> error**.
 
-1. **Caché** — módulos ya cargados en esta ejecución.
+1. **Caché** - módulos ya cargados en esta ejecución.
 2. **Internals** del core: `math`, `json`, `async`. Del nodo desktop:
    `fs`, `http`, `Lib`, `os`, `path`, `process`, `time`, `random`.
-3. **Hook externo** — el nodo resuelve módulos de usuario; en `clx` el orden de
+3. **Hook externo** - el nodo resuelve módulos de usuario; en `clx` el orden de
    candidatos es:
    1. `{dir del archivo}/{path}.clsx` (junto al archivo que importa)
    2. `{workspace}/modules/{nombre}/mod.clsx`
@@ -98,7 +98,7 @@ El `ModuleResolver` del runtime consulta en orden:
    5. `~/.cls/modules/{nombre}@{version}/mod.clsx` (globales versionadas;
       filtra por el rango semver declarado en `cls.json`)
    6. `~/.cls/modules/{nombre}/mod.clsx` (globales sin versión)
-4. **Error** — `Módulo 'X' no encontrado`.
+4. **Error** - `Módulo 'X' no encontrado`.
 
 ## Módulos en el JIT
 

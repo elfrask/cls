@@ -1,4 +1,4 @@
-//! AST — ClassDecl (Fase 1: extraido de frontend/ast.rs).
+//! AST - ClassDecl (Fase 1: extraido de frontend/ast.rs).
 
 use crate::frontend::ast::*;
 use crate::error::diagnostic::Span;
@@ -15,7 +15,7 @@ pub struct ClassDecl {
     /// Parámetros de tipo genérico `<T>` (compile-time)
     #[serde(default)]
     pub type_params: Vec<TypeParam>,
-    /// Visibilidad (export → disponible en módulos importados)
+    /// Visibilidad (export -> disponible en módulos importados)
     #[serde(default)]
     pub visibility: Visibility,
 }

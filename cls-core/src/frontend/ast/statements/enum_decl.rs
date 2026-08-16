@@ -1,4 +1,4 @@
-//! AST — EnumDecl (Fase 1: extraido de frontend/ast.rs).
+//! AST - EnumDecl (Fase 1: extraido de frontend/ast.rs).
 
 use crate::frontend::ast::*;
 use crate::error::diagnostic::Span;
@@ -12,6 +12,6 @@ pub struct EnumDecl {
     pub name: String,
     pub variants: Vec<String>,
     pub span: Span,
-    /// Visibilidad (export → disponible en módulos importados)
+    /// Visibilidad (export -> disponible en módulos importados)
     pub visibility: Visibility,
 }

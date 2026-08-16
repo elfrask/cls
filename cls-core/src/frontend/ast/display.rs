@@ -1,12 +1,12 @@
-﻿//! AST â€” display (Fase 1: extraido de frontend/ast.rs).
+﻿//! AST - display (Fase 1: extraido de frontend/ast.rs).
 
 use crate::frontend::ast::*;
 use std::fmt;
 
 
-/// Formatea una expresiÃ³n como cÃ³digo CLS legible (para mensajes de error).
-/// NO usa Debug del AST â€” el usuario debe poder leer quÃ© fallÃ³. Es la Ãºnica
-/// implementaciÃ³n compartida por typeck y el backend WASM.
+/// Formatea una expresión como código CLS legible (para mensajes de error).
+/// NO usa Debug del AST - el usuario debe poder leer qué falló. Es la única
+/// implementación compartida por typeck y el backend WASM.
 pub fn expr_display(expr: &Expression) -> String {
     use crate::frontend::token::Operator;
     match expr {

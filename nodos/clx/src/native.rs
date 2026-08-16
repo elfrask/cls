@@ -1,7 +1,7 @@
 //! Backend nativo dinámico para la feature `extension` del nodo clx.
 //!
 //! Resuelve símbolos por nombre en librerías del sistema (libloading / dlopen /
-//! LoadLibrary) → el usuario final solo escribe CLS (`extension "lib" as C { ... }`),
+//! LoadLibrary) -> el usuario final solo escribe CLS (`extension "lib" as C { ... }`),
 //! sin tocar el nodo ni salir del lenguaje.
 //!
 //! ABI: los argumentos se pasan por registros (i64 para enteros/punteros, f64 para
@@ -333,7 +333,7 @@ impl NativeBackend for DynamicBackend {
             })?;
         let base = *sym as usize;
 
-        // Convertir args → registros; los CString viven en buffers durante la llamada.
+        // Convertir args -> registros; los CString viven en buffers durante la llamada.
         let mut buffers: Vec<CString> = Vec::new();
         let mut cvals: Vec<CVal> = Vec::with_capacity(args.len());
         let mut shapes: Vec<Shape> = Vec::with_capacity(args.len());

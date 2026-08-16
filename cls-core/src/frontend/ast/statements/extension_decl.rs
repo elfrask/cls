@@ -1,11 +1,11 @@
-//! AST — ExtensionDecl (Fase 1: extraido de frontend/ast.rs).
+//! AST - ExtensionDecl (Fase 1: extraido de frontend/ast.rs).
 
 use crate::frontend::ast::*;
 use crate::error::diagnostic::Span;
 use serde::{Deserialize, Serialize};
 
 
-/// Declaración nativa (`extension "lib" { ... }`) — símbolos de librerías del SO.
+/// Declaración nativa (`extension "lib" { ... }`) - símbolos de librerías del SO.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtensionDecl {
     pub library: String,

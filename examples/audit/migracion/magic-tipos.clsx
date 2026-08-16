@@ -8,8 +8,8 @@ class V {
 };
 function main(args: String[]) -> int {
     var a = V(5);
-    print("V + 2:", a + 2);          # __add(o: V) recibe int → ?
-    print("V == 2:", a == 2);        # __equals(o: V) recibe int → ?
-    print("V < 2:", a < 2);          # __compare(o: V) recibe int → ?
+    print("V + 2:", a + 2);          # __add(o: V) recibe int -> ?
+    print("V == 2:", a == 2);        # __equals(o: V) recibe int -> ?
+    print("V < 2:", a < 2);          # __compare(o: V) recibe int -> ?
     return 0;
 }

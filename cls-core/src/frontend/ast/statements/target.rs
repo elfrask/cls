@@ -1,4 +1,4 @@
-//! AST — Target (Fase 1: extraido de frontend/ast.rs).
+//! AST - Target (Fase 1: extraido de frontend/ast.rs).
 
 use crate::frontend::ast::*;
 use serde::{Deserialize, Serialize};
@@ -41,7 +41,7 @@ impl Target {
     }
 
     /// Parsea un target: tripla `arch-os-abi` (o `arch-vendor-os-abi`) o un
-    /// nombre simple (SO conocido → os; arch conocido → arch).
+    /// nombre simple (SO conocido -> os; arch conocido -> arch).
     pub fn parse(s: &str) -> Self {
         if s == "cls-arch" {
             return Self {

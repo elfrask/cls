@@ -75,7 +75,7 @@ una condición `when`** (scope `meta.when.ccls`).
 
 ## Colores diferenciados (theme)
 
-Para activar: `Ctrl+K Ctrl+T` → **CLS Tipos Diferenciados**.
+Para activar: `Ctrl+K Ctrl+T` -> **CLS Tipos Diferenciados**.
 
 | Scope | Color |
 |-------|-------|

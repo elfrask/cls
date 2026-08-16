@@ -12,15 +12,15 @@ powershell -File examples/jit-examples/run-jit.ps1
 clx run --jit examples/jit-examples/modules/src/main.clsx
 ```
 
-## `modules/` — imports con múltiples módulos
+## `modules/` - imports con múltiples módulos
 
 Proyecto CLS que importa 3 módulos con los 3 estilos de Sistema A:
 
 | Estilo | Sintaxis | Qué demuestra |
 |--------|----------|----------------|
-| namespaced | `import "lib/mathx" as mathx` → `mathx::cuadrado()` | acceso `x::f` y `x::var` |
+| namespaced | `import "lib/mathx" as mathx` -> `mathx::cuadrado()` | acceso `x::f` y `x::var` |
 | from/alias | `from "lib/stringsx" import gritar as gritarFn, repetir` | renombrado con `as` |
-| include | `include "lib/colores"` → `Color.Azul` | todos los exports inline (enums) |
+| include | `include "lib/colores"` -> `Color.Azul` | todos los exports inline (enums) |
 
 ```
 modules/
@@ -28,9 +28,9 @@ modules/
 └── src/
     ├── main.clsx          (entry)
     └── lib/
-        ├── mathx.clsx     (export function/var → namespaced)
-        ├── stringsx.clsx  (export function → from/alias)
-        └── colores.clsx   (export enum → include)
+        ├── mathx.clsx     (export function/var -> namespaced)
+        ├── stringsx.clsx  (export function -> from/alias)
+        └── colores.clsx   (export enum -> include)
 ```
 
 Los imports se resuelven **relativos al archivo que importa** (dir de `src/`),

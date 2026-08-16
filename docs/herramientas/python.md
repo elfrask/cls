@@ -7,7 +7,7 @@ host desde Python.
 ## Requisitos
 
 - Python >= 3.9.
-- La librería nativa `clsb` compilada (`cargo build -p clxb` → `target/debug/clsb.dll`).
+- La librería nativa `clsb` compilada (`cargo build -p clxb` -> `target/debug/clsb.dll`).
 - Instalar el paquete: `pip install ./bindings/python` (o agregar la carpeta al `PYTHONPATH`).
 
 La librería nativa se busca en orden:
@@ -22,7 +22,7 @@ La librería nativa se busca en orden:
 import clsb
 
 engine = clsb.Engine()
-engine.set_output(print)                      # print del script → Python
+engine.set_output(print)                      # print del script -> Python
 engine.register_host_function("duplicar", "i(i)", lambda fid, a: a[0] * 2)
 
 module = engine.compile_source(
@@ -42,8 +42,8 @@ engine.eval('export function hola() -> String { return "hi"; }')  # "hi"
 | `set_output(cb)` | `cb(linea)` recibe cada línea que el script imprime con `print`. |
 | `set_resolver(cb)` | `cb(path, base_dir) -> str | None` resuelve `import "x"` no encontrado en disco (devuelve el source). |
 | `register_host_function(name, sig, fn)` | Registra una función host. `sig` = `ret(params)` con `i/f/b/c/s/v` (ej. `"i(i,i)"`). El callback recibe `(id, args)` y devuelve el valor. |
-| `compile_source(source, name="module", base_dir=".")` | Compila source en memoria → `Module`. |
-| `compile_file(path)` | Compila desde archivo → `Module`. |
+| `compile_source(source, name="module", base_dir=".")` | Compila source en memoria -> `Module`. |
+| `compile_file(path)` | Compila desde archivo -> `Module`. |
 | `eval(source)` | Compila y llama al primer export (o `main`) con 0 args. |
 
 ### `Module`
@@ -59,8 +59,8 @@ Excepción con `message` y `trace` (el trace completo del error CLS).
 
 ## Conversión automática de valores
 
-Python → CLS: `int → Int` · `float → Float` · `bool → Bool` · `str → String` ·
-`list/tuple → Array` · `dict → Record` · `None → null`. CLS → Python: la
+Python -> CLS: `int -> Int` · `float -> Float` · `bool -> Bool` · `str -> String` ·
+`list/tuple -> Array` · `dict -> Record` · `None -> null`. CLS -> Python: la
 conversión inversa; los `Record` se devuelven como `dict` y los `Array` como
 `list`.
 

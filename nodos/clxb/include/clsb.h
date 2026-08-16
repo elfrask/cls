@@ -1,12 +1,12 @@
-/* clsb.h — ABI C del nodo de bindings de CLS (embedding).
+/* clsb.h - ABI C del nodo de bindings de CLS (embedding).
  *
  * Generado a mano (espejo de nodos/clxb/src/capi.rs). El binario:
  *   Windows: clsb.dll · Linux: libclsb.so · macOS: libclsb.dylib
  *
  * Contrato de memoria:
- *   - clsb_value* devueltos → clsb_value_free (recursivo).
- *   - clsb_error* → clsb_error_free; los strings viven mientras el error.
- *   - clsb_version → estático.
+ *   - clsb_value* devueltos -> clsb_value_free (recursivo).
+ *   - clsb_error* -> clsb_error_free; los strings viven mientras el error.
+ *   - clsb_version -> estático.
  *   - Un handle no se comparte entre threads (single-thread por handle).
  */
 #ifndef CLSB_H

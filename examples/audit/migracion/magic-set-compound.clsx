@@ -8,9 +8,9 @@ class ConCall {
 function main(args: String[]) -> int {
     var c = ConCall(10);
     print("1:", c[1]);       # 11
-    c[0] = 5;                # ok → v = 5
+    c[0] = 5;                # ok -> v = 5
     print("2:", c.v);        # 5
-    c[0] += 3;               # compuesto sobre __set → error esperado
+    c[0] += 3;               # compuesto sobre __set -> error esperado
     print("3:", c.v);
     return 0;
 }

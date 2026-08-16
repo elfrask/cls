@@ -1,12 +1,12 @@
-﻿//! TypeChecker â€” resolución de anotaciones y genéricos (Fase 1: extraido de middleware/typeck.rs).
+﻿//! TypeChecker - resolución de anotaciones y genéricos (Fase 1: extraido de middleware/typeck.rs).
 
 use super::*;
 
 impl TypeChecker {
 
 
-    /// Â¿El tipo aíºn contiene un type param genérico sin binding (Named sin args
-    /// que no estí¡ en bindings)? Si sí­, la firma no estí¡ completamente resuelta
+    /// ¿El tipo aún contiene un type param genérico sin binding (Named sin args
+    /// que no está en bindings)? Si sí, la firma no está completamente resuelta
     /// y el argumento no se puede validar de forma fiable (p.ej. `T[]`).
     pub(crate) fn has_unbound_generic(&self, ty: &Type, bindings: &HashMap<String, Type>) -> bool {
         match ty {
@@ -98,16 +98,16 @@ impl TypeChecker {
     }
 
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ===========================================
     // Type resolution
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ===========================================
 
     pub fn resolve_type_annotation(&mut self, ann: &TypeAnnotation) -> Type {
         self.resolve_annotation_with(ann, &HashMap::new())
     }
 
 
-    /// Resuelve una anotación bajo un contexto de type params (bindings Tâ†’tipo).
+    /// Resuelve una anotación bajo un contexto de type params (bindings T->tipo).
     pub(crate) fn resolve_annotation_with(
         &mut self,
         ann: &TypeAnnotation,
@@ -206,7 +206,7 @@ impl TypeChecker {
                     "Float" => Type::Float,
                     "Character" => Type::Char,
                     "Boolean" => Type::Bool,
-                    // Record<K, V> â†’ diccionario tipado
+                    // Record<K, V> -> diccionario tipado
                     "Record" if param_types.len() == 2 => Type::Record(
                         Box::new(param_types[0].clone()),
                         Box::new(param_types[1].clone()),
@@ -308,7 +308,7 @@ impl TypeChecker {
     }
 
 
-    /// Construye bindings Tâ†’tipo para los type params de una interface.
+    /// Construye bindings T->tipo para los type params de una interface.
     pub(crate) fn interface_bindings(&mut self, info: &InterfaceInfo, args: &[Type]) -> HashMap<String, Type> {
         let mut bindings = HashMap::new();
         for (i, tp) in info.type_params.iter().enumerate() {
@@ -326,7 +326,7 @@ impl TypeChecker {
 
 
     /// Tipos de los campos de una interface en orden de declaración (para acceso
-    /// por í­ndice y offsets deterministas del shape). NO itera el HashMap: usa
+    /// por índice y offsets deterministas del shape). NO itera el HashMap: usa
     /// `field_order` (el orden en que se declararon los campos).
     pub(crate) fn interface_member_types(&mut self, info: &InterfaceInfo, bindings: &HashMap<String, Type>) -> Vec<Type> {
         info.field_order.iter()

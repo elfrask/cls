@@ -1,4 +1,4 @@
-//! AST — types_ann (Fase 1: extraido de frontend/ast.rs).
+//! AST - types_ann (Fase 1: extraido de frontend/ast.rs).
 
 mod type_access;
 mod type_annotation;

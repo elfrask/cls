@@ -5,7 +5,7 @@
 //! (para construir el handle con sus captures).
 
 use super::*;
-/// Motor de emisiÃƒÂ³n a nivel de mÃƒÂ³dulo.
+/// Motor de emisión a nivel de módulo.
 pub(crate) fn collect_arrows_in_block(block: &Block, out: &mut Vec<ArrowFunctionExpr>) {
     for stmt in &block.statements {
         collect_arrows_in_stmt(stmt, out);
@@ -289,7 +289,7 @@ pub(crate) fn collect_free_vars_in_expr(expr: &Expression, locals: &mut Vec<Stri
             }
         }
         Expression::ArrowFunction(a) => {
-            // Arrow anidada: sus variables libres tambiÃƒÂ©n son libres para la arrow
+            // Arrow anidada: sus variables libres también son libres para la arrow
             // externa (el padre debe capturarlas para construir el handle interno).
             // Los params de la arrow interna se excluyen.
             let mut inner_locals: Vec<String> = a.params.iter().map(|p| p.name.clone()).collect();

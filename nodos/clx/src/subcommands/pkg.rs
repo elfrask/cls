@@ -17,7 +17,7 @@ pub fn execute(cmd: &str, args: &[String]) -> i32 {
 
 fn cmd_add(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!("clx add — Agregar dependencia a cls.json");
+        println!("clx add - Agregar dependencia a cls.json");
         println!();
         println!("Uso: clx add <paquete> [--dev]");
         return 0;
@@ -61,7 +61,7 @@ fn cmd_add(args: &[String]) -> i32 {
 
 fn cmd_remove(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!("clx remove — Quitar dependencia de cls.json");
+        println!("clx remove - Quitar dependencia de cls.json");
         println!();
         println!("Uso: clx remove <paquete>");
         return 0;
@@ -109,7 +109,7 @@ fn cmd_remove(args: &[String]) -> i32 {
 
 fn cmd_install(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!("clx install — Instalar dependencias desde registry");
+        println!("clx install - Instalar dependencias desde registry");
         println!();
         println!("Uso: clx install");
         println!();

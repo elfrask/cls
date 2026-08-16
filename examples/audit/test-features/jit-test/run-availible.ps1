@@ -1,4 +1,4 @@
-# run-availible.ps1 — Prueba las features disponibles del JIT (carpeta availible/).
+# run-availible.ps1 - Prueba las features disponibles del JIT (carpeta availible/).
 # Ejecuta cada script con el JIT y el walker, compara paridad y muestra la salida.
 # Uso: powershell -File run-availible.ps1
 $ErrorActionPreference = "SilentlyContinue"

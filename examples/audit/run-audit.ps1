@@ -1,4 +1,4 @@
-# run-audit.ps1 — Runner de auditoria QA practico (v3, Start-Process con streams limpios).
+# run-audit.ps1 - Runner de auditoria QA practico (v3, Start-Process con streams limpios).
 # Uso: powershell -File run-audit.ps1 <ruta.clsx> [--jit-only]
 param(
     [Parameter(Mandatory=$true)][string]$Script,

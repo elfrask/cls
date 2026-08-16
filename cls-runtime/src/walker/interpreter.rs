@@ -67,7 +67,7 @@ pub struct Interpreter {
     structs: HashMap<String, StructDef>,
     classes: HashMap<String, ClassDef>,
     self_stack: Vec<SelfFrame>,
-    /// Métodos de tipos primitivos (String, Array, ...) — sin boxing
+    /// Métodos de tipos primitivos (String, Array, ...) - sin boxing
     method_tables: HashMap<crate::walker::stdlib::primitive::PrimitiveType, HashMap<&'static str, crate::walker::stdlib::primitive::PrimitiveMethod>>,
     /// Backends nativos por tipo de extensión (`extension "lib" as <kind>`).
     /// El nodo registra cada backend (C hoy; Python, Wasm... en el futuro).
@@ -162,7 +162,7 @@ impl Interpreter {
     }
 
     fn register_core_intrinsics(&mut self) {
-        // now() → timestamp en ms
+        // now() -> timestamp en ms
         self.env.define("now", Value::Fun(FunValue::new_native(
             "now", vec![],
             |_| {
@@ -275,7 +275,7 @@ impl Interpreter {
             },
         )));
 
-        // throw(msg) — lanza un error de runtime intencional
+        // throw(msg) - lanza un error de runtime intencional
         self.env.define("throw", Value::Fun(FunValue::new_native(
             "throw", vec!["msg".into()],
             |a| {
@@ -491,7 +491,7 @@ impl Interpreter {
         }
     }
 
-    /// Procesa `extension "lib" as <kind> { ... }` — registra símbolos nativos
+    /// Procesa `extension "lib" as <kind> { ... }` - registra símbolos nativos
     /// (funciones, estructuras, variables) delegando al backend del tipo declarado.
     fn execute_extension(&mut self, ext: &ExtensionDecl) -> ClsResult<Value> {
         let kind_name = ext.kind.name();
@@ -720,12 +720,12 @@ impl Interpreter {
                 Ok(Value::Void)
             }
             obj @ Value::Object(_) => {
-                // Protocolo de iteración: __iter() → array directo u objeto con __next()
+                // Protocolo de iteración: __iter() -> array directo u objeto con __next()
                 let iterator = match self.call_magic(&obj, "__iter", vec![], &for_each.span)? {
                     Some(it) => it,
                     None => return Err(self.err_at(format!("Objeto no iterable (falta __iter)"), &for_each.span)),
                 };
-                // Caso 1: __iter devolvió un Array → iterar directamente
+                // Caso 1: __iter devolvió un Array -> iterar directamente
                 if let Value::Array(arr) = &iterator {
                     for (idx, item) in arr.iter().enumerate() {
                         self.env.push_scope();
@@ -741,7 +741,7 @@ impl Interpreter {
                     }
                     return Ok(Value::Void);
                 }
-                // Caso 2: objeto iterador → __next() hasta null
+                // Caso 2: objeto iterador -> __next() hasta null
                 let mut idx = 0i64;
                 loop {
                     let next = match self.call_magic(&iterator, "__next", vec![], &for_each.span)? {
@@ -1262,7 +1262,7 @@ impl Interpreter {
     }
 
     fn evaluate_call(&mut self, call: &CallExpr) -> ClsResult<Value> {
-        // super.method(args) → método de la clase padre con `me` = objeto actual
+        // super.method(args) -> método de la clase padre con `me` = objeto actual
         if let Expression::MemberAccess(member) = &*call.callee {
             if let Expression::Identifier(obj_name, _) = &*member.object {
                 if obj_name == "super" {
@@ -1270,7 +1270,7 @@ impl Interpreter {
                     for arg in &call.args {
                         args.push(self.evaluate_expression(arg)?);
                     }
-                    // super.main(...) → constructor del padre
+                    // super.main(...) -> constructor del padre
                     if member.member == "main" {
                         let frame = self.self_stack.last().cloned()
                             .ok_or_else(|| self.err_at("'super.main' usado fuera de un método de clase", &call.span))?;
@@ -1476,13 +1476,13 @@ impl Interpreter {
         Ok(v.to_string())
     }
 
-    /// Interceptor de `toString(val)` — usa `__toString` si el objeto lo implementa.
+    /// Interceptor de `toString(val)` - usa `__toString` si el objeto lo implementa.
     fn native_to_string(&mut self, args: &[Value], span: &Span) -> ClsResult<Value> {
         let v = args.first().unwrap_or(&Value::Null);
         Ok(Value::String(self.value_to_string(v, span)?))
     }
 
-    /// Interceptor de `len(val)` — usa `__len` si el objeto lo implementa.
+    /// Interceptor de `len(val)` - usa `__len` si el objeto lo implementa.
     fn native_len(&mut self, args: &[Value], span: &Span) -> ClsResult<Value> {
         let v = args.first().unwrap_or(&Value::Null);
         if let Some(l) = self.call_magic(v, "__len", vec![], span)? {
@@ -1497,7 +1497,7 @@ impl Interpreter {
         }
     }
 
-    /// Interceptor de `print(...)` — usa `__repr` (y luego `__toString`) por cada argumento.
+    /// Interceptor de `print(...)` - usa `__repr` (y luego `__toString`) por cada argumento.
     fn native_print(&mut self, args: &[Value], span: &Span) -> ClsResult<Value> {
         let mut out = Vec::new();
         for a in args {
@@ -1507,7 +1507,7 @@ impl Interpreter {
         Ok(Value::Void)
     }
 
-    /// Interceptor de conversiones `int/float/bool` — usa magic methods si existen.
+    /// Interceptor de conversiones `int/float/bool` - usa magic methods si existen.
     fn native_convert(&mut self, name: &str, args: &[Value], span: &Span) -> ClsResult<Value> {
         let v = args.first().unwrap_or(&Value::Null);
         let magic = match name {
@@ -1538,7 +1538,7 @@ impl Interpreter {
         Ok(Value::String(v.type_name().to_string()))
     }
 
-    /// `json.stringify(x)` — usa `__toJson` si el objeto lo define; si no, el nativo.
+    /// `json.stringify(x)` - usa `__toJson` si el objeto lo define; si no, el nativo.
     fn native_stringify(&mut self, args: &[Value], span: &Span, fallback: &dyn Fn(&[Value]) -> ClsResult<Value>) -> ClsResult<Value> {
         let v = args.first().unwrap_or(&Value::Null);
         if let Some(r) = self.call_magic(v, "__toJson", vec![], span)? {
@@ -1672,14 +1672,14 @@ impl Interpreter {
                     }
                 })
                 .collect();
-            let trace_str = stack_trace.join("\n  → ");
+            let trace_str = stack_trace.join("\n  -> ");
             let span_display = if let Some(s) = &current_frame.span {
                 format!(" (línea {}, columna {})", s.start_line, s.start_col)
             } else {
                 String::new()
             };
             ClsError::RuntimeError(format!(
-                "{}\n  Call stack:\n  → {} → {}{}",
+                "{}\n  Call stack:\n  -> {} -> {}{}",
                 err_msg, trace_str, current_frame.function, span_display
             ))
         })
@@ -1747,7 +1747,7 @@ impl Interpreter {
     }
 
     fn evaluate_member_access(&mut self, member: &MemberAccessExpr) -> ClsResult<Value> {
-        // super.member → buscar en la clase padre de la clase actual
+        // super.member -> buscar en la clase padre de la clase actual
         if let Expression::Identifier(obj_name, _) = &*member.object {
             if obj_name == "super" {
                 return self.evaluate_super_access(&member.member, &member.span);
@@ -1807,7 +1807,7 @@ impl Interpreter {
                 Err(self.err_at(format!("Miembro '{}' no encontrado en '{}'", member.member, obj.class_name), &member.span))
             }
             Value::EnumDef(enum_def) => {
-                // Color.Rojo → Value::Enum (índice de la variante)
+                // Color.Rojo -> Value::Enum (índice de la variante)
                 let idx = enum_def.variants.iter().position(|v| v == &member.member);
                 match idx {
                     Some(i) => Ok(Value::Enum(Box::new(EnumValue {
@@ -2010,7 +2010,7 @@ impl Interpreter {
 
         let value = self.evaluate_expression(&assign.value)?;
 
-        // Operadores compuestos: target += val  →  target = target + val
+        // Operadores compuestos: target += val  ->  target = target + val
         let new_value = if assign.op != Operator::Equal {
             let current = self.read_target(&assign.target, &assign.span)?;
             self.apply_compound(current, assign.op, value, &assign.span)?
@@ -2052,7 +2052,7 @@ impl Interpreter {
                 Ok(())
             }
             Expression::MemberAccess(member) => {
-                // Caso especial: me.field = value → mutar self_stack
+                // Caso especial: me.field = value -> mutar self_stack
                 if let Expression::Identifier(obj_name, _) = &*member.object {
                     if obj_name == "me" {
                         if let Some(frame) = self.self_stack.last_mut() {
@@ -2137,7 +2137,7 @@ impl Interpreter {
     /// Aplica un operador compuesto: current OP value
     fn apply_compound(&mut self, current: Value, op: cls_core::frontend::token::Operator, value: Value, span: &Span) -> ClsResult<Value> {
         use cls_core::frontend::token::Operator;
-        // Convertir operador compuesto a su base: += → +, -= → -, etc.
+        // Convertir operador compuesto a su base: += -> +, -= -> -, etc.
         let base_op = match op {
             Operator::PlusEqual => Operator::Plus,
             Operator::MinusEqual => Operator::Minus,
@@ -2208,7 +2208,7 @@ impl Interpreter {
             (Operator::LessEqual, a, b) if !is_object(a) && !is_object(b) => cmp_num(a, b, |x, y| x <= y),
             (Operator::GreaterThan, a, b) if !is_object(a) && !is_object(b) => cmp_num(a, b, |x, y| x > y),
             (Operator::GreaterEqual, a, b) if !is_object(a) && !is_object(b) => cmp_num(a, b, |x, y| x >= y),
-            // Igualdad (no Objects — van al catch-all para __equals)
+            // Igualdad (no Objects - van al catch-all para __equals)
             (Operator::StrictEqual, a, b) if !is_object(a) && !is_object(b) => Ok(Value::Bool(a == b)),
             (Operator::NotEqual, a, b) if !is_object(a) && !is_object(b) => Ok(Value::Bool(a != b)),
             // Operador `is`: obj is Clase (instancia directa o por herencia)
@@ -2320,8 +2320,8 @@ impl Interpreter {
     }
 
     fn evaluate_cmx(&mut self, cmx: &CmxElement) -> ClsResult<Value> {
-        // Tag mayúscula → guardar la referencia (función, var, clase, etc) SIN ejecutarla.
-        // Tag minúscula → guardar como String. El tag mayúscula SIEMPRE debe ser una
+        // Tag mayúscula -> guardar la referencia (función, var, clase, etc) SIN ejecutarla.
+        // Tag minúscula -> guardar como String. El tag mayúscula SIEMPRE debe ser una
         // función/valor definido: si no existe, es un error (no un fallback a String).
         let tag = if cmx.tag.starts_with(|c: char| c.is_uppercase()) {
             match self.env.get(&cmx.tag) {

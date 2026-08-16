@@ -1,4 +1,4 @@
-# bench-jit.ps1 — Benchmark de compilacion JIT (5000 lineas de llamadas a suma) con timing por fase.
+# bench-jit.ps1 - Benchmark de compilacion JIT (5000 lineas de llamadas a suma) con timing por fase.
 # Corrida 1 = cache miss (compila CLS->WASM + backend), Corrida 2 = cacheada.
 # Uso: powershell -File bench-jit.ps1
 $root = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent

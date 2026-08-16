@@ -1,4 +1,4 @@
-# modelo.clsx — El dominio de dev-quest, aislado en su propio módulo.
+# modelo.clsx - El dominio de dev-quest, aislado en su propio módulo.
 #
 # DECISIÓN DE ARQUITECTURA (semi-senior, ADR):
 # - El modelo vive en su propio módulo para que main.clsx solo orqueste.

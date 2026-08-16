@@ -24,7 +24,7 @@ La librería se busca en orden: `CLS_LIB_PATH` > `clsb/bin/` (wheel) > PATH.
 import clsb
 
 engine = clsb.Engine()
-engine.set_output(print)                    # print del script → Python
+engine.set_output(print)                    # print del script -> Python
 
 module = engine.compile_source(
     'export function suma(a: int, b: int) -> int { return a + b; }'
@@ -58,8 +58,8 @@ def triple(fid, args):
     return args[0] * 3
 
 engine = clsb.Engine()
-engine.set_resolver(resolver)               # import "virt" → source
-engine.register_host_function("triple", "i(i)", triple)  # CLS→host
+engine.set_resolver(resolver)               # import "virt" -> source
+engine.register_host_function("triple", "i(i)", triple)  # CLS->host
 engine.compile_source('export function usa() -> int { return triple(5); };')
 ```
 
@@ -72,11 +72,11 @@ code de `run_main` sin matar el proceso de Python.
 
 ## API
 
-- `Engine()` — motor (un hilo por engine).
+- `Engine()` - motor (un hilo por engine).
 - `engine.set_output(cb)` / `set_resolver(cb)` / `register_host_function(name, sig, fn)`.
 - `engine.compile_source(src, name?, base_dir?) -> Module` / `compile_file(path)`.
 - `engine.eval(src) -> Any`.
 - `Module.call(name, *args) -> Any` / `Module.run_main(args?) -> int`.
-- `clsb.ClsError` — excepción con `.message` y `.trace` (trace completo).
+- `clsb.ClsError` - excepción con `.message` y `.trace` (trace completo).
 
 Ver `bindings/python/` (código) y `bindings/python/tests/test_bindings.py` (tests).

@@ -1,10 +1,10 @@
-/* harness.c — Contrato de la ABI C de clsb (validación del binding).
+/* harness.c - Contrato de la ABI C de clsb (validación del binding).
  *
  * Compilar:
  *   gcc harness.c -I ../include -L ../../target/debug -lclsb -o harness.exe
  *   (copiar clsb.dll junto al exe o agregar el dir al PATH)
  *
- * Ejecutar: harness.exe  → imprime OK por cada prueba (o FAIL + detalle).
+ * Ejecutar: harness.exe  -> imprime OK por cada prueba (o FAIL + detalle).
  */
 #include <clsb.h>
 #include <stdio.h>
@@ -98,7 +98,7 @@ int main(void) {
     clsb_value_free(&arr);
     clsb_value_free(&out);
 
-    /* run_main(["hola"]) → exit 0 + print capturado */
+    /* run_main(["hola"]) -> exit 0 + print capturado */
     clsb_value marg = clsb_value_string("hola");
     clsb_set_output(engine, on_output, NULL);
     int64_t code = clsb_run_main(m, &marg, 1, &err);
@@ -118,7 +118,7 @@ int main(void) {
     check(st == CLSB_OK && out.tag == CLSB_INT && out.bits == 42, "host fn duplicar -> 42");
     clsb_value_free(&out);
 
-    /* error: export inexistente → trace con mensaje */
+    /* error: export inexistente -> trace con mensaje */
     err = NULL;
     st = clsb_call(m, "no_existe", NULL, 0, &out, &err);
     check(st != CLSB_OK && err != NULL && clsb_error_trace(err) != NULL,

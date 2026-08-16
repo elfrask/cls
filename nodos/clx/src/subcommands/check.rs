@@ -6,7 +6,7 @@ use cls_core::frontend::ast::Module;
 
 pub fn execute(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!("clx check — Type checking");
+        println!("clx check - Type checking");
         println!();
         println!("Uso: clx check [archivo.clsx|directorio] [--strict]");
         println!();

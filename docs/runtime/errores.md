@@ -3,10 +3,10 @@
 ## Regla central
 
 - **Runtime y compilación** (`clx run`, `clxr`, build): **siempre** el trazo
-  completo — import_trace + call stack numerado con código fuente por frame +
+  completo - import_trace + call stack numerado con código fuente por frame +
   el frame del error con caret. Prohibido mostrar solo el mensaje.
 - **Typecheck** (`clx check`): errores de **un solo nivel** (archivo
-  checado) — `file:línea:col` + línea fuente + caret, sin trace de imports.
+  checado) - `file:línea:col` + línea fuente + caret, sin trace de imports.
 
 ## Encabezados y labels
 
@@ -18,7 +18,7 @@
 | Tipo | `Error de ejecución:` (via runtime) | `[Error de Tipo]` |
 
 En consola el encabezado y el mensaje `Error:` van en rojo brillante; los
-números de la traza en cian; `→` y la función en amarillo; el label en
+números de la traza en cian; `->` y la función en amarillo; el label en
 magenta brillante; el caret del frame del error en rojo (los demás en gris).
 
 ## Ejemplo real de salida (runtime)
@@ -37,7 +37,7 @@ Error de ejecución:
 Todo vive en `cls-runtime/src/error_report.rs`:
 
 - `ErrorReport { error, span, stack, import_trace, source_file, source }`.
-- `enum ErrorFormat { Plain, Console, Html, Json }` — lo elige el **nodo**.
+- `enum ErrorFormat { Plain, Console, Html, Json }` - lo elige el **nodo**.
 - `trait ErrorFormatter` + `PlainFormatter` (sin decoradores),
   `ConsoleFormatter` (ANSI de `cls_core::ansi`), `HtmlFormatter`
   (`<pre class="cls-error">`), `JsonFormatter`.
@@ -61,10 +61,10 @@ Todo vive en `cls-runtime/src/error_report.rs`:
 
 Decisiones internas:
 
-- `trace_entry` → `collect_trace` número import_trace y call stack junto con
+- `trace_entry` -> `collect_trace` número import_trace y call stack junto con
   el frame del error; cada entrada lee su línea del source (de `source` en
   memoria o del archivo) para mostrar código + caret.
-- Tabulaciones → 4 espacios en el caret (`caret_for`).
+- Tabulaciones -> 4 espacios en el caret (`caret_for`).
 - `clean_error_msg` quita el prefijo `Error de X: ` y el `Call stack:`
   embebido de mensajes legacy.
 
@@ -87,11 +87,11 @@ pub enum ClsError {
 
 Fábricas:
 
-- `ClsError::syntax_at(msg, span)` → `SyntaxErrorAt` (mensaje limpio, la
+- `ClsError::syntax_at(msg, span)` -> `SyntaxErrorAt` (mensaje limpio, la
   ubicación vive en el `Span`).
-- `ClsError::with_span(msg, span)` — alias de `syntax_at`.
-- `ClsError::compile_at(msg, span)` → `CompileErrorAt` (JIT y backend).
-- `extract_line_col(msg)` — fallback que extrae `(línea, columna)` de
+- `ClsError::with_span(msg, span)` - alias de `syntax_at`.
+- `ClsError::compile_at(msg, span)` -> `CompileErrorAt` (JIT y backend).
+- `extract_line_col(msg)` - fallback que extrae `(línea, columna)` de
   mensajes legacy que incrustan el span en el string; lo usa `error_span`
   cuando el error no trae span estructurado.
 
@@ -104,7 +104,7 @@ Parser y lexer usan `self.syntax_err(msg)`; el JIT usa `compile_at` para
   `try_table`); `throw` y errores de runtime llevan payload
   `(mensaje, span empaquetado)` que el host desempaca para renderizar el
   caret exacto.
-- **wasmi** (`CLS_JIT_RUNTIME=wasmi`): sin excepciones — `try/catch`/`throw`
+- **wasmi** (`CLS_JIT_RUNTIME=wasmi`): sin excepciones - `try/catch`/`throw`
   fallan en compilación y los errores son traps con el mensaje, **sin caret**.
 - El call stack CLS se mantiene con un shadow stack (`fn_enter`/`fn_exit`)
   de hasta 1000 frames; el stack overflow se detecta y reporta como

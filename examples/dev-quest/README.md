@@ -1,4 +1,4 @@
-# dev-quest — camino al mejor dev del mundo
+# dev-quest - camino al mejor dev del mundo
 
 Un CLI gamificado en CLS: conviertes tu aprendizaje en misiones, ganas XP,
 subes de nivel y construyes tu racha diaria. Hecho por un semi-senior que
@@ -53,11 +53,11 @@ data/dev-quest.json Progreso guardado (se crea solo al jugar)
 
 Separación de responsabilidades:
 
-- **`modelo.clsx`** — el dominio, aislado y reutilizable. Exporta sus enums y
+- **`modelo.clsx`** - el dominio, aislado y reutilizable. Exporta sus enums y
   clases con `export`; `main` los construye con `modelo.Tarea(...)` y
   `modelo.EstadoTarea.Pendiente`.
-- **`estadisticas.clsx` / `frases.clsx`** — lógica pura sin efectos.
-- **`main.clsx`** — lo que depende del entorno: `print`/`input` (comandos e
+- **`estadisticas.clsx` / `frases.clsx`** - lógica pura sin efectos.
+- **`main.clsx`** - lo que depende del entorno: `print`/`input` (comandos e
   interfaz), `fs`/`http` (persistencia y frases remotas), `now`/`len`/`int`.
 
 `main` no es pequeño a propósito: los módulos de CLS **no ven los intrinsics

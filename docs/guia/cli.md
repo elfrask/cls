@@ -12,7 +12,7 @@ clx <subcomando> [opciones] [argumentos]
 | Subcomando | Estado |
 |---|---|
 | `new`, `add`, `remove`/`rm`, `install`/`i`, `run`, `check`, `repl`, `build`, `lsp`, `ast`, `maptype`, `clean`, `-v`/`--version`, `-h`/`--help` | Implementados |
-| `init`, `tree`, `fmt` | **Placeholder** — imprimen "no implementado" y salen con código 1 |
+| `init`, `tree`, `fmt` | **Placeholder** - imprimen "no implementado" y salen con código 1 |
 | `--quiet` | Silencia logs; se usa **antes** del subcomando: `clx --quiet run ...` |
 
 Todos los subcomandos aceptan `-h`/`--help` (imprimen su ayuda y salen con 0,
@@ -31,7 +31,7 @@ Crea un proyecto nuevo con la estructura mínima:
     └── main.clsx     # function main(args: String[]) -> int
 ```
 
-- `--lib` — proyecto librería: `entry` vacío, `target: "library"` y no genera
+- `--lib` - proyecto librería: `entry` vacío, `target: "library"` y no genera
   `main.clsx`.
 - El nombre no puede empezar con `-` (los flags se interpretan como opciones);
   `clx new -h` muestra la ayuda del subcomando.
@@ -40,10 +40,10 @@ Crea un proyecto nuevo con la estructura mínima:
 
 Gestión de dependencias con `cls.json`:
 
-- `add` — agrega `"<paquete>": "^1.0.0"` a `dependencies` (o `devDependencies`
+- `add` - agrega `"<paquete>": "^1.0.0"` a `dependencies` (o `devDependencies`
   con `--dev`). Requiere un `cls.json` en el directorio actual.
-- `remove` — quita el paquete de `dependencies` o `devDependencies`.
-- `install` — descarga cada dependencia desde el registry como
+- `remove` - quita el paquete de `dependencies` o `devDependencies`.
+- `install` - descarga cada dependencia desde el registry como
   `modules/<paquete>/mod.clsx` y escribe el lockfile `cls.lock`.
 
 El registry se toma de, en orden: `CLS_REGISTRY` > `cls.json["registry"]` >
@@ -51,7 +51,7 @@ El registry se toma de, en orden: `CLS_REGISTRY` > `cls.json["registry"]` >
 
 ## `clx run [archivo] [--] [args...]`
 
-Compila y ejecuta con el **JIT** (CLS → WASM → wasmtime), el intérprete
+Compila y ejecuta con el **JIT** (CLS -> WASM -> wasmtime), el intérprete
 objetivo por defecto. Los argumentos tras `--` se pasan a `main(args)` (y
 quedan disponibles vía `process.args()`).
 
@@ -65,15 +65,15 @@ clx run app.clsx -- a1 a2
 
 Opciones:
 
-- `--jit, -j` — obsoleto, sin efecto (el JIT ya es el default).
-- `--ast-walker` — ejecuta con el tree-walker **DEPRECADO** (imprime una
+- `--jit, -j` - obsoleto, sin efecto (el JIT ya es el default).
+- `--ast-walker` - ejecuta con el tree-walker **DEPRECADO** (imprime una
   advertencia en stderr; solo referencia sintáctica).
-- `--target <tripla>, -t` — simula el entorno (`arch-os-abi`) para la
+- `--target <tripla>, -t` - simula el entorno (`arch-os-abi`) para la
   directiva `when` (no cambia la compilación).
-- `--` — separador de argumentos de la aplicación.
+- `--` - separador de argumentos de la aplicación.
 
-Los `import "mod"` se resuelven con el resolver del JIT: caché de módulos →
-directorio del archivo que importa → `modules/` del proyecto → módulos
+Los `import "mod"` se resuelven con el resolver del JIT: caché de módulos ->
+directorio del archivo que importa -> `modules/` del proyecto -> módulos
 globales `~/.cls/modules/` (ver `lenguaje/modulos.md`).
 
 ## `clx check [archivo|dir] [--strict]`
@@ -83,7 +83,7 @@ los `.clsx` recursivamente, saltando `modules/`, `dist/`, `libs/` y ocultos)
 o el `entry` del proyecto. Resuelve los imports del grafo y registra sus
 exports como prelude (los tipos importados son verificables).
 
-- `--strict` — activa el modo estricto (asignaciones incompatibles = error).
+- `--strict` - activa el modo estricto (asignaciones incompatibles = error).
 - Reporta `[ERROR|WARN|INFO] mensaje (file:line:col)` con línea + caret.
 - Código de salida: 0 sin errores, 1 con errores.
 
@@ -91,8 +91,8 @@ exports como prelude (los tipos importados son verificables).
 
 Empaqueta la aplicación en un `.clsapp` (zip con dos entradas):
 
-- `manifest.json` — `{name, version, entry, format: "source"}`.
-- `source.clsx` — el código fuente crudo del entry.
+- `manifest.json` - `{name, version, entry, format: "source"}`.
+- `source.clsx` - el código fuente crudo del entry.
 
 Default de salida: `dist/app.clsapp`. Nota: el empaquetado es de **código
 fuente** (el AST/WASM embebido es un trabajo futuro).
@@ -139,5 +139,5 @@ workspace `[cwd]/.cls-cache/`.
 
 ## Códigos de salida
 
-- `0` — éxito.
-- `1` — error de compilación, verificación o ejecución.
+- `0` - éxito.
+- `1` - error de compilación, verificación o ejecución.

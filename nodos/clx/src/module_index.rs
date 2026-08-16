@@ -1,6 +1,6 @@
 //! Indexación de módulos para el caché del JIT.
 //!
-//! El caché CLS→WASM en `~/.cache/cls/` usa una clave hash (`cache_key` en
+//! El caché CLS->WASM en `~/.cache/cls/` usa una clave hash (`cache_key` en
 //! `jit.rs`). Esa clave ya hashea el source del entry y de TODOS los módulos
 //! importados (locales y globales de `~/.cls`), de modo que editar cualquier
 //! `.clsx` del grafo importado invalida el caché y editar uno NO importado no

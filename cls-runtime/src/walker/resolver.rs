@@ -19,13 +19,13 @@ pub fn global_modules_dir() -> Option<PathBuf> {
     user_modules_dir()
 }
 
-/// Resolvedor de módulos — configurado por el nodo.
+/// Resolvedor de módulos - configurado por el nodo.
 ///
-/// Orden: cache → internals → external hook → error.
+/// Orden: cache -> internals -> external hook -> error.
 pub struct ModuleResolver {
-    /// Módulos internos (Map de nombre → módulo)
+    /// Módulos internos (Map de nombre -> módulo)
     internals: HashMap<String, Value>,
-    /// Hook externo: (path, env) → Ok(Some(module)) | Ok(None) | Err(error)
+    /// Hook externo: (path, env) -> Ok(Some(module)) | Ok(None) | Err(error)
     external: Option<Box<dyn Fn(String, &mut Environment) -> ClsResult<Option<Value>>>>,
     /// Caché de módulos ya importados
     cache: HashMap<String, Value>,
@@ -74,7 +74,7 @@ impl ModuleResolver {
         self.external = Some(Box::new(resolver));
     }
 
-    /// Resuelve un módulo: cache → internals → external → error
+    /// Resuelve un módulo: cache -> internals -> external -> error
     pub fn resolve(&mut self, path: &str, env: &mut Environment) -> ClsResult<Value> {
         // 1. Caché
         if let Some(m) = self.cache.get(path) {

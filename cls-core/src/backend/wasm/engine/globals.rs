@@ -42,7 +42,7 @@ impl<'a> Engine<'a> {
             fe.body.push(Instruction::GlobalSet(*idx));
         }
         fe.body.push(Instruction::End);
-        // Declarar los temporales que la emisiÃƒÆ’Ã‚Â³n pudo crear (emit_array, etc.).
+        // Declarar los temporales que la emisió pudo crear (emit_array, etc.).
         let local_types: Vec<ValType> = (0..fe.next_local)
             .map(|i| {
                 fe.local_tys
@@ -60,14 +60,14 @@ impl<'a> Engine<'a> {
         Ok(Some(func))
     }
 
-    /// Declara una funciÃƒÆ’Ã‚Â³n de clase (`Clase::m` o ctor) con `me` como primer param.
-    /// Los mÃƒÆ’Ã‚Â©todos `static` NO reciben `me` (se registran como `Clase::__s__m`).
+    /// Declara una funció de clase (`Clase::m` o ctor) con `me` como primer param.
+    /// Los mí©todos `static` NO reciben `me` (se registran como `Clase::__s__m`).
     pub(crate) fn build_allocator(&self) -> Function {
         // (func (param $n i64) (result i64)
         //   local 0 = n (param), local 1 = ptr, local 2 = end
         //   ptr = global 0
         //   end = (ptr + n + 8) & -8
-        //   if end > memsize*65536 ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ grow las pÃƒÆ’Ã‚Â¡ginas exactas para cubrir `end`
+        //   if end > memsize*65536 -> grow las páginas exactas para cubrir `end`
         //   global 0 = end
         //   ptr)
         let mut b = vec![
@@ -82,7 +82,7 @@ impl<'a> Engine<'a> {
             Instruction::I64And,
             Instruction::LocalSet(2),
             Instruction::Block(BlockType::Empty),
-            // if end <= memsize*65536 ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ skip grow
+            // if end <= memsize*65536 -> skip grow
             Instruction::LocalGet(2),
             Instruction::MemorySize(0),
             Instruction::I64ExtendI32U,
@@ -169,13 +169,13 @@ impl<'a> Engine<'a> {
         let data_bytes: usize = self.string_pool.iter().map(|s| s.len()).sum();
         // El layout es: [0 .. data_len) = bytes de los strings (en orden de
         // interning, append-only) y [STRING_TABLE_BASE .. + 8N) = tabla de
-        // ÃƒÆ’Ã‚Â­ndices (offset, len). Con base FIJA, los offsets de los datos NO
-        // dependen del tamaÃƒÆ’Ã‚Â±o total del pool: el REPL (estado persistente)
-        // transfiere punteros entre instancias y estos siguen siendo vÃƒÆ’Ã‚Â¡lidos
-        // mientras las entradas compartidas conserven su posiciÃƒÆ’Ã‚Â³n (prefix).
+        // índices (offset, len). Con base FIJA, los offsets de los datos NO
+        // dependen del tamaño total del pool: el REPL (estado persistente)
+        // transfiere punteros entre instancias y estos siguen siendo válidos
+        // mientras las entradas compartidas conserven su posició (prefix).
         assert!(
             data_bytes <= STRING_TABLE_BASE as usize,
-            "el string pool excede la regiÃƒÆ’Ã‚Â³n de datos ({} > {} bytes)",
+            "el string pool excede la regió de datos ({} > {} bytes)",
             data_bytes,
             STRING_TABLE_BASE
         );

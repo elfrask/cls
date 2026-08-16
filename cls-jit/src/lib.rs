@@ -1,11 +1,11 @@
-//! Motor JIT reusable de CLS: CLS → WASM → runtime (wasmtime desktop, wasmi web).
+//! Motor JIT reusable de CLS: CLS -> WASM -> runtime (wasmtime desktop, wasmi web).
 //!
 //! Este crate centraliza el motor de ejecución JIT que antes vivía en el nodo
 //! `clx` (`nodos/clx/src/jit.rs`). Lo usan:
 //!
-//! - `clx run --jit` (CLI de desarrollo) — el nodo inyecta el backend nativo y
+//! - `clx run --jit` (CLI de desarrollo) - el nodo inyecta el backend nativo y
 //!   los hooks del índice de módulos.
-//! - El futuro nodo de bindings (`nodos/clxb`) — mismo motor, otra frontera.
+//! - El futuro nodo de bindings (`nodos/clxb`) - mismo motor, otra frontera.
 //!
 //! El motor es **agnóstico al nodo**: el nodo provee el backend de extensiones
 //! nativas (`NativeBackend`) y los hooks opcionales (`ModuleIndexHook`) vía
@@ -71,7 +71,7 @@ pub trait ModuleIndexHook {
 /// - `native_backend`: backend de extensiones nativas (`extension "lib" as C`),
 ///   el nodo desktop usa `DynamicBackend` (libloading).
 /// - `module_index`: hooks opcionales del índice de módulos del workspace.
-/// - `host_intrinsics`: funciones host del nodo (nombres → firmas) que el
+/// - `host_intrinsics`: funciones host del nodo (nombres -> firmas) que el
 ///   script puede llamar como `nombre(args)`; se compilan vía `env.host_call`.
 /// - `host_call_handler`: despacha las llamadas del canal `env.host_call`.
 pub struct JitContext<'a> {
@@ -82,10 +82,10 @@ pub struct JitContext<'a> {
     /// Funciones host del nodo (intrinsics): el typeck las tipa y el backend
     /// emite las llamadas vía `env.host_call(id, ptr, n)`.
     pub host_intrinsics: &'a [cls_core::middleware::types::HostIntrinsic],
-    /// Handler del canal `env.host_call` (sin handler → 0 + warning).
+    /// Handler del canal `env.host_call` (sin handler -> 0 + warning).
     pub host_call_handler: Option<Arc<dyn HostCallHandler>>,
     /// Resolver de módulos del nodo: provee sources que no están en disco.
     pub module_source_resolver: Option<&'a dyn ModuleSourceResolver>,
-    /// Destino de `print` (sin él → stdout).
+    /// Destino de `print` (sin él -> stdout).
     pub output: Option<Arc<dyn OutputSink>>,
 }

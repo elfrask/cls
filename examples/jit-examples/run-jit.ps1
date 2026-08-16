@@ -1,4 +1,4 @@
-# run-jit.ps1 — Ejecuta los ejemplos JIT-only EXCLUSIVAMENTE con `clx run --jit`.
+# run-jit.ps1 - Ejecuta los ejemplos JIT-only EXCLUSIVAMENTE con `clx run --jit`.
 # El walker NO se usa aquí (es solo referencia sintáctica; se deprecará tras 2.0-dev1).
 # Uso: powershell -File run-jit.ps1
 $ErrorActionPreference = "Stop"

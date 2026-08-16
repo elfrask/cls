@@ -12,7 +12,7 @@ int main(void) {
     clsb_engine* engine = clsb_engine_new(NULL);
     clsb_error* err = NULL;
 
-    /* Probe 1: sandbox — el script puede usar fs del host? */
+    /* Probe 1: sandbox - el script puede usar fs del host? */
     clsb_set_output(engine, on_output, NULL);
     clsb_module* m = clsb_compile_source(engine,
         "function main(args: String[]) -> int { print(fs.cwd()); return 0; };",

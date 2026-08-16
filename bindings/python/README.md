@@ -1,4 +1,4 @@
-# clsb — bindings de CLS para Python
+# clsb - bindings de CLS para Python
 
 Bindings oficiales de CLS para Python (embedding): compilar código CLS, llamar
 funciones exportadas, ejecutar `main`, evaluar snippets y construir un nodo SDK

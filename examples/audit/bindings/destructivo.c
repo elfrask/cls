@@ -1,4 +1,4 @@
-/* destructivo.c — Harness C destructivo del binding clxb (auditoría QA).
+/* destructivo.c - Harness C destructivo del binding clxb (auditoría QA).
  *
  * Compilar:
  *   gcc destructivo.c -I ../../../nodos/clxb/include -L ../../../target/debug -lclsb -o destructivo.exe
@@ -355,7 +355,7 @@ int main(void) {
     /* ── S5: host functions ─────────────────────────────────────────────── */
     printf("\n=== S5: host functions ===\n");
     {
-        /* HALLAZGO: clxb registra UN handler global por engine — la última
+        /* HALLAZGO: clxb registra UN handler global por engine - la última
          * registración gana para TODOS los ids. Workaround probado: un engine
          * por función host. La demo del bug va al final (S5f). */
         const char* HS_I = "export function usa_i() -> int { return triplicar_i(14); }\n";
@@ -434,7 +434,7 @@ int main(void) {
         }
         /* S5f: demo del bug multi-host-fn (documentado, resultado esperado
          * incorrecto; el binding NO soporta más de una host fn por engine).
-         * alpha: *3, beta: *5 — si el dispatcher respetara el id, alpha(2)=6. */
+         * alpha: *3, beta: *5 - si el dispatcher respetara el id, alpha(2)=6. */
         {
             clsb_engine* he = clsb_engine_new(NULL);
             clsb_register_host_function(he, "alpha", "i(i)", host_triple_i, NULL);
@@ -479,7 +479,7 @@ int main(void) {
         err = NULL;
         clsb_value ws[2] = { clsb_value_string("abc"), clsb_value_int(2) };
         st = clsb_call(m, "suma", ws, 2, &out, &err);
-        printf("  tipo incorrecto (string donde int): st=%d tag=%d bits=%lld — %s\n",
+        printf("  tipo incorrecto (string donde int): st=%d tag=%d bits=%lld - %s\n",
                st, out.tag, (long long)out.bits,
                st == CLSB_OK ? "NO VALIDA TIPO (basura)" : "error");
         check(st == CLSB_OK, "tipo incorrecto: no crashea (status ok, basura)");

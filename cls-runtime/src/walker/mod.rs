@@ -1,7 +1,7 @@
 //! ⚠️ AST-walker (intérprete DEPRECADO).
 //!
 //! TODO ESTE SUBÁRBOL SE DEPRECA CON EL WALKER tras la salida de CLS 2.0-dev1.
-//! El intérprete objetivo es el JIT (`clx run`, CLS → WASM → wasmtime).
+//! El intérprete objetivo es el JIT (`clx run`, CLS -> WASM -> wasmtime).
 //! `mod.rs` re-exporta los items para compat transitoria con los nodos.
 
 pub mod clslib;

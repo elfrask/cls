@@ -11,7 +11,7 @@ pub(super) fn elem_size_bytes(w: WasTy) -> i64 {
         WasTy::I32 => 4,
     }
 }
-/// Aplica el operador compuesto a los dos valores del stack (segÃƒÂºn el tipo).
+/// Aplica el operador compuesto a los dos valores del stack (según el tipo).
 pub(super) fn apply_compound_ty(
     body: &mut Vec<Instruction>,
     op: Operator,
@@ -55,7 +55,7 @@ pub(super) fn cmx_tag_for_type(t: &Type) -> i64 {
         _ => 0,
     }
 }
-/// CÃƒÂ³digo del tipo de elemento para `arr_join`/`arr_to_string`
+/// Código del tipo de elemento para `arr_join`/`arr_to_string`
 /// (0=int, 1=string, 2=float, 3=bool, 4=char, 5=cmx).
 pub(super) fn arr_kind_code(t: &Type) -> i64 {
     match t {
@@ -77,7 +77,7 @@ pub(super) fn is_compound(op: Operator) -> bool {
             | Operator::PercentEqual
     )
 }
-/// Tag del RUNTIME interno para valores dentro de records/arrays heterogÃƒÂ©neos:
+/// Tag del RUNTIME interno para valores dentro de records/arrays heterogéneos:
 /// 0=int 1=string 2=float 3=bool 4=char 5=cmx 6=array 7=record (tabla de
 /// `fmt_val_to_string`/`record_tag` del host). Distinto de `cls_kind_code`
 /// (tabla del binding: 4=string 5=array 6=record).
@@ -117,16 +117,16 @@ pub(super) fn cls_kind_code(t: &Type) -> i64 {
         _ => 8,
     }
 }
-/// Base de la tabla de ÃƒÂ­ndices de strings (8 bytes por entrada: offset, len).
+/// Base de la tabla de índices de strings (8 bytes por entrada: offset, len).
 /// Layout de memoria: `[0 .. data_len)` = bytes de los strings (append-only,
 /// en orden de interning) y `[STRING_TABLE_BASE .. + 8N)` = tabla. Con base
-/// FIJA, los offsets de los datos no dependen del tamaÃƒÂ±o total del pool: el
+/// FIJA, los offsets de los datos no dependen del tamaño total del pool: el
 /// REPL JIT (estado persistente) transfiere punteros de strings entre
-/// instancias y estos siguen siendo vÃƒÂ¡lidos (las entradas compartidas
-/// conservan su posiciÃƒÂ³n si las nuevas se agregan al final).
-pub(super) const STRING_TABLE_BASE: u32 = 524_288; // 512KB Ã¢â‚¬â€ por debajo del heap (1MB)
+/// instancias y estos siguen siendo válidos (las entradas compartidas
+/// conservan su posición si las nuevas se agregan al final).
+pub(super) const STRING_TABLE_BASE: u32 = 524_288; // 512KB - por debajo del heap (1MB)
 
-/// Sentinel de fin de iteraciÃƒÂ³n del protocolo `__next` (el `return null` de un
-/// mÃƒÂ©todo `__next` se emite con este valor; un iterador puede devolver 0 como
-/// valor legÃƒÂ­timo, asÃƒÂ­ que el null NO puede ser 0).
-pub(super) const NULL_ITER_SENTINEL: i64 = i64::MIN;
+/// Sentinel de fin de iteración del protocolo `__next` (el `return null` de un
+/// método `__next` se emite con este valor; un iterador puede devolver 0 como
+/// valor legítimo, así que el null NO puede ser 0).
+pub(super) const NULL_ITER_SENTINEL: i64 = i64::MIN;

@@ -1,4 +1,4 @@
-//! AST — IncludeStatement (Fase 1: extraido de frontend/ast.rs).
+//! AST - IncludeStatement (Fase 1: extraido de frontend/ast.rs).
 
 use crate::error::diagnostic::Span;
 use serde::{Deserialize, Serialize};

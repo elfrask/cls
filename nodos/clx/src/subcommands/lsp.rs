@@ -1,6 +1,6 @@
 pub fn execute(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!("clx lsp — Language Server");
+        println!("clx lsp - Language Server");
         println!();
         println!("Uso: clx lsp [--silent]");
         println!();

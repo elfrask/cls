@@ -1,4 +1,4 @@
-# A-4: concat 100k veces "xx" (2 chars) → len 200000
+# A-4: concat 100k veces "xx" (2 chars) -> len 200000
 function main(args: String[]) -> int {
     var s = "";
     var i = 0;

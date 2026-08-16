@@ -1,4 +1,4 @@
-//! AST — Visibility (Fase 1: extraido de frontend/ast.rs).
+//! AST - Visibility (Fase 1: extraido de frontend/ast.rs).
 
 use serde::{Deserialize, Serialize};
 

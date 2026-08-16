@@ -1,4 +1,4 @@
-# benchmark.clsx — Micro-benchmark de CLS.
+# benchmark.clsx - Micro-benchmark de CLS.
 # Mide 5 cargas de trabajo típicas con los MISMOS parámetros que benchmark.js
 # y benchmark.py, para comparar velocidades de forma justa.
 #

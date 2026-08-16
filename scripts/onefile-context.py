@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""onefile-context.py — Genera un markdown con todo el proyecto para enviar a una IA.
+"""onefile-context.py - Genera un markdown con todo el proyecto para enviar a una IA.
 
 Uso:
   python scripts/onefile-context.py [--out archivo.md] [--include-dir dir] [--exclude pattern]

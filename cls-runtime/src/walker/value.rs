@@ -19,7 +19,7 @@ pub trait Pollable {
     fn poll(&mut self, interp: &mut crate::walker::interpreter::Interpreter) -> PollState;
 }
 
-/// Promise — puente entre intérprete y WASM. Compartido vía Arc (como JS).
+/// Promise - puente entre intérprete y WASM. Compartido vía Arc (como JS).
 #[derive(Clone)]
 pub struct Promise {
     inner: Arc<Mutex<PromiseInner>>,
@@ -497,7 +497,7 @@ impl FunValue {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CmxValue {
     /// El valor del tag: String para minúsculas, o la referencia (función/var/clase/etc)
-    /// para mayúsculas. CMX es agnóstico — no ejecuta la referencia.
+    /// para mayúsculas. CMX es agnóstico - no ejecuta la referencia.
     pub tag: Value,
     pub props: HashMap<String, Value>,
     pub children: Vec<Value>,

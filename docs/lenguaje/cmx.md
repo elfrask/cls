@@ -34,26 +34,26 @@ function main(args: String[]) -> int {
 
 ## Children
 
-- Texto plano → String.
-- `{expr}` → el valor de la expresión.
-- Elementos anidados → valores CMX recursivos.
+- Texto plano -> String.
+- `{expr}` -> el valor de la expresión.
+- Elementos anidados -> valores CMX recursivos.
 - `self-closing`: `<separador />`.
 
 ## Valor resultante
 
 `CmxValue { tag, props, children }`:
 
-- `tag` — String para tags en **minúscula**; para tags en **mayúscula** es la
+- `tag` - String para tags en **minúscula**; para tags en **mayúscula** es la
   **referencia** (función/var/clase) sin ejecutarla (CMX no la llama).
-- `props` — `Record` con los atributos (`app.props.titulo`).
-- `children` — `Array` de valores (`app.children[0].tag`, `app.children[2].props.id`).
+- `props` - `Record` con los atributos (`app.props.titulo`).
+- `children` - `Array` de valores (`app.children[0].tag`, `app.children[2].props.id`).
 
 ## Representación en `print`
 
 - Sin children: `<tag prop="valor" />` (con `props` ordenadas; `/>` si está
   vacío).
 - Con children: `<tag>... (n children)</tag>`.
-- Ej.: `print(app)` → `<app contador="2" titulo="Hola mundo">... (3 children)</app>`
+- Ej.: `print(app)` -> `<app contador="2" titulo="Hola mundo">... (3 children)</app>`
   (props ordenadas alfabéticamente).
 
 ## Runtime

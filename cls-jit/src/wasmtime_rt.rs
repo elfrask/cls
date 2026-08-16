@@ -132,7 +132,7 @@ pub fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), Str
 /// Como [`register_host_functions`] con control de `exit`/`trap` y del sandbox.
 /// `embed_exit = true`: omite `exit`/`trap` (el embedding los define).
 /// `sandbox = true`: omite los módulos del nodo desktop (`fs`, `http`, `os`,
-/// `path`, `process`, `time`, `random`) — solo core (print/math/json/strings).
+/// `path`, `process`, `time`, `random`) - solo core (print/math/json/strings).
 pub fn register_host_functions_opt(
     linker: &mut Linker<HostState>,
     embed_exit: bool,
@@ -660,7 +660,7 @@ pub(crate) fn run_wasm_wasmtime(
     };
     t = tick(timing, "Module::new (Cranelift)", t);
 
-    // El WASM es válido: persistirlo en el caché CLS→WASM (fallo silencioso).
+    // El WASM es válido: persistirlo en el caché CLS->WASM (fallo silencioso).
     if let Some(p) = &cache_path {
         let _ = std::fs::create_dir_all(crate::resolve::cache_dir())
             .and_then(|_| crate::resolve::atomic_write(p, wasm_bytes));

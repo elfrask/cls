@@ -1,4 +1,4 @@
-# CLS 2.0 — Modular WASM-first Programming Language
+# CLS 2.0 - Modular WASM-first Programming Language
 
 **Version**: 2.0.0 · **License**: MIT  
 [GitHub](https://github.com/frask/cls) · WASM-first · Multiplatform
@@ -6,9 +6,9 @@
 CLS is a programming language designed for **modular, safe, cross-platform development**. It compiles to WASM (future), has an integrated type checker, a JSX-like native syntax (CMX), a VFS abstraction with sandbox support, and a full LSP server for editor integration.
 
 ```
-.clsx → Lexer → Parser → AST → Tree-walker (Interpreter)
-                              → JSON backend (AST dump)
-                              → WASM codegen (future → .clbin)
+.clsx -> Lexer -> Parser -> AST -> Tree-walker (Interpreter)
+                              -> JSON backend (AST dump)
+                              -> WASM codegen (future -> .clbin)
 ```
 
 ---
@@ -143,12 +143,12 @@ for each item and idx in (items) {
 ```clx
 # Array
 var arr = [1, 2, 3];
-print(arr[0]);          # → 1
-print(len(arr));        # → 3
+print(arr[0]);          # -> 1
+print(len(arr));        # -> 3
 
 # Record / Object
 var obj = { "name": "CLS", "version": 2 };
-print(obj["name"]);     # → "CLS"
+print(obj["name"]);     # -> "CLS"
 ```
 
 ### String Interpolation
@@ -196,7 +196,7 @@ structure Person {
 };
 
 var p = Person("Alice", 30);
-print(p.name);          # → "Alice"
+print(p.name);          # -> "Alice"
 p.name = "Bob";         # mutation
 ```
 
@@ -223,12 +223,12 @@ interface Printable {
 ### CMX (Native JSX)
 
 ```clx
-# Lowercase tag → CmxValue
+# Lowercase tag -> CmxValue
 var el = <button label="Click" onClick={handleClick} />;
-print(el.tag);          # → "button"
-print(el.props.label);  # → "Click"
+print(el.tag);          # -> "button"
+print(el.props.label);  # -> "Click"
 
-# Uppercase tag → reference lookup
+# Uppercase tag -> reference lookup
 <App title="Hello" />;  # calls function App({title: "Hello"})
 
 # With children
@@ -304,11 +304,11 @@ math.range(1, 5)       # [1, 2, 3, 4]
 ### JSON (`import "json" as json`)
 
 ```clx
-json.parse('{"a": 1}')        # → { a: 1 }
-json.stringify({ "a": 1 })    # → '{"a":1}'
+json.parse('{"a": 1}')        # -> { a: 1 }
+json.stringify({ "a": 1 })    # -> '{"a":1}'
 ```
 
-### FS (`import "fs" as fs`) — desktop only
+### FS (`import "fs" as fs`) - desktop only
 
 ```clx
 fs.readFile("path")
@@ -320,7 +320,7 @@ fs.listDir("path")
 fs.cwd()
 ```
 
-### HTTP (`import "http" as http`) — desktop only
+### HTTP (`import "http" as http`) - desktop only
 
 ```clx
 http.get("https://api.example.com")
@@ -349,7 +349,7 @@ fs.writeFile("tmp://cache.dat", data);
 
 ## CLI Reference
 
-### `clx` — Development Toolchain
+### `clx` - Development Toolchain
 
 | Command | Description |
 |---------|-------------|
@@ -365,7 +365,7 @@ fs.writeFile("tmp://cache.dat", data);
 | `install` | Install dependencies |
 | `lsp` | Start LSP server |
 
-### `clxr` — Runtime Executor
+### `clxr` - Runtime Executor
 
 ```bash
 clxr app.clsx          # Run source
@@ -520,19 +520,19 @@ cls/
 | Phase | Description | Status |
 |-------|-------------|--------|
 | F1 | Workspace + crates + base nodes | ✅ |
-| F2 | Pipeline: lexer → parser → tree-walker | ✅ |
+| F2 | Pipeline: lexer -> parser -> tree-walker | ✅ |
 | F3 | Type checker + name resolver + optimizer | ✅ |
 | F4 | Stdlib: math, json, fs, http, intrinsics | ✅ |
 | F5a | ModuleResolver + imports | ✅ |
 | F5b | Exports + user modules | ✅ |
-| F6 | Migration ccls→clx, .ccls→.clsx | ✅ |
+| F6 | Migration ccls->clx, .ccls->.clsx | ✅ |
 | F7 | VFS + ClsLib indexing | ✅ |
-| — | LSP server + VS Code extension | ✅ |
-| — | Type maps + autocompletion | ✅ |
-| — | Async/await syntax | ✅ |
-| — | Structure + Interface | ✅ |
-| — | CMX with reference lookup | ✅ |
-| — | Error system with traceback | ✅ |
+| - | LSP server + VS Code extension | ✅ |
+| - | Type maps + autocompletion | ✅ |
+| - | Async/await syntax | ✅ |
+| - | Structure + Interface | ✅ |
+| - | CMX with reference lookup | ✅ |
+| - | Error system with traceback | ✅ |
 | Future | WASM backend (.clbin) | 🚧 |
 | Future | WASM runtime in clxr | 🚧 |
 | Future | Registry + package publishing | 🚧 |
@@ -541,4 +541,4 @@ cls/
 
 ## License
 
-MIT — see LICENSE file.
+MIT - see LICENSE file.

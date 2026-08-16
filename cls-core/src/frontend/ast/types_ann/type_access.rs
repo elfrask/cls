@@ -1,4 +1,4 @@
-//! AST — TypeAccess (Fase 1: extraido de frontend/ast.rs).
+//! AST - TypeAccess (Fase 1: extraido de frontend/ast.rs).
 
 use serde::{Deserialize, Serialize};
 

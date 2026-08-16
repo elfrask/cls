@@ -1,10 +1,10 @@
-"""clsb — bindings de CLS para Python (embedding vía ABI C).
+"""clsb - bindings de CLS para Python (embedding vía ABI C).
 
 ```python
 import clsb
 
 engine = clsb.Engine()
-engine.set_output(print)                      # print del script → Python
+engine.set_output(print)                      # print del script -> Python
 engine.register_host_function("duplicar", "i(i)", lambda id, a: a[0] * 2)
 
 module = engine.compile_source(
@@ -15,8 +15,8 @@ engine.eval('export function hola() -> String { return "hi"; }')  # "hi"
 ```
 
 Conversión automática de valores:
-`int → int` · `float → float` · `bool → bool` · `str → String` ·
-`list → Array` · `dict → Record` · `None → null` (y viceversa en retornos).
+`int -> int` · `float -> float` · `bool -> bool` · `str -> String` ·
+`list -> Array` · `dict -> Record` · `None -> null` (y viceversa en retornos).
 """
 
 from __future__ import annotations
@@ -203,7 +203,7 @@ class _HostFnBridge:
             out_ptr[0] = out
             return 0
         except Exception as e:
-            # Error del callback → la llamada CLS recibe 0 (documentado);
+            # Error del callback -> la llamada CLS recibe 0 (documentado);
             # el usuario puede re-lanzar en su callback si quiere.
             import sys
             print(f"clsb: host function {fid} falló: {e}", file=sys.stderr)
@@ -238,7 +238,7 @@ class Engine:
         self._l.clsb_set_output(self._h, self._output_cb, None)
 
     def set_resolver(self, cb: Callable[[str, str], Optional[str]]) -> None:
-        """Resuelve `import "x"` no encontrado en disco: cb(path, base_dir) → source."""
+        """Resuelve `import "x"` no encontrado en disco: cb(path, base_dir) -> source."""
         bridge = _ResolverBridge(cb)
         self._resolver_cb = _lib.RESOLVER_CB(bridge._call)
         self._l.clsb_set_resolver(self._h, self._resolver_cb, None)

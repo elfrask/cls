@@ -7,7 +7,7 @@ use crate::frontend::ast::*;
 //     cls_core::middleware::Optimizer::new().optimize(&mut module);
 //     let mut checker = TypeChecker::new(types_config);
 //
-// El type map (Span → Type) se construye desde los nodos del AST; si el
+// El type map (Span -> Type) se construye desde los nodos del AST; si el
 // optimizer reemplaza nodos (folding) debe hacerlo ANTES del typeck para que
 // los spans coincidan. Hoy `optimize` es solo un recorrido sin transformaciones.
 

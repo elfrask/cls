@@ -3,7 +3,7 @@
 Carpeta raíz de scripts: `examples/audit/`
 Runner: `examples/audit/run-audit.ps1` (ejecuta JIT + walker, guarda logs UTF-8 en `_logs/`)
 
-## features/ — 18 scripts (uno por categoría), todos exit 0 en JIT
+## features/ - 18 scripts (uno por categoría), todos exit 0 en JIT
 | Script | Feature |
 |---|---|
 | 01-basics.clsx | variables, const, let, literales, tipos, print |
@@ -25,7 +25,7 @@ Runner: `examples/audit/run-audit.ps1` (ejecuta JIT + walker, guarda logs UTF-8 
 | 17-genericos.clsx | alias, type access |
 | 18-shapes.clsx | shapes, interfaces |
 
-## errores/ — scripts de error y reproducción de bugs
+## errores/ - scripts de error y reproducción de bugs
 | Script | Tipo | Resultado esperado | Real (JIT) |
 |---|---|---|---|
 | err-sintaxis-token.clsx | sintaxis | línea+caret | ✅ |
@@ -42,11 +42,11 @@ Runner: `examples/audit/run-audit.ps1` (ejecuta JIT + walker, guarda logs UTF-8 
 | err-conversion.clsx | runtime | error conversión | ✅ (explicado en log) |
 | err-const-reasignada.clsx | runtime | error const | ⚠️ solo WARN |
 | err-private-externo.clsx | visibilidad | ERROR private | ❌ exit 0, imprime 0 (bug H2) |
-| **bug-pow-float.clsx** | WASM | — | ❌ WASM inválido + dump WAT |
-| **bug-abs-float.clsx** | WASM | — | ❌ WASM inválido |
-| **bug-array-hetero-float.clsx** | WASM | — | ❌ WASM inválido |
-| **bug-float-cmp-int.clsx** | WASM | — | ❌ WASM inválido |
-| **bug-array-index-write.clsx** | WASM | — | ❌ WASM inválido |
+| **bug-pow-float.clsx** | WASM | - | ❌ WASM inválido + dump WAT |
+| **bug-abs-float.clsx** | WASM | - | ❌ WASM inválido |
+| **bug-array-hetero-float.clsx** | WASM | - | ❌ WASM inválido |
+| **bug-float-cmp-int.clsx** | WASM | - | ❌ WASM inválido |
+| **bug-array-index-write.clsx** | WASM | - | ❌ WASM inválido |
 | **err-tupla-inmutable.clsx** | WASM | error tuplas | ❌ WASM inválido |
 | **bug-len-string.clsx** | runtime | len=4 | ❌ `171798691844` |
 | **bug-array-string-puntero.clsx** | runtime | `[1, "dos", 3]` | ❌ `[1, 68719476739, 3]` |
@@ -59,7 +59,7 @@ Runner: `examples/audit/run-audit.ps1` (ejecuta JIT + walker, guarda logs UTF-8 
 | **bug-visibilidad-protected.clsx** | visibilidad | ERROR | ❌ exit 0 |
 | **bug-visibilidad-readonly.clsx** | visibilidad | ERROR | ❌ exit 0 |
 
-## modules/ — sistema de módulos
+## modules/ - sistema de módulos
 | Script | Resultado |
 |---|---|
 | libmod.clsx / privados.clsx / err-lib-modulo.clsx | librerías de prueba |
@@ -71,11 +71,11 @@ Runner: `examples/audit/run-audit.ps1` (ejecuta JIT + walker, guarda logs UTF-8 
 | bug-enum-namespaced.clsx / bug-import-doble.clsx | reproducción H13/H14 |
 | cachetest/ | setup para prueba de caché (arriba en 07) |
 
-## cmx/ — CMX y sintaxis malformada
+## cmx/ - CMX y sintaxis malformada
 - `cmx-*.clsx`: tags sin cerrar, cierre sin apertura, attrs rotos, expr rota, `<div></div>` (H3 cuelga), `< b`, tags especiales, mixto
 - `sint-*.clsx`: `(a)` vs tupla, `() =>`, float mal, `1e300` (H9), for-each raro, doble and, interp rota, return/break fuera, `%%%`, `//`, coma colgante
 
-## stress/ — stress tests
+## stress/ - stress tests
 | Script | Resultado |
 |---|---|
 | stress-infinite-while.clsx | TIMEOUT esperado |
@@ -87,9 +87,9 @@ Runner: `examples/audit/run-audit.ps1` (ejecuta JIT + walker, guarda logs UTF-8 
 | stress-1e300.clsx | ❌ H9 notación científica |
 | stress-modulos.clsx | ⚠️ error de ruta del script (no del JIT) |
 
-## perf/ — benchmarks
+## perf/ - benchmarks
 `perf-loop` (20M iter), `perf-fib` (fib28), `perf-arrays` (100k), `perf-math` (100k), `perf-string` (10k), `perf-llamadas` (1M).
 
 ## Logs
-`examples/audit/_logs/` — salidas crudas por script: `*.jit.log`, `*.walker.log`,
+`examples/audit/_logs/` - salidas crudas por script: `*.jit.log`, `*.walker.log`,
 `*.raw.log` (reproducciones), `cli-tests.log`, `cmx-div-vacio.hang.log`.

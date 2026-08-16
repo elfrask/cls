@@ -1,10 +1,10 @@
-/* crash_probes.c — pruebas que pueden crashear, cada una en un subproceso
+/* crash_probes.c - pruebas que pueden crashear, cada una en un subproceso
  * (el caller corre cada caso por separado y captura el exit code).
  *
  * Uso: crash_probes.exe <caso>
- *   double_free    — clsb_value_free dos veces sobre el mismo valor
- *   null_err_compile — clsb_compile_source con err_out=NULL (y source inválido)
- *   null_err_call  — clsb_call con err_out=NULL (y export inexistente)
+ *   double_free    - clsb_value_free dos veces sobre el mismo valor
+ *   null_err_compile - clsb_compile_source con err_out=NULL (y source inválido)
+ *   null_err_call  - clsb_call con err_out=NULL (y export inexistente)
  */
 #include <clsb.h>
 #include <stdio.h>

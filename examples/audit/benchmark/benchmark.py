@@ -1,4 +1,4 @@
-# benchmark.py — Micro-benchmark de Python.
+# benchmark.py - Micro-benchmark de Python.
 # Mide las MISMAS 5 cargas de trabajo que benchmark.clsx y benchmark.js.
 #
 # Cómo correr:

@@ -8,22 +8,22 @@ está deprecado.
 
 `cls-jit/src/engine.rs` orquesta el pipeline completo:
 
-1. **Lectura** — se lee el entry desde disco.
-2. **Lexer** — `cls_core::frontend::Lexer`.
-3. **Parser** — `cls_core::frontend::Parser` (AST).
-4. **Imports** — se resuelven `import` / `from import` / `include`
+1. **Lectura** - se lee el entry desde disco.
+2. **Lexer** - `cls_core::frontend::Lexer`.
+3. **Parser** - `cls_core::frontend::Parser` (AST).
+4. **Imports** - se resuelven `import` / `from import` / `include`
    recursivamente (`load_import_modules_hooked`).
-5. **Caché** — se calcula la clave de los fuentes; si el `.wasm` existe en
+5. **Caché** - se calcula la clave de los fuentes; si el `.wasm` existe en
    `~/.cache/cls/`, se salta directo a la ejecución.
-6. **Desplazamiento de spans** — cada módulo importado se fusiona al módulo
+6. **Desplazamiento de spans** - cada módulo importado se fusiona al módulo
    principal con un offset de línea único (`100000 * n`).
-7. **Typecheck estricto** — `TypeChecker` con `strict: true`,
+7. **Typecheck estricto** - `TypeChecker` con `strict: true`,
    `no_implicit_any: true` y `null_safety: true`. Los errores de tipo abortan
    con diagnóstico + caret.
-8. **Flatten** — los imports se aplanan en el módulo único.
-9. **Emisión** — `WasmBackend` (`cls-core/src/backend/wasm.rs`) genera el
+8. **Flatten** - los imports se aplanan en el módulo único.
+9. **Emisión** - `WasmBackend` (`cls-core/src/backend/wasm.rs`) genera el
    binario WASM.
-10. **Ejecución** — instancia el módulo en wasmtime (o wasmi) y llama a
+10. **Ejecución** - instancia el módulo en wasmtime (o wasmi) y llama a
     `main(args)`.
 
 ## Caché
@@ -67,7 +67,7 @@ El módulo WASM importa ~105 funciones `env.*` implementadas en el host
 - Módulos desktop: `fs_*`, `http_*`, `os_*`, `path_*`, `process_*`,
   `time_*`, `random_*`.
 - CMX (`cmx_*`) y funciones como valor (`fn_*`).
-- `host_call(id, ptr, n)` — canal genérico para intrinsics del nodo.
+- `host_call(id, ptr, n)` - canal genérico para intrinsics del nodo.
 
 Los métodos de primitivos (`"hola".upper()`, `arr.push(x)`, ...) se compilan
 a llamadas directas a estas host functions (sin objetos ni boxing).
@@ -79,7 +79,7 @@ a llamadas directas a estas host functions (sin objetos ni boxing).
   `(mensaje, span empaquetado)` que el host desempaca para renderizar el
   caret exacto.
 - **wasmi** (`CLS_JIT_RUNTIME=wasmi`): intérprete puro, **sin soporte de
-  excepciones** — `try/catch`/`throw` fallan en compilación y los errores son
+  excepciones** - `try/catch`/`throw` fallan en compilación y los errores son
   traps con el mensaje, sin caret.
 - El call stack CLS se mantiene con un "shadow stack" (`fn_enter`/`fn_exit`)
   de hasta 1000 frames; el formateador del runtime lo muestra numerado con
@@ -105,11 +105,11 @@ Los magic methods se despachan por la **vtable de la clase** con la firma
 declarada del método (`call_indirect`): el emisor busca el magic en el tipo
 estático del objeto y emite `me` + args + dispatch. Los magics deben **anotar
 su retorno** (el JIT no puede tipar `Any`); la iteración usa el protocolo
-`__iter` → Array u objeto iterador con `__next` hasta `null`. Verificado en
+`__iter` -> Array u objeto iterador con `__next` hasta `null`. Verificado en
 `examples/audit/test-features/tests/jit-magic-all.clsx`.
 
 **Truthiness de condiciones** (paridad walker): `if`/`while`/`for`/`elif`
-coaccionan la condición a bool — numéricos `!= 0`, strings no vacíos
+coaccionan la condición a bool - numéricos `!= 0`, strings no vacíos
 (`len != 0`), arrays/records/tuplas con elementos (`len` del header), shapes y
 objetos siempre verdaderos; tipos sin definir (`Any`) dan error de compilación
 claro ("la condición debe ser Bool"). El intrínseco `bool(x)` usa la misma
@@ -125,8 +125,8 @@ base o a `i64` genérico.
 
 ## Debugging
 
-- `CLS_DUMP_WAT=1` — vierte el WAT del módulo a stderr (o lo incluye en el
+- `CLS_DUMP_WAT=1` - vierte el WAT del módulo a stderr (o lo incluye en el
   error si el módulo no valida).
-- `CLS_JIT_TIMING=1` — tiempos por fase (lectura, lexer, parser, imports,
+- `CLS_JIT_TIMING=1` - tiempos por fase (lectura, lexer, parser, imports,
   caché, typeck, flatten, emisión, ejecución).
-- `clx ast --json` — inspeccionar el AST previo a la emisión.
+- `clx ast --json` - inspeccionar el AST previo a la emisión.

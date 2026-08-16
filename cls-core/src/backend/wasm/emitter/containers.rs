@@ -5,7 +5,7 @@ use super::*;
 impl<'a> FuncEmitter<'a> {
 
 
-    /// Carga un campo del CmxValue (tag/props/children) Ã¢â‚¬â€ el ptr estÃƒÂ¡ en el stack.
+    /// Carga un campo del CmxValue (tag/props/children) - el ptr está en el stack.
     pub(crate) fn emit_cmx_field(&mut self, offset: i64) -> ClsResult<()> {
         self.body.push(Instruction::I64Const(offset));
         self.body.push(Instruction::I64Add);
@@ -21,7 +21,7 @@ impl<'a> FuncEmitter<'a> {
 
     pub(crate) fn emit_array(&mut self, a: &ArrayExpr) -> ClsResult<()> {
         let elem_ty = self.array_elem_type(a)?;
-        // Array de Cmx Ã¢â€ â€™ entradas `[val, tag]` stride 16 (children del Cmx, etc.).
+        // Array de Cmx -> entradas `[val, tag]` stride 16 (children del Cmx, etc.).
         let is_cmx = a
             .elements
             .first()
@@ -82,8 +82,8 @@ impl<'a> FuncEmitter<'a> {
             } else {
                 let val_tmp = self.fresh_local_ty(elem_ty);
                 let addr_tmp = self.fresh_local();
-                // Si el array es f64 y el elemento es un literal/expresiÃƒÂ³n int,
-                // promoverlo a f64 para el store (layout homogÃƒÂ©neo).
+                // Si el array es f64 y el elemento es un literal/expresión int,
+                // promoverlo a f64 para el store (layout homogéneo).
                 if elem_ty == WasTy::F64 {
                     self.f64_promote(el)?;
                 }
@@ -122,8 +122,8 @@ impl<'a> FuncEmitter<'a> {
 
     pub(crate) fn array_elem_type(&self, a: &ArrayExpr) -> ClsResult<WasTy> {
         if let Some(first) = a.elements.first() {
-            // PromociÃƒÂ³n: si CUALQUIER elemento es float, el array es de f64
-            // (p.ej. `[1, 2.0]` Ã¢â€ â€™ f64). El store promueve los ints a f64.
+            // Promoción: si CUALQUIER elemento es float, el array es de f64
+            // (p.ej. `[1, 2.0]` -> f64). El store promueve los ints a f64.
             let has_float = a
                 .elements
                 .iter()
@@ -133,7 +133,7 @@ impl<'a> FuncEmitter<'a> {
             }
             return self.value_type(first);
         }
-        // Array vacÃƒÂ­o: usar el tipo anotado registrado por el typeck (span del literal),
+        // Array vacío: usar el tipo anotado registrado por el typeck (span del literal),
         // p.ej. `const out: int[] = []`.
         if let Some(Type::Array(elem)) = self.types.get(&a.span) {
             if let Ok(w) = was_type(elem) {
@@ -141,15 +141,15 @@ impl<'a> FuncEmitter<'a> {
             }
         }
         Err(crate::error::ClsError::compile_at(
-            "Array literal vacÃƒÂ­o sin tipo: agrega la anotaciÃƒÂ³n del elemento (p.ej. `int[] = []`)",
+            "Array literal vacío sin tipo: agrega la anotaci�n del elemento (p.ej. `int[] = []`)",
             &a.span,
         ))
     }
 
 
-    /// Literal de record `{ a: 1, b: "x" }` Ã¢â€ â€™ record_new + record_set.
+    /// Literal de record `{ a: 1, b: "x" }` -> record_new + record_set.
     pub(crate) fn emit_record(&mut self, r: &RecordExpr) -> ClsResult<()> {
-        // Si el type map dice Shape Ã¢â€ â€™ emitir como struct contiguo (offsets fijos).
+        // Si el type map dice Shape -> emitir como struct contiguo (offsets fijos).
         // Es el caso de `var x = {a: 1, b: "1"}` (inferido) o anotado con
         // interface/alias de shape. Sin hashmap, sin keys en memoria, sin tags.
         if let Some(shape) = self.types.get(&r.span).cloned() {
@@ -177,9 +177,9 @@ impl<'a> FuncEmitter<'a> {
                 .get(&expr_span(val))
                 .cloned()
                 .unwrap_or(Type::Any);
-            // Tag del valor en el record: tag del RUNTIME interno (Record Ã¢â€ â€™ 7,
-            // Array Ã¢â€ â€™ 6, String Ã¢â€ â€™ 1...). Antes usaba arr_kind_code, que devolvÃƒÂ­a
-            // 0 para records Ã¢â€ â€™ el binding los leÃƒÂ­a como int (ptr crudo).
+            // Tag del valor en el record: tag del RUNTIME interno (Record -> 7,
+            // Array -> 6, String -> 1...). Antes usaba arr_kind_code, que devolvía
+            // 0 para records -> el binding los leía como int (ptr crudo).
             self.body.push(Instruction::I64Const(runtime_tag_code(&cls_t)));
             self.host.call(HostFn::RecordSet, &mut self.body);
             self.body.push(Instruction::Drop);
@@ -259,14 +259,14 @@ impl<'a> FuncEmitter<'a> {
 
     /// Construye un `CmxValue` en memoria: [tag][props_ptr][children_ptr].
     pub(crate) fn emit_cmx(&mut self, c: &CmxElement) -> ClsResult<()> {
-        // tag mayÃƒÂºscula Ã¢â€ â€™ resolver la variable/valor SIEMPRE (debe existir; si no, error).
-        // tag minÃƒÂºscula Ã¢â€ â€™ String.
+        // tag mayúscula -> resolver la variable/valor SIEMPRE (debe existir; si no, error).
+        // tag minúscula -> String.
         if c.tag.starts_with(|ch: char| ch.is_uppercase()) {
             let name = c.tag.clone();
             if self.globals.contains_key(&name) || self.locals.contains_key(&name) {
                 self.emit_ident_load(&name);
             } else if self.fn_table_idx.contains_key(&name) {
-                // FunciÃƒÂ³n como tag Ã¢â€ â€™ handle de funciÃƒÂ³n (tag-bit) para que
+                // Función como tag -> handle de función (tag-bit) para que
                 // `app.tag` sea invocable y se imprima `<function X>` (paridad walker).
                 let ti = self.fn_table_idx[&name];
                 let n = self.intern_string(&format!("<function {}>", name));
@@ -276,8 +276,8 @@ impl<'a> FuncEmitter<'a> {
                 self.host.call(HostFn::FnHandle, &mut self.body);
             } else {
                 return Err(crate::error::ClsError::CompileError(format!(
-                    "El tag '<{}>' usa mayÃƒÂºscula pero '{}' no estÃƒÂ¡ definido: \
-                     los tags con inicial mayÃƒÂºscula deben ser una funciÃƒÂ³n/valor existente",
+                    "El tag '<{}>' usa mayúscula pero '{}' no está definido: \
+                     los tags con inicial mayúscula deben ser una función/valor existente",
                     c.tag, name
                 )));
             }
@@ -285,7 +285,7 @@ impl<'a> FuncEmitter<'a> {
             let t = self.intern_string(&c.tag);
             self.emit_load_str(t);
         }
-        self.body.push(Instruction::I64Const(0)); // kind=0 Ã¢â€ â€™ elemento
+        self.body.push(Instruction::I64Const(0)); // kind=0 -> elemento
         self.host.call(HostFn::CmxNew, &mut self.body);
         let ptr = self.fresh_local();
         self.body.push(Instruction::LocalSet(ptr));
@@ -301,7 +301,7 @@ impl<'a> FuncEmitter<'a> {
                 }
                 Some(CmxAttributeValue::Expression(expr)) => {
                     self.emit_expression(expr)?;
-                    // Literales Ã¢â€ â€™ su tipo real (el type map puede dar Any).
+                    // Literales -> su tipo real (el type map puede dar Any).
                     cmx_literal_type(expr).or_else(|| self.types.get(&expr_span(expr)).cloned())
                 }
                 Some(CmxAttributeValue::Shorthand(name)) => {
@@ -332,7 +332,7 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::LocalGet(ptr));
             match child {
                 CmxChild::Text(s) => {
-                    // Texto Ã¢â€ â€™ CmxValue de texto (kind=1): el print lo muestra plano.
+                    // Texto -> CmxValue de texto (kind=1): el print lo muestra plano.
                     let s = self.intern_string(s);
                     self.emit_load_str(s);
                     self.body.push(Instruction::I64Const(1));
@@ -360,17 +360,17 @@ impl<'a> FuncEmitter<'a> {
 
 
     pub(crate) fn emit_index_get(&mut self, i: &IndexExpr) -> ClsResult<()> {
-        // Record: r["key"] Ã¢â€ â€™ record_get(ptr, key)
+        // Record: r["key"] -> record_get(ptr, key)
         let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
         // `o.x[0]` con `o.x` Any (json.parse anidado): indexar despachando por tag.
         if matches!(obj_ty, Some(Type::Any)) {
             let expr = Expression::Index(i.clone());
             self.emit_any_chain(&expr)?;
-            // Resultado (val, tag) Ã¢â€ â€™ dejar solo el val.
+            // Resultado (val, tag) -> dejar solo el val.
             self.body.push(Instruction::Drop);
             return Ok(());
         }
-        // Magic __get: clase con __get Ã¢â€ â€™ obj.__get(index) (paridad walker:
+        // Magic __get: clase con __get -> obj.__get(index) (paridad walker:
         // "Indexado no soportado en objeto (falta __get)" si no lo define).
         if let Some(cn) = self.class_magic_method(&obj_ty, "__get") {
             let _ = self.magic_ret_was(&cn, "__get")?;
@@ -385,7 +385,7 @@ impl<'a> FuncEmitter<'a> {
             self.bits_to_elem(elem_ty)?;
             return Ok(());
         }
-        // Shape: r["campo"] con clave literal Ã¢â€ â€™ load por offset (como member access).
+        // Shape: r["campo"] con clave literal -> load por offset (como member access).
         if let Some(Type::Shape(fields)) = &obj_ty {
             if let Expression::Literal(l) = &*i.index {
                 if let LiteralKind::String(key) = &l.kind {
@@ -424,14 +424,14 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
             return Err(crate::error::ClsError::compile_at(
-                "ÃƒÂndice dinÃƒÂ¡mico no soportado en un record con shape (usa Record<K,V> o any)",
+                "Índice dinámico no soportado en un record con shape (usa Record<K,V> o any)",
                 &i.span,
             ));
         }
         let elem_ty = self.index_elem_type(i)?;
         self.emit_expression(&i.object)?;
         self.emit_expression(&i.index)?;
-        // Array de Cmx Ã¢â€ â€™ entradas `[val, tag]` stride 16 (children del Cmx, etc.).
+        // Array de Cmx -> entradas `[val, tag]` stride 16 (children del Cmx, etc.).
         let is_cmx = matches!(&obj_ty, Some(Type::Array(e)) if matches!(**e, Type::Cmx));
         let elem_size = if is_cmx {
             16
@@ -502,7 +502,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I32Or);
         self.block_depth += 1;
         self.body.push(Instruction::If(BlockType::Empty));
-        self.emit_throw("ÃƒÂndice fuera de rango", span);
+        self.emit_throw("Índice fuera de rango", span);
         self.body.push(Instruction::Unreachable);
         self.body.push(Instruction::End);
         self.block_depth -= 1;
@@ -518,7 +518,7 @@ impl<'a> FuncEmitter<'a> {
             Type::Array(elem) => was_type(elem),
             Type::Record(_, v) => was_type(v),
             Type::Tuple(slots) => {
-                // ÃƒÂ­ndice literal Ã¢â€ â€™ slot exacto; dinÃƒÂ¡mico Ã¢â€ â€™ primer slot (o i64)
+                /Índice literal -> slot exacto; din�mico -> primer slot (o i64)
                 match &*i.index {
                     Expression::Literal(l) => match &l.kind {
                         LiteralKind::Int(v) if *v >= 0 && (*v as usize) < slots.len() => {
@@ -540,8 +540,8 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// TamaÃƒÂ±o de slot de un contenedor: tuplas usan slots de 8 bytes; arrays el
-    /// tamaÃƒÂ±o del tipo del elemento.
+    /// Tamaño de slot de un contenedor: tuplas usan slots de 8 bytes; arrays el
+    /// tamaño del tipo del elemento.
     pub(crate) fn container_elem_size(&self, i: &IndexExpr, elem_ty: WasTy) -> i64 {
         let span = expr_span(&i.object);
         match self.types.get(&span) {
@@ -595,7 +595,7 @@ impl<'a> FuncEmitter<'a> {
 
 
     pub(crate) fn emit_array_len(&mut self) {
-        // ptr estÃƒÂ¡ en stack Ã¢â€ â€™ len = i64.load(ptr+8)
+        // ptr está en stack -> len = i64.load(ptr+8)
         self.body.push(Instruction::I32WrapI64);
         self.body.push(Instruction::I64Load(MemArg {
             offset: 8,
@@ -660,7 +660,7 @@ impl<'a> FuncEmitter<'a> {
             return Ok(());
         }
         // `me.items.push(...)` / `obj.items.push(...)`: el array pudo
-        // reallocarse Ã¢â€ â€™ re-escribir el ptr en el campo (y dejar el ptr como
+        // reallocarse -> re-escribir el ptr en el campo (y dejar el ptr como
         // valor del receiver, paridad con el path de identifiers).
         if let Expression::MemberAccess(m) = obj {
             let obj_ty = self.types.get(&expr_span(&m.object)).cloned();
@@ -706,7 +706,7 @@ impl<'a> FuncEmitter<'a> {
 
 
     pub(crate) fn emit_i64_store(&mut self, offset: u32) {
-        // stack: [addr(i64), value] Ã¢â€ â€™ reordenar con wrap
+        // stack: [addr(i64), value] -> reordenar con wrap
         let v = self.fresh_local();
         self.body.push(Instruction::LocalSet(v));
         self.body.push(Instruction::I32WrapI64);

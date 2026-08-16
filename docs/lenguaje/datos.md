@@ -23,7 +23,7 @@ print(a.join("-"));    # acepta separador
   mutan el array y reasignan automáticamente la variable del receiver
   (`arr.push(x)` muta `arr`).
 - `map(fn)`: aplica la función a cada elemento y devuelve un array nuevo.
-- Índices fuera de rango → error `Índice fuera de rango`.
+- Índices fuera de rango -> error `Índice fuera de rango`.
 - Anidados: `a[1][0]`.
 
 ```clx

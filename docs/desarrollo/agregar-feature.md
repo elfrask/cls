@@ -38,24 +38,24 @@ el type map y los caret de error.
 ### 4. Typeck (`typeck.rs`)
 
 - `check_foo(...)` produce el `Type` de la expresión y registra
-  `types_by_span` (el type map `Span → Type`).
+  `types_by_span` (el type map `Span -> Type`).
 - Si la feature es un miembro de módulo nuevo, actualiza las tablas de
   miembros por módulo en `check_member_access` y `module_arity`.
 - En modo estricto las asignaciones incompatibles son ERROR con span real.
 
-### 5. Emisor WASM (`backend/wasm.rs`) — el JIT
+### 5. Emisor WASM (`backend/wasm.rs`) - el JIT
 
 Lo que permite `clx run`:
 
-- Implementa `emit_foo(...)`; el subset homogéneo: `Int` → `i64`,
-  `Float` → `f64`, `Bool` → `i32`, `String` → `i64` `(ptr << 32) | len`,
-  referencias → `i64` (bump allocator).
+- Implementa `emit_foo(...)`; el subset homogéneo: `Int` -> `i64`,
+  `Float` -> `f64`, `Bool` -> `i32`, `String` -> `i64` `(ptr << 32) | len`,
+  referencias -> `i64` (bump allocator).
 - Si el emisor no la soporta, produce un error explícito
   `El JIT (subconjunto WASM) aún no soporta ...` con `compile_at(msg, span)`.
 - Lo que el walker soporta pero no el emisor no frena la feature: **el JIT
   manda** (ver Directiva en `AGENTS.md`).
 
-### 6. Walker (`interpreter.rs`) — opcional
+### 6. Walker (`interpreter.rs`) - opcional
 
 Solo si quieres la referencia sintáctica en el tree-walker:
 `evaluate_foo(...)` + `Value` en `value.rs`. El walker está deprecado; no

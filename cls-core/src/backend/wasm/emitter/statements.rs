@@ -5,7 +5,7 @@ use super::*;
 impl<'a> FuncEmitter<'a> {
 
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ EmisiÃƒÂ³n de statements Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // == Emisión de statements ============================================
 
     pub(crate) fn emit_statement(&mut self, stmt: &Statement) -> ClsResult<()> {
         match stmt {
@@ -13,7 +13,7 @@ impl<'a> FuncEmitter<'a> {
                 let ty = match (&v.type_ann, &v.value) {
                     (Some(ann), Some(val)) => match was_type(&annotation_to_type(ann)) {
                         Ok(w) => w,
-                        // AnotaciÃƒÂ³n no resuelta (alias/unioÃƒÂ³n) Ã¢â€ â€™ tipo del valor.
+                        // Anotación no resuelta (alias/unioón) -> tipo del valor.
                         Err(_) => self.value_type(val)?,
                     },
                     (Some(ann), None) => was_type(&annotation_to_type(ann))?,
@@ -105,7 +105,7 @@ impl<'a> FuncEmitter<'a> {
             Statement::ForEach(fe) => self.emit_foreach(fe),
             Statement::Switch(s) => self.emit_switch(s),
             Statement::With(w) => self.emit_with(w),
-            // `when` Ã¢â€ â€™ compile-time: emitir solo la rama que matchea el target actual.
+            // `when` -> compile-time: emitir solo la rama que matchea el target actual.
             Statement::When(w) => {
                 if let Some(branch) = w.branches.iter().find(|b| self.target.matches(&b.cond)) {
                     for st in &branch.block.statements {
@@ -134,15 +134,15 @@ impl<'a> FuncEmitter<'a> {
 
     pub(crate) fn unsupported_stmt(&self, stmt: &Statement) -> crate::error::ClsError {
         crate::error::ClsError::CompileError(format!(
-            "El JIT (subconjunto WASM) aÃƒÂºn no soporta este statement: {}",
+            "El JIT (subconjunto WASM) aún no soporta este statement: {}",
             statement_display(stmt)
         ))
     }
 
 
-    /// `arr.map(f)` Ã¢â‚¬â€ aplica la funciÃƒÂ³n (handle) a cada elemento y devuelve un
-    /// array nuevo con los resultados. El array original YA estÃƒÂ¡ en el stack
-    /// (lo emitiÃƒÂ³ el dispatch del mÃƒÂ©todo).
+    /// `arr.map(f)` - aplica la función (handle) a cada elemento y devuelve un
+    /// array nuevo con los resultados. El array original YA está en el stack
+    /// (lo emitió el dispatch del método).
     pub(crate) fn emit_array_map(
         &mut self,
         _member: &MemberAccessExpr,
@@ -155,7 +155,7 @@ impl<'a> FuncEmitter<'a> {
         self.emit_expression(&c.args[0])?;
         let f_handle = self.fresh_local();
         self.body.push(Instruction::LocalSet(f_handle));
-        // tipo de f Ã¢â€ â€™ Fun(params, ret)
+        // tipo de f -> Fun(params, ret)
         let ft = self
             .types
             .get(&expr_span(&c.args[0]))
@@ -165,7 +165,7 @@ impl<'a> FuncEmitter<'a> {
             Type::Fun(p, r) => (p, *r),
             _ => {
                 return Err(crate::error::ClsError::CompileError(
-                    "map: el argumento debe ser una funciÃƒÂ³n".to_string(),
+                    "map: el argumento debe ser una función".to_string(),
                 ))
             }
         };
@@ -179,7 +179,7 @@ impl<'a> FuncEmitter<'a> {
             Type::Void => vec![],
             r => vec![was_type(&r)?.val_type()],
         };
-        // nuevo array [cap][len][ret...] del mismo tamaÃƒÂ±o que el original.
+        // nuevo array [cap][len][ret...] del mismo tamaño que el original.
         let i = self.fresh_local();
         let new_ptr = self.fresh_local();
         self.body.push(Instruction::LocalGet(arr_ptr));
@@ -226,7 +226,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64GeS);
         let depth = self.block_depth.saturating_sub(break_at);
         self.body.push(Instruction::BrIf(depth));
-        // addr del destino en el nuevo array Ã¢â€ â€™ guardar en local.
+        // addr del destino en el nuevo array -> guardar en local.
         self.body.push(Instruction::LocalGet(new_ptr));
         self.body.push(Instruction::LocalGet(i));
         self.body.push(Instruction::I64Const(es_ret));
@@ -236,7 +236,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Add);
         let addr_tmp = self.fresh_local();
         self.body.push(Instruction::LocalSet(addr_tmp));
-        // elem = arr[16 + i*elem_size] Ã¢â€ â€™ guardar en local.
+        // elem = arr[16 + i*elem_size] -> guardar en local.
         self.body.push(Instruction::LocalGet(arr_ptr));
         self.body.push(Instruction::LocalGet(i));
         self.body.push(Instruction::I64Const(elem_size));
@@ -365,7 +365,7 @@ impl<'a> FuncEmitter<'a> {
     /// `for each x [and i] in (col)` sobre array/tuple.
     pub(crate) fn emit_foreach(&mut self, fe: &ForEachStatement) -> ClsResult<()> {
         // Enum: `for each v in (Nivel)` o `for each v in (lib::Color)` (namespaced)
-        // Ã¢â€ â€™ loop 0..variants.len()
+        // -> loop 0..variants.len()
         let enum_key = match &fe.iterable {
             Expression::Identifier(name, _) => Some(name.clone()),
             Expression::NamespaceAccess(ns, name, _) => Some(format!("{}::{}", ns, name)),
@@ -386,7 +386,7 @@ impl<'a> FuncEmitter<'a> {
                 let break_at = self.block_depth;
                 self.block_depth += 1;
                 self.body.push(Instruction::Loop(BlockType::Empty));
-                // continue block: el `continue` salta aquÃƒÂ­ y ejecuta el incremento.
+                // continue block: el `continue` salta aquí y ejecuta el incremento.
                 self.block_depth += 1;
                 self.body.push(Instruction::Block(BlockType::Empty));
                 let continue_at = self.block_depth;
@@ -411,7 +411,7 @@ impl<'a> FuncEmitter<'a> {
                 for st in &fe.block.statements {
                     self.emit_statement(st)?;
                 }
-                // cerrar el continue block Ã¢â€ â€™ incremento
+                // cerrar el continue block -> incremento
                 self.body.push(Instruction::End);
                 self.block_depth -= 1;
                 self.body.push(Instruction::LocalGet(i));
@@ -434,7 +434,7 @@ impl<'a> FuncEmitter<'a> {
             .cloned()
             .unwrap_or(Type::Any);
         // Magic methods __iter/__next (paridad walker interpreter.rs:723-767):
-        // __iter() Ã¢â€ â€™ Array (caso 1) u objeto iterador con __next() hasta null
+        // __iter() -> Array (caso 1) u objeto iterador con __next() hasta null
         // (caso 2). El tipo del iterable debe ser una clase con __iter.
         if let Some(cn) = self.class_magic_method(&Some(iterable_ty.clone()), "__iter") {
             return self.emit_foreach_magic(fe, &cn, &iterable_ty);
@@ -442,7 +442,7 @@ impl<'a> FuncEmitter<'a> {
         let (elem_ty, elem_size) = match &iterable_ty {
             Type::Array(elem) => {
                 let w = was_type(elem)?;
-                // Array de Cmx Ã¢â€ â€™ entradas `[val, tag]` stride 16.
+                // Array de Cmx -> entradas `[val, tag]` stride 16.
                 let es = if matches!(**elem, Type::Cmx) {
                     16
                 } else {
@@ -467,8 +467,8 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Magic __iter/__next: `it = obj.__iter()`; si devuelve Array Ã¢â€ â€™ loop nativo;
-    /// si devuelve una clase iteradora Ã¢â€ â€™ `it.__next()` hasta `null` (0 en el JIT).
+    /// Magic __iter/__next: `it = obj.__iter()`; si devuelve Array -> loop nativo;
+    /// si devuelve una clase iteradora -> `it.__next()` hasta `null` (0 en el JIT).
     pub(crate) fn emit_foreach_magic(
         &mut self,
         fe: &ForEachStatement,
@@ -479,7 +479,7 @@ impl<'a> FuncEmitter<'a> {
         let iter = self.fresh_local();
         self.body.push(Instruction::LocalSet(iter));
         match self.magic_ret_type(cn, "__iter") {
-            // Caso 1: __iter devolviÃƒÂ³ un Array Ã¢â€ â€™ iterar con el loop nativo.
+            // Caso 1: __iter devolvió un Array -> iterar con el loop nativo.
             Some(Type::Array(elem)) => {
                 let w = was_type(&*elem)?;
                 let es = if matches!(*elem, Type::Cmx) {
@@ -489,7 +489,7 @@ impl<'a> FuncEmitter<'a> {
                 };
                 self.emit_foreach_array_loop(iter, w, es, fe)
             }
-            // Caso 2: objeto iterador Ã¢â€ â€™ __next() hasta null.
+            // Caso 2: objeto iterador -> __next() hasta null.
             Some(Type::Named(it_cn, _)) => self.emit_foreach_next_loop(iter, &it_cn, fe),
             _ => Err(crate::error::ClsError::CompileError(format!(
                 "'{}::__iter' debe anotar su retorno (Array<X> o una clase iteradora \
@@ -521,7 +521,7 @@ impl<'a> FuncEmitter<'a> {
         let break_at = self.block_depth;
         self.block_depth += 1;
         self.body.push(Instruction::Loop(BlockType::Empty));
-        // continue block: el `continue` salta aquÃƒÂ­ y ejecuta el incremento.
+        // continue block: el `continue` salta aquí y ejecuta el incremento.
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::Empty));
         let continue_at = self.block_depth;
@@ -580,7 +580,7 @@ impl<'a> FuncEmitter<'a> {
         for st in &fe.block.statements {
             self.emit_statement(st)?;
         }
-        // cerrar el continue block Ã¢â€ â€™ i++
+        // cerrar el continue block -> i++
         self.body.push(Instruction::End);
         self.block_depth -= 1;
         self.body.push(Instruction::LocalGet(i));
@@ -599,7 +599,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Loop del iterador: `v = it.__next()`; si `v == 0` (null) Ã¢â€ â€™ break; si no,
+    /// Loop del iterador: `v = it.__next()`; si `v == 0` (null) -> break; si no,
     /// item = v, index = i, cuerpo, i++.
     pub(crate) fn emit_foreach_next_loop(&mut self, iter: u32, it_cn: &str, fe: &ForEachStatement) -> ClsResult<()> {
         let item_was = match self.magic_ret_type(it_cn, "__next") {
@@ -624,7 +624,7 @@ impl<'a> FuncEmitter<'a> {
         let break_at = self.block_depth;
         self.block_depth += 1;
         self.body.push(Instruction::Loop(BlockType::Empty));
-        // continue block: el `continue` salta aquÃƒÂ­ y ejecuta el incremento.
+        // continue block: el `continue` salta aquí y ejecuta el incremento.
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::Empty));
         let continue_at = self.block_depth;
@@ -640,7 +640,7 @@ impl<'a> FuncEmitter<'a> {
             WasTy::I32 => Instruction::LocalSet(v),
             WasTy::I64 => Instruction::LocalSet(v),
         });
-        // if v == null (sentinel del protocolo __next) Ã¢â€ â€™ break
+        // if v == null (sentinel del protocolo __next) -> break
         self.body.push(Instruction::LocalGet(v));
         match item_was {
             WasTy::I32 => self.body.push(Instruction::I32Eqz),
@@ -666,7 +666,7 @@ impl<'a> FuncEmitter<'a> {
         for st in &fe.block.statements {
             self.emit_statement(st)?;
         }
-        // cerrar el continue block Ã¢â€ â€™ i++
+        // cerrar el continue block -> i++
         self.body.push(Instruction::End);
         self.block_depth -= 1;
         self.body.push(Instruction::LocalGet(i));
@@ -729,7 +729,7 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// `with x in (expr) { ... }` Ã¢â€ â€™ local temporal + bloque.
+    /// `with x in (expr) { ... }` -> local temporal + bloque.
     pub(crate) fn emit_with(&mut self, w: &WithStatement) -> ClsResult<()> {
         self.emit_expression(&w.value)?;
         let ty = self.value_type(&w.value)?;
@@ -742,13 +742,13 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// `try { ... } catch (e) { ... } finally { ... }` Ã¢â‚¬â€ excepciones WASM (try_table).
+    /// `try { ... } catch (e) { ... } finally { ... }` - excepciones WASM (try_table).
     /// Paridad con el walker: el finally solo se ejecuta si NO hubo catch; el catch
     /// recibe `e = "Error de runtime: " + msg` (e.to_string() del walker).
     pub(crate) fn emit_try(&mut self, stmt: &TryStatement) -> ClsResult<()> {
         if !self.exceptions {
             return Err(crate::error::ClsError::compile_at(
-                "try/catch no soportado en este runtime: el backend se compilÃƒÂ³ sin \
+                "try/catch no soportado en este runtime: el backend se compiló sin \
                  excepciones WASM (wasmi). Usa el runtime wasmtime o el WASM nativo del navegador.",
                 &stmt.span,
             ));
@@ -757,14 +757,14 @@ impl<'a> FuncEmitter<'a> {
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::Empty));
         let outer = self.block_depth;
-        // block $handler (result [i64, i64]) Ã¢â‚¬â€ su label (continuation, tras su End)
+        // block $handler (result [i64, i64]) - su label (continuation, tras su End)
         // es donde aterriza el catch con el payload [msg, span].
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::FunctionType(
             self.eh_handler_ty,
         )));
         let handler = self.block_depth;
-        // try_table: captura nuestro tag Ã¢â€ â€™ br al label del $handler con [msg, span]
+        // try_table: captura nuestro tag -> br al label del $handler con [msg, span]
         // El label del catch NO cuenta el try_table como scope (br 0 = $handler).
         self.block_depth += 1;
         let catch_label = self.block_depth - handler - 1;
@@ -780,10 +780,10 @@ impl<'a> FuncEmitter<'a> {
         }
         self.body.push(Instruction::End); // cierra try_table
         self.block_depth -= 1;
-        // flujo normal (sin excepciÃƒÂ³n) Ã¢â€ â€™ br al $outer (salta el handler)
+        // flujo normal (sin excepción) -> br al $outer (salta el handler)
         let br_outer = self.block_depth - outer;
         self.body.push(Instruction::Br(br_outer));
-        self.body.push(Instruction::End); // cierra $handler Ã¢â€ â€™ el catch aterriza AQUÃƒÂ con [msg, span]
+        self.body.push(Instruction::End); // cierra $handler -> el catch aterriza AQUÍ con [msg, span]
         self.block_depth -= 1;
         // handler: payload [msg, span] en el stack (span arriba, msg debajo)
         if stmt.catch_clauses.is_empty() {
@@ -837,7 +837,7 @@ impl<'a> FuncEmitter<'a> {
         if has_elif || has_else {
             self.body.push(Instruction::Else);
         }
-        // Cadena de elifs anidados dentro del else; el ÃƒÂºltimo cede al else final.
+        // Cadena de elifs anidados dentro del else; el último cede al else final.
         for (k, branch) in i.elif_branches.iter().enumerate() {
             self.emit_expression(&branch.condition)?;
             self.coerce_to_bool(&branch.condition)?;
@@ -942,7 +942,7 @@ impl<'a> FuncEmitter<'a> {
         // loop
         self.block_depth += 1;
         self.body.push(Instruction::Loop(BlockType::Empty));
-        // continue block: el `continue` salta aquÃƒÂ­ y ejecuta el update (evita
+        // continue block: el `continue` salta aquí y ejecuta el update (evita
         // que se salte el incremento y produzca un loop infinito).
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::Empty));
@@ -961,14 +961,14 @@ impl<'a> FuncEmitter<'a> {
         for s in &f.block.statements {
             self.emit_statement(s)?;
         }
-        // cerrar el continue block Ã¢â€ â€™ se ejecuta el update
+        // cerrar el continue block -> se ejecuta el update
         self.body.push(Instruction::End);
         self.block_depth -= 1;
         if let Some(update) = &f.update {
             self.emit_expression(update)?;
             self.emit_drop(update)?;
         }
-        // volver al loop (que estÃƒÂ¡ en continue_at - 1)
+        // volver al loop (que está en continue_at - 1)
         let depth = self.block_depth.saturating_sub(continue_at - 1);
         self.body.push(Instruction::Br(depth));
         self.body.push(Instruction::End); // loop

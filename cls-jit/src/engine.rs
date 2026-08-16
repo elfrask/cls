@@ -1,7 +1,7 @@
-//! Orquestación del motor: pipeline CLS → WASM y despacho al runtime.
+//! Orquestación del motor: pipeline CLS -> WASM y despacho al runtime.
 //!
-//! El pipeline (lectura → lexer → parser → typeck → imports → span_shift →
-//! flatten → emisión) es compartido por todos los runtimes. La ejecución del
+//! El pipeline (lectura -> lexer -> parser -> typeck -> imports -> span_shift ->
+//! flatten -> emisión) es compartido por todos los runtimes. La ejecución del
 //! WASM vive en [`crate::wasmtime_rt`] (desktop) y [`crate::wasmi_rt`] (web).
 
 use cls_core::config::types::TypesConfig;
@@ -16,7 +16,7 @@ use crate::resolve::{cache_dir, cache_key, load_import_modules_hooked};
 use crate::timing::{jit_timing, tick};
 use crate::{JitContext, RuntimeKind};
 
-/// Ejecuta un programa CLS con el JIT (CLS → WASM → wasmtime).
+/// Ejecuta un programa CLS con el JIT (CLS -> WASM -> wasmtime).
 /// Devuelve el exit code del proceso (0 = OK, 1 = error).
 pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>, ctx: &JitContext) -> i32 {
     run_jit_with(entry, app_args, target_str, ctx, RuntimeKind::Wasmtime)
@@ -26,7 +26,7 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>, ctx: 
 ///
 /// Diferencias por runtime:
 /// - **wasmtime**: excepciones CLS (tag + try_table), errores de runtime con
-///   payload (msg, span) → caret exacto.
+///   payload (msg, span) -> caret exacto.
 /// - **wasmi** (sin propuesta de exception-handling): el backend emite sin tag;
 ///   los `try/catch`/`throw` fallan en compilación con error claro y los errores
 ///   de runtime (div 0, índice) son traps (`unreachable`) con el shadow call
@@ -73,7 +73,7 @@ pub fn run_jit_with(
     };
     t = tick(timing, "parser", t);
 
-    // Type checker: llena el mapa Span → Type (requerido por el backend).
+    // Type checker: llena el mapa Span -> Type (requerido por el backend).
     let types_config = TypesConfig {
         check: true,
         strict: true,
@@ -109,12 +109,12 @@ pub fn run_jit_with(
     let cache_path = cache_dir().join(format!("{:016x}.wasm", key));
     if let Ok(cached) = std::fs::read(&cache_path) {
         if timing {
-            eprintln!("[JIT-TIMING] caché CLS→WASM: HIT ({} bytes)", cached.len());
+            eprintln!("[JIT-TIMING] caché CLS->WASM: HIT ({} bytes)", cached.len());
         }
         return run_wasm_dispatch(&cached, entry, app_args, timing, t, None, &imports, ctx, runtime);
     }
     if timing {
-        eprintln!("[JIT-TIMING] caché CLS→WASM: miss");
+        eprintln!("[JIT-TIMING] caché CLS->WASM: miss");
     }
     // Desplazar los spans de cada módulo importado con un offset de línea único.
     for (i, (_path, _src, m)) in imports.iter_mut().enumerate() {
@@ -156,7 +156,7 @@ pub fn run_jit_with(
         .collect();
     let merged = flatten_imports(&module, &prelude_for_flatten);
 
-    // wasmtime → excepciones CLS; wasmi → modo sin excepciones (sin tag).
+    // wasmtime -> excepciones CLS; wasmi -> modo sin excepciones (sin tag).
     // El modo app exige main; los intrinsics del nodo viajan al backend.
     let exceptions = matches!(runtime, RuntimeKind::Wasmtime);
     let opts = cls_core::backend::wasm::WasmBackendOptions {
@@ -232,7 +232,7 @@ pub(crate) fn module_offsets(modules: &[(String, String, ClsModule)]) -> Vec<(u3
 
 /// Resuelve el archivo y source reales de un span de runtime (puede estar
 /// desplazado por pertenecer a un módulo importado). Devuelve (archivo, source,
-/// span de-shifteado). Para el entry, `source` es `None` → el formateador lee del
+/// span de-shifteado). Para el entry, `source` es `None` -> el formateador lee del
 /// archivo en disco (evita perder la línea+caret del error del archivo principal).
 pub(crate) fn resolve_runtime_span(
     span: Span,
@@ -302,7 +302,7 @@ pub fn build_error_string(    msg: String,
     use cls_runtime::error_report::{format_error, ErrorFormat, ErrorReport};
 
     // Shadow call stack: frames (nombre, span) en orden de ejecución
-    // (main → outer → inner). El frame del error es el último. Cada span
+    // (main -> outer -> inner). El frame del error es el último. Cada span
     // se de-shiftea (los módulos importados tienen offset 100000*n).
     let stack: Vec<cls_core::error::StackFrame> = call_stack
         .iter()

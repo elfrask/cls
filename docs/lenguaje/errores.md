@@ -61,6 +61,6 @@ prohibido mostrar solo el mensaje.
   `(mensaje, span empaquetado)` que el host desempaca para renderizar el caret
   exacto.
 - **wasmi** (`CLS_JIT_RUNTIME=wasmi`): intérprete puro **sin soporte de
-  excepciones** — `try`/`catch`/`throw` fallan en compilación y los errores
+  excepciones** - `try`/`catch`/`throw` fallan en compilación y los errores
   son traps con el mensaje, sin caret.
 - Los errores de tipo del typeck estricto abortan antes de emitir.

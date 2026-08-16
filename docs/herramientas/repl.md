@@ -1,7 +1,7 @@
 # REPL interactivo
 
 `clx repl` abre una sesión interactiva para evaluar código línea por línea con
-el **intérprete JIT** (CLS → WASM → wasmtime), el mismo motor de `clx run`.
+el **intérprete JIT** (CLS -> WASM -> wasmtime), el mismo motor de `clx run`.
 
 ## Arranque
 
@@ -35,7 +35,7 @@ Cada línea se clasifica así:
   `enum `, `struct `, `interface `, `alias `, `namespace `, `extension `,
   `config `, `meta `, `when `, `print(`) se ejecuta como sentencia.
 - **Asignación a lvalue**: una línea como `x = 5`, `arr[0] = 99` o `a.b = 1` se
-  ejecuta como sentencia (silenciosa, como en un archivo) — no se envuelve en
+  ejecuta como sentencia (silenciosa, como en un archivo) - no se envuelve en
   `print` (evita imprimir punteros). Las comparaciones (`==`, `!=`, `<=`, `>=`)
   y flechas (`=>`) no se confunden con asignaciones.
 - **Expresión suelta**: cualquier otra línea se envuelve en `print(...)` y el
@@ -81,7 +81,7 @@ Reasignar una variable declarada antes la actualiza:
 ```
 
 **Truthiness de condiciones** (paridad con el walker): `if`, `while` y `for`
-aceptan cualquier valor como condición — numéricos `!= 0`, strings no vacíos,
+aceptan cualquier valor como condición - numéricos `!= 0`, strings no vacíos,
 arrays/records con elementos, objetos siempre verdaderos:
 
 ```clx

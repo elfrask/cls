@@ -1,12 +1,12 @@
-# main.clsx — El orquestador de dev-quest.
+# main.clsx - El orquestador de dev-quest.
 # Como semi-senior, separé responsabilidades en módulos y aquí solo queda lo
 # que DEBE estar en el archivo de entrada: comandos, persistencia e interfaz.
 #
 # ARQUITECTURA:
-#   main.clsx         → orquestación: dispatch de comandos, disco (fs), interfaz
-#   modelo.clsx       → dominio puro: enums + clases (Tarea, Habilidad, ...)
-#   estadisticas.clsx → lógica pura: niveles, porcentajes, racha
-#   frases.clsx       → frases motivacionales con fallback local
+#   main.clsx         -> orquestación: dispatch de comandos, disco (fs), interfaz
+#   modelo.clsx       -> dominio puro: enums + clases (Tarea, Habilidad, ...)
+#   estadisticas.clsx -> lógica pura: niveles, porcentajes, racha
+#   frases.clsx       -> frases motivacionales con fallback local
 #
 # POR QUÉ main aún es grande (ADR):
 #   - Los módulos NO tienen acceso a los intrinsics del runtime (print, input,
@@ -533,7 +533,7 @@ function cmdReset(estado: EstadoJuego) -> EstadoJuego {
 }
 
 function mostrarAyuda() -> int {
-    print("=== DEV QUEST — Ayuda ===");
+    print("=== DEV QUEST - Ayuda ===");
     print("tarea add <título> [categoria]   Añade una misión");
     print("tarea list [estado]              Lista tus misiones");
     print("tarea prog <id>                  Pasa una misión a 'En progreso'");
@@ -551,7 +551,7 @@ function mostrarAyuda() -> int {
 }
 
 function mostrarVersion() -> int {
-    print("dev-quest 0.1.0 — hecho con CLS por un semi-senior que no se rinde");
+    print("dev-quest 0.1.0 - hecho con CLS por un semi-senior que no se rinde");
     return 0;
 }
 
@@ -577,7 +577,7 @@ function ejecutar(estado: EstadoJuego, args: String[], httpMod: Any) -> EstadoJu
 
 function banner() {
     print("============================================");
-    print("  DEV QUEST — camino al mejor dev del mundo");
+    print("  DEV QUEST - camino al mejor dev del mundo");
     print("  (hecho por un semi-senior que no se rinde)");
     print("============================================");
 }
@@ -586,7 +586,7 @@ function menuInteractivo(estado: EstadoJuego) -> int {
     var salir: bool = false;
     while (!salir) {
         print("");
-        print("=== DEV QUEST — Menú ===");
+        print("=== DEV QUEST - Menú ===");
         print(" 1. Nueva misión");
         print(" 2. Listar misiones");
         print(" 3. Completar misión");

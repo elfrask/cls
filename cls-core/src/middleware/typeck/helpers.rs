@@ -1,4 +1,4 @@
-﻿//! TypeChecker â€” helpers libres (Fase 1: extraido de middleware/typeck.rs).
+﻿//! TypeChecker - helpers libres (Fase 1: extraido de middleware/typeck.rs).
 
 use super::*;
 
