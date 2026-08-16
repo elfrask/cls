@@ -242,14 +242,22 @@ impl<'a> FuncEmitter<'a> {
             },
             Type::Record(_, _) => match m.member.as_str() {
                 "length" | "size" => {
-                    self.host.call(HostFn::RecordLen, &mut self.body);
+                    if let Some(&idx) = self.func_indexes.get("__intr_record_len") {
+                        self.body.push(Instruction::Call(idx));
+                    } else {
+                        self.host.call(HostFn::RecordLen, &mut self.body);
+                    }
                     Ok(())
                 }
                 _ => {
                     // acceso por nombre de campo: r.campo -> record_get(ptr, "campo")
                     let k = self.intern_string(&m.member);
                     self.emit_load_str(k);
-                    self.host.call(HostFn::RecordGet, &mut self.body);
+                    if let Some(&idx) = self.func_indexes.get("__intr_record_get") {
+                        self.body.push(Instruction::Call(idx));
+                    } else {
+                        self.host.call(HostFn::RecordGet, &mut self.body);
+                    }
                     Ok(())
                 }
             },

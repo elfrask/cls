@@ -159,7 +159,11 @@ impl<'a> FuncEmitter<'a> {
         }
         let n = r.entries.len() as i64;
         self.body.push(Instruction::I64Const(n));
-        self.host.call(HostFn::RecordNew, &mut self.body);
+        if let Some(&idx) = self.func_indexes.get("__intr_record_new") {
+            self.body.push(Instruction::Call(idx));
+        } else {
+            self.host.call(HostFn::RecordNew, &mut self.body);
+        }
         let ptr = self.fresh_local();
         self.body.push(Instruction::LocalSet(ptr));
         for (key, val) in &r.entries {
@@ -181,7 +185,11 @@ impl<'a> FuncEmitter<'a> {
             // Array -> 6, String -> 1...). Antes usaba arr_kind_code, que devolvía
             // 0 para records -> el binding los leía como int (ptr crudo).
             self.body.push(Instruction::I64Const(runtime_tag_code(&cls_t)));
-            self.host.call(HostFn::RecordSet, &mut self.body);
+            if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
+                self.body.push(Instruction::Call(idx));
+            } else {
+                self.host.call(HostFn::RecordSet, &mut self.body);
+            }
             self.body.push(Instruction::Drop);
         }
         self.body.push(Instruction::LocalGet(ptr));
@@ -380,7 +388,11 @@ impl<'a> FuncEmitter<'a> {
         if matches!(obj_ty, Some(Type::Record(_, _))) {
             self.emit_expression(&i.object)?;
             self.emit_expression(&i.index)?;
-            self.host.call(HostFn::RecordGet, &mut self.body);
+            if let Some(&idx) = self.func_indexes.get("__intr_record_get") {
+                self.body.push(Instruction::Call(idx));
+            } else {
+                self.host.call(HostFn::RecordGet, &mut self.body);
+            }
             let elem_ty = self.index_elem_type(i)?;
             self.bits_to_elem(elem_ty)?;
             return Ok(());

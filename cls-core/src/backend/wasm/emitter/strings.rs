@@ -520,7 +520,11 @@ impl<'a> FuncEmitter<'a> {
             Type::Bool => self.body.push(Instruction::I64ExtendI32U),
             Type::String => {
                 self.emit_call_site(&span);
-                self.host.call(HostFn::ParseInt, &mut self.body)
+                if let Some(&idx) = self.func_indexes.get("__intr_parse_int") {
+                    self.body.push(Instruction::Call(idx));
+                } else {
+                    self.host.call(HostFn::ParseInt, &mut self.body)
+                }
             }
             _ => {}
         }
@@ -541,7 +545,11 @@ impl<'a> FuncEmitter<'a> {
             }
             Type::String => {
                 self.emit_call_site(&span);
-                self.host.call(HostFn::ParseFloat, &mut self.body)
+                if let Some(&idx) = self.func_indexes.get("__intr_parse_float") {
+                    self.body.push(Instruction::Call(idx));
+                } else {
+                    self.host.call(HostFn::ParseFloat, &mut self.body)
+                }
             }
             _ => {}
         }

@@ -10,12 +10,20 @@ impl<'a> FuncEmitter<'a> {
     pub(crate) fn emit_print_record_field(&mut self, ptr_tmp: u32, key_tmp: u32) {
         self.body.push(Instruction::LocalGet(ptr_tmp));
         self.body.push(Instruction::LocalGet(key_tmp));
-        self.host.call(HostFn::RecordGet, &mut self.body);
+        if let Some(&idx) = self.func_indexes.get("__intr_record_get") {
+            self.body.push(Instruction::Call(idx));
+        } else {
+            self.host.call(HostFn::RecordGet, &mut self.body);
+        }
         let val_tmp = self.fresh_local();
         self.body.push(Instruction::LocalSet(val_tmp));
         self.body.push(Instruction::LocalGet(ptr_tmp));
         self.body.push(Instruction::LocalGet(key_tmp));
-        self.host.call(HostFn::RecordTag, &mut self.body);
+        if let Some(&idx) = self.func_indexes.get("__intr_record_tag") {
+            self.body.push(Instruction::Call(idx));
+        } else {
+            self.host.call(HostFn::RecordTag, &mut self.body);
+        }
         let tag_tmp = self.fresh_local();
         self.body.push(Instruction::LocalSet(tag_tmp));
         self.body.push(Instruction::LocalGet(val_tmp));
@@ -282,7 +290,11 @@ impl<'a> FuncEmitter<'a> {
             self.emit_expression(arg)?;
             self.body.push(Instruction::I64Const(8));
             self.body.push(Instruction::I64Const(0));
-            self.host.call(HostFn::ArrToString, &mut self.body);
+            if let Some(&idx) = self.func_indexes.get("__intr_arr_to_string") {
+                self.body.push(Instruction::Call(idx));
+            } else {
+                self.host.call(HostFn::ArrToString, &mut self.body);
+            }
             self.host.call(HostFn::PrintStr, &mut self.body);
             return Ok(());
         }
@@ -360,12 +372,20 @@ impl<'a> FuncEmitter<'a> {
                 };
                 self.body.push(Instruction::I64Const(es));
                 self.body.push(Instruction::I64Const(kind));
-                self.host.call(HostFn::ArrToString, &mut self.body);
+                if let Some(&idx) = self.func_indexes.get("__intr_arr_to_string") {
+                    self.body.push(Instruction::Call(idx));
+                } else {
+                    self.host.call(HostFn::ArrToString, &mut self.body);
+                }
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
             Type::Record(_, _) => {
                 // Formatear `{k: v, ...}` como el walker (evita imprimir el ptr).
-                self.host.call(HostFn::RecordToString, &mut self.body);
+                if let Some(&idx) = self.func_indexes.get("__intr_record_to_string") {
+                    self.body.push(Instruction::Call(idx));
+                } else {
+                    self.host.call(HostFn::RecordToString, &mut self.body);
+                }
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
             Type::Shape(fields) => {
