@@ -275,12 +275,14 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::LocalGet(i));
                     self.body.push(Instruction::LocalSet(idx_local));
                 }
+                self.dead_flow = false;
                 for st in &fe.block.statements {
                     self.emit_statement(st)?;
                 }
                 // cerrar el continue block -> incremento
                 self.body.push(Instruction::End);
                 self.block_depth -= 1;
+                self.dead_flow = false;
                 self.body.push(Instruction::LocalGet(i));
                 self.body.push(Instruction::I64Const(1));
                 self.body.push(Instruction::I64Add);
@@ -292,6 +294,7 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::End);
                 self.block_depth -= 1;
                 self.loop_stack.pop();
+                self.dead_flow = false;
                 return Ok(());
             }
         }
@@ -446,12 +449,14 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::LocalGet(i));
             self.body.push(Instruction::LocalSet(idx_local));
         }
+        self.dead_flow = false;
         for st in &fe.block.statements {
             self.emit_statement(st)?;
         }
         // cerrar el continue block -> i++
         self.body.push(Instruction::End);
         self.block_depth -= 1;
+        self.dead_flow = false;
         self.body.push(Instruction::LocalGet(i));
         self.body.push(Instruction::I64Const(1));
         self.body.push(Instruction::I64Add);
@@ -464,6 +469,7 @@ impl<'a> FuncEmitter<'a> {
         self.block_depth -= 1;
         self.loop_stack.pop();
         let _ = d;
+        self.dead_flow = false;
         Ok(())
     }
 
@@ -533,12 +539,14 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::LocalGet(i));
             self.body.push(Instruction::LocalSet(idx_local));
         }
+        self.dead_flow = false;
         for st in &fe.block.statements {
             self.emit_statement(st)?;
         }
         // cerrar el continue block -> i++
         self.body.push(Instruction::End);
         self.block_depth -= 1;
+        self.dead_flow = false;
         self.body.push(Instruction::LocalGet(i));
         self.body.push(Instruction::I64Const(1));
         self.body.push(Instruction::I64Add);
@@ -550,6 +558,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::End); // block
         self.block_depth -= 1;
         self.loop_stack.pop();
+        self.dead_flow = false;
         Ok(())
     }
 

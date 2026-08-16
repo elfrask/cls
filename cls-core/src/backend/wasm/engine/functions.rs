@@ -92,7 +92,8 @@ impl<'a> Engine<'a> {
     }
 
 
-    pub(crate) fn compile_function(&mut self, f: &FunctionDecl) -> ClsResult<Function> {        let (param_types, _ret) = self.func_types[&f.name].clone();
+    pub(crate) fn compile_function(&mut self, f: &FunctionDecl) -> ClsResult<Function> {
+        let (param_types, ret) = self.func_types[&f.name].clone();
         let mut fe = FuncEmitter::new(
             self.types,
             HostCaller {
@@ -211,7 +212,32 @@ impl<'a> Engine<'a> {
         for s in &f.body.statements {
             fe.emit_statement(s)?;
         }
-        fe.emit_fn_exit();
+        if fe.dead_flow {
+            // Flujo terminado (return/break/if con todas las ramas terminadas):
+            // el fn_exit ya se emitió en el return; el `unreachable` marca el
+            // código muerto de forma VÁLIDA (cranelift rechaza el `end` con
+            // stack vacío tras un frame de if/switch/try con todas las ramas
+            // terminadas: "expected i64 but nothing on stack").
+            fe.body.push(Instruction::Unreachable);
+        } else {
+            // Flujo vivo hasta el final (p.ej. `while (true) { return }`, o una
+            // función que cae sin return): el `End` exige el resultado en el
+            // stack. Empujar el default (null/0) — nunca se ejecuta en los
+            // casos de loop infinito; en los demás, el walker también devuelve
+            // null al caer sin return.
+            if let Some(rt) = ret.as_ref() {
+                if *rt != Type::Void {
+                    match was_type(rt)? {
+                        WasTy::F64 => {
+                            fe.body.push(Instruction::F64Const(Ieee64::new(0.0f64.to_bits())))
+                        }
+                        WasTy::I32 => fe.body.push(Instruction::I32Const(0)),
+                        WasTy::I64 => fe.body.push(Instruction::I64Const(0)),
+                    }
+                }
+            }
+            fe.emit_fn_exit();
+        }
         // End final del cuerpo de la funció (wasm-encoder no lo añade).
         fe.body.push(Instruction::End);
         // locals: cada índice con su tipo (fallback I64).
