@@ -7,9 +7,18 @@ use wasmi::{Engine, Linker, Module, Store, TypedFunc};
 
 /// Buffer de tests dentro de la memoria lineal (8MB; se crece la memoria antes).
 const BUF: usize = 8 * 1024 * 1024;
+/// Inicio del bump allocator del test (`__cls_alloc`): lejos de `BUF` para que
+/// las alocaciones de las `__intr_*` no pisen los datos que el test escribe.
+const TEST_HEAP: i32 = 12 * 1024 * 1024;
+
+/// Estado del host del test: tope del bump allocator local para `__cls_alloc`.
+#[derive(Default)]
+struct TestState {
+    heap: Option<i32>,
+}
 
 struct Rt {
-    store: Store<()>,
+    store: Store<TestState>,
     instance: wasmi::Instance,
     mem: wasmi::Memory,
 }
@@ -17,8 +26,22 @@ struct Rt {
 fn instantiate() -> Rt {
     let engine = Engine::default();
     let module = Module::new(&engine, cls_internals::INTERNALS_WASM).expect("módulo válido");
-    let mut store = Store::new(&engine, ());
-    let linker = Linker::new(&engine);
+    let mut store = Store::new(&engine, TestState { heap: Some(TEST_HEAP) });
+    let mut linker = Linker::new(&engine);
+    // El módulo internals importa `env.__cls_alloc` (el bump allocator del CLS).
+    // En los tests standalone lo proveemos con un bump local (empieza en BUF
+    // hacia arriba) para que las funciones `__intr_*` puedan alocar.
+    linker
+        .func_wrap("env", "__cls_alloc", |mut caller: wasmi::Caller<'_, TestState>, size: i32| -> i32 {
+            let heap: &mut i32 = caller.data_mut().heap.as_mut().expect("heap");
+            if size <= 0 {
+                return 0;
+            }
+            let ptr = *heap;
+            *heap = ptr + size;
+            ptr
+        })
+        .expect("link __cls_alloc");
     let instance = linker
         .instantiate(&mut store, &module)
         .expect("instanciar")
@@ -407,6 +430,47 @@ fn math_range_pow_num() {
     assert_eq!(pow_num.call(&mut rt.store, (5, 0)).unwrap(), 1);
 }
 
+#[test]
+fn math_int_abs() {
+    let mut rt = instantiate();
+    let int_abs = fn3::<(i64,), i64>(&mut rt, "__intr_int_abs");
+    assert_eq!(int_abs.call(&mut rt.store, (5,)).unwrap(), 5);
+    assert_eq!(int_abs.call(&mut rt.store, (-42,)).unwrap(), 42);
+    assert_eq!(int_abs.call(&mut rt.store, (0,)).unwrap(), 0);
+    assert_eq!(int_abs.call(&mut rt.store, (i64::MIN,)).unwrap(), i64::MIN);
+}
+
+#[test]
+fn arr_realloc_copies_and_retains_len() {
+    let mut rt = instantiate();
+    let push = fn3::<(i64, i64, i64), i64>(&mut rt, "__intr_arr_push");
+    let realloc = fn3::<(i64, i64, i64), i64>(&mut rt, "__intr_arr_realloc");
+    let ptr = BUF as i64;
+    {
+        let m = rt.mem.data_mut(&mut rt.store);
+        wr_i64(m, BUF, 4); // cap
+        wr_i64(m, BUF + 8, 2); // len
+        wr_i64(m, BUF + 16, 10);
+        wr_i64(m, BUF + 24, 20);
+    }
+    let new_ptr = realloc.call(&mut rt.store, (ptr, 16, 8)).unwrap();
+    {
+        let m = rt.mem.data(&rt.store);
+        assert_eq!(rd_i64(m, new_ptr as usize), 16, "cap");
+        assert_eq!(rd_i64(m, new_ptr as usize + 8), 2, "len preservado");
+        assert_eq!(rd_i64(m, new_ptr as usize + 16), 10, "elem0");
+        assert_eq!(rd_i64(m, new_ptr as usize + 24), 20, "elem1");
+    }
+    // Tras realloc, push escribe en el slot sin re-realloc (cap 16 > len+1).
+    let p2 = push.call(&mut rt.store, (new_ptr, 30, 8)).unwrap();
+    {
+        let m = rt.mem.data(&rt.store);
+        assert_eq!(p2, new_ptr, "sin realloc con cap suficiente");
+        assert_eq!(rd_i64(m, new_ptr as usize + 8), 3);
+        assert_eq!(rd_i64(m, new_ptr as usize + 16 + 2 * 8), 30);
+    }
+}
+
 // ── conversiones ──────────────────────────────────────────────────────────
 
 #[test]
@@ -440,8 +504,17 @@ fn manifest_matcher_exported_functions() {
     // Cada firma declarada en abi::INTERNALS_FUNCTIONS debe existir en el wasm.
     let engine = Engine::default();
     let module = Module::new(&engine, cls_internals::INTERNALS_WASM).expect("módulo");
-    let mut store = Store::new(&engine, ());
-    let linker = Linker::new(&engine);
+    let mut store = Store::new(&engine, TestState { heap: Some(TEST_HEAP) });
+    let mut linker = Linker::new(&engine);
+    linker
+        .func_wrap("env", "__cls_alloc", |mut caller: wasmi::Caller<'_, TestState>, size: i32| -> i32 {
+            let heap: &mut i32 = caller.data_mut().heap.as_mut().expect("heap");
+            if size <= 0 { return 0; }
+            let ptr = *heap;
+            *heap = ptr + size;
+            ptr
+        })
+        .expect("link __cls_alloc");
     let instance = linker
         .instantiate(&mut store, &module)
         .expect("instanciar")

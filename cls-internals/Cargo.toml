@@ -5,8 +5,6 @@ edition = "2021"
 license = "MIT"
 description = "CLS internals: modulos internos e intrinsics precompilados a WASM (Fase 2)"
 
-[workspace]
-
 [dependencies]
 wasm-encoder = { version = "0.255" }
 

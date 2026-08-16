@@ -2,21 +2,18 @@
 //!
 //! - `sqrt/floor/ceil/round/min/max/abs` son instrucciones nativas (bit-exactas).
 //! - `sin/cos/tan/log/pow` usan el libm de Rust para wasm32 (determinista).
-//!   **Decisión pendiente (Fase 2 §Riesgos)**: minimax inline (~1e-12) vs libm
-//!   del SO. Aquí: libm de Rust (paridad cercana con el host; puede diferir en
-//!   los últimos bits vs libm del sistema).
 //! - `random` queda en el host (entropía del SO); `range` se porta (alloc local).
 
 use crate::mem;
 
 #[no_mangle]
 pub extern "C" fn __intr_math_sqrt(v: f64) -> f64 {
-    v.sqrt()
+    libm::sqrt(v)
 }
 
 #[no_mangle]
 pub extern "C" fn __intr_math_pow(a: f64, b: f64) -> f64 {
-    a.powf(b)
+    libm::pow(a, b)
 }
 
 #[no_mangle]
@@ -31,42 +28,49 @@ pub extern "C" fn __intr_math_max(a: f64, b: f64) -> f64 {
 
 #[no_mangle]
 pub extern "C" fn __intr_math_floor(v: f64) -> f64 {
-    v.floor()
+    libm::floor(v)
 }
 
 #[no_mangle]
 pub extern "C" fn __intr_math_ceil(v: f64) -> f64 {
-    v.ceil()
+    libm::ceil(v)
 }
 
 #[no_mangle]
 pub extern "C" fn __intr_math_round(v: f64) -> f64 {
-    v.round()
+    libm::round(v)
 }
 
 #[no_mangle]
 pub extern "C" fn __intr_math_sin(v: f64) -> f64 {
-    v.sin()
+    libm::sin(v)
 }
 
 #[no_mangle]
 pub extern "C" fn __intr_math_cos(v: f64) -> f64 {
-    v.cos()
+    libm::cos(v)
 }
 
 #[no_mangle]
 pub extern "C" fn __intr_math_tan(v: f64) -> f64 {
-    v.tan()
+    libm::tan(v)
 }
 
 #[no_mangle]
 pub extern "C" fn __intr_math_log(v: f64) -> f64 {
-    v.ln()
+    libm::log(v)
 }
 
 #[no_mangle]
 pub extern "C" fn __intr_math_fmod(a: f64, b: f64) -> f64 {
-    a % b
+    libm::fmod(a, b)
+}
+
+/// `abs` entero: `i64.abs` NO existe como instrucción WASM (solo `f64.abs` →
+/// `F64Abs` inline). Paridad con `host_int_abs` del host.
+#[no_mangle]
+pub extern "C" fn __intr_int_abs(v: i64) -> i64 {
+    if v < 0 { -v } else { v }
 }
 
 #[no_mangle]
@@ -74,7 +78,7 @@ pub extern "C" fn __intr_pow_num(a: i64, b: i64) -> i64 {
     if b == 0 {
         1
     } else {
-        (a as f64).powi(b as i32) as i64
+        libm::pow(a as f64, b as f64) as i64
     }
 }
 
