@@ -15,3 +15,6 @@ pub use error::{ClsError, ClsResult, StackFrame, Span};
 
 /// Versión del compilador CLS
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Hash de los fuentes del backend WASM (+ internals) — el caché CLS->WASM de
+/// cls-jit lo incluye para invalidar .wasm viejos al cambiar el emisor.
+pub const BACKEND_HASH: &str = env!("CLS_BACKEND_HASH");
