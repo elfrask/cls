@@ -121,7 +121,11 @@ impl<'a> FuncEmitter<'a> {
                     .cloned()
                     .unwrap_or(Type::Any);
                 self.body.push(Instruction::I64Const(arr_kind_code(&cls_t)));
-                self.host.call(HostFn::RecordSet, &mut self.body);
+                if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
+                    self.body.push(Instruction::Call(idx));
+                } else {
+                    self.host.call(HostFn::RecordSet, &mut self.body);
+                }
                 // write-back del ptr (el record pudo crecer y reallocarse)
                 if let Expression::Identifier(name, _) = &*i.object {
                     self.emit_ident_store(name);
