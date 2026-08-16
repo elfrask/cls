@@ -824,15 +824,10 @@ pub(crate) fn read_shadow_trace(
         let _ = data.get(addr..addr.saturating_add(4)).map(|s| b.copy_from_slice(s));
         u32::from_le_bytes(b)
     };
-    let read_u16 = |addr: usize| -> u16 {
-        let mut b = [0u8; 2];
-        let _ = data.get(addr..addr.saturating_add(2)).map(|s| b.copy_from_slice(s));
-        u16::from_le_bytes(b)
-    };
     let read_bytes = |addr: usize, len: usize| -> Vec<u8> {
         data.get(addr..addr.saturating_add(len)).map(|s| s.to_vec()).unwrap_or_default()
     };
     let name_at = |idx: u32| crate::engine::name_at(stb, idx, read_u32, read_bytes);
-    let stack = crate::engine::read_shadow_stack(shadow_ptr, base, read_u32, read_u16, name_at);
+    let stack = crate::engine::read_shadow_stack(shadow_ptr, base, read_u32, name_at);
     (stack, None)
 }
