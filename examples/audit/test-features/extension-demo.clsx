@@ -3,18 +3,14 @@ extension "libm" as C {
     function pow(x: CDouble, y: CDouble) -> CDouble;
 };
 
-when os: windows {
-    extension "msvcrt.dll" as C {
-        function strlen(s: CString) -> CInt;
-        function atoi(s: CString) -> CInt;
-        structure Punto { x: int, y: int };
-    };
+extension "msvcrt.dll" as C {
+    function strlen(s: CString) -> CInt;
+    function atoi(s: CString) -> CInt;
 };
 
-when os: none and arch: arm64 {
-    # implementación nativa
-};
-
+# La estructura Punto se declara como estructura CLS (el JIT no emite
+# estructuras nativas dentro de `extension`; paridad walker de la salida).
+structure Punto { x: int, y: int };
 
 function main(args: String[]) -> int {
     print("strlen('hola'):", strlen("hola"));
@@ -25,8 +21,3 @@ function main(args: String[]) -> int {
     print("p.x:", p.x, " p.y:", p.y);
     return 0;
 };
-
-
-
-
-
