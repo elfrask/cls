@@ -1,0 +1,18 @@
+[package]
+name = "cls-internals-wasm"
+version = "2.0.0"
+edition = "2021"
+license = "MIT"
+description = "CLS internals compilados a wasm32-unknown-unknown (sub-crate de cls-internals)"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+# Tamaño mínimo: el módulo se embebe en el binario del JIT.
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
