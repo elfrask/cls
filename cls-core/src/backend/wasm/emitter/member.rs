@@ -228,7 +228,7 @@ impl<'a> FuncEmitter<'a> {
         match obj_ty {
             Type::String => match m.member.as_str() {
                 "length" => {
-                    self.host.call(HostFn::StrLength, &mut self.body);
+                    self.emit_str_host("__intr_str_length", HostFn::StrLength);
                     Ok(())
                 }
                 _ => Err(self.unsupported_expr(&Expression::MemberAccess(m.clone()))),

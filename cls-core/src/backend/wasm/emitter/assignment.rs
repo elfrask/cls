@@ -50,7 +50,7 @@ impl<'a> FuncEmitter<'a> {
                         .cloned()
                         .unwrap_or(Type::Any);
                     if op == Operator::PlusEqual && matches!(cls_t, Type::String) {
-                        self.host.call(HostFn::StrConcat, &mut self.body);
+                        self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
                     } else if ty == WasTy::F64 {
                         self.f64_promote(&a.value)?;
                         match op {

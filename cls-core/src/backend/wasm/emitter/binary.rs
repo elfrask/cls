@@ -84,7 +84,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;
                 if is_str(&b.left) || is_str(&b.right) {
-                    self.host.call(HostFn::StrConcat, &mut self.body);
+                    self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
                 } else {
                     self.body.push(Instruction::I64Add);
                 }
@@ -109,7 +109,7 @@ impl<'a> FuncEmitter<'a> {
             Plus => {
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;
-                self.host.call(HostFn::StrConcat, &mut self.body);
+                self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
             }
             Minus if lt == WasTy::F64 || rt == WasTy::F64 => {
                 self.emit_expression(&b.left)?;
@@ -342,7 +342,7 @@ impl<'a> FuncEmitter<'a> {
                 // `x in "texto"` -> substring (arrays en A4). StrContains(container, needle)
                 self.emit_expression(&b.right)?;
                 self.emit_expression(&b.left)?;
-                self.host.call(HostFn::StrContains, &mut self.body);
+                self.emit_str_host("__intr_str_contains", HostFn::StrContains);
             }
             Is => {
                 // `v is Nivel` (enum), `p is Punto` (struct) o `o is Clase` (herencia)

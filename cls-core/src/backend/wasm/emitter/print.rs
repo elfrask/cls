@@ -39,7 +39,7 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::LocalGet(res));
                 let sep = self.intern_string(", ");
                 self.emit_load_str(sep);
-                self.host.call(HostFn::StrConcat, &mut self.body);
+                self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
                 self.body.push(Instruction::LocalSet(res));
             }
             self.body.push(Instruction::LocalGet(ptr));
@@ -74,35 +74,35 @@ impl<'a> FuncEmitter<'a> {
             match slot {
                 Type::String => {
                     self.body.push(Instruction::LocalGet(val_tmp));
-                    self.host.call(HostFn::StrRepr, &mut self.body);
+                    self.emit_str_host("__intr_str_repr", HostFn::StrRepr);
                 }
                 Type::Float => {
                     self.body.push(Instruction::LocalGet(val_tmp));
-                    self.host.call(HostFn::StrFloat, &mut self.body);
+                    self.emit_str_host("__intr_str_float", HostFn::StrFloat);
                 }
                 Type::Bool => {
                     self.body.push(Instruction::LocalGet(val_tmp));
-                    self.host.call(HostFn::StrBool, &mut self.body);
+                    self.emit_str_host("__intr_str_bool", HostFn::StrBool);
                 }
                 Type::Char => {
                     self.body.push(Instruction::LocalGet(val_tmp));
-                    self.host.call(HostFn::StrChar, &mut self.body);
+                    self.emit_str_host("__intr_str_char", HostFn::StrChar);
                 }
                 _ => {
                     self.body.push(Instruction::LocalGet(val_tmp));
-                    self.host.call(HostFn::StrInt, &mut self.body);
+                    self.emit_str_host("__intr_str_int", HostFn::StrInt);
                 }
             }
             self.body.push(Instruction::LocalSet(sv));
             self.body.push(Instruction::LocalGet(res));
             self.body.push(Instruction::LocalGet(sv));
-            self.host.call(HostFn::StrConcat, &mut self.body);
+            self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
             self.body.push(Instruction::LocalSet(res));
         }
         let close = self.intern_string(")");
         self.body.push(Instruction::LocalGet(res));
         self.emit_load_str(close);
-        self.host.call(HostFn::StrConcat, &mut self.body);
+        self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
         self.body.push(Instruction::LocalSet(res));
         self.body.push(Instruction::LocalGet(res));
         Ok(())
@@ -387,7 +387,7 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::LocalSet(st));
                         self.body.push(Instruction::LocalGet(res));
                         self.body.push(Instruction::LocalGet(st));
-                        self.host.call(HostFn::StrConcat, &mut self.body);
+                        self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
                         self.body.push(Instruction::LocalSet(res));
                     }
                     let label = format!("{}: ", fname);
@@ -397,7 +397,7 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::LocalSet(lt));
                     self.body.push(Instruction::LocalGet(res));
                     self.body.push(Instruction::LocalGet(lt));
-                    self.host.call(HostFn::StrConcat, &mut self.body);
+                    self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
                     self.body.push(Instruction::LocalSet(res));
                     // valor del campo: load por offset + a string según el tipo del campo
                     self.body.push(Instruction::LocalGet(ptr));
@@ -434,7 +434,7 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::LocalSet(qt));
                         self.body.push(Instruction::LocalGet(res));
                         self.body.push(Instruction::LocalGet(qt));
-                        self.host.call(HostFn::StrConcat, &mut self.body);
+                        self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
                         self.body.push(Instruction::LocalSet(res));
                     }
                     self.emit_was_to_string(*w, &cls_t)?;
@@ -442,7 +442,7 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::LocalSet(vt));
                     self.body.push(Instruction::LocalGet(res));
                     self.body.push(Instruction::LocalGet(vt));
-                    self.host.call(HostFn::StrConcat, &mut self.body);
+                    self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
                     self.body.push(Instruction::LocalSet(res));
                     if matches!(cls_t, Type::String) {
                         let q = self.intern_string("\"");
@@ -451,7 +451,7 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::LocalSet(qt));
                         self.body.push(Instruction::LocalGet(res));
                         self.body.push(Instruction::LocalGet(qt));
-                        self.host.call(HostFn::StrConcat, &mut self.body);
+                        self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
                         self.body.push(Instruction::LocalSet(res));
                     }
                 }
@@ -461,7 +461,7 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::LocalSet(ct));
                 self.body.push(Instruction::LocalGet(res));
                 self.body.push(Instruction::LocalGet(ct));
-                self.host.call(HostFn::StrConcat, &mut self.body);
+                self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
             Type::Tuple(slots) => {
@@ -491,7 +491,7 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::LocalSet(lt));
                         self.body.push(Instruction::LocalGet(res));
                         self.body.push(Instruction::LocalGet(lt));
-                        self.host.call(HostFn::StrConcat, &mut self.body);
+                        self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
                         self.body.push(Instruction::LocalSet(res));
                         // valor
                         self.body.push(Instruction::LocalGet(ptr));
@@ -519,15 +519,15 @@ impl<'a> FuncEmitter<'a> {
                             // el valor ya es un string (ptr<<32|len): concatenar directo
                         } else {
                             match w {
-                                WasTy::F64 => self.host.call(HostFn::StrFloat, &mut self.body),
-                                _ => self.host.call(HostFn::StrInt, &mut self.body),
+                                WasTy::F64 => self.emit_str_host("__intr_str_float", HostFn::StrFloat),
+                                _ => self.emit_str_host("__intr_str_int", HostFn::StrInt),
                             }
                         }
                         let sv = self.fresh_local();
                         self.body.push(Instruction::LocalSet(sv));
                         self.body.push(Instruction::LocalGet(res));
                         self.body.push(Instruction::LocalGet(sv));
-                        self.host.call(HostFn::StrConcat, &mut self.body);
+                        self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
                         self.body.push(Instruction::LocalSet(res));
                         if i < info.fields.len() - 1 {
                             let sep = self.intern_string(", ");
@@ -536,7 +536,7 @@ impl<'a> FuncEmitter<'a> {
                             self.body.push(Instruction::LocalSet(st));
                             self.body.push(Instruction::LocalGet(res));
                             self.body.push(Instruction::LocalGet(st));
-                            self.host.call(HostFn::StrConcat, &mut self.body);
+                            self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
                             self.body.push(Instruction::LocalSet(res));
                         }
                     }
@@ -546,7 +546,7 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::LocalSet(ct));
                     self.body.push(Instruction::LocalGet(res));
                     self.body.push(Instruction::LocalGet(ct));
-                    self.host.call(HostFn::StrConcat, &mut self.body);
+                    self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
                     self.body.push(Instruction::LocalSet(res));
                     self.body.push(Instruction::LocalGet(res));
                     self.host.call(HostFn::PrintStr, &mut self.body);
