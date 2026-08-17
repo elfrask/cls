@@ -157,84 +157,8 @@ pub fn register_host_functions_opt(
         w!("trap", |mut c: Caller<'_, HostState>, m: i64, s: i64| host::host_trap(&mut c, m, s));
     }
     w!("sleep", |mut c: Caller<'_, HostState>, ms: i64| host::host_sleep(&mut c, ms));
-    w!("parse_int", |mut c: Caller<'_, HostState>, v: i64| -> Result<i64, wasmtime::Error> {
-        host::host_parse_int(&mut c, v).map_err(wasmtime::Error::msg)
-    });
-    w!("parse_float", |mut c: Caller<'_, HostState>, v: i64| -> Result<f64, wasmtime::Error> {
-        host::host_parse_float(&mut c, v).map_err(wasmtime::Error::msg)
-    });
-    w!("parse_bool", |mut c: Caller<'_, HostState>, v: i64| host::host_parse_bool(&mut c, v));
-    w!("str_concat", |mut c: Caller<'_, HostState>, a: i64, b: i64| -> i64 {
-        host::host_str_concat(&mut c, a, b)
-    });
-    w!("str_int", |mut c: Caller<'_, HostState>, v: i64| -> i64 { host::host_str_int(&mut c, v) });
-    w!("str_float", |mut c: Caller<'_, HostState>, v: f64| -> i64 { host::host_str_float(&mut c, v) });
-    w!("str_bool", |mut c: Caller<'_, HostState>, v: i32| -> i64 { host::host_str_bool(&mut c, v) });
-    w!("str_char", |mut c: Caller<'_, HostState>, v: i32| -> i64 { host::host_str_char(&mut c, v) });
-    w!("str_upper", |mut c: Caller<'_, HostState>, v: i64| -> i64 { host::host_str_upper(&mut c, v) });
-    w!("str_lower", |mut c: Caller<'_, HostState>, v: i64| -> i64 { host::host_str_lower(&mut c, v) });
-    w!("str_trim", |mut c: Caller<'_, HostState>, v: i64| -> i64 { host::host_str_trim(&mut c, v) });
-    w!("str_contains", |mut c: Caller<'_, HostState>, a: i64, b: i64| -> i32 {
-        host::host_str_contains(&mut c, a, b)
-    });
-    w!("str_starts_with", |mut c: Caller<'_, HostState>, a: i64, b: i64| -> i32 {
-        host::host_str_starts_with(&mut c, a, b)
-    });
-    w!("str_ends_with", |mut c: Caller<'_, HostState>, a: i64, b: i64| -> i32 {
-        host::host_str_ends_with(&mut c, a, b)
-    });
-    w!("str_is_empty", |mut c: Caller<'_, HostState>, v: i64| -> i32 {
-        host::host_str_is_empty(&mut c, v)
-    });
-    w!("str_repr", |mut c: Caller<'_, HostState>, v: i64| -> i64 { host::host_str_repr(&mut c, v) });
-    w!("str_length", |mut c: Caller<'_, HostState>, v: i64| -> i64 { host::host_str_length(&mut c, v) });
-    w!("int_abs", |mut c: Caller<'_, HostState>, v: i64| -> i64 { host::host_int_abs(&mut c, v) });
-    w!("float_abs", |mut c: Caller<'_, HostState>, v: f64| -> f64 { host::host_float_abs(&mut c, v) });
-    w!("pow_num", |mut c: Caller<'_, HostState>, a: i64, b: i64| -> i64 { host::host_pow_num(&mut c, a, b) });
-    w!("fmod", |mut c: Caller<'_, HostState>, a: f64, b: f64| -> f64 { host::host_fmod(&mut c, a, b) });
     w!("input", |mut c: Caller<'_, HostState>| -> i64 { host::host_input(&mut c) });
-    w!("arr_push", |mut c: Caller<'_, HostState>, p: i64, v: i64, e: i64| -> i64 {
-        host::host_arr_push(&mut c, p, v, e)
-    });
-    w!("arr_pop", |mut c: Caller<'_, HostState>, p: i64, e: i64| -> i64 {
-        host::host_arr_pop(&mut c, p, e)
-    });
-    w!("arr_shift", |mut c: Caller<'_, HostState>, p: i64, e: i64| -> i64 {
-        host::host_arr_shift(&mut c, p, e)
-    });
-    w!("arr_unshift", |mut c: Caller<'_, HostState>, p: i64, v: i64, e: i64| -> i64 {
-        host::host_arr_unshift(&mut c, p, v, e)
-    });
-    w!("arr_reverse", |mut c: Caller<'_, HostState>, p: i64, e: i64| -> i64 {
-        host::host_arr_reverse(&mut c, p, e)
-    });
-    w!("arr_to_string", |mut c: Caller<'_, HostState>, p: i64, e: i64, k: i64| -> i64 {
-        host::host_arr_to_string(&mut c, p, e, k)
-    });
-    w!("arr_index_of", |mut c: Caller<'_, HostState>, p: i64, n: i64, e: i64| -> i64 {
-        host::host_arr_index_of(&mut c, p, n, e)
-    });
-    w!("arr_includes", |mut c: Caller<'_, HostState>, p: i64, n: i64, e: i64| -> i32 {
-        host::host_arr_includes(&mut c, p, n, e)
-    });
-    w!("arr_join", |mut c: Caller<'_, HostState>, p: i64, s: i64, e: i64, k: i64| -> i64 {
-        host::host_arr_join(&mut c, p, s, e, k)
-    });
-    w!("math_sqrt", |mut c: Caller<'_, HostState>, v: f64| -> f64 { host::host_math_sqrt(&mut c, v) });
-    w!("math_pow", |mut c: Caller<'_, HostState>, a: f64, b: f64| -> f64 { host::host_math_pow(&mut c, a, b) });
-    w!("math_min", |mut c: Caller<'_, HostState>, a: f64, b: f64| -> f64 { host::host_math_min(&mut c, a, b) });
-    w!("math_max", |mut c: Caller<'_, HostState>, a: f64, b: f64| -> f64 { host::host_math_max(&mut c, a, b) });
-    w!("math_floor", |mut c: Caller<'_, HostState>, v: f64| -> f64 { host::host_math_floor(&mut c, v) });
-    w!("math_ceil", |mut c: Caller<'_, HostState>, v: f64| -> f64 { host::host_math_ceil(&mut c, v) });
-    w!("math_round", |mut c: Caller<'_, HostState>, v: f64| -> f64 { host::host_math_round(&mut c, v) });
     w!("math_random", |mut c: Caller<'_, HostState>| -> f64 { host::host_math_random(&mut c) });
-    w!("math_sin", |mut c: Caller<'_, HostState>, v: f64| -> f64 { host::host_math_sin(&mut c, v) });
-    w!("math_cos", |mut c: Caller<'_, HostState>, v: f64| -> f64 { host::host_math_cos(&mut c, v) });
-    w!("math_tan", |mut c: Caller<'_, HostState>, v: f64| -> f64 { host::host_math_tan(&mut c, v) });
-    w!("math_log", |mut c: Caller<'_, HostState>, v: f64| -> f64 { host::host_math_log(&mut c, v) });
-    w!("math_range", |mut c: Caller<'_, HostState>, a: i64, b: i64| -> i64 {
-        host::host_math_range(&mut c, a, b)
-    });
     w!("json_stringify", |mut c: Caller<'_, HostState>, v: i64, k: i64| -> i64 {
         host::host_json_stringify(&mut c, v, k)
     });
@@ -254,33 +178,6 @@ pub fn register_host_functions_opt(
         w!("fs_mkdir", |mut c: Caller<'_, HostState>, p: i64| -> i64 { host::host_fs_mkdir(&mut c, p) });
         w!("fs_rm", |mut c: Caller<'_, HostState>, p: i64| -> i64 { host::host_fs_rm(&mut c, p) });
     }
-    w!("record_new", |mut c: Caller<'_, HostState>, cap: i64| -> i64 {
-        host::host_record_new(&mut c, cap)
-    });
-    w!("record_set", |mut c: Caller<'_, HostState>, p: i64, k: i64, v: i64, t: i64| -> i64 {
-        host::host_record_set(&mut c, p, k, v, t)
-    });
-    w!("record_get", |mut c: Caller<'_, HostState>, p: i64, k: i64| -> i64 {
-        host::host_record_get(&mut c, p, k)
-    });
-    w!("record_has", |mut c: Caller<'_, HostState>, p: i64, k: i64| -> i32 {
-        host::host_record_has(&mut c, p, k)
-    });
-    w!("record_tag", |mut c: Caller<'_, HostState>, p: i64, k: i64| -> i64 {
-        host::host_record_tag(&mut c, p, k)
-    });
-    w!("record_len", |mut c: Caller<'_, HostState>, p: i64| -> i64 {
-        host::host_record_len(&mut c, p)
-    });
-    w!("record_keys", |mut c: Caller<'_, HostState>, p: i64| -> i64 {
-        host::host_record_keys(&mut c, p)
-    });
-    w!("record_values", |mut c: Caller<'_, HostState>, p: i64| -> i64 {
-        host::host_record_values(&mut c, p)
-    });
-    w!("record_to_string", |mut c: Caller<'_, HostState>, p: i64| -> i64 {
-        host::host_record_to_string(&mut c, p)
-    });
     w!("any_member", |mut c: Caller<'_, HostState>, v: i64, t: i64, k: i64| -> (i64, i64) {
         host::host_any_member(&mut c, v, t, k)
     });
