@@ -30,6 +30,9 @@ pub(super) struct Engine<'a> {
     /// `true` = main obligatorio (modo app); `false` = se sintetiza main no-op
     /// (modo librería, solo exports).
     pub(crate) require_main: bool,
+    /// `true` = emitir el shadow call stack (fn_enter/exit/call_site) para el
+    /// trace de errores. `false` = omitir (pierde el trace; `clx run --release`).
+    pub(crate) trace_calls: bool,
     /// Funciones host del nodo por nombre (canal `env.host_call`).
     pub(crate) intrinsics: HashMap<String, HostIntrinsic>,
     /// Metadatos de los exports tipados (JSON, sección custom `clx:exports`).
@@ -108,6 +111,7 @@ impl<'a> Engine<'a> {
             func_count: 0,
             exceptions: true,
             require_main: true,
+            trace_calls: true,
             intrinsics: HashMap::new(),
             exports_meta: Vec::new(),
             func_indexes: HashMap::new(),

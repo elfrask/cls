@@ -415,20 +415,25 @@ impl<'a> Engine<'a> {
         }
 
         // Globals del shadow call stack (plan-performance/shadow-stack-wasm.md):
-        // `shadow_ptr` (tope del stack en memoria) + consts que el host lee para
-        // resolver `idx → nombre` (tabla de strings) y la región de frames.
-        // Todos por debajo del heap (1 MB): NO se transfieren en el REPL.
-        let shadow_ptr_idx = next_global;
-        next_global += 1;
-        self.shadow_ptr_global = shadow_ptr_idx;
-        self.globals_sec.global(
-            GlobalType {
-                val_type: ValType::I32,
-                mutable: true,
-                shared: false,
-            },
-            &ConstExpr::i32_const(SHADOW_STACK_BASE as i32),
-        );
+        // `shadow_ptr` (tope del stack en memoria, SOLO si trace_calls) + consts
+        // que el host lee para resolver `idx → nombre` (tabla de strings) y la
+        // región de frames. Todos por debajo del heap (1 MB): NO se transfieren
+        // en el REPL. Con `trace_calls=false` (`clx run --release`) no se emite
+        // `shadow_ptr` (queda 0): el emisor omite fn_enter/exit/call_site y el
+        // trace de errores se pierde (read_shadow_trace devuelve vacío).
+        if self.trace_calls {
+            let shadow_ptr_idx = next_global;
+            next_global += 1;
+            self.shadow_ptr_global = shadow_ptr_idx;
+            self.globals_sec.global(
+                GlobalType {
+                    val_type: ValType::I32,
+                    mutable: true,
+                    shared: false,
+                },
+                &ConstExpr::i32_const(SHADOW_STACK_BASE as i32),
+            );
+        }
         for (gtype, init) in [
             (GlobalType { val_type: ValType::I32, mutable: false, shared: false }, SHADOW_STACK_BASE as i32),
             (GlobalType { val_type: ValType::I32, mutable: false, shared: false }, STRING_TABLE_BASE as i32),
@@ -775,9 +780,12 @@ impl<'a> Engine<'a> {
             .export("alloc", ExportKind::Func, self.func_indexes["__alloc"]);
         self.exports_sec.export("memory", ExportKind::Memory, 0);
         // Shadow call stack: `__shadow_ptr` (tope de la región, mutable — el
-        // host lo lee en el error) y consts para resolver idx → nombre.
-        self.exports_sec
-            .export("__shadow_ptr", ExportKind::Global, self.shadow_ptr_global);
+        // host lo lee en el error; SOLO si trace_calls) y consts para resolver
+        // idx → nombre (siempre, para name_at).
+        if self.trace_calls {
+            self.exports_sec
+                .export("__shadow_ptr", ExportKind::Global, self.shadow_ptr_global);
+        }
         self.exports_sec
             .export("__shadow_base", ExportKind::Global, self.shadow_base_global);
         self.exports_sec

@@ -38,6 +38,20 @@ pub fn run_jit_with(
     ctx: &JitContext,
     runtime: RuntimeKind,
 ) -> i32 {
+    run_jit_with_opts(entry, app_args, target_str, ctx, runtime, true)
+}
+
+/// [`run_jit_with`] con control del shadow call stack: `trace_calls=false`
+/// omite el trace de errores (fn_enter/exit) — se pierde el stack en los
+/// errores de runtime a cambio de menos código WASM (`clx run --release`).
+pub fn run_jit_with_opts(
+    entry: &str,
+    app_args: &[String],
+    target_str: Option<&str>,
+    ctx: &JitContext,
+    runtime: RuntimeKind,
+    trace_calls: bool,
+) -> i32 {
     let timing = jit_timing();
     let mut t = Instant::now();
 
@@ -105,7 +119,7 @@ pub fn run_jit_with(
     // Clave de caché: source + versión + target + sources de módulos + runtime
     // (wasmtime y wasmi emiten bytes distintos: el tag de excepciones).
     let module_sources: Vec<String> = imports.iter().map(|(_, src, _)| src.clone()).collect();
-    let key = cache_key(&source, target_str, entry_path, &module_sources, runtime.as_str());
+    let key = cache_key(&source, target_str, entry_path, &module_sources, runtime.as_str(), trace_calls);
     let cache_path = cache_dir().join(format!("{:016x}.wasm", key));
     if let Ok(cached) = std::fs::read(&cache_path) {
         if timing {
@@ -163,6 +177,7 @@ pub fn run_jit_with(
         exceptions,
         require_main: true,
         intrinsics: ctx.host_intrinsics.to_vec(),
+        trace_calls,
     };
     let backend = cls_core::backend::wasm::WasmBackend::with_options(type_map, target, opts);
     let wasm_bytes = match backend.emit(&merged) {
