@@ -110,6 +110,25 @@ Parser y lexer usan `self.syntax_err(msg)`; el JIT usa `compile_at` para
   de hasta 1000 frames; el stack overflow se detecta y reporta como
   `stack overflow` limpio con los últimos 3 frames.
 
+### Flag `trace_calls` (`CLS_JIT_TRACE=0`)
+
+El shadow call stack se emite como stores WASM en la memoria lineal del módulo
+(frames de 12 bytes con el nombre y el call site del llamador). Por defecto está
+activo (`trace_calls: true` en `WasmBackendOptions`). Desactivarlo **pierde el
+trace de errores de runtime** (el reporte solo muestra el frame del error, sin
+`-> main -> outer -> ...`) a cambio de algo menos de código WASM:
+
+```
+CLS_JIT_TRACE=0 clx run programa.clsx
+```
+
+- Es una opción para releases que no necesitan traza; en desarrollo se
+  recomienda dejarlo activo (default).
+- La caché CLS→WASM distingue el flag (misma fuente con/ sin trace genera
+  módulos distintos).
+- `compile_file`/`run_jit_with_opts` aceptan el flag programáticamente
+  (`CompileOptions.trace_calls`).
+
 ## Typecheck (`clx check`)
 
 Formato de diagnóstico:

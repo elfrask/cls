@@ -359,6 +359,7 @@ impl ReplSession {
             exceptions: true,
             require_main: true,
             intrinsics: ctx.host_intrinsics.to_vec(),
+            trace_calls: true,
         };
         let backend = cls_core::backend::wasm::WasmBackend::with_options(
             type_map,

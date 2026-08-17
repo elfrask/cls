@@ -40,5 +40,8 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
         Ok("wasmi") => cls_jit::RuntimeKind::Wasmi,
         _ => cls_jit::RuntimeKind::Wasmtime,
     };
-    cls_jit::run_jit_with(entry, app_args, target_str, &ctx, runtime)
+    // `CLS_JIT_TRACE=0` -> omitir el shadow call stack (pierde el trace de
+    // errores de runtime a cambio de menos código WASM; `clx run --release`).
+    let trace_calls = !matches!(std::env::var("CLS_JIT_TRACE").as_deref(), Ok("0"));
+    cls_jit::run_jit_with_opts(entry, app_args, target_str, &ctx, runtime, trace_calls)
 }

@@ -72,6 +72,8 @@ pub struct CompileOptions {
     pub require_main: bool,
     /// Target para la directiva `when` (None = host).
     pub target: Option<String>,
+    /// `false` = omitir el shadow call stack (pierde el trace de errores).
+    pub trace_calls: bool,
 }
 
 impl Default for CompileOptions {
@@ -80,6 +82,7 @@ impl Default for CompileOptions {
             runtime: RuntimeKind::Wasmtime,
             require_main: true,
             target: None,
+            trace_calls: true,
         }
     }
 }
@@ -174,6 +177,7 @@ fn compile_module(
         exceptions: matches!(opts.runtime, RuntimeKind::Wasmtime),
         require_main: opts.require_main,
         intrinsics: ctx.host_intrinsics.to_vec(),
+        trace_calls: opts.trace_calls,
     };
     let backend =
         cls_core::backend::wasm::WasmBackend::with_options(checker.type_map(), target, backend_opts);

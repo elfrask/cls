@@ -74,6 +74,10 @@ pub struct WasmBackendOptions {
     /// Funciones host del NODO (intrinsics): las llamadas a esos nombres se
     /// compilan vía el canal `env.host_call(id, ptr, n)`.
     pub intrinsics: Vec<HostIntrinsic>,
+    /// `true` = el módulo mantiene el shadow call stack (fn_enter/fn_exit) para
+    /// el trace de errores. `false` (`clx run --release`) desactiva la emisión
+    /// de esos stores: pierde el trace de runtime a cambio de menos código.
+    pub trace_calls: bool,
 }
 
 impl Default for WasmBackendOptions {
@@ -82,6 +86,7 @@ impl Default for WasmBackendOptions {
             exceptions: true,
             require_main: true,
             intrinsics: Vec::new(),
+            trace_calls: true,
         }
     }
 }
@@ -96,6 +101,7 @@ pub struct WasmBackend<'a> {
     exceptions: bool,
     require_main: bool,
     intrinsics: Vec<HostIntrinsic>,
+    trace_calls: bool,
 }
 
 impl<'a> WasmBackend<'a> {
@@ -120,6 +126,7 @@ impl<'a> WasmBackend<'a> {
             exceptions: opts.exceptions,
             require_main: opts.require_main,
             intrinsics: opts.intrinsics,
+            trace_calls: opts.trace_calls,
         }
     }
 
@@ -158,6 +165,7 @@ impl<'a> WasmBackend<'a> {
                 exceptions: false,
                 require_main: false,
                 intrinsics: Vec::new(),
+                trace_calls: true,
             },
         )
     }
@@ -174,6 +182,7 @@ impl<'a> WasmBackend<'a> {
         let mut engine = Engine::new(self.types, self.target.clone());
         engine.exceptions = self.exceptions;
         engine.require_main = self.require_main;
+        engine.trace_calls = self.trace_calls;
         engine.intrinsics = self
             .intrinsics
             .iter()
