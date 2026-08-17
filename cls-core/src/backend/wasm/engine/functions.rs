@@ -127,6 +127,7 @@ impl<'a> Engine<'a> {
         // Métodos de clase: `me` (la instancia) es el primer param implícito.
         // `Clase::metodo` es método si el prefijo es una clase conocida; si no,
         // es un símbolo de mí³dulo importado (`mod::fn`, sin `me`).
+
         let is_method = f
             .name
             .split("::")
@@ -200,7 +201,17 @@ impl<'a> Engine<'a> {
                 fe.declare_var_ty(&p.name, was_type(&param_types[i])?);
             }
         }
-        // main inicializa las globals top-level al arrancar.
+        // Reservar los índices de los params implícitos (main sintetizado en
+        // modo librería: `f.params` vacío pero `func_types["main"]` tiene el
+        // array de args). Sin esto, `emit_fn_enter` (stores del shadow stack)
+        // usa `fresh_local_ty` que devuelve local 0 — pisando el `(param i64)`
+        // de la firma y Cranelift rechaza el módulo ("failed to compile
+        // function[N]").
+        let expected_params = (param_types.len() as u32) + param_offset;
+        while fe.next_local < expected_params {
+            fe.local_tys.insert(fe.next_local, WasTy::I64);
+            fe.next_local += 1;
+        }        // main inicializa las globals top-level al arrancar.
         if f.name == "main" {
             if let Some(idx) = self.func_indexes.get("__init_globals") {
                 fe.body.push(Instruction::Call(*idx));
@@ -245,7 +256,7 @@ impl<'a> Engine<'a> {
         // locals declarados empiezan después. Cada local = un grupo de 1 para
         // preservar los índices exactos (agrupar reordenaría y rompería tipos
         // mixtos).
-        let nparams = (param_types.len() + param_offset) as u32;
+        let nparams = (param_types.len() as u32) + param_offset;
         let local_types: Vec<ValType> = (nparams..fe.next_local)
             .map(|i| {
                 fe.local_tys

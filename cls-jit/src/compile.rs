@@ -380,6 +380,7 @@ mod tests {
             runtime: RuntimeKind::Wasmtime,
             require_main: false,
             target: None,
+            trace_calls: true,
         };
         let cm = compile_source(
             src,
