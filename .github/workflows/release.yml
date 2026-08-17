@@ -92,20 +92,20 @@ jobs:
           set -e
           npm ci --omit=dev || npm install --omit=dev
 
-      - name: Empaquetar extensión
+      - name: Empaquetar extensión (VSIX)
         shell: bash
+        working-directory: .vscode/extensions/ccls-lang
         run: |
           set -e
-          mkdir -p dist
-          bash scripts/release-zip.sh \
-            .vscode/extensions/ccls-lang \
-            "dist/cls-lang-${{ env.VERSION }}.zip"
+          mkdir -p ../../../dist
+          npx --yes @vscode/vsce package \
+            --out "../../../dist/cls-lang-${{ env.VERSION }}.vsix"
 
       - name: Subir artefacto
         uses: actions/upload-artifact@v4
         with:
           name: artifacts-extension
-          path: dist/cls-lang-${{ env.VERSION }}.zip
+          path: dist/cls-lang-${{ env.VERSION }}.vsix
           if-no-files-found: error
 
   release:
