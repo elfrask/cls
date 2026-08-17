@@ -17,9 +17,12 @@ fn main() {
     // indefinido a proposito (el linker de fusion lo resuelve al `__alloc` del
     // modulo CLS). rust-lld de toolchains nuevos rechaza simbolos indefinidos
     // por defecto (undefined symbol: __cls_alloc), asi que se permite el import
-    // explicitamente. Se pasa por --config (no RUSTFLAGS env: el cargo padre le
-    // pasa CARGO_ENCODED_RUSTFLAGS al build script, que anula RUSTFLAGS; no
-    // config file: la discovery depende del CWD del build script).
+    // explicitamente. Se pasa por --config target.<triple>.rustflags, pero el
+    // cargo padre le inyecta al build script la env CARGO_ENCODED_RUSTFLAGS
+    // (aunque este vacia), y esa env tiene prioridad sobre las config entries
+    // (doc oficial: fuentes de rustflags mutuamente excluyentes, la primera en
+    // orden gana). Por eso tambien fallo el config-file. Se limpia el env para
+    // que el --config sea la unica fuente y --allow-undefined llegue a rust-lld.
     let config = "target.wasm32-unknown-unknown.rustflags=[\"-C\",\"link-arg=--allow-undefined\"]";
     let status = Command::new(&cargo)
         .args(["build", "--release", "--manifest-path"])
@@ -27,6 +30,10 @@ fn main() {
         .args(["--target", "wasm32-unknown-unknown"])
         .args(["--config", config])
         .env("CARGO_TARGET_DIR", &target_dir)
+        .env_remove("RUSTFLAGS")
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        .env_remove("CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS")
+        .env_remove("CARGO_BUILD_RUSTFLAGS")
         .status()
         .expect("no se pudo ejecutar cargo para cls-internals-wasm");
     if !status.success() {
