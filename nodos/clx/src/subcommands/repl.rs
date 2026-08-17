@@ -67,7 +67,6 @@ pub fn execute(_args: &[String]) -> i32 {
         }
     }
 
-    println!("Adiós!");
     0
 }
 
