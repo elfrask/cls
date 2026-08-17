@@ -2,10 +2,12 @@
 
 CLS es un lenguaje de programación con verificación de tipos (compile-time),
 compilado a **WASM** y ejecutado con un **JIT** (`clx run`: CLS -> WASM ->
-wasmtime). El proyecto es un workspace Rust con seis crates - `cls-core`,
-`cls-runtime`, `cls-jit`, `nodos/clx`, `nodos/clxb`, `nodos/clxr` - y bindings
-de Python (`bindings/python`, paquete `clsb`) y Node.js (`bindings/js`,
-paquete `@cls-embed/node`), ambos sobre la ABI C `clsb_v1_*`.
+wasmtime). El proyecto es un workspace Rust con siete crates - `cls-core`,
+`cls-runtime`, `cls-jit`, `cls-internals`, `nodos/clx`, `nodos/clxb`,
+`nodos/clxr` - y bindings de Python (`bindings/python`, paquete `clsb`) y
+Node.js (`bindings/js`, paquete `@cls-embed/node`), ambos sobre la ABI C
+`clsb_v1_*`. `cls-internals` precompila los módulos internos a WASM y el
+backend los **fusiona dentro del módulo CLS** (cero imports de internals).
 
 > **JIT = intérprete objetivo.** El tree-walker (`clx run --ast-walker`) está
 > **DEPRECADO**: es solo referencia sintáctica y se eliminará tras
@@ -44,7 +46,7 @@ paquete `@cls-embed/node`), ambos sobre la ABI C `clsb_v1_*`.
 
 ### Runtime y ejecución
 
-- `runtime/jit.md` - el JIT: pipeline CLS -> WASM -> wasmtime, caché, host functions, límites.
+- `runtime/jit.md` - el JIT: pipeline CLS -> WASM -> wasmtime, caché, internals fusionadas, host functions, límites.
 - `runtime/walker.md` - el tree-walker DEPRECADO (referencia sintáctica).
 - `runtime/errores.md` - el sistema de errores y sus formatos.
 - `runtime/vfs.md` - VFS (sistema de archivos virtual), protocolos y `.clsapp`.

@@ -3,7 +3,7 @@
 El sistema de tipos tiene efecto en el typechecker (`clx check`), en el modo
 estricto (`clx check --strict`) y en la compilación a WASM (el JIT corre
 siempre con typecheck estricto). Fuentes: `cls-core/src/middleware/types.rs` y
-`typeck.rs`; ejemplos en `features/17-genericos.clsx`, `features/18-shapes.clsx`
+`typeck/`; ejemplos en `features/17-genericos.clsx`, `features/18-shapes.clsx`
 y `tests/test-types.clsx`.
 
 ## Tipos base

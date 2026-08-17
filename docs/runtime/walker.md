@@ -20,8 +20,9 @@ Se eliminará tras CLS 2.0-dev1. Usa `clx run` (JIT) para ejecutar programas.
 
 ## Implementación
 
-Vive en `cls-runtime/src/interpreter.rs` (junto a `environment.rs` y
-`value.rs`). Ejecuta el AST directamente, sin compilación intermedia.
+Vive en `cls-runtime/src/walker/` (interpreter.rs, environment.rs,
+value.rs, modules.rs, resolver.rs, sandbox.rs, ...). Ejecuta el AST
+directamente, sin compilación intermedia.
 
 ### `Interpreter`
 
@@ -102,6 +103,6 @@ cache -> internals -> external hook -> error.
   hook externo que lee el source del módulo y lo carga con
   `load_module_source`.
 
-`load_module_source` (`cls-runtime/src/interpreter.rs:1689`): ejecuta el
+`load_module_source` (`cls-runtime/src/walker/interpreter.rs:1689`): ejecuta el
 módulo en un scope aislado (guarda/restaura `exports`, `env` y `resolver`) y
 devuelve **solo los símbolos marcados `export`** como `Value::Record`.
