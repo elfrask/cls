@@ -1,0 +1,10 @@
+# @title fs
+# @description Modulo de acceso al sistema de archivos.
+
+function readFile(path: String) -> String {};
+function writeFile(path: String, content: String) {};
+function exists(path: String) -> bool {};
+function rm(path: String) {};
+function mkdir(path: String) {};
+function listDir(path: String) -> Array {};
+function cwd() -> String {};

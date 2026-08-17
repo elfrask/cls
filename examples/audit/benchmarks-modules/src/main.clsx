@@ -1,0 +1,26 @@
+from "lib/fib" import fib;
+from "lib/primos" import contarPrimos;
+from "lib/collatz" import collatzMasLargo;
+from "lib/arrays" import sumaArray;
+
+function main(args: String[]) -> int {
+    print("=== Benchmarks CLS (módulos) ===");
+
+    var t0 = now();
+    var r = fib(26);
+    print("fib(26):", r, "en", now() - t0, "ms");
+
+    t0 = now();
+    r = contarPrimos(10000);
+    print("primos(10000):", r, "en", now() - t0, "ms");
+
+    t0 = now();
+    r = collatzMasLargo(5000);
+    print("collatz(5000):", r, "en", now() - t0, "ms");
+
+    t0 = now();
+    r = sumaArray(5000);
+    print("array(5000):", r, "en", now() - t0, "ms");
+
+    return 0;
+};

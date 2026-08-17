@@ -1,0 +1,156 @@
+{
+  "name": "CLS Tipos Diferenciados",
+  "type": "dark",
+  "colors": {
+    "editor.background": "#1e1e2e",
+    "editor.foreground": "#cdd6f4",
+    "editor.lineHighlightBackground": "#31324455",
+    "editor.selectionBackground": "#585b7077",
+    "editorCursor.foreground": "#f5e0dc",
+    "editor.lineNumber.foreground": "#6c7086",
+    "editorIndentGuide.background": "#313244"
+  },
+  "tokenColors": [
+    {
+      "name": "Tipos primitivos CLS (storage.type)",
+      "scope": [
+        "storage.type.primitive.ccls",
+        "storage.type.numeric.ccls",
+        "storage.type.container.ccls",
+        "storage.type.native.ccls"
+      ],
+      "settings": { "foreground": "#4ec9b0", "fontStyle": "" }
+    },
+    {
+      "name": "Clases / interfaces / alias CLS (entity.name.type)",
+      "scope": [
+        "entity.name.type.ccls"
+      ],
+      "settings": { "foreground": "#e5c07b", "fontStyle": "bold" }
+    },
+    {
+      "name": "Funciones CLS (entity.name.function)",
+      "scope": [
+        "entity.name.function.ccls",
+        "entity.name.function.call.ccls"
+      ],
+      "settings": { "foreground": "#dcdcaa", "fontStyle": "" }
+    },
+    {
+      "name": "Métodos de clase CLS (entity.name.function.method)",
+      "scope": [
+        "entity.name.function.method.ccls"
+      ],
+      "settings": { "foreground": "#61afef", "fontStyle": "" }
+    },
+    {
+      "name": "Genéricos y acceso de tipos CLS",
+      "scope": [
+        "meta.type.generic.ccls",
+        "meta.type.access.ccls",
+        "meta.type.tuple.ccls"
+      ],
+      "settings": { "foreground": "#56b6c2" }
+    },
+    {
+      "name": "Phantom !T CLS",
+      "scope": [ "keyword.operator.phantom.ccls" ],
+      "settings": { "foreground": "#c678dd", "fontStyle": "bold" }
+    },
+    {
+      "name": "Separadores y puntuación de tipos CLS",
+      "scope": [
+        "punctuation.separator.ccls",
+        "punctuation.section.brackets.ccls",
+        "punctuation.section.parens.begin.ccls"
+      ],
+      "settings": { "foreground": "#e0af68" }
+    },
+    {
+      "name": "Unión de tipos | CLS",
+      "scope": [ "keyword.operator.union.ccls" ],
+      "settings": { "foreground": "#d19a66" }
+    },
+    {
+      "name": "Palabras clave CLS",
+      "scope": [
+        "keyword.structure.ccls",
+        "keyword.alias.ccls",
+        "keyword.declaration.ccls",
+        "keyword.import.ccls",
+        "keyword.modifier.ccls",
+        "keyword.control.ccls",
+        "keyword.control.platform.ccls",
+        "keyword.operator.selector.ccls",
+        "keyword.operator.logical.ccls",
+        "keyword.operator.logical.single.ccls",
+        "keyword.self.ccls",
+        "keyword.operator.arrow.ccls"
+      ],
+      "settings": { "foreground": "#c586c0" }
+    },
+    {
+      "name": "CMX: tags y atributos",
+      "scope": [
+        "entity.name.tag.ccls",
+        "punctuation.definition.tag.begin.ccls",
+        "punctuation.definition.tag.end.ccls",
+        "punctuation.definition.tag.selfclose.ccls",
+        "meta.cmx.ccls"
+      ],
+      "settings": { "foreground": "#e06c75" }
+    },
+    {
+      "name": "CMX: atributos",
+      "scope": [ "entity.other.attribute-name.ccls" ],
+      "settings": { "foreground": "#d19a66", "fontStyle": "italic" }
+    },
+    {
+      "name": "CMX: texto",
+      "scope": [ "text.ccls" ],
+      "settings": { "foreground": "#cdd6f4" }
+    },
+    {
+      "name": "Variables CLS",
+      "scope": [
+        "variable.other.ccls",
+        "variable.other.declaration.ccls",
+        "variable.parameter.ccls"
+      ],
+      "settings": { "foreground": "#9cdcfe" }
+    },
+    {
+      "name": "Type params y fun type CLS",
+      "scope": [
+        "variable.parameter.type-param.ccls",
+        "meta.type.fun.ccls",
+        "keyword.operator.fun-type.ccls"
+      ],
+      "settings": { "foreground": "#56b6c2" }
+    },
+    {
+      "name": "Constantes y números CLS",
+      "scope": [
+        "constant.language.boolean.ccls",
+        "constant.language.null.ccls",
+        "constant.numeric.integer.ccls",
+        "constant.numeric.float.ccls"
+      ],
+      "settings": { "foreground": "#b5cea8" }
+    },
+    {
+      "name": "Strings CLS",
+      "scope": [
+        "string.quoted.double.ccls",
+        "string.quoted.single.ccls",
+        "string.quoted.backtick.ccls"
+      ],
+      "settings": { "foreground": "#ce9178" }
+    },
+    {
+      "name": "Comentarios CLS",
+      "scope": [ "comment.line.number-sign.ccls" ],
+      "settings": { "foreground": "#6a9955", "fontStyle": "italic" }
+    }
+  ]
+}

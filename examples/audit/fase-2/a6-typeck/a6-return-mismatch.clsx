@@ -1,0 +1,8 @@
+# A-6: return type mismatch debe ABORTAR en strict con linea real
+function f() -> int {
+    return "x";
+};
+function main(args: String[]) -> int {
+    print(f());
+    return 0;
+};

@@ -1,0 +1,6 @@
+# C-2 isolate: array literal int+float -> debe promocionar a Float
+function main(args: String[]) -> int {
+    var a = [1, 2.0];
+    print("a =", a);
+    return 0;
+};

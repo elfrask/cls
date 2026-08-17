@@ -1,0 +1,50 @@
+# @title math
+# @description Modulo de operaciones matematicas.
+
+# @description Valor de PI
+var PI: float;
+
+# @description Constante de Euler
+var E: float;
+
+# @description Valor absoluto
+function abs(x: float) -> float {};
+
+# @description Raiz cuadrada
+function sqrt(x: float) -> float {};
+
+# @description Potencia
+function pow(base: float, exp: float) -> float {};
+
+# @description Minimo entre dos numeros
+function min(a: float, b: float) -> float {};
+
+# @description Maximo entre dos numeros
+function max(a: float, b: float) -> float {};
+
+# @description Redondeo hacia abajo
+function floor(x: float) -> int {};
+
+# @description Redondeo hacia arriba
+function ceil(x: float) -> int {};
+
+# @description Redondeo al entero mas cercano
+function round(x: float) -> int {};
+
+# @description Numero aleatorio [0, 1)
+function random() -> float {};
+
+# @description Seno
+function sin(x: float) -> float {};
+
+# @description Coseno
+function cos(x: float) -> float {};
+
+# @description Tangente
+function tan(x: float) -> float {};
+
+# @description Logaritmo natural
+function log(x: float) -> float {};
+
+# @description Genera un rango de enteros
+function range(start: int, end: int) -> Array {};

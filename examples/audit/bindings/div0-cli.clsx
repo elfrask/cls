@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    var r = 10 / 0;
+    print("r:", r);
+    return 0;
+}

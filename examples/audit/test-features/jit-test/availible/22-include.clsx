@@ -1,0 +1,9 @@
+include "libmod";
+
+function main(args: String[]) -> int {
+    print("=== include ===");
+    print("saludar:", saludar("CLS"));
+    print("suma:", suma(1, 2));
+    print("version:", VERSION);
+    return 0;
+};

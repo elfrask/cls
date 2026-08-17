@@ -1,0 +1,8 @@
+# R4: iteracion for each sobre enum namespaced
+import "libmod" as lib;
+function main(args: String[]) -> int {
+    for each v in (lib::Color) {
+        print("variante:", v);
+    }
+    return 0;
+};

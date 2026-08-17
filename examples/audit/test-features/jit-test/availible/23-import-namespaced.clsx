@@ -1,0 +1,9 @@
+import "libmod" as lib;
+
+function main(args: String[]) -> int {
+    print("=== import as (namespaced) ===");
+    print("saludar:", lib::saludar("CLS"));
+    print("suma:", lib::suma(10, 20));
+    print("version:", lib::VERSION);
+    return 0;
+};

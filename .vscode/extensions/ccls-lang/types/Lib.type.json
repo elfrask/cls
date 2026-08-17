@@ -1,0 +1,30 @@
+{
+  "source": "cls-runtime/clsi\\Lib.clsi",
+  "entries": [
+    {
+      "name": "load",
+      "kind": "function",
+      "line": 3,
+      "col": 1,
+      "end_line": 3,
+      "end_col": 1,
+      "doc": "",
+      "version": null,
+      "deprecated": null,
+      "signature": "load(name: String) -> String",
+      "params": [
+        {
+          "name": "name",
+          "type_": "String",
+          "doc": null
+        }
+      ],
+      "return_type": "String",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    }
+  ]
+}

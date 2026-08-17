@@ -1,0 +1,11 @@
+# C-3: metodo protected llamado desde fuera DEBE dar error
+class A {
+    protected function secreta() -> int { return 7; }
+    function main() { me.aux = 1; }
+    var aux: int;
+};
+function main(args: String[]) -> int {
+    var a = A();
+    print(a.secreta());
+    return 0;
+};

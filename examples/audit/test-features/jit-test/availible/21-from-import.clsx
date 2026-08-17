@@ -1,0 +1,9 @@
+from "libmod" import saludar as saludar_fn, VERSION as version, suma;
+
+function main(args: String[]) -> int {
+    print("=== from import con alias ===");
+    print("saludar_fn:", saludar_fn("CLS"));
+    print("suma:", suma(10, 20));
+    print("version:", version);
+    return 0;
+};

@@ -1,0 +1,10 @@
+# CMX malformado: tag sin cerrar
+function main(args: String[]) -> int {
+    var app = (
+        <div>
+            <span>texto
+        </div>
+    );
+    print(app.tag);
+    return 0;
+};

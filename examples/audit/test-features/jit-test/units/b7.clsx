@@ -1,0 +1,11 @@
+import "http" as http;
+import "fs" as fs;
+
+function main(args: String[]) -> int {
+    var r = http.get("https://httpbin.org/get");
+    print("http len:", r.length);
+    print("http ok:", r.contains("httpbin"));
+    var cwd = fs.cwd();
+    print("cwd ok:", cwd.length > 0);
+    return 0;
+};

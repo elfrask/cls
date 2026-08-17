@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    var h = () => 42;
+    print("h():", h());
+    return 0;
+};

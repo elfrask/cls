@@ -1,0 +1,17 @@
+
+async function fetchData(url: String) -> String {
+    # En el futuro: http.get(url) async real
+    # Por ahora: await es un passthrough
+    print("inicio")
+    sleep(1000) # uso incorrecto de sleep; usar asyncLib.delay para los asíncronos
+    print("fin")
+
+    return "dato simulado";
+};
+
+function main(args: String[]) -> int {
+    var resultado = fetchData("https://ejemplo.com");
+    print("Holaa");
+    print("Resultado:", await resultado);
+    return 0;
+};

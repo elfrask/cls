@@ -1,0 +1,24 @@
+function main(args: String[]) -> int {
+    class N { function __toString() -> String { return "hola"; } }
+    print("toString:", toString(N()));
+
+    class T { function __type() -> String { return "MiTipo"; } }
+    print("type:", type(T()));
+
+    class J { function __toJson() -> String { return "{json}"; } }
+    print("toJson:", json.stringify(J()));
+
+    class L { function __len() -> int { return 42; } }
+    print("len:", len(L()));
+
+    class C { function __call(x: int) -> int { return x * 2; } }
+    print("call:", C()(5));
+
+    class E { function __equals(o: Any) -> bool { return true; } }
+    print("equals:", E() == E());
+
+    class A { function __add(o: Any) -> int { return 7; } }
+    print("add:", A() + A());
+
+    return 0;
+}

@@ -1,0 +1,19 @@
+function main(args: String[]) -> int {
+    var nombre = "CLS";
+    var val: int[] = [10, 20, 0];
+    print("interp:", "Hola $nombre");
+    print("interp2:", "val $val");
+    print("expr:", "suma: ${1 + 2}");
+    print("concat:", "a" + "b" + "c");
+    print("upper:", "hola".upper());
+    print("lower:", "HOLA".lower());
+    print("trim:", "  x  ".trim());
+    print("contains:", "hola mundo".contains("mundo"));
+    print("startsWith:", "abc".startsWith("ab"));
+    print("endsWith:", "abc".endsWith("bc"));
+    print("isEmpty:", "".isEmpty());
+    print("length:", "abcd".length);
+    print("in substring:", "mundo" in "hola mundo");
+    print("in String?:", "mundo" is String);
+    return 0;
+};

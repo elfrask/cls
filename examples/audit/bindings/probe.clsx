@@ -1,0 +1,17 @@
+export function fint() -> int { return -42; }
+export function ffloat() -> float { return 3.5; }
+export function fbool() -> bool { return true; }
+export function fchar() -> char { return 'X'; }
+export function fstr() -> String { return "hola bindings"; }
+export function farr() -> int[] { return [1, 2, 3]; }
+export function frec() -> Record<String, int> { return { "a": 1, "b": 2 }; }
+export function echo_str(s: String) -> String { return "[" + s + "]"; }
+export function sum_ints(xs: int[]) -> int { var t: int = 0; for each n in (xs) { t += n; } return t; }
+export function join_strs(xs: String[]) -> String { var s: String = ""; for each x in (xs) { s += x; } return s; }
+export function get_rec(d: Record<String, int>, k: String) -> int { return d[k]; }
+export function add_f(a: float, b: float) -> float { return a + b; }
+export function and_b(a: bool, b: bool) -> bool { return a and b; }
+export function echo_c(c: char) -> char { return c; }
+export function mayus(s: String) -> String { return s.upper(); }
+export function div(a: int, b: int) -> int { return a / b; }
+export function suma(a: int, b: int) -> int { return a + b; }

@@ -1,0 +1,11 @@
+# CMX: tags con guion y numeros
+function main(args: String[]) -> int {
+    var app = (
+        <mi-componente version={2}>
+            <sub-2 />
+        </mi-componente>
+    );
+    print("tag:", app.tag);
+    print("child:", app.children[0].tag);
+    return 0;
+};

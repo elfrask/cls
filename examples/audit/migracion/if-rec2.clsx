@@ -1,0 +1,7 @@
+function main(args: String[]) -> int {
+    var rec = {a: 1};
+    if (rec) { print("truthy"); }
+    var n = 5;
+    if (n) { print("int"); }
+    return 0;
+}

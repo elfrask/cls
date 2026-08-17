@@ -1,0 +1,6 @@
+# BUG: math.abs(float) genera WASM invalido
+import "math" as math;
+function main(args: String[]) -> int {
+    print("abs float:", math.abs(-2.5));
+    return 0;
+};

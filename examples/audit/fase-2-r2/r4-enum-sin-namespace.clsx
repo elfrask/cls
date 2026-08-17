@@ -1,0 +1,11 @@
+# R4: enum namespaced con variable de tipado - print, is, ==, iteracion via include
+# (cubre Color.Rojo sin namespace)
+include "libmod";
+function main(args: String[]) -> int {
+    var c = Color.Rojo;
+    print("c:", c);
+    print("c is Color:", c is Color);
+    print("c==Rojo:", c == Color.Rojo);
+    print("c==Verde:", c == Color.Verde);
+    return 0;
+};

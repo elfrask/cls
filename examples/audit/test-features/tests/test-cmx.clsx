@@ -1,0 +1,18 @@
+function main(args: String[]) -> int {
+    print("--- Basic CMX ---");
+    var a = <App />;
+    print("a:", a);
+    var b = <App>Hello</App>;
+    print("b:", b);
+    var c = <App><Dash /></App>;
+    print("c:", c);
+    var d = <Button name="test" />;
+    print("d:", d);
+    var e = <Button click={print("hi")} />; # uso incorrecto (print suelta un void y se ejecuta en la declaracion en este caso)
+    print("e:", e);
+    var e2 = <Button click={() -> { print("hi") }} />; # uso correcto: se guarda en click una funcion flecha que almacena el codigo que se ejecutara si el boton es clickeado
+    print("e2:", e2);
+    var f = ( <App><Dash /><Button name="ok" /></App> );
+    print("f:", f);
+    return 0;
+}

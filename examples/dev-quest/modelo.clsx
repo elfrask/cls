@@ -1,0 +1,114 @@
+# modelo.clsx - El dominio de dev-quest, aislado en su propio módulo.
+#
+# DECISIÓN DE ARQUITECTURA (semi-senior, ADR):
+# - El modelo vive en su propio módulo para que main.clsx solo orqueste.
+# - CLASES PLANAS (sin herencia): el runtime aún no resuelve `super`/herencia
+#   entre módulos ("La clase X no tiene clase padre"), así que en vez de una
+#   base `Entidad`, cada clase declara su `id` directamente. Duplicar tres
+#   campos es mejor que romper el diseño. Cuando el runtime lo soporte, se
+#   puede reintroducir la herencia sin tocar a los llamadores.
+# - Sin intrinsics: los módulos no ven `now`, `len`, `float`... por eso aquí
+#   solo hay datos puros y lógica que no depende del entorno.
+# - Todo se exporta con `export` (clases y enums) para que main lo construya
+#   con `modelo.Tarea(...)` / `modelo.EstadoTarea.Pendiente`.
+
+# El estado en el que vive una misión.
+export enum EstadoTarea {
+    Pendiente,
+    EnProgreso,
+    Completada,
+};
+
+# ¿De qué mundo viene cada misión? Aprender, practicar o construir.
+export enum Categoria {
+    Aprendizaje,
+    Practica,
+    Proyecto,
+    Otro,
+};
+
+# Una misión: aprender, practicar o construir algo concreto.
+export class Tarea {
+    var id: int = 0;
+    var titulo: String = "";
+    var estado: EstadoTarea = EstadoTarea.Pendiente;
+    var categoria: Categoria = Categoria.Aprendizaje;
+    var xp: int = 0;
+
+    function main(id: int, titulo: String, categoria: Categoria) {
+        me.id = id;
+        me.titulo = titulo;
+        me.categoria = categoria;
+    }
+
+    function __toString() -> String {
+        return "#${me.id} ${me.titulo} [${me.estado}]";
+    }
+};
+
+# Una habilidad que quiero dominar: tiene nivel 1..10 y cuenta mis prácticas.
+export class Habilidad {
+    var id: int = 0;
+    var nombre: String = "";
+    var nivel: int = 1;
+    var practicas: int = 0;
+
+    function main(id: int, nombre: String) {
+        me.id = id;
+        me.nombre = nombre;
+    }
+
+    # Cada 3 prácticas subo de nivel (máximo 10). ¡Así se crece!
+    function practicar() {
+        var practicasActuales: int = me.practicas;
+        var nivelActual: int = me.nivel;
+        me.practicas = practicasActuales + 1;
+        if (practicasActuales % 3 == 0 && nivelActual < 10) {
+            me.nivel = nivelActual + 1;
+        }
+    }
+
+    function __toString() -> String {
+        return "#${me.id} ${me.nombre} (nivel ${me.nivel}, ${me.practicas} prácticas)";
+    }
+};
+
+# Una entrada de mi diario: qué aprendí hoy.
+export class LogDia {
+    var fecha: String = "";
+    var mensaje: String = "";
+
+    function main(fecha: String, mensaje: String) {
+        me.fecha = fecha;
+        me.mensaje = mensaje;
+    }
+
+    function __toString() -> String {
+        return "${me.fecha}: ${me.mensaje}";
+    }
+};
+
+# Todo el estado del juego: mi progreso completo.
+export class EstadoJuego {
+    var siguienteId: int = 1;
+    var tareas: Tarea[] = [];
+    var habilidades: Habilidad[] = [];
+    var logs: LogDia[] = [];
+    var xpTotal: int = 0;
+    var racha: int = 0;
+    var ultimoDia: int = 0;
+
+    function main() {
+    }
+
+    # Empiezo de cero, vaciando mis colecciones una por una.
+    function limpiar() {
+        me.siguienteId = 1;
+        me.xpTotal = 0;
+        me.racha = 0;
+        me.ultimoDia = 0;
+        me.tareas = [];
+        me.habilidades = [];
+        me.logs = [];
+    }
+};

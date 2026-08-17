@@ -1,0 +1,5 @@
+import "random" as r;
+function main(args: String[]) -> int {
+    print("r.float:", r::float(0.0, 1.0));
+    return 0;
+}

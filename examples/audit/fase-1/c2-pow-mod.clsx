@@ -1,0 +1,9 @@
+# C-2 isolate: pow mixto + mod mixto (solo constructos sospechosos buenos)
+function main(args: String[]) -> int {
+    print("2 ** 3.0 =", 2 ** 3.0);
+    print("2.0 ** 3 =", 2.0 ** 3);
+    print("2.0 ** 0.5 =", 2.0 ** 0.5);
+    print("5.5 % 2 =", 5.5 % 2);
+    print("5 % 2.5 =", 5 % 2.5);
+    return 0;
+};

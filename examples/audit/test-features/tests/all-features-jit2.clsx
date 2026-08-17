@@ -1,0 +1,101 @@
+import "math" as math;
+
+alias Color = "red" | "green" | "blue";
+
+enum Nivel {
+    Bajo,
+    Medio,
+    Alto,
+};
+
+structure Punto {
+    x: int,
+    y: int,
+};
+
+function suma(a: int, b: int = 5) -> int {
+    return a + b;
+};
+
+function fib(n: int) -> int {
+    if (n <= 1) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+};
+
+function main(args: String[]) -> int {
+    print("--- operadores ---");
+    print("pow:", 2 ** 10, "fmod:", 7.5 % 2.0);
+    var arr = [1, 2, 3];
+    arr[0] += 10;
+    print("compound:", arr[0]);
+    print("def param:", suma(2));
+
+    print("--- tuplas ---");
+    var t = (10, 20, 30);
+    print("tuple len:", t.length, "idx:", t[1], "join:", t.join("-"));
+
+    print("--- strings ---");
+    var s = "hola";
+    print("upper:", s.upper(), "len:", s.length, "contains:", s.contains("ol"));
+    var nombre = "CLS";
+    print("interp: $nombre y ${1 + 2}");
+
+    print("--- arrays ---");
+    var lista = [3, 1, 2];
+    lista.push(4);
+    print("push len:", lista.length, "indexOf:", lista.indexOf(2), "join:", lista.join("-"));
+    lista.pop();
+    print("pop len:", lista.length);
+    lista.shift();
+    print("shift len:", lista.length);
+    var l2 = [1, 2, 3];
+    l2.unshift(0);
+    l2.reverse();
+    print("unshift+reverse:", l2[0]);
+
+    print("--- for each / switch / with ---");
+    for each item and idx in ([1, 2, 3]) {
+        print("fe:", idx, item);
+    }
+    switch (2) {
+        case (1) { print("switch: uno"); }
+        case (2) { print("switch: dos"); }
+        case default { print("switch: default"); }
+    }
+    with tmp in (40 + 2) {
+        print("with:", tmp);
+    }
+
+    print("--- enums ---");
+    var nivel = Nivel.Alto;
+    print("enum:", nivel, "==:", nivel == Nivel.Alto, "is:", nivel is Nivel);
+    for each v in (Nivel) {
+        print("iter:", v);
+    }
+
+    print("--- structs ---");
+    var p = Punto(3, 4);
+    print("struct:", p, "x:", p.x, "y:", p.y, "is:", p is Punto);
+
+    print("--- stdlib ---");
+    print("abs:", math.abs(-7), "sqrt:", math.sqrt(16), "pow:", math.pow(2, 3));
+    print("PI:", math.PI, "range:", len(math.range(0, 3)));
+
+    print("--- tipos ---");
+    var c: Color = "red";
+    print("union:", c);
+    const k = "constante";
+    print("literal:", k);
+
+    print("--- when ---");
+    var saludo = "generic";
+    when (arch: cls-arch) {
+        saludo = "native";
+    }
+    print("saludo:", saludo);
+    print("--- fib ---");
+    print("fib(26):", fib(26));
+    return 0;
+};

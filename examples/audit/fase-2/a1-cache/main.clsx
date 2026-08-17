@@ -1,0 +1,5 @@
+import "mimod" as lib;
+function main(args: String[]) -> int {
+    print('VALOR:', lib::getValor());
+    return 0;
+};

@@ -1,0 +1,18 @@
+[package]
+name = "clxb"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[lib]
+name = "clsb"
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+cls-core = { workspace = true, features = ["wasm-backend"] }
+cls-runtime = { workspace = true }
+cls-jit = { workspace = true }
+wasmtime = { version = "44", features = ["cache", "gc"] }

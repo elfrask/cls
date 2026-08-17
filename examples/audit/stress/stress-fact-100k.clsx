@@ -1,0 +1,10 @@
+# STRESS: recursion factorial con stack normal (profundidad 100k)
+function fact(n: int) -> int {
+    if (n <= 1) { return 1; }
+    return n * fact(n - 1);
+};
+function main(args: String[]) -> int {
+    var r = fact(100000);
+    print("fact(100000):", r);
+    return 0;
+};

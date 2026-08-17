@@ -1,0 +1,44 @@
+{
+    "name": "test-config",
+    "version": "0.1.0",
+    "entry": "examples/test-config.clsx",
+    "description": "Test de configuracion",
+    "authors": ["test"],
+    "license": "MIT",
+    "registry": "https://registry.cls-lang.org",
+    "project": {
+        "sourceDir": "src",
+        "outDir": "dist",
+        "target": "executable"
+    },
+    "compiler": {
+        "targetArchitecture": "wasm",
+        "optimizationLevel": "O2",
+        "sourceMaps": true,
+        "types": {
+            "check": true,
+            "strict": false,
+            "nullSafety": true
+        }
+    },
+    "interpreter": {
+        "optimization": false,
+        "mode": "pure-ast",
+        "runtime": {
+            "memoryLimit": "512MB",
+            "stackSize": "8MB",
+            "gc": {
+                "enabled": false,
+                "strategy": "compiled",
+                "threshold": "64MB"
+            }
+        },
+        "sandbox": {
+            "allowFs": true,
+            "allowNet": false,
+            "maxExecutionTime": 5000
+        }
+    },
+    "dependencies": {},
+    "devDependencies": {}
+}

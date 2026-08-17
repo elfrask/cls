@@ -1,0 +1,11 @@
+function main(args: String[]) -> int {
+    print("join:", path.join("a", "b"));
+    print("basename:", path.basename("/x/y/file.txt"));
+    print("dirname:", path.dirname("/x/y/file.txt"));
+    print("extname:", path.extname("/x/y/file.txt"));
+    print("isAbsolute:", path.isAbsolute("/x/y"));
+    print("isAbsolute rel:", path.isAbsolute("rel/path"));
+    print("normalize:", path.normalize("/a/./b/../c"));
+    print("sep:", path.sep());
+    return 0;
+}

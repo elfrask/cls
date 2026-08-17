@@ -1,0 +1,24 @@
+function main(args: String[]) -> int {
+    print("=== try/catch div por cero ===");
+    try {
+        var x = 10 / 0;
+        print("no llega");
+    } catch (e) {
+        print("catch div:", e);
+    }
+    print("=== try sin excepcion ===");
+    try { 
+        print("try normal");
+    } catch (e) {
+        print("no deberia:", e);
+    }
+    print("=== try normal con catch que no se dispara ===");
+    var y = 5;
+    try {
+        y = y + 1;
+    } catch (e) {
+        print("no deberia", e);
+    }
+    print("y:", y);
+    return 0;
+};

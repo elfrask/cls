@@ -1,0 +1,13 @@
+export function saludar(nombre: String) -> String {
+    return "Hola " + nombre;
+};
+
+export function suma(a: int, b: int) -> int {
+    return a + (b);
+};
+
+export var VERSION = "2.0";
+
+function interna() -> int {
+    return 99;
+};

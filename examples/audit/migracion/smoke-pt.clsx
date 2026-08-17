@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    print("process.pid:", process.pid());
+    print("time.year:", time.year());
+    return 0;
+}

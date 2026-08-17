@@ -1,0 +1,6 @@
+# ERROR: acceso namespaced a simbolo no exportado
+import "privados" as priv;
+function main(args: String[]) -> int {
+    print(priv::interna());
+    return 0;
+};

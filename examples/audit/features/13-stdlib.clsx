@@ -1,0 +1,27 @@
+# QA: stdlib math, json, fs, http (sin los casos con bugs conocidos del JIT)
+import "math" as math;
+import "json" as json;
+import "fs" as fs;
+
+function main(args: String[]) -> int {
+    print("sqrt:", math.sqrt(16));
+    print("pow:", math.pow(2.0, 8.0));
+    print("min:", math.min(3, 7), "max:", math.max(3, 7));
+    print("floor:", math.floor(3.7), "ceil:", math.ceil(3.2), "round:", math.round(3.5));
+    print("sin:", math.sin(0.0), "cos:", math.cos(0.0));
+    print("tan:", math.tan(0.0));
+    print("log:", math.log(1.0));
+    print("PI:", math.PI, "E:", math.E);
+    var obj = json.parse('{"nombre": "CLS", "version": 2.0}');
+    print("json parse nombre:", obj.nombre);
+    print("json parse version:", obj.version);
+    print("json stringify:", json.stringify({a: 1, b: "dos"}));
+    print("fs existe:", fs.exists("no-existe-este-archivo-xyz.clsx"));
+    var tmp = "qa_stdlib_temp.txt";
+    fs.writeFile(tmp, "contenido de prueba");
+    print("fs existe tras write:", fs.exists(tmp));
+    print("fs read:", fs.readFile(tmp));
+    fs.rm(tmp);
+    print("fs existe tras rm:", fs.exists(tmp));
+    return 0;
+};

@@ -1,0 +1,7 @@
+# X3: import "math" con un archivo local math.clsx presente (suplantación)
+# Esperado: gana el interno -> 8; si imprime FAKE es REGRESIÓN de X3
+import "math" as m;
+function main(args: String[]) -> int {
+    print("pow:", m::pow(2, 3));
+    return 0;
+};

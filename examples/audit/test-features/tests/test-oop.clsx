@@ -1,0 +1,49 @@
+module Utils {
+    function double(x: int) -> int { return x * 2; }
+    var version = "1.0";
+};
+
+namespace Config {
+    var appName = "CLS";
+    function build() -> String { return appName; }
+};
+
+class Person {
+    var name: String;
+    var age: int;
+
+    function main(name: String, age: int) {
+        me.name = name;
+        me.age = age;
+    }
+
+    function greet() -> String {
+        return "Hola, soy " + me.name + " de " + toString(me.age);
+    }
+
+    function birthday() {
+        me.age = me.age + 1;
+    }
+};
+
+function main(args: String[]) -> int {
+    print("=== Modules ===");
+    print("Utils::double(21):", Utils::double(21));
+    print("Utils::version:", Utils::version);
+
+    print("=== Namespaces ===");
+    print("Config::appName:", Config::appName);
+    print("Config::build():", Config::build());
+
+    print("=== Classes ===");
+    var p = Person("Alice", 30);
+    print("p.name:", p.name);
+    print("p.age:", p.age);
+    print("p.greet():", p.greet());
+
+    p.birthday();
+    print("Despues de cumple:", p.age);
+    print("p:", toString(p));
+
+    return 0;
+};

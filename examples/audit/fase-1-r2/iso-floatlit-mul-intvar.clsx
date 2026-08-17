@@ -1,0 +1,6 @@
+function main(args: String[]) -> int {
+    var k: int = 3;
+    var m: float = 0.5 * k;
+    print(m);
+    return 0;
+};

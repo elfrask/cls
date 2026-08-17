@@ -1,0 +1,8 @@
+# Malformado: 1e300 literal grande
+function main(args: String[]) -> int {
+    var x = 1e300;
+    var y = 1e-300;
+    print("1e300:", x);
+    print("1e-300:", y);
+    return 0;
+};

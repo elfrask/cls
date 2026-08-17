@@ -1,0 +1,54 @@
+# jit-subset.clsx - Micro-benchmark SOLO con features del subconjunto JIT.
+# Mismo trabajo que benchmark.clsx (fib/primos/collatz) sin arrays/strings/methods.
+
+function fib(n: int) -> int {
+    if (n < 2) { return n; }
+    return fib(n - 1) + fib(n - 2);
+}
+
+function esPrimo(n: int) -> bool {
+    if (n < 2) { return false; }
+    var d: int = 2;
+    while (d * d <= n) {
+        if (n % d == 0) { return false; }
+        d = d + 1;
+    }
+    return true;
+}
+
+function collatzPasos(n: int) -> int {
+    var pasos: int = 0;
+    while (n > 1) {
+        if (n % 2 == 0) {
+            n = n / 2;
+        } else {
+            n = 3 * n + 1;
+        }
+        pasos = pasos + 1;
+    }
+    return pasos;
+}
+
+function main(args: String[]) -> int {
+    var inicio: int = now();
+    var r: int = fib(26);
+    print("fib(26) =", r, " ms:", now() - inicio);
+
+    inicio = now();
+    var primos: int = 0;
+    for (var i: int = 2; i <= 10000; i = i + 1) {
+        if (esPrimo(i)) { primos = primos + 1; }
+    }
+    print("primos(10000) =", primos, " ms:", now() - inicio);
+
+    inicio = now();
+    var mejor: int = 0;
+    var mejorN: int = 0;
+    for (var j: int = 1; j <= 5000; j = j + 1) {
+        var p: int = collatzPasos(j);
+        if (p > mejor) { mejor = p; mejorN = j; }
+    }
+    print("collatz(5000) mejor=", mejorN, " pasos=", mejor, " ms:", now() - inicio);
+
+    return 0;
+}

@@ -1,0 +1,19 @@
+# R5-iso: clase con campo float - lectura y escritura (control de tipos)
+class Punto {
+    var x: int;
+    var y: float;
+    function main(a: int, b: float) {
+        me.x = a;
+        me.y = b;
+    };
+    function leerY() -> float {
+        return me.y;
+    };
+};
+function main(args: String[]) -> int {
+    var p = Punto(1, 2.5);
+    print("x:", p.x, "y:", p.y);
+    p.y = 3.14;
+    print("y2:", p.y, "leerY:", p.leerY());
+    return 0;
+};

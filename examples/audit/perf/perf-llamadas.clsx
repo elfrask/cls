@@ -1,0 +1,15 @@
+# PERF: llamadas a funcion simple
+function add(a: int, b: int) -> int {
+    return a + b;
+};
+function main(args: String[]) -> int {
+    var t0 = now();
+    var x: int = 0;
+    for (var i = 0; i < 1000000; i++) {
+        x = add(x, i);
+    }
+    var t1 = now();
+    print("x:", x);
+    print("tiempo_ms:", t1 - t0);
+    return 0;
+};

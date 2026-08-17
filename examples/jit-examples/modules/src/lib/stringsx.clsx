@@ -1,0 +1,11 @@
+export function gritar(s: String) -> String {
+    return s.upper() + "!!!";
+};
+
+export function repetir(s: String, n: int) -> String {
+    var out = "";
+    for (var i = 0; i < n; i++) {
+        out = out + s;
+    }
+    return out;
+};

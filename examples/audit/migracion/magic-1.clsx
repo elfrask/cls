@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    class N { function __toString() -> String { return "hola"; } }
+    print("toString:", toString(N()));
+    return 0;
+}

@@ -1,0 +1,21 @@
+function main(args: String[]) -> int {
+    print("suma:", 2 + 3, "resta:", 5 - 1, "mult:", 4 * 2, "div:", 10 / 4);
+    print("mod:", 10 % 3, "potencia:", 2 ** 8);
+    print("mod float:", 5.5 % 2.0);
+    var x = 1;
+    x++;
+    print("postfix ++:", x);
+    x--;
+    print("postfix --:", x);
+    var y = 10;
+    y += 5;
+    y *= 2;
+    y -= 3;
+    y /= 3;
+    print("compuestos:", y);
+    print("cmp:", 3 > 2, 3 == 3, 3 <= 2);
+    print("logicos:", true && false, true || false, !true);
+    print("type int:", type(42), "type str:", type("x"), "type arr:", type([1, 2]));
+    print("str(42):", str(42));
+    return 0;
+};

@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    var k: int = 3;
+    print(0.5 + k);
+    return 0;
+};

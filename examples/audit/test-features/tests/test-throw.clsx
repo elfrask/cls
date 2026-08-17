@@ -1,0 +1,10 @@
+function main(args: String[]) -> int {
+    print("Antes...");
+
+    if (len(args) == 0) {
+        throw("Se necesitan argumentos!");
+    };
+
+    print("Args:", args);
+    return 0;
+};

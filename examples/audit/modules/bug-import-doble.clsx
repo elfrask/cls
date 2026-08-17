@@ -1,0 +1,8 @@
+# BUG: importar el mismo modulo 2 veces con sintaxis distinta falla en JIT
+import "libmod" as lib;
+include "libmod";
+function main(args: String[]) -> int {
+    print("saludar:", lib::saludar("QA"));
+    print("saludar directo:", saludar("X"));
+    return 0;
+};

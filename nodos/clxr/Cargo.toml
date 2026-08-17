@@ -1,0 +1,15 @@
+[package]
+name = "clxr"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "clxr"
+path = "src/main.rs"
+
+[dependencies]
+cls-core = { workspace = true }
+cls-runtime = { workspace = true }
+zip = "2"
+serde_json = "1"

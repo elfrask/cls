@@ -1,0 +1,114 @@
+class Number: Value {
+    var value: int;
+    
+    function main(value: int) {
+        me.value = value;
+    }
+
+    function __toString() -> String {
+        return "Num(" + toString(me.value) + ")";
+    }
+
+    function __equals(other) -> bool {
+        return me.value == other.value;
+    }
+
+    function __compare(other) -> int {
+        if (me.value < other.value) { return -1; }
+        if (me.value > other.value) { return 1; }
+        return 0;
+    }
+
+    function __add(other) -> Number {
+        return Number(me.value + other.value);
+    }
+
+    function __mod(other) -> Number {
+        return Number(me.value % other.value);
+    }
+
+    function __len() -> int {
+        return len(toString(me.value));
+    }
+
+    function __neg() -> Number {
+        return Number(-me.value);
+    }
+
+    function __not() -> bool {
+        return me.value == 0;
+    }
+
+    function __get(index: int) -> int {
+        return [me.value, me.value * 2, me.value * 3][index];
+    }
+
+    function __iter() -> Array {
+        return [me.value, me.value + 1, me.value + 2];
+    }
+
+    function __call(x: int) -> int {
+        return me.value + x;
+    }
+};
+
+class Accum {
+    var items: Array;
+
+    function main() {
+        me.items = [1, 2, 3, 4];
+    }
+
+    function __iter() -> Number {
+        return Number(0);
+    }
+};
+
+function main(args: String[]) -> int {
+    var a = Number(5);
+    var b = Number(7);
+
+    print("=== __toString ===");
+    print("a:", a);
+    print("toString(a):", toString(a));
+    var interp = "valor ${a}";
+    print("interpolacion:", interp);
+
+    print("=== __equals / __compare ===");
+    print("a == Number(5):", a == Number(5));
+    print("a == b:", a == b);
+    print("a < b:", a < b);
+    print("b > a:", b > a);
+
+    print("=== operadores ===");
+    var c = a + b;
+    print("a + b:", c);
+    var m = a % b;
+    print("a % b:", m);
+
+    print("=== __len ===");
+    print("len(a):", len(a));
+
+    print("=== __neg / __not ===");
+    print("-a:", -a);
+    print("!a:", !a);
+    var zero = Number(0);
+    print("!zero:", !zero);
+
+    print("=== __get ===");
+    print("a[0]:", a[0]);
+    print("a[2]:", a[2]);
+
+    print("=== __iter (for each) ===");
+    for each item in (a) {
+        print("  item:", item);
+    }
+
+    print("=== __call ===");
+    print("a(10):", a(10));
+
+    print("=== modulo float ===");
+    print("7.5 % 2.0:", 7.5 % 2.0);
+
+    return 0;
+};

@@ -1,0 +1,7 @@
+import 'ord' as o1;
+import 'ord2' as o2;
+function main(args: String[]) -> int {
+    print("orden1 (calcular despues):", o1::procesar(5));
+    print("orden2 (calcular antes):", o2::procesar(5));
+    return 0;
+}

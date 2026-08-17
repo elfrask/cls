@@ -1,0 +1,17 @@
+class Base {
+    var x: int;
+    function main(x: int) { me.x = x; }
+    function __add(o: Base) -> Base { return Base(me.x + o.x); }
+    function __repr() -> String { return "B(" + toString(me.x) + ")"; }
+};
+class Hijo: Base {
+    function main(x: int) { me.x = x * 10; }
+    function __repr() -> String { return "H(" + toString(me.x) + ")"; }
+};
+function main(args: String[]) -> int {
+    var h1 = Hijo(1);
+    var h2 = Hijo(2);
+    print("heredado add:", h1 + h2);   # __add heredado de Base
+    print("repr hijo:", h1);           # H(10)
+    return 0;
+}

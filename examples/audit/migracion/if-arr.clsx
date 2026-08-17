@@ -1,0 +1,7 @@
+function main(args: String[]) -> int {
+    var arr = [1, 2];
+    if (arr) { print("array truthy"); }
+    var vacio: int[] = [];
+    if (vacio) { print("array falsy (no)"); }
+    return 0;
+}

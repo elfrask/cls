@@ -1,0 +1,18 @@
+function main(args: String[]) -> int {
+    print("os.env:", os.env("PATH"));
+    print("os.cpus:", os.cpus());
+    print("os.hostname:", os.hostname());
+    print("os.home:", os.home());
+    print("os.tempdir:", os.tempdir());
+    print("path.resolve:", path.resolve("C:/x", "y"));
+    print("path.normalize:", path.normalize("C:/x/../y"));
+    print("process.cwd:", process.cwd());
+    print("process.env:", process.env("USERNAME"));
+    print("time.iso:", time.iso());
+    print("time.date:", time.date());
+    print("time.clock:", time.clock());
+    print("time.hour:", time.hour());
+    print("random.uuid:", random.uuid());
+    print("random.random:", random.random());
+    return 0;
+}

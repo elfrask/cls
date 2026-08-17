@@ -1,0 +1,38 @@
+import "modules/lib" as lib;
+import "modules/colores" as colores;
+
+function main(args: String[]) -> int {
+    print("=== enum importado ===");
+    print("lib.Nivel.Alto:", lib.Nivel.Alto);
+    print("Medio == Medio:", lib.Nivel.Medio == lib.Nivel.Medio);
+    print("Bajo == Alto:", lib.Nivel.Bajo == lib.Nivel.Alto);
+    print("Bajo is lib.Nivel:", lib.Nivel.Bajo is lib.Nivel);
+
+    print("=== iterar enum importado ===");
+    for each n in (lib.Nivel) {
+        print("nivel:", n);
+    }
+
+    print("=== clase importada ===");
+    var c = lib.Contador(5);
+    print("obtener:", c.obtener());
+
+    print("=== structure importada ===");
+    var p = lib.Par(1, 2);
+    print("par:", p);
+
+    print("=== funcion importada ===");
+    print("suma(3, 4):", lib.suma(3, 4));
+
+    print("=== var exportada ===");
+    print("VERSION:", lib.VERSION);
+
+    print("=== otro modulo (colores) ===");
+    print("complementario(Rojo):", colores.complementario(colores.Color.Rojo));
+    print("Rojo is Color:", colores.Color.Rojo is colores.Color);
+    for each c2 in (colores.Color) {
+        print("color:", c2);
+    }
+
+    return 0;
+};

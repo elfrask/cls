@@ -1,0 +1,80 @@
+{
+  "source": "cls-runtime\\clsi\\async.clsi",
+  "entries": [
+    {
+      "name": "delay",
+      "kind": "function",
+      "line": 12,
+      "col": 1,
+      "end_line": 12,
+      "end_col": 1,
+      "doc": "Crea una promesa que resuelve despues de X milisegundos",
+      "version": null,
+      "deprecated": null,
+      "signature": "delay(ms: int) -> Promise",
+      "params": [
+        {
+          "name": "ms",
+          "type_": "int",
+          "doc": "Milisegundos de espera"
+        }
+      ],
+      "return_type": "Promise",
+      "return_doc": "Promesa que resuelve a void",
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "all",
+      "kind": "function",
+      "line": 17,
+      "col": 1,
+      "end_line": 17,
+      "end_col": 1,
+      "doc": "Resuelve cuando TODAS las promesas del array resuelven",
+      "version": null,
+      "deprecated": null,
+      "signature": "all(promises: Array) -> Promise",
+      "params": [
+        {
+          "name": "promises",
+          "type_": "Array",
+          "doc": "Array de promesas"
+        }
+      ],
+      "return_type": "Promise",
+      "return_doc": "Promesa que resuelve a Array con todos los resultados",
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "race",
+      "kind": "function",
+      "line": 18,
+      "col": 1,
+      "end_line": 18,
+      "end_col": 1,
+      "doc": "Resuelve con la PRIMERA promesa que resuelva",
+      "version": null,
+      "deprecated": null,
+      "signature": "race(promises: Array) -> Promise",
+      "params": [
+        {
+          "name": "promises",
+          "type_": "Array",
+          "doc": "Array de promesas"
+        }
+      ],
+      "return_type": "Promise",
+      "return_doc": "Promesa que resuelve con el primer resultado",
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+function main(args: String[]) -> int {
+    print("time.year:", time.year());
+    return 0;
+}

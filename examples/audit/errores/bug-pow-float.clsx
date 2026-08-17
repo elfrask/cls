@@ -1,0 +1,5 @@
+# BUG: '**' con base float genera WASM invalido (compilador bug)
+function main(args: String[]) -> int {
+    print("pow float:", 2.0 ** 0.5);
+    return 0;
+};

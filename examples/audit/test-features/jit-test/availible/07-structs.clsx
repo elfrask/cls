@@ -1,0 +1,13 @@
+structure Punto {
+    x: int,
+    y: int,
+};
+
+function main(args: String[]) -> int {
+    var p = Punto(3, 4);
+    print("struct:", p);
+    print("p.x:", p.x, " p.y:", p.y);
+    print("is:", p is Punto);
+    print("Punto:", Punto);
+    return 0;
+};

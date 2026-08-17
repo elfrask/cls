@@ -1,0 +1,8 @@
+# @title json
+# @description Modulo JSON
+
+# @description Parsea un string JSON
+function parse(text: String) -> Any {};
+
+# @description Convierte un valor a JSON string
+function stringify(value: Any) -> String {};

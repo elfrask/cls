@@ -1,0 +1,17 @@
+function main(args: String[]) -> int {
+    var saludo = "generic";
+    when (arch: cls-arch) {
+        saludo = "native";
+    }
+    when (os: win) {
+        print("when os: windows");
+    }
+    when (os: linux) {
+        print("when os: linux");
+    }
+    when (arch: x86_64) {
+        print("sim: x86_64");
+    }
+    print("saludo:", saludo);
+    return 0;
+};

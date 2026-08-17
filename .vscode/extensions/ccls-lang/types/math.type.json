@@ -1,0 +1,407 @@
+{
+  "source": "cls-runtime/clsi\\math.clsi",
+  "entries": [
+    {
+      "name": "PI",
+      "kind": "variable",
+      "line": 8,
+      "col": 1,
+      "end_line": 8,
+      "end_col": 1,
+      "doc": "Valor de PI",
+      "version": null,
+      "deprecated": null,
+      "signature": null,
+      "params": [],
+      "return_type": null,
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": "float",
+      "value": null
+    },
+    {
+      "name": "E",
+      "kind": "variable",
+      "line": 11,
+      "col": 1,
+      "end_line": 11,
+      "end_col": 1,
+      "doc": "Constante de Euler",
+      "version": null,
+      "deprecated": null,
+      "signature": null,
+      "params": [],
+      "return_type": null,
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": "float",
+      "value": null
+    },
+    {
+      "name": "abs",
+      "kind": "function",
+      "line": 14,
+      "col": 1,
+      "end_line": 14,
+      "end_col": 1,
+      "doc": "Valor absoluto",
+      "version": null,
+      "deprecated": null,
+      "signature": "abs(x: float) -> float",
+      "params": [
+        {
+          "name": "x",
+          "type_": "float",
+          "doc": null
+        }
+      ],
+      "return_type": "float",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "sqrt",
+      "kind": "function",
+      "line": 17,
+      "col": 1,
+      "end_line": 17,
+      "end_col": 1,
+      "doc": "Raiz cuadrada",
+      "version": null,
+      "deprecated": null,
+      "signature": "sqrt(x: float) -> float",
+      "params": [
+        {
+          "name": "x",
+          "type_": "float",
+          "doc": null
+        }
+      ],
+      "return_type": "float",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "pow",
+      "kind": "function",
+      "line": 20,
+      "col": 1,
+      "end_line": 20,
+      "end_col": 1,
+      "doc": "Potencia",
+      "version": null,
+      "deprecated": null,
+      "signature": "pow(base: float, exp: float) -> float",
+      "params": [
+        {
+          "name": "base",
+          "type_": "float",
+          "doc": null
+        },
+        {
+          "name": "exp",
+          "type_": "float",
+          "doc": null
+        }
+      ],
+      "return_type": "float",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "min",
+      "kind": "function",
+      "line": 23,
+      "col": 1,
+      "end_line": 23,
+      "end_col": 1,
+      "doc": "Minimo entre dos numeros",
+      "version": null,
+      "deprecated": null,
+      "signature": "min(a: float, b: float) -> float",
+      "params": [
+        {
+          "name": "a",
+          "type_": "float",
+          "doc": null
+        },
+        {
+          "name": "b",
+          "type_": "float",
+          "doc": null
+        }
+      ],
+      "return_type": "float",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "max",
+      "kind": "function",
+      "line": 26,
+      "col": 1,
+      "end_line": 26,
+      "end_col": 1,
+      "doc": "Maximo entre dos numeros",
+      "version": null,
+      "deprecated": null,
+      "signature": "max(a: float, b: float) -> float",
+      "params": [
+        {
+          "name": "a",
+          "type_": "float",
+          "doc": null
+        },
+        {
+          "name": "b",
+          "type_": "float",
+          "doc": null
+        }
+      ],
+      "return_type": "float",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "floor",
+      "kind": "function",
+      "line": 29,
+      "col": 1,
+      "end_line": 29,
+      "end_col": 1,
+      "doc": "Redondeo hacia abajo",
+      "version": null,
+      "deprecated": null,
+      "signature": "floor(x: float) -> int",
+      "params": [
+        {
+          "name": "x",
+          "type_": "float",
+          "doc": null
+        }
+      ],
+      "return_type": "int",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "ceil",
+      "kind": "function",
+      "line": 32,
+      "col": 1,
+      "end_line": 32,
+      "end_col": 1,
+      "doc": "Redondeo hacia arriba",
+      "version": null,
+      "deprecated": null,
+      "signature": "ceil(x: float) -> int",
+      "params": [
+        {
+          "name": "x",
+          "type_": "float",
+          "doc": null
+        }
+      ],
+      "return_type": "int",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "round",
+      "kind": "function",
+      "line": 35,
+      "col": 1,
+      "end_line": 35,
+      "end_col": 1,
+      "doc": "Redondeo al entero mas cercano",
+      "version": null,
+      "deprecated": null,
+      "signature": "round(x: float) -> int",
+      "params": [
+        {
+          "name": "x",
+          "type_": "float",
+          "doc": null
+        }
+      ],
+      "return_type": "int",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "random",
+      "kind": "function",
+      "line": 38,
+      "col": 1,
+      "end_line": 38,
+      "end_col": 1,
+      "doc": "Numero aleatorio [0, 1)",
+      "version": null,
+      "deprecated": null,
+      "signature": "random() -> float",
+      "params": [],
+      "return_type": "float",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "sin",
+      "kind": "function",
+      "line": 41,
+      "col": 1,
+      "end_line": 41,
+      "end_col": 1,
+      "doc": "Seno",
+      "version": null,
+      "deprecated": null,
+      "signature": "sin(x: float) -> float",
+      "params": [
+        {
+          "name": "x",
+          "type_": "float",
+          "doc": null
+        }
+      ],
+      "return_type": "float",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "cos",
+      "kind": "function",
+      "line": 44,
+      "col": 1,
+      "end_line": 44,
+      "end_col": 1,
+      "doc": "Coseno",
+      "version": null,
+      "deprecated": null,
+      "signature": "cos(x: float) -> float",
+      "params": [
+        {
+          "name": "x",
+          "type_": "float",
+          "doc": null
+        }
+      ],
+      "return_type": "float",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "tan",
+      "kind": "function",
+      "line": 47,
+      "col": 1,
+      "end_line": 47,
+      "end_col": 1,
+      "doc": "Tangente",
+      "version": null,
+      "deprecated": null,
+      "signature": "tan(x: float) -> float",
+      "params": [
+        {
+          "name": "x",
+          "type_": "float",
+          "doc": null
+        }
+      ],
+      "return_type": "float",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "log",
+      "kind": "function",
+      "line": 50,
+      "col": 1,
+      "end_line": 50,
+      "end_col": 1,
+      "doc": "Logaritmo natural",
+      "version": null,
+      "deprecated": null,
+      "signature": "log(x: float) -> float",
+      "params": [
+        {
+          "name": "x",
+          "type_": "float",
+          "doc": null
+        }
+      ],
+      "return_type": "float",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "range",
+      "kind": "function",
+      "line": 51,
+      "col": 1,
+      "end_line": 51,
+      "end_col": 1,
+      "doc": "Genera un rango de enteros",
+      "version": null,
+      "deprecated": null,
+      "signature": "range(start: int, end: int) -> Array",
+      "params": [
+        {
+          "name": "start",
+          "type_": "int",
+          "doc": null
+        },
+        {
+          "name": "end",
+          "type_": "int",
+          "doc": null
+        }
+      ],
+      "return_type": "Array",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    }
+  ]
+}

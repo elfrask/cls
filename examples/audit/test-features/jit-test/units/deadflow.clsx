@@ -1,0 +1,49 @@
+function fib(v: int) -> int { if (v < 1) { return 0 } else { return fib(v-1) + v } }
+
+function switchAll(x: int) -> int {
+    switch (x) {
+        case (1) { return 10 }
+        case (2) { return 20 }
+        case default { return 30 }
+    }
+}
+
+function whileRet() -> int {
+    while (true) {
+        return 5
+    }
+}
+
+function ifElseRet(x: int) -> int {
+    if (x < 0) {
+        return 0
+    } else {
+        return 1
+    }
+}
+
+function elifChain(x: int) -> int {
+    if (x == 1) { return 1 }
+    elif (x == 2) { return 2 }
+    elif (x == 3) { return 3 }
+    else { return 4 }
+}
+
+function deadAfterRet(x: int) -> int {
+    return 7
+    var y = x + 1
+    print(y)
+}
+
+function main(args: String[]) -> int {
+    print("fib(5) =", fib(5));
+    print("switchAll(2) =", switchAll(2));
+    print("switchAll(9) =", switchAll(9));
+    print("whileRet() =", whileRet());
+    print("ifElseRet(5) =", ifElseRet(5));
+    print("ifElseRet(-1) =", ifElseRet(-1));
+    print("elifChain(3) =", elifChain(3));
+    print("elifChain(9) =", elifChain(9));
+    print("deadAfterRet(0) =", deadAfterRet(0));
+    return 0;
+}

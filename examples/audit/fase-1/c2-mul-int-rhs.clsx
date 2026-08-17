@@ -1,0 +1,7 @@
+# C-2 isolate: compound assignment con RHS int literal sobre variable float
+function main(args: String[]) -> int {
+    var f: float = 10.0;
+    f *= 2;
+    print("f *= 2 ->", f);
+    return 0;
+};

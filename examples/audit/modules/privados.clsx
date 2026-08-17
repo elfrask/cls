@@ -1,0 +1,9 @@
+export function privada() -> int {
+    return 1;
+};
+function interna() -> int {
+    return 2;
+};
+export function publica() -> int {
+    return 3;
+};

@@ -1,0 +1,30 @@
+function main(args: String[]) -> int {
+    var fi = [2.5, 2.0, 3.0];
+    fi[0] += 2;
+    print("fi+=", fi[0]);
+    var fs = [2.5, 2.0, 3.0];
+    fs[0] -= 1;
+    print("fs-=", fs[0]);
+    var fm = [2.5, 2.0, 3.0];
+    fm[0] *= 2;
+    print("fm*=", fm[0]);
+    var fd = [2.5, 2.0, 3.0];
+    fd[0] /= 2;
+    print("fd/=", fd[0]);
+    var fr = [2.5, 2.0, 3.0];
+    fr[1] %= 1.5;
+    print("fr%=", fr[1]);
+    var ii = [1, 2, 3];
+    ii[0] += 2;
+    print("ii+=", ii[0]);
+    var im = [1, 2, 3];
+    im[1] *= 3;
+    print("im*=", im[1]);
+    var ir = [7, 2, 3];
+    ir[1] %= 3;
+    print("ir%=", ir[1]);
+    var mix = [2.5, 2.0];
+    mix[1] += 1;
+    print("mix+=", mix[1]);
+    return 0;
+}

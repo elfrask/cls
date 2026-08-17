@@ -1,0 +1,16 @@
+export function contarPrimos(hasta: int) -> int {
+    var contador = 0;
+    for (var i = 2; i <= hasta; i++) {
+        var esPrimo = true;
+        for (var j = 2; j * j <= i; j++) {
+            if (i % j == 0) {
+                esPrimo = false;
+                break;
+            }
+        }
+        if (esPrimo) {
+            contador = contador + 1;
+        }
+    }
+    return contador;
+};

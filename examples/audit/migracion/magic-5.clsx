@@ -1,0 +1,6 @@
+function main(args: String[]) -> int {
+    class C { function __call(x: int) -> int { return x * 2; } }
+    var f = C();
+    print("call:", f(5));
+    return 0;
+}

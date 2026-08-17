@@ -1,0 +1,28 @@
+class Animal {
+    var name: String;
+
+    function main(name: String) {
+        me.name = name;
+    }
+
+    function speak() -> String {
+        return me.name + " hace un sonido";
+    }
+};
+
+class Dog (Animal) {
+    function speak() -> String {
+        return me.name + " ladra";
+    }
+};
+
+function main(args: String[]) -> int {
+    var a = Animal("Animal");
+    print("Animal.speak():", a.speak());
+
+    var d = Dog("Rex");
+    print("Dog.name (heredado):", d.name);
+    print("Dog.speak():", d.speak());
+
+    return 0;
+};

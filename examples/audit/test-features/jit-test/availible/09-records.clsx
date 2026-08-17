@@ -1,0 +1,19 @@
+import "json" as json;
+
+function main(args: String[]) -> int {
+    var u = { a: 10, b: 20, c: "jajaj" };
+    print("u:", u);
+    print("a:", u["a"]);
+    print("b:", u["b"]);
+    print("len:", u.length, "size:", u.size);
+    print("has a:", u.has("a"), "has x:", u.has("x"));
+    var ks = u.keys();
+    var vs = u.values();
+    print("keys len:", len(ks), "values len:", len(vs));
+    print("keys:", ks);
+    var obj: Record<String, any> = json.parse('{"n": "CLS", "v": 2026}');
+    print("json n:", obj["n"], "v:", obj["v"]);
+    var salida = json.stringify({ x: 1 });
+    print("stringify:", salida);
+    return 0;
+};

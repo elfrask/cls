@@ -1,0 +1,19 @@
+function main(args: String[]) -> int {
+    var nombre = "CLS";
+    print("interpolacion: Hola $nombre");
+    print("expr: ${1 + 2}");
+    print("upper:", "hola".upper());
+    print("lower:", "HOLA".lower());
+    print("trim:", "  x  ".trim());
+    print("length:", "abcd".length);
+    print("contains:", "hola mundo".contains("mundo"));
+    print("startsWith:", "abc".startsWith("ab"));
+    print("endsWith:", "abc".endsWith("bc"));
+    print("isEmpty:", "".isEmpty());
+    print("in substring:", "mundo" in "hola mundo");
+    print("toString:", toString(42));
+    print("int.toString:", (42).toString(), "float.toString:", (2.5).toString());
+    print("int.abs:", (-7).abs(), "float.abs:", (-3.5).abs());
+    print("bool.toString:", true.toString(), "char.toString:", 'x'.toString());
+    return 0;
+};

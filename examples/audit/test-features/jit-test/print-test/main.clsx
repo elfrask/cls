@@ -1,0 +1,41 @@
+
+function range(init: int, end: int) -> int[] {
+  
+  const out: int[] = [];
+
+
+  for (var i = 0; i < end; i = i + 1) {
+    out.push(i);
+  }
+
+  return out
+}
+
+
+function main(params: String[]) -> int {
+  
+  print("==== Tipos de datos pruebas ====");
+  
+  print("Bool:", true);
+  print("Bool:", false);
+
+  print("Int:", 10);
+  print("Int:", 12);
+  print("Int:", 1023);
+
+  print("Float:", 10.12);
+  print("Float:", 1.14);
+  print("Float:", 10.41);
+
+  print("Arrays:", [1, 2, 3]);
+  print("Arrays:", ["1", "2", "3"]);
+
+  # print("Null:", null);
+
+  const e: int[] = range(0, 100);
+
+  for each value in (e) {
+    print("Value: $value");
+  };
+  return 0;
+}

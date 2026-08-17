@@ -1,0 +1,50 @@
+enum Color {
+    Rojo,
+    Verde,
+    Azul,
+};
+
+enum Estado {
+    Apagado,
+    Encendido,
+    EnEspera,
+};
+
+function main(args: String[]) -> int {
+    print("=== acceso ===");
+    var c = Color.Rojo;
+    print("c:", c);
+    print("Color.Verde:", Color.Verde);
+    print("Color.Azul:", Color.Azul);
+
+    print("=== comparacion ===");
+    print("c == Color.Rojo:", c == Color.Rojo);
+    print("c == Color.Verde:", c == Color.Verde);
+    print("c == Color.Azul:", c == Color.Azul);
+
+    print("=== is ===");
+    print("c is Color:", c is Color);
+    print("c is Estado:", c is Estado);
+
+    print("=== tipado estricto ===");
+    var color2: Color = Color.Verde;
+    print("color2:", color2);
+
+    print("=== iteracion ===");
+    for each v in (Color) {
+        print("variante:", v);
+    };
+    var e = (
+        <Div attr="valor" k={(e) -> {print("")}}>
+            children
+            <Div />
+        </Div>
+    )
+
+    print("=== iteracion con indice ===");
+    for each v and i in (Estado) {
+        print(i, ":", v);
+    }
+
+    return 0;
+};

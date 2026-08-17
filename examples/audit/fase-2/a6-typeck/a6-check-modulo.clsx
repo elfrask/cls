@@ -1,0 +1,7 @@
+# A-6: clx check debe mostrar caret en el archivo del modulo importado
+import "a6-lib-bug" as lb;
+function main(args: String[]) -> int {
+    var r = lb::buggy();
+    print(r);
+    return 0;
+};

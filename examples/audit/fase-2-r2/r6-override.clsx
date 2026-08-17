@@ -1,0 +1,16 @@
+# R6: metodo heredado con override - override gana
+class Base {
+    function nombre() -> String {
+        return "base";
+    };
+};
+class Hija: Base {
+    function nombre() -> String {
+        return "hija";
+    };
+};
+function main(args: String[]) -> int {
+    var h = Hija();
+    print("nombre:", h.nombre());
+    return 0;
+};

@@ -1,0 +1,106 @@
+class Animal {
+    var name: String;
+    function main(name: String) { me.name = name; }
+    function speak() -> String { return me.name + " hace ruido"; }
+};
+
+class Dog: Animal {
+    function speak() -> String { return super.speak() + " y ladra"; }
+    function nombre() -> String { return super.name; }
+};
+
+class Cuenta {
+    private var saldo: float;
+    public var titular: String;
+    protected var numero: String;
+    readonly var creadoEn: int;
+    static var tasa: float = 0.05;
+
+    function main(titular: String, saldo: float) {
+        me.titular = titular;
+        me.saldo = saldo;
+        me.numero = "001-0001";
+        me.creadoEn = 2026;
+    }
+    private function auditar() -> bool { return me.saldo >= 0; }
+    public function depositar(monto: float) { me.saldo = me.saldo + monto; }
+    public function verSaldo() -> float { return me.saldo; }
+    protected function verNumero() -> String { return me.numero; }
+    static function obtenerTasa() -> float { return Cuenta.tasa; }
+};
+
+class CuentaVip: Cuenta {
+    function main(titular: String, saldo: float) {
+        super.main(titular, saldo);
+    }
+    function descripcion() -> String { return "Vip " + me.numero; }
+    function verNumeroHijo() -> String { return me.verNumero(); }
+    function fijarFecha() -> bool {
+        me.creadoEn = 2030;
+        return true;
+    }
+};
+
+function main(args: String[]) -> int {
+    print("=== Herencia con ':' ===");
+    var d = Dog("Rex");
+    print("d.speak():", d.speak());
+    print("d.nombre():", d.nombre());
+
+    print("=== Operador is ===");
+    print("d is Dog:", d is Dog);
+    print("d is Animal:", d is Animal);
+    print("d is Cuenta:", d is Cuenta);
+
+    print("=== public/private/static ===");
+    var c = Cuenta("Ana", 100.0);
+    print("titular (public):", c.titular);
+    c.depositar(50.0);
+    print("saldo (via public):", c.verSaldo());
+    print("tasa (static):", Cuenta.tasa);
+    print("obtenerTasa (static):", Cuenta.obtenerTasa());
+
+    print("=== private enforcement ===");
+    try {
+        var x = c.saldo;
+        print("ERROR: c.saldo accesible", x);
+    } catch (e) {
+        print("c.saldo bloqueado (ok)");
+    }
+    try {
+        var y = c.auditar();
+        print("ERROR: c.auditar() accesible", y);
+    } catch (e) {
+        print("c.auditar() bloqueado (ok)");
+    }
+
+    print("=== protected enforcement ===");
+    try {
+        var z = c.numero;
+        print("ERROR: c.numero accesible", z);
+    } catch (e) {
+        print("c.numero bloqueado desde fuera (ok)");
+    }
+    try {
+        var w = c.verNumero();
+        print("ERROR: c.verNumero() accesible", w);
+    } catch (e) {
+        print("c.verNumero() bloqueado desde fuera (ok)");
+    }
+
+    print("=== protected desde subclase (ok) ===");
+    var v = CuentaVip("Leo", 500.0);
+    print("v.descripcion():", v.descripcion());
+    print("v.verNumeroHijo():", v.verNumeroHijo());
+
+    print("=== readonly enforcement ===");
+    try {
+        c.creadoEn = 1999;
+        print("ERROR: c.creadoEn reasignable");
+    } catch (e) {
+        print("c.creadoEn bloqueado desde fuera (ok)");
+    }
+    print("v.fijarFecha() (escritura interna ok):", v.fijarFecha());
+
+    return 0;
+};

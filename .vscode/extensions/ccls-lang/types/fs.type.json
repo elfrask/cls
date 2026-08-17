@@ -1,0 +1,179 @@
+{
+  "source": "cls-runtime/clsi\\fs.clsi",
+  "entries": [
+    {
+      "name": "readFile",
+      "kind": "function",
+      "line": 5,
+      "col": 1,
+      "end_line": 5,
+      "end_col": 1,
+      "doc": "Modulo de acceso al sistema de archivos.",
+      "version": null,
+      "deprecated": null,
+      "signature": "readFile(path: String) -> String",
+      "params": [
+        {
+          "name": "path",
+          "type_": "String",
+          "doc": null
+        }
+      ],
+      "return_type": "String",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "writeFile",
+      "kind": "function",
+      "line": 6,
+      "col": 1,
+      "end_line": 6,
+      "end_col": 1,
+      "doc": "",
+      "version": null,
+      "deprecated": null,
+      "signature": "writeFile(path: String, content: String)",
+      "params": [
+        {
+          "name": "path",
+          "type_": "String",
+          "doc": null
+        },
+        {
+          "name": "content",
+          "type_": "String",
+          "doc": null
+        }
+      ],
+      "return_type": null,
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "exists",
+      "kind": "function",
+      "line": 7,
+      "col": 1,
+      "end_line": 7,
+      "end_col": 1,
+      "doc": "",
+      "version": null,
+      "deprecated": null,
+      "signature": "exists(path: String) -> bool",
+      "params": [
+        {
+          "name": "path",
+          "type_": "String",
+          "doc": null
+        }
+      ],
+      "return_type": "bool",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "rm",
+      "kind": "function",
+      "line": 8,
+      "col": 1,
+      "end_line": 8,
+      "end_col": 1,
+      "doc": "",
+      "version": null,
+      "deprecated": null,
+      "signature": "rm(path: String)",
+      "params": [
+        {
+          "name": "path",
+          "type_": "String",
+          "doc": null
+        }
+      ],
+      "return_type": null,
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "mkdir",
+      "kind": "function",
+      "line": 9,
+      "col": 1,
+      "end_line": 9,
+      "end_col": 1,
+      "doc": "",
+      "version": null,
+      "deprecated": null,
+      "signature": "mkdir(path: String)",
+      "params": [
+        {
+          "name": "path",
+          "type_": "String",
+          "doc": null
+        }
+      ],
+      "return_type": null,
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "listDir",
+      "kind": "function",
+      "line": 10,
+      "col": 1,
+      "end_line": 10,
+      "end_col": 1,
+      "doc": "",
+      "version": null,
+      "deprecated": null,
+      "signature": "listDir(path: String) -> Array",
+      "params": [
+        {
+          "name": "path",
+          "type_": "String",
+          "doc": null
+        }
+      ],
+      "return_type": "Array",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    },
+    {
+      "name": "cwd",
+      "kind": "function",
+      "line": 11,
+      "col": 1,
+      "end_line": 11,
+      "end_col": 1,
+      "doc": "",
+      "version": null,
+      "deprecated": null,
+      "signature": "cwd() -> String",
+      "params": [],
+      "return_type": "String",
+      "return_doc": null,
+      "fields": [],
+      "members": [],
+      "type_": null,
+      "value": null
+    }
+  ]
+}

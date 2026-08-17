@@ -1,0 +1,29 @@
+[package]
+name = "cls-jit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[dependencies]
+cls-core = { workspace = true, features = ["wasm-backend"] }
+cls-runtime = { workspace = true }
+wasmtime = { version = "44", features = ["cache", "gc"] }
+# wasmi 0.38 estable (la 2.0.0-beta.10 segfaulta al acceder a memoria desde un
+# host caller). No implementa la propuesta de excepciones -> el backend emite sin
+# tag (modo sin excepciones).
+wasmi = { version = "0.38", optional = true }
+wasmprinter = "0.2"
+ureq = "2"
+serde_json = "1"
+
+[features]
+default = []
+# Runtime wasmi (intérprete WASM puro, para wasm32/navegador). No implementa la
+# propuesta de excepciones -> el backend emite sin tag (modo sin excepciones).
+wasmi-runtime = ["dep:wasmi"]
+
+[dev-dependencies]
+wat = "1"

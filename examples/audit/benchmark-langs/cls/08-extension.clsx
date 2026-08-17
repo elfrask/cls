@@ -1,0 +1,18 @@
+extension "msvcrt.dll" as C {
+    function strlen(s: CString) -> int;
+    function atoi(s: CString) -> int;
+};
+
+function main(args: String[]) -> int {
+    var t0 = now();
+    var N: int = 1000000;
+    var sum: int = 0;
+    var i: int = 0;
+    for (i = 0; i < N; i++) {
+        sum = sum + strlen("hola");
+    }
+    var t1 = now();
+    print("ext_result:", sum);
+    print("ext_ms:", t1 - t0);
+    return 0;
+}

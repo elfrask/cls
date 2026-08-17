@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    class J { function __toJson() -> String { return "{json}"; } }
+    print("toJson:", json.stringify(J()));
+    return 0;
+}

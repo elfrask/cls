@@ -1,0 +1,5 @@
+# ERROR SINTAXIS: string sin cerrar
+function main(args: String[]) -> int {
+    var s = "esto no cierra;
+    return 0;
+};

@@ -1,0 +1,8 @@
+# CMX malformado: '<div>' con '<' suelto en el texto
+function main(args: String[]) -> int {
+    var app = (
+        <div>a < b</div>
+    );
+    print(app.tag);
+    return 0;
+};

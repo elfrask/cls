@@ -1,0 +1,6 @@
+# BUG A-7: módulo intermedio (nested_b) importa otro módulo (nested_a)
+import "nested_b" as nb;
+function main(args: String[]) -> int {
+    print("suma:", nb::suma(5));
+    return 0;
+};

@@ -1,0 +1,14 @@
+import "json" as json;
+class N { function __toString() -> String { return "hola"; } }
+class T { function __type() -> String { return "MiTipo"; } }
+class J { function __toJson() -> String { return "{json}"; } }
+class L { function __len() -> int { return 42; } }
+class E { function __equals(o: Any) -> bool { return true; } }
+function main(args: String[]) -> int {
+    print("toString:", toString(N()));
+    print("type:", type(T()));
+    print("toJson:", json.stringify(J()));
+    print("len:", len(L()));
+    print("equals:", E() == E());
+    return 0;
+}

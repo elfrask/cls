@@ -1,0 +1,33 @@
+# QA: funciones, closures, arrows, recursion (declaraciones a nivel superior)
+function suma(a: int, b: int) -> int { return a + b; };
+function saludar(nombre: String) { print("Hola", nombre); };
+function factorial(n: int) -> int {
+    if (n <= 1) { return 1; }
+    return n * factorial(n - 1);
+};
+function fib(n: int) -> int {
+    if (n < 2) { return n; }
+    return fib(n - 1) + fib(n - 2);
+};
+
+function main(args: String[]) -> int {
+    print("suma:", suma(3, 4));
+    print("funcion sin retorno (void):");
+    saludar("Mundo");
+    var doble = (x: int) -> x * 2;
+    print("arrow:", doble(21));
+    var multi = (a: int, b: int) -> { return a * b; };
+    print("arrow cuerpo:", multi(3, 5));
+    var sinArgs = () -> 99;
+    print("arrow vacio:", sinArgs());
+    var base = 10;
+    var closure = (x: int) -> x + base;
+    print("closure captura:", closure(5));
+    base = 100;
+    print("closure tras cambio:", closure(5));
+    print("factorial:", factorial(10));
+    print("fib(20):", fib(20));
+    var arr = [1, 2, 3];
+    print("funcion como valor:", type(suma));
+    return 0;
+};

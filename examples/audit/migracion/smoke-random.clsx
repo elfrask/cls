@@ -1,0 +1,4 @@
+function main(args: String[]) -> int {
+    print("random.int:", random.int(1, 100));
+    return 0;
+}

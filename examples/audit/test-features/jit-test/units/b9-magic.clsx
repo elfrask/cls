@@ -1,0 +1,30 @@
+import "json" as json;
+
+class Persona {
+    var nombre: String;
+    var edad: int;
+    function __toJson() -> String {
+        return "{\"p\":\"" + me.nombre + "\"}";
+    }
+    function __type() -> String {
+        return "PersonaMagica";
+    }
+};
+
+class Simple {
+    var x: int;
+};
+
+function main(args: String[]) -> int {
+    var p = Persona();
+    p.nombre = "Ana";
+    p.edad = 30;
+    print("type persona:", type(p));
+    print("json persona:", json.stringify(p));
+    var s = Simple();
+    s.x = 42;
+    print("type simple:", type(s));
+    print("json simple:", json.stringify(s));
+    print("type int:", type(42), "type str:", type("x"));
+    return 0;
+};

@@ -1,0 +1,7 @@
+# X3: dos módulos importados con el MISMO alias -> reportar comportamiento
+import "x3-libmod" as dup;
+import "x3-mod-b" as dup;
+function main(args: String[]) -> int {
+    print("dup::valor():", dup::valor());
+    return 0;
+};

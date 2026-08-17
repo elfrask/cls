@@ -1,0 +1,11 @@
+import "modules/lib" as lib;
+import "modules/colores" as colores;
+
+function main(args: String[]) -> int {
+    var nivel: Nivel = Nivel.Alto;
+    var color: Color = Color.Rojo;
+    var c: Contador = lib.Contador(9);
+    var s: int = lib.suma(1, 2);
+    var v: String = lib.VERSION;
+    return 0;
+};

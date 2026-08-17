@@ -1,0 +1,13 @@
+function main(args: String[]) -> int {
+    print("cwd:", process.cwd());
+    print("pid:", process.pid());
+    print("platform:", process.platform());
+    print("env PATH:", process.env("PATH"));
+    print("title:", process.title());
+    var a = process.args();
+    print("args len:", a.length);
+    for each x in (a) {
+        print("arg:", x);
+    }
+    return 0;
+}

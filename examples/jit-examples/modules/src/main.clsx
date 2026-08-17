@@ -1,0 +1,20 @@
+import "lib/mathx" as mathx;
+from "lib/stringsx" import gritar as gritarFn, repetir;
+include "lib/colores";
+
+function main(args: String[]) -> int {
+    print("=== import as (namespaced) ===");
+    print("cuadrado:", mathx::cuadrado(5));
+    print("cubo:", mathx::cubo(3));
+    print("PI:", mathx::PI);
+
+    print("=== from import (con alias) ===");
+    print("gritar:", gritarFn("hola"));
+    print("repetir:", repetir("ab", 3));
+
+    print("=== include (todos los exports) ===");
+    var c = Color.Azul;
+    print("color:", c, "== Azul:", c == Color.Azul, "is:", c is Color);
+
+    return 0;
+};

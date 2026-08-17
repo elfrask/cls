@@ -1,0 +1,8 @@
+function main(args: String[]) -> int {
+    var files = fs.listDir(".");
+    print("len:", files.length);
+    for each f in (files) {
+        print("file:", f);
+    }
+    return 0;
+};

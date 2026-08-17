@@ -1,0 +1,1 @@
+function main(args: String[]) -> int { print("x" + "y"); return 0; }

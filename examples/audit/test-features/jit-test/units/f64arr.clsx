@@ -1,0 +1,6 @@
+function main(args: String[]) -> int {
+    var arr = [30.0, 40.0];
+    print("arr[0]:", arr[0]);
+    print("test", args);
+    return 0;
+};

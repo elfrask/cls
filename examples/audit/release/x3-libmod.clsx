@@ -1,0 +1,13 @@
+# X3: módulo de usuario con símbolos exportados (enum + función + var)
+export function saludar(nombre: String) -> String {
+    return "Hola, " + nombre;
+};
+export function valor() -> String {
+    return "A";
+};
+export var VERSION = "3.1.4";
+export enum Color {
+    Rojo,
+    Verde,
+    Azul,
+};

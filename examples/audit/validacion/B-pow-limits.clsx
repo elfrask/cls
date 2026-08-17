@@ -1,0 +1,22 @@
+function main(args: String[]) -> int {
+    print("p1:", math.pow(2, 3));
+    var x = math.pow(2, 3);
+    print("p2:", x);
+    var y = math.pow(2.0, 3);
+    print("p3:", y);
+    var z = math.pow(2, 3.0);
+    print("p4:", z);
+    var w = math.pow(2.5, 2.0);
+    print("p5:", w);
+    var a = 2;
+    var b = 3;
+    var v = math.pow(a, b);
+    print("p6:", v);
+    var arr = [math.pow(2, 3), math.pow(4, 2)];
+    print("p7:", arr[0], arr[1]);
+    var m = math.pow(2, 3) + math.pow(2, 2);
+    print("p8:", m);
+    var n: float = math.pow(2, 3);
+    print("p9:", n);
+    return 0;
+}

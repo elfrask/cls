@@ -1,0 +1,7 @@
+# C-2 isolate: escribir float en indice de array
+function main(args: String[]) -> int {
+    var b = [1, 2, 3];
+    b[0] = 2.5;
+    print("b =", b);
+    return 0;
+};

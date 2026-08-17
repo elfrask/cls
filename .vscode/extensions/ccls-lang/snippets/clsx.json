@@ -1,0 +1,533 @@
+{
+  "Función": {
+    "prefix": "fn",
+    "body": [
+      "function ${1:nombre}(${2:param}: ${3:Tipo}) -> ${4:Tipo} {",
+      "    ${5:# cuerpo}",
+      "    return ${6:valor};",
+      "};"
+    ],
+    "description": "Función con tipo de retorno"
+  },
+  "Función void": {
+    "prefix": "fnv",
+    "body": [
+      "function ${1:nombre}(${2:param}: ${3:Tipo}) {",
+      "    ${4:# cuerpo}",
+      "};"
+    ],
+    "description": "Función sin retorno"
+  },
+  "Función genérica": {
+    "prefix": "fng",
+    "body": [
+      "function ${1:nombre}<T>(${2:x}: T) -> T {",
+      "    return ${2:x};",
+      "};"
+    ],
+    "description": "Función genérica (compile-time)"
+  },
+  "Función async": {
+    "prefix": "fna",
+    "body": [
+      "async function ${1:nombre}(${2:param}: ${3:Tipo}) -> ${4:Tipo} {",
+      "    ${5:var res = await ${6:operacion}();}",
+      "    return res;",
+      "};"
+    ],
+    "description": "Función asíncrona con await"
+  },
+  "Clase": {
+    "prefix": "cls",
+    "body": [
+      "class ${1:Nombre} {",
+      "    var ${2:campo}: ${3:Tipo};",
+      "",
+      "    function main(${4:param}: ${3:Tipo}) {",
+      "        me.${2:campo} = ${4:param};",
+      "    }",
+      "",
+      "    function ${5:metodo}() -> ${6:Tipo} {",
+      "        return me.${2:campo};",
+      "    }",
+      "};"
+    ],
+    "description": "Clase con constructor y método"
+  },
+  "Clase genérica": {
+    "prefix": "clsg",
+    "body": [
+      "class ${1:Caja}<T> {",
+      "    var ${2:contenido}: T;",
+      "",
+      "    function main(${2:contenido}: T) {",
+      "        me.${2:contenido} = ${2:contenido};",
+      "    }",
+      "",
+      "    function obtener() -> T {",
+      "        return me.${2:contenido};",
+      "    }",
+      "};"
+    ],
+    "description": "Clase genérica con type param"
+  },
+  "Clase con herencia": {
+    "prefix": "clsh",
+    "body": [
+      "class ${1:Padre} {",
+      "    ${2:# members}",
+      "};",
+      "",
+      "class ${3:Hijo}: ${1:Padre} {",
+      "    function ${4:metodo}() -> ${5:Tipo} {",
+      "        return super.${4:metodo}();",
+      "    }",
+      "};"
+    ],
+    "description": "Herencia con ':' y super"
+  },
+  "Miembros con visibilidad": {
+    "prefix": "clsv",
+    "body": [
+      "class ${1:Nombre} {",
+      "    private var ${2:privado}: ${3:Tipo};",
+      "    protected var ${4:protegido}: ${5:Tipo};",
+      "    public var ${6:publico}: ${7:Tipo};",
+      "    readonly var ${8:inmutable}: ${9:Tipo};",
+      "    static var ${10:estatico}: ${11:Tipo};",
+      "",
+      "    private function ${12:interno}() {}",
+      "    protected function ${13:protegidoMet}() {}",
+      "    public function ${14:metodo}() {}",
+      "    static function ${15:estaticoMet}() { return ${1:Nombre}.${10:estatico}; }",
+      "};"
+    ],
+    "description": "public/private/protected/static/readonly"
+  },
+  "Interface": {
+    "prefix": "intf",
+    "body": [
+      "interface ${1:Nombre} {",
+      "    ${2:campo}: ${3:Tipo},",
+      "    ${4:metodo}(${5:param}: ${6:Tipo}): ${7:Tipo},",
+      "};"
+    ],
+    "description": "Interface con campos y métodos (compile-time)"
+  },
+  "Interface genérica": {
+    "prefix": "intfg",
+    "body": [
+      "interface ${1:Hello}<T=${2:Int}> {",
+      "    ${3:num}: T,",
+      "    ${4:metodo}(${5:x}: T): ${6:Tipo},",
+      "};"
+    ],
+    "description": "Interface genérica con default"
+  },
+  "Extracción de tipo": {
+    "prefix": "ext",
+    "body": [
+      "var ${1:valor}: ${2:Interface}[\"${3:campo}\"] = ${4:valor};"
+    ],
+    "description": "Extraer tipo hijo (compile-time)"
+  },
+  "Alias de tupla": {
+    "prefix": "alit",
+    "body": [
+      "alias ${1:Vec3} = (${2:Int}, ${3:Int}, ${4:Int});"
+    ],
+    "description": "Alias de tipo tupla"
+  },
+  "Alias de unión": {
+    "prefix": "aliu",
+    "body": [
+      "alias ${1:Color} = \"${2:red}\" | \"${3:green}\" | \"${4:blue}\";"
+    ],
+    "description": "Alias de unión de literales"
+  },
+  "Alias de función": {
+    "prefix": "alif",
+    "body": [
+      "alias ${1:FnInt} = fun(${2:Int}) -> ${3:Int};"
+    ],
+    "description": "Alias de tipo función"
+  },
+  "Alias de record": {
+    "prefix": "alir",
+    "body": [
+      "alias ${1:Dict} = Record<String, ${2:Int}>;"
+    ],
+    "description": "Alias de diccionario tipado"
+  },
+  "Structure": {
+    "prefix": "struct",
+    "body": [
+      "structure ${1:Nombre} {",
+      "    ${2:campo}: ${3:Tipo},",
+      "    ${4:otro}: ${5:Tipo},",
+      "};"
+    ],
+    "description": "Estructura de datos (layout plano)"
+  },
+  "Module": {
+    "prefix": "mod",
+    "body": [
+      "module ${1:nombre} {",
+      "    export function ${2:funcion}() -> ${3:Tipo} {",
+      "        ${4:# cuerpo}",
+      "    }",
+      "};"
+    ],
+    "description": "Módulo con export"
+  },
+  "Namespace": {
+    "prefix": "ns",
+    "body": [
+      "namespace ${1:nombre} {",
+      "    ${2:# members}",
+      "};"
+    ],
+    "description": "Namespace"
+  },
+  "Import": {
+    "prefix": "imp",
+    "body": [
+      "import \"${1:modulo}\" as ${2:alias};"
+    ],
+    "description": "Importar módulo"
+  },
+  "From import": {
+    "prefix": "impf",
+    "body": [
+      "from \"${1:modulo}\" import ${2:símbolo};"
+    ],
+    "description": "Importar símbolos específicos"
+  },
+  "If / else": {
+    "prefix": "if",
+    "body": [
+      "if (${1:condicion}) {",
+      "    ${2:# entonces}",
+      "} else {",
+      "    ${3:# sino}",
+      "}"
+    ],
+    "description": "Condicional if/else"
+  },
+  "While": {
+    "prefix": "wh",
+    "body": [
+      "while (${1:condicion}) {",
+      "    ${2:# cuerpo}",
+      "}"
+    ],
+    "description": "Bucle while"
+  },
+  "Loop": {
+    "prefix": "lp",
+    "body": [
+      "loop {",
+      "    ${1:# cuerpo}",
+      "    if (${2:condicion}) { break; }",
+      "}"
+    ],
+    "description": "Bucle infinito con break"
+  },
+  "For": {
+    "prefix": "for",
+    "body": [
+      "for (var ${1:i} = ${2:0}; ${1:i} < ${3:limite}; ${1:i} = ${1:i} + 1) {",
+      "    ${4:# cuerpo}",
+      "}"
+    ],
+    "description": "Bucle for tradicional"
+  },
+  "For each": {
+    "prefix": "fe",
+    "body": [
+      "for each ${1:item} in (${2:coleccion}) {",
+      "    ${3:# cuerpo}",
+      "}"
+    ],
+    "description": "Iterar colección"
+  },
+  "For each con índice": {
+    "prefix": "fei",
+    "body": [
+      "for each ${1:item} (${2:i}) in (${3:coleccion}) {",
+      "    ${4:# item y ${2:i}}",
+      "}"
+    ],
+    "description": "Iterar con índice"
+  },
+  "Switch": {
+    "prefix": "sw",
+    "body": [
+      "switch (${1:valor}) {",
+      "    case (${2:patron}) {",
+      "        ${3:# caso}",
+      "    }",
+      "    default {",
+      "        ${4:# por defecto}",
+      "    }",
+      "}"
+    ],
+    "description": "Switch con casos"
+  },
+  "Try / catch": {
+    "prefix": "try",
+    "body": [
+      "try {",
+      "    ${1:# código que puede fallar}",
+      "} catch (${2:e}) {",
+      "    ${3:# manejo del error}",
+      "}"
+    ],
+    "description": "Manejo de errores"
+  },
+  "Tupla tipada": {
+    "prefix": "tup",
+    "body": [
+      "var ${1:par}: (${2:Int}, ${3:String}) = (${4:1}, \"${5:x}\");"
+    ],
+    "description": "Tupla heterogénea"
+  },
+  "Array tipado": {
+    "prefix": "arr",
+    "body": [
+      "var ${1:lista}: ${2:Int}[] = [${3:1}, ${4:2}, ${5:3}];"
+    ],
+    "description": "Array tipado"
+  },
+  "Record / diccionario": {
+    "prefix": "rec",
+    "body": [
+      "var ${1:dic}: Record<String, ${2:Int}> = {${3:a}: ${4:1}};"
+    ],
+    "description": "Diccionario tipado"
+  },
+  "Const con literal type": {
+    "prefix": "const",
+    "body": [
+      "const ${1:NOMBRE} = \"${2:valor}\";"
+    ],
+    "description": "Constante (infiere literal type)"
+  },
+  "Arrow function": {
+    "prefix": "arrow",
+    "body": [
+      "var ${1:fn} = (${2:x}: ${3:Tipo}) => ${4:expresion};"
+    ],
+    "description": "Función flecha"
+  },
+  "CMX elemento": {
+    "prefix": "cmx",
+    "body": [
+      "<${1:div} ${2:attr}=\"${3:valor}\">",
+      "    ${4:children}",
+      "</${1:div}>"
+    ],
+    "description": "Elemento CMX"
+  },
+  "Magic method __toString": {
+    "prefix": "tostr",
+    "body": [
+      "function __toString() -> String {",
+      "    return \"${1:...}\";",
+      "}"
+    ],
+    "description": "Método mágico __toString"
+  },
+  "Operador is": {
+    "prefix": "isop",
+    "body": [
+      "${1:objeto} is ${2:Clase}"
+    ],
+    "description": "Validar instancia de clase"
+  },
+  "Super": {
+    "prefix": "sup",
+    "body": [
+      "super.${1:metodo}(${2:args})"
+    ],
+    "description": "Acceso al método del padre"
+  },
+  "Método main": {
+    "prefix": "main",
+    "body": [
+      "function main(args: String[]) -> int {",
+      "    ${1:# entrada}",
+      "    return 0;",
+      "};"
+    ],
+    "description": "Punto de entrada main"
+  },
+  "Enum": {
+    "prefix": "enum",
+    "body": [
+      "enum ${1:Nombre} {",
+      "    ${2:Variante1},",
+      "    ${3:Variante2},",
+      "    ${4:Variante3},",
+      "};"
+    ],
+    "description": "Enum con variantes constantes (índice 1-2 bytes)"
+  },
+  "Enum uso": {
+    "prefix": "enumus",
+    "body": [
+      "var ${1:estado} = ${2:Enum}.${3:Variante};",
+      "if (${1:estado} == ${2:Enum}.${3:Variante}) {",
+      "    ${4:# ...}",
+      "}"
+    ],
+    "description": "Usar un enum (acceso + comparación)"
+  },
+  "Enum iterar": {
+    "prefix": "enumi",
+    "body": [
+      "for each ${1:estado} in (${2:Enum}) {",
+      "    ${3:# ...}",
+      "}"
+    ],
+    "description": "Iterar las variantes de un enum"
+  },
+  "Extensión nativa": {
+    "prefix": "ext",
+    "body": [
+      "extension \"${1:libreria}\" as ${2:C} {",
+      "    function ${3:funcion}(${4:param}: ${5:CString}) -> ${6:CInt};",
+      "};"
+    ],
+    "description": "FFI: declarar símbolos nativos de una librería del sistema"
+  },
+  "Extensión función nativa": {
+    "prefix": "extfn",
+    "body": [
+      "function ${1:funcion}(${2:param}: ${3:CString}) -> ${4:CInt};"
+    ],
+    "description": "Declaración de una función nativa (sin cuerpo) dentro de extension"
+  },
+  "Extensión estructura nativa": {
+    "prefix": "extst",
+    "body": [
+      "structure ${1:Nombre} {",
+      "    ${2:x}: ${3:CInt},",
+      "};"
+    ],
+    "description": "Estructura nativa (layout C) dentro de extension"
+  },
+  "Extensión export": {
+    "prefix": "exte",
+    "body": [
+      "extension \"${1:libreria}\" as ${2:C} {",
+      "    export function ${3:funcion}(${4:param}: ${5:CString}) -> ${6:CInt};",
+      "};"
+    ],
+    "description": "FFI: exportar símbolos nativos para módulos importados"
+  },
+  "Directiva when": {
+    "prefix": "when",
+    "body": [
+      "when ${1:os}: ${2:linux} {",
+      "    ${3:# implementación}",
+      "}"
+    ],
+    "description": "Directiva multi-entorno: implementación por plataforma/arquitectura"
+  },
+  "Directiva when target": {
+    "prefix": "whent",
+    "body": [
+      "when target: \"${1:riscv32-none-elf}\" {",
+      "    ${2:# implementación}",
+      "}"
+    ],
+    "description": "Directiva when con tripla de target (embebido/bare-metal)"
+  },
+  "Directiva default": {
+    "prefix": "dflt",
+    "body": [
+      "default {",
+      "    ${1:# implementación por defecto}",
+      "}"
+    ],
+    "description": "Rama por defecto de la directiva when (siempre matchea)"
+  },
+  "Tipos nativos C": {
+    "prefix": "cty",
+    "body": [
+      "${1:CString}|${2:CPtr}|${3:CInt}|${4:CUInt}|${5:CDouble}"
+    ],
+    "description": "Tipos primitivos dedicados del ABI C (CString, CPtr, CInt, CUInt, CDouble...)"
+  },
+  "when os": {
+    "prefix": "os",
+    "scope": "source.clsx meta.when.ccls",
+    "body": [
+      "os: ${1|windows,linux,macos,none,bare-metal,freebsd|} "
+    ],
+    "description": "Selector de sistema operativo en `when`"
+  },
+  "when arch": {
+    "prefix": "arch",
+    "scope": "source.clsx meta.when.ccls",
+    "body": [
+      "arch: ${1|cls-arch,x86_64,arm64,aarch64,arm,riscv32,riscv64,avr|} "
+    ],
+    "description": "Selector de arquitectura en `when` (cls-arch = arquitectura nativa CLS)"
+  },
+  "when abi": {
+    "prefix": "abi",
+    "scope": "source.clsx meta.when.ccls",
+    "body": [
+      "abi: ${1|gnu,msvc,eabi,elf|} "
+    ],
+    "description": "Selector de ABI en `when`"
+  },
+  "when platform": {
+    "prefix": "platform",
+    "scope": "source.clsx meta.when.ccls",
+    "body": [
+      "platform: ${1|pc,esp32,stm32f4,rp2040,none|} "
+    ],
+    "description": "Selector de plataforma/HAL en `when`"
+  },
+  "when target tripla": {
+    "prefix": "target",
+    "scope": "source.clsx meta.when.ccls",
+    "body": [
+      "target: \"${1:riscv32-none-elf}\" "
+    ],
+    "description": "Selector de target por tripla (embebido/bare-metal) en `when`"
+  },
+  "when multi-entorno": {
+    "prefix": "whenx",
+    "body": [
+      "when ${1:os}: ${2:linux} ${3:and} ${4:arch}: ${5:arm64} {",
+      "    ${6:# implementación}",
+      "}"
+    ],
+    "description": "Directiva when con múltiples condiciones (os/arch/abi/platform combinados)"
+  },
+  "Extensión multi-plataforma": {
+    "prefix": "extw",
+    "body": [
+      "when ${1:os}: ${2:windows} {",
+      "    extension \"${3:libreria}\" as C {",
+      "        ${4:function f(param: CString) -> CInt; }",
+      "    }",
+      "}"
+    ],
+    "description": "Extensión nativa condicionada a una plataforma"
+  },
+  "Extensión tipos nativos": {
+    "prefix": "extcty",
+    "body": [
+      "function ${1:funcion}(",
+      "    ${2:a}: ${3:CInt},",
+      "    ${4:b}: ${5:CDouble}",
+      ") -> ${6:CInt};"
+    ],
+    "description": "Función nativa con tipos del ABI C (CInt/CDouble/etc.)"
+  }
+}

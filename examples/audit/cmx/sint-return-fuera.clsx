@@ -1,0 +1,6 @@
+# Malformado: return fuera de funcion
+return 42;
+function main(args: String[]) -> int {
+    print("main");
+    return 0;
+};

@@ -1,0 +1,4 @@
+function main(args: String[]) -> int {
+    print("path.join:", path.join("a", "b"));
+    return 0;
+}

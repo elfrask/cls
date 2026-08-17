@@ -1,0 +1,7 @@
+function main(args: String[]) -> int {
+    var x = math.pow(2, 3);
+    print("x:", x);
+    var y = math.pow(2, 3.0);
+    print("y:", y);
+    return 0;
+}

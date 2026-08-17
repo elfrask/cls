@@ -1,0 +1,5 @@
+# ERROR SINTAXIS: token inesperado
+function main(args: String[]) -> int {
+    var x = @;
+    return 0;
+};

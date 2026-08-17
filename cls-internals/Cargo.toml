@@ -1,0 +1,14 @@
+[package]
+name = "cls-internals"
+version = "2.0.0"
+edition = "2021"
+license = "MIT"
+description = "CLS internals: modulos internos e intrinsics precompilados a WASM (Fase 2)"
+
+[dependencies]
+wasm-encoder = { version = "0.255" }
+
+[dev-dependencies]
+wasmi = { version = "0.38" }
+wasmprinter = "0.255"
+wasmparser = "0.255"

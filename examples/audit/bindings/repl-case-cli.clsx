@@ -1,0 +1,9 @@
+function main(args: String[]) -> int {
+    var arr = [1, 2, 3];
+    arr[2] = 99;
+    print("arr:", arr);
+    var b = "x";
+    b = "nuevo";
+    print("b:", b);
+    return 0;
+}

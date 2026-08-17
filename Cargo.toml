@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+    "cls-core",
+    "cls-runtime",
+    "cls-jit",
+    "cls-internals",
+    "nodos/clx",
+    "nodos/clxb",
+    "nodos/clxr",
+]
+
+[workspace.package]
+version = "2.0.0"
+edition = "2021"
+license = "MIT"
+description = "CLS Language - Modular WASM-first programming language"
+homepage = "https://github.com/frask/cls"
+repository = "https://github.com/frask/cls"
+
+[workspace.dependencies]
+cls-core = { path = "cls-core" }
+cls-runtime = { path = "cls-runtime" }
+cls-jit = { path = "cls-jit" }
+
+# Las dependencias (wasmtime/Cranelift) compiladas optimizadas -> el JIT compila
+# WASM->nativo mucho más rápido incluso en build debug.
+[profile.dev.package."*"]
+opt-level = 2

@@ -1,0 +1,9 @@
+function main(args: String[]) -> int {
+    var farr = [2.5, 2.0, 3.0];
+    farr[1] += 2;
+    print("farr:", farr);
+    var farr2 = [2.5, 2.0, 3.0];
+    farr2[0] *= 3;
+    print("farr2:", farr2);
+    return 0;
+}

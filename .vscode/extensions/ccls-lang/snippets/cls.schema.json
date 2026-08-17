@@ -1,0 +1,221 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CLS Manifest",
+  "description": "Schema for cls.json - CLS project manifest",
+  "type": "object",
+  "required": ["name", "version"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Nombre del proyecto",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "version": {
+      "type": "string",
+      "description": "Version semver",
+      "pattern": "^\\d+\\.\\d+\\.\\d+"
+    },
+    "description": {
+      "type": "string",
+      "description": "Descripcion del proyecto"
+    },
+    "authors": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Autores del proyecto"
+    },
+    "license": {
+      "type": "string",
+      "description": "Licencia SPDX",
+      "default": "MIT"
+    },
+    "registry": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL del registry de paquetes",
+      "default": "https://registry.cls-lang.org"
+    },
+    "entry": {
+      "type": "string",
+      "description": "Punto de entrada principal",
+      "default": "src/main.clsx"
+    },
+    "project": {
+      "type": "object",
+      "description": "Configuracion del proyecto",
+      "properties": {
+        "sourceDir": {
+          "type": "string",
+          "default": "src",
+          "description": "Directorio del codigo fuente"
+        },
+        "outDir": {
+          "type": "string",
+          "default": "dist",
+          "description": "Directorio de salida (build)"
+        },
+        "target": {
+          "type": "string",
+          "enum": ["executable", "library", "dynamic-lib"],
+          "default": "executable",
+          "description": "Tipo de proyecto"
+        }
+      }
+    },
+    "compiler": {
+      "type": "object",
+      "description": "Configuracion del compilador",
+      "properties": {
+        "targetArchitecture": {
+          "type": "string",
+          "enum": ["wasm", "x86_64", "arm64", "bytecode"],
+          "default": "wasm",
+          "description": "Arquitectura destino"
+        },
+        "optimizationLevel": {
+          "type": "string",
+          "enum": ["O0", "O1", "O2", "O3", "Os"],
+          "default": "O2",
+          "description": "Nivel de optimizacion"
+        },
+        "sourceMaps": {
+          "type": "boolean",
+          "default": true,
+          "description": "Generar source maps"
+        },
+        "types": {
+          "type": "object",
+          "description": "Configuracion de tipos",
+          "properties": {
+            "check": { "type": "boolean", "default": true },
+            "strict": { "type": "boolean", "default": false },
+            "noImplicitAny": { "type": "boolean", "default": false },
+            "nullSafety": { "type": "boolean", "default": true }
+          }
+        },
+        "features": {
+          "type": "object",
+          "description": "Features del lenguaje",
+          "properties": {
+            "async": { "type": "boolean", "default": false },
+            "macros": { "type": "boolean", "default": false },
+            "experimental": { "type": "boolean", "default": false }
+          }
+        },
+        "warnings": {
+          "type": "object",
+          "description": "Configuracion de warnings",
+          "properties": {
+            "unusedVariables": {
+              "type": "string",
+              "enum": ["warn", "error", "off"],
+              "default": "warn"
+            },
+            "deadCode": {
+              "type": "string",
+              "enum": ["warn", "error", "off"],
+              "default": "warn"
+            },
+            "treatWarningsAsErrors": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        }
+      }
+    },
+    "interpreter": {
+      "type": "object",
+      "description": "Configuracion del interprete/runtime",
+      "properties": {
+        "optimization": {
+          "type": "boolean",
+          "default": false,
+          "description": "Optimizar en interpretacion"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["pure-ast", "jit"],
+          "default": "pure-ast",
+          "description": "Modo de interpretacion"
+        },
+        "runtime": {
+          "type": "object",
+          "description": "Configuracion de memoria del runtime",
+          "properties": {
+            "memoryLimit": {
+              "type": "string",
+              "default": "512MB",
+              "description": "Limite de memoria"
+            },
+            "stackSize": {
+              "type": "string",
+              "default": "8MB",
+              "description": "Tamano de pila"
+            },
+            "gc": {
+              "type": "object",
+              "description": "Configuracion del Garbage Collector",
+              "properties": {
+                "enabled": { "type": "boolean", "default": false },
+                "strategy": {
+                  "type": "string",
+                  "enum": ["compiled", "active"],
+                  "default": "compiled"
+                },
+                "threshold": {
+                  "type": "string",
+                  "default": "64MB",
+                  "description": "Umbral para activar GC"
+                }
+              }
+            }
+          }
+        },
+        "sandbox": {
+          "type": "object",
+          "description": "Sandbox de seguridad",
+          "properties": {
+            "allowFs": {
+              "type": "boolean",
+              "default": false,
+              "description": "Permitir acceso a filesystem"
+            },
+            "allowNet": {
+              "type": "boolean",
+              "default": false,
+              "description": "Permitir acceso a red"
+            },
+            "maxExecutionTime": {
+              "type": "integer",
+              "default": 5000,
+              "minimum": 0,
+              "description": "Timeout maximo en ms"
+            }
+          }
+        }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[\\^~]?\\d+\\.\\d+\\.\\d+"
+      },
+      "description": "Dependencias del proyecto"
+    },
+    "devDependencies": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[\\^~]?\\d+\\.\\d+\\.\\d+"
+      },
+      "description": "Dependencias de desarrollo"
+    },
+    "lockfileVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version del lockfile (interno)"
+    }
+  }
+}

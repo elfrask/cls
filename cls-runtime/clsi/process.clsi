@@ -1,0 +1,23 @@
+# @title process
+# @description Modulo del proceso actual del nodo desktop.
+
+# @description Argumentos pasados a la aplicacion (los de despues de --)
+function args() -> Array {};
+
+# @description Directorio de trabajo actual
+function cwd() -> String {};
+
+# @description Variable de entorno ("" si no existe)
+function env(key: String) -> String {};
+
+# @description Termina el proceso con un codigo de salida
+function exit(code: int) {};
+
+# @description PID del proceso actual
+function pid() -> int {};
+
+# @description Nombre del sistema operativo
+function platform() -> String {};
+
+# @description Titulo del proceso ("" si no disponible)
+function title() -> String {};

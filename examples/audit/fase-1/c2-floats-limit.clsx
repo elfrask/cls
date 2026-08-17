@@ -1,0 +1,23 @@
+# C-2 edge cases: pow, mod, compound assignment, negation, abs, sqrt
+function main(args: String[]) -> int {
+    print("2 ** 3.0 =", 2 ** 3.0);
+    print("2.0 ** 3 =", 2.0 ** 3);
+    print("2.0 ** 0.5 =", 2.0 ** 0.5);
+    print("5.5 % 2 =", 5.5 % 2);
+    print("5 % 2.5 =", 5 % 2.5);
+    var f: float = 0.0;
+    f += 2.5;
+    print("f += 2.5 ->", f);
+    f *= 2;
+    print("f *= 2 ->", f);
+    f -= 1.5;
+    print("f -= 1.5 ->", f);
+    f /= 2;
+    print("f /= 2 ->", f);
+    print("-2.5 =", -2.5);
+    import "math" as math;
+    print("abs(-2.5) =", math.abs(-2.5));
+    print("sqrt(2.0) =", math.sqrt(2.0));
+    print("2.0 ** 0.5 =", 2.0 ** 0.5);
+    return 0;
+};

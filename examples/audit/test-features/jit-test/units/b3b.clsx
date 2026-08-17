@@ -1,0 +1,35 @@
+class Animal {
+    var nombre: String;
+
+    function main() {
+        me.nombre = "animal";
+    };
+
+    function hablar() -> String {
+        return "generico";
+    };
+};
+
+class Perro: Animal {
+    function hablar() -> String {
+        return "guau";
+    };
+
+    function presentar() -> String {
+        return super.hablar() + " y " + me.hablar();
+    };
+};
+
+function main(args: String[]) -> int {
+    var a = Animal();
+    var p = Perro();
+    print("a hablar:", a.hablar());
+    print("p hablar:", p.hablar());
+    print("p nombre:", p.nombre);
+    print("p presentar:", p.presentar());
+    print("a is Animal:", a is Animal);
+    print("p is Animal:", p is Animal);
+    print("p is Perro:", p is Perro);
+    print("a is Perro:", a is Perro);
+    return 0;
+};

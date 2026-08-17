@@ -1,0 +1,10 @@
+# A-5: overflow 1e999 y notación con punto
+function main(args: String[]) -> int {
+    var a = 1e999;
+    var b = 0.5e3;
+    var c = 12.34e2;
+    print("1e999:", a);
+    print("0.5e3:", b);
+    print("12.34e2:", c);
+    return 0;
+};

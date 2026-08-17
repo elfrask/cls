@@ -1,0 +1,12 @@
+# PERF: string concat en bucle
+function main(args: String[]) -> int {
+    var t0 = now();
+    var s = "";
+    for (var i = 0; i < 10000; i++) {
+        s = s + "ab";
+    }
+    var t1 = now();
+    print("len:", s.length);
+    print("tiempo_ms:", t1 - t0);
+    return 0;
+};

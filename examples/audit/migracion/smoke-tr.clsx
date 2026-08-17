@@ -1,0 +1,5 @@
+function main(args: String[]) -> int {
+    print("time.year:", time.year());
+    print("random.int:", random.int(1, 100));
+    return 0;
+}

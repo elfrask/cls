@@ -1,0 +1,6 @@
+# ERROR: modulo no encontrado
+from "noexiste" import f;
+function main(args: String[]) -> int {
+    print("nunca");
+    return 0;
+};

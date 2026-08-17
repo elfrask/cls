@@ -1,0 +1,8 @@
+import "test-libs/error-test" as err;
+
+
+
+function main(argvs: String[]) -> int {
+
+  return 0;
+}

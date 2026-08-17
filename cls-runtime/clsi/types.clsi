@@ -1,0 +1,85 @@
+# @title types
+# @description Interfaces de los tipos de datos estandar de CLS y sus metodos.
+# Los primitivos NO se envuelven en objetos: los metodos se resuelven por
+# dispatch tables estaticas (cls-runtime/src/stdlib/primitive.rs).
+# Convenciones
+#   @kind getter  -> propiedad computada ("hola".length), sin parentesis
+#   (metodo)      -> invocable con parentesis ("hola".upper())
+#   @mutable      -> muta el valor in-place (arrays) via write-back automatico
+
+# @description Cadena de caracteres UTF-8. Inmutable: los metodos de
+# transformacion devuelven un string NUEVO (asignar: s = s.upper()).
+interface String () {
+    upper() : String,
+    lower() : String,
+    trim() : String,
+    contains(needle: String) : bool,
+    startsWith(prefix: String) : bool,
+    endsWith(suffix: String) : bool,
+    isEmpty() : bool,
+    toString() : String,
+    # @kind getter
+    length() : int,
+};
+
+# @description Numero entero de 64 bits con signo. Inmutable.
+interface Int () {
+    toString() : String,
+    abs() : int,
+};
+
+# @description Numero de punto flotante (f64). Inmutable.
+interface Float () {
+    toString() : String,
+    abs() : float,
+};
+
+# @description Valor booleano. Inmutable.
+interface Bool () {
+    toString() : String,
+};
+
+# @description Caracter Unicode. Inmutable.
+interface Char () {
+    toString() : String,
+};
+
+# @description Arreglo dinamico y MUTABLE. Los mutadores (push, pop, shift,
+# unshift, reverse) modifican el arreglo in-place y escriben de vuelta la
+# variable: arr.push(4) equivale a arr = arr.push(4).
+# @mutable
+interface Array () {
+    # @kind getter
+    length() : int,
+    push(value: Any) : Array,
+    pop() : Array,
+    shift() : Array,
+    unshift(value: Any) : Array,
+    indexOf(value: Any) : int,
+    includes(value: Any) : bool,
+    join(separator: String) : String,
+    reverse() : Array,
+    toString() : Array,
+};
+
+# @description Tupla: arreglo INMUTABLE. No admite push/pop ni asignacion por
+# indice (t[0] = 99 -> error). Solo lectura por indice y for-each.
+interface Tuple () {
+    # @kind getter
+    length() : int,
+    join(separator: String) : String,
+    toString() : Tuple,
+};
+
+# @description Record: mapa clave -> valor (objeto JSON). Las claves propias
+# tienen prioridad sobre los metodos (r.length es el metodo; r.edad es la key).
+interface Record () {
+    # @kind getter
+    length() : int,
+    # @kind getter
+    size() : int,
+    keys() : Array,
+    values() : Array,
+    has(key: String) : bool,
+    toString() : Record,
+};

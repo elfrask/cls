@@ -1,0 +1,11 @@
+# STRESS: anidamiento profundo de expresiones aritmeticas
+function main(args: String[]) -> int {
+    var x = 1;
+    var i = 0;
+    while (i < 5000000) {
+        x = (x + 1) * 2 - 1 / 1;
+        i++;
+    }
+    print("x:", x);
+    return 0;
+};

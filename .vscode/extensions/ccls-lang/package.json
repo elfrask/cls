@@ -1,0 +1,62 @@
+{
+  "name": "cls-lang",
+  "displayName": "CLS Language Support",
+  "description": "Syntax highlighting, LSP, snippets and language support for CLS (.clsx, cls.json)",
+  "version": "1.0.0",
+  "publisher": "frask",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^10.1.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Linters"
+  ],
+  "main": "./client/extension.js",
+  "activationEvents": [
+    "onLanguage:clx"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "clx",
+        "aliases": ["CLS", "clsx", "clx"],
+        "extensions": [".clsx"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "clx",
+        "scopeName": "source.clsx",
+        "path": "./syntaxes/clsx.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "clx",
+        "path": "./snippets/clsx.json"
+      },
+      {
+        "language": "json",
+        "path": "./snippets/cls.json.json"
+      }
+    ],
+    "themes": [
+      {
+        "label": "CLS Tipos Diferenciados",
+        "uiTheme": "vs-dark",
+        "path": "./themes/cls-color-theme.json"
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": "cls.json",
+        "url": "./snippets/cls.schema.json"
+      }
+    ]
+  }
+}

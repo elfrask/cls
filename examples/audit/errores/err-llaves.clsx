@@ -1,0 +1,6 @@
+# ERROR SINTAXIS: llaves desbalanceadas
+function main(args: String[]) -> int {
+    if (true) {
+        print("hola");
+    return 0;
+};

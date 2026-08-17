@@ -1,0 +1,7 @@
+import 'matematica' as mat;
+function main(args: String[]) -> int {
+    print("iniciando miapp...");
+    var r = mat::procesar(10);
+    print("resultado:", r);
+    return 0;
+}

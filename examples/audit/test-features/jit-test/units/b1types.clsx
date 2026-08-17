@@ -1,0 +1,19 @@
+var gInt = 5;
+var gFloat = 2.5;
+var gStr = "inicial";
+var gArr = [1, 2, 3];
+
+function mutar() {
+    gInt = gInt * 2;
+    gFloat = gFloat + 0.5;
+    gStr = gStr + "!";
+    gArr.push(4);
+};
+
+function main(args: String[]) -> int {
+    mutar();
+    print("int:", gInt, "float:", gFloat, "str:", gStr, "arr len:", len(gArr));
+    gInt++;
+    print("int postfix:", gInt);
+    return 0;
+};

@@ -1,0 +1,17 @@
+enum Nivel {
+    Bajo,
+    Medio,
+    Alto,
+};
+
+function main(args: String[]) -> int {
+    print("enum?", Nivel);
+    var nivel = Nivel.Alto;
+    print("enum:", nivel);
+    print("enum ==:", nivel == Nivel.Alto, "!=:", nivel == Nivel.Bajo);
+    print("enum is:", nivel is Nivel);
+    for each v in (Nivel) {
+        print("enum iter:", v);
+    }
+    return 0;
+};

@@ -1,0 +1,4 @@
+function main(a) -> int {
+    print("a:", a);
+    return 0;
+}

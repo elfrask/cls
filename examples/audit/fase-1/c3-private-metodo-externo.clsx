@@ -1,0 +1,11 @@
+# C-3: metodo private llamado desde fuera DEBE dar error
+class A {
+    private function secreta() -> int { return 42; }
+    function main() { me.aux = 1; }
+    var aux: int;
+};
+function main(args: String[]) -> int {
+    var a = A();
+    print(a.secreta());
+    return 0;
+};

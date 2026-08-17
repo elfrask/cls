@@ -1,0 +1,15 @@
+function main(args: String[]) -> int {
+    if (1) { print("int truthy"); }
+    if (0) { print("int falsy (no debe salir)"); }
+    if (2.5) { print("float truthy"); }
+    if (0.0) { print("float falsy (no debe salir)"); }
+    if ("") { print("string falsy (no debe salir)"); }
+    if ("x") { print("string truthy"); }
+    var arr = [1, 2];
+    if (arr) { print("array truthy"); }
+    var vacio: int[] = [];
+    if (vacio) { print("array falsy (no debe salir)"); }
+    var rec = {a: 1};
+    if (rec) { print("record truthy"); }
+    return 0;
+}

@@ -1,0 +1,7 @@
+import "json" as json;
+function main(args: String[]) -> int {
+    var o = json.parse('{"nombre": "CLS", "version": 2.0}');
+    print("nombre:", o.nombre);
+    print("version:", o.version);
+    return 0;
+};

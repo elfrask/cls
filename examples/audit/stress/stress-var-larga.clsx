@@ -1,0 +1,6 @@
+# STRESS: nombre de variable extremadamente largo
+function main(args: String[]) -> int {
+    var variableConUnNombreExtremadamenteLargoParaProbarLosLimitesDelAnalizadorSintactico123456789 = 42;
+    print("valor:", variableConUnNombreExtremadamenteLargoParaProbarLosLimitesDelAnalizadorSintactico123456789);
+    return 0;
+};

@@ -1,0 +1,6 @@
+# C-2 isolate: array con float PRIMERO (orden opuesto)
+function main(args: String[]) -> int {
+    var a = [2.0, 1];
+    print("a =", a);
+    return 0;
+};

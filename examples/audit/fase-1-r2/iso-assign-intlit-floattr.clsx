@@ -1,0 +1,6 @@
+function main(args: String[]) -> int {
+    var f: float = 2.5;
+    f = f * 2;
+    print(f);
+    return 0;
+};

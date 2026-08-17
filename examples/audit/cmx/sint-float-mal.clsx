@@ -1,0 +1,6 @@
+# Malformado: float mal escrito (doble punto)
+function main(args: String[]) -> int {
+    var x = 3..14;
+    print(x);
+    return 0;
+};

@@ -1,0 +1,25 @@
+# Fase B de extensiones JIT: tipos nativos + aridad 3-4 + retorno float.
+# Cubre lo que el demo walker no cubría en el JIT (CDouble/CString/CInt/CPtr),
+# con extensiones a top-level (sin `when`/estructura nativa: son gaps del typeck
+# y del emisor, fuera de Fase A/B).
+extension "msvcrt.dll" as C {
+    function strlen(s: CString) -> CInt;
+    function atoi(s: CString) -> CInt;
+    function strncmp(a: CString, b: CString, n: CInt) -> CInt;
+    function fwrite(buffer: CPtr, size: CInt, count: CInt, stream: CPtr) -> CInt;
+};
+
+extension "libm" as C {
+    function sqrt(x: CDouble) -> CDouble;
+    function pow(x: CDouble, y: CDouble) -> CDouble;
+};
+
+function main(args: String[]) -> int {
+    print("strlen('hola'):", strlen("hola"));
+    print("atoi('42'):", atoi("42"));
+    print("sqrt(16):", sqrt(16.0));
+    print("pow(2, 8):", pow(2.0, 8.0));
+    print("strncmp('abc','abd',3):", strncmp("abc", "abd", 3));
+    print("fwrite(NULL,0,0,NULL):", fwrite(0, 0, 0, 0));
+    return 0;
+};

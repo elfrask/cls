@@ -1,0 +1,10 @@
+# BUG: JIT NO aplica visibilidad protected (walker si la aplica)
+class A {
+    protected var num: String;
+    function main() { me.num = "secreto"; }
+};
+function main(args: String[]) -> int {
+    var a = A();
+    print("protect:", a.num);
+    return 0;
+};

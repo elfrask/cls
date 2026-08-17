@@ -1,0 +1,16 @@
+# PERF: arrays (push/read) con tipo concreto
+function main(args: String[]) -> int {
+    var t0 = now();
+    var a: Int[] = [];
+    for (var i = 0; i < 100000; i++) {
+        a.push(i);
+    }
+    var sum: int = 0;
+    for (var j = 0; j < 100000; j++) {
+        sum = sum + a[j];
+    }
+    var t1 = now();
+    print('sum:', sum);
+    print('tiempo_ms:', t1 - t0);
+    return 0;
+};

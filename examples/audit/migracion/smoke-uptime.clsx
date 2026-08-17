@@ -1,0 +1,4 @@
+function main(args: String[]) -> int {
+    print("os.uptime:", os.uptime());
+    return 0;
+}

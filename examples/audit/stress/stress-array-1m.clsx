@@ -1,0 +1,13 @@
+# STRESS: array gigante (push 1M elementos)
+function main(args: String[]) -> int {
+    var a = [];
+    var i = 0;
+    while (i < 1000000) {
+        a.push(i);
+        i++;
+    }
+    print("len:", a.length);
+    print("ultimo:", a[999999]);
+    print("primer:", a[0]);
+    return 0;
+};

@@ -1,0 +1,21 @@
+# C-6 edge: len, strings en arrays/records/tuplas (sin rec.toString)
+function main(args: String[]) -> int {
+    print("len('') =", len(""));
+    print("len('a') =", len("a"));
+    var s = "abcdefghijklmnopqrstuvwxyz";
+    print("len(26 chars) =", len(s));
+    var big = "";
+    for (var i = 0; i < 100; i = i + 1) {
+        big = big + "x";
+    }
+    print("len(100 x) =", len(big));
+    var arr = ["uno", "dos", "tres"];
+    print("arr strings =", arr);
+    print("arr[1] =", arr[1]);
+    var rec = {"nombre": "pepe", "edad": 30};
+    print("rec =", rec);
+    print("rec.nombre =", rec.nombre);
+    var tup = ("a", "b");
+    print("tupla strings =", tup);
+    return 0;
+};

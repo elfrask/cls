@@ -1,0 +1,41 @@
+interface Persona {
+    nombre: String,
+    edad: Int,
+};
+
+alias Punto = { x: Float, y: Float };
+alias Combinado = { a: Int } & { b: String };
+
+function main(args: String[]) -> int {
+    print("=== shape inferido ===");
+    var u = { a: 10, b: "veinte" };
+    print("u:", u);
+    print("a:", u.a, "b:", u["b"]);
+    u.a = 30;
+    print("a tras set:", u.a);
+    print("len:", u.length, "size:", u.size);
+    print("has a:", u.has("a"), "has z:", u.has("z"));
+    print("keys:", u.keys());
+
+    print("=== interface como shape ===");
+    var p: Persona = { nombre: "Ana", edad: 30 };
+    print("p:", p);
+    print("nombre:", p.nombre, "edad:", p.edad);
+    p.edad = 31;
+    print("edad tras set:", p.edad);
+
+    print("=== alias de shape ===");
+    var pt: Punto = { x: 1.5, y: 2.5 };
+    print("pt:", pt);
+    print("x:", pt.x);
+
+    print("=== conjuncion de shapes ===");
+    var c: Combinado = { a: 1, b: "x" };
+    print("c:", c);
+    print("a:", c.a, "b:", c.b);
+
+    print("=== shape en funcion ===");
+    var r = { total: 7 };
+    print("r:", r);
+    return 0;
+};

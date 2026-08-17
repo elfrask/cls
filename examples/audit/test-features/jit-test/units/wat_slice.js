@@ -1,0 +1,12 @@
+const fs = require('fs');
+const t = fs.readFileSync('C:/Users/Frask/AppData/Local/Temp/opencode/b1.wat', 'utf8');
+const g = t.indexOf('(global');
+console.log('=== globals ===');
+console.log(t.slice(g, g + 400));
+const m = t.indexOf('(export "main"');
+const f = t.lastIndexOf('(func (;', m);
+console.log('=== main ===');
+console.log(t.slice(f, f + 1500));
+const gi = t.indexOf('(func (;');
+console.log('=== funcs 1..4 ===');
+console.log(t.slice(gi, gi + 900));

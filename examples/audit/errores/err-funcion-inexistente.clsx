@@ -1,0 +1,7 @@
+# ERROR RUNTIME: funcion inexistente
+function main(args: String[]) -> int {
+    print("antes");
+    funcionInexistente(1, 2);
+    print("despues");
+    return 0;
+};

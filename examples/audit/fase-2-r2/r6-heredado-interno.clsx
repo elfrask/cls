@@ -1,0 +1,16 @@
+# R6: metodo heredado llamado DESDE dentro de un metodo de la hija
+class Base {
+    function aux() -> int {
+        return 42;
+    };
+};
+class Hija: Base {
+    function usar() -> int {
+        return me.aux() + 1;
+    };
+};
+function main(args: String[]) -> int {
+    var h = Hija();
+    print("usar:", h.usar());
+    return 0;
+};

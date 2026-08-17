@@ -1,0 +1,4 @@
+extension "libc" as C {
+    export function strlen(s: CString) -> CInt;
+    export function atoi(s: CString) -> CInt;
+};

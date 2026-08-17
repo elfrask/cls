@@ -1,0 +1,23 @@
+extension "libm" as C {
+    function sqrt(x: CDouble) -> CDouble;
+    function pow(x: CDouble, y: CDouble) -> CDouble;
+};
+
+extension "msvcrt.dll" as C {
+    function strlen(s: CString) -> CInt;
+    function atoi(s: CString) -> CInt;
+};
+
+# La estructura Punto se declara como estructura CLS (el JIT no emite
+# estructuras nativas dentro de `extension`; paridad walker de la salida).
+structure Punto { x: int, y: int };
+
+function main(args: String[]) -> int {
+    print("strlen('hola'):", strlen("hola"));
+    print("atoi('42'):", atoi("42"));
+    print("sqrt(16):", sqrt(16.0));
+    print("pow(2, 8):", pow(2.0, 8.0));
+    var p = Punto(3, 4);
+    print("p.x:", p.x, " p.y:", p.y);
+    return 0;
+};

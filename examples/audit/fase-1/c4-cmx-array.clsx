@@ -1,0 +1,10 @@
+# C-4: CMX vacio en array como children
+function main(args: String[]) -> int {
+    var arr = [<div></div>, <span></span>];
+    print("arr len:", arr.length);
+    print("arr[0].tag:", arr[0].tag);
+    print("arr[1].tag:", arr[1].tag);
+    var padre = <div><div></div></div>;
+    print("padre.children:", padre.children);
+    return 0;
+};

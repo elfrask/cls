@@ -1,0 +1,5 @@
+# archivo NO relacionado - no deberia invalidar el cache de main.clsx
+function main(args: String[]) -> int {
+    print("sin relacion");
+    return 0;
+};

@@ -1,0 +1,11 @@
+# C-3: escritura private externa bloqueada (write target)
+class A {
+    private var x: int;
+    function main() { me.x = 1; }
+};
+function main(args: String[]) -> int {
+    var a = A();
+    a.x = 99;
+    print(a.x);
+    return 0;
+};

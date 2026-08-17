@@ -1,0 +1,17 @@
+# QA: tuplas (arrays inmutables)
+function main(args: String[]) -> int {
+    var t = (10, 20, 30);
+    print("literal:", t);
+    print("t[0]:", t[0], "t[2]:", t[2]);
+    print("length:", t.length);
+    print("join:", t.join(","));
+    var hetero = (1, "dos", 3.0);
+    print("heterogenea:", hetero);
+    print("type:", type(t));
+    var i = 0;
+    for each x in (t) {
+        print("each[$i]:", x);
+        i++;
+    }
+    return 0;
+};

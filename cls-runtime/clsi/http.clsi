@@ -1,0 +1,3 @@
+# @title http
+function get(url: String) -> String {};
+function post(url: String, body: String) -> String {};

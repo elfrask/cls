@@ -1,0 +1,14 @@
+function main(args: String[]) -> int {
+    print("=== closure simple ===");
+    var x = 10;
+    var f = () -> { return x + 1; };
+    print("f:", f());
+
+    print("=== closure con mutacion ===");
+    var contador = 0;
+    var inc = () -> { contador = contador + 1; return contador; };
+    print("inc1:", inc());
+    print("inc2:", inc());
+    print("contador externo:", contador);
+    return 0;
+};

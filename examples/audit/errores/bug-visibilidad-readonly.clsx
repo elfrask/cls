@@ -1,0 +1,11 @@
+# BUG: JIT NO aplica readonly (escritura externa permitida; walker la bloquea)
+class C {
+    readonly var creado: int;
+    function main() { me.creado = 2024; }
+};
+function main(args: String[]) -> int {
+    var c = C();
+    c.creado = 999;
+    print("tras write externo:", c.creado);
+    return 0;
+};

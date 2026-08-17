@@ -1,0 +1,6 @@
+import "json" as json;
+function main(args: String[]) -> int {
+    var o = json.parse('{"a":true,"b":null}');
+    print("a:", o.a, "b:", o.b);
+    return 0;
+};

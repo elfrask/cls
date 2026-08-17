@@ -1,0 +1,78 @@
+# estadisticas.clsx - La ciencia detrás de mi progreso.
+# Convierte XP en niveles, calcula porcentajes y cuida mi racha diaria.
+#
+# Aprendizaje clave: los módulos NO tienen acceso a los intrinsics del runtime
+# (now, len, float, toString...). Todo lo que necesito me llega como parámetro
+# (el día de hoy lo calcula main con now() y me lo pasa). El resto es pura
+# aritmética, sin intrinsics. ¡Los números nunca mienten!
+
+# Cuánto XP necesito para alcanzar cada nivel.
+# Novato(0) < Aprendiz(50) < Junior(150) < Senior(350) < Mago(700)
+function xpParaNivel(nivel: String) -> int {
+    if (nivel == "Aprendiz") { return 50; }
+    if (nivel == "Junior") { return 150; }
+    if (nivel == "Senior") { return 350; }
+    if (nivel == "Mago") { return 700; }
+    return 0;
+}
+
+function siguienteNivel(nivel: String) -> String {
+    if (nivel == "Novato") { return "Aprendiz"; }
+    if (nivel == "Aprendiz") { return "Junior"; }
+    if (nivel == "Junior") { return "Senior"; }
+    if (nivel == "Senior") { return "Mago"; }
+    return "Mago";
+}
+
+# El nombre del nivel según mi XP total.
+export function nivelDesdeXp(xp: int) -> String {
+    if (xp >= xpParaNivel("Mago")) { return "Mago"; }
+    if (xp >= xpParaNivel("Senior")) { return "Senior"; }
+    if (xp >= xpParaNivel("Junior")) { return "Junior"; }
+    if (xp >= xpParaNivel("Aprendiz")) { return "Aprendiz"; }
+    return "Novato";
+}
+
+# Qué porcentaje me falta para subir al siguiente nivel.
+# Uso aritmética entera para no depender de float (intrinsic no disponible
+# en módulos). El truncado es más que suficiente para un porcentaje.
+export function porcentajeSiguienteNivel(xp: int) -> int {
+    if (xp >= xpParaNivel("Mago")) { return 100; }
+    var nivel: String = nivelDesdeXp(xp);
+    var base: int = xpParaNivel(nivel);
+    var tope: int = xpParaNivel(siguienteNivel(nivel));
+    if (tope == base) { return 0; }
+    return (xp - base) * 100 / (tope - base);
+}
+
+# El día de hoy como un número, para calcular rachas.
+# El parámetro `ahora` (now() desde main) es entero: la división de enteros
+# también es entera, así que no necesito convertir nada.
+export function diaHoy(ahora: int) -> int {
+    return ahora / 86400000;
+}
+
+# Una etiqueta legible para mi diario.
+export function fechaHoy(hoy: int) -> String {
+    return "día ${diaHoy(hoy)}";
+}
+
+# Actualiza la racha. Devuelve (rachaNueva, ultimoDiaNuevo).
+export function actualizarRacha(racha: int, ultimoDia: int, hoy: int) -> (int, int) {
+    if (ultimoDia == 0) {
+        return (1, hoy);
+    }
+    if (ultimoDia == hoy) {
+        return (racha, hoy);
+    }
+    if (ultimoDia + 1 == hoy) {
+        return (racha + 1, hoy);
+    }
+    return (1, hoy);
+}
+
+# Un porcentaje simple: cuánto llevo de algo. Enteros puros.
+export function porcentaje(hecho: int, total: int) -> int {
+    if (total <= 0) { return 0; }
+    return hecho * 100 / total;
+}

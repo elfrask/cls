@@ -1,0 +1,9 @@
+function main(args: String[]) -> int {
+    var rec = {a: 1};
+    print("antes");
+    if (rec) { print("record truthy"); } else { print("record falsy"); }
+    print("despues");
+    var rec2: Record<String, int> = {b: 2};
+    if (rec2) { print("rec2 truthy"); }
+    return 0;
+}

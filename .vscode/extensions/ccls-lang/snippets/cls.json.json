@@ -1,0 +1,104 @@
+{
+  "CLS Manifest - Full": {
+    "prefix": "clsmanifest",
+    "body": [
+      "{",
+      "  \"name\": \"${1:project-name}\",",
+      "  \"version\": \"${2:0.1.0}\",",
+      "  \"description\": \"${3:A CLS project}\",",
+      "  \"authors\": [\"${4:author}\"],",
+      "  \"license\": \"${5:MIT}\",",
+      "  \"registry\": \"https://registry.cls-lang.org\",",
+      "  \"entry\": \"${6:src/main.clsx}\",",
+      "",
+      "  \"project\": {",
+      "    \"sourceDir\": \"src\",",
+      "    \"outDir\": \"dist\",",
+      "    \"target\": \"${7|executable,library,dynamic-lib|}\"",
+      "  },",
+      "",
+      "  \"compiler\": {",
+      "    \"targetArchitecture\": \"${8|wasm,x86_64,arm64,bytecode|}\",",
+      "    \"optimizationLevel\": \"${9|O0,O1,O2,O3,Os|}\",",
+      "    \"sourceMaps\": ${10|true,false|},",
+      "    \"types\": {",
+      "      \"check\": ${11|true,false|},",
+      "      \"strict\": ${12|true,false|},",
+      "      \"noImplicitAny\": ${13|true,false|},",
+      "      \"nullSafety\": ${14|true,false|}",
+      "    },",
+      "    \"features\": {",
+      "      \"async\": ${15|true,false|},",
+      "      \"macros\": ${16|true,false|},",
+      "      \"experimental\": ${17|true,false|}",
+      "    },",
+      "    \"warnings\": {",
+      "      \"unusedVariables\": \"${18|warn,error,off|}\",",
+      "      \"deadCode\": \"${19|warn,error,off|}\",",
+      "      \"treatWarningsAsErrors\": ${20|true,false|}",
+      "    }",
+      "  },",
+      "",
+      "  \"interpreter\": {",
+      "    \"optimization\": ${21|true,false|},",
+      "    \"mode\": \"${22|pure-ast,jit|}\",",
+      "    \"runtime\": {",
+      "      \"memoryLimit\": \"${23:512MB}\",",
+      "      \"stackSize\": \"${24:8MB}\",",
+      "      \"gc\": {",
+      "        \"enabled\": ${25|true,false|},",
+      "        \"strategy\": \"${26|compiled,active|}\",",
+      "        \"threshold\": \"${27:64MB}\"",
+      "      }",
+      "    },",
+      "    \"sandbox\": {",
+      "      \"allowFs\": ${28|true,false|},",
+      "      \"allowNet\": ${29|true,false|},",
+      "      \"maxExecutionTime\": ${30:5000}",
+      "    }",
+      "  },",
+      "",
+      "  \"dependencies\": {},",
+      "  \"devDependencies\": {}",
+      "}"
+    ],
+    "description": "Full CLS manifest configuration (cls.json)"
+  },
+
+  "CLS Manifest - Minimal": {
+    "prefix": "clsmin",
+    "body": [
+      "{",
+      "  \"name\": \"${1:project-name}\",",
+      "  \"version\": \"0.1.0\",",
+      "  \"entry\": \"${2:src/main.clsx}\"",
+      "}"
+    ],
+    "description": "Minimal CLS manifest (cls.json)"
+  },
+
+  "CLS Sandbox Config": {
+    "prefix": "clssandbox",
+    "body": [
+      "\"interpreter\": {",
+      "  \"sandbox\": {",
+      "    \"allowFs\": ${1|true,false|},",
+      "    \"allowNet\": ${2|true,false|},",
+      "    \"maxExecutionTime\": ${3:5000}",
+      "  }",
+      "}"
+    ],
+    "description": "CLS sandbox configuration block"
+  },
+
+  "CLS Dependencies": {
+    "prefix": "clsdeps",
+    "body": [
+      "\"dependencies\": {",
+      "  \"${1:package-name}\": \"${2:^1.0.0}\"",
+      "},",
+      "\"devDependencies\": {}"
+    ],
+    "description": "CLS dependencies block"
+  }
+}

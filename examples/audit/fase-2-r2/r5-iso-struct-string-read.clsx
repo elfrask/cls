@@ -1,0 +1,10 @@
+# R5-iso: struct con campo String - SOLO lectura (sin escritura)
+structure Punto {
+    x: int,
+    nombre: String,
+};
+function main(args: String[]) -> int {
+    var p = Punto(1, "a");
+    print("antes:", p.x, p.nombre);
+    return 0;
+};
