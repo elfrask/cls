@@ -1,0 +1,163 @@
+name: Release
+
+on:
+  push:
+    branches: [releases]
+
+permissions:
+  contents: write
+
+env:
+  VERSION: 2.0.0
+
+jobs:
+  build:
+    name: Build (${{ matrix.os_name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            os_name: windows
+            exe_ext: .exe
+            native_lib: clsb.dll
+          - os: ubuntu-latest
+            os_name: linux
+            exe_ext: ""
+            native_lib: libclsb.so
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Caché de Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release
+        shell: bash
+        run: cargo build --release --workspace
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          set -e
+          ./target/release/clx${{ matrix.exe_ext }} --version
+          out="$(./target/release/clx${{ matrix.exe_ext }} run scripts/release-smoke.clsx)"
+          test "$out" = "hola"
+          out2="$(./target/release/clxr${{ matrix.exe_ext }} scripts/release-smoke.clsx)"
+          test "$out2" = "hola"
+
+      - name: Empaquetado
+        shell: bash
+        run: |
+          set -e
+          SHA7="$(git rev-parse --short=7 HEAD)"
+          bash scripts/release-pack.sh \
+            "${{ matrix.os_name }}" \
+            "${{ matrix.exe_ext }}" \
+            "${{ matrix.native_lib }}" \
+            "${{ env.VERSION }}" \
+            "$SHA7"
+
+      - name: Subir artefactos
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ matrix.os_name }}
+          path: dist/${{ matrix.os_name }}/*
+          if-no-files-found: error
+
+  extension:
+    name: Extensión VS Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: npm ci
+        shell: bash
+        working-directory: .vscode/extensions/ccls-lang
+        run: |
+          set -e
+          npm ci --omit=dev || npm install --omit=dev
+
+      - name: Empaquetar extensión
+        shell: bash
+        run: |
+          set -e
+          mkdir -p dist
+          bash scripts/release-zip.sh \
+            .vscode/extensions/ccls-lang \
+            "dist/cls-lang-${{ env.VERSION }}.zip"
+
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-extension
+          path: dist/cls-lang-${{ env.VERSION }}.zip
+          if-no-files-found: error
+
+  release:
+    name: Publicar release
+    runs-on: ubuntu-latest
+    needs: [build, extension]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calcular tag
+        shell: bash
+        env:
+          RELEASE_STAGE: ${{ vars.RELEASE_STAGE }}
+        run: |
+          set -euo pipefail
+          STAGE="${RELEASE_STAGE:-dev}"
+          if [ "$STAGE" = "dev" ]; then
+            COUNT="$(git tag --list "v${{ env.VERSION }}-dev*" | wc -l | tr -d ' ')"
+            N=$((COUNT + 1))
+            TAG="v${{ env.VERSION }}-dev-${N}"
+          else
+            TAG="v${{ env.VERSION }}-release"
+          fi
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "RELEASE_NAME=$(git log -1 --format=%s)" >> "$GITHUB_ENV"
+
+      - name: Generar body
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f "devlogs/${TAG}.md" ]; then
+            cp "devlogs/${TAG}.md" body.md
+          elif [ -f "devlogs/${TAG}" ]; then
+            cp "devlogs/${TAG}" body.md
+          else
+            printf '## CLS %s\n\nCommit: `%s`\n\n### Artefactos\n- Portables: Windows + Linux\n- Binarios sueltos: clx, clxr\n- Extensión VS Code\n- Bindings: C, Python, JS\n' "$TAG" "${GITHUB_SHA}" > body.md
+          fi
+          echo "BODY_PATH=$PWD/body.md" >> "$GITHUB_ENV"
+
+      - name: Descargar artefactos
+        uses: actions/download-artifact@v4
+        with:
+          pattern: artifacts-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Crear GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.RELEASE_NAME }}
+          body_path: ${{ env.BODY_PATH }}
+          files: artifacts/**/*
+          fail_on_unmatched_files: false
