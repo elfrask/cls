@@ -5,6 +5,21 @@
 > Mediciones: promedio de 3 runs, `*_ms` interno reportado por el propio script.
 > Hardware: (máquina del desarrollador).
 
+## RESULTADOS PRINCIPALES (tiempo interno promedio, ms — menos es mejor)
+
+### Features comunes (carga idéntica)
+
+| Prueba | Carga | **CLS** | C++ | Rust | JS | Python |
+|---|---|---|---|---|---|---|
+| **Aritmética** (5 ops + cmp) | 20M iter | **90.7** | 91.1 | **82.8** | 109.2 | 12 111.7 |
+| **Fib recursivo** | fib(30) | 4 391 | **2.1** | 2.3 | 12.4 | 173.7 |
+| **Arrays** (push + sum) | 100k | 344.7 | **0.2** | 0.2 | 6.2 | 4.9 |
+| **Strings** (concat) | 10k | 52 | 0.1 | **0.03** | 0.2 | 4.1 |
+| **Math** (sqrt+sin) | 200k | 80.3 | 8.5 | **1.8** | 7.9 | 85.5 |
+| **Llamadas** (función) | 1M | 1 918.7 | 0* | 0* | **3.5** | 199.6 |
+
+\* C++/Rust con -O3 **inlinean** `cuadrado` (0ms — no comparable).
+
 ## Resultados (antes vs después de la Fase 3)
 
 | Prueba | Baseline pre-Fase3¹ | Con internals WASM (hoy) | Objetivo del plan | Estado |
