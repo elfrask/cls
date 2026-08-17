@@ -11,7 +11,7 @@
 set -euo pipefail
 
 OS="${1:?uso: release-pack.sh <os> <exe_ext> <native_lib> <version> <sha7>}"
-EXE_EXT="${2:?}"
+EXE_EXT="${2:-}"
 NATIVE_LIB="${3:?}"
 VERSION="${4:?}"
 SHA7="${5:?}"
