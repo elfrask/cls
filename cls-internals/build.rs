@@ -12,10 +12,20 @@ fn main() {
     let target_dir = out_dir.join("wasm-target");
 
     let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+
+    // El sub-crate `wasm/` se compila como cdylib standalone con `__cls_alloc`
+    // indefinido a proposito (el linker de fusion lo resuelve al `__alloc` del
+    // modulo CLS). rust-lld de toolchains nuevos rechaza simbolos indefinidos
+    // por defecto (undefined symbol: __cls_alloc), asi que se permite el import
+    // explicitamente. Se pasa por --config (no RUSTFLAGS env: el cargo padre le
+    // pasa CARGO_ENCODED_RUSTFLAGS al build script, que anula RUSTFLAGS; no
+    // config file: la discovery depende del CWD del build script).
+    let config = "target.wasm32-unknown-unknown.rustflags=[\"-C\",\"link-arg=--allow-undefined\"]";
     let status = Command::new(&cargo)
         .args(["build", "--release", "--manifest-path"])
         .arg(&wasm_manifest)
         .args(["--target", "wasm32-unknown-unknown"])
+        .args(["--config", config])
         .env("CARGO_TARGET_DIR", &target_dir)
         .status()
         .expect("no se pudo ejecutar cargo para cls-internals-wasm");
