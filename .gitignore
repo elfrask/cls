@@ -17,3 +17,4 @@ __pycache__/
 **/_logs
 .pytest_cache
 **/target
+*.zip

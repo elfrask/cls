@@ -2,8 +2,14 @@
   "name": "cls-lang",
   "displayName": "CLS Language Support",
   "description": "Syntax highlighting, LSP, snippets and language support for CLS (.clsx, cls.json)",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "publisher": "frask",
+  "license": "MIT",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/elfrask/cls"
+  },
   "engines": {
     "vscode": "^1.80.0"
   },
