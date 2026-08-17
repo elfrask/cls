@@ -1,0 +1,13 @@
+# El sub-crate `wasm/` de cls-internals se compila como cdylib standalone con
+# `__cls_alloc` indefinido a proposito: el linker de fusion lo resuelve al
+# `__alloc` del modulo CLS. toolchains nuevos de rust-lld rechazan simbolos
+# indefinidos por defecto (error: undefined symbol: __cls_alloc), asi que se
+# permiten explicitamente con --allow-undefined.
+#
+# Este config debe vivir en cls-internals/.cargo (NO en wasm/.cargo): el
+# build.rs invoca `cargo build --manifest-path <wasm/Cargo.toml>` con el CWD
+# del package root (cls-internals), y cargo descubre configs desde el CWD hacia
+# arriba. RUSTFLAGS env no funciona aqui: el cargo padre le pasa
+# CARGO_ENCODED_RUSTFLAGS al build script, que anula RUSTFLAGS del hijo.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--allow-undefined"]
