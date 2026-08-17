@@ -4,10 +4,10 @@ Una feature nueva atraviesa las capas del compilador, del análisis de tipos
 y, si aplica al JIT, del emisor WASM. Estructura:
 
 ```
-cls-core/src/frontend/   lexer.rs, token.rs, parser.rs, ast.rs
-cls-core/src/middleware/ typeck.rs (check_*), types.rs, resolver.rs, optimizer.rs
-cls-core/src/backend/    wasm.rs (emit_*), json.rs, visitor.rs
-cls-runtime/src/         interpreter.rs (evaluate_*), value.rs
+cls-core/src/frontend/   lexer.rs, token.rs, parser.rs, ast/ (un archivo por tipo)
+cls-core/src/middleware/ typeck/ (check_*), types.rs, resolver.rs, optimizer.rs
+cls-core/src/backend/    wasm/ (engine/ + emitter/), json.rs, visitor.rs
+cls-runtime/src/walker/  interpreter.rs (evaluate_*), value.rs
 ```
 
 ## Pasos por capa
@@ -20,11 +20,12 @@ Solo si la feature introduce sintaxis nueva:
   el símbolo real, no el Debug).
 - En `lexer.rs`, produce el token desde la fuente.
 
-### 2. AST (`ast.rs`)
+### 2. AST (`ast/`)
 
 Define el nodo (p. ej. `Expression::Foo(FooExpr)` o
-`Statement::Foo(...)`) con su `Span`. Los spans son obligatorios: alimentan
-el type map y los caret de error.
+`Statement::Foo(...)`) con su `Span` en `frontend/ast/` (re-exportado en
+`ast/mod.rs`). Los spans son obligatorios: alimentan el type map y los caret
+de error.
 
 ### 3. Parser (`parser.rs`)
 
@@ -35,7 +36,7 @@ el type map y los caret de error.
   parser ya tiene patrones: `is_arrow_function`, check directo en LParen,
   depth tracking.
 
-### 4. Typeck (`typeck.rs`)
+### 4. Typeck (`middleware/typeck/`)
 
 - `check_foo(...)` produce el `Type` de la expresión y registra
   `types_by_span` (el type map `Span -> Type`).
@@ -43,19 +44,22 @@ el type map y los caret de error.
   miembros por módulo en `check_member_access` y `module_arity`.
 - En modo estricto las asignaciones incompatibles son ERROR con span real.
 
-### 5. Emisor WASM (`backend/wasm.rs`) - el JIT
+### 5. Emisor WASM (`backend/wasm/`) - el JIT
 
 Lo que permite `clx run`:
 
 - Implementa `emit_foo(...)`; el subset homogéneo: `Int` -> `i64`,
   `Float` -> `f64`, `Bool` -> `i32`, `String` -> `i64` `(ptr << 32) | len`,
   referencias -> `i64` (bump allocator).
+- Si la operación tiene equivalente en internals precompiladas
+  (`cls-internals`, funciones `__intr_*`), emite `call __intr_*` por nombre
+  (con host fallback si no está fusionada).
 - Si el emisor no la soporta, produce un error explícito
   `El JIT (subconjunto WASM) aún no soporta ...` con `compile_at(msg, span)`.
 - Lo que el walker soporta pero no el emisor no frena la feature: **el JIT
   manda** (ver Directiva en `AGENTS.md`).
 
-### 6. Walker (`interpreter.rs`) - opcional
+### 6. Walker (`cls-runtime/src/walker/interpreter.rs`) - opcional
 
 Solo si quieres la referencia sintáctica en el tree-walker:
 `evaluate_foo(...)` + `Value` en `value.rs`. El walker está deprecado; no
@@ -85,7 +89,10 @@ inviertas tiempo en paridad.
 ## Referencia de ejemplo
 
 - CMX: tokens en `lexer.rs` (`lex_cmx`), parseo en
-  `parser.rs::parse_cmx`, evaluación en `interpreter.rs::evaluate_cmx`,
-  tipo en el typeck, emisión en `backend/wasm.rs` (`cmx_*` host functions).
-- Errores del emisor no soportado: `compile_at` en `backend/wasm.rs`
+  `parser.rs::parse_cmx`, evaluación en `walker/interpreter.rs::evaluate_cmx`,
+  tipo en el typeck, emisión en `backend/wasm/` (host functions `cmx_*`).
+- Errores del emisor no soportado: `compile_at` en `backend/wasm/`
   (p. ej. `await`, índices dinámicos en records con shape).
+- Internals WASM: agregar una función `__intr_*` = implementar en
+  `cls-internals/wasm/src/<area>.rs` + firmar en `abi.rs` (ver
+  `agregar-modulo-interno.md`).

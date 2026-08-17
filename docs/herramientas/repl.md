@@ -130,9 +130,12 @@ línea actual.
   en archivos).
 - Solo `wasmtime` (no wasmi).
 - Los campos `static` de clases se re-inicializan en cada línea.
-- Los strings de la sesión se re-sembran en el pool de cada módulo nuevo (los
-  punteros transferidos conservan su offset); el límite práctico del pool es
-  ~512 KB de datos de strings acumulados.
+- El estado se transfiere copiando `[HEAP_START, len)` de la instancia anterior
+  (globals `__g_{idx}` + heap); la ventana de internals y el string pool del
+  módulo nuevo quedan intactos. Los strings de la sesión se re-sembran en el
+  pool de cada módulo nuevo (los punteros transferidos conservan su offset); el
+  límite práctico del pool es ~512 KB de datos de strings acumulados (región
+  `STRING_DATA_BASE .. STRING_TABLE_BASE` de `layout.rs`).
 
 ## Errores
 

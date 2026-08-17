@@ -106,8 +106,12 @@ Parser y lexer usan `self.syntax_err(msg)`; el JIT usa `compile_at` para
   caret exacto.
 - **wasmi** (`CLS_JIT_RUNTIME=wasmi`): sin excepciones - `try/catch`/`throw`
   fallan en compilación y los errores son traps con el mensaje, **sin caret**.
-- El call stack CLS se mantiene con un shadow stack (`fn_enter`/`fn_exit`)
-  de hasta 1000 frames; el stack overflow se detecta y reporta como
+- El call stack CLS vive en la **memoria lineal** del módulo: frames de 12
+  bytes (`name_idx:u32, line:u32, col:u32`) escritos por `fn_enter`/`fn_exit`/
+  `call_site` como stores WASM inline (0 host calls), en la región
+  `[SHADOW_STACK_BASE .. SHADOW_STACK_BASE + 12*1000)`. El host lee la región
+  solo en el trap (`read_shadow_trace`) y resuelve `idx → nombre` contra la
+  tabla de strings; el stack overflow se detecta y reporta como
   `stack overflow` limpio con los últimos 3 frames.
 
 ### Flag `trace_calls` (`CLS_JIT_TRACE=0`)

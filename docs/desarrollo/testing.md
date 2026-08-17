@@ -12,8 +12,8 @@ cargo test -p clxr         # solo un crate
 
 | Crate | Dónde | Tests (contados en el código) |
 |---|---|---|
-| `cls-core` | `src/frontend/lexer.rs` (8), `src/frontend/parser.rs` (22), `src/middleware/typeck.rs` (21), `src/error/mod.rs` (9) | span/merge/fábricas de error, lexer, parser, typeck |
-| `cls-runtime` | `src/stdlib/primitive.rs` (10), `src/interpreter.rs` (22), `src/vfs/resolver.rs` (10), `src/vfs/security.rs` (5), `src/error_report.rs` (6) | dispatch tables de primitivos, control de flujo, VFS, formato de errores |
+| `cls-core` | `src/frontend/lexer.rs` (8), `src/frontend/parser.rs` (22), `src/middleware/typeck/tests.rs` (21), `src/error/mod.rs` (9) | span/merge/fábricas de error, lexer, parser, typeck |
+| `cls-runtime` | `src/stdlib/primitive.rs` (10), `src/walker/interpreter.rs` (22), `src/vfs/resolver.rs` (10), `src/vfs/security.rs` (5), `src/error_report.rs` (6) | dispatch tables de primitivos, control de flujo, VFS, formato de errores |
 | `cls-jit` | `tests/` - `wasmi_smoke.rs`, `host_call.rs`, `exports.rs`, `debug_kinds.rs` (8 tests) | **`wasmi_smoke` requiere la feature `wasmi-runtime`** |
 | `nodos/clxb` | `tests/embed.rs` (5 tests de integración) | `cargo test -p clxb` |
 
@@ -45,6 +45,12 @@ magic methods, genéricos, shapes.
 | `test-features/jit-test/availible/` | Features disponibles del JIT (25 scripts, `01-operadores.clsx` … `25-bitops.clsx`) |
 | `test-features/jit-test/units/` | Unit tests del JIT (`a1`–`a11`, `b1`–`b9`, `f64arr`, `synerr`, `bench_fib`, ...) + `.wat`/`.js` de referencia |
 | `test-features/tests/` | Suite de features (imports, VFS, async, errores, magic, clases, ...) - incluye `jit-magic-all.clsx` (test integral de los 24 magic methods con `clx run`) |
+
+Convención de paridad: los tests de features comparan **JIT vs walker**
+(excepto los de `examples/jit-examples/`, JIT-only). Los unit tests del emisor
+incluyen `units/deadflow.clsx` (paridad walker) - verifica el fix de
+**dead-flow** (`unreachable` tras `return`/`break`/`if` con todas las ramas
+terminadas + default de retorno; commit `3e1cd80`).
 
 Logs de corridas: `examples/audit/_logs/*.jit.log` (cada script de QA escribe
 `<nombre>.jit.log` con stdout/stderr/exit/time).

@@ -21,8 +21,9 @@ está deprecado.
    `no_implicit_any: true` y `null_safety: true`. Los errores de tipo abortan
    con diagnóstico + caret.
 8. **Flatten** - los imports se aplanan en el módulo único.
-9. **Emisión** - `WasmBackend` (`cls-core/src/backend/wasm.rs`) genera el
-   binario WASM.
+9. **Emisión** - `WasmBackend` (carpeta `cls-core/src/backend/wasm/`:
+   `engine/` y `emitter/`) genera el binario WASM, **fusionando** dentro del
+   módulo las internals precompiladas de `cls-internals`.
 10. **Ejecución** - instancia el módulo en wasmtime (o wasmi) y llama a
     `main(args)`.
 
@@ -30,13 +31,46 @@ está deprecado.
 
 - Ubicación: `~/.cache/cls/` (HOME/USERPROFILE).
 - Clave: hash de la fuente del entry + versión de `cls-core` + target +
-  runtime + **fuentes de todos los módulos importados**. Editar cualquier
-  `.clsx` del grafo invalida el caché.
+  runtime + **fuentes de todos los módulos importados** + `BACKEND_HASH`
+  (build.rs de `cls-core` hashea `src/backend/wasm/` y las fuentes de
+  `cls-internals`). Editar cualquier `.clsx` del grafo **o el emisor** invalida
+  el caché. El flag `trace_calls` también forma parte de la clave (misma fuente
+  con/sin trace genera módulos distintos).
 - Escritura atómica (archivo temporal + rename); solo se persiste si el
   binario valida.
 - `clx clean` vacía el caché. El workspace adicionalmente registra un índice
   de integridad informativo en `[workspace]/.cls-cache/module-index.json`
   (hashes SHA-256 de cada `.clsx`; el JIT no lo usa para invalidar).
+
+## Internals fusionadas (`cls-internals`)
+
+Los arrays, strings, records, math y conversiones ya **no se importan del
+host**: viven precompilados a WASM en el crate `cls-internals` (sub-crate
+`cls-internals/wasm/` → `wasm32-unknown-unknown`, embebido con
+`include_bytes!`) y el emisor los **fusiona dentro del módulo CLS**
+(`engine/fusion.rs`), compartiendo la memoria lineal:
+
+- El emisor llama a `__intr_<area>_<op>` por nombre (`func_indexes`); si una
+  internals no está presente cae al **host fallback** con la misma firma.
+- El re-mapeo es solo de **índices WASM** (types/funcs/globals/tabla), no de
+  direcciones; el import `__cls_alloc` de internals se resuelve al `__alloc`
+  del CLS (misma firma `(i64) -> i64`).
+- Las direcciones internas del sub-crate quedan **intactas** (ventana fija).
+- Verificado: el WAT del módulo no importa `env.arr_*`/`str_*`/`record_*`/
+  `math_*`/`parse_*` (paridad 02-strings, 03-tuplas, 04-arrays, 06/09-records,
+  suites 25+21 PASS, wasmtime y wasmi).
+
+### Layout de la memoria lineal (`layout.rs`)
+
+```
+[0 .. INTERNALS_WINDOW_END)        ventana de internals (1.11MB, direcciones intactas)
+[STRING_DATA_BASE .. +512KB)       string pool del CLS (data segment)
+[STRING_TABLE_BASE .. +256KB)      tabla de strings (offset, len por entrada)
+[HEAP_START ..]                    heap bump (allocator compartido)
+[SHADOW_STACK_BASE .. +12*1000)    shadow call stack (trace de errores)
+```
+
+Memoria mínima 32 páginas (2MB); `memory.grow` según demanda.
 
 ## Representación de tipos
 
@@ -50,27 +84,29 @@ está deprecado.
 | `Array<T>` | `i64` = puntero a `[cap][len][elems...]` |
 | `Record`/`Shape`/`Tuple`/`Cmx`/clases/structs/enums | `i64` = puntero |
 
-Memoria: bump allocator (sin free), heap inicial 1 MB tras el string pool,
-`memory.grow` según demanda. Los strings de la fuente se internan en un pool
-en el data segment.
+Memoria: bump allocator (sin free) en `HEAP_START` (tras la ventana de
+internals + string pool + tabla), `memory.grow` según demanda. Los strings de
+la fuente se internan en un pool en el data segment (tabla de índices en
+`STRING_TABLE_BASE`, datos en `STRING_DATA_BASE`).
 
 ## Host functions
 
-El módulo WASM importa ~105 funciones `env.*` implementadas en el host
-(`cls-jit/src/host.rs` + `wasmtime_rt.rs`):
+El módulo WASM importa **solo las host functions de I/O, errores y nodo**
+(~77 imports `env.*`, implementadas en `cls-jit/src/host.rs` +
+`wasmtime_rt.rs`/`wasmi_rt.rs`):
 
-- Impresión y conversiones (`print_*`, `parse_*`, `str_*`).
-- `now`, `exit`, `sleep`, `trap`.
-- Arrays y records (`arr_*`, `record_*`).
-- Math (`math_sqrt`, `math_pow`, `math_range`, ...), JSON (`json_parse`,
-  `json_stringify`).
-- Módulos desktop: `fs_*`, `http_*`, `os_*`, `path_*`, `process_*`,
-  `time_*`, `random_*`.
+- Impresión (`print_*`) y errores (`trap`, `exit`).
+- `now`, `sleep`, `host_call(id, ptr, n)` - canal genérico para intrinsics del
+  nodo.
+- Módulos desktop: `fs_*`, `http_*`, `os_*`, `path_*`, `process_*`, `time_*`,
+  `random_*`.
 - CMX (`cmx_*`) y funciones como valor (`fn_*`).
-- `host_call(id, ptr, n)` - canal genérico para intrinsics del nodo.
 
-Los métodos de primitivos (`"hola".upper()`, `arr.push(x)`, ...) se compilan
-a llamadas directas a estas host functions (sin objetos ni boxing).
+Los arrays/strings/records/math/conversiones se **fusionan** desde
+`cls-internals` (ver arriba); el `HostFn` correspondiente queda como fallback
+con la misma firma. Los métodos de primitivos (`"hola".upper()`,
+`arr.push(x)`, ...) se compilan a llamadas directas a internals u host (sin
+objetos ni boxing).
 
 ## Excepciones y errores
 
@@ -81,10 +117,19 @@ a llamadas directas a estas host functions (sin objetos ni boxing).
 - **wasmi** (`CLS_JIT_RUNTIME=wasmi`): intérprete puro, **sin soporte de
   excepciones** - `try/catch`/`throw` fallan en compilación y los errores son
   traps con el mensaje, sin caret.
-- El call stack CLS se mantiene con un "shadow stack" (`fn_enter`/`fn_exit`)
-  de hasta 1000 frames; el formateador del runtime lo muestra numerado con
-  código fuente por frame (ver `runtime/errores.md`). El stack overflow se
-  detecta y reporta limpio.
+- El call stack CLS se mantiene en la **memoria lineal** del módulo: frames de
+  12 bytes (`name_idx:u32, line:u32, col:u32`) escritos por `fn_enter`/
+  `fn_exit`/`call_site` como **stores WASM inline (0 host calls)** en la región
+  `[SHADOW_STACK_BASE .. SHADOW_STACK_BASE + 12*1000)`. El host lee la región
+  **solo en el trap** (`read_shadow_trace` en wasmtime/wasmi/repl) y resuelve
+  `idx → nombre` contra la tabla de strings; el formateador del runtime lo
+  muestra numerado con código fuente por frame (ver `runtime/errores.md`). El
+  stack overflow se detecta y reporta limpio. `CLS_JIT_TRACE=0` omite el
+  shadow stack (pierde el trace, menos código WASM).
+- **Dead-flow**: el emisor cierra las funciones con `unreachable` tras
+  `return`/`break`/`if` con todas las ramas terminadas y un default de retorno
+  para flujo vivo sin `return` (cranelift exige stack balanceado; test
+  `examples/audit/test-features/jit-test/units/deadflow.clsx`).
 - Errores de tipo del typeck estricto abortan antes de emitir.
 
 ## Límites del subconjunto JIT

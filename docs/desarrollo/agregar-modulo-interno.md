@@ -88,12 +88,46 @@ function doble(x: int) -> int {};
      `cls-jit/src/wasmtime_rt.rs` (`register_host_functions` registra cada
      `env.*` en el `Linker`), o
    - vía el canal `env.host_call(id, ptr, n)` con `HostCallHandler` del nodo.
-   - El typeck (`cls-core/src/middleware/typeck.rs`) valida los accesos:
+   - El typeck (`cls-core/src/middleware/typeck/`) valida los accesos:
      `check_member_access` resuelve `mi_modulo.func()` contra las tablas de
      miembros por módulo y `module_arity` valida la aridad de cada función.
 5. **`.clsi`** en `cls-runtime/clsi/mi_modulo.clsi` - además de LSP/maptype,
    es la fuente de las firmas que usa el typeck del JIT (ver
    `fs.clsi`, `os.clsi`, `time.clsi`, etc.).
+
+## Internals precompiladas a WASM (`cls-internals`)
+
+Desde el plan de rendimiento (P-F2), los intrinsics de alto costo (arrays,
+strings, records, math, conversiones) ya **no viajan como host functions**:
+viven precompilados a WASM en el crate `cls-internals` y el backend los
+**fusiona dentro del módulo CLS** (cero imports de internals). Este es el flujo
+para agregar o modificar una internals:
+
+1. **Implementar la función** en el sub-crate no_std
+   `cls-internals/wasm/src/<area>.rs` (`lib.rs` re-exporta; áreas: `arrays`,
+   `strings`, `records`, `math`, `convert`, `fmt`). El nombre exportado debe
+   ser `__intr_<area>_<op>` (p. ej. `__intr_str_concat`).
+   - El sub-crate se compila a `wasm32-unknown-unknown` sin runtime Rust:
+     aloca vía `__cls_alloc` (el linker de fusión lo resuelve al `__alloc`
+     del CLS) y usa `mem.rs`/`allocator.rs`; los tipos y layouts deben matchear
+     los del backend (ver `cls-internals/src/abi.rs` y
+     `cls-core/src/backend/wasm/types.rs`).
+2. **Registrar la firma** en `cls-internals/src/abi.rs` (catálogo
+   `INTERNALS_FUNCTIONS`, ~50 entradas): `InternalsFn { name, params, results }`
+   con los `ValType` WASM. Misma firma que el `HostFn` que reemplaza
+   (`cls-core/src/backend/wasm/host_fn.rs`).
+3. **Usarla desde el emisor**: `func_indexes.get("__intr_...")` — si la
+   internals está fusionada se emite `call __intr_*`; si no, cae al host
+   fallback (helper `emit_str_host(name, fallback)` en `emitter/strings.rs`
+   para strings).
+4. **Re-verificar**: el WAT del módulo no debe importar el `env.<area>_*`
+   correspondiente; correr las suites de paridad
+   (`examples/audit/test-features/jit-test/run-availible.ps1` + `run-tests.ps1`,
+   wasmtime y wasmi).
+
+`build.rs` de `cls-core` hashea `src/backend/wasm` + las fuentes de
+`cls-internals` (`BACKEND_HASH`): editar cualquiera de los dos invalida la
+caché CLS→WASM.
 
 ## Notas
 
