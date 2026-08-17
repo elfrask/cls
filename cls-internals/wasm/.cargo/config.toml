@@ -1,6 +1,0 @@
-# El sub-crate fue compilado como cdylib standalone con `__cls_alloc` indefinido
-# a propósito: el linker de fusión lo resuelve al `__alloc` del módulo CLS.
-# toolchains mas nuevos de rust-lld rechazan simbolos indefinidos por defecto
-# (error: undefined symbol: __cls_alloc). Permitirlos explicitamente.
-[target.wasm32-unknown-unknown]
-rustflags = ["-C", "link-arg=--allow-undefined"]

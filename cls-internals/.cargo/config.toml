@@ -1,0 +1,10 @@
+# El sub-crate `wasm/` de cls-internals se compila como cdylib standalone con
+# `__cls_alloc` indefinido a proposito: el linker de fusion lo resuelve al
+# `__alloc` del modulo CLS. Este config vive aqui (no en wasm/.cargo) porque el
+# build.rs invoca cargo con CWD = cls-internals, y cargo busca configs desde el
+# CWD hacia arriba.
+#
+# toolchains nuevos de rust-lld rechazan simbolos indefinidos por defecto
+# (error: undefined symbol: __cls_alloc). Permitirlos explicitamente.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--allow-undefined"]
