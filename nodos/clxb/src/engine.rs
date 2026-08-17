@@ -147,6 +147,7 @@ impl ClsEngine {
             runtime: cls_jit::RuntimeKind::Wasmtime,
             require_main: false,
             target: None,
+            trace_calls: true,
         };
         let compiled = cls_jit::compile_source(source, name, base_dir, &self.jit_ctx(), &opts)?;
         let module = ClsModule::instantiate(compiled, &self.jit_ctx(), self.sandbox)?;
@@ -159,6 +160,7 @@ impl ClsEngine {
             runtime: cls_jit::RuntimeKind::Wasmtime,
             require_main: false,
             target: None,
+            trace_calls: true,
         };
         let compiled = cls_jit::compile_file(path, &self.jit_ctx(), &opts)?;
         let module = ClsModule::instantiate(compiled, &self.jit_ctx(), self.sandbox)?;

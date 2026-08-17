@@ -26,12 +26,14 @@ const DEFAULT: WasmBackendOptions = WasmBackendOptions {
     exceptions: true,
     require_main: true,
     intrinsics: Vec::new(),
+    trace_calls: true,
 };
 
 const LIBRARY: WasmBackendOptions = WasmBackendOptions {
     exceptions: true,
     require_main: false,
     intrinsics: Vec::new(),
+    trace_calls: true,
 };
 
 #[test]
