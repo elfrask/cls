@@ -1,0 +1,10 @@
+extension "C:/Users/Frask/Documents/cls/examples/jit-examples/ffi_read.dll" as C {
+    function sum_record_ints(rec: CRecord) -> CLong;
+};
+
+function main(args: String[]) -> int {
+    var r: Record<String, Int> = {"x": 10, "y": 20, "z": 30};
+    print("sum:", sum_record_ints(r));      # 60
+    print("OK record hashmap");
+    return 0;
+};

@@ -1,0 +1,12 @@
+extension "C:/Users/Frask/Documents/cls/examples/jit-examples/ffi_read.dll" as C {
+    function bump_first_int(rec: CRecord) -> CRecord;
+};
+
+function main(args: String[]) -> int {
+    var r: Record<String, Int> = {"a": 10, "b": 20};
+    var r2 = bump_first_int(r);
+    print("a:", r["a"]);     # 11 (in-place bump)
+    print("b:", r["b"]);     # 20
+    print("OK bump in-place");
+    return 0;
+};

@@ -1,0 +1,15 @@
+extension "C:/Users/Frask/Documents/cls/examples/jit-examples/ffi_read.dll" as C {
+    function array_len_probe(arr: CArray) -> CLong;
+    function array_elem_probe(arr: CArray, i: CLong) -> CLong;
+    function sum_record_ints(rec: CRecord) -> CLong;
+};
+
+function main(args: String[]) -> int {
+    var a = [10, 20, 30];
+    print("len:", array_len_probe(a));      # 3
+    print("elem0:", array_elem_probe(a, 0)); # 10
+    var r: Record<String, Int> = {"x": 10, "y": 20, "z": 30};
+    print("sum:", sum_record_ints(r));      # 60
+    print("OK ffi estructurado real");
+    return 0;
+};

@@ -1,0 +1,11 @@
+extension "C:/Users/Frask/Documents/cls/examples/jit-examples/ffi_read.dll" as C {
+    function sum_record_ints(rec: CRecord) -> CLong;
+};
+
+function main(args: String[]) -> int {
+    var raw = '{"a": 5, "b": 7}';
+    var d = json.parse(raw);
+    print("sum json:", sum_record_ints(d));   # 12
+    print("OK json record");
+    return 0;
+};
