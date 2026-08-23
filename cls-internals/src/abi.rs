@@ -50,6 +50,8 @@ pub static INTERNALS_FUNCTIONS: &[InternalsFn] = &[
     InternalsFn { name: "__intr_str_is_empty", params: &[I64], results: &[I32] },
     InternalsFn { name: "__intr_str_repr", params: &[I64], results: &[I64] },
     InternalsFn { name: "__intr_str_length", params: &[I64], results: &[I64] },
+    InternalsFn { name: "__intr_str_eq", params: &[I64, I64], results: &[I32] },
+    InternalsFn { name: "__intr_any_to_string", params: &[I64, I64], results: &[I64] },
     // ── records ───────────────────────────────────────────────────────────
     InternalsFn { name: "__intr_record_new", params: &[I64], results: &[I64] },
     InternalsFn { name: "__intr_record_set", params: &[I64, I64, I64, I64], results: &[I64] },

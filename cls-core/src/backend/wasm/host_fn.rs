@@ -34,6 +34,8 @@ pub enum HostFn {
     StrEndsWith,
     StrIsEmpty,
     StrLength,
+    StrEq,
+    AnyToString,
     StrRepr,
     IntAbs,
     FloatAbs,
@@ -178,6 +180,8 @@ impl HostFn {
             StrEndsWith => "str_ends_with",
             StrIsEmpty => "str_is_empty",
             StrLength => "str_length",
+            StrEq => "str_eq",
+            AnyToString => "any_to_string",
             StrRepr => "str_repr",
             IntAbs => "int_abs",
             FloatAbs => "float_abs",
@@ -306,9 +310,10 @@ impl HostFn {
             StrUpper | StrLower | StrTrim | StrLength | StrRepr => {
                 (i64p.clone(), vec![ValType::I64])
             }
-            StrContains | StrStartsWith | StrEndsWith => {
+            StrContains | StrStartsWith | StrEndsWith | StrEq => {
                 (vec![ValType::I64, ValType::I64], vec![ValType::I32])
             }
+            AnyToString => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             StrIsEmpty => (i64p.clone(), vec![ValType::I32]),
             IntAbs => (i64p.clone(), vec![ValType::I64]),
             FloatAbs => (vec![ValType::F64], vec![ValType::F64]),

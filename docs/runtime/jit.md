@@ -146,6 +146,13 @@ visibilidad, static, `super`, `is`, **magic methods completos 24/24**:
 arrow functions con capturas, funciones como valor, `when` (compile-time),
 módulos aplanados, `extension` (nativa, ≤ 4 args) y `main`.
 
+**FFI estructurado** (`CRecord`/`CArray`/`CStruct`): los valores viajan como
+puntero al layout de la memoria lineal (`array [cap][len][elems*8]`, `record
+[cap][len][(key,val,tag)*24]`, `struct` contiguo). El wrapper del JIT traduce el
+offset wasm a la dirección host (`ffi_wasm_to_host`/`ffi_host_to_wasm`) para que
+el DLL lea/escriba el layout zero-copy; el backend del nodo pasa el ptr como
+`Value::Int`. Ver `docs/lenguaje/extension.md` y `examples/jit-examples/`.
+
 Los magic methods se despachan por la **vtable de la clase** con la firma
 declarada del método (`call_indirect`): el emisor busca el magic en el tipo
 estático del objeto y emite `me` + args + dispatch. Los magics deben **anotar

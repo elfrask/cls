@@ -177,6 +177,14 @@ pub(super) fn ty_code(t: &Type) -> (char, WasTy) {
             "CString" => ('s', WasTy::I64),
             // CPtr / CLong / CULong: punteros y enteros nativos de 64 bits.
             "CPtr" | "CLong" | "CULong" => ('i', WasTy::I64),
+            // CRecord / CArray / CStruct: puntero al layout de memoria lineal.
+            // Letras propias ('r'/'a'/'S') para que el wrapper del JIT distinga
+            // el marshalling (traduce offset wasm <-> dirección host; el ptr del
+            // layout del WASM no es válido fuera del módulo). En el WASM viajan
+            // como i64 (puntero), igual que CPtr.
+            "CRecord" => ('r', WasTy::I64),
+            "CArray" => ('a', WasTy::I64),
+            "CStruct" => ('S', WasTy::I64),
             // CFloat (f32) no está soportado por el dispatcher: error claro al
             // registrar el host (native.rs da el error para args).
             "CFloat" => ('i', WasTy::I64),

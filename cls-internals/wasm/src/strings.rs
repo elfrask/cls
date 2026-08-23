@@ -133,3 +133,35 @@ pub extern "C" fn __intr_str_length(v: i64) -> i64 {
         s.len() as i64
     }
 }
+
+/// Igualdad de strings por CONTENIDO (no por puntero). `a`, `b` = packed.
+/// Devuelve 1 si son iguales, 0 si no. Si comparten el mismo puntero -> true.
+#[no_mangle]
+pub extern "C" fn __intr_str_eq(a: i64, b: i64) -> i32 {
+    unsafe {
+        let a_ptr = (a >> 32) as usize;
+        let a_len = (a & 0xffff_ffff) as usize;
+        let b_ptr = (b >> 32) as usize;
+        let b_len = (b & 0xffff_ffff) as usize;
+        if a_ptr == b_ptr {
+            return 1;
+        }
+        if a_len != b_len {
+            return 0;
+        }
+        let sa = core::slice::from_raw_parts(a_ptr as *const u8, a_len);
+        let sb = core::slice::from_raw_parts(b_ptr as *const u8, b_len);
+        if sa == sb { 1 } else { 0 }
+    }
+}
+
+/// Convierte un valor dinámico `(val, tag)` a string según su TAG (para
+/// `str(any)` sobre valores leídos de records/JSON). Tags runtime:
+/// 0=int 1=string 2=float 3=bool 4=char 5=cmx 6=array 7=record 12=null.
+#[no_mangle]
+pub extern "C" fn __intr_any_to_string(val: i64, tag: i64) -> i64 {
+    unsafe {
+        let s = crate::fmt::fmt_val_to_string(val, tag);
+        mem::write_str(&s)
+    }
+}

@@ -131,6 +131,29 @@ impl<'a> FuncEmitter<'a> {
     pub(crate) fn emit_any_chain(&mut self, expr: &Expression) -> ClsResult<()> {
         match expr {
             Expression::MemberAccess(m) => {
+                // Si el objeto es una CLASE (o struct) y el miembro es un campo,
+                // `me.campo` es acceso a un campo real (p.ej. un Record), no una
+                // cadena JSON anidada. Evaluarlo como miembro normal + tag del
+                // tipo del campo; AnyMember solo aplica a cadenas sobre JSON.
+                let is_class_field = if let Some(Type::Named(cn, _)) =
+                    self.types.get(&expr_span(&m.object))
+                {
+                    self.class_defs.contains_key(cn.as_str())
+                        || self.struct_defs.contains_key(cn.as_str())
+                } else {
+                    false
+                };
+                if is_class_field {
+                    self.emit_expression(&Expression::MemberAccess(m.clone()))?;
+                    let t = self
+                        .types
+                        .get(&expr_span(&Expression::MemberAccess(m.clone())))
+                        .cloned()
+                        .unwrap_or(Type::Any);
+                    let tag = self.any_static_tag(&t);
+                    self.body.push(Instruction::I64Const(tag));
+                    return Ok(());
+                }
                 self.emit_any_chain(&m.object)?;
                 let k = self.intern_string(&m.member);
                 self.emit_load_str(k);
@@ -140,6 +163,22 @@ impl<'a> FuncEmitter<'a> {
             Expression::Index(i) => {
                 self.emit_any_chain(&i.object)?;
                 self.emit_expression(&i.index)?;
+                // Índice numérico (p.ej. `json.parse("[..]")[j]` representado
+                // como record con claves "0","1",...): AnyIndex busca la key
+                // como string -> convertir el int.
+                if matches!(
+                    self.types.get(&expr_span(&i.index)),
+                    Some(
+                        Type::Int
+                            | Type::I8
+                            | Type::I16
+                            | Type::I32
+                            | Type::I64
+                            | Type::Literal(LitVal::Int(_))
+                    )
+                ) {
+                    self.emit_str_host("__intr_str_int", HostFn::StrInt);
+                }
                 self.host.call(HostFn::AnyIndex, &mut self.body);
                 Ok(())
             }

@@ -93,6 +93,26 @@ impl Type {
                 a1.is_assignable_to(a2) && b1.is_assignable_to(b2)
             }
 
+            // Tipos nativos estructurados del FFI (CRecord/CArray/CStruct):
+            // el valor CLS correspondiente es assignable al tipo puntero (viaja
+            // como ptr al layout de la memoria lineal, como CPtr).
+            (Type::Record(_, _) | Type::Shape(_), Type::Named(n, _)) if n == "CRecord" => true,
+            (Type::Array(_) | Type::Tuple(_), Type::Named(n, _)) if n == "CArray" => true,
+            (Type::Named(n, _), Type::Named(m, _))
+                if matches!(n.as_str(), "CRecord" | "CArray" | "CStruct")
+                    && matches!(m.as_str(), "CRecord" | "CArray" | "CStruct" | "CPtr") =>
+            {
+                true
+            }
+            (Type::Named(n, _), Type::Named(m, _)) if n == "CStruct" && m == "CPtr" => true,
+            // Un ptr del layout viaja como Int; los punteros estructurados
+            // aceptan Int como valor crudo (p.ej. `CStruct` <- `Int`).
+            (Type::Int, Type::Named(n, _))
+                if matches!(n.as_str(), "CRecord" | "CArray" | "CStruct") =>
+            {
+                true
+            }
+
             // Shapes: cada campo del destino debe existir en el origen con tipo
             // compatible (el origen puede tener campos extra). Estructural.
             (Type::Shape(src), Type::Shape(dst)) => {

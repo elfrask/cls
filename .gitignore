@@ -19,3 +19,4 @@ __pycache__/
 **/target
 *.zip
 *.vsix
+*.dll

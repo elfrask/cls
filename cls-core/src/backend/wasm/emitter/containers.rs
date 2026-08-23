@@ -157,6 +157,14 @@ impl<'a> FuncEmitter<'a> {
                 return self.emit_shape_record(r, fields);
             }
         }
+        self.emit_record_hashmap(r)
+    }
+
+    /// Emite un literal de record como HASHMAP (`[cap][len][(key,val,tag)*24]`),
+    /// sin importar si el type map dice Shape. Se usa cuando el literal es un
+    /// VALOR que se guarda en un contenedor dinámico (`Record<String,any>`):
+    /// un shape contiguo NO es legible como hashmap por la lectura/stringify.
+    pub(crate) fn emit_record_hashmap(&mut self, r: &RecordExpr) -> ClsResult<()> {
         let n = r.entries.len() as i64;
         self.body.push(Instruction::I64Const(n));
         if let Some(&idx) = self.func_indexes.get("__intr_record_new") {
@@ -251,6 +259,64 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
+
+    /// Convierte un SHAPE (estructura contigua con offsets) a un HASHMAP
+    /// (`[cap][len][(key,val,tag)*24]`). Se usa cuando un valor tipado Shape se
+    /// guarda en un contenedor dinámico (`Record<String,any>`): la lectura/
+    /// stringify lo trata como hashmap, y un shape contiguo no es legible como
+    /// tal. Evalúa `expr` (deja el ptr del shape) y lo copia campo a campo.
+    pub(crate) fn emit_shape_to_hashmap(&mut self, expr: &Expression, fields: &[(String, Type)]) -> ClsResult<()> {
+        let layout = self.shape_layout(fields)?;
+        self.emit_expression(expr)?;
+        let shape_ptr = self.fresh_local();
+        self.body.push(Instruction::LocalSet(shape_ptr));
+        // record_new(cap = n)
+        let n = fields.len() as i64;
+        self.body.push(Instruction::I64Const(n));
+        if let Some(&idx) = self.func_indexes.get("__intr_record_new") {
+            self.body.push(Instruction::Call(idx));
+        } else {
+            self.host.call(HostFn::RecordNew, &mut self.body);
+        }
+        let rec_ptr = self.fresh_local();
+        self.body.push(Instruction::LocalSet(rec_ptr));
+        for (name, t) in fields {
+            let (_, w, off) = layout
+                .iter()
+                .find(|(nm, _, _)| nm == name)
+                .cloned()
+                .unwrap();
+            // key = nombre del campo (string del pool)
+            let k = self.intern_string(name);
+            self.body.push(Instruction::LocalGet(rec_ptr));
+            self.emit_load_str(k);
+            // val = shape[off]
+            self.body.push(Instruction::LocalGet(shape_ptr));
+            self.body.push(Instruction::I64Const(off));
+            self.body.push(Instruction::I64Add);
+            self.body.push(Instruction::I32WrapI64);
+            match w {
+                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
+                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
+            }
+            // Normalizar a i64 (float -> bits; bool/char -> extender)
+            match w {
+                WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+                WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+                WasTy::I64 => {}
+            }
+            self.body.push(Instruction::I64Const(runtime_tag_code(t)));
+            if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
+                self.body.push(Instruction::Call(idx));
+            } else {
+                self.host.call(HostFn::RecordSet, &mut self.body);
+            }
+            self.body.push(Instruction::Drop);
+        }
+        self.body.push(Instruction::LocalGet(rec_ptr));
+        Ok(())
+    }
 
     /// Calcula `(nombre, WasTy, offset)` para cada campo de un shape (contiguo).
     pub(crate) fn shape_layout(&self, fields: &[(String, Type)]) -> ClsResult<Vec<(String, WasTy, i64)>> {
@@ -388,6 +454,22 @@ impl<'a> FuncEmitter<'a> {
         if matches!(obj_ty, Some(Type::Record(_, _))) {
             self.emit_expression(&i.object)?;
             self.emit_expression(&i.index)?;
+            // Índice numérico sobre un Record (p.ej. `json.parse("[..]")[j]`
+            // que se representa como record con claves "0","1",...): convertir
+            // el int a string antes de record_get (la key es string).
+            if matches!(
+                self.types.get(&expr_span(&i.index)),
+                Some(
+                    Type::Int
+                        | Type::I8
+                        | Type::I16
+                        | Type::I32
+                        | Type::I64
+                        | Type::Literal(LitVal::Int(_))
+                )
+            ) {
+                self.emit_str_host("__intr_str_int", HostFn::StrInt);
+            }
             if let Some(&idx) = self.func_indexes.get("__intr_record_get") {
                 self.body.push(Instruction::Call(idx));
             } else {

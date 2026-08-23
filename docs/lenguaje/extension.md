@@ -41,6 +41,9 @@ Ejemplos: `examples/audit/test-features/extension-demo.clsx`,
 | `CChar` / `CUChar` | `i8` / `u8` |
 | `CDouble` / `CFloat` | `f64` / `f32` |
 | `CPtr` | puntero (`void*`) |
+| `CRecord` | record CLS como ptr al layout `[cap][len][(key,val,tag)*24]` |
+| `CArray` | array CLS como ptr al layout `[cap][len][elems*8]` |
+| `CStruct` | struct CLS como ptr al layout contiguo (offsets) |
 | `Struct(nombre)` | layout C de una `structure` declarada |
 | `Bool` | `i32` (0/1) |
 | `Void` | sin retorno |
@@ -48,6 +51,40 @@ Ejemplos: `examples/audit/test-features/extension-demo.clsx`,
 
 Nota: **`CFloat` no está soportado** por el dispatcher (`f32`); usar
 `CDouble`.
+
+## Valores estructurados (`CRecord` / `CArray` / `CStruct`)
+
+Estos tipos viajan como **puntero al layout canónico de la memoria lineal**
+(el de `HostCtx`, igual que usan los hosts JIT y los bindings):
+
+```
+string  : (ptr<<32)|len
+array   : [cap:i64][len:i64][elems*es]     (es=4 bool/char, 8 resto)
+record  : [cap:i64][len:i64][(key,val,tag)*24]
+struct  : ptr + offsets contiguos
+```
+
+Tags runtime de los valores dentro de records: `0=int 1=string 2=float 3=bool
+4=char 6=array 7=record`.
+
+- **Arg**: el valor CLS (Record/Array/Struct) se escribe en el layout y el DLL
+  recibe su puntero. El wrapper del JIT traduce el offset de la memoria lineal
+  del módulo a la dirección host (la memoria lineal es una alocación del host),
+  así el DLL lee/escribe el mismo layout en su espacio de direcciones.
+- **Retorno**: el DLL escribe el layout (idealmente in-place sobre la memoria
+  del módulo) y CLS lo vuelve a usar como record/array. El puntero que devuelve
+  el DLL debe caer dentro de la memoria lineal del módulo (contrato zero-copy);
+  si devuelve un buffer propio, CLS lo recibe como `Int` crudo (no re-usable).
+- **Records con shape** (`var r = {a:1,b:"x"}` inferido) se emiten como struct
+  contiguo, no como hashmap: usa `CRecord` para `Record<K,V>` o `json.parse`, y
+  `CStruct`/`Struct` para shapes.
+- **Walker**: el tree-walker no expone la memoria del módulo; los args se
+  serializan a un buffer host y los retornos estructurados llegan como `Int`
+  crudo (ptr).
+
+Ejemplos: `examples/jit-examples/ffi-struct-real.clsx`,
+`examples/jit-examples/ffi-record-typed.clsx`,
+`examples/jit-examples/ffi-bump4.clsx`.
 
 ## Variables nativas
 

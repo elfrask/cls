@@ -36,6 +36,15 @@ pub enum NativeType {
     CDouble,
     /// `structure` nativa (layout C); el nombre identifica el layout.
     Struct(String),
+    /// `CRecord` — record CLS -> ptr al layout `[cap][len][(key,val,tag)*24]`.
+    /// El valor viaja como puntero a la memoria lineal del módulo.
+    CRecord,
+    /// `CArray` — array CLS -> ptr al layout `[cap][len][elems*es]`.
+    /// El valor viaja como puntero a la memoria lineal del módulo.
+    CArray,
+    /// `CStruct` — struct CLS -> ptr al layout contiguo (offsets).
+    /// El valor viaja como puntero a la memoria lineal del módulo.
+    CStruct,
 }
 
 /// Backend que resuelve símbolos de librerías del sistema (linkadas por el SO).

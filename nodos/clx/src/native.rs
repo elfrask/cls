@@ -118,6 +118,7 @@ fn arg_shape(nt: &NativeType) -> ClsResult<Shape> {
     match nt {
         NativeType::Any | NativeType::Int | NativeType::CLong | NativeType::CULong
         | NativeType::CString | NativeType::CPtr | NativeType::Struct(_)
+        | NativeType::CRecord | NativeType::CArray | NativeType::CStruct
         | NativeType::CInt | NativeType::CUInt | NativeType::CShort | NativeType::CUShort
         | NativeType::CChar | NativeType::CUChar | NativeType::Bool => Ok(Shape::I64),
         NativeType::Float | NativeType::CDouble => Ok(Shape::F64),
@@ -140,7 +141,12 @@ fn ret_shape(nt: &NativeType) -> ClsResult<RetShape> {
     }
 }
 
-fn conv_arg(nt: &NativeType, value: &Value, buffers: &mut Vec<CString>) -> ClsResult<CVal> {
+fn conv_arg(
+    nt: &NativeType,
+    value: &Value,
+    buffers: &mut Vec<CString>,
+    keepalives: &mut Vec<LayoutKeepAlive>,
+) -> ClsResult<CVal> {
     match (nt, value) {
         (NativeType::CString, Value::String(s)) => {
             let c = CString::new(s.as_bytes()).map_err(|_| {
@@ -153,6 +159,35 @@ fn conv_arg(nt: &NativeType, value: &Value, buffers: &mut Vec<CString>) -> ClsRe
             Ok(CVal::I(*dir))
         }
         (NativeType::CPtr, Value::Null) | (NativeType::Struct(_), Value::Null) => Ok(CVal::I(0)),
+        // CRecord/CArray/CStruct: el valor CLS llega como `Value::Record`/
+        // `Value::Array`/`Value::Int(ptr)` (el wrapper del JIT lo leyó de la
+        // memoria del módulo). Se serializa a un buffer HOST (el DLL lee/escribe
+        // su propio espacio de direcciones; el ptr del layout del WASM no es
+        // válido fuera del módulo). `keepalives` mantiene vivos los strings.
+        (NativeType::CRecord, Value::Record(map)) => {
+            let mut b = HostLayoutBuf::new();
+            let ptr = b.write_record(map);
+            keepalives.push(b.into_keepalive());
+            Ok(CVal::I(ptr as i64))
+        }
+        (NativeType::CArray, Value::Array(items)) => {
+            let mut b = HostLayoutBuf::new();
+            let ptr = b.write_array(items);
+            keepalives.push(b.into_keepalive());
+            Ok(CVal::I(ptr as i64))
+        }
+        (NativeType::CStruct, Value::Struct(s)) => {
+            let mut b = HostLayoutBuf::new();
+            let ptr = b.write_struct(&s.fields);
+            keepalives.push(b.into_keepalive());
+            Ok(CVal::I(ptr as i64))
+        }
+        (NativeType::CRecord | NativeType::CArray | NativeType::CStruct, Value::Int(ptr)) => {
+            Ok(CVal::I(*ptr))
+        }
+        (NativeType::CRecord | NativeType::CArray | NativeType::CStruct, Value::Null) => {
+            Ok(CVal::I(0))
+        }
         (NativeType::Bool, Value::Bool(b)) => Ok(CVal::I(if *b { 1 } else { 0 })),
         (NativeType::Bool, Value::Int(v)) => Ok(CVal::I(if *v != 0 { 1 } else { 0 })),
         (NativeType::Float | NativeType::CDouble, Value::Int(v)) => Ok(CVal::F(*v as f64)),
@@ -187,6 +222,15 @@ fn conv_ret(raw: RawRet, nt: &NativeType) -> ClsResult<Value> {
             RawRet::F(f) => Ok(Value::Float(f)),
             _ => Ok(Value::Float(0.0)),
         },
+        NativeType::CRecord | NativeType::CArray | NativeType::CStruct => match raw {
+            // El retorno es el ptr HOST al layout (el DLL escribió in-place en
+            // la memoria del módulo, que es una alocación del host). Se devuelve
+            // el ptr crudo; el wrapper del JIT lo traduce host -> offset wasm y
+            // CLS lo usa como su record/array (cero copias). Para el tree-walker
+            // (sin memoria del módulo) queda como Int crudo (documentado).
+            RawRet::I(ptr) => Ok(Value::Int(ptr)),
+            _ => Ok(Value::Int(0)),
+        },
         NativeType::Void => Ok(Value::Void),
         _ => match raw {
             RawRet::I(v) => Ok(Value::Int(v)),
@@ -197,6 +241,147 @@ fn conv_ret(raw: RawRet, nt: &NativeType) -> ClsResult<Value> {
 
 fn native_type_label(nt: &NativeType) -> String {
     format!("{:?}", nt)
+}
+
+// ── Buffer host para el layout de valores estructurados del FFI ─────────────
+
+/// Serializa/deserializa el layout canónico de CLS (string packed, array
+/// `[cap][len][elems*8]`, record `[cap][len][(key,val,tag)*24]`, struct
+/// contiguo) en un buffer HOST.
+///
+/// Para **args** (tree-walker): serializa un `Value` a un buffer propio
+/// (`base` = dirección host estable) que se mantiene vivo durante la llamada.
+struct HostLayoutBuf {
+    base: usize,
+    owned: Vec<u8>,
+    strings: Vec<Vec<u8>>,
+}
+
+impl HostLayoutBuf {
+    fn new() -> Self {
+        Self {
+            base: 0,
+            owned: Vec::new(),
+            strings: Vec::new(),
+        }
+    }
+
+    fn ensure_owned(&mut self, size: usize) {
+        if self.owned.is_empty() {
+            self.owned = vec![0u8; size];
+            self.base = self.owned.as_ptr() as usize;
+        }
+    }
+
+    /// Mantiene vivos los buffers y strings del layout durante la llamada.
+    fn into_keepalive(self) -> LayoutKeepAlive {
+        LayoutKeepAlive {
+            owned: self.owned,
+            strings: self.strings,
+        }
+    }
+
+    /// Aloca un string en el heap propio (el ptr es estable aunque `owned` o
+    /// `strings` se reasigne) y devuelve su packed `(ptr<<32)|len`.
+    fn write_str(&mut self, s: &str) -> i64 {
+        let buf = s.as_bytes().to_vec();
+        let ptr = buf.as_ptr() as usize;
+        self.strings.push(buf);
+        ((ptr as i64) << 32) | (s.len() as i64)
+    }
+
+    fn write_i64(&mut self, addr: usize, v: i64) {
+        if addr + 8 <= self.owned.len() {
+            self.owned[addr..addr + 8].copy_from_slice(&v.to_le_bytes());
+        }
+    }
+
+    fn write_scalar(&mut self, v: &Value) -> i64 {
+        match v {
+            Value::Int(n) => *n,
+            Value::Float(f) => f.to_bits() as i64,
+            Value::Bool(b) => {
+                if *b {
+                    1
+                } else {
+                    0
+                }
+            }
+            Value::Char(c) => *c as i64,
+            Value::String(s) => self.write_str(s),
+            Value::Array(items) => self.write_array(items) as i64,
+            Value::Tuple(items) => self.write_array(items) as i64,
+            Value::Record(map) => self.write_record(map) as i64,
+            Value::Struct(s) => self.write_struct(&s.fields) as i64,
+            Value::Null | Value::Void => 0,
+            _ => 0,
+        }
+    }
+
+    /// Array `[cap][len][elems*8]`.
+    fn write_array(&mut self, items: &[Value]) -> usize {
+        self.ensure_owned(items.len() * 8 + 16);
+        self.write_i64(0, items.len() as i64);
+        self.write_i64(8, items.len() as i64);
+        for (i, it) in items.iter().enumerate() {
+            let bits = self.write_scalar(it);
+            self.write_i64(16 + i * 8, bits);
+        }
+        self.base
+    }
+
+    /// Record `[cap][len][(key,val,tag)*24]` (tags runtime).
+    fn write_record(&mut self, map: &std::collections::HashMap<String, Value>) -> usize {
+        self.ensure_owned(map.len() * 24 + 16);
+        self.write_i64(0, map.len() as i64);
+        self.write_i64(8, map.len() as i64);
+        let mut i = 0usize;
+        let mut keys: Vec<&String> = map.keys().collect();
+        keys.sort();
+        for k in keys {
+            let key = self.write_str(k);
+            let bits = self.write_scalar(&map[k]);
+            let tag = Self::runtime_tag(&map[k]);
+            let base = 16 + i * 24;
+            self.write_i64(base, key);
+            self.write_i64(base + 8, bits);
+            self.write_i64(base + 16, tag);
+            i += 1;
+        }
+        self.base
+    }
+
+    /// Struct: layout contiguo de campos (cada uno su representación i64).
+    fn write_struct(&mut self, fields: &[Value]) -> usize {
+        self.ensure_owned(fields.len() * 8);
+        for (i, f) in fields.iter().enumerate() {
+            let bits = self.write_scalar(f);
+            self.write_i64(i * 8, bits);
+        }
+        self.base
+    }
+
+    fn runtime_tag(v: &Value) -> i64 {
+        match v {
+            Value::Int(_) => 0,
+            Value::String(_) => 1,
+            Value::Float(_) => 2,
+            Value::Bool(_) => 3,
+            Value::Char(_) => 4,
+            Value::Array(_) | Value::Tuple(_) => 6,
+            Value::Record(_) | Value::Struct(_) => 7,
+            Value::Null | Value::Void => 0,
+            _ => 8,
+        }
+    }
+}
+
+/// Mantiene vivos los buffers y strings de un layout host durante la llamada.
+struct LayoutKeepAlive {
+    #[allow(dead_code)]
+    owned: Vec<u8>,
+    #[allow(dead_code)]
+    strings: Vec<Vec<u8>>,
 }
 
 // ── Resolución de nombres de librería ───────────────────────────────────────
@@ -385,13 +570,14 @@ impl NativeBackend for DynamicBackend {
         let sym = get_symbol(lib, &resolved, symbol)?;
         let base = sym.addr;
 
-        // Convertir args -> registros; los CString viven en buffers durante la llamada.
+        // Convertir args -> registros; los CString/layouts viven en buffers durante la llamada.
         let mut buffers: Vec<CString> = Vec::new();
+        let mut keepalives: Vec<LayoutKeepAlive> = Vec::new();
         let mut cvals: Vec<CVal> = Vec::with_capacity(args.len());
         let mut shapes: Vec<Shape> = Vec::with_capacity(args.len());
         for (i, arg) in args.iter().enumerate() {
             let nt = param_types.get(i).cloned().unwrap_or(NativeType::Any);
-            cvals.push(conv_arg(&nt, arg, &mut buffers)?);
+            cvals.push(conv_arg(&nt, arg, &mut buffers, &mut keepalives)?);
             shapes.push(arg_shape(&nt)?);
         }
         let rshape = ret_shape(&ret)?;

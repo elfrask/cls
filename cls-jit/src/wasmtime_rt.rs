@@ -120,6 +120,31 @@ impl HostCtx for Caller<'_, HostState> {
     }
 }
 
+/// Traduce un offset de la memoria lineal del módulo (el ptr CLS de un record/
+/// array) a su dirección HOST (la memoria lineal es una alocación del host; el
+/// DLL la lee/escribe en su propio espacio de direcciones).
+fn ffi_wasm_to_host(caller: &mut Caller<'_, HostState>, wasm_ptr: i64) -> i64 {
+    if let Some(mem) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+        let base = mem.data_ptr(&mut *caller) as usize;
+        return (base as i64).wrapping_add(wasm_ptr);
+    }
+    wasm_ptr
+}
+
+/// Traduce una dirección HOST (devuelta por el DLL) de vuelta a un offset de la
+/// memoria lineal del módulo. Si el ptr no cae dentro de la memoria (el DLL
+/// devolvió un buffer propio), se vuelve 0 (el layout no es re-usable por CLS).
+fn ffi_host_to_wasm(caller: &mut Caller<'_, HostState>, host_ptr: i64) -> i64 {
+    if let Some(mem) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+        let base = mem.data_ptr(&mut *caller) as usize;
+        let host = host_ptr as usize;
+        if host >= base && host < base + mem.data_size(&mut *caller) {
+            return (host - base) as i64;
+        }
+    }
+    0
+}
+
 // ── Registro de host functions (adaptadores) ────────────────────────────────
 
 /// Registra las host functions `env.*` (adaptadores de una línea a los cuerpos
@@ -159,6 +184,12 @@ pub fn register_host_functions_opt(
     w!("sleep", |mut c: Caller<'_, HostState>, ms: i64| host::host_sleep(&mut c, ms));
     w!("input", |mut c: Caller<'_, HostState>| -> i64 { host::host_input(&mut c) });
     w!("math_random", |mut c: Caller<'_, HostState>| -> f64 { host::host_math_random(&mut c) });
+    w!("str_eq", |mut c: Caller<'_, HostState>, a: i64, b: i64| -> i32 {
+        host::host_str_eq(&mut c, a, b)
+    });
+    w!("any_to_string", |mut c: Caller<'_, HostState>, v: i64, t: i64| -> i64 {
+        host::host_any_to_string(&mut c, v, t)
+    });
     w!("json_stringify", |mut c: Caller<'_, HostState>, v: i64, k: i64| -> i64 {
         host::host_json_stringify(&mut c, v, k)
     });
@@ -340,6 +371,9 @@ pub fn register_native_hosts(
             'c' => NativeType::CInt,
             's' => NativeType::CString,
             'I' => NativeType::CInt,
+            'r' => NativeType::CRecord,
+            'a' => NativeType::CArray,
+            'S' => NativeType::CStruct,
             _ => NativeType::Int,
         };
         let ret_to_i64 = |v: Result<Value, cls_core::error::ClsError>| -> i64 {
@@ -401,6 +435,11 @@ pub fn register_native_hosts(
                         'f' => Value::Float(a.f64().unwrap_or(0.0)),
                         'b' => Value::Bool(a.i32().unwrap_or(0) != 0),
                         'c' => Value::Int(a.i32().unwrap_or(0) as i64),
+                        // El ptr del layout CLS (offset de la memoria lineal) se
+                        // traduce a su dirección HOST: el DLL la lee/escribe en
+                        // su propio espacio. La memoria lineal es una alocación
+                        // del host, así que `base + offset` es un puntero válido.
+                        'r' | 'a' | 'S' => Value::Int(ffi_wasm_to_host(&mut caller, a.i64().unwrap_or(0))),
                         _ => Value::Int(a.i64().unwrap_or(0)),
                     };
                     vals.push(v);
@@ -424,6 +463,26 @@ pub fn register_native_hosts(
                     'b' | 'c' => {
                         results[0] = Val::I32(ret_to_i32(r));
                         Ok(())
+                    }
+                    'r' | 'a' | 'S' => {
+                        // El backend devolvió el ptr HOST del layout (el DLL
+                        // escribió in-place en la memoria del módulo, que es
+                        // una alocación del host). Se traduce host -> offset
+                        // WASM y se devuelve al CLS.
+                        match r {
+                            Ok(Value::Int(host_ptr)) => {
+                                results[0] = Val::I64(ffi_host_to_wasm(&mut caller, host_ptr));
+                                Ok(())
+                            }
+                            Ok(v) => {
+                                results[0] = Val::I64(host::ffi_write_value(&mut caller, &v));
+                                Ok(())
+                            }
+                            Err(_) => {
+                                results[0] = Val::I64(0);
+                                Ok(())
+                            }
+                        }
                     }
                     _ => {
                         results[0] = Val::I64(ret_to_i64(r));

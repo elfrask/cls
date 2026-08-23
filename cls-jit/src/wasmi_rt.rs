@@ -151,6 +151,12 @@ pub fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), Str
     w!("trap", |mut c: Caller<'_, HostState>, m: i64, s: i64| host::host_trap(&mut c, m, s));
     w!("input", |mut c: Caller<'_, HostState>| -> i64 { host::host_input(&mut c) });
     w!("math_random", |mut c: Caller<'_, HostState>| -> f64 { host::host_math_random(&mut c) });
+    w!("str_eq", |mut c: Caller<'_, HostState>, a: i64, b: i64| -> i32 {
+        host::host_str_eq(&mut c, a, b)
+    });
+    w!("any_to_string", |mut c: Caller<'_, HostState>, v: i64, t: i64| -> i64 {
+        host::host_any_to_string(&mut c, v, t)
+    });
     w!("json_stringify", |mut c: Caller<'_, HostState>, v: i64, k: i64| -> i64 {
         host::host_json_stringify(&mut c, v, k)
     });
@@ -325,6 +331,9 @@ fn register_native_hosts(
             'c' => NativeType::CInt,
             's' => NativeType::CString,
             'I' => NativeType::CInt,
+            'r' => NativeType::CRecord,
+            'a' => NativeType::CArray,
+            'S' => NativeType::CStruct,
             _ => NativeType::Int,
         };
         let ret_to_i64 = |v: Result<Value, cls_core::error::ClsError>| -> i64 {
@@ -386,6 +395,7 @@ fn register_native_hosts(
                         'f' => Value::Float(a.f64().map(|f| f.into()).unwrap_or(0.0)),
                         'b' => Value::Bool(a.i32().unwrap_or(0) != 0),
                         'c' => Value::Int(a.i32().unwrap_or(0) as i64),
+                        'r' | 'a' | 'S' => Value::Int(a.i64().unwrap_or(0)),
                         _ => Value::Int(a.i64().unwrap_or(0)),
                     };
                     vals.push(v);
@@ -408,6 +418,12 @@ fn register_native_hosts(
                     }
                     'b' | 'c' => {
                         results[0] = Val::I32(ret_to_i32(r));
+                        Ok(())
+                    }
+                    'r' | 'a' | 'S' => {
+                        // En wasmi (browser/wasm32) no hay DLLs nativas; el
+                        // ptr del layout se devuelve tal cual (passthrough).
+                        results[0] = Val::I64(ret_to_i64(r));
                         Ok(())
                     }
                     _ => {

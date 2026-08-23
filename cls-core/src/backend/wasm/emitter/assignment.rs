@@ -99,7 +99,23 @@ impl<'a> FuncEmitter<'a> {
                 let val_tmp = self.fresh_local_ty(elem_ty);
                 self.emit_expression(&i.object)?;
                 self.emit_expression(&i.index)?;
-                self.emit_expression(&a.value)?;
+                // Si el valor es un record con SHAPE (literal o variable),
+                // emitirlo como HASHMAP: al guardarlo en un contenedor dinámico
+                // (Record<String,any>), un shape contiguo no es legible como
+                // hashmap por la lectura/stringify (probe19: v1 era {}). Los
+                // shapes se emiten contiguos solo cuando su tipo esperado es
+                // shape; como valor de un record, se convierten a hashmap.
+                let val_shape = match self.types.get(&expr_span(&a.value)).cloned() {
+                    Some(Type::Shape(fields)) => Some(fields),
+                    _ => None,
+                };
+                if let Some(fields) = val_shape {
+                    self.emit_shape_to_hashmap(&a.value, &fields)?;
+                } else if let Expression::Record(rec) = &*a.value {
+                    self.emit_record_hashmap(rec)?;
+                } else {
+                    self.emit_expression(&a.value)?;
+                }
                 self.body.push(match elem_ty {
                     WasTy::F64 => Instruction::LocalSet(val_tmp),
                     WasTy::I32 => Instruction::LocalSet(val_tmp),
@@ -120,18 +136,21 @@ impl<'a> FuncEmitter<'a> {
                     .get(&expr_span(&a.value))
                     .cloned()
                     .unwrap_or(Type::Any);
-                self.body.push(Instruction::I64Const(arr_kind_code(&cls_t)));
+                // Tag del RUNTIME (runtime_tag_code: 1=string 6=array 7=record),
+                // NO arr_kind_code (binding: 4=string 5=array 6=record) — el
+                // record_set y la lectura/stringify usan el esquema runtime.
+                self.body.push(Instruction::I64Const(runtime_tag_code(&cls_t)));
                 if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                     self.body.push(Instruction::Call(idx));
                 } else {
                     self.host.call(HostFn::RecordSet, &mut self.body);
                 }
-                // write-back del ptr (el record pudo crecer y reallocarse)
-                if let Expression::Identifier(name, _) = &*i.object {
-                    self.emit_ident_store(name);
-                } else {
-                    self.body.push(Instruction::Drop);
-                }
+                // write-back del ptr (el record pudo crecer y reallocarse).
+                // writeback_array maneja Identifier Y MemberAccess (`me.record`)
+                // y deja el ptr del record en el stack; aquí no se usa como
+                // receiver, así que se descarta (el statement devuelve el valor).
+                self.writeback_array(&i.object)?;
+                self.body.push(Instruction::Drop);
                 self.body.push(match elem_ty {
                     WasTy::F64 => Instruction::LocalGet(val_tmp),
                     WasTy::I32 => Instruction::LocalGet(val_tmp),

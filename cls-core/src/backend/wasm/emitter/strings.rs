@@ -162,6 +162,16 @@ impl<'a> FuncEmitter<'a> {
                 // Handle de función -> `<function X>` (el nombre está en el handle).
                 self.host.call(HostFn::FnToString, &mut self.body);
             }
+            Type::Any | Type::Unknown => {
+                // Valor dinámico (leído de record/JSON): el tag del runtime
+                // decide la conversión. El caller dejó el val en el stack sin
+                // tag; re-emitimos con emit_any_chain (val + tag) y despachamos
+                // por tag. (str("x") con punteros ya no: se imprime el
+                // contenido por tag string.)
+                self.body.push(Instruction::Drop);
+                self.emit_any_chain(arg)?;
+                self.emit_str_host("__intr_any_to_string", HostFn::AnyToString);
+            }
             _ => self.emit_str_host("__intr_str_int", HostFn::StrInt),
         }
         Ok(())

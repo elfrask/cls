@@ -203,6 +203,14 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64ShrS);
             }
             StrictEqual => {
+                // Strings: comparar por CONTENIDO (`==` de punteros empaquetados
+                // daba false para buffers distintos con el mismo texto).
+                if self.is_string_expr(&b.left) || self.is_string_expr(&b.right) {
+                    self.emit_expression(&b.left)?;
+                    self.emit_expression(&b.right)?;
+                    self.emit_str_host("__intr_str_eq", HostFn::StrEq);
+                    return Ok(());
+                }
                 self.emit_expression(&b.left)?;
                 if lt == WasTy::F64 || rt == WasTy::F64 {
                     self.f64_promote(&b.left)?;
@@ -218,6 +226,13 @@ impl<'a> FuncEmitter<'a> {
                 })?;
             }
             NotEqual => {
+                if self.is_string_expr(&b.left) || self.is_string_expr(&b.right) {
+                    self.emit_expression(&b.left)?;
+                    self.emit_expression(&b.right)?;
+                    self.emit_str_host("__intr_str_eq", HostFn::StrEq);
+                    self.body.push(Instruction::I32Eqz);
+                    return Ok(());
+                }
                 self.emit_expression(&b.left)?;
                 if lt == WasTy::F64 || rt == WasTy::F64 {
                     self.f64_promote(&b.left)?;
@@ -486,6 +501,15 @@ impl<'a> FuncEmitter<'a> {
     /// Tuple/Record/Shape: len del header (ptr+8) != 0. Char/Bool: ya son i32.
     /// Cmx/Named/objetos: true (paridad walker). Any/Unknown/Null: error claro
     /// (antes emitía WASM inválido "expected i32, found i64").
+    /// ¿La expresión está tipada como String en el type map? (para `==`/`!=`
+    /// de strings: comparar contenido, no el puntero empaquetado).
+    pub(crate) fn is_string_expr(&self, expr: &Expression) -> bool {
+        matches!(
+            self.types.get(&expr_span(expr)),
+            Some(Type::String)
+        )
+    }
+
     pub(crate) fn coerce_to_bool(&mut self, expr: &Expression) -> ClsResult<()> {
         let ty = self
             .types
