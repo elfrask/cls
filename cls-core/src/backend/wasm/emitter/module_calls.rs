@@ -507,6 +507,12 @@ impl<'a> FuncEmitter<'a> {
                     if obj == "net" {
                         return Some(WasTy::I64);
                     }
+                    if obj == "strings" {
+                        return match member.member.as_str() {
+                            "indexOf" => Some(WasTy::I64),
+                            _ => Some(WasTy::I64),
+                        };
+                    }
                 }
             }
         }
@@ -554,6 +560,35 @@ impl<'a> FuncEmitter<'a> {
             }
             "lastError" => {
                 self.host.call(NetLastError, &mut self.body);
+                Ok(())
+            }
+            _ => Err(self.unsupported_expr(&Expression::Call(c.clone()))),
+        }
+    }
+
+    /// `strings.X(...)` -> internal `__intr_str_*` (si las internals están
+    /// fusionadas; call directo por nombre) o fallback al host del módulo
+    /// strings (misma firma/ABI, orden de stack idéntico).
+    pub(crate) fn emit_strings_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
+        use HostFn::*;
+        match member.member.as_str() {
+            "indexOf" => {
+                self.emit_expression(&c.args[0])?;
+                self.emit_expression(&c.args[1])?;
+                self.emit_str_host("__intr_str_index_of", StrIndexOf);
+                Ok(())
+            }
+            "slice" => {
+                self.emit_expression(&c.args[0])?;
+                self.emit_expression(&c.args[1])?;
+                self.emit_expression(&c.args[2])?;
+                self.emit_str_host("__intr_str_slice", StrSlice);
+                Ok(())
+            }
+            "split" => {
+                self.emit_expression(&c.args[0])?;
+                self.emit_expression(&c.args[1])?;
+                self.emit_str_host("__intr_str_split", StrSplit);
                 Ok(())
             }
             _ => Err(self.unsupported_expr(&Expression::Call(c.clone()))),

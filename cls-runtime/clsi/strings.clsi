@@ -1,0 +1,11 @@
+# @title strings
+# @description Modulo de utilidades de string (parseo por bytes).
+
+# @description Indice de la primera ocurrencia de `sub` en `s` (bytes); -1 si no esta.
+function indexOf(s: String, sub: String) -> int {};
+
+# @description Substring de `s` desde `start` (inclusive) hasta `end` (exclusive), en bytes. `end < 0` = hasta el final.
+function slice(s: String, start: int, end: int) -> String {};
+
+# @description Divide `s` por el separador `sep`. Devuelve un array de strings.
+function split(s: String, sep: String) -> Array {};

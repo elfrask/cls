@@ -50,6 +50,11 @@ pub static INTERNALS_FUNCTIONS: &[InternalsFn] = &[
     InternalsFn { name: "__intr_str_is_empty", params: &[I64], results: &[I32] },
     InternalsFn { name: "__intr_str_repr", params: &[I64], results: &[I64] },
     InternalsFn { name: "__intr_str_length", params: &[I64], results: &[I64] },
+    // Módulo strings (utilidades de parseo por bytes): indexOf, slice, split.
+    // Paridad con los hosts `str_index_of`/`str_slice`/`str_split`.
+    InternalsFn { name: "__intr_str_index_of", params: &[I64, I64], results: &[I64] },
+    InternalsFn { name: "__intr_str_slice", params: &[I64, I64, I64], results: &[I64] },
+    InternalsFn { name: "__intr_str_split", params: &[I64, I64], results: &[I64] },
     InternalsFn { name: "__intr_str_eq", params: &[I64, I64], results: &[I32] },
     InternalsFn { name: "__intr_any_to_string", params: &[I64, I64], results: &[I64] },
     // ── records ───────────────────────────────────────────────────────────

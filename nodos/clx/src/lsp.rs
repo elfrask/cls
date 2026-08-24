@@ -324,6 +324,7 @@ fn load_module_exports(name: &str) -> Option<Vec<String>> {
         "fs" => { let vfs = Arc::new(VfsResolver::new()); Some(record_keys(&fs::module(vfs))) }
         "http" => Some(record_keys(&http::module())),
         "net" => Some(record_keys(&net::module())),
+        "strings" => Some(record_keys(&crate::modules::strings::module())),
         _ => None,
     }
 }

@@ -152,6 +152,10 @@ pub enum HostFn {
     NetSend,
     NetClose,
     NetLastError,
+    // Módulo str (utilidades de string)
+    StrIndexOf,
+    StrSlice,
+    StrSplit,
 }
 
 impl HostFn {
@@ -297,6 +301,9 @@ impl HostFn {
             NetSend => "net_send",
             NetClose => "net_close",
             NetLastError => "net_last_error",
+            StrIndexOf => "str_index_of",
+            StrSlice => "str_slice",
+            StrSplit => "str_split",
         }
     }
 
@@ -450,6 +457,11 @@ impl HostFn {
             NetSend => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             NetClose => (i64p.clone(), vec![ValType::I64]),
             NetLastError => (vec![], vec![ValType::I64]),
+            // Módulo str: indexOf(s,sub)->int, slice(s,start,end)->String,
+            // split(s,sep)->String[] (array como ptr, igual que fs.listDir)
+            StrIndexOf => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
+            StrSlice => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
+            StrSplit => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
         }
     }
 }

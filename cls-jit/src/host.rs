@@ -2157,3 +2157,55 @@ pub fn host_net_last_error<C: HostCtx>(ctx: &mut C) -> i64 {
     };
     ctx.write_str(&msg)
 }
+
+// ── str (utilidades de string) ───────────────────────────────────────────────
+
+/// `str.indexOf(s, sub) -> int`. Índice de la primera ocurrencia de `sub` en
+/// `s` (bytes), o -1 si no está.
+pub fn host_str_index_of<C: HostCtx>(ctx: &mut C, s: i64, sub: i64) -> i64 {
+    let s = ctx.read_str(s);
+    let sub = ctx.read_str(sub);
+    match s.find(&sub) {
+        Some(idx) => idx as i64,
+        None => -1,
+    }
+}
+
+/// `str.slice(s, start, end) -> String`. Substring de `s` desde `start`
+/// (inclusive) hasta `end` (exclusive), en bytes. `end < 0` = hasta el final.
+pub fn host_str_slice<C: HostCtx>(ctx: &mut C, s: i64, start: i64, end: i64) -> i64 {
+    let s = ctx.read_str(s);
+    let len = s.len() as i64;
+    let start = start.max(0).min(len);
+    let end = if end < 0 {
+        len
+    } else {
+        end.max(start).min(len)
+    };
+    let out = s[start as usize..end as usize].to_string();
+    ctx.write_str(&out)
+}
+
+/// `str.split(s, sep) -> String[]`. Divide `s` por el separador `sep`.
+pub fn host_str_split<C: HostCtx>(ctx: &mut C, s: i64, sep: i64) -> i64 {
+    let s = ctx.read_str(s);
+    let sep = ctx.read_str(sep);
+    let parts: Vec<String> = if sep.is_empty() {
+        vec![s]
+    } else {
+        s.split(&sep).map(|p| p.to_string()).collect()
+    };
+    // Array<String> en memoria: header [cap:i64][len:i64] + elems packed.
+    let n = parts.len() as i64;
+    let array_ptr = ctx.alloc(n * 8 + 16);
+    if array_ptr == 0 {
+        return 0;
+    }
+    ctx.write_i64(array_ptr as usize, n);
+    ctx.write_i64(array_ptr as usize + 8, n);
+    for (i, part) in parts.iter().enumerate() {
+        let sp = ctx.write_str(part);
+        ctx.write_i64(array_ptr as usize + 16 + i * 8, sp);
+    }
+    array_ptr
+}

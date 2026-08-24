@@ -3,7 +3,9 @@
 //! memoria lineal (bump del allocator del módulo).
 
 use alloc::format;
-use alloc::string::ToString;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
 use crate::mem;
 
 #[no_mangle]
@@ -131,6 +133,66 @@ pub extern "C" fn __intr_str_length(v: i64) -> i64 {
     unsafe {
         let s = mem::read_str(v);
         s.len() as i64
+    }
+}
+
+/// `str.indexOf(s, sub) -> int`. Índice de la primera ocurrencia de `sub` en
+/// `s` (bytes), o -1 si no está. Paridad con `host_str_index_of`.
+#[no_mangle]
+pub extern "C" fn __intr_str_index_of(s: i64, sub: i64) -> i64 {
+    unsafe {
+        let s = mem::read_str(s);
+        let sub = mem::read_str(sub);
+        match s.find(&sub) {
+            Some(idx) => idx as i64,
+            None => -1,
+        }
+    }
+}
+
+/// `str.slice(s, start, end) -> String`. Substring de `s` desde `start`
+/// (inclusive) hasta `end` (exclusive), en bytes. `end < 0` = hasta el final.
+/// Paridad con `host_str_slice`.
+#[no_mangle]
+pub extern "C" fn __intr_str_slice(s: i64, start: i64, end: i64) -> i64 {
+    unsafe {
+        let s = mem::read_str(s);
+        let len = s.len() as i64;
+        let start = start.max(0).min(len);
+        let end = if end < 0 {
+            len
+        } else {
+            end.max(start).min(len)
+        };
+        mem::write_str(&s[start as usize..end as usize])
+    }
+}
+
+/// `str.split(s, sep) -> String[]`. Divide `s` por el separador `sep`.
+/// Devuelve un array `[cap:i64][len:i64][elems*8]` (strings packed).
+/// Paridad con `host_str_split`.
+#[no_mangle]
+pub extern "C" fn __intr_str_split(s: i64, sep: i64) -> i64 {
+    unsafe {
+        let s = mem::read_str(s);
+        let sep = mem::read_str(sep);
+        let parts: Vec<String> = if sep.is_empty() {
+            vec![s]
+        } else {
+            s.split(&sep).map(|p| p.to_string()).collect()
+        };
+        let n = parts.len() as i64;
+        let array_ptr = mem::alloc(n * 8 + 16);
+        if array_ptr == 0 {
+            return 0;
+        }
+        mem::write_i64(array_ptr, n);
+        mem::write_i64(array_ptr + 8, n);
+        for (i, part) in parts.iter().enumerate() {
+            let sp = mem::write_str(part);
+            mem::write_i64(array_ptr + 16 + i * 8, sp);
+        }
+        array_ptr as i64
     }
 }
 

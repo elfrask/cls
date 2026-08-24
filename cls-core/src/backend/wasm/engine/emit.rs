@@ -307,6 +307,15 @@ impl<'a> Engine<'a> {
             RandomInt,
             RandomFloat,
             RandomUuid,
+            NetListen,
+            NetAccept,
+            NetRecv,
+            NetSend,
+            NetClose,
+            NetLastError,
+            StrIndexOf,
+            StrSlice,
+            StrSplit,
         ] {
             self.register_host(h);
         }

@@ -425,6 +425,16 @@ pub fn register_host_functions_opt(
         });
         w!("net_close", |mut c: Caller<'_, HostState>, h: i64| -> i64 { host::host_net_close(&mut c, h) });
         w!("net_last_error", |mut c: Caller<'_, HostState>| -> i64 { host::host_net_last_error(&mut c) });
+        // Módulo str (utilidades de string)
+        w!("str_index_of", |mut c: Caller<'_, HostState>, s: i64, sub: i64| -> i64 {
+            host::host_str_index_of(&mut c, s, sub)
+        });
+        w!("str_slice", |mut c: Caller<'_, HostState>, s: i64, a: i64, b: i64| -> i64 {
+            host::host_str_slice(&mut c, s, a, b)
+        });
+        w!("str_split", |mut c: Caller<'_, HostState>, s: i64, sep: i64| -> i64 {
+            host::host_str_split(&mut c, s, sep)
+        });
     }
     Ok(())
 }

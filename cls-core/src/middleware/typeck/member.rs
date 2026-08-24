@@ -89,6 +89,22 @@ impl TypeChecker {
                     _ => Type::Any,
                 };
             }
+            if name == "net" {
+                return match member.member.as_str() {
+                    "listen" | "accept" | "send" | "close" => Type::Int,
+                    "recv" => Type::String,
+                    "lastError" => Type::String,
+                    _ => Type::Any,
+                };
+            }
+            if name == "strings" {
+                return match member.member.as_str() {
+                    "indexOf" => Type::Int,
+                    "slice" => Type::String,
+                    "split" => Type::Array(Box::new(Type::String)),
+                    _ => Type::Any,
+                };
+            }
         }
         let obj_type = self.check_expression(&member.object);
         // Color.Rojo -> el tipo del enum (si member.object es un nombre de enum)

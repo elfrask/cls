@@ -294,6 +294,74 @@ fn str_contains_starts_ends_empty() {
 }
 
 #[test]
+fn str_index_of() {
+    let mut rt = instantiate();
+    let index_of = fn3::<(i64, i64), i64>(&mut rt, "__intr_str_index_of");
+    let (a, b, c, d) = (BUF + 64, BUF + 128, BUF + 192, BUF + 256);
+    let (pa, pb, pc, pd);
+    {
+        let m = rt.mem.data_mut(&mut rt.store);
+        pa = write_str(m, a, "hola mundo");
+        pb = write_str(m, b, "mun");
+        pc = write_str(m, c, "xyz");
+        pd = write_str(m, d, "");
+    }
+    assert_eq!(index_of.call(&mut rt.store, (pa, pb)).unwrap(), 5);
+    assert_eq!(index_of.call(&mut rt.store, (pa, pc)).unwrap(), -1);
+    assert_eq!(index_of.call(&mut rt.store, (pa, pd)).unwrap(), 0);
+}
+
+#[test]
+fn str_slice() {
+    let mut rt = instantiate();
+    let slice = fn3::<(i64, i64, i64), i64>(&mut rt, "__intr_str_slice");
+    let (a,) = (BUF + 64,);
+    let pa;
+    {
+        let m = rt.mem.data_mut(&mut rt.store);
+        pa = write_str(m, a, "hola mundo");
+    }
+    let r1 = slice.call(&mut rt.store, (pa, 5, 12)).unwrap();
+    let r2 = slice.call(&mut rt.store, (pa, 5, -1)).unwrap();
+    let r3 = slice.call(&mut rt.store, (pa, 0, 4)).unwrap();
+    let m = rt.mem.data(&rt.store);
+    assert_eq!(read_str(m, r1), "mundo");
+    assert_eq!(read_str(m, r2), "mundo");
+    assert_eq!(read_str(m, r3), "hola");
+}
+
+#[test]
+fn str_split() {
+    let mut rt = instantiate();
+    let split = fn3::<(i64, i64), i64>(&mut rt, "__intr_str_split");
+    let (a, b, c) = (BUF + 64, BUF + 128, BUF + 192);
+    let (pa, pb, pc);
+    {
+        let m = rt.mem.data_mut(&mut rt.store);
+        pa = write_str(m, a, "a,b,c");
+        pb = write_str(m, b, ",");
+        pc = write_str(m, c, "solo");
+    }
+    let arr = split.call(&mut rt.store, (pa, pb)).unwrap();
+    let arr2 = split.call(&mut rt.store, (pc, pb)).unwrap();
+    let m = rt.mem.data(&rt.store);
+    let arr = arr as usize;
+    let arr2 = arr2 as usize;
+    // cap y len
+    assert_eq!(rd_i64(m, arr), 3);
+    assert_eq!(rd_i64(m, arr + 8), 3);
+    // elems
+    assert_eq!(read_str(m, rd_i64(m, arr + 16)), "a");
+    assert_eq!(read_str(m, rd_i64(m, arr + 24)), "b");
+    assert_eq!(read_str(m, rd_i64(m, arr + 32)), "c");
+    // split sin sep -> un solo elemento
+    assert_eq!(rd_i64(m, arr2), 1);
+    assert_eq!(rd_i64(m, arr2 + 8), 1);
+    assert_eq!(read_str(m, rd_i64(m, arr2 + 16)), "solo");
+}
+
+
+#[test]
 fn str_int_float_bool_char() {
     let mut rt = instantiate();
     let str_int = fn3::<(i64,), i64>(&mut rt, "__intr_str_int");

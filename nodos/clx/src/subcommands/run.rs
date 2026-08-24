@@ -228,6 +228,7 @@ fn make_desktop_resolver(
     resolver.add_internal("fs", crate::modules::fs::module(vfs));
     resolver.add_internal("http", crate::modules::http::module());
     resolver.add_internal("net", crate::modules::net::module());
+    resolver.add_internal("strings", crate::modules::strings::module());
     resolver.add_internal("Lib", crate::modules::lib::module(lib_resolver));
     resolver.add_internal("os", crate::modules::os::module());
     resolver.add_internal("path", crate::modules::path::module());

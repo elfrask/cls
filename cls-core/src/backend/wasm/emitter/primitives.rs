@@ -132,6 +132,9 @@ impl<'a> FuncEmitter<'a> {
             if obj_name == "net" {
                 self.emit_net_call(member, c)?; return Ok(true);
             }
+            if obj_name == "strings" {
+                self.emit_strings_call(member, c)?; return Ok(true);
+            }
             // `Clase.metodo()` con método static -> call directo (sin me).
             if self.class_defs.contains_key(obj_name.as_str()) {
                 let skey = format!("{}::__s__{}", obj_name, member.member);
