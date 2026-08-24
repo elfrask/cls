@@ -166,7 +166,15 @@ impl<'a> Engine<'a> {
                             .as_ref()
                             .map(annotation_to_type)
                             .unwrap_or(Type::Void);
-                        let (rc, rw) = ty_code(&ret_t);
+                        // Struct de extensión como retorno (`-> Punto`): se
+                        // tipa como Named(Punto); el rcode debe ser 'S' (struct)
+                        // para que el wrapper copie el layout contiguo.
+                        let (rc, rw) = match &ret_t {
+                            Type::Named(n, _) if self.struct_defs.contains_key(n.as_str()) => {
+                                ('S', WasTy::I64)
+                            }
+                            t => ty_code(t),
+                        };
                         let results = if rc == 'v' {
                             vec![]
                         } else {
@@ -181,6 +189,32 @@ impl<'a> Engine<'a> {
                             .import("env", &import_name, EntityType::Function(tidx));
                         self.native_indexes.insert(f.name.clone(), idx);
                         self.native_ret.insert(f.name.clone(), rc);
+                    }
+                    // Structures declaradas en `extension`: registrar en
+                    // `struct_defs` para que `Struct(Nombre)` como retorno
+                    // (o `CStruct`) permita acceder a campos por offsets.
+                    if let NativeDecl::Structure(s) = d {
+                        if !self.struct_defs.contains_key(&s.name) {
+                            let mut fields = Vec::new();
+                            let mut offsets = Vec::new();
+                            let mut off = 16i64;
+                            for f in &s.fields {
+                                let t = annotation_to_type(&f.type_ann);
+                                let w = was_type(&t)?;
+                                offsets.push(off);
+                                fields.push((f.name.clone(), t, w));
+                                off += elem_size_bytes(w);
+                            }
+                            self.struct_defs.insert(
+                                s.name.clone(),
+                                StructInfo {
+                                    def_id: 0,
+                                    fields,
+                                    offsets,
+                                    total: off,
+                                },
+                            );
+                        }
                     }
                 }
             }

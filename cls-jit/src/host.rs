@@ -1986,3 +1986,174 @@ fn cmx_format<C: HostCtx>(ctx: &mut C, p: usize) -> String {
     }
     out
 }
+
+// ── net (sockets TCP para el servidor HTTP) ──────────────────────────────────
+
+/// Estado global de los sockets del módulo `net`. Cada listener/stream se
+/// identifica con un handle i64 único (incremental). El módulo se implementa
+/// con `std::net` (TcpListener/TcpStream), portable entre SO.
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::net::{TcpListener, TcpStream};
+
+static NET_NEXT_ID: AtomicI64 = AtomicI64::new(1);
+static NET_LISTENERS: OnceLock<Mutex<HashMap<i64, TcpListener>>> = OnceLock::new();
+static NET_STREAMS: OnceLock<Mutex<HashMap<i64, TcpStream>>> = OnceLock::new();
+static NET_LAST_ERROR: Mutex<String> = Mutex::new(String::new());
+
+fn net_listeners() -> &'static Mutex<HashMap<i64, TcpListener>> {
+    NET_LISTENERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+fn net_streams() -> &'static Mutex<HashMap<i64, TcpStream>> {
+    NET_STREAMS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn net_set_error(msg: &str) {
+    if let Ok(mut e) = NET_LAST_ERROR.lock() {
+        *e = msg.to_string();
+    }
+}
+
+/// `net.listen(port) -> handle`. Escucha en 127.0.0.1:port. Devuelve el handle
+/// del listener o 0 si falló (ver `net.lastError()`).
+pub fn host_net_listen<C: HostCtx>(_ctx: &mut C, port: i64) -> i64 {
+    let addr = format!("127.0.0.1:{}", port);
+    match TcpListener::bind(&addr) {
+        Ok(listener) => {
+            let id = NET_NEXT_ID.fetch_add(1, Ordering::SeqCst);
+            if let Ok(mut l) = net_listeners().lock() {
+                l.insert(id, listener);
+            }
+            net_set_error("");
+            id
+        }
+        Err(e) => {
+            net_set_error(&format!("listen {}: {}", addr, e));
+            0
+        }
+    }
+}
+
+/// `net.accept(handle) -> sock`. Bloquea hasta aceptar una conexión. Devuelve
+/// el handle del stream (o 0 si el listener no existe o falló).
+pub fn host_net_accept<C: HostCtx>(_ctx: &mut C, handle: i64) -> i64 {
+    let listener = match net_listeners().lock() {
+        Ok(l) => l.get(&handle).map(|l| l.try_clone().ok()).flatten(),
+        Err(_) => None,
+    };
+    let listener = match listener {
+        Some(l) => l,
+        None => {
+            net_set_error("accept: listener no existe");
+            return 0;
+        }
+    };
+    match listener.accept() {
+        Ok((stream, _)) => {
+            let id = NET_NEXT_ID.fetch_add(1, Ordering::SeqCst);
+            if let Ok(mut s) = net_streams().lock() {
+                s.insert(id, stream);
+            }
+            net_set_error("");
+            id
+        }
+        Err(e) => {
+            net_set_error(&format!("accept: {}", e));
+            0
+        }
+    }
+}
+
+/// `net.recv(sock, max) -> String`. Lee hasta `max` bytes del socket (no
+/// bloquea más allá de lo disponible; usa `read` que devuelve lo que haya).
+/// Devuelve el string leído (vacío si la conexión cerró o hubo error).
+pub fn host_net_recv<C: HostCtx>(ctx: &mut C, sock: i64, max: i64) -> i64 {
+    let max = max.clamp(1, 1_000_000) as usize;
+    let mut buf = vec![0u8; max];
+    let n = {
+    let stream = match net_streams().lock() {
+        Ok(s) => s.get(&sock).and_then(|s| s.try_clone().ok()),
+        Err(_) => None,
+    };
+        let mut stream = match stream {
+            Some(s) => s,
+            None => {
+                net_set_error("recv: socket no existe");
+                return ctx.write_str("");
+            }
+        };
+        use std::io::Read;
+        match stream.read(&mut buf) {
+            Ok(0) => {
+                net_set_error("");
+                ctx.write_str("")
+            }
+            Ok(n) => {
+                net_set_error("");
+                let s = String::from_utf8_lossy(&buf[..n]).into_owned();
+                ctx.write_str(&s)
+            }
+            Err(e) => {
+                net_set_error(&format!("recv: {}", e));
+                ctx.write_str("")
+            }
+        }
+    };
+    n
+}
+
+/// `net.send(sock, data) -> n`. Envía los bytes del string. Devuelve el número
+/// de bytes enviados (o 0 si falló).
+pub fn host_net_send<C: HostCtx>(ctx: &mut C, sock: i64, data: i64) -> i64 {
+    let s = ctx.read_str(data);
+    let stream = match net_streams().lock() {
+        Ok(s) => s.get(&sock).map(|s| s.try_clone().ok()).flatten(),
+        Err(_) => None,
+    };
+    let mut stream = match stream {
+        Some(s) => s,
+        None => {
+            net_set_error("send: socket no existe");
+            return 0;
+        }
+    };
+    use std::io::Write;
+    match stream.write(s.as_bytes()) {
+        Ok(n) => {
+            net_set_error("");
+            let _ = stream.flush();
+            n as i64
+        }
+        Err(e) => {
+            net_set_error(&format!("send: {}", e));
+            0
+        }
+    }
+}
+
+/// `net.close(sock) -> 0`. Cierra un socket o listener.
+pub fn host_net_close<C: HostCtx>(_ctx: &mut C, handle: i64) -> i64 {
+    let mut removed = false;
+    if let Ok(mut s) = net_streams().lock() {
+        if s.remove(&handle).is_some() {
+            removed = true;
+        }
+    }
+    if !removed {
+        if let Ok(mut l) = net_listeners().lock() {
+            let _ = l.remove(&handle);
+        }
+    }
+    net_set_error("");
+    0
+}
+
+/// `net.lastError() -> String`. Último error del módulo net.
+pub fn host_net_last_error<C: HostCtx>(ctx: &mut C) -> i64 {
+    let msg = match NET_LAST_ERROR.lock() {
+        Ok(e) => e.clone(),
+        Err(_) => String::new(),
+    };
+    ctx.write_str(&msg)
+}

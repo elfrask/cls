@@ -145,6 +145,13 @@ pub enum HostFn {
     RandomInt,
     RandomFloat,
     RandomUuid,
+    // Módulo net (sockets TCP)
+    NetListen,
+    NetAccept,
+    NetRecv,
+    NetSend,
+    NetClose,
+    NetLastError,
 }
 
 impl HostFn {
@@ -284,6 +291,12 @@ impl HostFn {
             RandomInt => "random_int",
             RandomFloat => "random_float",
             RandomUuid => "random_uuid",
+            NetListen => "net_listen",
+            NetAccept => "net_accept",
+            NetRecv => "net_recv",
+            NetSend => "net_send",
+            NetClose => "net_close",
+            NetLastError => "net_last_error",
         }
     }
 
@@ -429,6 +442,14 @@ impl HostFn {
             RandomInt => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             RandomFloat => (vec![ValType::F64, ValType::F64], vec![ValType::F64]),
             RandomUuid => (vec![], vec![ValType::I64]),
+            // Módulo net: listen(port)->handle, accept(handle)->sock,
+            // recv(sock,max)->String, send(sock,data)->n, close(sock)->0, lastError()->String
+            NetListen => (i64p.clone(), vec![ValType::I64]),
+            NetAccept => (i64p.clone(), vec![ValType::I64]),
+            NetRecv => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
+            NetSend => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
+            NetClose => (i64p.clone(), vec![ValType::I64]),
+            NetLastError => (vec![], vec![ValType::I64]),
         }
     }
 }

@@ -145,6 +145,99 @@ fn ffi_host_to_wasm(caller: &mut Caller<'_, HostState>, host_ptr: i64) -> i64 {
     0
 }
 
+/// Copia un layout del BUFFER HOST del DLL (fuera de la memoria del módulo) a la
+/// memoria del módulo, RE-MApeando los punteros internos: las keys de un record
+/// y los valores string (tag 1) apuntan al espacio del DLL; al copiar crudo
+/// quedarían inválidos en el módulo. Re-serializa:
+/// - array `[cap][len][elems*8]` de escalares: copia cruda (stride 8).
+/// - record `[cap][len][(key,val,tag)*24]`: re-aloca cada key string en el
+///   módulo y copia val (re-mapeando strings si tag==1).
+fn ffi_copy_own_layout(
+    caller: &mut Caller<'_, HostState>,
+    host_ptr: i64,
+    rcode: char,
+) -> i64 {
+    let host = host_ptr as usize;
+    if host == 0 {
+        return 0;
+    }
+    // Header `[cap][len]`.
+    let len = unsafe { ((host + 8) as *const i64).read_unaligned() };
+    if len < 0 || len > 1_000_000 {
+        return 0;
+    }
+    if rcode == 'a' {
+        // Array de escalares: copia cruda.
+        let size = 16 + (len as i64) * 8;
+        let wasm_off = caller.alloc(size);
+        let ok = caller.write_bytes(wasm_off as usize, unsafe {
+            std::slice::from_raw_parts(host as *const u8, size as usize)
+        });
+        return if ok { wasm_off } else { 0 };
+    }
+    if rcode == 'S' {
+        // Struct: layout CLS `[def_id][len][campos contiguos]`. El `len` del
+        // header = número de campos; los campos CLS se alinean a 8 bytes (es el
+        // stride de int/float/ptr en structs CLS). Copia cruda del bloque.
+        let n = len.max(0);
+        let size = 16 + n * 8;
+        let wasm_off = caller.alloc(size);
+        let ok = caller.write_bytes(wasm_off as usize, unsafe {
+            std::slice::from_raw_parts(host as *const u8, size as usize)
+        });
+        return if ok { wasm_off } else { 0 };
+    }
+    if rcode == 'r' {
+        // Record: re-serializar con keys/valores strings re-mapeados.
+        let n = len as usize;
+        let ptr = caller.alloc((n as i64) * 24 + 16);
+        if ptr == 0 {
+            return 0;
+        }
+        caller.write_i64(ptr as usize, n as i64);
+        caller.write_i64(ptr as usize + 8, n as i64);
+        for i in 0..n {
+            let base = host + 16 + i * 24;
+            let kbits = unsafe { (base as *const i64).read_unaligned() };
+            let vbits = unsafe { ((base + 8) as *const i64).read_unaligned() };
+            let tag = unsafe { ((base + 16) as *const i64).read_unaligned() };
+            // Key string: el ptr del DLL puede ser un offset relativo al buffer
+            // propio (si es bajo, < 1MB) o una dirección absoluta. Se resuelve
+            // contra el buffer y se re-aloca en la memoria del módulo.
+            let kraw = (kbits >> 32) as usize;
+            let klen = (kbits & 0xffff_ffff) as usize;
+            let ksrc = if kraw < 1_000_000 { host + kraw } else { kraw };
+            let new_key = if klen > 0 && klen < 1_000_000 {
+                caller.write_str(std::str::from_utf8(unsafe {
+                    std::slice::from_raw_parts(ksrc as *const u8, klen)
+                }).unwrap_or(""))
+            } else {
+                0
+            };
+            // Valor: si tag==1 (string), re-mapear igual; si no, copiar bits.
+            let new_val = if tag == 1 {
+                let vraw = (vbits >> 32) as usize;
+                let vlen = (vbits & 0xffff_ffff) as usize;
+                let vsrc = if vraw < 1_000_000 { host + vraw } else { vraw };
+                if vlen > 0 && vlen < 1_000_000 {
+                    caller.write_str(std::str::from_utf8(unsafe {
+                        std::slice::from_raw_parts(vsrc as *const u8, vlen)
+                    }).unwrap_or(""))
+                } else {
+                    vbits
+                }
+            } else {
+                vbits
+            };
+            caller.write_i64(ptr as usize + 16 + i * 24, new_key);
+            caller.write_i64(ptr as usize + 16 + i * 24 + 8, new_val);
+            caller.write_i64(ptr as usize + 16 + i * 24 + 16, tag);
+        }
+        return ptr;
+    }
+    0
+}
+
 // ── Registro de host functions (adaptadores) ────────────────────────────────
 
 /// Registra las host functions `env.*` (adaptadores de una línea a los cuerpos
@@ -321,6 +414,17 @@ pub fn register_host_functions_opt(
             host::host_random_float(&mut c, min, max)
         });
         w!("random_uuid", |mut c: Caller<'_, HostState>| -> i64 { host::host_random_uuid(&mut c) });
+        // Módulo net (sockets TCP del servidor)
+        w!("net_listen", |mut c: Caller<'_, HostState>, p: i64| -> i64 { host::host_net_listen(&mut c, p) });
+        w!("net_accept", |mut c: Caller<'_, HostState>, h: i64| -> i64 { host::host_net_accept(&mut c, h) });
+        w!("net_recv", |mut c: Caller<'_, HostState>, s: i64, m: i64| -> i64 {
+            host::host_net_recv(&mut c, s, m)
+        });
+        w!("net_send", |mut c: Caller<'_, HostState>, s: i64, d: i64| -> i64 {
+            host::host_net_send(&mut c, s, d)
+        });
+        w!("net_close", |mut c: Caller<'_, HostState>, h: i64| -> i64 { host::host_net_close(&mut c, h) });
+        w!("net_last_error", |mut c: Caller<'_, HostState>| -> i64 { host::host_net_last_error(&mut c) });
     }
     Ok(())
 }
@@ -471,8 +575,23 @@ pub fn register_native_hosts(
                         // WASM y se devuelve al CLS.
                         match r {
                             Ok(Value::Int(host_ptr)) => {
-                                results[0] = Val::I64(ffi_host_to_wasm(&mut caller, host_ptr));
-                                Ok(())
+                                let wasm_off = ffi_host_to_wasm(&mut caller, host_ptr);
+                                if wasm_off != 0 {
+                                    // In-place sobre la memoria del módulo: usar
+                                    // el offset directo (cero copias).
+                                    results[0] = Val::I64(wasm_off);
+                                    Ok(())
+                                } else if host_ptr != 0 {
+                                    // El DLL devolvió un buffer PROPIO (fuera de
+                                    // la memoria del módulo): re-serializar el
+                                    // layout a la memoria del módulo re-mapeando
+                                    // punteros internos (keys/strings del DLL).
+                                    results[0] = Val::I64(ffi_copy_own_layout(&mut caller, host_ptr, rcode));
+                                    Ok(())
+                                } else {
+                                    results[0] = Val::I64(0);
+                                    Ok(())
+                                }
                             }
                             Ok(v) => {
                                 results[0] = Val::I64(host::ffi_write_value(&mut caller, &v));

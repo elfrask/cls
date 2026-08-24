@@ -1,0 +1,20 @@
+# @title net
+# @description Modulo de sockets TCP para construir servidores de red.
+
+# @description Escucha en 127.0.0.1:port. Devuelve el handle del listener (0 si fallo; ver lastError).
+function listen(port: int) -> int {};
+
+# @description Bloquea hasta aceptar una conexion. Devuelve el handle del socket (0 si fallo).
+function accept(handle: int) -> int {};
+
+# @description Lee hasta `max` bytes del socket. Devuelve el string leido (vacio si cerro o fallo).
+function recv(sock: int, max: int) -> String {};
+
+# @description Envia los bytes de `data` por el socket. Devuelve los bytes enviados (0 si fallo).
+function send(sock: int, data: String) -> int {};
+
+# @description Cierra un socket o listener.
+function close(handle: int) -> int {};
+
+# @description Ultimo error del modulo net ("" si no hubo).
+function lastError() -> String {};

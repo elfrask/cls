@@ -71,10 +71,20 @@ Tags runtime de los valores dentro de records: `0=int 1=string 2=float 3=bool
   recibe su puntero. El wrapper del JIT traduce el offset de la memoria lineal
   del módulo a la dirección host (la memoria lineal es una alocación del host),
   así el DLL lee/escribe el mismo layout en su espacio de direcciones.
-- **Retorno**: el DLL escribe el layout (idealmente in-place sobre la memoria
-  del módulo) y CLS lo vuelve a usar como record/array. El puntero que devuelve
-  el DLL debe caer dentro de la memoria lineal del módulo (contrato zero-copy);
-  si devuelve un buffer propio, CLS lo recibe como `Int` crudo (no re-usable).
+- **Retorno**: el DLL escribe el layout y CLS lo vuelve a usar como
+  record/array/struct.
+  - Si el puntero devuelto cae dentro de la memoria lineal del módulo
+    (in-place/zero-copy), se usa el offset directo (cero copias).
+  - Si el DLL devuelve un **buffer propio** (malloc, fuera de la memoria del
+    módulo), el wrapper lo **re-serializa a la memoria del módulo** re-mapeando
+    los punteros internos: las keys de un record y los valores string se
+    re-alocan en el módulo (el layout canónico empaqueta punteros de 32 bits, no
+    direcciones host de 64 bits). Las keys/valores string del DLL deben usar
+    **offsets relativos al buffer** (bajos, < 1MB) en los bits altos:
+    `(offset<<32)|len`.
+  - `CStruct` como retorno: se declara el `structure` en la `extension` y se
+    usa `-> NombreDelStruct`; el wrapper copia el layout contiguo y los campos
+    se acceden por offsets (`p.x`, `p.y`).
 - **Records con shape** (`var r = {a:1,b:"x"}` inferido) se emiten como struct
   contiguo, no como hashmap: usa `CRecord` para `Record<K,V>` o `json.parse`, y
   `CStruct`/`Struct` para shapes.

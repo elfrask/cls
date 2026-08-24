@@ -1,6 +1,7 @@
 pub mod fs;
 pub mod http;
 pub mod lib;
+pub mod net;
 pub mod os;
 pub mod path;
 pub mod process;

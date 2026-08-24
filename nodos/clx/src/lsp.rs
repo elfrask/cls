@@ -12,7 +12,7 @@ use cls_core::middleware::{TypeChecker, NameResolver};
 use cls_core::config::TypesConfig;
 use cls_runtime::{Value, VfsResolver};
 use cls_runtime::stdlib::{math, json};
-use crate::modules::{fs, http};
+use crate::modules::{fs, http, net};
 use crate::type_defs::{self, TypeModule};
 
 #[derive(Debug, Clone)]
@@ -323,6 +323,7 @@ fn load_module_exports(name: &str) -> Option<Vec<String>> {
         "json" => Some(record_keys(&json::module())),
         "fs" => { let vfs = Arc::new(VfsResolver::new()); Some(record_keys(&fs::module(vfs))) }
         "http" => Some(record_keys(&http::module())),
+        "net" => Some(record_keys(&net::module())),
         _ => None,
     }
 }

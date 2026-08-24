@@ -147,6 +147,15 @@ pub(super) fn annotation_to_type(ann: &TypeAnnotation) -> Type {
             "Bool" | "Boolean" => Type::Bool,
             "Char" => Type::Char,
             "Any" | "any" => Type::Any,
+            // Struct(Nombre): struct de extensión -> se tipa como el struct
+            // (member access por offsets del struct_defs).
+            "Struct" if args.len() == 1 => {
+                if let TypeKind::Named(sn, _) = &args[0].kind {
+                    Type::Named(sn.clone(), vec![])
+                } else {
+                    Type::Named(name.clone(), args.iter().map(annotation_to_type).collect())
+                }
+            }
             _ => Type::Named(name.clone(), args.iter().map(annotation_to_type).collect()),
         },
         TypeKind::Cmx => Type::Cmx,

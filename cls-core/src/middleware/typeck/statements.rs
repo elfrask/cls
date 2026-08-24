@@ -143,6 +143,28 @@ impl TypeChecker {
                             let ret = f.return_type.as_ref()
                                 .map(|ta| self.resolve_type_annotation(ta))
                                 .unwrap_or(Type::Void);
+                            // Retorno de FFI estructurado: CArray/CRecord son
+                            // punteros al layout, pero CLS los usa como
+                            // Array/Record indexable (len(), [i], has()).
+                            // CStruct queda opaco (Named); `Struct(Nombre)`
+                            // referencia un `structure` declarado -> se tipa
+                            // como el struct (acceso a campos por offsets).
+                            let ret = match ret {
+                                Type::Named(n, _) if n == "CArray" => {
+                                    Type::Array(Box::new(Type::Any))
+                                }
+                                Type::Named(n, _) if n == "CRecord" => {
+                                    Type::Record(Box::new(Type::String), Box::new(Type::Any))
+                                }
+                                Type::Named(n, ref args) if n == "Struct" => {
+                                    if let Some(Type::Named(sn, _)) = args.first() {
+                                        Type::Named(sn.clone(), vec![])
+                                    } else {
+                                        Type::Named("Struct".to_string(), args.clone())
+                                    }
+                                }
+                                r => r,
+                            };
                             self.define(&f.name, Type::Fun(param_tys, Box::new(ret)));
                         }
                         NativeDecl::Structure(s) => {

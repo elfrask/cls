@@ -1,0 +1,16 @@
+extension "ffi_own.dll" as C {
+    function make_array_own() -> CArray;
+    function make_record_own() -> CRecord;
+};
+
+function main(args: String[]) -> int {
+    var a = make_array_own();
+    print("len arr:", len(a));
+    print("arr[0]:", a[0]);
+    print("arr[1]:", a[1]);
+    print("arr[2]:", a[2]);
+    var r = make_record_own();
+    print("has a:", r.has("a"), "v a:", r["a"]);
+    print("has b:", r.has("b"), "v b:", r["b"]);
+    return 0;
+}

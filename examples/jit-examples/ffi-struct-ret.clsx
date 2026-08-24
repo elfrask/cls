@@ -1,0 +1,11 @@
+extension "ffi_struct.dll" as C {
+    structure Punto { x: int, y: int };
+    function make_punto_own() -> Punto;
+};
+
+function main(args: String[]) -> int {
+    var p = make_punto_own();
+    print("p.x:", p.x);
+    print("p.y:", p.y);
+    return 0;
+}

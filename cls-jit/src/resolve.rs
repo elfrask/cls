@@ -234,7 +234,7 @@ pub fn load_import_modules_hooked(
     use cls_core::error::ClsError;
     // Módulos internos del core/nodo: NO se resuelven como archivos.
     const INTERNALS: &[&str] = &[
-        "math", "json", "fs", "http", "Lib", "async", "os", "path", "process", "time", "random",
+        "math", "json", "fs", "http", "Lib", "async", "os", "path", "process", "time", "random", "net",
     ];
     for stmt in &module.statements {
         let import = match stmt {

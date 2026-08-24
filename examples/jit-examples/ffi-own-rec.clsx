@@ -1,0 +1,12 @@
+extension "ffi_own.dll" as C {
+    function make_record_own() -> CRecord;
+};
+
+function main(args: String[]) -> int {
+    var r = make_record_own();
+    print("has a:", r.has("a"));
+    print("v a:", r["a"]);
+    print("has b:", r.has("b"));
+    print("v b:", r["b"]);
+    return 0;
+}
