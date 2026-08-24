@@ -436,8 +436,8 @@ impl<'a> FuncEmitter<'a> {
     pub(crate) fn emit_index_get(&mut self, i: &IndexExpr) -> ClsResult<()> {
         // Record: r["key"] -> record_get(ptr, key)
         let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
-        // `o.x[0]` con `o.x` Any (json.parse anidado): indexar despachando por tag.
-        if matches!(obj_ty, Some(Type::Any)) {
+        // `o.x[0]` con `o.x` Any/Value/JSON (json.parse anidado): indexar despachando por tag.
+        if matches!(obj_ty, Some(Type::Any) | Some(Type::Json) | Some(Type::Value)) {
             let expr = Expression::Index(i.clone());
             self.emit_any_chain(&expr)?;
             // Resultado (val, tag) -> dejar solo el val.

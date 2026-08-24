@@ -124,6 +124,8 @@ impl TypeChecker {
             TypeKind::Null => Type::Null,
             TypeKind::Void => Type::Void,
             TypeKind::Empty => Type::Empty,
+            TypeKind::Json => Type::Json,
+            TypeKind::Value => Type::Value,
             TypeKind::Array(inner) => {
                 Type::Array(Box::new(self.resolve_annotation_with(inner, bindings)))
             }

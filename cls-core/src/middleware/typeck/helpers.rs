@@ -38,6 +38,8 @@ pub(crate) fn builtin_type_name(name: &str) -> Option<Type> {
         "Cmx" => Some(Type::Cmx),
         "Null" => Some(Type::Null),
         "Void" => Some(Type::Void),
+        "JSON" | "Json" | "json" => Some(Type::Json),
+        "Value" | "value" => Some(Type::Value),
         _ => None,
     }
 }

@@ -16,6 +16,14 @@ pub enum Type {
     Void,
     Empty,
 
+    // Valor JSON dinámico (alias `JSON = Record<String, Value | JSON | Value[]>`)
+    // y Value (cualquier valor CLS: primitivo, JSON, array). Son los tipos
+    // "tipados pero dinámicos" que reemplazan a `Any` como contrato público:
+    // el tag runtime viaja con el valor, el typeck/emisor los tratan como
+    // contenedores polimórficos concretos.
+    Json,
+    Value,
+
     // Con parámetros
     Array(Box<Type>),                    // type[]
     Tuple(Vec<Type>),                    // (Int, String) heterogéneo por posición
@@ -58,6 +66,16 @@ impl Type {
         match (self, other) {
             // Any puede ser cualquier cosa
             (Type::Any, _) | (_, Type::Any) => true,
+
+            // Value / Json: contenedores dinámicos. Cualquier valor CLS es
+            // asignable a `Value` (primitivo, array, JSON); `JSON` (objeto
+            // JSON) es un `Value`; `Value` se puede asignar a `JSON` solo si
+            // el origen es un valor JSON (record/array) — en la práctica el
+            // typeck los trata como compatibles entre sí (el tag decide en
+            // runtime). Un primitivo NO es `JSON` (objeto/documento).
+            (_, Type::Value) | (Type::Value, _) => true,
+            (_, Type::Json) => matches!(self, Type::Json | Type::Value | Type::Record(_, _) | Type::Shape(_) | Type::Array(_)),
+            (Type::Json, _) => true,
 
             // Tipos idénticos
             (a, b) if a == b => true,
@@ -168,6 +186,8 @@ impl Type {
             Type::Null => "Null".to_string(),
             Type::Void => "Void".to_string(),
             Type::Empty => "Empty".to_string(),
+            Type::Json => "JSON".to_string(),
+            Type::Value => "Value".to_string(),
             Type::Array(inner) => format!("{}[]", inner.to_string()),
             Type::Tuple(ts) => format!(
                 "({})",
@@ -290,5 +310,24 @@ mod tests {
         let other = Type::Literal(LitVal::Str("green".to_string()));
         assert!(red.is_assignable_to(&u));
         assert!(!other.is_assignable_to(&u));
+    }
+
+    #[test]
+    fn json_value_assignable() {
+        // Todo valor CLS es asignable a `Value`.
+        assert!(Type::Int.is_assignable_to(&Type::Value));
+        assert!(Type::String.is_assignable_to(&Type::Value));
+        assert!(Type::Array(Box::new(Type::Int)).is_assignable_to(&Type::Value));
+        assert!(Type::Json.is_assignable_to(&Type::Value));
+        // `Value` es asignable a `Value`.
+        assert!(Type::Value.is_assignable_to(&Type::Value));
+        // Un objeto JSON es asignable a `JSON`; un primitivo NO.
+        assert!(Type::Json.is_assignable_to(&Type::Json));
+        assert!(Type::Record(Box::new(Type::String), Box::new(Type::Value)).is_assignable_to(&Type::Json));
+        assert!(!Type::Int.is_assignable_to(&Type::Json));
+        // JSON es un Value (idempotencia).
+        assert!(Type::Json.is_assignable_to(&Type::Value));
+        assert!(Type::Value.is_assignable_to(&Type::Any));
+        assert!(Type::Json.is_assignable_to(&Type::Any));
     }
 }

@@ -244,7 +244,7 @@ impl<'a> FuncEmitter<'a> {
         // despachar por tag en runtime y formatear el valor (val, tag) real.
         if let Expression::Index(ix) = arg {
             let obj_ty = self.types.get(&expr_span(&ix.object)).cloned();
-            if matches!(obj_ty, Some(Type::Any)) {
+            if matches!(obj_ty, Some(Type::Any) | Some(Type::Json) | Some(Type::Value)) {
                 self.emit_any_chain(arg)?;
                 self.host.call(HostFn::PrintAny, &mut self.body);
                 return Ok(());
@@ -252,7 +252,7 @@ impl<'a> FuncEmitter<'a> {
         }
         if let Expression::MemberAccess(m) = arg {
             let obj_ty = self.types.get(&expr_span(&m.object)).cloned();
-            if matches!(obj_ty, Some(Type::Any)) {
+            if matches!(obj_ty, Some(Type::Any) | Some(Type::Json) | Some(Type::Value)) {
                 self.emit_any_chain(arg)?;
                 self.host.call(HostFn::PrintAny, &mut self.body);
                 return Ok(());

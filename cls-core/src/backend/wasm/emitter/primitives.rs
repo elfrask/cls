@@ -80,12 +80,12 @@ impl<'a> FuncEmitter<'a> {
                     if let Type::Shape(fields) = &t {
                         self.emit_shape_to_json_string(&c.args[0], fields)?; return Ok(true);
                     }
-                    // Para `Any` (valor leído de un record/JSON): emitir con
-                    // emit_any_chain (val + tag) y serializar por TAG real en
-                    // runtime (host_json_stringify serializa escalares/record/
-                    // array por tag). Sin esto, `json.stringify(d["int"])`
-                    // devolvía el raw (puntero) -> str() lo leía como string.
-                    if matches!(t, Type::Any | Type::Unknown) {
+                    // Para `Any`/`Value`/`JSON` (valor leído de un record/JSON o
+                    // dinámico): emitir con emit_any_chain (val + tag) y serializar
+                    // por TAG real en runtime (host_json_stringify serializa
+                    // escalares/record/array por tag). Sin esto,
+                    // `json.stringify(d["int"])` devolvía el raw (puntero).
+                    if matches!(t, Type::Any | Type::Unknown | Type::Json | Type::Value) {
                         self.emit_any_chain(&c.args[0])?;   // (val, tag)
                         self.host.call(HostFn::JsonStringify, &mut self.body);
                         return Ok(true);

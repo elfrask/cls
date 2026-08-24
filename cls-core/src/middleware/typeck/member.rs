@@ -29,9 +29,10 @@ impl TypeChecker {
             }
             if name == "json" {
                 return match member.member.as_str() {
-                    // parse devuelve un Record<String, any> (para acceso por
-                    // índice obj["k"] y print). El layout del host es compatible.
-                    "parse" => Type::Record(Box::new(Type::String), Box::new(Type::Any)),
+                    // parse devuelve un JSON (objeto/array/valor dinámico tipado).
+                    // El tag runtime viaja con el valor: acceso por índice, print
+                    // y stringify despachan por tag sin perder el tipo.
+                    "parse" => Type::Json,
                     "stringify" => Type::String,
                     _ => Type::Any,
                 };
@@ -133,9 +134,24 @@ impl TypeChecker {
                 "length" | "size" => Type::Int,
                 "has" => Type::Bool,
                 "keys" => Type::Array(k.clone()),
-                "values" => Type::Array(Box::new(Type::Any)),
+                "values" => Type::Array(Box::new(Type::Value)),
                 "toString" => Type::String,
                 _ => Type::Any,
+            },
+            // JSON (objeto/array dinámico) y Value: el acceso a campo devuelve
+            // un `Value` (el tag runtime viaja con el valor; las operaciones
+            // posteriores — str, ==, print, stringify, index — despachan por tag).
+            Type::Json => match member.member.as_str() {
+                "toString" => Type::String,
+                "length" | "size" => Type::Int,
+                "has" => Type::Bool,
+                "keys" => Type::Array(Box::new(Type::String)),
+                _ => Type::Value,
+            },
+            Type::Value => match member.member.as_str() {
+                "toString" => Type::String,
+                "length" => Type::Int,
+                _ => Type::Value,
             },
             Type::Shape(fields) => {
                 match member.member.as_str() {

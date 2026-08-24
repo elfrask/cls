@@ -662,6 +662,8 @@ fn annotation_from_type(t: &Type) -> Option<TypeAnnotation> {
         Type::Bool => TypeKind::Bool,
         Type::Char => TypeKind::Char,
         Type::Any | Type::Unknown | Type::Null | Type::Void | Type::Empty => return None,
+        Type::Json => TypeKind::Json,
+        Type::Value => TypeKind::Value,
         Type::Cmx => TypeKind::Cmx,
         Type::Array(inner) => TypeKind::Array(Box::new(annotation_from_type(inner)?)),
         Type::Tuple(items) => TypeKind::Tuple(

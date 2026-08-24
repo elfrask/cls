@@ -525,6 +525,8 @@ impl Parser {
             "bool" | "Bool" | "Boolean" => return Ok(TypeKind::Bool),
             "char" | "Char" | "Character" => return Ok(TypeKind::Char),
             "any" | "Any" => return Ok(TypeKind::Any),
+            "json" | "JSON" => return Ok(TypeKind::Json),
+            "value" | "Value" => return Ok(TypeKind::Value),
             "unknown" => return Ok(TypeKind::Unknown),
             "null" => return Ok(TypeKind::Null),
             "Void" | "void" => return Ok(TypeKind::Void),

@@ -1607,10 +1607,17 @@ pub fn host_any_index<C: HostCtx>(ctx: &mut C, val: i64, tag: i64, idx: i64) -> 
     let t = tag_type(tag);
     match t {
         7 => {
-            // Record: buscar la key (idx como string).
+            // Record: buscar la key. El idx puede venir como string empaquetado
+            // (ptr<<32|len) o como número (los índices numéricos de `json.parse`
+            // se representan con claves "0","1",...). Si es numérico (bajo),
+            // convertirlo a string para la búsqueda.
             let p = val as usize;
             let len = arr_len(ctx, p) as usize;
-            let k = ctx.read_str(idx);
+            let k = if (idx >> 32) == 0 && idx >= 0 {
+                idx.to_string()
+            } else {
+                ctx.read_str(idx)
+            };
             for i in 0..len {
                 let ki = ctx.read_i64(p + 16 + i * 24);
                 if ctx.read_str(ki) == k {

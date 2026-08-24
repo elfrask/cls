@@ -12,6 +12,9 @@ impl TypeChecker {
         match obj {
             Type::Array(inner) => *inner,
             Type::Record(_k, v) => *v,
+            // JSON / Value: el índice (clave u offset) devuelve un `Value`
+            // dinámico; el tag runtime viaja con el valor.
+            Type::Json | Type::Value => Type::Value,
             // Shape: índice literal con clave conocida -> tipo del campo; clave
             // desconocida -> error (la estructura del record es fija).
             Type::Shape(fields) => {

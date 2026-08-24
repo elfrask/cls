@@ -40,6 +40,7 @@ pub(super) fn was_type(t: &Type) -> ClsResult<WasTy> {
         Type::Named(..) | Type::Literal(_) => Ok(WasTy::I64),
         Type::Fun(..) => Ok(WasTy::I64),
         Type::Any => Ok(WasTy::I64),
+        Type::Json | Type::Value => Ok(WasTy::I64),
         Type::Union(members) => {
             let mut it = members.iter();
             let first = it.next().and_then(|m| was_type(m).ok());
@@ -70,6 +71,8 @@ pub(super) fn builtin_was_type(name: &str) -> Option<BuiltinTypeName> {    match
         "Cmx" => Some(BuiltinTypeName::Cmx),
         "Null" => Some(BuiltinTypeName::Null),
         "Void" => Some(BuiltinTypeName::Void),
+        "JSON" | "Json" | "json" => Some(BuiltinTypeName::Json),
+        "Value" | "value" => Some(BuiltinTypeName::Value),
         _ => None,
     }
 }
@@ -87,6 +90,8 @@ pub(super) enum BuiltinTypeName {
     Cmx,
     Null,
     Void,
+    Json,
+    Value,
 }
 
 /// ¿El Type CLS del lado izquierdo coincide con el nombre builtin a la derecha?
@@ -105,6 +110,8 @@ pub(super) fn builtin_type_matches(t: &Type, name: &BuiltinTypeName) -> bool {
         (BuiltinTypeName::Cmx, Type::Cmx) => true,
         (BuiltinTypeName::Null, Type::Null) => true,
         (BuiltinTypeName::Void, Type::Void | Type::Empty) => true,
+        (BuiltinTypeName::Json, Type::Json | Type::Value | Type::Record(_, _) | Type::Array(_) | Type::Shape(_)) => true,
+        (BuiltinTypeName::Value, _) => true,
         _ => false,
     }
 }
@@ -117,6 +124,9 @@ pub(super) fn annotation_to_type(ann: &TypeAnnotation) -> Type {
         TypeKind::String => Type::String,
         TypeKind::Bool => Type::Bool,
         TypeKind::Char => Type::Char,
+        TypeKind::Any => Type::Any,
+        TypeKind::Json => Type::Json,
+        TypeKind::Value => Type::Value,
         TypeKind::Void | TypeKind::Empty => Type::Void,
         TypeKind::Array(inner) => Type::Array(Box::new(annotation_to_type(inner))),
         TypeKind::Tuple(items) => Type::Tuple(items.iter().map(annotation_to_type).collect()),
@@ -147,6 +157,8 @@ pub(super) fn annotation_to_type(ann: &TypeAnnotation) -> Type {
             "Bool" | "Boolean" => Type::Bool,
             "Char" => Type::Char,
             "Any" | "any" => Type::Any,
+            "JSON" | "Json" | "json" => Type::Json,
+            "Value" | "value" => Type::Value,
             // Struct(Nombre): struct de extensión -> se tipa como el struct
             // (member access por offsets del struct_defs).
             "Struct" if args.len() == 1 => {

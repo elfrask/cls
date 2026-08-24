@@ -113,8 +113,8 @@ impl<'a> FuncEmitter<'a> {
     /// 0=int,1=string,2=float,3=bool,4=char,5=cmx,6=array,7=record.
     pub(crate) fn any_static_tag(&self, t: &Type) -> i64 {
         match t {
-            Type::Record(_, _) => 7,
-            Type::Array(_) => 6,
+            Type::Record(_, _) | Type::Json | Type::Shape(_) => 7,
+            Type::Array(_) | Type::Value => 6,
             Type::String => 1,
             Type::Bool => 3,
             Type::Float | Type::F32 | Type::F64 => 2,
@@ -163,22 +163,10 @@ impl<'a> FuncEmitter<'a> {
             Expression::Index(i) => {
                 self.emit_any_chain(&i.object)?;
                 self.emit_expression(&i.index)?;
-                // Índice numérico (p.ej. `json.parse("[..]")[j]` representado
-                // como record con claves "0","1",...): AnyIndex busca la key
-                // como string -> convertir el int.
-                if matches!(
-                    self.types.get(&expr_span(&i.index)),
-                    Some(
-                        Type::Int
-                            | Type::I8
-                            | Type::I16
-                            | Type::I32
-                            | Type::I64
-                            | Type::Literal(LitVal::Int(_))
-                    )
-                ) {
-                    self.emit_str_host("__intr_str_int", HostFn::StrInt);
-                }
+                // Índice numérico (p.ej. `json.parse("[..]")[j]` o `arr[0]` de un
+                // array JSON): AnyIndex acepta idx numérico (tag 6 = array) y
+                // string (tag 7 = record con claves "0","1",...); el host lo
+                // normaliza.
                 self.host.call(HostFn::AnyIndex, &mut self.body);
                 Ok(())
             }
@@ -430,8 +418,8 @@ impl<'a> FuncEmitter<'a> {
                     Err(self.unsupported_expr(&Expression::MemberAccess(m.clone())))
                 }
             }
-            Type::Any => {
-                // `o.a.c` donde `o.a` es Any (json.parse anidado): despachar por tag.
+            Type::Any | Type::Json | Type::Value => {
+                // `o.a.c` donde `o.a` es Any/Value/JSON (json.parse anidado): despachar por tag.
                 let expr = Expression::MemberAccess(m.clone());
                 self.emit_any_chain(&expr)?;
                 // Resultado (val, tag) en el stack -> dejar solo el val (el tag se
