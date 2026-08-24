@@ -14,4 +14,7 @@ pub struct InterfaceDecl {
     pub fields: Vec<InterfaceField>,
     pub signatures: Vec<SignatureDecl>,
     pub span: Span,
+    /// Visibilidad (export -> disponible en módulos importados)
+    #[serde(default)]
+    pub visibility: Visibility,
 }

@@ -1127,6 +1127,7 @@ impl Parser {
             fields,
             signatures,
             span: self.span(),
+            visibility: Visibility::Default,
         }))
     }
 
@@ -1184,6 +1185,7 @@ impl Parser {
             type_params,
             type_ann,
             span: self.span(),
+            visibility: Visibility::Default,
         }))
     }
 
@@ -1516,6 +1518,8 @@ impl Parser {
             Statement::ClassDecl(ref mut c) => c.visibility = visibility,
             Statement::EnumDecl(ref mut e) => e.visibility = visibility,
             Statement::StructureDecl(ref mut s) => s.visibility = visibility,
+            Statement::InterfaceDecl(ref mut i) => i.visibility = visibility,
+            Statement::TypeAlias(ref mut t) => t.visibility = visibility,
             _ => {}
         }
         

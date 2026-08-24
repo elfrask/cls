@@ -12,4 +12,7 @@ pub struct TypeAliasDecl {
     pub type_params: Vec<TypeParam>,
     pub type_ann: TypeAnnotation,
     pub span: Span,
+    /// Visibilidad (export -> disponible en módulos importados)
+    #[serde(default)]
+    pub visibility: Visibility,
 }

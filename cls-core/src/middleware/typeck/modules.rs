@@ -65,6 +65,18 @@ impl TypeChecker {
                     Statement::EnumDecl(e) if e.visibility == Visibility::Export => {
                         names.push(e.name.clone());
                     }
+                    Statement::ClassDecl(c) if c.visibility == Visibility::Export => {
+                        names.push(c.name.clone());
+                    }
+                    Statement::StructureDecl(s) if s.visibility == Visibility::Export => {
+                        names.push(s.name.clone());
+                    }
+                    Statement::InterfaceDecl(i) if i.visibility == Visibility::Export => {
+                        names.push(i.name.clone());
+                    }
+                    Statement::TypeAlias(t) if t.visibility == Visibility::Export => {
+                        names.push(t.name.clone());
+                    }
                     _ => {}
                 }
             }
@@ -97,6 +109,19 @@ impl TypeChecker {
                 Statement::EnumDecl(e) if e.visibility == Visibility::Export => {
                     self.define(&e.name, Type::Named(e.name.clone(), vec![]));
                 }
+                Statement::ClassDecl(c) if c.visibility == Visibility::Export => {
+                    self.define(&c.name, Type::Named(c.name.clone(), vec![]));
+                }
+                Statement::StructureDecl(s) if s.visibility == Visibility::Export => {
+                    self.define(&s.name, Type::Named(s.name.clone(), vec![]));
+                }
+                Statement::InterfaceDecl(i) if i.visibility == Visibility::Export => {
+                    self.define(&i.name, Type::Named(i.name.clone(), vec![]));
+                }
+                Statement::TypeAlias(t) if t.visibility == Visibility::Export => {
+                    let ty = self.resolve_type_annotation(&t.type_ann);
+                    self.define(&t.name, ty);
+                }
                 _ => {}
             }
         }
@@ -125,6 +150,18 @@ impl TypeChecker {
                 }
                 Statement::EnumDecl(e) if e.visibility == Visibility::Export && e.name == name => {
                     return Some(Type::Named(e.name.clone(), vec![]));
+                }
+                Statement::ClassDecl(c) if c.visibility == Visibility::Export && c.name == name => {
+                    return Some(Type::Named(c.name.clone(), vec![]));
+                }
+                Statement::StructureDecl(s) if s.visibility == Visibility::Export && s.name == name => {
+                    return Some(Type::Named(s.name.clone(), vec![]));
+                }
+                Statement::InterfaceDecl(i) if i.visibility == Visibility::Export && i.name == name => {
+                    return Some(Type::Named(i.name.clone(), vec![]));
+                }
+                Statement::TypeAlias(t) if t.visibility == Visibility::Export && t.name == name => {
+                    return Some(self.resolve_type_annotation(&t.type_ann));
                 }
                 _ => {}
             }
