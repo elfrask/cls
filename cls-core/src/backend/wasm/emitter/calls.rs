@@ -98,9 +98,13 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
             if let Some(fidx) = self.func_indexes.get(&key).copied() {
+                let expected = self.func_types.get(&key).map(|(p, _)| p.clone());
                 self.body.push(Instruction::I64Const(0)); // __capturas
-                for arg in &c.args {
-                    self.emit_expression(arg)?;
+                for (i, arg) in c.args.iter().enumerate() {
+                    match &expected {
+                        Some(ps) => self.emit_call_arg(arg, Some(ps), i)?,
+                        None => self.emit_call_arg(arg, None, i)?,
+                    }
                 }
                 self.emit_call_site(&c.span);
                 self.body.push(Instruction::Call(fidx));
@@ -116,13 +120,17 @@ impl<'a> FuncEmitter<'a> {
         }
         if let Expression::Identifier(name, _) = &*c.callee {
             if let Some(fidx) = self.func_indexes.get(name).copied() {
+                let expected = self.func_types.get(name).map(|(p, _)| p.clone());
                 // Firma uniforme (B5): las funciones CLS top-level reciben
                 // __capturas (0) como primer arg. Internas y main no.
                 if !name.starts_with("__") && name != "main" {
                     self.body.push(Instruction::I64Const(0));
                 }
-                for arg in &c.args {
-                    self.emit_expression(arg)?;
+                for (i, arg) in c.args.iter().enumerate() {
+                    match &expected {
+                        Some(ps) => self.emit_call_arg(arg, Some(ps), i)?,
+                        None => self.emit_call_arg(arg, None, i)?,
+                    }
                 }
                 // Args faltantes -> valores por defecto (en el call site)
                 if let Some(defaults) = self.func_defaults.get(name) {
@@ -182,7 +190,7 @@ impl<'a> FuncEmitter<'a> {
             // Args (empujar capturas al fondo, luego los args).
             self.body.push(Instruction::LocalGet(caps_tmp));
             for a in &c.args {
-                self.emit_expression(a)?;
+                self.emit_call_arg(a, None, 0)?;
             }
             // El fnptr se obtiene del handle en memoria (offset 0).
             self.body.push(Instruction::LocalGet(v));
@@ -203,8 +211,8 @@ impl<'a> FuncEmitter<'a> {
             // Rama par (función simple): capturas = 0, tabla_idx = v>>1.
             self.body.push(Instruction::Else);
             self.body.push(Instruction::I64Const(0));
-            for a in &c.args {
-                self.emit_expression(a)?;
+            for (i, a) in c.args.iter().enumerate() {
+                self.emit_call_arg(a, None, i)?;
             }
             self.body.push(Instruction::LocalGet(v));
             self.body.push(Instruction::I64Const(1));
@@ -269,8 +277,8 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::LocalSet(caps_tmp));
             // push [capturas, args..., tabla_idx]
             self.body.push(Instruction::LocalGet(caps_tmp));
-            for arg in &c.args {
-                self.emit_expression(arg)?;
+            for (i, arg) in c.args.iter().enumerate() {
+                self.emit_call_arg(arg, Some(&params), i)?;
             }
             // Params faltantes -> Null (0), como el walker (default o Null).
             for _ in c.args.len()..params.len() {
@@ -294,8 +302,8 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::Else);
             // Rama simple (par): tabla_idx = v>>1; push [capturas=0, args..., tabla_idx].
             self.body.push(Instruction::I64Const(0));
-            for arg in &c.args {
-                self.emit_expression(arg)?;
+            for (i, arg) in c.args.iter().enumerate() {
+                self.emit_call_arg(arg, Some(&params), i)?;
             }
             for _ in c.args.len()..params.len() {
                 self.body.push(Instruction::I64Const(0));
@@ -337,6 +345,34 @@ impl<'a> FuncEmitter<'a> {
             }
         }
         Err(self.unsupported_expr(&Expression::Call(c.clone())))
+    }
+
+    /// Emite un argumento de llamada. Si el argumento es un record literal
+    /// (Shape contiguo) y el parámetro esperado es dinámico (Record/JSON/Value/
+    /// Any — o desconocido, p.ej. métodos de clase), lo convierte a HASHMAP:
+    /// un shape contiguo no es legible como record por el callee (json.stringify,
+    /// acceso por clave, stringify dinámico).
+    pub(crate) fn emit_call_arg(
+        &mut self,
+        expr: &Expression,
+        expected_params: Option<&[Type]>,
+        idx: usize,
+    ) -> ClsResult<()> {
+        let _ = idx;
+        let arg_ty = self.types.get(&expr_span(expr)).cloned();
+        if let Some(Type::Shape(fields)) = &arg_ty {
+            let convert = match expected_params.and_then(|ps| ps.get(idx)) {
+                Some(t) => matches!(
+                    t,
+                    Type::Record(_, _) | Type::Json | Type::Value | Type::Any | Type::Unknown
+                ),
+                None => true,
+            };
+            if convert {
+                return self.emit_shape_to_hashmap(expr, fields);
+            }
+        }
+        self.emit_expression(expr)
     }
 
     /// Constructor de clase: `Clase(args)` -> alloc + vtable + init fields + ctor.

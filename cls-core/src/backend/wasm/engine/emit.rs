@@ -664,12 +664,24 @@ impl<'a> Engine<'a> {
                                 .unwrap_or(Type::Any)
                         })
                         .collect();
-                    let ret = f
+                    let declared_ret = f
                         .return_type
                         .as_ref()
-                        .map(annotation_to_type)
-                        .unwrap_or(Type::Void);
-                    (params, ret)
+                        .map(annotation_to_type);
+                    // Retorno inferido: el span de la arrow puede no estar en el
+                    // type map (span degenerado compartido con el statement); el
+                    // retorno real sí está en el span del `return expr` del body.
+                    let inferred_ret = declared_ret.unwrap_or_else(|| {
+                        for stmt in &f.body.statements {
+                            if let Statement::Return(Some(e)) = stmt {
+                                if let Some(ty) = self.types.get(&expr_span(e)) {
+                                    return ty.clone();
+                                }
+                            }
+                        }
+                        Type::Void
+                    });
+                    (params, inferred_ret)
                 }
             };
             self.func_types

@@ -511,8 +511,11 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_expression(&member.object)?;
                     self.body.push(Instruction::LocalSet(obj_tmp));
                     self.body.push(Instruction::LocalGet(obj_tmp));
+                    // Método de clase: los params tipados no están en el emisor
+                    // (vtable) -> convertir Shape a hashmap si el arg lo es
+                    // (p.ej. res.json({ok:true}) con obj: JSON).
                     for a in &c.args {
-                        self.emit_expression(a)?;
+                        self.emit_call_arg(a, None, 0)?;
                     }
                     // slot = vtable(obj[0]) + method_slot
                     self.body.push(Instruction::LocalGet(obj_tmp));
