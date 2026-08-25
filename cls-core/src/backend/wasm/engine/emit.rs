@@ -257,6 +257,7 @@ impl<'a> Engine<'a> {
             PrintAny,
             AnyMember,
             AnyIndex,
+            AnyToBool,
             FnHandle,
             FnToString,
             // Nota: FnEnter/FnExit/CallSite ya NO se importan — el shadow call

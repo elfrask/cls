@@ -419,7 +419,7 @@ impl<'a> FuncEmitter<'a> {
             ))
         })?;
         match t {
-            Type::Any | Type::Unknown => Err(crate::error::ClsError::CompileError(format!(
+            Type::Unknown => Err(crate::error::ClsError::CompileError(format!(
                 "Expresión sin tipo concreto ({}:{}): {}",
                 span.start_line,
                 span.start_col,

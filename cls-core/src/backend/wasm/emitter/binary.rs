@@ -562,6 +562,15 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I32Const(1));
                 Ok(())
             }
+            // Valor dinámico (Any/Value/JSON, leído de record/JSON): despachar
+            // por tag en runtime (host_any_to_bool). `if (m.found)` donde `m`
+            // es Record<String,Any> o `bool(x)` sobre un valor JSON.
+            Type::Any | Type::Unknown | Type::Value | Type::Json => {
+                self.body.push(Instruction::Drop);
+                self.emit_any_chain(expr)?;
+                self.host.call(HostFn::AnyToBool, &mut self.body);
+                Ok(())
+            }
             other => Err(crate::error::ClsError::compile_at(
                 &format!(
                     "la condición debe ser Bool, encontró {} (usa bool(...) para convertir)",

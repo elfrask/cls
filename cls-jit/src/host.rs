@@ -522,6 +522,24 @@ pub fn host_any_to_string<C: HostCtx>(ctx: &mut C, val: i64, tag: i64) -> i64 {
     ctx.write_str(&s)
 }
 
+/// Truthiness de un valor dinámico `(val, tag)` (para `if (x)` / `bool(x)`
+/// sobre un valor leído de record/JSON/Any). Paridad con la truthiness del
+/// walker por tipo: int/float != 0, string len != 0, bool, container len != 0,
+/// null -> false. Tags runtime: 0=int 1=string 2=float 3=bool 4=char 5=cmx
+/// 6=array 7=record.
+pub fn host_any_to_bool<C: HostCtx>(ctx: &mut C, val: i64, tag: i64) -> i32 {
+    match tag_type(tag) {
+        0 => (val != 0) as i32,
+        1 => (ctx.read_str(val).len() > 0) as i32,
+        2 => (f64::from_bits(val as u64) != 0.0) as i32,
+        3 => (val != 0) as i32,
+        4 => (val != 0) as i32,
+        5 => 1,
+        6 | 7 => (arr_len(ctx, val as usize) > 0) as i32,
+        _ => 0,
+    }
+}
+
 pub fn host_int_abs<C: HostCtx>(_ctx: &mut C, v: i64) -> i64 {
     v.abs()
 }

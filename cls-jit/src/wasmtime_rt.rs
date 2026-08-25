@@ -283,6 +283,9 @@ pub fn register_host_functions_opt(
     w!("any_to_string", |mut c: Caller<'_, HostState>, v: i64, t: i64| -> i64 {
         host::host_any_to_string(&mut c, v, t)
     });
+    w!("any_to_bool", |mut c: Caller<'_, HostState>, v: i64, t: i64| -> i32 {
+        host::host_any_to_bool(&mut c, v, t)
+    });
     w!("json_stringify", |mut c: Caller<'_, HostState>, v: i64, k: i64| -> i64 {
         host::host_json_stringify(&mut c, v, k)
     });

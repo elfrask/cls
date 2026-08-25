@@ -36,6 +36,7 @@ pub enum HostFn {
     StrLength,
     StrEq,
     AnyToString,
+    AnyToBool,
     StrRepr,
     IntAbs,
     FloatAbs,
@@ -193,6 +194,7 @@ impl HostFn {
             StrLength => "str_length",
             StrEq => "str_eq",
             AnyToString => "any_to_string",
+            AnyToBool => "any_to_bool",
             StrRepr => "str_repr",
             IntAbs => "int_abs",
             FloatAbs => "float_abs",
@@ -334,6 +336,7 @@ impl HostFn {
                 (vec![ValType::I64, ValType::I64], vec![ValType::I32])
             }
             AnyToString => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
+            AnyToBool => (vec![ValType::I64, ValType::I64], vec![ValType::I32]),
             StrIsEmpty => (i64p.clone(), vec![ValType::I32]),
             IntAbs => (i64p.clone(), vec![ValType::I64]),
             FloatAbs => (vec![ValType::F64], vec![ValType::F64]),

@@ -203,14 +203,87 @@ impl<'a> FuncEmitter<'a> {
         }
         // Función como valor (variable con handle) -> call_indirect por tipo.
         let callee_ty = self.types.get(&expr_span(&c.callee)).cloned();
+        // `handler(req, res)` con `handler: Any/Value` (callback almacenado en un
+        // record/Any): call dinámico por handle. La firma es universal
+        // `[capturas, i64...N] -> i64` (los args de objetos/records viajan como
+        // ptr i64; el retorno es el valor como i64). El tag-bit del handle
+        // decide si es closure (capturas en memoria) o función simple.
+        if matches!(callee_ty, Some(Type::Any | Type::Unknown | Type::Value | Type::Json)) {
+            let n = c.args.len();
+            let mut pv_closure = vec![ValType::I64];
+            pv_closure.extend(std::iter::repeat(ValType::I64).take(n));
+            let tidx_closure = self.register_func_type(pv_closure, vec![ValType::I64]);
+            self.emit_expression(&c.callee)?;
+            let v = self.fresh_local();
+            self.body.push(Instruction::LocalSet(v));
+            // Rama closure (impar): capturas = handle[8].
+            self.body.push(Instruction::LocalGet(v));
+            self.body.push(Instruction::I64Const(1));
+            self.body.push(Instruction::I64And);
+            self.body.push(Instruction::I32WrapI64);
+            self.block_depth += 1;
+            self.body.push(Instruction::If(BlockType::Result(ValType::I64)));
+            self.body.push(Instruction::LocalGet(v));
+            self.body.push(Instruction::I64Const(1));
+            self.body.push(Instruction::I64ShrU);
+            self.body.push(Instruction::I64Const(8));
+            self.body.push(Instruction::I64Add);
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::I64Load(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
+            let caps_tmp = self.fresh_local();
+            self.body.push(Instruction::LocalSet(caps_tmp));
+            // Args (empujar capturas al fondo, luego los args).
+            self.body.push(Instruction::LocalGet(caps_tmp));
+            for a in &c.args {
+                self.emit_expression(a)?;
+            }
+            // El fnptr se obtiene del handle en memoria (offset 0).
+            self.body.push(Instruction::LocalGet(v));
+            self.body.push(Instruction::I64Const(1));
+            self.body.push(Instruction::I64ShrU);
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::I64Load(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
+            self.body.push(Instruction::I32WrapI64);
+            self.emit_call_site(&c.span);
+            self.body.push(Instruction::CallIndirect {
+                type_index: tidx_closure,
+                table_index: 0,
+            });
+            // Rama par (función simple): capturas = 0, tabla_idx = v>>1.
+            self.body.push(Instruction::Else);
+            self.body.push(Instruction::I64Const(0));
+            for a in &c.args {
+                self.emit_expression(a)?;
+            }
+            self.body.push(Instruction::LocalGet(v));
+            self.body.push(Instruction::I64Const(1));
+            self.body.push(Instruction::I64ShrU);
+            self.body.push(Instruction::I32WrapI64);
+            self.emit_call_site(&c.span);
+            self.body.push(Instruction::CallIndirect {
+                type_index: tidx_closure,
+                table_index: 0,
+            });
+            self.body.push(Instruction::End);
+            self.block_depth -= 1;
+            return Ok(());
+        }
         if let Some(Type::Fun(params, ret)) = callee_ty {
             let mut pv: Vec<ValType> = Vec::new();
             for t in &params {
                 pv.push(was_type(t)?.val_type());
             }
-            let rv: Vec<ValType> = match &*ret {
+            let rv: Vec<ValType> = match *ret {
                 Type::Void => vec![],
-                r => vec![was_type(r)?.val_type()],
+                r => vec![was_type(&r)?.val_type()],
             };
             // Firma uniforme (B5): closure = [capturas(i64), params...].
             // Toda función CLS (top-level y arrows) se compila con el capturas

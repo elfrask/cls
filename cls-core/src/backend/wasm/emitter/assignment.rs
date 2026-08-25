@@ -521,6 +521,61 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(());
                     }
                 }
+                // Record dinámico: `r.campo = val` -> record_set(ptr, "campo",
+                // val_bits, tag) + write-back. El access por `.` sobre un
+                // Record<String,Any> (diferente del shape contiguo).
+                if matches!(
+                    self.types.get(&expr_span(&m.object)),
+                    Some(Type::Record(_, _))
+                ) {
+                    if is_compound(op) {
+                        return Err(crate::error::ClsError::CompileError(
+                            "Operadores compuestos (+=) sobre registros no soportados en el JIT"
+                                .to_string(),
+                        ));
+                    }
+                    let obj_tmp = self.fresh_local();
+                    let val_tmp = self.fresh_local();
+                    self.emit_expression(&m.object)?;
+                    self.body.push(Instruction::LocalSet(obj_tmp));
+                    let val_shape = match self.types.get(&expr_span(&a.value)).cloned() {
+                        Some(Type::Shape(fields)) => Some(fields),
+                        _ => None,
+                    };
+                    if let Some(fields) = val_shape {
+                        self.emit_shape_to_hashmap(&a.value, &fields)?;
+                    } else if let Expression::Record(rec) = &*a.value {
+                        self.emit_record_hashmap(rec)?;
+                    } else {
+                        self.emit_expression(&a.value)?;
+                    }
+                    self.body.push(Instruction::LocalSet(val_tmp));
+                    self.body.push(Instruction::LocalGet(obj_tmp));
+                    let k = self.intern_string(&m.member);
+                    self.emit_load_str(k);
+                    self.body.push(Instruction::LocalGet(val_tmp));
+                    // El valor viaja como i64: bool/char (i32) -> extender; float -> bits.
+                    match self.value_type(&a.value)? {
+                        WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+                        WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+                        _ => {}
+                    }
+                    let cls_t = self
+                        .types
+                        .get(&expr_span(&a.value))
+                        .cloned()
+                        .unwrap_or(Type::Any);
+                    self.body.push(Instruction::I64Const(runtime_tag_code(&cls_t)));
+                    if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
+                        self.body.push(Instruction::Call(idx));
+                    } else {
+                        self.host.call(HostFn::RecordSet, &mut self.body);
+                    }
+                    self.writeback_array(&m.object)?;
+                    self.body.push(Instruction::Drop);
+                    self.body.push(Instruction::LocalGet(val_tmp));
+                    return Ok(());
+                }
                 // Record con shape: r.campo = val -> store por offset (campo existente).
                 if let Some(Type::Shape(fields)) = self.types.get(&expr_span(&m.object)).cloned() {                    if is_compound(op) {
                         return Err(crate::error::ClsError::CompileError(

@@ -85,10 +85,12 @@ impl<'a> Engine<'a> {
                 args.iter().map(annotation_to_type).collect(),
             ));
         }
-        Err(crate::error::ClsError::CompileError(format!(
-            "Campo '{}' de '{}' con tipo desconocido (el JIT requiere un tipo concreto)",
-            field, owner
-        )))
+        // `Any`/`Unknown` sin tipo concreto: campo dinámico (viaja como i64).
+        // El acceso a un campo `Any` usa dispatch por tag en runtime (records,
+        // callbacks, valores JSON). Es el comportamiento del "dinamismo 0":
+        // `Any` sigue siendo un tipo de campo válido (el JIT lo rechaza solo en
+        // params/retornos de funciones, donde se requiere la firma WASM).
+        Ok(t)
     }
 
 
