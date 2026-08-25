@@ -238,6 +238,12 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Const(val));
                 return Ok(());
             }
+            // Estático de clase namespaced: `lib::Clase.campo` -> el flatten trae
+            // la clase como `lib::Clase` y sus estáticos como `lib::Clase::campo`.
+            if let Some(&g) = self.static_fields.get(&format!("{}::{}", key, m.member)) {
+                self.body.push(Instruction::GlobalGet(g));
+                return Ok(());
+            }
         }
         // `Clase.campo` (campo estático): el objeto es el nombre de la clase.
         if let Expression::Identifier(cn, _) = &*m.object {

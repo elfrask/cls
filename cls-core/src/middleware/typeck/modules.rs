@@ -10,7 +10,7 @@ impl TypeChecker {
         // `import "math"`/`import "json"` (internals del nodo) -> namespace.
         let alias = imp.alias.as_deref().unwrap_or(&imp.path);
         self.import_aliases.insert(alias.to_string(), imp.path.clone());
-        self.define(alias, Type::Named(alias.to_string(), vec![]));
+        self.define_decl(alias, Type::Named(alias.to_string(), vec![]), &imp.span);
         Type::Void
     }
 
@@ -20,6 +20,9 @@ impl TypeChecker {
         for im in &fi.names {
             if let Some(t) = self.find_export_type(&fi.path, &im.name) {
                 let local = im.alias.as_deref().unwrap_or(&im.name);
+                // Los exports ya se definieron al procesar el módulo del prelude
+                // (check_with_prelude). Aquí solo se asegura el binding local; la
+                // colisión entre módulos DISTINTOS ya se detectó en el prelude.
                 self.define(local, t);
             } else {
                 let available = self.module_export_names(&fi.path);
@@ -95,7 +98,7 @@ impl TypeChecker {
             match stmt {
                 Statement::FunctionDecl(f) if f.visibility == Visibility::Export => {
                     let t = self.function_decl_type(f);
-                    self.define(&f.name, t);
+                    self.define_decl(&f.name, t, &inc.span);
                 }
                 Statement::VarDecl(v) | Statement::ConstDecl(v)
                     if v.visibility == Visibility::Export =>
@@ -104,23 +107,23 @@ impl TypeChecker {
                         .map(|ta| self.resolve_type_annotation(ta))
                         .or_else(|| v.value.as_ref().map(|val| self.infer_literal_type(val)))
                         .unwrap_or(Type::Any);
-                    self.define(&v.name, t);
+                    self.define_decl(&v.name, t, &inc.span);
                 }
                 Statement::EnumDecl(e) if e.visibility == Visibility::Export => {
-                    self.define(&e.name, Type::Named(e.name.clone(), vec![]));
+                    self.define_decl(&e.name, Type::Named(e.name.clone(), vec![]), &inc.span);
                 }
                 Statement::ClassDecl(c) if c.visibility == Visibility::Export => {
-                    self.define(&c.name, Type::Named(c.name.clone(), vec![]));
+                    self.define_decl(&c.name, Type::Named(c.name.clone(), vec![]), &inc.span);
                 }
                 Statement::StructureDecl(s) if s.visibility == Visibility::Export => {
-                    self.define(&s.name, Type::Named(s.name.clone(), vec![]));
+                    self.define_decl(&s.name, Type::Named(s.name.clone(), vec![]), &inc.span);
                 }
                 Statement::InterfaceDecl(i) if i.visibility == Visibility::Export => {
-                    self.define(&i.name, Type::Named(i.name.clone(), vec![]));
+                    self.define_decl(&i.name, Type::Named(i.name.clone(), vec![]), &inc.span);
                 }
                 Statement::TypeAlias(t) if t.visibility == Visibility::Export => {
                     let ty = self.resolve_type_annotation(&t.type_ann);
-                    self.define(&t.name, ty);
+                    self.define_decl(&t.name, ty, &inc.span);
                 }
                 _ => {}
             }

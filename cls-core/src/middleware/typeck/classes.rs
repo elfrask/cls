@@ -8,7 +8,7 @@ impl TypeChecker {
 
     pub(crate) fn check_class(&mut self, c: &ClassDecl) -> Type {
         let class_type = Type::Named(c.name.clone(), vec![]);
-        self.define(&c.name, class_type.clone());
+        self.define_decl(&c.name, class_type.clone(), &c.span);
         self.push_scope();
         self.define("me", class_type.clone());
         self.define("super", class_type.clone());

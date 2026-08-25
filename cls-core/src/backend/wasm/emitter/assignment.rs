@@ -549,17 +549,18 @@ impl<'a> FuncEmitter<'a> {
                     } else {
                         self.emit_expression(&a.value)?;
                     }
-                    self.body.push(Instruction::LocalSet(val_tmp));
-                    self.body.push(Instruction::LocalGet(obj_tmp));
-                    let k = self.intern_string(&m.member);
-                    self.emit_load_str(k);
-                    self.body.push(Instruction::LocalGet(val_tmp));
-                    // El valor viaja como i64: bool/char (i32) -> extender; float -> bits.
+                    // El valor se guarda como i64 (el local es i64): bool/char
+                    // (i32) -> extender ANTES del set; float -> bits.
                     match self.value_type(&a.value)? {
                         WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
                         WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
                         _ => {}
                     }
+                    self.body.push(Instruction::LocalSet(val_tmp));
+                    self.body.push(Instruction::LocalGet(obj_tmp));
+                    let k = self.intern_string(&m.member);
+                    self.emit_load_str(k);
+                    self.body.push(Instruction::LocalGet(val_tmp));
                     let cls_t = self
                         .types
                         .get(&expr_span(&a.value))

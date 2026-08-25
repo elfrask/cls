@@ -355,7 +355,7 @@ impl TypeChecker {
     pub(crate) fn check_type_alias(&mut self, alias: &TypeAliasDecl) {
         let type_ann = alias.type_ann.clone();
         let resolved = self.resolve_annotation_with(&type_ann, &HashMap::new());
-        self.define(&alias.name, resolved);
+        self.define_decl(&alias.name, resolved, &alias.span);
     }
 
 }

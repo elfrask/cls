@@ -65,6 +65,13 @@ pub struct TypeChecker {
     prelude: Vec<(String, Module)>,
     /// Alias de `import "path" as x` -> path (para `x::miembro`).
     import_aliases: HashMap<String, String>,
+    /// Nombres de símbolos CONSTANTES (intrinsics core): no redefinibles por el
+    /// usuario (sobrescribirlos da resultados inesperados / bugs fatales).
+    const_symbols: std::collections::HashSet<String>,
+    /// Nombres pre-registrados por la pre-pasada de firmas del prelude (para
+    /// recursión). `define_decl` no los cuenta como colisión (son el mismo
+    /// símbolo del mismo módulo, re-chequeado en la pasada principal).
+    pre_registered: std::collections::HashSet<String>,
 }
 
 impl TypeChecker {
@@ -84,8 +91,16 @@ impl TypeChecker {
             struct_members: HashMap::new(),
             prelude: Vec::new(),
             import_aliases: HashMap::new(),
+            const_symbols: std::collections::HashSet::new(),
+            pre_registered: std::collections::HashSet::new(),
         };
-        // Registrar funciones built-in (core intrinsics)
+        // Registrar funciones built-in (core intrinsics) como CONSTANTES (no
+        // redefinibles): print, input, args, toString, int, float, str, bool,
+        // len, type, now, exit, sleep, throw.
+        let core_names = [
+            "print", "input", "args", "toString", "int", "float", "str", "bool",
+            "len", "type", "now", "exit", "sleep", "throw",
+        ];
         tc.define("print", Type::Fun(vec![Type::Any], Box::new(Type::Void)));
         tc.define("input", Type::Fun(vec![Type::String], Box::new(Type::String)));
         tc.define("args", Type::Array(Box::new(Type::String)));
@@ -100,6 +115,9 @@ impl TypeChecker {
         tc.define("exit", Type::Fun(vec![Type::Int], Box::new(Type::Void)));
         tc.define("sleep", Type::Fun(vec![Type::Int], Box::new(Type::Void)));
         tc.define("throw", Type::Fun(vec![Type::Any], Box::new(Type::Unknown)));
+        for n in &core_names {
+            tc.const_symbols.insert(n.to_string());
+        }
         tc
     }
 
@@ -113,9 +131,11 @@ impl TypeChecker {
         if !self.config.check {
             return Ok(());
         }
+        self.pre_registered.clear();
         // Pre-registrar firmas de funciones top-level (uso antes de definición).
         for stmt in &module.statements {
             if let Statement::FunctionDecl(f) = stmt {
+                self.pre_registered.insert(f.name.clone());
                 self.define_function_signature(f);
             }
         }
@@ -145,11 +165,13 @@ impl TypeChecker {
             return Ok(());
         }
         self.prelude = prelude.to_vec();
+        self.pre_registered.clear();
         // Pre-registrar firmas de funciones top-level de cada módulo del prelude
         // (para soportar recursión y uso antes de definición dentro del módulo).
         for (_path, m) in prelude {
             for stmt in &m.statements {
                 if let Statement::FunctionDecl(f) = stmt {
+                    self.pre_registered.insert(f.name.clone());
                     self.define_function_signature(f);
                 }
             }
@@ -191,6 +213,45 @@ impl TypeChecker {
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name.to_string(), typ);
         }
+    }
+
+    /// Define un símbolo de DECLARACIÓN top-level (función, clase, enum, struct,
+    /// interface, alias, var/const global, import). En el scope global detecta:
+    /// - nombre ya declarado -> error "declaración múltiple" (colisión entre
+    ///   módulos importados o redefinición en el script).
+    /// - nombre de intrinsic const -> error (no redefinible).
+    /// En scopes locales no hace nada especial (el shadowing es normal).
+    pub(crate) fn define_decl(&mut self, name: &str, typ: Type, span: &Span) -> Type {
+        if self.scopes.len() == 1 {
+            let is_const = self.const_symbols.contains(name);
+            if is_const && self.scopes[0].contains_key(name) {
+                return self.error(
+                    &format!(
+                        "El nombre '{}' es un intrinsic del lenguaje y no puede redefinirse",
+                        name
+                    ),
+                    span.clone(),
+                );
+            }
+            // Un símbolo pre-registrado (firma de la pre-pasada del prelude) no
+            // cuenta como colisión: es el mismo símbolo del mismo módulo que se
+            // re-chequea en la pasada principal.
+            if self.pre_registered.remove(name) {
+                self.define(name, typ);
+                return Type::Void;
+            }
+            if self.scopes[0].contains_key(name) {
+                return self.error(
+                    &format!(
+                        "El nombre '{}' ya está declarado (declaración múltiple). Los módulos importados no pueden exportar el mismo nombre en el mismo scope.",
+                        name
+                    ),
+                    span.clone(),
+                );
+            }
+        }
+        self.define(name, typ);
+        Type::Void
     }
 
 

@@ -52,6 +52,16 @@ impl TypeChecker {
             );
         }
 
+        // Variable duplicada en el scope actual -> error (paridad con el
+        // resolver: no se puede redeclarar una variable en el mismo bloque).
+        if let Some(scope) = self.scopes.last() {
+            if scope.contains_key(&var.name) {
+                return self.error(
+                    &format!("El nombre '{}' ya está declarado en este scope", var.name),
+                    var.span.clone(),
+                );
+            }
+        }
         self.define(&var.name, declared.clone());
         // Registrar el tipo declarado en el span de la declaración (REPL con
         // estado persistente: los hoists quedan sin init y el backend necesita
@@ -111,7 +121,7 @@ impl TypeChecker {
         self.current_return_type = prev_return;
         self.current_fn_span = prev_fn_span;
 
-        self.define(&func.name, fn_type);
+        self.define_decl(&func.name, fn_type, &func.span);
         return_type
     }
 

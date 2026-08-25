@@ -65,7 +65,7 @@ impl TypeChecker {
             Statement::Expression(e) => self.check_expression(e),
             Statement::ClassDecl(c) => self.check_class(c),
             Statement::StructureDecl(s) => {
-                self.define(&s.name, Type::Named(s.name.clone(), vec![]));
+                self.define_decl(&s.name, Type::Named(s.name.clone(), vec![]), &s.span);
                 let members: HashMap<String, Type> = s.fields.iter()
                     .map(|f| {
                         let t = self.resolve_type_annotation(&f.type_ann);
@@ -76,7 +76,7 @@ impl TypeChecker {
                 Type::Void
             }
             Statement::InterfaceDecl(i) => {
-                self.define(&i.name, Type::Named(i.name.clone(), vec![]));
+                self.define_decl(&i.name, Type::Named(i.name.clone(), vec![]), &i.span);
                 let fields: HashMap<String, TypeAnnotation> = i.fields.iter()
                     .map(|f| (f.name.clone(), f.type_ann.clone()))
                     .collect();
@@ -99,12 +99,12 @@ impl TypeChecker {
                 Type::Void
             }
             Statement::EnumDecl(e) => {
-                self.define(&e.name, Type::Named(e.name.clone(), vec![]));
+                self.define_decl(&e.name, Type::Named(e.name.clone(), vec![]), &e.span);
                 self.enums.insert(e.name.clone());
                 Type::Void
             }
             Statement::ModuleDecl(m) => {
-                self.define(&m.name, Type::Named(m.name.clone(), vec![]));
+                self.define_decl(&m.name, Type::Named(m.name.clone(), vec![]), &m.span);
                 self.push_scope();
                 for stmt in &m.body {
                     self.check_statement(stmt);

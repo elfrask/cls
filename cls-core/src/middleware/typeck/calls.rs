@@ -139,11 +139,21 @@ impl TypeChecker {
             }
             Type::Named(_, _) => {
                 // ¿Constructor de clase/struct? - el callee es el NOMBRE de la
-                // clase (Identifier) -> devuelve el tipo de la clase.
-                if let Expression::Identifier(n, _) = &*call.callee {
-                    if self.class_members.contains_key(n) || self.struct_members.contains_key(n) {
-                        return callee_type.clone();
+                // clase (Identifier) o `lib::Clase` (NamespaceAccess) -> devuelve
+                // el tipo de la clase.
+                let is_ctor = match &*call.callee {
+                    Expression::Identifier(n, _) => {
+                        self.class_members.contains_key(n)
+                            || self.struct_members.contains_key(n)
                     }
+                    Expression::NamespaceAccess(_, member, _) => {
+                        self.class_members.contains_key(member)
+                            || self.struct_members.contains_key(member)
+                    }
+                    _ => false,
+                };
+                if is_ctor {
+                    return callee_type.clone();
                 }
                 // Objeto callable (magic __call): el callee es una expresión cuyo
                 // tipo es una clase con __call -> tipo del retorno del __call.

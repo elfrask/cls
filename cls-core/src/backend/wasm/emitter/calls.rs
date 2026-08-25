@@ -69,71 +69,8 @@ impl<'a> FuncEmitter<'a> {
         }
         // Constructor de clase: `Clase(args)` -> alloc + vtable + init fields + ctor.
         if let Expression::Identifier(name, _) = &*c.callee {
-            if let Some(info) = self.class_defs.get(name).cloned() {
-                self.body.push(Instruction::I64Const(info.total));
-                let alloc = self.func_indexes["__alloc"];
-                self.body.push(Instruction::Call(alloc));
-                let obj = self.fresh_local();
-                self.body.push(Instruction::LocalSet(obj));
-                // vtable_ptr[0] = vtable_start, class_id[8] = id
-                self.body.push(Instruction::LocalGet(obj));
-                self.body
-                    .push(Instruction::I64Const(info.vtable_start as i64));
-                self.emit_i64_store(0);
-                self.body.push(Instruction::LocalGet(obj));
-                self.body.push(Instruction::I64Const(info.class_id as i64));
-                self.emit_i64_store(8);
-                // init fields a 0
-                for (_fn, _t, w, off, _vis) in &info.fields {
-                    self.body.push(Instruction::LocalGet(obj));
-                    self.body.push(Instruction::I64Const(*off));
-                    self.body.push(Instruction::I64Add);
-                    self.body.push(Instruction::I32WrapI64);
-                    match w {
-                        WasTy::F64 => self
-                            .body
-                            .push(Instruction::F64Const(Ieee64::new(0.0f64.to_bits()))),
-                        WasTy::I32 => self.body.push(Instruction::I32Const(0)),
-                        WasTy::I64 => self.body.push(Instruction::I64Const(0)),
-                    }
-                    match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        })),
-                        WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
-                            offset: 0,
-                            align: 2,
-                            memory_index: 0,
-                        })),
-                        WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        })),
-                    }
-                }
-                // call Clase::__ctor (o el del padre si no se define) con me.
-                // Solo se pushea `me`+args si EXISTE el ctor: si la clase no lo
-                // define, el stack debe quedar limpio (el leftover rompía la
-                // validación WASM en `__init_globals`, que no tiene resultado
-                // que lo consuma - el modo archivo lo enmascaraba con `return`).
-                let callsite = c.span.clone();
-                let mut cur = Some(name.to_string());
-                while let Some(cls) = cur {
-                    if let Some(idx) = self.func_indexes.get(&format!("{}::__ctor", cls)) {
-                        self.body.push(Instruction::LocalGet(obj));
-                        for a in &c.args {
-                            self.emit_expression(a)?;
-                        }
-                        self.emit_call_site(&callsite);
-                        self.body.push(Instruction::Call(*idx));
-                        break;
-                    }
-                    cur = self.class_defs.get(&cls).and_then(|i| i.parent.clone());
-                }
-                self.body.push(Instruction::LocalGet(obj));
+            if self.class_defs.contains_key(name.as_str()) {
+                self.emit_class_constructor(name, c)?;
                 return Ok(());
             }
         }
@@ -154,6 +91,12 @@ impl<'a> FuncEmitter<'a> {
         // `x::f(...)` - módulo/namespace importado: call directo a `x::f`.
         if let Expression::NamespaceAccess(ns, member, _) = &*c.callee {
             let key = format!("{}::{}", ns, member);
+            // Constructor de clase namespaced: `lib::App(args)` -> la clase fue
+            // flatteneada como `lib::App`.
+            if self.class_defs.contains_key(&key) {
+                self.emit_class_constructor(&key, c)?;
+                return Ok(());
+            }
             if let Some(fidx) = self.func_indexes.get(&key).copied() {
                 self.body.push(Instruction::I64Const(0)); // __capturas
                 for arg in &c.args {
@@ -394,6 +337,73 @@ impl<'a> FuncEmitter<'a> {
             }
         }
         Err(self.unsupported_expr(&Expression::Call(c.clone())))
+    }
+
+    /// Constructor de clase: `Clase(args)` -> alloc + vtable + init fields + ctor.
+    /// `name` puede ser el nombre simple (`App`) o prefijado (`lib::App`).
+    fn emit_class_constructor(&mut self, name: &str, c: &CallExpr) -> ClsResult<()> {
+        let info = self.class_defs[name].clone();
+        self.body.push(Instruction::I64Const(info.total));
+        let alloc = self.func_indexes["__alloc"];
+        self.body.push(Instruction::Call(alloc));
+        let obj = self.fresh_local();
+        self.body.push(Instruction::LocalSet(obj));
+        // vtable_ptr[0] = vtable_start, class_id[8] = id
+        self.body.push(Instruction::LocalGet(obj));
+        self.body
+            .push(Instruction::I64Const(info.vtable_start as i64));
+        self.emit_i64_store(0);
+        self.body.push(Instruction::LocalGet(obj));
+        self.body.push(Instruction::I64Const(info.class_id as i64));
+        self.emit_i64_store(8);
+        // init fields a 0
+        for (_fn, _t, w, off, _vis) in &info.fields {
+            self.body.push(Instruction::LocalGet(obj));
+            self.body.push(Instruction::I64Const(*off));
+            self.body.push(Instruction::I64Add);
+            self.body.push(Instruction::I32WrapI64);
+            match w {
+                WasTy::F64 => self
+                    .body
+                    .push(Instruction::F64Const(Ieee64::new(0.0f64.to_bits()))),
+                WasTy::I32 => self.body.push(Instruction::I32Const(0)),
+                WasTy::I64 => self.body.push(Instruction::I64Const(0)),
+            }
+            match w {
+                WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
+                WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
+                    offset: 0,
+                    align: 2,
+                    memory_index: 0,
+                })),
+                WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
+            }
+        }
+        // call Clase::__ctor (o el del padre si no se define) con me.
+        let callsite = c.span.clone();
+        let mut cur = Some(name.to_string());
+        while let Some(cls) = cur {
+            if let Some(idx) = self.func_indexes.get(&format!("{}::__ctor", cls)) {
+                self.body.push(Instruction::LocalGet(obj));
+                for a in &c.args {
+                    self.emit_expression(a)?;
+                }
+                self.emit_call_site(&callsite);
+                self.body.push(Instruction::Call(*idx));
+                break;
+            }
+            cur = self.class_defs.get(&cls).and_then(|i| i.parent.clone());
+        }
+        self.body.push(Instruction::LocalGet(obj));
+        Ok(())
     }
 
 }
