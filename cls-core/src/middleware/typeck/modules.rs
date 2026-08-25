@@ -9,6 +9,18 @@ impl TypeChecker {
     pub(crate) fn check_import(&mut self, imp: &ImportStatement) -> Type {
         // `import "math"`/`import "json"` (internals del nodo) -> namespace.
         let alias = imp.alias.as_deref().unwrap_or(&imp.path);
+        // Import aliases pueden aparecer en varios módulos del prelude (p.ej.
+        // `import "strings" as strings` en router y en request); redefinir el
+        // mismo alias para el mismo path no es colisión.
+        if let Some(existing_path) = self.import_aliases.get(alias) {
+            if existing_path == &imp.path {
+                return Type::Void;
+            }
+        }
+        if self.scopes.first().is_some_and(|s| s.contains_key(alias)) {
+            self.define_decl(alias, Type::Named(alias.to_string(), vec![]), &imp.span);
+            return Type::Void;
+        }
         self.import_aliases.insert(alias.to_string(), imp.path.clone());
         self.define_decl(alias, Type::Named(alias.to_string(), vec![]), &imp.span);
         Type::Void
