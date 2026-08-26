@@ -162,7 +162,9 @@ impl<'a> FuncEmitter<'a> {
                         "Operadores compuestos (+=) sobre records con shape no soportados en el JIT".to_string(),
                     ));
                 }
-                // r["campo"] = val -> store por offset (solo campos existentes).
+                // DEFAULT INVERTIDO: `s["campo"] = val` sobre un shape -> el
+                // valor vive como hashmap, así que es record_set + write-back
+                // (idéntico al caso Record dinámico de abajo).
                 let shape = self.types.get(&expr_span(&i.object)).cloned();
                 let fields = match &shape {
                     Some(Type::Shape(f)) => f.clone(),
@@ -179,9 +181,10 @@ impl<'a> FuncEmitter<'a> {
                         ))
                     }
                 };
-                let (_, w, off) = self.shape_layout(&fields)?
-                    .into_iter()
-                    .find(|(n, _, _)| *n == key)
+                let field_ty = fields
+                    .iter()
+                    .find(|(n, _)| *n == key)
+                    .map(|(_, t)| t.clone())
                     .ok_or_else(|| crate::error::ClsError::compile_at(
                         &format!("El record no tiene el campo '{}' (no se pueden agregar campos a un shape)", key),
                         &i.span,
@@ -189,32 +192,29 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&i.object)?;
                 let ptr_tmp = self.fresh_local();
                 self.body.push(Instruction::LocalSet(ptr_tmp));
-                self.emit_expression(&a.value)?;
-                let val_tmp = self.fresh_local_ty(w);
+                // Frontera única hacia el valor (destino = tipo del campo).
+                self.emit_coerce(&a.value, Some(&field_ty))?;
+                let val_tmp = self.fresh_local();
                 self.body.push(Instruction::LocalSet(val_tmp));
                 self.body.push(Instruction::LocalGet(ptr_tmp));
-                self.body.push(Instruction::I64Const(off));
-                self.body.push(Instruction::I64Add);
-                self.body.push(Instruction::I32WrapI64);
+                let k = self.intern_string(&key);
+                self.emit_load_str(k);
                 self.body.push(Instruction::LocalGet(val_tmp));
-                match w {
-                    WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
-                        offset: 0,
-                        align: 3,
-                        memory_index: 0,
-                    })),
-                    WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
-                        offset: 0,
-                        align: 2,
-                        memory_index: 0,
-                    })),
-                    WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
-                        offset: 0,
-                        align: 3,
-                        memory_index: 0,
-                    })),
+                match self.value_type(&a.value)? {
+                    WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+                    WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+                    _ => {}
                 }
-                self.body.push(Instruction::LocalGet(ptr_tmp));
+                let tag = runtime_tag_code(&field_ty);
+                self.body.push(Instruction::I64Const(tag));
+                if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
+                    self.body.push(Instruction::Call(idx));
+                } else {
+                    self.host.call(HostFn::RecordSet, &mut self.body);
+                }
+                self.writeback_array(&i.object)?;
+                self.body.push(Instruction::Drop);
+                self.body.push(Instruction::LocalGet(val_tmp));
                 Ok(())
             }
             Expression::Index(i) => {
@@ -570,60 +570,49 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::LocalGet(val_tmp));
                     return Ok(());
                 }
-                // Record con shape: r.campo = val -> store por offset (campo existente).
-                if let Some(Type::Shape(fields)) = self.types.get(&expr_span(&m.object)).cloned() {                    if is_compound(op) {
+                // DEFAULT INVERTIDO: `r.campo = val` sobre un shape -> el valor
+                // vive como hashmap, así que es record_set + write-back (igual
+                // que el caso Record dinámico de arriba).
+                if let Some(Type::Shape(fields)) = self.types.get(&expr_span(&m.object)).cloned() {
+                    if is_compound(op) {
                         return Err(crate::error::ClsError::CompileError(
                             "Operadores compuestos sobre campos de record con shape no soportados en el JIT".to_string(),
                         ));
                     }
-                    let (_, w, off) = self.shape_layout(&fields)?
-                        .into_iter()
-                        .find(|(n, _, _)| *n == m.member)
+                    let field_ty = fields
+                        .iter()
+                        .find(|(n, _)| *n == m.member)
+                        .map(|(_, t)| t.clone())
                         .ok_or_else(|| crate::error::ClsError::compile_at(
                             &format!("El record no tiene el campo '{}' (no se pueden agregar campos a un shape)", m.member),
                             &m.span,
                         ))?;
                     let obj_tmp = self.fresh_local();
-                    let val_tmp = self.fresh_local_ty(w);
+                    let val_tmp = self.fresh_local();
                     self.emit_expression(&m.object)?;
                     self.body.push(Instruction::LocalSet(obj_tmp));
-                    self.emit_expression(&a.value)?;
-                    self.body.push(match w {
-                        WasTy::F64 => Instruction::LocalSet(val_tmp),
-                        WasTy::I32 => Instruction::LocalSet(val_tmp),
-                        WasTy::I64 => Instruction::LocalSet(val_tmp),
-                    });
+                    // Frontera única hacia el valor (destino = tipo del campo).
+                    self.emit_coerce(&a.value, Some(&field_ty))?;
+                    self.body.push(Instruction::LocalSet(val_tmp));
                     self.body.push(Instruction::LocalGet(obj_tmp));
-                    self.body.push(Instruction::I64Const(off));
-                    self.body.push(Instruction::I64Add);
-                    self.body.push(Instruction::I32WrapI64);
-                    self.body.push(match w {
-                        WasTy::F64 => Instruction::LocalGet(val_tmp),
-                        WasTy::I32 => Instruction::LocalGet(val_tmp),
-                        WasTy::I64 => Instruction::LocalGet(val_tmp),
-                    });
-                    match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        })),
-                        WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
-                            offset: 0,
-                            align: 2,
-                            memory_index: 0,
-                        })),
-                        WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        })),
+                    let k = self.intern_string(&m.member);
+                    self.emit_load_str(k);
+                    self.body.push(Instruction::LocalGet(val_tmp));
+                    match self.value_type(&a.value)? {
+                        WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+                        WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+                        _ => {}
                     }
-                    self.body.push(match w {
-                        WasTy::F64 => Instruction::LocalGet(val_tmp),
-                        WasTy::I32 => Instruction::LocalGet(val_tmp),
-                        WasTy::I64 => Instruction::LocalGet(val_tmp),
-                    });
+                    let tag = runtime_tag_code(&field_ty);
+                    self.body.push(Instruction::I64Const(tag));
+                    if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
+                        self.body.push(Instruction::Call(idx));
+                    } else {
+                        self.host.call(HostFn::RecordSet, &mut self.body);
+                    }
+                    self.writeback_array(&m.object)?;
+                    self.body.push(Instruction::Drop);
+                    self.body.push(Instruction::LocalGet(val_tmp));
                     return Ok(());
                 }
                 Err(self.unsupported_expr(&Expression::MemberAccess(m.clone())))

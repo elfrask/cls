@@ -536,8 +536,10 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Ne);
                 Ok(())
             }
-            Type::Array(_) | Type::Tuple(_) | Type::Record(_, _) => {
+            Type::Array(_) | Type::Tuple(_) | Type::Record(_, _) | Type::Shape(_) => {
                 // Header CLS: [cap:i64][len:i64] -> truthy si len (ptr+8) != 0.
+                // (Tras invertir el default, los shapes viven como hashmap y
+                // tienen el mismo header que los records.)
                 self.body.push(Instruction::I64Const(8));
                 self.body.push(Instruction::I64Add);
                 self.body.push(Instruction::I32WrapI64);
@@ -548,13 +550,6 @@ impl<'a> FuncEmitter<'a> {
                 }));
                 self.body.push(Instruction::I64Const(0));
                 self.body.push(Instruction::I64Ne);
-                Ok(())
-            }
-            // Shape: se emite como struct contiguo SIN header [cap][len] (los
-            // campos van directos) -> no se puede leer el len; un shape con
-            // campos declarados siempre es truthy (paridad walker).
-            Type::Shape(_) => {
-                self.body.push(Instruction::I32Const(1));
                 Ok(())
             }
             Type::Cmx | Type::Named(_, _) | Type::Null => {

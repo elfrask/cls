@@ -1,4 +1,4 @@
-//! print.rs (Fase 1: extraido de cls-core/src/backend/wasm/emitter/strings.rs).
+﻿//! print.rs (Fase 1: extraido de cls-core/src/backend/wasm/emitter/strings.rs).
 
 use super::*;
 
@@ -118,19 +118,10 @@ impl<'a> FuncEmitter<'a> {
 
 
 
-    pub(crate) fn emit_print_arg(&mut self, arg: &Expression) -> ClsResult<()> {        // `u.values()` sobre un record con shape -> imprimir `[v1, v2, ...]` inline
-        // (el typeck da Array<Any>, no imprimible por el backend genérico).
-        if let Expression::Call(c) = arg {
-            if let Expression::MemberAccess(m) = &*c.callee {
-                if m.member == "values" {
-                    let obj_ty = self.types.get(&expr_span(&m.object)).cloned();
-                    if let Some(Type::Shape(fields)) = &obj_ty {
-                        return self.emit_shape_values_to_string(m, fields);
-                    }
-                }
-            }
-        }
-        // Index de array de Cmx (`app.children[i]`): despachar por el tag del child
+    pub(crate) fn emit_print_arg(&mut self, arg: &Expression) -> ClsResult<()> {
+        // `u.values()` sobre un shape: los shapes viven como hashmap (default
+        // invertido), asi que .values() produce un array normal y lo imprime el
+        // camino generico de arrays. Sin caso especial.
         // (el elemento puede ser cmx, string, array, int, ...).
         if let Expression::Index(ix) = arg {
             let obj_ty = self.types.get(&expr_span(&ix.object)).cloned();
@@ -388,100 +379,13 @@ impl<'a> FuncEmitter<'a> {
                 }
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
-            Type::Shape(fields) => {
-                // Formatear `{k: v, ...}` (keys ordenadas alfabéticamente, paridad walker).
-                let layout = self.shape_layout(&fields)?;
-                let ptr = self.fresh_local();
-                self.body.push(Instruction::LocalSet(ptr));
-                let open = self.intern_string("{");
-                self.emit_load_str(open);
-                let res = self.fresh_local();
-                self.body.push(Instruction::LocalSet(res));
-                let mut ordered: Vec<&(String, WasTy, i64)> = layout.iter().collect();
-                ordered.sort_by(|a, b| a.0.cmp(&b.0));
-                for (i, (fname, w, off)) in ordered.iter().enumerate() {
-                    if i > 0 {
-                        let sep = self.intern_string(", ");
-                        self.emit_load_str(sep);
-                        let st = self.fresh_local();
-                        self.body.push(Instruction::LocalSet(st));
-                        self.body.push(Instruction::LocalGet(res));
-                        self.body.push(Instruction::LocalGet(st));
-                        self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
-                        self.body.push(Instruction::LocalSet(res));
-                    }
-                    let label = format!("{}: ", fname);
-                    let ls = self.intern_string(&label);
-                    self.emit_load_str(ls);
-                    let lt = self.fresh_local();
-                    self.body.push(Instruction::LocalSet(lt));
-                    self.body.push(Instruction::LocalGet(res));
-                    self.body.push(Instruction::LocalGet(lt));
-                    self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
-                    self.body.push(Instruction::LocalSet(res));
-                    // valor del campo: load por offset + a string según el tipo del campo
-                    self.body.push(Instruction::LocalGet(ptr));
-                    self.body.push(Instruction::I64Const(*off));
-                    self.body.push(Instruction::I64Add);
-                    self.body.push(Instruction::I32WrapI64);
-                    match *w {
-                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        })),
-                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
-                            offset: 0,
-                            align: 2,
-                            memory_index: 0,
-                        })),
-                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        })),
-                    }
-                    let cls_t = fields
-                        .iter()
-                        .find(|(n, _)| *n == *fname)
-                        .map(|(_, t)| t.clone())
-                        .unwrap_or(Type::Any);
-                    // Los strings de un shape se imprimen con comillas (paridad walker).
-                    if matches!(cls_t, Type::String) {
-                        let q = self.intern_string("\"");
-                        self.emit_load_str(q);
-                        let qt = self.fresh_local();
-                        self.body.push(Instruction::LocalSet(qt));
-                        self.body.push(Instruction::LocalGet(res));
-                        self.body.push(Instruction::LocalGet(qt));
-                        self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
-                        self.body.push(Instruction::LocalSet(res));
-                    }
-                    self.emit_was_to_string(*w, &cls_t)?;
-                    let vt = self.fresh_local();
-                    self.body.push(Instruction::LocalSet(vt));
-                    self.body.push(Instruction::LocalGet(res));
-                    self.body.push(Instruction::LocalGet(vt));
-                    self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
-                    self.body.push(Instruction::LocalSet(res));
-                    if matches!(cls_t, Type::String) {
-                        let q = self.intern_string("\"");
-                        self.emit_load_str(q);
-                        let qt = self.fresh_local();
-                        self.body.push(Instruction::LocalSet(qt));
-                        self.body.push(Instruction::LocalGet(res));
-                        self.body.push(Instruction::LocalGet(qt));
-                        self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
-                        self.body.push(Instruction::LocalSet(res));
-                    }
+            Type::Shape(_) => {
+                // DEFAULT INVERTIDO: hashmap en runtime -> record_to_string.
+                if let Some(&idx) = self.func_indexes.get("__intr_record_to_string") {
+                    self.body.push(Instruction::Call(idx));
+                } else {
+                    self.host.call(HostFn::RecordToString, &mut self.body);
                 }
-                let close = self.intern_string("}");
-                self.emit_load_str(close);
-                let ct = self.fresh_local();
-                self.body.push(Instruction::LocalSet(ct));
-                self.body.push(Instruction::LocalGet(res));
-                self.body.push(Instruction::LocalGet(ct));
-                self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
             Type::Tuple(slots) => {

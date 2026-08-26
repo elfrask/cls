@@ -294,50 +294,34 @@ impl<'a> FuncEmitter<'a> {
                     Ok(())
                 }
             },
-            Type::Shape(fields) => match m.member.as_str() {
-                "length" | "size" => {
-                    // Compile-time: el shape tiene un nº de campos fijo.
-                    self.body.push(Instruction::I64Const(fields.len() as i64));
-                    Ok(())
-                }
-                "has" => {
-                    let has = fields.iter().any(|(n, _)| *n == m.member);
-                    self.body
-                        .push(Instruction::I32Const(if has { 1 } else { 0 }));
-                    Ok(())
-                }
-                _ => {
-                    let (_, w, off) = self
-                        .shape_layout(&fields)?
-                        .into_iter()
-                        .find(|(n, _, _)| *n == m.member)
-                        .ok_or_else(|| {
-                            crate::error::ClsError::compile_at(
-                                &format!("El record no tiene el campo '{}'", m.member),
-                                &m.span,
-                            )
-                        })?;
-                    self.body.push(Instruction::I64Const(off));
-                    self.body.push(Instruction::I64Add);
-                    self.body.push(Instruction::I32WrapI64);
-                    match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        })),
-                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
-                            offset: 0,
-                            align: 2,
-                            memory_index: 0,
-                        })),
-                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        })),
+            Type::Shape(_) => {
+                // DEFAULT INVERTIDO: los record literals viven como hashmap, asi
+                // que un valor tipado Shape se lee con las ops de record
+                // (record_len/record_get). El chequeo estatico de campos sigue
+                // siendo trabajo del typeck.
+                match m.member.as_str() {
+                    "length" | "size" => {
+                        if let Some(&idx) = self.func_indexes.get("__intr_record_len") {
+                            self.body.push(Instruction::Call(idx));
+                        } else {
+                            self.host.call(HostFn::RecordLen, &mut self.body);
+                        }
+                        Ok(())
                     }
-                    Ok(())
+                    "has" => Err(crate::error::ClsError::compile_at(
+                        "`has` sobre record usa la forma r.has(key)",
+                        &m.span,
+                    )),
+                    _ => {
+                        let k = self.intern_string(&m.member);
+                        self.emit_load_str(k);
+                        if let Some(&idx) = self.func_indexes.get("__intr_record_get") {
+                            self.body.push(Instruction::Call(idx));
+                        } else {
+                            self.host.call(HostFn::RecordGet, &mut self.body);
+                        }
+                        Ok(())
+                    }
                 }
             },
             Type::Cmx => match m.member.as_str() {

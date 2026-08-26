@@ -202,11 +202,10 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_str_host("__intr_str_int", HostFn::StrInt);
                 Ok(())
             }
-            Type::Shape(fields) => {
-                // Shape anidado: recorrer y formatear recursivamente.
-                let ptr = self.fresh_local();
-                self.body.push(Instruction::LocalSet(ptr));
-                self.emit_shape_field_to_string(ptr, &fields)?;
+            Type::Shape(_) => {
+                // DEFAULT INVERTIDO: los shapes viven como hashmap en runtime ->
+                // misma representación que un record: record_to_string.
+                self.host.call(HostFn::RecordToString, &mut self.body);
                 Ok(())
             }
             _ => {

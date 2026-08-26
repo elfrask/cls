@@ -149,14 +149,12 @@ impl<'a> FuncEmitter<'a> {
 
     /// Literal de record `{ a: 1, b: "x" }` -> record_new + record_set.
     pub(crate) fn emit_record(&mut self, r: &RecordExpr) -> ClsResult<()> {
-        // Si el type map dice Shape -> emitir como struct contiguo (offsets fijos).
-        // Es el caso de `var x = {a: 1, b: "1"}` (inferido) o anotado con
-        // interface/alias de shape. Sin hashmap, sin keys en memoria, sin tags.
-        if let Some(shape) = self.types.get(&r.span).cloned() {
-            if let Type::Shape(fields) = &shape {
-                return self.emit_shape_record(r, fields);
-            }
-        }
+        // DEFAULT INVERTIDO (dev-3 paso 3): los record literals se emiten SIEMPRE
+        // como hashmap `[cap][len][(key,val,tag)*24]`. El layout contiguo queda
+        // reservado a las estructuras nombradas (`structure`) e instancias de
+        // clase, donde los offsets son parte del contrato (FFI CStruct, campos).
+        // Asi ningun valor `{...}` puede cruzar una frontera dinamica con un
+        // layout ilegible.
         self.emit_record_hashmap(r)
     }
 
@@ -183,13 +181,9 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::LocalGet(ptr));
             let k = self.intern_string(key);
             self.emit_load_str(k);
-            // Valor Shape anidado: convertir a hashmap (un ptr contiguo con tag 7
-            // no es legible como record por la lectura/stringify).
-            if let Type::Shape(fields) = &cls_t {
-                self.emit_shape_to_hashmap(val, fields)?;
-            } else {
-                self.emit_expression(val)?;
-            }
+            // Valor anidado: los literals viven como hashmap (default invertido),
+            // así que la emisión recursiva ya produce un record legible.
+            self.emit_expression(val)?;
             match self.value_type(val)? {
                 WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
                 WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
@@ -285,21 +279,12 @@ impl<'a> FuncEmitter<'a> {
     }
 
     /// FRONTERA ÚNICA de valores: emite `expr` para ser consumido como `dest`.
-    /// Si el valor es un shape contiguo y el destino es dinámico
-    /// (Record/JSON/Value/Any/Unknown — o desconocido: calls dinámicos/métodos),
-    /// lo convierte a HASHMAP recursivo. En cualquier otro caso emite directo.
-    /// TODA transferencia de valor (args, return, assign, campos, elems,
-    /// inicializadores anidados) debe pasar por aquí.
-    pub(crate) fn emit_coerce(&mut self, expr: &Expression, dest: Option<&Type>) -> ClsResult<()> {
-        let convert = match dest {
-            Some(t) => Self::is_dynamic_dest(t),
-            None => true,
-        };
-        if convert {
-            if let Some(Type::Shape(fields)) = self.types.get(&expr_span(expr)).cloned() {
-                return self.emit_shape_to_hashmap(expr, &fields);
-            }
-        }
+    /// Tras INVERTIR EL DEFAULT (los record literals viven como hashmap), ningún
+    /// valor de tipo `Shape` es contiguo en runtime, así que esta frontera es
+    /// hoy pass-through: existe como PUNTO único de coerción para futuros
+    /// layouts (si algo vuelve a ser contiguo, la conversión se implementa aquí
+    /// y todas las transferencias lo heredan).
+    pub(crate) fn emit_coerce(&mut self, expr: &Expression, _dest: Option<&Type>) -> ClsResult<()> {
         self.emit_expression(expr)
     }
 
@@ -541,11 +526,12 @@ impl<'a> FuncEmitter<'a> {
             self.bits_to_elem(elem_ty)?;
             return Ok(());
         }
-        // Shape: r["campo"] con clave literal -> load por offset (como member access).
+        // Shape: r["campo"] con clave literal -> los literals viven como hashmap
+        // (default invertido): record_get por la clave.
         if let Some(Type::Shape(fields)) = &obj_ty {
             if let Expression::Literal(l) = &*i.index {
                 if let LiteralKind::String(key) = &l.kind {
-                    let (_, w, off) = self
+                    let (_, w, _off) = self
                         .shape_layout(fields)?
                         .into_iter()
                         .find(|(n, _, _)| n == key)
@@ -556,33 +542,23 @@ impl<'a> FuncEmitter<'a> {
                             )
                         })?;
                     self.emit_expression(&i.object)?;
-                    self.body.push(Instruction::I64Const(off));
-                    self.body.push(Instruction::I64Add);
-                    self.body.push(Instruction::I32WrapI64);
-                    match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        })),
-                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
-                            offset: 0,
-                            align: 2,
-                            memory_index: 0,
-                        })),
-                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        })),
+                    let k = self.intern_string(key);
+                    self.emit_load_str(k);
+                    if let Some(&idx) = self.func_indexes.get("__intr_record_get") {
+                        self.body.push(Instruction::Call(idx));
+                    } else {
+                        self.host.call(HostFn::RecordGet, &mut self.body);
                     }
+                    self.bits_to_elem(w)?;
                     return Ok(());
                 }
             }
-            return Err(crate::error::ClsError::compile_at(
-                "Índice dinámico no soportado en un record con shape (usa Record<K,V> o any)",
-                &i.span,
-            ));
+            // Clave no literal sobre shape: tratar el shape como hashmap y usar
+            // AnyIndex (el typeck ya tipó el resultado como Value/Any).
+            let expr = Expression::Index(i.clone());
+            self.emit_any_chain(&expr)?;
+            self.body.push(Instruction::Drop);
+            return Ok(());
         }
         let elem_ty = self.index_elem_type(i)?;
         self.emit_expression(&i.object)?;

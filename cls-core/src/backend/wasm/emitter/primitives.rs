@@ -1,4 +1,4 @@
-//! primitives.rs (Fase 1: extraido de emitter/calls.rs).
+﻿//! primitives.rs (Fase 1: extraido de emitter/calls.rs).
 
 use super::*;
 
@@ -77,8 +77,13 @@ impl<'a> FuncEmitter<'a> {
                         }
                     }
                     // Shape -> stringify inline (json.stringify({x:1}) -> '{"x":1}').
-                    if let Type::Shape(fields) = &t {
-                        self.emit_shape_to_json_string(&c.args[0], fields)?; return Ok(true);
+                    // Shape: los literals viven como hashmap (default invertido)
+                    // -> serializar por el camino dinámico con tag 7 (record).
+                    if let Type::Shape(_) = &t {
+                        self.emit_coerce(&c.args[0], Some(&Type::Json))?;
+                        self.body.push(Instruction::I64Const(7));
+                        self.host.call(HostFn::JsonStringify, &mut self.body);
+                        return Ok(true);
                     }
                     // Para `Any`/`Value`/`JSON` (valor leído de un record/JSON o
                     // dinámico): emitir con emit_any_chain (val + tag) y serializar
@@ -320,128 +325,33 @@ impl<'a> FuncEmitter<'a> {
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
                 }
             }
-            Type::Shape(fields) => {
+            Type::Shape(_) => {
+                // DEFAULT INVERTIDO: los shapes viven como hashmap en runtime ->
+                // mismas operaciones que un record (record_has/keys/values).
                 match member.member.as_str() {
                     "has" => {
-                        // Compile-time: si la clave (literal) está en el shape.
-                        let has = match &c.args[0] {
-                            Expression::Literal(l)
-                                if matches!(l.kind, LiteralKind::String(_)) =>
-                            {
-                                match &l.kind {
-                                    LiteralKind::String(k) => {
-                                        fields.iter().any(|(n, _)| *n == *k)
-                                    }
-                                    _ => false,
-                                }
-                            }
-                            _ => true, // clave dinámica -> se asume que puede existir
-                        };
-                        self.body
-                            .push(Instruction::I32Const(if has { 1 } else { 0 }));
+                        self.emit_expression(&c.args[0])?;
+                        if let Some(&idx) = self.func_indexes.get("__intr_record_has") {
+                            self.body.push(Instruction::Call(idx));
+                        } else {
+                            self.host.call(HostFn::RecordHas, &mut self.body);
+                        }
                         return Ok(true);
                     }
                     "keys" => {
-                        // Construir array<String> con las keys del shape.
-                        let mut sorted: Vec<&String> = fields.iter().map(|(n, _)| n).collect();
-                        sorted.sort();
-                        let n = sorted.len() as i64;
-                        let es = 8i64;
-                        self.body.push(Instruction::I64Const(n));
-                        self.body.push(Instruction::I64Const(es));
-                        self.body.push(Instruction::I64Mul);
-                        self.body.push(Instruction::I64Const(16));
-                        self.body.push(Instruction::I64Add);
-                        let alloc = self.func_indexes["__alloc"];
-                        self.body.push(Instruction::Call(alloc));
-                        let ptr = self.fresh_local();
-                        self.body.push(Instruction::LocalSet(ptr));
-                        self.body.push(Instruction::LocalGet(ptr));
-                        self.body.push(Instruction::I64Const(n));
-                        self.emit_i64_store(0);
-                        self.body.push(Instruction::LocalGet(ptr));
-                        self.body.push(Instruction::I64Const(n));
-                        self.emit_i64_store(8);
-                        for (i, k) in sorted.iter().enumerate() {
-                            self.body.push(Instruction::LocalGet(ptr));
-                            self.body.push(Instruction::I64Const(16 + (i as i64) * 8));
-                            self.body.push(Instruction::I64Add);
-                            self.body.push(Instruction::I32WrapI64);
-                            let s = self.intern_string(k);
-                            self.emit_load_str(s);
-                            self.body.push(Instruction::I64Store(MemArg {
-                                offset: 0,
-                                align: 3,
-                                memory_index: 0,
-                            }));
+                        if let Some(&idx) = self.func_indexes.get("__intr_record_keys") {
+                            self.body.push(Instruction::Call(idx));
+                        } else {
+                            self.host.call(HostFn::RecordKeys, &mut self.body);
                         }
-                        self.body.push(Instruction::LocalGet(ptr));
                         return Ok(true);
                     }
                     "values" => {
-                        // Construir array con los valores (según el tipo de cada campo).
-                        self.emit_expression(&member.object)?;
-                        let ptr = self.fresh_local();
-                        self.body.push(Instruction::LocalSet(ptr));
-                        let layout = self.shape_layout(&fields)?;
-                        let mut ordered: Vec<&(String, WasTy, i64)> = layout.iter().collect();
-                        ordered.sort_by(|a, b| a.0.cmp(&b.0));
-                        let n = fields.len() as i64;
-                        let es = 8i64;
-                        self.body.push(Instruction::I64Const(n));
-                        self.body.push(Instruction::I64Const(es));
-                        self.body.push(Instruction::I64Mul);
-                        self.body.push(Instruction::I64Const(16));
-                        self.body.push(Instruction::I64Add);
-                        let alloc = self.func_indexes["__alloc"];
-                        self.body.push(Instruction::Call(alloc));
-                        let arr = self.fresh_local();
-                        self.body.push(Instruction::LocalSet(arr));
-                        self.body.push(Instruction::LocalGet(arr));
-                        self.body.push(Instruction::I64Const(n));
-                        self.emit_i64_store(0);
-                        self.body.push(Instruction::LocalGet(arr));
-                        self.body.push(Instruction::I64Const(n));
-                        self.emit_i64_store(8);
-                        for (i, (_, w, off)) in ordered.iter().enumerate() {
-                            self.body.push(Instruction::LocalGet(arr));
-                            self.body.push(Instruction::I64Const(16 + (i as i64) * 8));
-                            self.body.push(Instruction::I64Add);
-                            self.body.push(Instruction::I32WrapI64);
-                            self.body.push(Instruction::LocalGet(ptr));
-                            self.body.push(Instruction::I64Const(*off));
-                            self.body.push(Instruction::I64Add);
-                            self.body.push(Instruction::I32WrapI64);
-                            match *w {
-                                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
-                                    offset: 0,
-                                    align: 3,
-                                    memory_index: 0,
-                                })),
-                                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
-                                    offset: 0,
-                                    align: 2,
-                                    memory_index: 0,
-                                })),
-                                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
-                                    offset: 0,
-                                    align: 3,
-                                    memory_index: 0,
-                                })),
-                            }
-                            // bits a i64 (f64 -> reinterpret; i32 -> extend)
-                            match *w {
-                                WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
-                                WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
-                                WasTy::I64 => {}
-                            }
-                            self.body.push(Instruction::I64Store(MemArg {
-                                offset: 0,
-                                align: 3,
-                                memory_index: 0,
-                            }));
+                        if let Some(&idx) = self.func_indexes.get("__intr_record_values") {
+                            self.body.push(Instruction::Call(idx));
+                        } else {
+                            self.host.call(HostFn::RecordValues, &mut self.body);
                         }
-                        self.body.push(Instruction::LocalGet(arr));
                         return Ok(true);
                     }
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
