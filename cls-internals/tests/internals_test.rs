@@ -362,6 +362,46 @@ fn str_split() {
 
 
 #[test]
+fn str_append_in_place() {
+    let mut rt = instantiate();
+    let concat_slack = fn3::<(i64, i64), i64>(&mut rt, "__intr_str_concat_slack");
+    let append = fn3::<(i64, i64, i64), i64>(&mut rt, "__intr_str_append");
+    let (a, b) = (BUF + 64, BUF + 128);
+    let (pa, pb);
+    {
+        let m = rt.mem.data_mut(&mut rt.store);
+        pa = write_str(m, a, "hola ");
+        pb = write_str(m, b, "mundo");
+    }
+    // Primer concat con slack: "hola " + "mundo"
+    let packed = concat_slack.call(&mut rt.store, (pa, pb)).unwrap();
+    {
+        let m = rt.mem.data(&rt.store);
+        assert_eq!(read_str(m, packed), "hola mundo");
+    }
+    // Append in-place de string
+    let (c,) = (BUF + 192,);
+    let pc;
+    {
+        let m = rt.mem.data_mut(&mut rt.store);
+        pc = write_str(m, c, "!");
+    }
+    let packed2 = append.call(&mut rt.store, (packed, pc, 1i64)).unwrap();
+    {
+        let m = rt.mem.data(&rt.store);
+        assert_eq!(read_str(m, packed2), "hola mundo!");
+    }
+    // El ptr NO debió cambiar (in-place dentro del slack)
+    assert_eq!((packed2 >> 32), (packed >> 32));
+    // Append de int (tag 0)
+    let packed3 = append.call(&mut rt.store, (packed2, 42i64, 0i64)).unwrap();
+    {
+        let m = rt.mem.data(&rt.store);
+        assert_eq!(read_str(m, packed3), "hola mundo!42");
+    }
+}
+
+#[test]
 fn str_int_float_bool_char() {
     let mut rt = instantiate();
     let str_int = fn3::<(i64,), i64>(&mut rt, "__intr_str_int");

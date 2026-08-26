@@ -39,19 +39,24 @@ impl<'a> FuncEmitter<'a> {
                         }
                     }
                     // Elegir operación según el tipo del identificador (int vs float).
-                    let ty = self.value_type(&a.target)?;
-                    self.emit_ident_load(name);
-                    self.emit_expression(&a.value)?;
-                    // `s += x` con String: concatenar (StrConcat), NO sumar
-                    // los punteros empaquetados (producía bytes NUL).
                     let cls_t = self
                         .types
                         .get(&expr_span(&a.target))
                         .cloned()
                         .unwrap_or(Type::Any);
+                    let ty = self.value_type(&a.target)?;
+                    self.emit_ident_load(name);
+                    // `s += x` con String: APPEND in-place (dev-2) — escribe la
+                    // pieza en el slack del buffer si hay, sin alocar.
                     if op == Operator::PlusEqual && matches!(cls_t, Type::String) {
-                        self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
-                    } else if ty == WasTy::F64 {
+                        self.emit_append_piece(&a.value)?;
+                        self.emit_str_host("__intr_str_append", HostFn::StrAppend);
+                        self.emit_ident_store(name);
+                        self.emit_ident_load(name);
+                        return Ok(());
+                    }
+                    self.emit_expression(&a.value)?;
+                    if ty == WasTy::F64 {
                         self.f64_promote(&a.value)?;
                         match op {
                             Operator::PlusEqual => self.body.push(Instruction::F64Add),
@@ -77,6 +82,30 @@ impl<'a> FuncEmitter<'a> {
                         .get(name)
                         .cloned()
                         .or_else(|| self.types.get(&expr_span(&a.target)).cloned());
+                    // `s = s + x` con s:String: APPEND in-place (dev-2) — mismo
+                    // buffer si hay slack, sin alocar ni copiar el contenido.
+                    if matches!(dest.as_ref(), Some(Type::String)) {
+                        if let Expression::Binary(bin) = &*a.value {
+                            if bin.op == Operator::Plus {
+                                if let Expression::Identifier(lhs, _) = &*bin.left {
+                                    if lhs == name
+                                        && matches!(
+                                            self.types.get(&expr_span(&bin.left)).cloned(),
+                                            Some(Type::String)
+                                        )
+                                    {
+                                        self.emit_str_append(
+                                            &Expression::Identifier(lhs.clone(), expr_span(&bin.left)),
+                                            &bin.right,
+                                        )?;
+                                        self.emit_ident_store(name);
+                                        self.emit_ident_load(name);
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                        }
+                    }
                     self.emit_coerce(&a.value, dest.as_ref())?;
                     // Assignment simple `f = k`: si el target es float y el RHS
                     // es int, promover a f64 (el store del local espera f64).

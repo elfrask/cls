@@ -179,6 +179,48 @@ impl<'a> FuncEmitter<'a> {
 
 
 
+    /// Frontera de append: emite la pieza como `(val:i64, tag:i64)` — el ABI de
+    /// `__intr_str_append`. Escalares concretos emiten valor+tag estático;
+    /// dinámicos usan el camino por tag runtime (emit_any_chain).
+    pub(crate) fn emit_append_piece(&mut self, expr: &Expression) -> ClsResult<()> {
+        let t = self.types.get(&expr_span(expr)).cloned().unwrap_or(Type::Any);
+        if Self::is_dynamic_dest(&t) || matches!(t, Type::Fun(..) | Type::Named(..)) {
+            return self.emit_any_chain(expr);
+        }
+        self.emit_expression(expr)?;
+        match was_type(&t)? {
+            WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+            WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+            _ => {}
+        }
+        self.body.push(Instruction::I64Const(runtime_tag_code(&t)));
+        Ok(())
+    }
+
+
+    /// Secuencia de append: `old` en el stack + pieza (val, tag) ->
+    /// `__intr_str_append` (internal fusionada o host como fallback).
+    pub(crate) fn emit_str_append(
+        &mut self,
+        old: &Expression,
+        piece: &Expression,
+    ) -> ClsResult<()> {
+        self.emit_expression(old)?;
+        self.emit_append_piece(piece)?;
+        self.emit_str_host("__intr_str_append", HostFn::StrAppend);
+        Ok(())
+    }
+
+
+    /// Concat con slack: PRIMER `s = a + b` de una cadena de builds — aloca
+    /// capacidad x2 y escribe el header que habilita appends in-place después.
+    pub(crate) fn emit_concat_slack(&mut self, a: &Expression, b: &Expression) -> ClsResult<()> {
+        self.emit_expression(a)?;
+        self.emit_expression(b)?;
+        self.emit_str_host("__intr_str_concat_slack", HostFn::StrConcatSlack);
+        Ok(())
+    }
+
     /// Convierte un valor WASM (ya en el stack) a string según su tipo CLS.
     /// No consume el ptr; lo usa directo para hosts de string.
     pub(crate) fn emit_was_to_string(&mut self, w: WasTy, cls_t: &Type) -> ClsResult<()> {

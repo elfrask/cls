@@ -416,6 +416,83 @@ pub fn host_str_concat<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i64 {
     ctx.write_str(&out)
 }
 
+/// Magic del header de capacidad (misma convención que
+/// `cls-internals/wasm/src/strings.rs::__intr_str_append`): guardado en
+/// `ptr-8`, bit63 seteado + cap real en los bits bajos.
+const APPEND_CAP_MAGIC: i64 = i64::MIN;
+
+fn read_cap_host<C: HostCtx>(ctx: &mut C, ptr: usize) -> Option<usize> {
+    if ptr < 8 {
+        return None;
+    }
+    let hdr = ctx.read_i64(ptr - 8);
+    if hdr & APPEND_CAP_MAGIC == APPEND_CAP_MAGIC {
+        Some((hdr & i64::MAX) as usize)
+    } else {
+        None
+    }
+}
+
+/// Concat con slack: aloca cap x2 y escribe el header en `ptr-8`, habilitando
+/// appends in-place subsiguientes. Paridad con `__intr_str_concat_slack`.
+pub fn host_str_concat_slack<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i64 {
+    let sa = ctx.read_str(a);
+    let sb = ctx.read_str(b);
+    let total = sa.len() + sb.len();
+    let cap = (total * 2).max(total + 16);
+    let block = ctx.alloc((cap + 8) as i64) as usize;
+    if block == 0 {
+        return 0;
+    }
+    let ptr = block + 8;
+    ctx.write_bytes(ptr, sa.as_bytes());
+    ctx.write_bytes(ptr + sa.len(), sb.as_bytes());
+    ctx.write_i64(block, cap as i64 | APPEND_CAP_MAGIC);
+    ((ptr as i64) << 32) | (total as i64)
+}
+
+/// Append in-place si hay slack; degrada a re-aloca x2. Paridad con
+/// `__intr_str_append`.
+pub fn host_str_append<C: HostCtx>(ctx: &mut C, old: i64, v_val: i64, v_tag: i64) -> i64 {
+    let piece = fmt_val_to_string(ctx, v_val, v_tag);
+    let old_ptr = (old >> 32) as usize;
+    let old_len = (old & 0xffff_ffff) as usize;
+    let total = old_len + piece.len();
+
+    if let Some(cap) = read_cap_host(ctx, old_ptr) {
+        if total <= cap {
+            ctx.write_bytes(old_ptr + old_len, piece.as_bytes());
+            return ((old_ptr as i64) << 32) | (total as i64);
+        }
+        // Overflow con header válido: re-aloca x2 (amortizado). read_str es
+        // bounds-safe y esta rama corre una vez por cadena de appends.
+        let so = ctx.read_str(old);
+        let new_cap = (cap * 2).max(total + 16);
+        let block = ctx.alloc((new_cap + 8) as i64) as usize;
+        if block == 0 {
+            return 0;
+        }
+        let nptr = block + 8;
+        ctx.write_bytes(nptr, so.as_bytes());
+        ctx.write_bytes(nptr + old_len, piece.as_bytes());
+        ctx.write_i64(block, new_cap as i64 | APPEND_CAP_MAGIC);
+        return ((nptr as i64) << 32) | (total as i64);
+    }
+
+    // Slow path: sin slack previo → concat con slack.
+    let so = ctx.read_str(old);
+    let cap = (so.len() * 2).max(so.len() + 16);
+    let block = ctx.alloc((cap + 8) as i64) as usize;
+    if block == 0 {
+        return 0;
+    }
+    let ptr = block + 8;
+    ctx.write_bytes(ptr, so.as_bytes());
+    ctx.write_bytes(ptr + so.len(), piece.as_bytes());
+    ctx.write_i64(block, cap as i64 | APPEND_CAP_MAGIC);
+    ((ptr as i64) << 32) | (total as i64)
+}
+
 pub fn host_str_int<C: HostCtx>(ctx: &mut C, v: i64) -> i64 {
     ctx.write_str(&v.to_string())
 }
@@ -1467,14 +1544,22 @@ pub fn host_record_new<C: HostCtx>(ctx: &mut C, cap: i64) -> i64 {
     ptr as i64
 }
 
+/// Fast path de interning (dev-2): packed i64 idéntico = mismo string.
+#[inline]
+fn key_matches_host<C: HostCtx>(ctx: &mut C, stored_packed: i64, lookup_packed: i64) -> bool {
+    if stored_packed == lookup_packed {
+        return true;
+    }
+    ctx.read_str(stored_packed) == ctx.read_str(lookup_packed)
+}
+
 pub fn host_record_set<C: HostCtx>(ctx: &mut C, ptr: i64, key: i64, val: i64, tag: i64) -> i64 {
     let p = ptr as usize;
     let len = arr_len(ctx, p) as usize;
     let cap = arr_cap(ctx, p) as usize;
-    let k = ctx.read_str(key);
     for i in 0..len {
         let ki = ctx.read_i64(p + 16 + i * 24);
-        if ctx.read_str(ki) == k {
+        if key_matches_host(ctx, ki, key) {
             ctx.write_i64(p + 16 + i * 24 + 8, val);
             ctx.write_i64(p + 16 + i * 24 + 16, tag);
             return p as i64;
@@ -1507,10 +1592,9 @@ pub fn host_record_set<C: HostCtx>(ctx: &mut C, ptr: i64, key: i64, val: i64, ta
 pub fn host_record_get<C: HostCtx>(ctx: &mut C, ptr: i64, key: i64) -> i64 {
     let p = ptr as usize;
     let len = arr_len(ctx, p) as usize;
-    let k = ctx.read_str(key);
     for i in 0..len {
         let ki = ctx.read_i64(p + 16 + i * 24);
-        if ctx.read_str(ki) == k {
+        if key_matches_host(ctx, ki, key) {
             return ctx.read_i64(p + 16 + i * 24 + 8);
         }
     }
@@ -1520,10 +1604,9 @@ pub fn host_record_get<C: HostCtx>(ctx: &mut C, ptr: i64, key: i64) -> i64 {
 pub fn host_record_has<C: HostCtx>(ctx: &mut C, ptr: i64, key: i64) -> i32 {
     let p = ptr as usize;
     let len = arr_len(ctx, p) as usize;
-    let k = ctx.read_str(key);
     for i in 0..len {
         let ki = ctx.read_i64(p + 16 + i * 24);
-        if ctx.read_str(ki) == k {
+        if key_matches_host(ctx, ki, key) {
             return 1;
         }
     }
@@ -1533,10 +1616,9 @@ pub fn host_record_has<C: HostCtx>(ctx: &mut C, ptr: i64, key: i64) -> i32 {
 pub fn host_record_tag<C: HostCtx>(ctx: &mut C, ptr: i64, key: i64) -> i64 {
     let p = ptr as usize;
     let len = arr_len(ctx, p) as usize;
-    let k = ctx.read_str(key);
     for i in 0..len {
         let ki = ctx.read_i64(p + 16 + i * 24);
-        if ctx.read_str(ki) == k {
+        if key_matches_host(ctx, ki, key) {
             return ctx.read_i64(p + 16 + i * 24 + 16);
         }
     }

@@ -55,6 +55,10 @@ pub static INTERNALS_FUNCTIONS: &[InternalsFn] = &[
     InternalsFn { name: "__intr_str_index_of", params: &[I64, I64], results: &[I64] },
     InternalsFn { name: "__intr_str_slice", params: &[I64, I64, I64], results: &[I64] },
     InternalsFn { name: "__intr_str_split", params: &[I64, I64], results: &[I64] },
+    // Append in-place (dev-2): concat con slack + append que escribe in-place
+    // mientras haya capacidad (header mágico en ptr-8).
+    InternalsFn { name: "__intr_str_concat_slack", params: &[I64, I64], results: &[I64] },
+    InternalsFn { name: "__intr_str_append", params: &[I64, I64, I64], results: &[I64] },
     InternalsFn { name: "__intr_str_eq", params: &[I64, I64], results: &[I32] },
     InternalsFn { name: "__intr_any_to_string", params: &[I64, I64], results: &[I64] },
     // ── records ───────────────────────────────────────────────────────────

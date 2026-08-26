@@ -154,6 +154,12 @@ pub fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), Str
     w!("str_eq", |mut c: Caller<'_, HostState>, a: i64, b: i64| -> i32 {
         host::host_str_eq(&mut c, a, b)
     });
+    w!("str_concat_slack", |mut c: Caller<'_, HostState>, a: i64, b: i64| -> i64 {
+        host::host_str_concat_slack(&mut c, a, b)
+    });
+    w!("str_append", |mut c: Caller<'_, HostState>, o: i64, v: i64, t: i64| -> i64 {
+        host::host_str_append(&mut c, o, v, t)
+    });
     w!("any_to_string", |mut c: Caller<'_, HostState>, v: i64, t: i64| -> i64 {
         host::host_any_to_string(&mut c, v, t)
     });

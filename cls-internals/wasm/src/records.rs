@@ -7,6 +7,18 @@ unsafe fn rec_len(ptr: usize) -> i64 {
     mem::read_i64(ptr + 8)
 }
 
+/// Fast path de interning (dev-2): si dos keys tienen el MISMO i64 empaquetado
+/// `(ptr<<32)|len`, son el mismo string — comparación de enteros en vez de
+/// leer+memcmp. Las keys literales van interned al pool, así que las búsquedas
+/// con key literal golpean este camino casi siempre.
+#[inline]
+unsafe fn key_matches(stored_packed: i64, lookup_packed: i64) -> bool {
+    if stored_packed == lookup_packed {
+        return true;
+    }
+    mem::read_str(stored_packed) == mem::read_str(lookup_packed)
+}
+
 #[no_mangle]
 pub extern "C" fn __intr_record_new(cap: i64) -> i64 {
     unsafe {
@@ -24,10 +36,9 @@ pub extern "C" fn __intr_record_set(ptr: i64, key: i64, val: i64, tag: i64) -> i
         let p = ptr as usize;
         let len = rec_len(p) as usize;
         let cap = mem::read_i64(p) as usize;
-        let k = mem::read_str(key);
         for i in 0..len {
             let ki = mem::read_i64(p + 16 + i * 24);
-            if mem::read_str(ki) == k {
+            if key_matches(ki, key) {
                 mem::write_i64(p + 16 + i * 24 + 8, val);
                 mem::write_i64(p + 16 + i * 24 + 16, tag);
                 return p as i64;
@@ -63,10 +74,9 @@ pub extern "C" fn __intr_record_get(ptr: i64, key: i64) -> i64 {
     unsafe {
         let p = ptr as usize;
         let len = rec_len(p) as usize;
-        let k = mem::read_str(key);
         for i in 0..len {
             let ki = mem::read_i64(p + 16 + i * 24);
-            if mem::read_str(ki) == k {
+            if key_matches(ki, key) {
                 return mem::read_i64(p + 16 + i * 24 + 8);
             }
         }
@@ -79,10 +89,9 @@ pub extern "C" fn __intr_record_has(ptr: i64, key: i64) -> i32 {
     unsafe {
         let p = ptr as usize;
         let len = rec_len(p) as usize;
-        let k = mem::read_str(key);
         for i in 0..len {
             let ki = mem::read_i64(p + 16 + i * 24);
-            if mem::read_str(ki) == k {
+            if key_matches(ki, key) {
                 return 1;
             }
         }
@@ -95,10 +104,9 @@ pub extern "C" fn __intr_record_tag(ptr: i64, key: i64) -> i64 {
     unsafe {
         let p = ptr as usize;
         let len = rec_len(p) as usize;
-        let k = mem::read_str(key);
         for i in 0..len {
             let ki = mem::read_i64(p + 16 + i * 24);
-            if mem::read_str(ki) == k {
+            if key_matches(ki, key) {
                 return mem::read_i64(p + 16 + i * 24 + 16);
             }
         }
