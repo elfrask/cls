@@ -27,8 +27,45 @@ impl<'a> FuncEmitter<'a> {
                     (None, None) => WasTy::I64,
                 };
                 let idx = self.declare_var_ty(&v.name, ty);
+                // Tipo CLS declarado de la local (frontera de asignación).
+                let declared_cls: Option<Type> = v
+                    .type_ann
+                    .as_ref()
+                    .map(|a| annotation_to_type(a))
+                    .or_else(|| {
+                        v.value
+                            .as_ref()
+                            .and_then(|val| self.types.get(&expr_span(val)).cloned())
+                    });
+                match &declared_cls {
+                    Some(t) => {
+                        self.local_cls_types.insert(v.name.clone(), t.clone());
+                    }
+                    None => {}
+                }
                 if let Some(value) = &v.value {
-                    self.emit_expression(value)?;
+                    // Frontera: shape contiguo hacia destino dinámico.
+                    let mut emitted = false;
+                    if let Some(dest) = &declared_cls {
+                        if matches!(
+                            dest,
+                            Type::Record(_, _)
+                                | Type::Json
+                                | Type::Value
+                                | Type::Any
+                                | Type::Unknown
+                        ) {
+                            if let Some(Type::Shape(fields)) =
+                                self.types.get(&expr_span(value)).cloned()
+                            {
+                                self.emit_shape_to_hashmap(value, &fields)?;
+                                emitted = true;
+                            }
+                        }
+                    }
+                    if !emitted {
+                        self.emit_expression(value)?;
+                    }
                     if self.promoted.contains(&v.name) {
                         // Variable promovida: alloc slot `[valor]`, guardar ptr en
                         // el local, store el valor en el slot.
@@ -82,7 +119,26 @@ impl<'a> FuncEmitter<'a> {
             }
             Statement::Return(e) => {
                 if e.is_some() {
-                    self.emit_expression(e.as_ref().unwrap())?;
+                    let expr = e.as_ref().unwrap();
+                    // Frontera de retorno: shape contiguo hacia retorno dinámico
+                    // (Record/JSON/Value/Any) -> convertir a hashmap.
+                    let mut emitted = false;
+                    if let Some(ret) = &self.fn_ret {
+                        if matches!(
+                            ret,
+                            Type::Record(_, _) | Type::Json | Type::Value | Type::Any | Type::Unknown
+                        ) {
+                            if let Some(Type::Shape(fields)) =
+                                self.types.get(&expr_span(expr)).cloned()
+                            {
+                                self.emit_shape_to_hashmap(expr, &fields)?;
+                                emitted = true;
+                            }
+                        }
+                    }
+                    if !emitted {
+                        self.emit_expression(expr)?;
+                    }
                 }
                 // Des-registrar el frame antes de cortar: `Instruction::Return`
                 // salta al final sin pasar por el `fn_exit` del cuerpo.

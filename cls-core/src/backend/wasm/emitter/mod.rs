@@ -72,6 +72,13 @@ pub(crate) struct FuncEmitter<'a> {
     /// Span de la función que se está compilando (para errores de statements sin
     /// span propio, p.ej. `break`/`continue` fuera de loop).
     pub(crate) current_fn_span: Span,
+    /// Tipo de retorno declarado de la función/método en compilación (frontera
+    /// de `return`: convertir Shape→hashmap si el retorno es dinámico).
+    pub(crate) fn_ret: Option<Type>,
+    /// Tipos CLS declarados de las variables locales del cuerpo (nombre -> tipo,
+    /// por anotación o inferencia registrada al compilar su VarDecl) — frontera
+    /// de asignación `destino = valor`.
+    pub(crate) local_cls_types: HashMap<String, Type>,
     target: &'a Target,
     /// Índice del tag de excepción CLS (para `Instruction::Throw`).
     tag_idx: u32,
@@ -160,6 +167,8 @@ impl<'a> FuncEmitter<'a> {
             current_class,
             current_method: None,
             current_fn_span: Span::new(1, 1, 1, 1),
+            fn_ret: None,
+            local_cls_types: HashMap::new(),
             target,
             tag_idx,
             eh_handler_ty,

@@ -71,7 +71,35 @@ impl<'a> FuncEmitter<'a> {
                         }
                     }
                 } else {
-                    self.emit_expression(&a.value)?;
+                    // Frontera: shape contiguo hacia destino dinámico declarado.
+                    let mut emitted = false;
+                    let dest_dyn = self
+                        .local_cls_types
+                        .get(name)
+                        .cloned()
+                        .or_else(|| self.types.get(&expr_span(&a.target)).cloned())
+                        .map(|t| {
+                            matches!(
+                                t,
+                                Type::Record(_, _)
+                                    | Type::Json
+                                    | Type::Value
+                                    | Type::Any
+                                    | Type::Unknown
+                            )
+                        })
+                        .unwrap_or(false);
+                    if dest_dyn {
+                        if let Some(Type::Shape(fields)) =
+                            self.types.get(&expr_span(&a.value)).cloned()
+                        {
+                            self.emit_shape_to_hashmap(&a.value, &fields)?;
+                            emitted = true;
+                        }
+                    }
+                    if !emitted {
+                        self.emit_expression(&a.value)?;
+                    }
                     // Assignment simple `f = k`: si el target es float y el RHS
                     // es int, promover a f64 (el store del local espera f64).
                     if self.value_type(&a.target)? == WasTy::F64 {
@@ -416,7 +444,28 @@ impl<'a> FuncEmitter<'a> {
                         let val_tmp = self.fresh_local_ty(w);
                         self.emit_expression(&m.object)?;
                         self.body.push(Instruction::LocalSet(obj_tmp));
-                        self.emit_expression(&a.value)?;
+                        // Frontera: shape contiguo hacia campo dinámico
+                        // (Any/JSON/Value/Record) -> hashmap.
+                        let field_dyn = matches!(
+                            _t,
+                            Type::Record(_, _)
+                                | Type::Json
+                                | Type::Value
+                                | Type::Any
+                                | Type::Unknown
+                        );
+                        let mut emitted = false;
+                        if field_dyn {
+                            if let Some(Type::Shape(fields)) =
+                                self.types.get(&expr_span(&a.value)).cloned()
+                            {
+                                self.emit_shape_to_hashmap(&a.value, &fields)?;
+                                emitted = true;
+                            }
+                        }
+                        if !emitted {
+                            self.emit_expression(&a.value)?;
+                        }
                         self.body.push(match w {
                             WasTy::F64 => Instruction::LocalSet(val_tmp),
                             WasTy::I32 => Instruction::LocalSet(val_tmp),

@@ -194,7 +194,27 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "push" => {
-                        self.emit_expression(&c.args[0])?;
+                        // Frontera: shape contiguo a array dinámico -> hashmap.
+                        let elem_cls = self.array_elem_cls_type(&member.object)?;
+                        let mut emitted = false;
+                        if matches!(
+                            &elem_cls,
+                            Type::Any
+                                | Type::Unknown
+                                | Type::Json
+                                | Type::Value
+                                | Type::Record(_, _)
+                        ) {
+                            if let Some(Type::Shape(fields)) =
+                                self.types.get(&expr_span(&c.args[0])).cloned()
+                            {
+                                self.emit_shape_to_hashmap(&c.args[0], &fields)?;
+                                emitted = true;
+                            }
+                        }
+                        if !emitted {
+                            self.emit_expression(&c.args[0])?;
+                        }
                         self.elem_to_bits(&c.args[0], elem_ty)?;
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_push") {
@@ -226,7 +246,26 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(true);
                     }
                     "unshift" => {
-                        self.emit_expression(&c.args[0])?;
+                        let elem_cls = self.array_elem_cls_type(&member.object)?;
+                        let mut emitted = false;
+                        if matches!(
+                            &elem_cls,
+                            Type::Any
+                                | Type::Unknown
+                                | Type::Json
+                                | Type::Value
+                                | Type::Record(_, _)
+                        ) {
+                            if let Some(Type::Shape(fields)) =
+                                self.types.get(&expr_span(&c.args[0])).cloned()
+                            {
+                                self.emit_shape_to_hashmap(&c.args[0], &fields)?;
+                                emitted = true;
+                            }
+                        }
+                        if !emitted {
+                            self.emit_expression(&c.args[0])?;
+                        }
                         self.elem_to_bits(&c.args[0], elem_ty)?;
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_unshift") {
