@@ -194,27 +194,9 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "push" => {
-                        // Frontera: shape contiguo a array dinámico -> hashmap.
+                        // Frontera única: shape contiguo a array dinámico.
                         let elem_cls = self.array_elem_cls_type(&member.object)?;
-                        let mut emitted = false;
-                        if matches!(
-                            &elem_cls,
-                            Type::Any
-                                | Type::Unknown
-                                | Type::Json
-                                | Type::Value
-                                | Type::Record(_, _)
-                        ) {
-                            if let Some(Type::Shape(fields)) =
-                                self.types.get(&expr_span(&c.args[0])).cloned()
-                            {
-                                self.emit_shape_to_hashmap(&c.args[0], &fields)?;
-                                emitted = true;
-                            }
-                        }
-                        if !emitted {
-                            self.emit_expression(&c.args[0])?;
-                        }
+                        self.emit_coerce(&c.args[0], Some(&elem_cls))?;
                         self.elem_to_bits(&c.args[0], elem_ty)?;
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_push") {
@@ -246,26 +228,9 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(true);
                     }
                     "unshift" => {
+                        // Frontera única: shape contiguo a array dinámico.
                         let elem_cls = self.array_elem_cls_type(&member.object)?;
-                        let mut emitted = false;
-                        if matches!(
-                            &elem_cls,
-                            Type::Any
-                                | Type::Unknown
-                                | Type::Json
-                                | Type::Value
-                                | Type::Record(_, _)
-                        ) {
-                            if let Some(Type::Shape(fields)) =
-                                self.types.get(&expr_span(&c.args[0])).cloned()
-                            {
-                                self.emit_shape_to_hashmap(&c.args[0], &fields)?;
-                                emitted = true;
-                            }
-                        }
-                        if !emitted {
-                            self.emit_expression(&c.args[0])?;
-                        }
+                        self.emit_coerce(&c.args[0], Some(&elem_cls))?;
                         self.elem_to_bits(&c.args[0], elem_ty)?;
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_unshift") {
@@ -550,11 +515,10 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_expression(&member.object)?;
                     self.body.push(Instruction::LocalSet(obj_tmp));
                     self.body.push(Instruction::LocalGet(obj_tmp));
-                    // Método de clase: los params tipados no están en el emisor
-                    // (vtable) -> convertir Shape a hashmap si el arg lo es
-                    // (p.ej. res.json({ok:true}) con obj: JSON).
+                    // Frontera única: métodos de clase (params no disponibles en
+                    // el emisor) -> destino desconocido, convertir si es Shape.
                     for a in &c.args {
-                        self.emit_call_arg(a, None, 0)?;
+                        self.emit_coerce(a, None)?;
                     }
                     // slot = vtable(obj[0]) + method_slot
                     self.body.push(Instruction::LocalGet(obj_tmp));

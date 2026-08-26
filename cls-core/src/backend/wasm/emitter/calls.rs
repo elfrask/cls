@@ -358,21 +358,9 @@ impl<'a> FuncEmitter<'a> {
         expected_params: Option<&[Type]>,
         idx: usize,
     ) -> ClsResult<()> {
-        let _ = idx;
-        let arg_ty = self.types.get(&expr_span(expr)).cloned();
-        if let Some(Type::Shape(fields)) = &arg_ty {
-            let convert = match expected_params.and_then(|ps| ps.get(idx)) {
-                Some(t) => matches!(
-                    t,
-                    Type::Record(_, _) | Type::Json | Type::Value | Type::Any | Type::Unknown
-                ),
-                None => true,
-            };
-            if convert {
-                return self.emit_shape_to_hashmap(expr, fields);
-            }
-        }
-        self.emit_expression(expr)
+        // Frontera única: delega en emit_coerce con el tipo esperado del param.
+        let dest = expected_params.and_then(|ps| ps.get(idx));
+        self.emit_coerce(expr, dest)
     }
 
     /// Constructor de clase: `Clase(args)` -> alloc + vtable + init fields + ctor.

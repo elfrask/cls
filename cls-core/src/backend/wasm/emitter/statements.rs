@@ -44,28 +44,8 @@ impl<'a> FuncEmitter<'a> {
                     None => {}
                 }
                 if let Some(value) = &v.value {
-                    // Frontera: shape contiguo hacia destino dinámico.
-                    let mut emitted = false;
-                    if let Some(dest) = &declared_cls {
-                        if matches!(
-                            dest,
-                            Type::Record(_, _)
-                                | Type::Json
-                                | Type::Value
-                                | Type::Any
-                                | Type::Unknown
-                        ) {
-                            if let Some(Type::Shape(fields)) =
-                                self.types.get(&expr_span(value)).cloned()
-                            {
-                                self.emit_shape_to_hashmap(value, &fields)?;
-                                emitted = true;
-                            }
-                        }
-                    }
-                    if !emitted {
-                        self.emit_expression(value)?;
-                    }
+                    // Frontera única: shape contiguo hacia destino dinámico.
+                    self.emit_coerce(value, declared_cls.as_ref())?;
                     if self.promoted.contains(&v.name) {
                         // Variable promovida: alloc slot `[valor]`, guardar ptr en
                         // el local, store el valor en el slot.
@@ -120,25 +100,9 @@ impl<'a> FuncEmitter<'a> {
             Statement::Return(e) => {
                 if e.is_some() {
                     let expr = e.as_ref().unwrap();
-                    // Frontera de retorno: shape contiguo hacia retorno dinámico
-                    // (Record/JSON/Value/Any) -> convertir a hashmap.
-                    let mut emitted = false;
-                    if let Some(ret) = &self.fn_ret {
-                        if matches!(
-                            ret,
-                            Type::Record(_, _) | Type::Json | Type::Value | Type::Any | Type::Unknown
-                        ) {
-                            if let Some(Type::Shape(fields)) =
-                                self.types.get(&expr_span(expr)).cloned()
-                            {
-                                self.emit_shape_to_hashmap(expr, &fields)?;
-                                emitted = true;
-                            }
-                        }
-                    }
-                    if !emitted {
-                        self.emit_expression(expr)?;
-                    }
+                    // Frontera única: shape contiguo hacia retorno dinámico.
+                    let dest = self.fn_ret.clone();
+                    self.emit_coerce(expr, dest.as_ref())?;
                 }
                 // Des-registrar el frame antes de cortar: `Instruction::Return`
                 // salta al final sin pasar por el `fn_exit` del cuerpo.

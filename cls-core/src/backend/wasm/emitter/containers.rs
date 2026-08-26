@@ -276,6 +276,33 @@ impl<'a> FuncEmitter<'a> {
     /// guarda en un contenedor dinámico (`Record<String,any>`): la lectura/
     /// stringify lo trata como hashmap, y un shape contiguo no es legible como
     /// tal. Evalúa `expr` (deja el ptr del shape) y lo copia campo a campo.
+    /// ¿Es un destino que lee los valores como hashmap dinámico?
+    pub(crate) fn is_dynamic_dest(t: &Type) -> bool {
+        matches!(
+            t,
+            Type::Record(_, _) | Type::Json | Type::Value | Type::Any | Type::Unknown
+        )
+    }
+
+    /// FRONTERA ÚNICA de valores: emite `expr` para ser consumido como `dest`.
+    /// Si el valor es un shape contiguo y el destino es dinámico
+    /// (Record/JSON/Value/Any/Unknown — o desconocido: calls dinámicos/métodos),
+    /// lo convierte a HASHMAP recursivo. En cualquier otro caso emite directo.
+    /// TODA transferencia de valor (args, return, assign, campos, elems,
+    /// inicializadores anidados) debe pasar por aquí.
+    pub(crate) fn emit_coerce(&mut self, expr: &Expression, dest: Option<&Type>) -> ClsResult<()> {
+        let convert = match dest {
+            Some(t) => Self::is_dynamic_dest(t),
+            None => true,
+        };
+        if convert {
+            if let Some(Type::Shape(fields)) = self.types.get(&expr_span(expr)).cloned() {
+                return self.emit_shape_to_hashmap(expr, &fields);
+            }
+        }
+        self.emit_expression(expr)
+    }
+
     pub(crate) fn emit_shape_to_hashmap(&mut self, expr: &Expression, fields: &[(String, Type)]) -> ClsResult<()> {
         self.emit_expression(expr)?;
         let shape_ptr = self.fresh_local();
