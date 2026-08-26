@@ -665,9 +665,19 @@ pub(crate) fn run_wasm_wasmtime(
     let module = match Module::new(&engine, wasm_bytes) {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("[JIT] Módulo WASM inválido para '{}':\n{:?}", entry, e);
-            if let Ok(wat) = wasmprinter::print_bytes(wasm_bytes) {
-                eprintln!("--- WAT ---\n{}", wat);
+            // Diagnóstico corto: el `{:?}` completo del error puede embeber los
+            // bytes crudos del módulo (megabytes ilegibles). El WAT completo
+            // queda detrás de CLS_DUMP_WAT=1.
+            let msg = e.root_cause().to_string();
+            eprintln!(
+                "[JIT] Módulo WASM inválido para '{}': {}",
+                entry,
+                if msg.is_empty() { e.to_string() } else { msg }
+            );
+            if std::env::var("CLS_DUMP_WAT").is_ok() {
+                if let Ok(wat) = wasmprinter::print_bytes(wasm_bytes) {
+                    eprintln!("--- WAT ---\n{}", wat);
+                }
             }
             if let Some(p) = &cache_path {
                 let _ = std::fs::remove_file(p);

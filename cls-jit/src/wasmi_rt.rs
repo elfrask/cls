@@ -483,7 +483,8 @@ pub(crate) fn run_wasm_wasmi(
     let module = match Module::new(&engine, wasm_bytes) {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("[JIT] Módulo WASM inválido para '{}' (wasmi):\n{:?}", entry, e);
+            // Diagnóstico corto (el `{:?}` puede embeber bytes crudos).
+            eprintln!("[JIT] Módulo WASM inválido para '{}' (wasmi): {}", entry, e);
             if let Some(p) = &cache_path {
                 let _ = std::fs::remove_file(p);
             }
