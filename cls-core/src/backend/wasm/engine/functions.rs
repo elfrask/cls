@@ -203,7 +203,37 @@ impl<'a> Engine<'a> {
             }
         } else {
             for (i, p) in f.params.iter().enumerate() {
-                fe.declare_var_ty(&p.name, was_type(&param_types[i])?);
+                // Firma normalizada (dev-2): TODOS los params de arrows son I64
+                // en la firma WASM. Los params float se convierten de vuelta a
+                // f64 vía prologue (shadow local) después de la declaración.
+                let is_arrow = f.name.starts_with("__arrow_");
+                if is_arrow {
+                    fe.declare_var_ty(&p.name, WasTy::I64);
+                } else {
+                    fe.declare_var_ty(&p.name, was_type(&param_types[i])?);
+                }
+            }
+            // Prologue de conversión: para cada param float de una arrow,
+            // aloca un shadow f64 local y emite
+            // `local.get(i64_param); f64.reinterpret_i64; local.set(f64_shadow)`.
+            // Luego redirige el nombre al shadow para que el body lea f64.
+            let is_arrow = f.name.starts_with("__arrow_");
+            if is_arrow {
+                for (i, p) in f.params.iter().enumerate() {
+                    let ann_t = p.type_ann.as_ref()
+                        .map(|ta| crate::backend::wasm::types::annotation_to_type(ta))
+                        .unwrap_or(Type::Any);
+                    if matches!(ann_t, Type::Float | Type::F32 | Type::F64)
+                        && !matches!(ann_t, Type::Any | Type::Unknown)
+                    {
+                        let i64_idx = fe.local_for(&p.name);
+                        let f64_idx = fe.fresh_local_ty(WasTy::F64);
+                        fe.body.push(Instruction::LocalGet(i64_idx));
+                        fe.body.push(Instruction::F64ReinterpretI64);
+                        fe.body.push(Instruction::LocalSet(f64_idx));
+                        fe.override_local(&p.name, f64_idx, WasTy::F64);
+                    }
+                }
             }
         }
         // Reservar los índices de los params implícitos (main sintetizado en

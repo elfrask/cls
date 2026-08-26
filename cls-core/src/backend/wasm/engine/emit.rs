@@ -687,15 +687,19 @@ impl<'a> Engine<'a> {
             self.func_types
                 .insert(f.name.clone(), (params.clone(), Some(ret.clone())));
             let mut pv: Vec<ValType> = Vec::new();
-            // Firma uniforme (B5): toda arrow recibe __capturas (i64) como primer param.
+            // Firma uniforme (B5 + normalización dev-2): TODA arrow recibe
+            // [capturas:i64, params:i64...] -> i64. Los params float viajan como
+            // bits (f64.reinterpret/i64.reinterpret en la frontera). Esto hace
+            // que el call_indirect del call dinámico universal SIEMPRE valide.
             pv.push(ValType::I64);
-            for t in &params {
-                pv.push(was_type(t)?.val_type());
+            for _ in &params {
+                pv.push(ValType::I64);
             }
-            let rv: Vec<ValType> = if ret != Type::Void {
-                vec![was_type(&ret)?.val_type()]
-            } else {
+            // Retorno: Void -> sin result; todo lo demás -> i64 (los f64 van como bits)
+            let rv: Vec<ValType> = if matches!(ret, Type::Void) {
                 vec![]
+            } else {
+                vec![ValType::I64]
             };
             let tidx = self.register_func_type(pv.clone(), rv.clone());
             let fidx = self.func_count;

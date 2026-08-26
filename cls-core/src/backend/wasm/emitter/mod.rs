@@ -393,6 +393,14 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
+    /// Override el índice WASM y tipo de una variable ya declarada (usado por
+    /// el prologue de conversión de arrows normalizadas: float params pasan
+    /// como i64 bits en la firma, se convierten a f64 shadow local).
+    pub(crate) fn override_local(&mut self, name: &str, idx: u32, ty: WasTy) {
+        self.locals.insert(name.to_string(), idx);
+        self.local_tys.insert(idx, ty);
+    }
+
     pub(crate) fn value_type(&self, expr: &Expression) -> ClsResult<WasTy> {
         // Literales: el kind ES el tipo (los spans del parser colisionan entre
         // un literal y la expresión que lo contiene, así que el type map puede
