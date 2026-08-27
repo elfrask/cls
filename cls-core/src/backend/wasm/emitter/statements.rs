@@ -46,6 +46,16 @@ impl<'a> FuncEmitter<'a> {
                 if let Some(value) = &v.value {
                     // Frontera única: shape contiguo hacia destino dinámico.
                     self.emit_coerce(value, declared_cls.as_ref())?;
+                    // VarDecl `f: Float = 42;`: si el local es float y el RHS
+                    // es int (o literal int), promover a f64. El store del
+                    // local espera f64; sin esto, el modulo WASM es invalido
+                    // (type mismatch: expected f64, found i64). Mismo patron
+                    // que el assignment simple en assignment.rs:110-114.
+                    if ty == WasTy::F64
+                        && self.value_type(value)? != WasTy::F64
+                    {
+                        self.f64_promote(value)?;
+                    }
                     if self.promoted.contains(&v.name) {
                         // Variable promovida: alloc slot `[valor]`, guardar ptr en
                         // el local, store el valor en el slot.

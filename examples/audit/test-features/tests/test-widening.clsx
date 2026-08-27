@@ -1,0 +1,28 @@
+# test-widening.clsx - Test de regresion del widening Int -> Float
+# (decision 001: unica coercion implicita permitida en CLS 2.0)
+# Bug emisor 08 cerrado: el widening funciona en VarDecl y en binarios.
+
+function main(args: String[]) -> int {
+    # Caso 1: Int -> Float en asignacion directa (literal int)
+    var f1: Float = 42;
+
+    # Caso 2: Int + Float -> Float (promocion numerica en binario)
+    var f2: Float = 42 + 1.5;
+
+    # Caso 3: Float + Int -> Float (orden inverso, mismo resultado)
+    var f3: Float = 1.5 + 42;
+
+    # Caso 4: Float declarado explicitamente (literal float)
+    var f4: Float = 3.14;
+
+    # Caso 5: Int + Int -> Int, sin coercion
+    var i1: Int = 5 + 3;
+
+    print(str(f1));
+    print(str(f2));
+    print(str(f3));
+    print(str(f4));
+    print(str(i1));
+
+    return 0;
+};
