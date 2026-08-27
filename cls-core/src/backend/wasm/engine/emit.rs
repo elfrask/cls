@@ -308,12 +308,7 @@ impl<'a> Engine<'a> {
             RandomInt,
             RandomFloat,
             RandomUuid,
-            NetListen,
-            NetAccept,
-            NetRecv,
-            NetSend,
-            NetClose,
-            NetLastError,
+            // NetListen/Accept/Recv/Send/Close/LastError eliminados (dev-2).
             StrIndexOf,
             StrSlice,
             StrSplit,

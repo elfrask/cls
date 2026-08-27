@@ -149,13 +149,9 @@ pub enum HostFn {
     RandomFloat,
     RandomUuid,
     // Módulo net (sockets TCP)
-    NetListen,
-    NetAccept,
-    NetRecv,
-    NetSend,
-    NetClose,
-    NetLastError,
-    // Módulo str (utilidades de string)
+    // NetListen/Accept/Recv/Send/Close/LastError eliminados (dev-2):
+    // el módulo `net` ya no existe en el runtime. Los sockets deben venir
+    // de `extension`+`when` en el .clsx del usuario.
     StrIndexOf,
     StrSlice,
     StrSplit,
@@ -301,12 +297,7 @@ impl HostFn {
             RandomInt => "random_int",
             RandomFloat => "random_float",
             RandomUuid => "random_uuid",
-            NetListen => "net_listen",
-            NetAccept => "net_accept",
-            NetRecv => "net_recv",
-            NetSend => "net_send",
-            NetClose => "net_close",
-            NetLastError => "net_last_error",
+            // net_* eliminados (dev-2): ver comentario arriba.
             StrIndexOf => "str_index_of",
             StrSlice => "str_slice",
             StrSplit => "str_split",
@@ -461,12 +452,7 @@ impl HostFn {
             RandomUuid => (vec![], vec![ValType::I64]),
             // Módulo net: listen(port)->handle, accept(handle)->sock,
             // recv(sock,max)->String, send(sock,data)->n, close(sock)->0, lastError()->String
-            NetListen => (i64p.clone(), vec![ValType::I64]),
-            NetAccept => (i64p.clone(), vec![ValType::I64]),
-            NetRecv => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            NetSend => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            NetClose => (i64p.clone(), vec![ValType::I64]),
-            NetLastError => (vec![], vec![ValType::I64]),
+            // net_* eliminados (dev-2): ver comentario arriba.
             // Módulo str: indexOf(s,sub)->int, slice(s,start,end)->String,
             // split(s,sep)->String[] (array como ptr, igual que fs.listDir)
             StrIndexOf => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),

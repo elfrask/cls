@@ -90,14 +90,10 @@ impl TypeChecker {
                     _ => Type::Any,
                 };
             }
-            if name == "net" {
-                return match member.member.as_str() {
-                    "listen" | "accept" | "send" | "close" => Type::Int,
-                    "recv" => Type::String,
-                    "lastError" => Type::String,
-                    _ => Type::Any,
-                };
-            }
+            // net eliminado (dev-2): no hay miembros conocidos. Si el usuario
+            // escribe `net.X` el typeck cae al default (Any/Unknown) y el
+            // emisor lo rechaza con "miembro no soportado".
+            // Para sockets: `extension` con `when` por SO en el .clsx.
             if name == "strings" {
                 return match member.member.as_str() {
                     "indexOf" => Type::Int,

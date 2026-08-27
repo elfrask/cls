@@ -19,7 +19,7 @@ impl TypeChecker {
                 } else if matches!(
                     name.as_str(),
                     "json" | "math" | "fs" | "http" | "Lib" | "async" | "os" | "path"
-                        | "process" | "time" | "random" | "net" | "strings"
+                        | "process" | "time" | "random" | "strings"
                 ) {
                     // Módulos internos del nodo: no son variables, pero se aceptan
                     // como namespace (el backend los resuelve).

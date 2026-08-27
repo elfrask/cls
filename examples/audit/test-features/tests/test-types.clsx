@@ -49,6 +49,5 @@ function main(args: String[]) -> int {
         </Div>
     );
 
-    
     return 0;
 };

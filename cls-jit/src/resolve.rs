@@ -233,8 +233,11 @@ pub fn load_import_modules_hooked(
 ) -> cls_core::error::ClsResult<()> {
     use cls_core::error::ClsError;
     // Módulos internos del core/nodo: NO se resuelven como archivos.
+    // `net` eliminado en dev-2 (era código muerto: los host_net_* nunca se
+    // usaron desde ningún .clsx; los sockets deben venir de `extension`+`when`
+    // en el .clsx del usuario, ver docs/lenguaje/extension.md).
     const INTERNALS: &[&str] = &[
-        "math", "json", "fs", "http", "Lib", "async", "os", "path", "process", "time", "random", "net", "strings",
+        "math", "json", "fs", "http", "Lib", "async", "os", "path", "process", "time", "random", "strings",
     ];
     for stmt in &module.statements {
         let import = match stmt {

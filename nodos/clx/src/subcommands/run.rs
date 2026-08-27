@@ -227,7 +227,7 @@ fn make_desktop_resolver(
     let mut resolver = cls_runtime::ModuleResolver::new().with_core_stdlib();
     resolver.add_internal("fs", crate::modules::fs::module(vfs));
     resolver.add_internal("http", crate::modules::http::module());
-    resolver.add_internal("net", crate::modules::net::module());
+    // net eliminado (dev-2): no hay módulo runtime.
     resolver.add_internal("strings", crate::modules::strings::module());
     resolver.add_internal("Lib", crate::modules::lib::module(lib_resolver));
     resolver.add_internal("os", crate::modules::os::module());

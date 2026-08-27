@@ -292,17 +292,7 @@ pub fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), Str
         host::host_random_float(&mut c, min, max)
     });
     w!("random_uuid", |mut c: Caller<'_, HostState>| -> i64 { host::host_random_uuid(&mut c) });
-    // Módulo net (sockets TCP del servidor)
-    w!("net_listen", |mut c: Caller<'_, HostState>, p: i64| -> i64 { host::host_net_listen(&mut c, p) });
-    w!("net_accept", |mut c: Caller<'_, HostState>, h: i64| -> i64 { host::host_net_accept(&mut c, h) });
-    w!("net_recv", |mut c: Caller<'_, HostState>, s: i64, m: i64| -> i64 {
-        host::host_net_recv(&mut c, s, m)
-    });
-    w!("net_send", |mut c: Caller<'_, HostState>, s: i64, d: i64| -> i64 {
-        host::host_net_send(&mut c, s, d)
-    });
-    w!("net_close", |mut c: Caller<'_, HostState>, h: i64| -> i64 { host::host_net_close(&mut c, h) });
-    w!("net_last_error", |mut c: Caller<'_, HostState>| -> i64 { host::host_net_last_error(&mut c) });
+    // net eliminado (dev-2): no se registran hosts de sockets.
     // Módulo str (utilidades de string)
     w!("str_index_of", |mut c: Caller<'_, HostState>, s: i64, sub: i64| -> i64 {
         host::host_str_index_of(&mut c, s, sub)

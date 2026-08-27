@@ -527,44 +527,10 @@ impl<'a> FuncEmitter<'a> {
         None
     }
 
-    /// `net.X(...)` -> host del módulo net (sockets TCP del servidor).
-    pub(crate) fn emit_net_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
-        use HostFn::*;
-        match member.member.as_str() {
-            "listen" => {
-                self.emit_expression(&c.args[0])?;
-                self.host.call(NetListen, &mut self.body);
-                Ok(())
-            }
-            "accept" => {
-                self.emit_expression(&c.args[0])?;
-                self.host.call(NetAccept, &mut self.body);
-                Ok(())
-            }
-            "recv" => {
-                self.emit_expression(&c.args[0])?;
-                self.emit_expression(&c.args[1])?;
-                self.host.call(NetRecv, &mut self.body);
-                Ok(())
-            }
-            "send" => {
-                self.emit_expression(&c.args[0])?;
-                self.emit_expression(&c.args[1])?;
-                self.host.call(NetSend, &mut self.body);
-                Ok(())
-            }
-            "close" => {
-                self.emit_expression(&c.args[0])?;
-                self.host.call(NetClose, &mut self.body);
-                Ok(())
-            }
-            "lastError" => {
-                self.host.call(NetLastError, &mut self.body);
-                Ok(())
-            }
-            _ => Err(self.unsupported_expr(&Expression::Call(c.clone()))),
-        }
-    }
+    /// `net.X(...)` eliminado (dev-2): el módulo `net` ya no existe. Si un
+    /// usuario escribe `net.listen(...)` el dispatch cae al error genérico
+    /// de miembro no soportado (no se compila, el typeck lo rechaza antes).
+    /// Para sockets: usar `extension` con `when` por SO en el .clsx.
 
     /// `strings.X(...)` -> internal `__intr_str_*` (si las internals están
     /// fusionadas; call directo por nombre) o fallback al host del módulo

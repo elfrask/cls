@@ -135,7 +135,8 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_random_call(member, c)?; return Ok(true);
             }
             if obj_name == "net" {
-                self.emit_net_call(member, c)?; return Ok(true);
+                // net eliminado (dev-2): cae al error genérico de miembro no soportado.
+                return Err(self.unsupported_expr(&Expression::Call(c.clone())));
             }
             if obj_name == "strings" {
                 self.emit_strings_call(member, c)?; return Ok(true);
