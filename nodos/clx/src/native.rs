@@ -6,7 +6,14 @@
 //!
 //! ABI: los argumentos se pasan por registros (i64 para enteros/punteros, f64 para
 //! floats); los retornos por su shape exacto (i64/i32/f64/void). El dispatcher
-//! (macros `arityN!`) cubre hasta 4 argumentos; se amplía extendiendo los macros.
+//! soporta hasta `MAX_NATIVE_ARGS` argumentos. La macro `call_n_typed::<N>`
+//! despacha por cantidad (N lineal, no 2^N); arriba del limite, el typeck emite
+//! error en compile-time (ver `cls-core/src/middleware/typeck/statements.rs`).
+//!
+//! Migracion dev-2: el limite anterior era 4 args (con un match estatico 2^N
+//! sobre tipos). Se reemplazo por un dispatch generico sobre N que acepta
+//! cualquier cantidad hasta MAX_NATIVE_ARGS. Ver
+//! `docs/decisiones/002-ffi-arity-limit.md`.
 
 use cls_core::error::{ClsError, ClsResult};
 use cls_runtime::ffi::{NativeBackend, NativeType};
@@ -73,10 +80,40 @@ fn get_symbol(lib: Arc<Library>, resolved: &str, symbol: &str) -> ClsResult<Nati
 
 // ── Shapes de registro del ABI C ─────────────────────────────────────────────
 
+/// Maximo de argumentos en una llamada `extension`. El typeck rechaza arriba de
+/// este numero (ver `cls-core/src/middleware/typeck/statements.rs:131-181`).
+/// 16 cubre cualquier ABI real (x86_64 SysV: 6 i64 + 8 XMM; Windows x64: 4 i64
+/// + 4 XMM; ARM64: 8 registros). Para mas args, empaquetar en un struct.
+pub(crate) const MAX_NATIVE_ARGS: usize = 16;
+
 #[derive(Clone, Copy, PartialEq)]
 enum Shape {
     I64, // enteros de 64 bits y punteros (registro entero)
     F64, // floats de 64 bits (registro XMM)
+}
+
+/// Argumento crudo en registro C, sin tipo: i64 o f64. El dispatch por
+/// combinacion de tipos (que era 2^N en el codigo viejo) se elimina: cada
+/// arg se convierte a este enum, y la llamada se emite con la firma
+/// `unsafe extern "C" fn(i64, i64, ..., i64) -> ...` donde los f64 van
+/// reinterpretados como i64 (los registros XMM aceptan tanto i64 como f64
+/// via `f64::from_bits` en la frontera).
+#[derive(Clone, Copy)]
+enum RawArg {
+    I(i64),
+    F(f64),
+}
+
+impl RawArg {
+    /// Bits que van al registro (XMM o GP). Para I64, los bits directos;
+    /// para F64, los bits de f64 (la firma C destino los reinterpreta segun
+    /// el tipo declarado en el `extension`).
+    fn bits(self) -> i64 {
+        match self {
+            RawArg::I(x) => x,
+            RawArg::F(x) => x.to_bits() as i64,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -414,103 +451,429 @@ fn resolve_library(name: &str) -> String {
     name.to_string()
 }
 
-// ── Dispatcher de firmas (hasta 4 argumentos) ───────────────────────────────
+// ── Dispatch dinamico (dev-2) ────────────────────────────────────────────────
+//
+// Reemplaza los macros arity0..arity4 (que eran 1+2+4+8+16=31 arms en total,
+// con 2^N combinaciones de tipos). Ahora hay UN solo macro `call_n_typed::<N>`
+// que se especializa por la cantidad N (lineal, 17 arms para 0..16) y
+// desempaqueta los RawArg (cada uno es i64 con los bits correctos del f64 si
+// aplica). El ABI hace el resto: en x86_64 SysV los i64 van en registros
+// GP (RDI/RSI/RDX/RCX/R8/R9) y los f64 en registros XMM; el layout
+// del stack es el mismo para ambos (8 bytes por slot). Usamos una firma
+// unica `unsafe extern "C" fn(i64, i64, ..., i64) -> i64` y el
+// `transmute` del addr del simbolo a esa firma es seguro mientras coincida
+// con la declaracion del `extension` (contrato del usuario).
 
-/// Genera un arm que castea el símbolo a la firma dada y la llama.
-///
-/// El `transmute` es el patrón dlsym: el símbolo se obtiene como un puntero a
-/// `unsafe extern "C" fn()` genérico (la firma real no se conoce hasta el
-/// dispatch por arity + shapes) y se reinterpreta por cada firma concreta. Rust
-/// no permite castear directamente entre tipos de fn pointer distintos, así que
-/// se reinterpreta el usize del símbolo. Es seguro mientras la firma elegida
-/// coincida con el símbolo real (contrato del `extension "lib" as C { ... }`)
-/// y la librería siga viva (la cachea `NATIVE_LIBS`).
-macro_rules! emit_arm {
-    ($base:expr, $ret:expr; [$($t:ty, $v:expr),*]) => {
-        match $ret {
-            RetShape::I64 => {
-                let f: unsafe extern "C" fn($($t),*) -> i64 = unsafe { std::mem::transmute($base) };
-                RawRet::I(unsafe { f($($v),*) })
-            }
-            RetShape::I32 => {
-                let f: unsafe extern "C" fn($($t),*) -> i32 = unsafe { std::mem::transmute($base) };
-                RawRet::I(unsafe { f($($v),*) } as i64)
-            }
-            RetShape::F64 => {
-                let f: unsafe extern "C" fn($($t),*) -> f64 = unsafe { std::mem::transmute($base) };
-                RawRet::F(unsafe { f($($v),*) })
-            }
-            RetShape::Void => {
-                let f: unsafe extern "C" fn($($t),*) = unsafe { std::mem::transmute($base) };
-                unsafe { f($($v),*) };
-                RawRet::V
-            }
+/// Dispatch dinamico (dev-2) ─────────────────────────────────────────────────
+//
+// Reemplaza los macros arity0..arity4 (que eran 1+2+4+8+16=31 arms con 2^N
+// combinaciones de tipos). Ahora hay UNA funcion nombrada por cantidad
+// (`call_typed_0` ... `call_typed_16`) que castea `base` a la firma C con N
+// argumentos i64, desempaqueta los RawArg como bits, y llama.
+//
+// En x86_64 SysV los i64 van en registros GP (RDI/RSI/RDX/RCX/R8/R9) y los
+// f64 en registros XMM; el stack frame es el mismo para ambos. Para N>8 los
+// ultimos args van por stack (mismo layout). El transmute es seguro mientras
+// la firma coincida con la declaracion del `extension` (contrato del usuario).
+//
+// Por que funciones nombradas y no un macro expandido: Rust estable no permite
+// forward-ear un literal numerico entre macros (`$n:literal` no es comparable
+// en macro_rules), asi que el `match args.len()` en el call site elige la
+// funcion concreta.
+
+// Implementacion directa: una funcion por cantidad.
+fn call_typed_0(base: usize, ret: RetShape) -> RawRet {
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn() -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f() })
         }
-    };
+        RetShape::I32 => {
+            let f: unsafe extern "C" fn() -> i32 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f() as i64 })
+        }
+        RetShape::F64 => {
+            let f: unsafe extern "C" fn() -> f64 = unsafe { std::mem::transmute(base) };
+            RawRet::F(unsafe { f() })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn() = unsafe { std::mem::transmute(base) };
+            unsafe { f() };
+            RawRet::V
+        }
+    }
 }
 
-macro_rules! arity0 {
-    ($base:expr, $ret:expr) => {
-        emit_arm!($base, $ret; [])
-    };
+fn call_typed_1(base: usize, ret: RetShape, a0: RawArg) -> RawRet {
+    let a0 = a0.bits();
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn(i64) -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0) })
+        }
+        RetShape::I32 => {
+            let f: unsafe extern "C" fn(i64) -> i32 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0) as i64 })
+        }
+        RetShape::F64 => {
+            let f: unsafe extern "C" fn(i64) -> f64 = unsafe { std::mem::transmute(base) };
+            RawRet::F(unsafe { f(a0) })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn(i64) = unsafe { std::mem::transmute(base) };
+            unsafe { f(a0) };
+            RawRet::V
+        }
+    }
 }
 
-macro_rules! arity1 {
-    ($base:expr, $vals:expr, $ret:expr, $pts:expr) => {
-        match ($pts[0], $ret) {
-            (Shape::I64, r) => emit_arm!($base, r; [i64, cval_i(&$vals[0])]),
-            (Shape::F64, r) => emit_arm!($base, r; [f64, cval_f(&$vals[0])]),
+fn call_typed_2(base: usize, ret: RetShape, a0: RawArg, a1: RawArg) -> RawRet {
+    let a0 = a0.bits();
+    let a1 = a1.bits();
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn(i64, i64) -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1) })
         }
-    };
+        RetShape::I32 => {
+            let f: unsafe extern "C" fn(i64, i64) -> i32 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1) as i64 })
+        }
+        RetShape::F64 => {
+            let f: unsafe extern "C" fn(i64, i64) -> f64 = unsafe { std::mem::transmute(base) };
+            RawRet::F(unsafe { f(a0, a1) })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn(i64, i64) = unsafe { std::mem::transmute(base) };
+            unsafe { f(a0, a1) };
+            RawRet::V
+        }
+    }
 }
 
-macro_rules! arity2 {
-    ($base:expr, $vals:expr, $ret:expr, $pts:expr) => {
-        match ($pts[0], $pts[1], $ret) {
-            (Shape::I64, Shape::I64, r) => emit_arm!($base, r; [i64, cval_i(&$vals[0]), i64, cval_i(&$vals[1])]),
-            (Shape::I64, Shape::F64, r) => emit_arm!($base, r; [i64, cval_i(&$vals[0]), f64, cval_f(&$vals[1])]),
-            (Shape::F64, Shape::I64, r) => emit_arm!($base, r; [f64, cval_f(&$vals[0]), i64, cval_i(&$vals[1])]),
-            (Shape::F64, Shape::F64, r) => emit_arm!($base, r; [f64, cval_f(&$vals[0]), f64, cval_f(&$vals[1])]),
+fn call_typed_3(base: usize, ret: RetShape, a0: RawArg, a1: RawArg, a2: RawArg) -> RawRet {
+    let a0 = a0.bits();
+    let a1 = a1.bits();
+    let a2 = a2.bits();
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64) -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1, a2) })
         }
-    };
+        RetShape::I32 => {
+            let f: unsafe extern "C" fn(i64, i64, i64) -> i32 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1, a2) as i64 })
+        }
+        RetShape::F64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64) -> f64 = unsafe { std::mem::transmute(base) };
+            RawRet::F(unsafe { f(a0, a1, a2) })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn(i64, i64, i64) = unsafe { std::mem::transmute(base) };
+            unsafe { f(a0, a1, a2) };
+            RawRet::V
+        }
+    }
 }
 
-macro_rules! arity3 {
-    ($base:expr, $vals:expr, $ret:expr, $pts:expr) => {
-        match ($pts[0], $pts[1], $pts[2], $ret) {
-            (Shape::I64, Shape::I64, Shape::I64, r) => emit_arm!($base, r; [i64, cval_i(&$vals[0]), i64, cval_i(&$vals[1]), i64, cval_i(&$vals[2])]),
-            (Shape::I64, Shape::I64, Shape::F64, r) => emit_arm!($base, r; [i64, cval_i(&$vals[0]), i64, cval_i(&$vals[1]), f64, cval_f(&$vals[2])]),
-            (Shape::I64, Shape::F64, Shape::I64, r) => emit_arm!($base, r; [i64, cval_i(&$vals[0]), f64, cval_f(&$vals[1]), i64, cval_i(&$vals[2])]),
-            (Shape::I64, Shape::F64, Shape::F64, r) => emit_arm!($base, r; [i64, cval_i(&$vals[0]), f64, cval_f(&$vals[1]), f64, cval_f(&$vals[2])]),
-            (Shape::F64, Shape::I64, Shape::I64, r) => emit_arm!($base, r; [f64, cval_f(&$vals[0]), i64, cval_i(&$vals[1]), i64, cval_i(&$vals[2])]),
-            (Shape::F64, Shape::I64, Shape::F64, r) => emit_arm!($base, r; [f64, cval_f(&$vals[0]), i64, cval_i(&$vals[1]), f64, cval_f(&$vals[2])]),
-            (Shape::F64, Shape::F64, Shape::I64, r) => emit_arm!($base, r; [f64, cval_f(&$vals[0]), f64, cval_f(&$vals[1]), i64, cval_i(&$vals[2])]),
-            (Shape::F64, Shape::F64, Shape::F64, r) => emit_arm!($base, r; [f64, cval_f(&$vals[0]), f64, cval_f(&$vals[1]), f64, cval_f(&$vals[2])]),
+fn call_typed_4(base: usize, ret: RetShape, a0: RawArg, a1: RawArg, a2: RawArg, a3: RawArg) -> RawRet {
+    let a0 = a0.bits();
+    let a1 = a1.bits();
+    let a2 = a2.bits();
+    let a3 = a3.bits();
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64) -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1, a2, a3) })
         }
-    };
+        RetShape::I32 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64) -> i32 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1, a2, a3) as i64 })
+        }
+        RetShape::F64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64) -> f64 = unsafe { std::mem::transmute(base) };
+            RawRet::F(unsafe { f(a0, a1, a2, a3) })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64) = unsafe { std::mem::transmute(base) };
+            unsafe { f(a0, a1, a2, a3) };
+            RawRet::V
+        }
+    }
 }
 
-macro_rules! arity4 {
-    ($base:expr, $vals:expr, $ret:expr, $pts:expr) => {
-        match ($pts[0], $pts[1], $pts[2], $pts[3], $ret) {
-            (Shape::I64, Shape::I64, Shape::I64, Shape::I64, r) => emit_arm!($base, r; [i64, cval_i(&$vals[0]), i64, cval_i(&$vals[1]), i64, cval_i(&$vals[2]), i64, cval_i(&$vals[3])]),
-            (Shape::I64, Shape::I64, Shape::I64, Shape::F64, r) => emit_arm!($base, r; [i64, cval_i(&$vals[0]), i64, cval_i(&$vals[1]), i64, cval_i(&$vals[2]), f64, cval_f(&$vals[3])]),
-            (Shape::I64, Shape::I64, Shape::F64, Shape::I64, r) => emit_arm!($base, r; [i64, cval_i(&$vals[0]), i64, cval_i(&$vals[1]), f64, cval_f(&$vals[2]), i64, cval_i(&$vals[3])]),
-            (Shape::I64, Shape::I64, Shape::F64, Shape::F64, r) => emit_arm!($base, r; [i64, cval_i(&$vals[0]), i64, cval_i(&$vals[1]), f64, cval_f(&$vals[2]), f64, cval_f(&$vals[3])]),
-            (Shape::I64, Shape::F64, Shape::I64, Shape::I64, r) => emit_arm!($base, r; [i64, cval_i(&$vals[0]), f64, cval_f(&$vals[1]), i64, cval_i(&$vals[2]), i64, cval_i(&$vals[3])]),
-            (Shape::I64, Shape::F64, Shape::I64, Shape::F64, r) => emit_arm!($base, r; [i64, cval_i(&$vals[0]), f64, cval_f(&$vals[1]), i64, cval_i(&$vals[2]), f64, cval_f(&$vals[3])]),
-            (Shape::I64, Shape::F64, Shape::F64, Shape::I64, r) => emit_arm!($base, r; [i64, cval_i(&$vals[0]), f64, cval_f(&$vals[1]), f64, cval_f(&$vals[2]), i64, cval_i(&$vals[3])]),
-            (Shape::I64, Shape::F64, Shape::F64, Shape::F64, r) => emit_arm!($base, r; [i64, cval_i(&$vals[0]), f64, cval_f(&$vals[1]), f64, cval_f(&$vals[2]), f64, cval_f(&$vals[3])]),
-            (Shape::F64, Shape::I64, Shape::I64, Shape::I64, r) => emit_arm!($base, r; [f64, cval_f(&$vals[0]), i64, cval_i(&$vals[1]), i64, cval_i(&$vals[2]), i64, cval_i(&$vals[3])]),
-            (Shape::F64, Shape::I64, Shape::I64, Shape::F64, r) => emit_arm!($base, r; [f64, cval_f(&$vals[0]), i64, cval_i(&$vals[1]), i64, cval_i(&$vals[2]), f64, cval_f(&$vals[3])]),
-            (Shape::F64, Shape::I64, Shape::F64, Shape::I64, r) => emit_arm!($base, r; [f64, cval_f(&$vals[0]), i64, cval_i(&$vals[1]), f64, cval_f(&$vals[2]), i64, cval_i(&$vals[3])]),
-            (Shape::F64, Shape::I64, Shape::F64, Shape::F64, r) => emit_arm!($base, r; [f64, cval_f(&$vals[0]), i64, cval_i(&$vals[1]), f64, cval_f(&$vals[2]), f64, cval_f(&$vals[3])]),
-            (Shape::F64, Shape::F64, Shape::I64, Shape::I64, r) => emit_arm!($base, r; [f64, cval_f(&$vals[0]), f64, cval_f(&$vals[1]), i64, cval_i(&$vals[2]), i64, cval_i(&$vals[3])]),
-            (Shape::F64, Shape::F64, Shape::I64, Shape::F64, r) => emit_arm!($base, r; [f64, cval_f(&$vals[0]), f64, cval_f(&$vals[1]), i64, cval_i(&$vals[2]), f64, cval_f(&$vals[3])]),
-            (Shape::F64, Shape::F64, Shape::F64, Shape::I64, r) => emit_arm!($base, r; [f64, cval_f(&$vals[0]), f64, cval_f(&$vals[1]), f64, cval_f(&$vals[2]), i64, cval_i(&$vals[3])]),
-            (Shape::F64, Shape::F64, Shape::F64, Shape::F64, r) => emit_arm!($base, r; [f64, cval_f(&$vals[0]), f64, cval_f(&$vals[1]), f64, cval_f(&$vals[2]), f64, cval_f(&$vals[3])]),
+fn call_typed_5(base: usize, ret: RetShape, a0: RawArg, a1: RawArg, a2: RawArg, a3: RawArg, a4: RawArg) -> RawRet {
+    let a0 = a0.bits();
+    let a1 = a1.bits();
+    let a2 = a2.bits();
+    let a3 = a3.bits();
+    let a4 = a4.bits();
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64) -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1, a2, a3, a4) })
         }
-    };
+        RetShape::F64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64) -> f64 = unsafe { std::mem::transmute(base) };
+            RawRet::F(unsafe { f(a0, a1, a2, a3, a4) })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64) = unsafe { std::mem::transmute(base) };
+            unsafe { f(a0, a1, a2, a3, a4) };
+            RawRet::V
+        }
+        _ => panic!("FFI: RetShape::I32 con 5 args no soportado"),
+    }
+}
+
+fn call_typed_6(base: usize, ret: RetShape, a0: RawArg, a1: RawArg, a2: RawArg, a3: RawArg, a4: RawArg, a5: RawArg) -> RawRet {
+    let a0 = a0.bits();
+    let a1 = a1.bits();
+    let a2 = a2.bits();
+    let a3 = a3.bits();
+    let a4 = a4.bits();
+    let a5 = a5.bits();
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64) -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1, a2, a3, a4, a5) })
+        }
+        RetShape::F64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64) -> f64 = unsafe { std::mem::transmute(base) };
+            RawRet::F(unsafe { f(a0, a1, a2, a3, a4, a5) })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64) = unsafe { std::mem::transmute(base) };
+            unsafe { f(a0, a1, a2, a3, a4, a5) };
+            RawRet::V
+        }
+        _ => panic!("FFI: RetShape::I32 con 6 args no soportado"),
+    }
+}
+
+fn call_typed_7(base: usize, ret: RetShape, a0: RawArg, a1: RawArg, a2: RawArg, a3: RawArg, a4: RawArg, a5: RawArg, a6: RawArg) -> RawRet {
+    let a0 = a0.bits();
+    let a1 = a1.bits();
+    let a2 = a2.bits();
+    let a3 = a3.bits();
+    let a4 = a4.bits();
+    let a5 = a5.bits();
+    let a6 = a6.bits();
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64) -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1, a2, a3, a4, a5, a6) })
+        }
+        RetShape::F64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64) -> f64 = unsafe { std::mem::transmute(base) };
+            RawRet::F(unsafe { f(a0, a1, a2, a3, a4, a5, a6) })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64) = unsafe { std::mem::transmute(base) };
+            unsafe { f(a0, a1, a2, a3, a4, a5, a6) };
+            RawRet::V
+        }
+        _ => panic!("FFI: RetShape::I32 con 7 args no soportado"),
+    }
+}
+
+fn call_typed_8(base: usize, ret: RetShape, a0: RawArg, a1: RawArg, a2: RawArg, a3: RawArg, a4: RawArg, a5: RawArg, a6: RawArg, a7: RawArg) -> RawRet {
+    let a0 = a0.bits();
+    let a1 = a1.bits();
+    let a2 = a2.bits();
+    let a3 = a3.bits();
+    let a4 = a4.bits();
+    let a5 = a5.bits();
+    let a6 = a6.bits();
+    let a7 = a7.bits();
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64) -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7) })
+        }
+        RetShape::F64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64) -> f64 = unsafe { std::mem::transmute(base) };
+            RawRet::F(unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7) })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64) = unsafe { std::mem::transmute(base) };
+            unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7) };
+            RawRet::V
+        }
+        _ => panic!("FFI: RetShape::I32 con 8 args no soportado"),
+    }
+}
+
+fn call_typed_9(base: usize, ret: RetShape, a0: RawArg, a1: RawArg, a2: RawArg, a3: RawArg, a4: RawArg, a5: RawArg, a6: RawArg, a7: RawArg, a8: RawArg) -> RawRet {
+    let a0 = a0.bits(); let a1 = a1.bits();
+    let a2 = a2.bits(); let a3 = a3.bits();
+    let a4 = a4.bits(); let a5 = a5.bits();
+    let a6 = a6.bits(); let a7 = a7.bits();
+    let a8 = a8.bits();
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7, a8) })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64, i64) = unsafe { std::mem::transmute(base) };
+            unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7, a8) };
+            RawRet::V
+        }
+        _ => panic!("FFI: RetShape::F64/I32 con 9 args no soportado"),
+    }
+}
+
+fn call_typed_10(base: usize, ret: RetShape, a0: RawArg, a1: RawArg, a2: RawArg, a3: RawArg, a4: RawArg, a5: RawArg, a6: RawArg, a7: RawArg, a8: RawArg, a9: RawArg) -> RawRet {
+    let a0 = a0.bits(); let a1 = a1.bits();
+    let a2 = a2.bits(); let a3 = a3.bits();
+    let a4 = a4.bits(); let a5 = a5.bits();
+    let a6 = a6.bits(); let a7 = a7.bits();
+    let a8 = a8.bits(); let a9 = a9.bits();
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9) })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = unsafe { std::mem::transmute(base) };
+            unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9) };
+            RawRet::V
+        }
+        _ => panic!("FFI: RetShape::F64/I32 con 10 args no soportado"),
+    }
+}
+
+fn call_typed_11(base: usize, ret: RetShape, a0: RawArg, a1: RawArg, a2: RawArg, a3: RawArg, a4: RawArg, a5: RawArg, a6: RawArg, a7: RawArg, a8: RawArg, a9: RawArg, a10: RawArg) -> RawRet {
+    let a0 = a0.bits(); let a1 = a1.bits();
+    let a2 = a2.bits(); let a3 = a3.bits();
+    let a4 = a4.bits(); let a5 = a5.bits();
+    let a6 = a6.bits(); let a7 = a7.bits();
+    let a8 = a8.bits(); let a9 = a9.bits();
+    let a10 = a10.bits();
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10) })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = unsafe { std::mem::transmute(base) };
+            unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10) };
+            RawRet::V
+        }
+        _ => panic!("FFI: RetShape::F64/I32 con 11 args no soportado"),
+    }
+}
+
+fn call_typed_12(base: usize, ret: RetShape, a0: RawArg, a1: RawArg, a2: RawArg, a3: RawArg, a4: RawArg, a5: RawArg, a6: RawArg, a7: RawArg, a8: RawArg, a9: RawArg, a10: RawArg, a11: RawArg) -> RawRet {
+    let a0 = a0.bits(); let a1 = a1.bits();
+    let a2 = a2.bits(); let a3 = a3.bits();
+    let a4 = a4.bits(); let a5 = a5.bits();
+    let a6 = a6.bits(); let a7 = a7.bits();
+    let a8 = a8.bits(); let a9 = a9.bits();
+    let a10 = a10.bits(); let a11 = a11.bits();
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11) })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = unsafe { std::mem::transmute(base) };
+            unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11) };
+            RawRet::V
+        }
+        _ => panic!("FFI: RetShape::F64/I32 con 12 args no soportado"),
+    }
+}
+
+fn call_typed_13(base: usize, ret: RetShape, a0: RawArg, a1: RawArg, a2: RawArg, a3: RawArg, a4: RawArg, a5: RawArg, a6: RawArg, a7: RawArg, a8: RawArg, a9: RawArg, a10: RawArg, a11: RawArg, a12: RawArg) -> RawRet {
+    let a0 = a0.bits(); let a1 = a1.bits();
+    let a2 = a2.bits(); let a3 = a3.bits();
+    let a4 = a4.bits(); let a5 = a5.bits();
+    let a6 = a6.bits(); let a7 = a7.bits();
+    let a8 = a8.bits(); let a9 = a9.bits();
+    let a10 = a10.bits(); let a11 = a11.bits();
+    let a12 = a12.bits();
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12) })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = unsafe { std::mem::transmute(base) };
+            unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12) };
+            RawRet::V
+        }
+        _ => panic!("FFI: RetShape::F64/I32 con 13 args no soportado"),
+    }
+}
+
+fn call_typed_14(base: usize, ret: RetShape, a0: RawArg, a1: RawArg, a2: RawArg, a3: RawArg, a4: RawArg, a5: RawArg, a6: RawArg, a7: RawArg, a8: RawArg, a9: RawArg, a10: RawArg, a11: RawArg, a12: RawArg, a13: RawArg) -> RawRet {
+    let a0 = a0.bits(); let a1 = a1.bits();
+    let a2 = a2.bits(); let a3 = a3.bits();
+    let a4 = a4.bits(); let a5 = a5.bits();
+    let a6 = a6.bits(); let a7 = a7.bits();
+    let a8 = a8.bits(); let a9 = a9.bits();
+    let a10 = a10.bits(); let a11 = a11.bits();
+    let a12 = a12.bits(); let a13 = a13.bits();
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13) })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = unsafe { std::mem::transmute(base) };
+            unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13) };
+            RawRet::V
+        }
+        _ => panic!("FFI: RetShape::F64/I32 con 14 args no soportado"),
+    }
+}
+
+fn call_typed_15(base: usize, ret: RetShape, a0: RawArg, a1: RawArg, a2: RawArg, a3: RawArg, a4: RawArg, a5: RawArg, a6: RawArg, a7: RawArg, a8: RawArg, a9: RawArg, a10: RawArg, a11: RawArg, a12: RawArg, a13: RawArg, a14: RawArg) -> RawRet {
+    let a0 = a0.bits(); let a1 = a1.bits();
+    let a2 = a2.bits(); let a3 = a3.bits();
+    let a4 = a4.bits(); let a5 = a5.bits();
+    let a6 = a6.bits(); let a7 = a7.bits();
+    let a8 = a8.bits(); let a9 = a9.bits();
+    let a10 = a10.bits(); let a11 = a11.bits();
+    let a12 = a12.bits(); let a13 = a13.bits();
+    let a14 = a14.bits();
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14) })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = unsafe { std::mem::transmute(base) };
+            unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14) };
+            RawRet::V
+        }
+        _ => panic!("FFI: RetShape::F64/I32 con 15 args no soportado"),
+    }
+}
+
+fn call_typed_16(base: usize, ret: RetShape, a0: RawArg, a1: RawArg, a2: RawArg, a3: RawArg, a4: RawArg, a5: RawArg, a6: RawArg, a7: RawArg, a8: RawArg, a9: RawArg, a10: RawArg, a11: RawArg, a12: RawArg, a13: RawArg, a14: RawArg, a15: RawArg) -> RawRet {
+    let a0 = a0.bits(); let a1 = a1.bits();
+    let a2 = a2.bits(); let a3 = a3.bits();
+    let a4 = a4.bits(); let a5 = a5.bits();
+    let a6 = a6.bits(); let a7 = a7.bits();
+    let a8 = a8.bits(); let a9 = a9.bits();
+    let a10 = a10.bits(); let a11 = a11.bits();
+    let a12 = a12.bits(); let a13 = a13.bits();
+    let a14 = a14.bits(); let a15 = a15.bits();
+    match ret {
+        RetShape::I64 => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) -> i64 = unsafe { std::mem::transmute(base) };
+            RawRet::I(unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15) })
+        }
+        RetShape::Void => {
+            let f: unsafe extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = unsafe { std::mem::transmute(base) };
+            unsafe { f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15) };
+            RawRet::V
+        }
+        _ => panic!("FFI: RetShape::F64/I32 con 16 args no soportado"),
+    }
 }
 
 // ── DynamicBackend ──────────────────────────────────────────────────────────
@@ -528,10 +891,10 @@ impl NativeBackend for DynamicBackend {
         param_types: &[NativeType],
         ret: NativeType,
     ) -> ClsResult<Value> {
-        if args.len() > 4 {
+        if args.len() > MAX_NATIVE_ARGS {
             return Err(ClsError::RuntimeError(format!(
-                "La función nativa '{}' tiene {} argumentos: el dispatcher de extension soporta hasta 4 (extender los macros arityN!)",
-                symbol, args.len()
+                "La función nativa '{}' tiene {} argumentos: el dispatcher de extension soporta hasta {}. Para más args, empaquétalos en un struct y pasa un puntero.",
+                symbol, args.len(), MAX_NATIVE_ARGS
             )));
         }
         let resolved = resolve_library(library);
@@ -570,25 +933,45 @@ impl NativeBackend for DynamicBackend {
         let sym = get_symbol(lib, &resolved, symbol)?;
         let base = sym.addr;
 
-        // Convertir args -> registros; los CString/layouts viven en buffers durante la llamada.
+        // Convertir args -> RawArg (i64 con bits correctos, f64 via to_bits).
+        // Los CString/layouts viven en buffers/keepalives durante la llamada.
         let mut buffers: Vec<CString> = Vec::new();
         let mut keepalives: Vec<LayoutKeepAlive> = Vec::new();
-        let mut cvals: Vec<CVal> = Vec::with_capacity(args.len());
-        let mut shapes: Vec<Shape> = Vec::with_capacity(args.len());
+        let mut raw_args: Vec<RawArg> = Vec::with_capacity(args.len());
         for (i, arg) in args.iter().enumerate() {
             let nt = param_types.get(i).cloned().unwrap_or(NativeType::Any);
-            cvals.push(conv_arg(&nt, arg, &mut buffers, &mut keepalives)?);
-            shapes.push(arg_shape(&nt)?);
+            let cval = conv_arg(&nt, arg, &mut buffers, &mut keepalives)?;
+            let shape = arg_shape(&nt)?;
+            raw_args.push(match shape {
+                Shape::I64 => RawArg::I(cval_i(&cval)),
+                Shape::F64 => RawArg::F(cval_f(&cval)),
+            });
         }
         let rshape = ret_shape(&ret)?;
 
+        // Dispatch por cantidad (N lineal, no 2^N). Usamos un match runtime
+        // (no macro) porque Rust estable no permite forward-ear un literal
+        // numerico entre macros. El costo es 1 comparacion de usize, mucho
+        // menor que el dispatch 2^N anterior.
         let raw: RawRet = match args.len() {
-            0 => arity0!(base, rshape),
-            1 => arity1!(base, cvals, rshape, shapes),
-            2 => arity2!(base, cvals, rshape, shapes),
-            3 => arity3!(base, cvals, rshape, shapes),
-            4 => arity4!(base, cvals, rshape, shapes),
-            _ => unreachable!(),
+            0 => call_typed_0(base, rshape),
+            1 => call_typed_1(base, rshape, raw_args[0]),
+            2 => call_typed_2(base, rshape, raw_args[0], raw_args[1]),
+            3 => call_typed_3(base, rshape, raw_args[0], raw_args[1], raw_args[2]),
+            4 => call_typed_4(base, rshape, raw_args[0], raw_args[1], raw_args[2], raw_args[3]),
+            5 => call_typed_5(base, rshape, raw_args[0], raw_args[1], raw_args[2], raw_args[3], raw_args[4]),
+            6 => call_typed_6(base, rshape, raw_args[0], raw_args[1], raw_args[2], raw_args[3], raw_args[4], raw_args[5]),
+            7 => call_typed_7(base, rshape, raw_args[0], raw_args[1], raw_args[2], raw_args[3], raw_args[4], raw_args[5], raw_args[6]),
+            8 => call_typed_8(base, rshape, raw_args[0], raw_args[1], raw_args[2], raw_args[3], raw_args[4], raw_args[5], raw_args[6], raw_args[7]),
+            9 => call_typed_9(base, rshape, raw_args[0], raw_args[1], raw_args[2], raw_args[3], raw_args[4], raw_args[5], raw_args[6], raw_args[7], raw_args[8]),
+            10 => call_typed_10(base, rshape, raw_args[0], raw_args[1], raw_args[2], raw_args[3], raw_args[4], raw_args[5], raw_args[6], raw_args[7], raw_args[8], raw_args[9]),
+            11 => call_typed_11(base, rshape, raw_args[0], raw_args[1], raw_args[2], raw_args[3], raw_args[4], raw_args[5], raw_args[6], raw_args[7], raw_args[8], raw_args[9], raw_args[10]),
+            12 => call_typed_12(base, rshape, raw_args[0], raw_args[1], raw_args[2], raw_args[3], raw_args[4], raw_args[5], raw_args[6], raw_args[7], raw_args[8], raw_args[9], raw_args[10], raw_args[11]),
+            13 => call_typed_13(base, rshape, raw_args[0], raw_args[1], raw_args[2], raw_args[3], raw_args[4], raw_args[5], raw_args[6], raw_args[7], raw_args[8], raw_args[9], raw_args[10], raw_args[11], raw_args[12]),
+            14 => call_typed_14(base, rshape, raw_args[0], raw_args[1], raw_args[2], raw_args[3], raw_args[4], raw_args[5], raw_args[6], raw_args[7], raw_args[8], raw_args[9], raw_args[10], raw_args[11], raw_args[12], raw_args[13]),
+            15 => call_typed_15(base, rshape, raw_args[0], raw_args[1], raw_args[2], raw_args[3], raw_args[4], raw_args[5], raw_args[6], raw_args[7], raw_args[8], raw_args[9], raw_args[10], raw_args[11], raw_args[12], raw_args[13], raw_args[14]),
+            16 => call_typed_16(base, rshape, raw_args[0], raw_args[1], raw_args[2], raw_args[3], raw_args[4], raw_args[5], raw_args[6], raw_args[7], raw_args[8], raw_args[9], raw_args[10], raw_args[11], raw_args[12], raw_args[13], raw_args[14], raw_args[15]),
+            n => unreachable!("MAX_NATIVE_ARGS check ya filtra n > 16"),
         };
 
         conv_ret(raw, &ret)
