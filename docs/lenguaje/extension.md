@@ -127,8 +127,12 @@ nativa, sin recompilar el core), ver [extension-when.md](extension-when.md).
 
 ## Límites y mapeo de librerías
 
-- Hasta **4 argumentos** por función nativa (dispatcher `arity0`–`arity4`;
-  más de 4 -> error claro).
+- Hasta **16 argumentos** por función nativa (dispatcher dinámico
+  `call_typed_0..call_typed_16`; más de 16 -> error claro sugiriendo
+  empaquetar en un struct). Ver
+  [decisión 002](../decisiones/002-ffi-arity-limit.md) para el
+  rationale (por qué 16, por qué no ilimitado, por qué no matches
+  estáticos 2^N).
 - Mapeo de nombres de librería por SO:
 
 | Nombre | Windows | Linux | macOS |
