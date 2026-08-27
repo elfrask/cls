@@ -8,12 +8,12 @@ ramas inactivas crean funciones "fantasma".
 ## Sintaxis
 
 ```clx
-when os: windows {
+when (os: windows) {
     extension "msvcrt.dll" as C { ... };
 };
 
-when os: linux { ... };
-when arch: arm64 { ... };
+when (os: linux) { ... };
+when (arch: arm64) { ... };
 ```
 
 - Prefijos: `os:`, `arch:`, `abi:`, `platform:`, `target:` (tripla
@@ -21,10 +21,14 @@ when arch: arm64 { ... };
 - Combinaciones con `and` / `or` / `not` y paréntesis:
 
 ```clx
-when os: none and arch: arm64 {
+when (os: none) and (arch: arm64) {
     # implementación nativa
 };
 ```
+
+Para un ejemplo funcional con `extension` (sockets TCP portables
+vía `ws2_32.dll` / `libc.so.6` / `libSystem.B.dylib`), ver
+[extension-when.md](extension-when.md).
 
 - Nombres simples: un SO conocido (`windows`, `linux`, `macos`, `none`,
   `bare-metal`, `freebsd`) o una arquitectura conocida (`x86_64`, `arm64`,

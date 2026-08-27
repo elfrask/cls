@@ -122,6 +122,9 @@ LoadLibrary); los otros kinds requieren un backend registrado por el nodo
 (`Interpreter::set_native_backend` por kind); sin él, el error indica que el
 nodo no registró backend para el tipo.
 
+Para el patrón `when` + `extension` (selección por SO de la librería
+nativa, sin recompilar el core), ver [extension-when.md](extension-when.md).
+
 ## Límites y mapeo de librerías
 
 - Hasta **4 argumentos** por función nativa (dispatcher `arity0`–`arity4`;

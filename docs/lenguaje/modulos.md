@@ -100,6 +100,11 @@ El `ModuleResolver` del runtime consulta en orden:
    6. `~/.cls/modules/{nombre}/mod.clsx` (globales sin versión)
 4. **Error** - `Módulo 'X' no encontrado`.
 
+Para módulos que requieren bindings nativos del SO (sockets, threads,
+ficheros de bajo nivel, etc.), ver [extension-when.md](extension-when.md):
+el patrón `when` + `extension` permite declarar esos bindings en un
+`.clsx` sin necesidad de recompilar cls-core o cls-jit.
+
 ## Módulos en el JIT
 
 El JIT **aplana** los imports: compila el entry y todos sus módulos en **un
