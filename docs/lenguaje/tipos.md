@@ -23,7 +23,7 @@ y `tests/test-types.clsx`.
 
 Acrónimos numéricos: `i32`, `i64`, `i16`, `i8`, `f32`, `f64`.
 
-Conversión implícita: `Int -> Float`.
+Conversión implícita: `Int -> Float` (ver [decisión 001](../decisiones/001-no-implicit-coercion.md)). Es la única coerción permitida en CLS 2.0; todo otro mismatch de tipos es error en `clx check`.
 
 ## Arrays
 

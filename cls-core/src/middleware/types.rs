@@ -80,7 +80,9 @@ impl Type {
             // Tipos idénticos
             (a, b) if a == b => true,
 
-            // Enteros a flotantes (implícito)
+            // Widening numérico Int→Float: única coerción implícita permitida.
+            // Ver docs/decisiones/001-no-implicit-coercion.md.
+            // NO extender a otros pares de tipos sin actualizar la decisión.
             (Type::Int, Type::Float) => true,
 
             // Alias de enteros
