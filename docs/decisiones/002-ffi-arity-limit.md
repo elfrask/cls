@@ -100,28 +100,22 @@ que el match 2^N anterior.
 
 ## Limitaciones conocidas (no resueltas en este commit)
 
-1. **El emisor no propaga target a imports de `extension` dentro de
-   `when`**. Si declaras:
-   ```clx
-   when (os: windows) {
-       extension "ws2_32.dll" as C { function socket(...) -> CInt; };
-   }
-   ```
-   el emisor actual **no emite la rama que matchea el target** (bug
-   pre-existente, no introducido por este commit). El typeck pasa,
-   pero el WASM emitido no incluye el import, y la llamada falla con
-   "símbolo no encontrado". Workaround temporal: declarar las
-   extensiones **fuera** de `when` y aceptar que el linker carga la
-   librería del host. Fix en commit separado (refactor del emisor para
-   propagar target a los imports).
-
-2. **`RetShape::I32` con 5+ args panickea** (no soportado). El C de 32
+1. **`RetShape::I32` con 5+ args panickea** (no soportado). El C de 32
    bits (`int`) es raro en APIs modernas; si se necesita, el workaround
    es usar `CInt` (que se traduce a i32 en WASM pero i64 en el host)
    o reordenar para que la firma C lo exponga como i64.
 
-3. **f32 (`CFloat`) no soportado** por el dispatcher. El typeck lo
+2. **f32 (`CFloat`) no soportado** por el dispatcher. El typeck lo
    rechaza. Usar `CDouble`.
+
+> **Resuelto (dev-2)**: el bug previo donde el emisor no propagaba target
+> a los imports de `extension` dentro de `when` (documentado en la
+> versión inicial de esta decisión) está corregido. Ahora el
+> `Engine::effective_statements`, el `NameResolver` y el `TypeChecker`
+> procesan solo la rama activa del `when` (filtrada por el target del
+> host o el target pasado al checker via `with_target`). El patrón
+> canónico `when (os: windows) { extension "ws2_32.dll" as C { ... } }`
+> funciona end-to-end. Ver commit posterior a `124edb8`.
 
 ## Reversibilidad
 

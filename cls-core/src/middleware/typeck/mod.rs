@@ -72,10 +72,20 @@ pub struct TypeChecker {
     /// recursión). `define_decl` no los cuenta como colisión (son el mismo
     /// símbolo del mismo módulo, re-chequeado en la pasada principal).
     pre_registered: std::collections::HashSet<String>,
+    /// Target del entorno actual. Usado por las directivas `when` en
+    /// compile-time: solo la rama que matchea este target se procesa (mismo
+    /// comportamiento que el emisor WASM y el resolver). Default: el host.
+    target: Target,
 }
 
 impl TypeChecker {
     pub fn new(config: TypesConfig) -> Self {
+        Self::with_target(config, Target::host())
+    }
+
+    /// Construye un typeck para un target especifico (usado por
+    /// `clx check --target <tripla>` para simular el entorno).
+    pub fn with_target(config: TypesConfig, target: Target) -> Self {
         let mut tc = Self {
             config,
             diagnostics: Vec::new(),
@@ -93,6 +103,7 @@ impl TypeChecker {
             import_aliases: HashMap::new(),
             const_symbols: std::collections::HashSet::new(),
             pre_registered: std::collections::HashSet::new(),
+            target,
         };
         // Registrar funciones built-in (core intrinsics) como CONSTANTES (no
         // redefinibles): print, input, args, toString, int, float, str, bool,

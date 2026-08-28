@@ -120,11 +120,18 @@ impl TypeChecker {
             Statement::FromImport(fi) => self.check_from_import(fi),
             Statement::Include(inc) => self.check_include(inc),
             Statement::When(w) => {
-                // Cada rama se chequea en su propio scope (símbolos condicionales).
+                // `when` es compile-time: solo se procesa la rama que matchea
+                // el target del host. Antes del fix (dev-2) se iteraban TODAS
+                // las ramas con un scope local cada una, lo que hacia que las
+                // declaraciones globales (extension/structure/enum) dentro
+                // del `when` se perdieran al poppear el scope. Esto invalidaba
+                // el patron canonico `when (os: windows) { extension "ws2_32.dll"
+                // as C { ... } }`. Ver extension-when.md y decision 002.
                 for branch in &w.branches {
-                    self.push_scope();
-                    self.check_block(&branch.block);
-                    self.pop_scope();
+                    if self.target.matches(&branch.cond) {
+                        self.check_block(&branch.block);
+                        break;
+                    }
                 }
                 Type::Void
             }

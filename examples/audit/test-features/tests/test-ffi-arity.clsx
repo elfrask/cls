@@ -1,27 +1,34 @@
-# test-ffi-arity.clsx - Test de regresion del limite de aridad del FFI.
-# Migracion dev-2: el limite de 4 args se elimino y se subio a 16 con
-# dispatch dinamico. Ver docs/decisiones/002-ffi-arity-limit.md.
-# El typeck + el emisor + el runtime aceptan 0..16 args. Para >16
-# args, el runtime emite error claro sugiriendo empaquetar en struct.
+# test-ffi-arity.clsx - Test del FFI con target propagation.
+# Migracion dev-2: el emisor propaga target a imports de `extension`
+# dentro de `when` (antes del fix, los statements compile-time
+# dentro de `when` se perdian, invalidando el patron canonico
+# `when (os: windows) { extension "ws2_32.dll" as C { ... } }`).
+# Ver decision 002-ffi-arity-limit.md y extension-when.md.
 
-# Misma forma que extension-demo.clsx (que SI compila y ejecuta). El
-# emisor actual NO propaga el target a los imports de extension, asi
-# que la version `when`-envuelta de este test no funciona todavia
-# (ver docs/decisiones/002-ffi-arity-limit.md, seccion "Limitaciones").
-
-extension "msvcrt.dll" as C {
-    function strlen(s: CString) -> CInt;
-    function atoi(s: CString) -> CInt;
+when (os: windows) {
+    extension "msvcrt.dll" as C {
+        function strlen(s: CString) -> CInt;
+        function atoi(s: CString) -> CInt;
+    };
 };
 
-extension "libc.so.6" as C {
-    function strlen(s: CString) -> CInt;
-    function atoi(s: CString) -> CInt;
+when (os: linux) {
+    extension "libc.so.6" as C {
+        function strlen(s: CString) -> CInt;
+        function atoi(s: CString) -> CInt;
+    };
 };
 
-# Validacion 1: 1 arg funciona.
-# Validacion 2: el runtime NO panickea con 5+ args: emite error claro
-# ("...soporta hasta 16...") en vez de `unreachable!()`.
+when (os: macos) {
+    extension "libSystem.B.dylib" as C {
+        function strlen(s: CString) -> CInt;
+        function atoi(s: CString) -> CInt;
+    };
+};
+
+# Verificacion: el emisor propaga el target y solo emite la rama que
+# matchea. Si llegamos aca, el `when`+`extension` funciona (antes del
+# fix, strlen/atoi eran "Variable no definida").
 function main(args: String[]) -> int {
     print("strlen('hola'):", strlen("hola"));
     print("atoi('42'):", atoi("42"));

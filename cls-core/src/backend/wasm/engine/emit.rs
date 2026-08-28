@@ -4,13 +4,42 @@ use super::*;
 
 impl<'a> Engine<'a> {
 
+    /// Itera los statements efectivos de un módulo respetando `when`: solo
+    /// la rama que matchea `self.target` se considera activa, y se procesa
+    /// recursivamente (un when puede anidar otro when).
+    ///
+    /// Antes del fix (dev-2), los sitios que recolectaban declaraciones
+    /// compile-time (enums, structures, classes, extensions, static props)
+    /// iteraban `&module.statements` directamente, perdiendo cualquier
+    /// statement dentro de un `when`. Esto invalidaba el patrón canónico
+    /// `when (os: windows) { extension "ws2_32.dll" as C { ... } }` (ver
+    /// `docs/lenguaje/extension-when.md` y `agent-context/dev2/09-FFI-DYLINK-FUTURE.md`).
+    pub(crate) fn effective_statements<'b>(&'a self, stmts: &'b [Statement]) -> Vec<&'b Statement> {
+        let mut out = Vec::new();
+        Self::collect_effective(&self.target, stmts, &mut out);
+        out
+    }
+
+    fn collect_effective<'b>(target: &Target, stmts: &'b [Statement], out: &mut Vec<&'b Statement>) {
+        for stmt in stmts {
+            match stmt {
+                Statement::When(w) => {
+                    if let Some(branch) = w.branches.iter().find(|b| target.matches(&b.cond)) {
+                        Self::collect_effective(target, &branch.block.statements, out);
+                    }
+                }
+                _ => out.push(stmt),
+            }
+        }
+    }
 
     pub(crate) fn emit(&mut self, module: &Module) -> ClsResult<Vec<u8>> {
         self.collect_functions(module)?;
 
         // Recolectar enums -> (def_id, variantes) para constantes `Nivel.Alto`.
+        // `when`-aware: respeta las ramas activas del target actual (dev-2 fix).
         let mut def_id = 0u32;
-        for stmt in &module.statements {
+        for stmt in self.effective_statements(&module.statements) {
             if let Statement::EnumDecl(e) = stmt {
                 self.enum_defs
                     .insert(e.name.clone(), (def_id, e.variants.clone()));
@@ -19,7 +48,7 @@ impl<'a> Engine<'a> {
         }
         // Recolectar structures -> offsets de campos (layout [def_id][len][campos]).
         let mut sdef_id = 0u32;
-        for stmt in &module.statements {
+        for stmt in self.effective_statements(&module.statements) {
             if let Statement::StructureDecl(s) = stmt {
                 let mut fields = Vec::new();
                 let mut offsets = Vec::new();
@@ -44,8 +73,9 @@ impl<'a> Engine<'a> {
             }
         }
         // Recolectar clases -> class_defs (layout de objeto) + declarar métodos/ctor.
+        // `when`-aware (dev-2 fix).
         let mut next_class_id = 0u32;
-        for stmt in &module.statements {
+        for stmt in self.effective_statements(&module.statements) {
             if let Statement::ClassDecl(c) = stmt {
                 let mut fields = Vec::new();
                 let mut methods = Vec::new();
@@ -145,7 +175,8 @@ impl<'a> Engine<'a> {
             }
         }
         // Recolectar extensiones -> imports `env.<sym>__<sig>@<lib>`.
-        for stmt in &module.statements {
+        // `when`-aware: respeta las ramas activas (dev-2 fix).
+        for stmt in self.effective_statements(&module.statements) {
             if let Statement::Extension(e) = stmt {
                 for d in &e.declarations {
                     if let NativeDecl::Function(f) = d {
@@ -407,7 +438,8 @@ impl<'a> Engine<'a> {
 
         // Campos estáticos de clase: cada `static var` -> un global WASM mutable
         // (accesible como `Clase.campo`). Se declaran tras los globals de usuario.
-        for stmt in &module.statements {
+        // `when`-aware (dev-2 fix).
+        for stmt in self.effective_statements(&module.statements) {
             if let Statement::ClassDecl(c) = stmt {
                 for member in &c.body {
                     if let ClassMember::Property(p) = member {

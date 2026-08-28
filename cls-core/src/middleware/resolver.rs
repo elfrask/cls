@@ -6,6 +6,10 @@ use std::collections::HashMap;
 pub struct NameResolver {
     scopes: Vec<Scope>,
     diagnostics: Vec<Diagnostic>,
+    /// Target del entorno actual. Usado para evaluar las directivas `when`
+    /// en compile-time: solo la rama que matchea este target se procesa
+    /// (mismo comportamiento que el emisor WASM en `effective_statements`).
+    target: Target,
 }
 
 impl NameResolver {
@@ -13,6 +17,17 @@ impl NameResolver {
         Self {
             scopes: vec![Scope::global()],
             diagnostics: Vec::new(),
+            target: Target::host(),
+        }
+    }
+
+    /// Construye un resolver para un target especifico (usado por
+    /// `clx check --target <tripla>` para simular el entorno).
+    pub fn with_target(target: Target) -> Self {
+        Self {
+            scopes: vec![Scope::global()],
+            diagnostics: Vec::new(),
+            target,
         }
     }
 
@@ -183,8 +198,18 @@ impl NameResolver {
                 // TODO: procesar include
             }
             Statement::When(w) => {
+                // `when` es compile-time: solo se procesa la rama que matchea
+                // el target del host. Antes del fix (dev-2) se iteraban TODAS
+                // las ramas y se poppeaban los scopes, lo que hacia que las
+                // declaraciones dentro de `when` (extension/structure/enum)
+                // se perdieran al salir del scope. Esto invalidaba el patron
+                // canonico `when (os: windows) { extension "ws2_32.dll" as C
+                // { ... } }`. Ver extension-when.md y decision 002.
                 for branch in &w.branches {
-                    self.resolve_block(&branch.block)?;
+                    if self.target.matches(&branch.cond) {
+                        self.resolve_block(&branch.block)?;
+                        break;
+                    }
                 }
             }
             Statement::StructureDecl(structure) => {
