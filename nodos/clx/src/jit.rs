@@ -27,7 +27,7 @@ impl cls_jit::ModuleIndexHook for ClxModuleIndexHook {
 /// Devuelve el exit code (0 = OK, 1 = error).
 pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i32 {
     let ctx = cls_jit::JitContext {
-        native_backend: Arc::new(crate::native::DynamicBackend),
+        native_backend: Arc::new(cls_runtime::DynamicBackend),
         module_index: Some(&ClxModuleIndexHook),
         host_intrinsics: &[],
         host_call_handler: None,

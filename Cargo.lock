@@ -231,6 +231,7 @@ name = "cls-runtime"
 version = "2.0.0"
 dependencies = [
  "cls-core",
+ "libloading",
  "serde",
  "serde_json",
  "sha2",
@@ -269,6 +270,7 @@ name = "clxr"
 version = "2.0.0"
 dependencies = [
  "cls-core",
+ "cls-jit",
  "cls-runtime",
  "serde_json",
  "zip",

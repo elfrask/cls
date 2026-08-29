@@ -1,4 +1,4 @@
-//! Backend nativo dinámico para la feature `extension` del nodo clx.
+//! Backend nativo dinámico para la feature `extension`.
 //!
 //! Resuelve símbolos por nombre en librerías del sistema (libloading / dlopen /
 //! LoadLibrary) -> el usuario final solo escribe CLS (`extension "lib" as C { ... }`),
@@ -14,10 +14,14 @@
 //! sobre tipos). Se reemplazo por un dispatch generico sobre N que acepta
 //! cualquier cantidad hasta MAX_NATIVE_ARGS. Ver
 //! `docs/decisiones/002-ffi-arity-limit.md`.
+//!
+//! Migracion dev-2 (Fase 6): este archivo se movio de `nodos/clx/src/native.rs`
+//! a `cls-runtime/src/native_backend.rs` para que `clxr` (y cualquier
+//! futuro nodo) pueda reusar el mismo backend FFI sin duplicar codigo.
 
-use cls_core::error::{ClsError, ClsResult};
-use cls_runtime::ffi::{NativeBackend, NativeType};
-use cls_runtime::value::Value;
+use crate::error::{ClsError, ClsResult};
+use crate::ffi::{NativeBackend, NativeType};
+use crate::value::Value;
 use libloading::Library;
 use std::ffi::CString;
 use std::os::raw::c_char;
@@ -84,7 +88,7 @@ fn get_symbol(lib: Arc<Library>, resolved: &str, symbol: &str) -> ClsResult<Nati
 /// este numero (ver `cls-core/src/middleware/typeck/statements.rs:131-181`).
 /// 16 cubre cualquier ABI real (x86_64 SysV: 6 i64 + 8 XMM; Windows x64: 4 i64
 /// + 4 XMM; ARM64: 8 registros). Para mas args, empaquetar en un struct.
-pub(crate) const MAX_NATIVE_ARGS: usize = 16;
+pub const MAX_NATIVE_ARGS: usize = 16;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Shape {
@@ -971,7 +975,7 @@ impl NativeBackend for DynamicBackend {
             14 => call_typed_14(base, rshape, raw_args[0], raw_args[1], raw_args[2], raw_args[3], raw_args[4], raw_args[5], raw_args[6], raw_args[7], raw_args[8], raw_args[9], raw_args[10], raw_args[11], raw_args[12], raw_args[13]),
             15 => call_typed_15(base, rshape, raw_args[0], raw_args[1], raw_args[2], raw_args[3], raw_args[4], raw_args[5], raw_args[6], raw_args[7], raw_args[8], raw_args[9], raw_args[10], raw_args[11], raw_args[12], raw_args[13], raw_args[14]),
             16 => call_typed_16(base, rshape, raw_args[0], raw_args[1], raw_args[2], raw_args[3], raw_args[4], raw_args[5], raw_args[6], raw_args[7], raw_args[8], raw_args[9], raw_args[10], raw_args[11], raw_args[12], raw_args[13], raw_args[14], raw_args[15]),
-            n => unreachable!("MAX_NATIVE_ARGS check ya filtra n > 16"),
+            _n => unreachable!("MAX_NATIVE_ARGS check ya filtra n > 16"),
         };
 
         conv_ret(raw, &ret)

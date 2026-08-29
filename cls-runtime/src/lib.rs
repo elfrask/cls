@@ -1,6 +1,7 @@
 pub mod error;
 pub mod error_report;
 pub mod ffi;
+pub mod native_backend;
 pub mod walker;
 
 // Compat transitoria: paths de módulo que los nodos usan directamente
@@ -19,6 +20,10 @@ pub use walker::{VfsResolver, VfsProtocol, LocalFs, ZipFs, resolve_safe};
 pub use walker::{ClsLibIndex, ClsLibEntry, ClsLibResolver, compute_hash_bytes};
 pub use walker::GarbageCollector;
 pub use walker::Sandbox;
+
+/// Backend nativo FFI via libloading (dlopen/LoadLibrary). Reusado por
+/// `nodos/clx` y `nodos/clxr` (dev-2, migrado de `nodos/clx/src/native.rs`).
+pub use native_backend::{DynamicBackend, MAX_NATIVE_ARGS};
 
 /// Version del runtime CLS
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -100,7 +100,7 @@ pub fn execute(args: &[String]) -> i32 {
     let vfs = make_vfs(config.as_ref());
     let lib_resolver = make_lib_resolver(vfs.clone());
     let native: std::sync::Arc<dyn cls_runtime::ffi::NativeBackend> =
-        std::sync::Arc::new(crate::native::DynamicBackend::default());
+        std::sync::Arc::new(cls_runtime::DynamicBackend::default());
     let entry_dir = std::path::Path::new(&entry)
         .parent()
         .map(|p| p.to_path_buf())

@@ -57,10 +57,20 @@ sin clonar. El JIT corre el checker con `strict: true`,
 pub struct WasmBackendOptions {
     pub exceptions: bool,      // tag + try_table (wasmtime) vs modo sin excepciones (wasmi)
     pub require_main: bool,    // true = debe existir main(args) ; false = modo librería (main no-op)
-    pub intrinsics: Vec<HostIntrinsic>, // intrinsics del nodo vía env.host_call
+    pub intrinsics: Vec<HostIntrinsic>, // API generica para intrinsics del nodo (canal env.host_call). Ver "Estado de uso" abajo.
     pub trace_calls: bool,     // true = shadow call stack en memoria lineal (default); false = CLS_JIT_TRACE=0 (pierde el trace de errores)
 }
 ```
+
+**Estado de uso de `intrinsics` (dev-2)**:
+- `nodos/clx` (CLI de desarrollo): pasa `intrinsics: &[]` y `host_call_handler: None`. No usa el canal genérico. Todos los intrinsics están migrados a imports WASM dedicados con nombre fijo (ver `cls-jit/src/wasmtime_rt.rs:265-425`).
+- `nodos/clxb` (bindings C): usa el mecanismo activamente para permitir que el host C registre intrinsics custom (ver `nodos/clxb/src/engine.rs:123`).
+- `cls-jit/tests/host_call.rs`: test que verifica el mecanismo funciona.
+
+El canal `env.host_call` **se mantiene** como API genérica de la librería
+porque es parte del contrato público de `cls-jit` (consumido por `clxb`).
+El nodo `clx` no lo usa, pero su existencia no afecta performance en el path
+del nodo (no se registra si `intrinsics` está vacío).
 
 Constructores:
 
@@ -84,11 +94,14 @@ Constructores:
 - `repl.rs` - `ReplSession`: REPL JIT con estado persistente (cada línea
   compila un módulo nuevo; globals + heap se transfieren entre instancias).
 - `host.rs` + `wasmtime_rt.rs` - cuerpos genéricos de las host functions
-  `env.*` y `register_host_functions` en el `Linker`; canal
-  `env.host_call(id, ptr, n)` para intrinsics del nodo (`HostCallHandler`).
+  `env.*` y `register_host_functions` en el `Linker`. **API de intrinsics**:
+  el nodo puede pasar `JitContext { host_intrinsics, host_call_handler }`
+  para registrar funciones custom vía el canal `env.host_call(id, ptr, n)`.
+  `nodos/clx` no usa esta API (todos los intrinsics son imports dedicados);
+  `nodos/clxb` la usa para los bindings C.
 - `resolve.rs` - `cache_dir()`, `load_import_modules`, `module_candidates`.
-- El nodo inyecta `JitContext { native_backend, module_index, host_intrinsics,
-  host_call_handler, module_source_resolver, output }`.
+- El nodo inyecta `JitContext { native_backend, module_index,
+  module_source_resolver, output, host_intrinsics, host_call_handler }`.
 
 ## Nodos
 
