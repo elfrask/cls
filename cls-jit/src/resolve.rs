@@ -152,7 +152,13 @@ pub fn module_candidates(
     manifest: Option<&cls_core::config::ModuleManifest>,
 ) -> Vec<std::path::PathBuf> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let user_modules = cls_runtime::user_modules_dir();
+    // Migracion dev-2 (Fase 7): antes se llamaba `cls_runtime::user_modules_dir()`
+    // (parte del walker eliminado). La logica es trivial: el path a
+    // `~/.cls/modules` del usuario actual. Se inlinea para evitar
+    // agregar una API publica a `cls-runtime` solo por esto.
+    let user_modules: Option<std::path::PathBuf> = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(|h| std::path::PathBuf::from(h).join(".cls").join("modules"));
     let name = path.trim_start_matches(['/', '\\']).trim();
     let proj = project_root(base_dir);
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();

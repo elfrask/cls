@@ -4,10 +4,11 @@
 //! `cls-jit` (CLS -> WASM -> wasmtime). Mismo path que `clx run`,
 //! pero como binario independiente con un solo argumento posicional.
 //!
-//! Migracion dev-2 (Fase 6): el codigo anterior usaba el tree-walker
-//! deprecado (`cls_runtime::Interpreter`). Ahora delega al JIT.
-//! El flag `--ast-walker` se mantiene por compatibilidad como fallback
-//! deprecado (se elimina junto con el walker tras CLS 2.0-dev1).
+//! Migracion dev-2 (Fase 7): se elimino el path `--ast-walker`
+//! (tree-walker deprecado). El runtime ahora es 100% JIT.
+//! El walker completo (`cls-runtime/src/walker/`) se borro en esta
+//! misma fase; los simbolos `ModuleResolver`, `Interpreter` y
+//! `Intrinsics` del walker ya no existen.
 
 use std::env;
 use std::fs;
@@ -23,14 +24,14 @@ fn main() {
     if args.len() < 2 {
         eprintln!("clxr 2.0 - CLS Runtime Executor");
         eprintln!("Uso: clxr <archivo> [args...]");
-        eprintln!("  .clsx           -> ejecucion JIT (default)");
+        eprintln!("  .clsx           -> ejecucion JIT");
         eprintln!("  .clsapp         -> extrae y ejecuta via JIT");
-        eprintln!("  --ast-walker    -> tree-walker DEPRECADO (se elimina tras 2.0-dev1)");
         process::exit(1);
     }
 
-    // Detectar flags. `args[0]` es el path del binario: lo saltamos.
-    let ast_walker = args.iter().skip(1).any(|a| a == "--ast-walker");
+    // `args[0]` es el path del binario: lo saltamos.
+    // Flags `--*` se ignoran silenciosamente (compatibilidad hacia atras
+    // con el flag `--ast-walker` eliminado en Fase 7).
     let positional: Vec<String> = args.iter()
         .skip(1)
         .filter(|a| !a.starts_with("--"))
@@ -51,26 +52,11 @@ fn main() {
         Err(e) => { eprintln!("Error: {}", e); process::exit(1); }
     };
 
-    if ast_walker {
-        eprintln!(
-            "{}",
-            cls_core::ansi::fg(
-                true,
-                cls_core::ansi::codes::BRIGHT_YELLOW,
-                "[DEPRECADO] El intérprete AST-walker está deprecado y se desaconseja su uso. \
-                 Se eliminará tras CLS 2.0-dev1. Usa `clxr` sin `--ast-walker` (JIT) para ejecutar programas.",
-            )
-        );
-        run_walker(&resolved_path, &app_args);
-    } else {
-        run_jit(&resolved_path, &app_args);
-    }
+    run_jit(&resolved_path, &app_args);
 }
 
 /// Resuelve el entry: si es .clsapp, extrae a un dir temporal y devuelve
 /// el path al .clsx interno. Si es .clsx, lo devuelve tal cual.
-/// El dir temporal se elimina automaticamente al salir del proceso
-/// (es un side-effect aceptable para un binario efimero).
 fn resolve_entry(path: &str) -> Result<PathBuf, String> {
     if !path.ends_with(".clsapp") {
         return Ok(PathBuf::from(path));
@@ -106,7 +92,7 @@ fn resolve_entry(path: &str) -> Result<PathBuf, String> {
     Ok(entry_path)
 }
 
-/// Ejecuta el archivo con el JIT (default).
+/// Ejecuta el archivo con el JIT.
 fn run_jit(entry: &std::path::Path, app_args: &[String]) -> ! {
     let ctx = JitContext {
         native_backend: Arc::new(cls_runtime::DynamicBackend),
@@ -122,48 +108,4 @@ fn run_jit(entry: &std::path::Path, app_args: &[String]) -> ! {
         RuntimeKind::Wasmtime, true,
     );
     process::exit(exit_code);
-}
-
-/// Ejecuta el archivo con el tree-walker (fallback deprecado).
-fn run_walker(entry: &std::path::Path, app_args: &[String]) -> ! {
-    let source = match fs::read_to_string(entry) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Error al leer '{}': {}", entry.display(), e);
-            process::exit(1);
-        }
-    };
-
-    let mut lexer = cls_core::frontend::Lexer::new(&source);
-    let tokens = match lexer.tokenize() {
-        Ok(t) => t,
-        Err(e) => { cls_runtime::show_syntax_error(e, &source, &entry.to_string_lossy()); process::exit(1); }
-    };
-
-    let mut parser = cls_core::frontend::Parser::new(tokens);
-    let module = match parser.parse() {
-        Ok(m) => m,
-        Err(e) => { cls_runtime::show_syntax_error(e, &source, &entry.to_string_lossy()); process::exit(1); }
-    };
-
-    let resolver = cls_runtime::ModuleResolver::new().with_core_stdlib();
-    let mut interpreter = cls_runtime::Interpreter::new(
-        cls_runtime::Intrinsics::desktop_defaults(app_args.to_vec()),
-        resolver,
-    );
-    interpreter.set_source_file(entry.to_string_lossy().to_string());
-
-    if let Err(e) = interpreter.execute(&module) {
-        let report = interpreter.build_error_report(e);
-        cls_runtime::show_runtime_error(&report);
-        process::exit(1);
-    }
-    match interpreter.call_main() {
-        Ok(code) => process::exit(code),
-        Err(e) => {
-            let report = interpreter.build_error_report(e);
-            cls_runtime::show_runtime_error(&report);
-            process::exit(1);
-        }
-    }
 }

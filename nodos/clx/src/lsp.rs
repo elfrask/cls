@@ -11,7 +11,6 @@ use cls_core::frontend::ast::*;
 use cls_core::middleware::{TypeChecker, NameResolver};
 use cls_core::config::TypesConfig;
 use cls_runtime::{Value, VfsResolver};
-use cls_runtime::stdlib::{math, json};
 use crate::modules::{fs, http};
 use crate::type_defs::{self, TypeModule};
 
@@ -319,8 +318,21 @@ fn record_keys(v: &Value) -> Vec<String> {
 
 fn load_module_exports(name: &str) -> Option<Vec<String>> {
     match name {
-        "math" => Some(record_keys(&math::module())),
-        "json" => Some(record_keys(&json::module())),
+        // Migracion dev-2 (Fase 7): antes se llamaba al walker
+        // (cls_runtime::stdlib::math::module(), etc.) para obtener las
+        // keys. Al eliminarse el walker, las keys son hardcoded aqui
+        // (deben coincidir con los nombres en `cls-runtime/clsi/*.clsi`).
+        // TODO dev-2: leer desde `type_defs::load_all_type_definitions()`
+        // (un solo lugar para todos los .clsi, no hardcoded).
+        "math" => Some(vec![
+            "PI".into(), "E".into(),
+            "abs".into(), "sqrt".into(), "pow".into(),
+            "min".into(), "max".into(),
+            "floor".into(), "ceil".into(), "round".into(),
+            "random".into(), "sin".into(), "cos".into(), "tan".into(),
+            "log".into(), "range".into(),
+        ]),
+        "json" => Some(vec!["parse".into(), "stringify".into()]),
         "fs" => { let vfs = Arc::new(VfsResolver::new()); Some(record_keys(&fs::module(vfs))) }
         "http" => Some(record_keys(&http::module())),
         // net eliminado (dev-2): no hay módulo runtime.

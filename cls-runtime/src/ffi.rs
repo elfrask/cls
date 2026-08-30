@@ -1,12 +1,15 @@
 //! FFI: backend nativo para la feature `extension` (librerías del sistema).
 //!
+//! El trait `NativeBackend` opera sobre el `Value` de CLS (definido en
+//! `cls-runtime::value`). El `Value` se movió a su propio módulo
+//! (Fase 7) desacoplado del tree-walker: el FFI no depende del walker.
+//!
 //! El runtime es agnóstico al entorno: el **nodo** (clx/clxr) implementa
-//! `NativeBackend` y lo inyecta con `Interpreter::set_native_backend`.
-//! Los símbolos los linkea el sistema operativo (el binario host los expone);
-//! CLS no hace dlopen/LoadLibrary.
+//! este trait (o usa `DynamicBackend` por default) para resolver
+//! símbolos en librerías del sistema.
 
 use crate::error::ClsResult;
-use crate::walker::value::Value;
+use crate::value::Value;
 
 /// Tipo nativo (ABI C) de un parámetro/retorno/variable de `extension`.
 #[derive(Debug, Clone, PartialEq, Eq)]

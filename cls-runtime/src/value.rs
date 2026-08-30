@@ -1,3 +1,19 @@
+//! Tipos de valor y maquinaria de runtime (mínimo viable para el FFI).
+//!
+//! Migracion dev-2 (Fase 7): este archivo vivia en
+//! `cls-runtime/src/walker/value.rs` y formaba parte del tree-walker.
+//! Al eliminarse el walker, se conserva este archivo en su propia
+//! ubicación (`cls-runtime/src/value.rs`) porque el `DynamicBackend`
+//! (FFI via libloading) lo necesita para la conversion de tipos entre
+//! los registros C y los valores de CLS. El resto del walker
+//! (Interpreter, Intrinsics, stdlib, etc.) se elimina en esta misma fase.
+//!
+//! El `Value` aqui es el tipo de runtime "shape-only": lo suficiente
+//! para que el FFI pueda convertir entre el ABI C y CLS (Int/Float/
+//! String/Bool/Array/Record/Struct/Null/Void). El resto de los
+//! constructores (ClassDef, ClassInstance, EnumDef, EnumValue, CmxValue,
+//! Promise, Environment) se eliminaron porque solo el walker los usaba.
+
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -15,8 +31,13 @@ pub enum PollState {
 /// Contrato para corrutinas. Tanto el intérprete (scheduler de clxr)
 /// como los state machines WASM (futuro) implementan esto.
 /// Corre en un solo thread (el scheduler de clxr), por eso no requiere Send/Sync.
+///
+/// NOTA Fase 7: el `poll` tomaba un `&mut crate::walker::interpreter::Interpreter`
+/// que ya no existe. Se cambia a un `&mut dyn std::any::Any` opaco para que
+/// el trait no dependa del walker. Si esto se llega a usar de nuevo, el
+/// caller hace el downcast correspondiente.
 pub trait Pollable {
-    fn poll(&mut self, interp: &mut crate::walker::interpreter::Interpreter) -> PollState;
+    fn poll(&mut self, _interp: &mut dyn std::any::Any) -> PollState;
 }
 
 /// Promise - puente entre intérprete y WASM. Compartido vía Arc (como JS).
@@ -56,7 +77,7 @@ impl Promise {
     }
 
     /// Intenta resolver (poll). Devuelve el estado actual.
-    pub fn poll(&mut self, interp: &mut crate::walker::interpreter::Interpreter) -> PollState {
+    pub fn poll(&mut self, interp: &mut dyn std::any::Any) -> PollState {
         let mut inner = self.inner.lock().unwrap();
         if let Some(ref result) = inner.result {
             return result.clone();
@@ -177,8 +198,8 @@ pub struct ClassInstance {
     pub protected_fields: std::collections::HashSet<String>,
     /// Métodos marcados protected (desde ClassDef)
     pub protected_methods: std::collections::HashSet<String>,
-    /// Métodos marcados static (desde ClassDef)
-    pub static_methods: std::collections::HashSet<String>,
+    /// Fields marcados static (desde ClassDef)
+    pub static_fields: std::collections::HashSet<String>,
     /// Fields readonly (escritura solo interna)
     pub readonly_fields: std::collections::HashSet<String>,
 }
@@ -379,6 +400,13 @@ impl fmt::Display for Value {
 
 pub type NativeFn = Box<dyn Fn(&[Value]) -> ClsResult<Value>>;
 
+/// Tipo opaco de closure (captura léxica). Antes era
+/// `Arc<Mutex<crate::walker::environment::Environment>>`. Al eliminarse
+/// el walker, se reemplaza por un `Box<dyn Any>` que el caller puede
+/// downcastear. El FFI no usa closures, asi que esto es solo
+/// compatibilidad de API.
+pub type ClosureEnv = Arc<Mutex<dyn std::any::Any + Send>>;
+
 /// Valor de función (callable)
 #[derive(Clone)]
 pub struct FunValue {
@@ -407,8 +435,12 @@ pub enum FunKind {
     User {
         params: Vec<cls_core::frontend::ast::Parameter>,
         body: Block,
-        /// Entorno léxico capturado (closures). None = usa el env global actual.
-        closure: Option<std::sync::Arc<std::sync::Mutex<crate::walker::environment::Environment>>>,
+        /// Entorno léxico capturado (closures). `None` = usa el env global actual.
+        ///
+        /// Antes era `Option<Arc<Mutex<crate::walker::environment::Environment>>>`.
+        /// Al eliminarse el walker, se cambia a `Option<ClosureEnv>` (opaco).
+        /// El caller (un futuro runtime JIT) hace el downcast correspondiente.
+        closure: Option<ClosureEnv>,
     },
 }
 
@@ -468,7 +500,7 @@ impl FunValue {
         }
     }
 
-    pub fn new_user_with_closure(name: &str, params: Vec<cls_core::frontend::ast::Parameter>, body: Block, closure: std::sync::Arc<std::sync::Mutex<crate::walker::environment::Environment>>) -> Self {
+    pub fn new_user_with_closure(name: &str, params: Vec<cls_core::frontend::ast::Parameter>, body: Block, closure: ClosureEnv) -> Self {
         Self {
             name: name.to_string(),
             is_async: false,
@@ -484,7 +516,7 @@ impl FunValue {
         }
     }
 
-    pub fn new_async_user_with_closure(name: &str, params: Vec<cls_core::frontend::ast::Parameter>, body: Block, closure: std::sync::Arc<std::sync::Mutex<crate::walker::environment::Environment>>) -> Self {
+    pub fn new_async_user_with_closure(name: &str, params: Vec<cls_core::frontend::ast::Parameter>, body: Block, closure: ClosureEnv) -> Self {
         Self {
             name: name.to_string(),
             is_async: true,

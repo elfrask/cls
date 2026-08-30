@@ -1,6 +1,5 @@
-use cls_core::error::{ClsError, Span, StackFrame};
+use cls_core::error::{ClsError, Span, StackFrame, ImportFrame};
 use cls_core::ansi;
-use crate::ImportFrame;
 
 /// Reporte de error con contexto completo para formateo centralizado.
 pub struct ErrorReport {

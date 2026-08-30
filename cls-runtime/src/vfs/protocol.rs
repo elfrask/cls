@@ -48,7 +48,7 @@ impl LocalFs {
     }
 
     fn resolve(&self, path: &str) -> ClsResult<PathBuf> {
-        crate::walker::vfs::security::resolve_safe(path, &self.base)
+        crate::vfs::security::resolve_safe(path, &self.base)
     }
 }
 

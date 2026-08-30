@@ -24,6 +24,23 @@ impl StackFrame {
     }
 }
 
+/// Frame de importacion para el trace de errores de runtime/compilacion.
+/// Cada `import "X" as Y` agrega un frame a la pila; si un modulo
+/// posterior falla, el trace muestra la cadena de imports.
+///
+/// Migracion dev-2 (Fase 7): este struct vivia en
+/// `cls-runtime/src/walker/interpreter.rs` (parte del tree-walker).
+/// Al eliminarse el walker, se mueve a `cls-core` porque es parte
+/// del modelo de errores (no del walker) y ambos runtimes
+/// (JIT y walker deprecado) lo producen.
+#[derive(Debug, Clone)]
+pub struct ImportFrame {
+    pub source_file: String,
+    pub module_name: String,
+    pub line: u32,
+    pub col: u32,
+}
+
 #[derive(Error, Debug)]
 pub enum ClsError {
     #[error("Error de compilación: {0}")]

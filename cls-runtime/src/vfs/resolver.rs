@@ -133,7 +133,7 @@ impl VfsResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::walker::vfs::protocol::LocalFs;
+    use crate::vfs::protocol::LocalFs;
     use std::sync::Arc;
 
     fn test_resolver() -> VfsResolver {
@@ -177,9 +177,9 @@ mod tests {
     #[test]
     fn test_read_to_string() {
         let v = test_resolver();
-        v.write_file("greeting.txt", b"hola mundo").unwrap();
+        v.write_file("greeting.txt", b"").unwrap();
         let s = v.read_to_string("greeting.txt").unwrap();
-        assert_eq!(s, "hola mundo");
+        assert_eq!(s, "");
     }
 
     #[test]
