@@ -1,0 +1,11 @@
+﻿=== for each ===
+fe: 1
+fe: 2
+fe: 3
+fe idx: 0 = 4
+fe idx: 1 = 5
+fe idx: 2 = 6
+=== switch ===
+switch: dos
+=== with ===
+with: 3

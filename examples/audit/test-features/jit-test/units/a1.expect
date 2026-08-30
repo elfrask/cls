@@ -1,0 +1,8 @@
+﻿potencia: 256
+mod float: 1.5
+postfix ++: 2
+postfix --: 1
+type(42): Int
+arr[0]+=: 6
+default param: Hola, Ana
+str(42): 42

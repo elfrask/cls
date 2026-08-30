@@ -1,0 +1,9 @@
+﻿fib(5) = 15
+switchAll(2) = 20
+switchAll(9) = 30
+whileRet() = 5
+ifElseRet(5) = 1
+ifElseRet(-1) = 0
+elifChain(3) = 3
+elifChain(9) = 4
+deadAfterRet(0) = 7

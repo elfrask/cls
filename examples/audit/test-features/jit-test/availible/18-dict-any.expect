@@ -1,0 +1,10 @@
+﻿=== Record<K,V> dict mutable ===
+d: {a: 10, b: 20}
+a: 10
+c tras set: 30 len: 3
+has c: true
+=== Record<String, any> (json.parse) ===
+n: CLS v: 2026 ok: true
+json len: 3
+=== stringify de shape ===
+stringify: {"x":1,"y":"a"}

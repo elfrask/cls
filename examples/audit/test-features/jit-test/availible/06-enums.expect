@@ -1,0 +1,7 @@
+﻿enum? <enum Nivel>
+enum: Alto
+enum ==: true !=: false
+enum is: true
+enum iter: Bajo
+enum iter: Medio
+enum iter: Alto

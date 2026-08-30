@@ -1,0 +1,4 @@
+﻿struct: Punto { x: 3, y: 4 }
+p.x: 3  p.y: 4
+is: true
+Punto: <function Punto>

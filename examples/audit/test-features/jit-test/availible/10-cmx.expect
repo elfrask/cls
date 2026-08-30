@@ -1,0 +1,13 @@
+﻿tag: app
+titulo: Demo
+activo: true
+count: 5
+children len: 7
+children's: ["Texto hijo\n            ", "interp: Demo", [<div />, <div />, <div />], [1, 2, 3], <galeria etiqueta="Click" />, "ola que tal", ["value: 1", "value: 2", "value: 3"]]
+primer hijo: Texto hijo
+            
+interp cuerpo: interp: Demo
+array cmx: [<div />, <div />, <div />]
+segundo hijo: galeria
+5to hijo: ola que tal
+cmx: <app activo="true" count="5" titulo="Demo">... (7 children)</app>

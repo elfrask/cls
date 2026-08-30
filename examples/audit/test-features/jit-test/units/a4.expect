@@ -1,0 +1,9 @@
+﻿push length: 4
+indexOf(2): 2
+includes(9): false
+join: 3-1-2-4
+index [0]: 3
+pop: [3, 1, 2]
+shift: [1, 2]
+unshift[0]: 0
+reverse[0]: 3

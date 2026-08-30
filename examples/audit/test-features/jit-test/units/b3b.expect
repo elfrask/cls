@@ -1,0 +1,8 @@
+﻿a hablar: generico
+p hablar: guau
+p nombre: animal
+p presentar: generico y guau
+a is Animal: true
+p is Animal: true
+p is Perro: true
+a is Perro: false

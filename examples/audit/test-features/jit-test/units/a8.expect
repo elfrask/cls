@@ -1,0 +1,7 @@
+﻿abs: 7
+sqrt: 4
+pow: 8
+PI: 3.141592653589793
+range: 3
+random ok: true
+fs.exists: false

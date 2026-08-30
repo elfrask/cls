@@ -1,0 +1,4 @@
+﻿t[0]: 10 t[1]: veinte t[2]: 30
+length: 3
+join: 10|veinte|30
+tuple: (10, "veinte", 30)
