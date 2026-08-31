@@ -1,1 +1,19 @@
-﻿
+﻿=== shape inferido ===
+u: {a: 10, b: "veinte"}
+a: 10 b: veinte
+a tras set: 30
+len: 2 size: 2
+has a: true has z: false
+keys: []
+=== interface como shape ===
+p: {edad: 30, nombre: "Ana"}
+nombre: Ana edad: 30
+edad tras set: 31
+=== alias de shape ===
+pt: {x: 1.5, y: 2.5}
+x: 1.5
+=== conjuncion de shapes ===
+c: {a: 1, b: "x"}
+a: 1 b: x
+=== shape en funcion ===
+r: {total: 7}

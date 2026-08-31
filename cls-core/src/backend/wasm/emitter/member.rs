@@ -294,7 +294,7 @@ impl<'a> FuncEmitter<'a> {
                     Ok(())
                 }
             },
-            Type::Shape(_) => {
+            Type::Shape(fields) => {
                 // DEFAULT INVERTIDO: los record literals viven como hashmap, asi
                 // que un valor tipado Shape se lee con las ops de record
                 // (record_len/record_get). El chequeo estatico de campos sigue
@@ -319,6 +319,19 @@ impl<'a> FuncEmitter<'a> {
                             self.body.push(Instruction::Call(idx));
                         } else {
                             self.host.call(HostFn::RecordGet, &mut self.body);
+                        }
+                        // Bug fix dev-2 (Fase 7): __intr_record_get devuelve los
+                        // bits crudos del valor (i64). Para Float hay que
+                        // reinterpretar los bits como f64. El typeck conoce el
+                        // tipo del campo por el Shape; lo buscamos y aplicamos
+                        // F64ReinterpretI64 si corresponde. Antes el emisor
+                        // dejaba el i64 crudo en el stack, lo que producia
+                        // "type mismatch: expected f64, found i64" en
+                        // contextos que esperan Float (e.g. `print("x:", pt.x)`).
+                        if let Some((_, field_ty)) = fields.iter().find(|(n, _)| n == &m.member) {
+                            if matches!(field_ty, Type::Float) {
+                                self.body.push(Instruction::F64ReinterpretI64);
+                            }
                         }
                         Ok(())
                     }
