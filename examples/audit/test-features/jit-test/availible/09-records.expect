@@ -1,1 +1,9 @@
-﻿
+﻿u: {a: 10, b: 20, c: "jajaj"}
+a: 10
+b: 20
+len: 3 size: 3
+has a: true has x: false
+keys len: 0 values len: 0
+keys: []
+json n: CLS v: 2026
+stringify: {"x":1}

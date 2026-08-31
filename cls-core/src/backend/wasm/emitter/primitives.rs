@@ -300,9 +300,13 @@ impl<'a> FuncEmitter<'a> {
                 match member.member.as_str() {
                     "has" => {
                         self.emit_expression(&c.args[0])?;
+                        eprintln!("DEBUG: func_indexes tiene __intr_record_has? {}", self.func_indexes.contains_key("__intr_record_has"));
+                        eprintln!("DEBUG: type del obj_ty = {:?}", self.types.get(&expr_span(&member.object)));
                         if let Some(&idx) = self.func_indexes.get("__intr_record_has") {
+                            eprintln!("DEBUG: emitiendo call({})", idx);
                             self.body.push(Instruction::Call(idx));
                         } else {
+                            eprintln!("DEBUG: fallback a host.call(RecordHas)");
                             self.host.call(HostFn::RecordHas, &mut self.body);
                         }
                         return Ok(true);
@@ -329,6 +333,14 @@ impl<'a> FuncEmitter<'a> {
             Type::Shape(_) => {
                 // DEFAULT INVERTIDO: los shapes viven como hashmap en runtime ->
                 // mismas operaciones que un record (record_has/keys/values).
+                // Bug fix dev-2 (Fase 7): faltaba `self.emit_expression(&member.object)?;`
+                // al inicio de la rama Shape. En la rama Record (linea 299) si se
+                // emite el receiver; en Shape no, lo que dejaba el stack sin el
+                // ptr del hashmap -> el call a __intr_record_has(ptr, key) tomaba
+                // el primer i64 (la key) como ptr y el segundo (lo que fuera) como
+                // key, o peor, sin argumentos. Sintoma: "type mismatch: expected
+                // i64 but nothing on stack" en el offset del call.
+                self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "has" => {
                         self.emit_expression(&c.args[0])?;
@@ -340,6 +352,7 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(true);
                     }
                     "keys" => {
+                        self.body.push(Instruction::I64Const(0)); // kind dummy
                         if let Some(&idx) = self.func_indexes.get("__intr_record_keys") {
                             self.body.push(Instruction::Call(idx));
                         } else {
@@ -348,6 +361,7 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(true);
                     }
                     "values" => {
+                        self.body.push(Instruction::I64Const(0)); // kind dummy
                         if let Some(&idx) = self.func_indexes.get("__intr_record_values") {
                             self.body.push(Instruction::Call(idx));
                         } else {
