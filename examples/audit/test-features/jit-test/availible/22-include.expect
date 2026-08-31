@@ -1,1 +1,4 @@
-﻿
+﻿=== include ===
+saludar: Hola CLS
+suma: 3
+version: 2.0

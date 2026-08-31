@@ -187,11 +187,28 @@ impl TypeChecker {
                 }
             }
         }
+        // Checkear los statements del prelude. Esto es necesario para validar
+        // tipos internos de los exports (e.g. `function saludar() { return "..."; }`
+        // debe validar que la concatenacion es valida). Esto tambien define los
+        // exports en scope[0] del modulo principal.
         for (_path, m) in prelude {
             for stmt in &m.statements {
                 self.check_statement(stmt);
             }
         }
+        // Bug fix dev-2 (Fase 7): antes la pasada tambien checkeaba los
+        // statements del prelude (linea 190-194 originales). Esto era
+        // problematico porque:
+        // 1. Los `check_statement` del prelude llamaban `define_decl` para los
+        //    exports, que consumia el `pre_registered`.
+        // 2. Ademas, los exports quedaban en scope[0] del modulo principal, lo
+        //    que hacia fallar el `include "libmod"` posterior con
+        //    "ya esta declarado" (especialmente para vars/consts que no se
+        //    pre-registran).
+        // Solucion: en `define_decl`, chequear presencia (no consumir) del
+        // pre-registrado. Y en `check_include` del modulo principal, saltar
+        // exports que ya estan en scope[0] (porque ya fueron definidos por la
+        // pasada del prelude).
         for stmt in &module.statements {
             self.check_statement(stmt);
         }
@@ -244,10 +261,19 @@ impl TypeChecker {
                     span.clone(),
                 );
             }
-            // Un símbolo pre-registrado (firma de la pre-pasada del prelude) no
-            // cuenta como colisión: es el mismo símbolo del mismo módulo que se
-            // re-chequea en la pasada principal.
-            if self.pre_registered.remove(name) {
+            // Bug fix dev-2 (Fase 7): antes era `self.pre_registered.remove(name)`.
+            // El problema: la pre-pasada pre-registra las funciones del prelude,
+            // y luego la pasada principal (sobre los statements del prelude)
+            // llama `check_function_decl` que consume el pre-registro via
+            // `define_decl`. Despues, cuando el modulo principal hace
+            // `include "libmod"`, `check_include` llama `define_decl("saludar", ...)`
+            // y el pre-registro ya no esta. Ademas, el scope[0] ya tiene
+            // "saludar" (definido por check_function_decl). Resultado: error
+            // "ya esta declarado".
+            //
+            // Solucion: chequear presencia (no consumir). Si esta pre-registrado,
+            // es legitimo redefinir (es el mismo simbolo del mismo modulo re-checkeado).
+            if self.pre_registered.contains(name) {
                 self.define(name, typ);
                 return Type::Void;
             }

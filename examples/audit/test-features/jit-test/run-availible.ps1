@@ -18,15 +18,11 @@ $dir = Join-Path $PSScriptRoot "availible"
 $script:clx = $clx
 $script:Update = $Update
 
-# Tests con bugs pre-existentes del emisor WASM / typeck (no son
-# regresiones de la eliminacion del walker). Ver
-# agent-context/dev2/BUGS-AUDIT-FASE7.md para detalle de cada uno.
+# Tests que no se ejecutan como programa:
+# - libmod.clsx: es un modulo con exports (incluido por 22-include), no
+#   tiene function main. No es un test, es una dependencia.
 $preExisting = @{
-    "02-strings.clsx"   = "BUG: panic emisor (string interpolation)"
-    "09-records.clsx"   = "BUG: WASM invalido (Record<String,any>)"
-    "17-shapes.clsx"    = "BUG: WASM invalido (shape literal)"
-    "22-include.clsx"   = "BUG: typeck (include duplica exports)"
-    "libmod.clsx"       = "BUG: typeck (include duplica exports)"
+    "libmod.clsx" = "modulo (incluido por 22-include), no tiene main"
 }
 
 function Run-Oracle($clsx) {

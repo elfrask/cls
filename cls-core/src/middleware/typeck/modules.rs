@@ -107,6 +107,27 @@ impl TypeChecker {
             None => return Type::Void,
         };
         for stmt in &m.statements {
+            // Bug fix dev-2 (Fase 7): si el export ya esta en scope[0],
+            // no re-definir. Esto pasa cuando la pasada del prelude ya proceso
+            // el modulo (lo hizo en check_with_prelude, lineas 192-197) y dejo
+            // los exports definidos en scope[0]. El pre-registro cubre las
+            // funciones (via define_decl que ya chequea pre_registered.contains);
+            // vars/consts/classes/etc. se cubren por esta guarda explicita.
+            if let Some(name) = match stmt {
+                Statement::FunctionDecl(f) if f.visibility == Visibility::Export => Some(&f.name),
+                Statement::VarDecl(v) | Statement::ConstDecl(v)
+                    if v.visibility == Visibility::Export => Some(&v.name),
+                Statement::EnumDecl(e) if e.visibility == Visibility::Export => Some(&e.name),
+                Statement::ClassDecl(c) if c.visibility == Visibility::Export => Some(&c.name),
+                Statement::StructureDecl(s) if s.visibility == Visibility::Export => Some(&s.name),
+                Statement::InterfaceDecl(i) if i.visibility == Visibility::Export => Some(&i.name),
+                Statement::TypeAlias(t) if t.visibility == Visibility::Export => Some(&t.name),
+                _ => None,
+            } {
+                if self.scopes.len() == 1 && self.scopes[0].contains_key(name) {
+                    continue;
+                }
+            }
             match stmt {
                 Statement::FunctionDecl(f) if f.visibility == Visibility::Export => {
                     let t = self.function_decl_type(f);
