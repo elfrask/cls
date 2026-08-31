@@ -1,1 +1,8 @@
-﻿
+tag: App
+titulo: Demo
+activo: true
+count: 5
+children len: 2
+primer hijo: Texto hijo
+            
+cmx: <App activo="true" count="5" titulo="Demo">... (2 children)</App>

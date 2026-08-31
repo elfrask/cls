@@ -1,5 +1,7 @@
 function main(args: String[]) -> int {
     var titulo = "Demo";
+    var App = "App";
+    var Boton = "Boton";
     var app = (
         <App titulo={titulo} activo={true} count={5}>
             Texto hijo

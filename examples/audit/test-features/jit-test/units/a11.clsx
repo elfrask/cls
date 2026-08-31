@@ -1,12 +1,28 @@
-extension "clx_demo" {
-    function add(a: int, b: int) -> int { native; }
-    function mul(a: float, b: float) -> float { native; }
-    function greet(n: String) -> String { native; }
+# a11.clsx - Test FFI (extension) con libreria del sistema.
+# Migracion dev-2 (Fase 8): antes usaba clx_demo.dll (que no existe en el
+# repo). Ahora usa msvcrt.dll/libc (DLLs estandar del sistema) con el
+# patron canonico `when (os:) { extension ... }`.
+when (os: windows) {
+    extension "msvcrt.dll" as C {
+        function strlen(s: CString) -> CInt;
+        function atoi(s: CString) -> CInt;
+    };
+};
+when (os: linux) {
+    extension "libc.so.6" as C {
+        function strlen(s: CString) -> CInt;
+        function atoi(s: CString) -> CInt;
+    };
+};
+when (os: macos) {
+    extension "libSystem.B.dylib" as C {
+        function strlen(s: CString) -> CInt;
+        function atoi(s: CString) -> CInt;
+    };
 };
 
 function main(args: String[]) -> int {
-    print("add:", add(2, 3));
-    print("mul:", mul(2.5, 4.0));
-    print("greet:", greet("CLS"));
+    print("strlen:", strlen("hola"));
+    print("atoi:", atoi("42"));
     return 0;
 };

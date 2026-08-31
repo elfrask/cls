@@ -23,31 +23,53 @@ $script:clx = $clx
 $script:Update = $Update
 
 # Scripts que requieren condiciones especiales (no son fallos).
-$special = @{
-    "a11.clsx"     = "requiere DLL de extension (clx_demo.dll)"
-    "f64arr.clsx"  = "requiere args de app (-- ola mundo)"
-    "b7.clsx"      = "requiere red (httpbin.org)"
-    "synerr.clsx"  = "prueba de error de sintaxis (sin paridad)"
-    "syn2.clsx"    = "prueba de error de sintaxis (sin paridad)"
-    "a2min.clsx"   = "variante de tuplas (cubierto por a2)"
-    "bench_fib.clsx" = "benchmark (usa now(), no hay paridad de tiempos)"
-    "b8-cmx.clsx"   = "prueba CMX ref (sin paridad estable)"
+# Migracion dev-2 (Fase 7+8): a2min, b8-cmx, f64arr, a11 y bench_fib
+# ahora tienen oracle y pasan. b7 (red) se valida por regex (ver rangeChecks).
+$special = @{}
+
+# Tests que DEBEN fallar (errores de sintaxis intencionales). El runner
+# valida que el comando sale con codigo != 0 y produce stderr.
+$expectedErrors = @{
+    "synerr.clsx" = "error de sintaxis intencional"
+    "syn2.clsx"   = "error de sintaxis intencional"
 }
 
-function Run-Oracle($clsx) {
+# Args de app por test (se pasan tras `--`). Migracion dev-2 (Fase 8):
+# f64arr.clsx imprime `print("test", args)` y espera recibir ["ola", "mundo"].
+$appArgs = @{
+    "f64arr.clsx" = @("ola", "mundo")
+}
+
+# Tests con salida no deterministica (tiempos, etc.) validados por regex
+# en lugar de oracle exacto. Migracion dev-2 (Fase 8): bench_fib imprime
+# fib(26) (deterministico: 121393) + ms (no deterministico). b7 (red)
+# imprime el len de la respuesta de httpbin (varia) + flags estables.
+# Ambos se validan por regex. Si b7 falla por red, se cuenta como SKIP.
+$rangeChecks = @{
+    "bench_fib.clsx" = "fib\(26\): 121393"
+    "b7.clsx"        = "http ok: true"
+}
+
+function Run-Oracle($clsx, $extraArgs) {
     $tmpOut = [System.IO.Path]::GetTempFileName()
     $tmpErr = [System.IO.Path]::GetTempFileName()
-    $p = Start-Process -FilePath $script:clx -ArgumentList @("run", $clsx) -NoNewWindow -Wait -PassThru `
+    $argList = @("run", $clsx)
+    if ($extraArgs -and $extraArgs.Count -gt 0) {
+        $argList += "--"
+        $argList += $extraArgs
+    }
+    $p = Start-Process -FilePath $script:clx -ArgumentList $argList -NoNewWindow -Wait -PassThru `
         -RedirectStandardOutput $tmpOut -RedirectStandardError $tmpErr
     $content = (Get-Content -Raw -Encoding UTF8 $tmpOut -ErrorAction SilentlyContinue) + ""
     if ($content -ne "" -and -not $content.EndsWith("`n")) { $content = $content + "`n" }
+    $err = (Get-Content -Raw -Encoding UTF8 $tmpErr -ErrorAction SilentlyContinue) + ""
     Remove-Item $tmpOut, $tmpErr -ErrorAction SilentlyContinue
-    return @{ Content = $content; Exit = $p.ExitCode }
+    return @{ Content = $content; Err = $err; Exit = $p.ExitCode }
 }
 
-function Compare-To-Oracle($clsx) {
+function Compare-To-Oracle($clsx, $extraArgs) {
     $expect = [System.IO.Path]::ChangeExtension($clsx, ".expect")
-    $r = Run-Oracle $clsx
+    $r = Run-Oracle $clsx $extraArgs
     if (-not (Test-Path $expect)) {
         Set-Content -Path $expect -Value $r.Content -Encoding UTF8 -NoNewline
         return @{ Status = "NEW"; Output = $r.Content; Exit = $r.Exit }
@@ -75,7 +97,36 @@ foreach ($f in $files) {
         $skip++
         continue
     }
-    $r = Compare-To-Oracle $f.FullName
+    # Test que DEBE fallar: validar exit != 0 y stderr no vacio.
+    if ($expectedErrors.ContainsKey($name)) {
+        $r = Run-Oracle $f.FullName
+        if ($r.Exit -ne 0 -and -not [string]::IsNullOrWhiteSpace($r.Err)) {
+            $pass++
+            $errLine = ($r.Err -split "`r?`n" | Where-Object { $_.Trim() -ne "" } | Select-Object -First 1)
+            Write-Host ("{0,-14} {1,-8} {2,-6} {3}" -f $name, "PASS", $r.Exit, $errLine)
+        } else {
+            $fail++
+            Write-Host ("{0,-14} {1,-8} {2,-6} {3}" -f $name, "FAIL", $r.Exit, "esperaba error de sintaxis pero no fallo")
+        }
+        continue
+    }
+    $extra = if ($appArgs.ContainsKey($name)) { $appArgs[$name] } else { @() }
+    # Test con salida no deterministica: validar por regex.
+    if ($rangeChecks.ContainsKey($name)) {
+        $r = Run-Oracle $f.FullName $extra
+        if ($r.Content -match $rangeChecks[$name]) {
+            $pass++
+            Write-Host ("{0,-14} {1,-8} {2,-6} {3}" -f $name, "PASS", $r.Exit, "regex: $($rangeChecks[$name])")
+        } elseif ($name -eq "b7.clsx" -and ($r.Err -match "red|connect|timeout|resolve|internet")) {
+            $skip++
+            Write-Host ("{0,-14} {1,-8} {2,-6} {3}" -f $name, "SKIP", $r.Exit, "sin red (b7 es smoke)")
+        } else {
+            $fail++
+            Write-Host ("{0,-14} {1,-8} {2,-6} {3}" -f $name, "FAIL", $r.Exit, "regex no matcheo: $($rangeChecks[$name])")
+        }
+        continue
+    }
+    $r = Compare-To-Oracle $f.FullName $extra
     switch ($r.Status) {
         "PASS"    { $pass++; Write-Host ("{0,-14} {1,-8} {2,-6} {3}" -f $name, "PASS", $r.Exit, "") }
         "FAIL"    { $fail++; $primera = (($r.Output -split "`r?`n" | Where-Object { $_ -ne "" }) | Select-Object -First 1); Write-Host ("{0,-14} {1,-8} {2,-6} {3}" -f $name, "FAIL", $r.Exit, $primera) }
