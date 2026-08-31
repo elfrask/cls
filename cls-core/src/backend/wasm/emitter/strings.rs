@@ -156,7 +156,11 @@ impl<'a> FuncEmitter<'a> {
                 };
                 self.body.push(Instruction::I64Const(es));
                 self.body.push(Instruction::I64Const(kind));
-                self.host.call(HostFn::ArrToString, &mut self.body);
+                // Bug fix dev-2 (Fase 7): antes llamaba `self.host.call(HostFn::ArrToString, ...)`
+                // pero ese host ya no se importa (las internals están fusionadas en el
+                // módulo). La internal correcta es `__intr_arr_to_string(ptr, es, kind)`.
+                // Migracion Fase 3 (paso 3) dejo este path muerto.
+                self.emit_str_host("__intr_arr_to_string", HostFn::ArrToString);
             }
             Type::Fun(..) => {
                 // Handle de función -> `<function X>` (el nombre está en el handle).

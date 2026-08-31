@@ -1,1 +1,14 @@
-﻿
+﻿interp: Hola CLS
+interp2: val [10, 20, 0]
+expr: suma: 3
+concat: abc
+upper: HOLA
+lower: hola
+trim: x
+contains: true
+startsWith: true
+endsWith: true
+isEmpty: true
+length: 4
+in substring: true
+in String?: true
