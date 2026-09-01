@@ -72,7 +72,7 @@ backend los **fusiona dentro del módulo CLS** (cero imports de internals).
 - `desarrollo/testing.md` - cómo ejecutar y escribir tests.
 - `desarrollo/agregar-feature.md` - cómo agregar una feature al lenguaje.
 - `desarrollo/agregar-modulo-interno.md` - cómo agregar un módulo interno.
-- `desarrollo/minilaravel.md` - especificación del framework HTTP (minilaravel) en `.clsx` puro — para implementar por un dev.
+- `desarrollo/minilaravel.md` - especificación del framework HTTP (minilaravel) en `.clsx` puro, con vistas en CMX — para implementar por un dev.
 
 > Los planes de las 4 fases de rendimiento (refactor atómico, crate
 > `cls-internals`, adaptación del core, auditoría final) viven en

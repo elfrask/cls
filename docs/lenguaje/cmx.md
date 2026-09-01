@@ -66,3 +66,42 @@ functions `cmx_*`. El lexer usa un buffer FIFO (`cmx_buffer`) con detección de
 functions con `()`.
 
 Ejemplo completo: `examples/audit/features/12-cmx.clsx`.
+
+## Renderizar CMX a HTML
+
+`CmxValue` es un **DOM virtual** (tag/props/children), pero **no se serializa a
+HTML por sí solo**: `print(app)` produce la representación de depuración
+(`<app>... (3 children)</app>`, children abreviados). No existe un `render()`
+nativo ni `toString()` de CMX accesible desde el lenguaje.
+
+Para obtener HTML (p. ej. en un framework HTTP), se recorre el árbol en **CLS
+puro**:
+
+```clx
+function e(s: String) -> String {
+    # escape HTML: & -> &amp;, < -> &lt;, > -> &gt;, " -> &quot;, ' -> &#39;
+}
+
+function render(cmx: any) -> String {
+    # texto (kind=1): devuelve e(texto)
+    # elemento: "<tag prop=\"valor\" ...>" + render de cada child + "</tag>"
+    # child Array: expandir cada elemento (permite {arr.map(...)})
+    # child funcion: no renderizar (o resolver segun protocolo)
+}
+```
+
+**Cómo cubrir las limitaciones de CMX en un renderer**:
+
+| Necesidad | Patrón |
+|---|---|
+| Loops | `{arr.map((x: T) -> <li>{x}</li>)}` — el renderer expande arrays de children |
+| Condicionales | `{cond ? a : b}` como expresión, o `if` fuera del marcado |
+| Layouts/herencia | Composición de funciones (`layout_base(titulo, body)`) |
+| Componentes reutilizables | Llamar la función y pasar el resultado: `{home_view(...)}` (los tags en mayúscula NO se invocan) |
+| Raw HTML (sin escape) | Una función `raw(html)` que el renderer reconozca y no escape |
+
+**Límites**: no hay `for`/`if` estructurales dentro del marcado (solo
+expresiones), y las funciones como tags no se ejecutan. Todo contenido
+interpolado debe escaparse salvo `raw()` explícito (riesgo de inyección).
+
+Ejemplo de uso real: `docs/desarrollo/minilaravel.md` (framework HTTP, F6).

@@ -17,9 +17,9 @@
 3. `modules/router.clsx` — enrutador con params (F3)
 4. `modules/middleware.clsx` — cadena de middleware (F4)
 5. `modules/static.clsx` — archivos estáticos (F5)
-6. `modules/view.clsx` — templates tipo Blade (F6)
+6. `modules/view.clsx` — renderer CMX → HTML (CLS puro) (F6)
 7. `examples/http-framework/main.clsx` — demo completa (F7)
-8. `examples/http-framework/views/` — templates de la demo
+8. `examples/http-framework/views.clsx` — vistas de la demo (funciones CLS que devuelven CMX)
 9. `examples/http-framework/README.md` — cómo correr y probar
 
 ## Docs de referencia (leer primero)
@@ -33,6 +33,7 @@
 | Records/arrays/strings | `docs/lenguaje/datos.md` |
 | Módulos (`import`/`from`/`include`) | `docs/lenguaje/modulos.md` |
 | Estado real del runtime (WASI NO, async NO) | `docs/lenguaje/estado-runtime.md` |
+| **CMX (sintaxis de vistas)** | `docs/lenguaje/cmx.md` + tests `b8-cmx.clsx`, `10-cmx.clsx` |
 | Módulo `fs` (para static) y `json` | `docs/stdlib/desktop.md`, `docs/stdlib/core.md` |
 | Ejemplos funcionales de FFI | `examples/audit/test-features/extension-demo.clsx`, `examples/audit/test-features/tests/test-ffi-arity.clsx` |
 
@@ -45,6 +46,9 @@
 5. **Handlers con tipos explícitos**: `(req: Request) -> Response`, nunca params bare (el typeck infiere `Any` y falla el dispatch — ver `docs/lenguaje/magics.md`).
 6. **`when` envuelve `extension`, nunca al revés**.
 7. **Sin async/await**: el servidor es bloqueante por request.
+8. **Las vistas usan CMX** (la sintaxis nativa de maquetación). NO se inventa un
+   motor de templates (nada de `{{ }}`, `@if`, `@for`, Blade). El renderer
+   CMX→HTML es CLS puro (módulo `render.clsx`), ver F6.
 
 ---
 
@@ -197,36 +201,64 @@ class App {
 - 404 si el archivo no existe (`fs.exists`).
 - **Nota**: `fs` es un host call del nodo — es la excepción permitida (file I/O no lo cubre WASI, que no está implementado). No es una violación de "host delgado": es el módulo desktop documentado.
 
-## F6. Templates tipo Blade (`modules/view.clsx`)
+## F6. Vistas con CMX + renderer CLS puro (`modules/view.clsx`)
 
-**Sintaxis**:
-- `{{ expr }}` — imprime con escape HTML (`<` → `&lt;`, etc.)
-- `{!! expr !!}` — imprime raw (sin escape)
-- `@if (cond) ... @elseif (cond) ... @else ... @endif`
-- `@for x in (arr) ... @endfor` y `@foreach x in (arr) ... @endforeach`
-- `@layout("base")` + `@section("content") ... @endsection` — herencia de layouts
-- `@include("partial")` — incluye otro template
+**Las vistas usan CMX** — la sintaxis nativa de maquetación de CLS (JSX-like,
+ver `docs/lenguaje/cmx.md`). NO se inventa un motor de templates (nada de
+`{{ }}`, `@if`, `@for`, Blade).
 
-**API**:
+CMX construye un árbol `CmxValue { tag, props, children }` (DOM virtual).
+**No serializa a HTML por sí solo** (`cmx_to_string` produce debug abreviado),
+así que el framework incluye un **renderer en CLS puro** que recorre el árbol:
+
 ```clx
-class View {
-    static function render(name: String, data: Record<String, any>) -> String {
-        # 1. lee views/name.blade (fs.readFile)
-        # 2. compila: parsea @directives y {{ }} a una cadena con interpolacion
-        # 3. evalua expresiones con los datos (soporta: variables, .campo, aritmetica simple)
-        # 4. si tiene @layout, renderiza el layout con el @section
-        # 5. devuelve el HTML final
-    }
-};
+# modules/view.clsx — renderer CMX -> HTML (CLS puro, 0 host nuevo)
+function e(s: String) -> String {
+    # escape HTML: & -> &amp;, < -> &lt;, > -> &gt;, " -> &quot;, ' -> &#39;
+}
+
+function render(cmx: any) -> String {
+    # kind=1 (texto): devuelve e(texto)
+    # tag + props: "<tag nombre=\"valor\" ...>"
+    # children: concat render() de cada hijo (si un hijo es Array, expandir cada elemento)
+    # cierre: "</tag>"
+}
 ```
 
-**Compilación en runtime** (sugerida, 2 pasadas):
-1. **Parsear directivas** → reemplazar `@if/@for/@layout/@section` por marcadores.
-2. **Evaluar** → construir el string: para cada segmento, o texto literal o resultado de evaluar la expresión con `data`.
+**Vista de la demo** — una función CLS que devuelve CMX:
 
-**Escape**: función `e(s: String) -> String` que reemplaza `&`, `<`, `>`, `"`, `'` por entidades.
+```clx
+# views.clsx — las vistas son funciones CLS (no archivos .blade)
+function home_view(titulo: String, items: Array) -> any {
+    return (
+        <div class="container">
+            <h1>{titulo}</h1>
+            <ul>
+                {items.map((x: String) -> <li>{x}</li>)}
+            </ul>
+        </div>
+    );
+}
+```
 
-**Nota sobre complejidad**: los templates son la parte más ambiciosa. Si el tiempo apremia, implementar primero `{{ }}`, `{!! !!}`, `@if/@for`, y `@layout/@section` como objetivo mínimo (el resto puede quedar documentado como "no implementado en v1").
+**Handler**:
+```clx
+app.get("/", (req: Request) -> Response {
+    return Response.html(render(home_view("Bienvenido", ["A", "B", "C"])));
+});
+```
+
+**Cómo se cubren los gaps de CMX (v1)**:
+| Necesidad | Patrón CMX |
+|---|---|
+| Loops | `{arr.map((x: T) -> <li>{x}</li>)}` — el renderer expande arrays de children |
+| Condicionales | `{cond ? a : b}` como expresión, o `if` fuera del marcado construyendo el CmxValue por partes |
+| Layouts/herencia | Composición de funciones: `layout_base(titulo, body)` que recibe el CmxValue del body |
+| Componentes reutilizables | Llamar la función y pasar el resultado: `{home_view(...)}` (los tags en mayúscula NO se invocan — CMX guarda la referencia sin ejecutar) |
+| Raw HTML (sin escape) | El renderer escapa por defecto; una función `raw(html)` marca el valor para que el renderer no lo escape (solo para contenido confiable) |
+
+**Escape**: `e()` en el renderer (texto y props). Sin escape = riesgo de
+inyección HTML — documentar que TODO lo interpolado se escapa salvo `raw()`.
 
 ## F7. Demo completa (`examples/http-framework/`)
 
@@ -240,7 +272,7 @@ function main(args: String[]) -> int {
     var app = App();
     app.use(logging_middleware);
     app.get("/", (req: Request) -> Response {
-        return Response.html(View.render("home", {titulo: "Bienvenido", items: ["A", "B", "C"]}));
+        return Response.html(render(layout_base("Home", home_view("Bienvenido", ["A", "B", "C"]))));
     });
     app.get("/api/users", (req: Request) -> Response {
         return Response.json({ok: true, users: ["ana", "beto", "carla"]});
@@ -255,24 +287,38 @@ function main(args: String[]) -> int {
 };
 ```
 
-`views/base.blade`:
-```
-<html><head><title>@yield("title")</title></head>
-<body>@section("content")@endsection</body></html>
-```
+`views.clsx` (las vistas son funciones CLS que devuelven CMX — no archivos de
+template):
 
-`views/home.blade`:
-```
-@layout("base")
-@section("content")
-<h1>{{ titulo }}</h1>
-<ul>@for x in (items)<li>{{ x }}</li>@endfor</ul>
-@endsection
+```clx
+# layout_base: composicion de layout (no hay @extends en CMX; se compone)
+function layout_base(titulo: String, body: any) -> any {
+    return (
+        <html>
+            <head><title>{titulo}</title></head>
+            <body>
+                {body}
+            </body>
+        </html>
+    );
+}
+
+# home_view: la vista (CMX puro)
+function home_view(titulo: String, items: Array) -> any {
+    return (
+        <div class="container">
+            <h1>{titulo}</h1>
+            <ul>
+                {items.map((x: String) -> <li>{x}</li>)}
+            </ul>
+        </div>
+    );
+}
 ```
 
 `README.md` de la demo: cómo correr (`clx run main.clsx`) y probar:
 ```bash
-curl http://localhost:8080/              # view con layout
+curl http://localhost:8080/              # HTML renderizado (layout + vista CMX)
 curl http://localhost:8080/api/users     # {"ok":true,...}
 curl http://localhost:8080/users/42      # {"id":"42"}
 curl http://localhost:8080/no-existe     # 404
@@ -297,7 +343,7 @@ curl http://localhost:8080/no-existe     # 404
 | Sin concurrencia | Servidor bloqueante, un request a la vez. Concurrencia futura: threads vía `extension` a `pthread_create`, o `select`/`poll`. NO implementar en v1. |
 | Chunked encoding | Solo `Content-Length`. `Transfer-Encoding: chunked` no soportado (documentar). |
 | Keep-alive | Conexión se cierra tras cada request (Connection: close). |
-| Templates | Subconjunto mínimo primero (`{{ }}`, `{!! !!}`, `@if/@for/@layout/@section`). |
+| Vistas CMX | El renderer CLS puro cubre tags/props/children y expande arrays. Loops vía `{arr.map()}`, condicionales vía `{cond ? a : b}` o `if` fuera del marcado, layouts por composición de funciones. Sin escape de raw salvo `raw()` explícito. |
 | Seguridad | Sin HTTPS/TLS. Body parseado como texto. Sin rate limiting. Documentar que es para desarrollo/educación, no producción. |
 
 ## Preguntas que el dev debe resolver (con sugerencia)
@@ -308,4 +354,4 @@ curl http://localhost:8080/no-existe     # 404
 | ¿Cómo se pasa `req.params`? | Campo `params: Record<String, String>` en Request, llenado por el router |
 | ¿Ctor de Socket con `main`? | Sí (regla 4). El ctor recibe el fd |
 | ¿Buffer de recv? | Alocar un string de capacidad fija (ej. 8192) por request; crecer si `Content-Length` lo pide |
-| ¿Cómo evaluar `{{ expr }}` con data? | Sustitución por nombre de variable + `.campo` (split por `.`); sin evaluar expresiones arbitrarias en v1 |
+| ¿Cómo distinguir en el renderer un child texto de un child CMX? | El child texto tiene kind=1 (tag es el texto plano); los elementos tienen tag + props. Ver `cmx.md` (Representación) y los tests `b8-cmx.clsx`/`10-cmx.clsx` |
