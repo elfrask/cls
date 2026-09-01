@@ -340,9 +340,6 @@ impl<'a> Engine<'a> {
             RandomFloat,
             RandomUuid,
             // NetListen/Accept/Recv/Send/Close/LastError eliminados (dev-2).
-            StrIndexOf,
-            StrSlice,
-            StrSplit,
         ] {
             self.register_host(h);
         }

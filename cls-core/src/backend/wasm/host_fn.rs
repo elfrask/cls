@@ -3,6 +3,11 @@
 
 use wasm_encoder::ValType;
 /// Funciones host (`env.*`) que el nodo JIT debe implementar.
+///
+/// Solo las que el emisor llama directo (I/O, reloj, closures, CMX, Any, JSON,
+/// módulos del nodo). Las operaciones de strings/arrays/records/math/parse se
+/// resuelven a internals fusionadas `__intr_*` (0 cruces de frontera); no hay
+/// variantes host para ellas (poda Fase 8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HostFn {
     PrintInt,
@@ -15,55 +20,9 @@ pub enum HostFn {
     Exit,
     Sleep,
     Trap,
-    ParseInt,
-    ParseFloat,
-    ParseBool,
-    StrConcat,
-    StrConcatSlack,
-    StrAppend,
-    StrInt,
-    StrFloat,
-    StrBool,
-    StrChar,
-    PowNum,
-    Fmod,
     Input,
-    StrUpper,
-    StrLower,
-    StrTrim,
-    StrContains,
-    StrStartsWith,
-    StrEndsWith,
-    StrIsEmpty,
-    StrLength,
-    StrEq,
-    AnyToString,
     AnyToBool,
-    StrRepr,
-    IntAbs,
-    FloatAbs,
-    ArrPush,
-    ArrPop,
-    ArrShift,
-    ArrUnshift,
-    ArrIndexOf,
-    ArrIncludes,
-    ArrJoin,
-    ArrReverse,
-    ArrToString,
-    MathSqrt,
-    MathPow,
-    MathMin,
-    MathMax,
-    MathFloor,
-    MathCeil,
-    MathRound,
     MathRandom,
-    MathSin,
-    MathCos,
-    MathTan,
-    MathLog,
-    MathRange,
     JsonStringify,
     JsonParse,
     FsExists,
@@ -73,15 +32,6 @@ pub enum HostFn {
     FsListDir,
     FsMkdir,
     FsRm,
-    RecordNew,
-    RecordSet,
-    RecordGet,
-    RecordHas,
-    RecordTag,
-    RecordLen,
-    RecordKeys,
-    RecordValues,
-    RecordToString,
     HttpGet,
     HttpPost,
     CmxNew,
@@ -152,9 +102,6 @@ pub enum HostFn {
     // NetListen/Accept/Recv/Send/Close/LastError eliminados (dev-2):
     // el módulo `net` ya no existe en el runtime. Los sockets deben venir
     // de `extension`+`when` en el .clsx del usuario.
-    StrIndexOf,
-    StrSlice,
-    StrSplit,
 }
 
 impl HostFn {
@@ -171,55 +118,9 @@ impl HostFn {
             Exit => "exit",
             Sleep => "sleep",
             Trap => "trap",
-            ParseInt => "parse_int",
-            ParseFloat => "parse_float",
-            ParseBool => "parse_bool",
-            StrConcat => "str_concat",
-            StrConcatSlack => "str_concat_slack",
-            StrAppend => "str_append",
-            StrInt => "str_int",
-            StrFloat => "str_float",
-            StrBool => "str_bool",
-            StrChar => "str_char",
-            PowNum => "pow_num",
-            Fmod => "fmod",
             Input => "input",
-            StrUpper => "str_upper",
-            StrLower => "str_lower",
-            StrTrim => "str_trim",
-            StrContains => "str_contains",
-            StrStartsWith => "str_starts_with",
-            StrEndsWith => "str_ends_with",
-            StrIsEmpty => "str_is_empty",
-            StrLength => "str_length",
-            StrEq => "str_eq",
-            AnyToString => "any_to_string",
             AnyToBool => "any_to_bool",
-            StrRepr => "str_repr",
-            IntAbs => "int_abs",
-            FloatAbs => "float_abs",
-            ArrPush => "arr_push",
-            ArrPop => "arr_pop",
-            ArrShift => "arr_shift",
-            ArrUnshift => "arr_unshift",
-            ArrIndexOf => "arr_index_of",
-            ArrIncludes => "arr_includes",
-            ArrJoin => "arr_join",
-            ArrReverse => "arr_reverse",
-            ArrToString => "arr_to_string",
-            MathSqrt => "math_sqrt",
-            MathPow => "math_pow",
-            MathMin => "math_min",
-            MathMax => "math_max",
-            MathFloor => "math_floor",
-            MathCeil => "math_ceil",
-            MathRound => "math_round",
             MathRandom => "math_random",
-            MathSin => "math_sin",
-            MathCos => "math_cos",
-            MathTan => "math_tan",
-            MathLog => "math_log",
-            MathRange => "math_range",
             JsonStringify => "json_stringify",
             JsonParse => "json_parse",
             FsExists => "fs_exists",
@@ -229,15 +130,6 @@ impl HostFn {
             FsListDir => "fs_list_dir",
             FsMkdir => "fs_mkdir",
             FsRm => "fs_rm",
-            RecordNew => "record_new",
-            RecordSet => "record_set",
-            RecordGet => "record_get",
-            RecordHas => "record_has",
-            RecordTag => "record_tag",
-            RecordLen => "record_len",
-            RecordKeys => "record_keys",
-            RecordValues => "record_values",
-            RecordToString => "record_to_string",
             HttpGet => "http_get",
             HttpPost => "http_post",
             CmxNew => "cmx_new",
@@ -297,10 +189,6 @@ impl HostFn {
             RandomInt => "random_int",
             RandomFloat => "random_float",
             RandomUuid => "random_uuid",
-            // net_* eliminados (dev-2): ver comentario arriba.
-            StrIndexOf => "str_index_of",
-            StrSlice => "str_slice",
-            StrSplit => "str_split",
         }
     }
 
@@ -315,58 +203,9 @@ impl HostFn {
             Now => (vec![], vec![ValType::I64]),
             Exit | Sleep => (i64p.clone(), vec![]),
             Trap => (vec![ValType::I64, ValType::I64], vec![]),
-            ParseInt | StrInt => (i64p.clone(), vec![ValType::I64]),
-            ParseBool => (i64p.clone(), vec![ValType::I32]),
-            ParseFloat => (i64p.clone(), vec![ValType::F64]),
-            StrFloat => (vec![ValType::F64], vec![ValType::I64]),
-            StrBool | StrChar => (vec![ValType::I32], vec![ValType::I64]),
-            StrConcat => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            StrConcatSlack => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            // (old, val, tag) -> nuevo packed de s
-            StrAppend => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
-            PowNum => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            Fmod => (vec![ValType::F64, ValType::F64], vec![ValType::F64]),
             Input => (vec![], vec![ValType::I64]),
-            StrUpper | StrLower | StrTrim | StrLength | StrRepr => {
-                (i64p.clone(), vec![ValType::I64])
-            }
-            StrContains | StrStartsWith | StrEndsWith | StrEq => {
-                (vec![ValType::I64, ValType::I64], vec![ValType::I32])
-            }
-            AnyToString => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             AnyToBool => (vec![ValType::I64, ValType::I64], vec![ValType::I32]),
-            StrIsEmpty => (i64p.clone(), vec![ValType::I32]),
-            IntAbs => (i64p.clone(), vec![ValType::I64]),
-            FloatAbs => (vec![ValType::F64], vec![ValType::F64]),
-            ArrPush | ArrUnshift => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            ArrPop | ArrShift | ArrReverse => {
-                (vec![ValType::I64, ValType::I64], vec![ValType::I64])
-            }
-            ArrIndexOf => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            ArrIncludes => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I32],
-            ),
-            ArrJoin => (
-                vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            ArrToString => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            MathSqrt | MathFloor | MathCeil | MathRound | MathSin | MathCos | MathTan | MathLog => {
-                (vec![ValType::F64], vec![ValType::F64])
-            }
-            MathPow | MathMin | MathMax => (vec![ValType::F64, ValType::F64], vec![ValType::F64]),
             MathRandom => (vec![], vec![ValType::F64]),
-            MathRange => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             JsonStringify => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             JsonParse => (i64p.clone(), vec![ValType::I64]),
             FsExists => (i64p.clone(), vec![ValType::I32]),
@@ -374,17 +213,6 @@ impl HostFn {
             FsReadFile => (i64p.clone(), vec![ValType::I64]),
             FsWriteFile => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             FsListDir | FsMkdir | FsRm => (i64p.clone(), vec![ValType::I64]),
-            RecordNew => (i64p.clone(), vec![ValType::I64]),
-            RecordSet => (
-                vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            RecordGet => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            RecordHas => (vec![ValType::I64, ValType::I64], vec![ValType::I32]),
-            RecordTag => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            RecordLen => (i64p.clone(), vec![ValType::I64]),
-            RecordKeys | RecordValues => (i64p.clone(), vec![ValType::I64]),
-            RecordToString => (i64p.clone(), vec![ValType::I64]),
             HttpGet => (i64p.clone(), vec![ValType::I64]),
             HttpPost => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             CmxNew => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
@@ -453,11 +281,6 @@ impl HostFn {
             // Módulo net: listen(port)->handle, accept(handle)->sock,
             // recv(sock,max)->String, send(sock,data)->n, close(sock)->0, lastError()->String
             // net_* eliminados (dev-2): ver comentario arriba.
-            // Módulo str: indexOf(s,sub)->int, slice(s,start,end)->String,
-            // split(s,sep)->String[] (array como ptr, igual que fs.listDir)
-            StrIndexOf => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            StrSlice => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
-            StrSplit => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
         }
     }
 }

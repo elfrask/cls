@@ -261,7 +261,7 @@ impl<'a> FuncEmitter<'a> {
         match obj_ty {
             Type::String => match m.member.as_str() {
                 "length" => {
-                    self.emit_str_host("__intr_str_length", HostFn::StrLength);
+                    self.emit_str_host("__intr_str_length");
                     Ok(())
                 }
                 _ => Err(self.unsupported_expr(&Expression::MemberAccess(m.clone()))),
@@ -277,8 +277,6 @@ impl<'a> FuncEmitter<'a> {
                 "length" | "size" => {
                     if let Some(&idx) = self.func_indexes.get("__intr_record_len") {
                         self.body.push(Instruction::Call(idx));
-                    } else {
-                        self.host.call(HostFn::RecordLen, &mut self.body);
                     }
                     Ok(())
                 }
@@ -288,8 +286,6 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_load_str(k);
                     if let Some(&idx) = self.func_indexes.get("__intr_record_get") {
                         self.body.push(Instruction::Call(idx));
-                    } else {
-                        self.host.call(HostFn::RecordGet, &mut self.body);
                     }
                     Ok(())
                 }
@@ -303,8 +299,6 @@ impl<'a> FuncEmitter<'a> {
                     "length" | "size" => {
                         if let Some(&idx) = self.func_indexes.get("__intr_record_len") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::RecordLen, &mut self.body);
                         }
                         Ok(())
                     }
@@ -317,8 +311,6 @@ impl<'a> FuncEmitter<'a> {
                         self.emit_load_str(k);
                         if let Some(&idx) = self.func_indexes.get("__intr_record_get") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::RecordGet, &mut self.body);
                         }
                         // Bug fix dev-2 (Fase 7): __intr_record_get devuelve los
                         // bits crudos del valor (i64). Para Float hay que

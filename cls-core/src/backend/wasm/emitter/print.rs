@@ -12,8 +12,6 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::LocalGet(key_tmp));
         if let Some(&idx) = self.func_indexes.get("__intr_record_get") {
             self.body.push(Instruction::Call(idx));
-        } else {
-            self.host.call(HostFn::RecordGet, &mut self.body);
         }
         let val_tmp = self.fresh_local();
         self.body.push(Instruction::LocalSet(val_tmp));
@@ -21,8 +19,6 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::LocalGet(key_tmp));
         if let Some(&idx) = self.func_indexes.get("__intr_record_tag") {
             self.body.push(Instruction::Call(idx));
-        } else {
-            self.host.call(HostFn::RecordTag, &mut self.body);
         }
         let tag_tmp = self.fresh_local();
         self.body.push(Instruction::LocalSet(tag_tmp));
@@ -47,7 +43,7 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::LocalGet(res));
                 let sep = self.intern_string(", ");
                 self.emit_load_str(sep);
-                self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
+                self.emit_str_host("__intr_str_concat");
                 self.body.push(Instruction::LocalSet(res));
             }
             self.body.push(Instruction::LocalGet(ptr));
@@ -82,35 +78,35 @@ impl<'a> FuncEmitter<'a> {
             match slot {
                 Type::String => {
                     self.body.push(Instruction::LocalGet(val_tmp));
-                    self.emit_str_host("__intr_str_repr", HostFn::StrRepr);
+                    self.emit_str_host("__intr_str_repr");
                 }
                 Type::Float => {
                     self.body.push(Instruction::LocalGet(val_tmp));
-                    self.emit_str_host("__intr_str_float", HostFn::StrFloat);
+                    self.emit_str_host("__intr_str_float");
                 }
                 Type::Bool => {
                     self.body.push(Instruction::LocalGet(val_tmp));
-                    self.emit_str_host("__intr_str_bool", HostFn::StrBool);
+                    self.emit_str_host("__intr_str_bool");
                 }
                 Type::Char => {
                     self.body.push(Instruction::LocalGet(val_tmp));
-                    self.emit_str_host("__intr_str_char", HostFn::StrChar);
+                    self.emit_str_host("__intr_str_char");
                 }
                 _ => {
                     self.body.push(Instruction::LocalGet(val_tmp));
-                    self.emit_str_host("__intr_str_int", HostFn::StrInt);
+                    self.emit_str_host("__intr_str_int");
                 }
             }
             self.body.push(Instruction::LocalSet(sv));
             self.body.push(Instruction::LocalGet(res));
             self.body.push(Instruction::LocalGet(sv));
-            self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
+            self.emit_str_host("__intr_str_concat");
             self.body.push(Instruction::LocalSet(res));
         }
         let close = self.intern_string(")");
         self.body.push(Instruction::LocalGet(res));
         self.emit_load_str(close);
-        self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
+        self.emit_str_host("__intr_str_concat");
         self.body.push(Instruction::LocalSet(res));
         self.body.push(Instruction::LocalGet(res));
         Ok(())
@@ -283,8 +279,6 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Const(0));
             if let Some(&idx) = self.func_indexes.get("__intr_arr_to_string") {
                 self.body.push(Instruction::Call(idx));
-            } else {
-                self.host.call(HostFn::ArrToString, &mut self.body);
             }
             self.host.call(HostFn::PrintStr, &mut self.body);
             return Ok(());
@@ -365,8 +359,6 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Const(kind));
                 if let Some(&idx) = self.func_indexes.get("__intr_arr_to_string") {
                     self.body.push(Instruction::Call(idx));
-                } else {
-                    self.host.call(HostFn::ArrToString, &mut self.body);
                 }
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
@@ -374,8 +366,6 @@ impl<'a> FuncEmitter<'a> {
                 // Formatear `{k: v, ...}` como el walker (evita imprimir el ptr).
                 if let Some(&idx) = self.func_indexes.get("__intr_record_to_string") {
                     self.body.push(Instruction::Call(idx));
-                } else {
-                    self.host.call(HostFn::RecordToString, &mut self.body);
                 }
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
@@ -383,8 +373,6 @@ impl<'a> FuncEmitter<'a> {
                 // DEFAULT INVERTIDO: hashmap en runtime -> record_to_string.
                 if let Some(&idx) = self.func_indexes.get("__intr_record_to_string") {
                     self.body.push(Instruction::Call(idx));
-                } else {
-                    self.host.call(HostFn::RecordToString, &mut self.body);
                 }
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
@@ -415,7 +403,7 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::LocalSet(lt));
                         self.body.push(Instruction::LocalGet(res));
                         self.body.push(Instruction::LocalGet(lt));
-                        self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
+                        self.emit_str_host("__intr_str_concat");
                         self.body.push(Instruction::LocalSet(res));
                         // valor
                         self.body.push(Instruction::LocalGet(ptr));
@@ -443,15 +431,15 @@ impl<'a> FuncEmitter<'a> {
                             // el valor ya es un string (ptr<<32|len): concatenar directo
                         } else {
                             match w {
-                                WasTy::F64 => self.emit_str_host("__intr_str_float", HostFn::StrFloat),
-                                _ => self.emit_str_host("__intr_str_int", HostFn::StrInt),
+                                WasTy::F64 => self.emit_str_host("__intr_str_float"),
+                                _ => self.emit_str_host("__intr_str_int"),
                             }
                         }
                         let sv = self.fresh_local();
                         self.body.push(Instruction::LocalSet(sv));
                         self.body.push(Instruction::LocalGet(res));
                         self.body.push(Instruction::LocalGet(sv));
-                        self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
+                        self.emit_str_host("__intr_str_concat");
                         self.body.push(Instruction::LocalSet(res));
                         if i < info.fields.len() - 1 {
                             let sep = self.intern_string(", ");
@@ -460,7 +448,7 @@ impl<'a> FuncEmitter<'a> {
                             self.body.push(Instruction::LocalSet(st));
                             self.body.push(Instruction::LocalGet(res));
                             self.body.push(Instruction::LocalGet(st));
-                            self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
+                            self.emit_str_host("__intr_str_concat");
                             self.body.push(Instruction::LocalSet(res));
                         }
                     }
@@ -470,7 +458,7 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::LocalSet(ct));
                     self.body.push(Instruction::LocalGet(res));
                     self.body.push(Instruction::LocalGet(ct));
-                    self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
+                    self.emit_str_host("__intr_str_concat");
                     self.body.push(Instruction::LocalSet(res));
                     self.body.push(Instruction::LocalGet(res));
                     self.host.call(HostFn::PrintStr, &mut self.body);

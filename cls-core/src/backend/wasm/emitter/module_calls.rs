@@ -1,4 +1,4 @@
-//! module_calls.rs (Fase 1: extraido de cls-core/src/backend/wasm/emitter/calls.rs).
+﻿//! module_calls.rs (Fase 1: extraido de cls-core/src/backend/wasm/emitter/calls.rs).
 
 use super::*;
 
@@ -6,7 +6,7 @@ impl<'a> FuncEmitter<'a> {
 
 
 
-    /// `.join(sep)` sobre una tupla: unroll estático (slots conocidos en compile-time).
+    /// `.join(sep)` sobre una tupla: unroll estÃ¡tico (slots conocidos en compile-time).
     pub(crate) fn emit_tuple_join(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         let obj_ty = self
             .types
@@ -31,7 +31,7 @@ impl<'a> FuncEmitter<'a> {
             if i > 0 {
                 self.body.push(Instruction::LocalGet(res));
                 self.body.push(Instruction::LocalGet(sep));
-                self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
+                self.emit_str_host("__intr_str_concat");
                 self.body.push(Instruction::LocalSet(res));
             }
             let slot_ty = was_type(slot)?;
@@ -58,16 +58,16 @@ impl<'a> FuncEmitter<'a> {
                 })),
             }
             match (slot_ty, slot) {
-                (WasTy::F64, _) => self.emit_str_host("__intr_str_float", HostFn::StrFloat),
-                (WasTy::I32, Type::Bool) => self.emit_str_host("__intr_str_bool", HostFn::StrBool),
-                (WasTy::I32, _) => self.emit_str_host("__intr_str_char", HostFn::StrChar),
+                (WasTy::F64, _) => self.emit_str_host("__intr_str_float"),
+                (WasTy::I32, Type::Bool) => self.emit_str_host("__intr_str_bool"),
+                (WasTy::I32, _) => self.emit_str_host("__intr_str_char"),
                 (WasTy::I64, Type::String) => {}
-                (WasTy::I64, _) => self.emit_str_host("__intr_str_int", HostFn::StrInt),
+                (WasTy::I64, _) => self.emit_str_host("__intr_str_int"),
             }
             self.body.push(Instruction::LocalSet(s_tmp));
             self.body.push(Instruction::LocalGet(res));
             self.body.push(Instruction::LocalGet(s_tmp));
-            self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
+            self.emit_str_host("__intr_str_concat");
             self.body.push(Instruction::LocalSet(res));
         }
         self.body.push(Instruction::LocalGet(res));
@@ -76,15 +76,14 @@ impl<'a> FuncEmitter<'a> {
 
 
 
-    /// `math.X(...)` -> instrucción WASM nativa o función interna `__intr_math_*`
-    /// (fallback: host del módulo math si las internals no están fusionadas).
+    /// `math.X(...)` -> instrucciÃ³n WASM nativa o funciÃ³n interna `__intr_math_*`.
+    /// La fusiÃ³n de internals es incondicional (emit.rs llama fuse_internals
+    /// siempre), asÃ­ que la internals existe; no hay fallback host.
     pub(crate) fn emit_math_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
-        let call = |m: &mut Self, name: &str, host: HostFn| -> ClsResult<()> {
+        let call = |m: &mut Self, name: &str| -> ClsResult<()> {
             if let Some(&idx) = m.func_indexes.get(name) {
                 m.body.push(Instruction::Call(idx));
-            } else {
-                m.host.call(host, &mut m.body);
             }
             Ok(())
         };
@@ -92,10 +91,10 @@ impl<'a> FuncEmitter<'a> {
             "abs" => {
                 self.emit_expression(&c.args[0])?;
                 match self.value_type(&c.args[0])? {
-                    // float: F64Abs (instrucción nativa, bit-exacta)
+                    // float: F64Abs (instrucciÃ³n nativa, bit-exacta)
                     WasTy::F64 => self.body.push(Instruction::F64Abs),
                     // int: i64.abs NO existe en WASM -> __intr_int_abs
-                    _ => call(self, "__intr_int_abs", IntAbs)?,
+                    _ => call(self, "__intr_int_abs")?,
                 }
                 Ok(())
             }
@@ -128,8 +127,6 @@ impl<'a> FuncEmitter<'a> {
                 self.f64_promote(&c.args[0])?;
                 if let Some(&idx) = self.func_indexes.get("__intr_math_sin") {
                     self.body.push(Instruction::Call(idx));
-                } else {
-                    self.host.call(MathSin, &mut self.body);
                 }
                 Ok(())
             }
@@ -138,8 +135,6 @@ impl<'a> FuncEmitter<'a> {
                 self.f64_promote(&c.args[0])?;
                 if let Some(&idx) = self.func_indexes.get("__intr_math_cos") {
                     self.body.push(Instruction::Call(idx));
-                } else {
-                    self.host.call(MathCos, &mut self.body);
                 }
                 Ok(())
             }
@@ -148,8 +143,6 @@ impl<'a> FuncEmitter<'a> {
                 self.f64_promote(&c.args[0])?;
                 if let Some(&idx) = self.func_indexes.get("__intr_math_tan") {
                     self.body.push(Instruction::Call(idx));
-                } else {
-                    self.host.call(MathTan, &mut self.body);
                 }
                 Ok(())
             }
@@ -158,8 +151,6 @@ impl<'a> FuncEmitter<'a> {
                 self.f64_promote(&c.args[0])?;
                 if let Some(&idx) = self.func_indexes.get("__intr_math_log") {
                     self.body.push(Instruction::Call(idx));
-                } else {
-                    self.host.call(MathLog, &mut self.body);
                 }
                 Ok(())
             }
@@ -168,7 +159,7 @@ impl<'a> FuncEmitter<'a> {
                 self.f64_promote(&c.args[0])?;
                 self.emit_expression(&c.args[1])?;
                 self.f64_promote(&c.args[1])?;
-                call(self, "__intr_math_pow", MathPow)?;
+                call(self, "__intr_math_pow")?;
                 Ok(())
             }
             "min" => {
@@ -196,8 +187,6 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&c.args[1])?;
                 if let Some(&idx) = self.func_indexes.get("__intr_math_range") {
                     self.body.push(Instruction::Call(idx));
-                } else {
-                    self.host.call(MathRange, &mut self.body);
                 }
                 Ok(())
             }
@@ -207,7 +196,7 @@ impl<'a> FuncEmitter<'a> {
 
 
 
-    /// `fs.X(...)` -> host del módulo fs (básico: exists/cwd/readFile/writeFile/listDir/mkdir/rm).
+    /// `fs.X(...)` -> host del mÃ³dulo fs (bÃ¡sico: exists/cwd/readFile/writeFile/listDir/mkdir/rm).
     pub(crate) fn emit_fs_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
         match member.member.as_str() {
@@ -252,7 +241,7 @@ impl<'a> FuncEmitter<'a> {
 
 
 
-    /// `http.X(...)` -> host del módulo http.
+    /// `http.X(...)` -> host del mÃ³dulo http.
     pub(crate) fn emit_http_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
         match member.member.as_str() {
@@ -273,7 +262,7 @@ impl<'a> FuncEmitter<'a> {
 
 
 
-    /// `os.X(...)` -> host del módulo os.
+    /// `os.X(...)` -> host del mÃ³dulo os.
     pub(crate) fn emit_os_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
         match member.member.as_str() {
@@ -300,7 +289,7 @@ impl<'a> FuncEmitter<'a> {
 
 
 
-    /// `path.X(...)` -> host del módulo path.
+    /// `path.X(...)` -> host del mÃ³dulo path.
     pub(crate) fn emit_path_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
         match member.member.as_str() {
@@ -341,7 +330,7 @@ impl<'a> FuncEmitter<'a> {
 
 
 
-    /// `process.X(...)` -> host del módulo process.
+    /// `process.X(...)` -> host del mÃ³dulo process.
     pub(crate) fn emit_process_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
         match member.member.as_str() {
@@ -365,7 +354,7 @@ impl<'a> FuncEmitter<'a> {
 
 
 
-    /// `time.X(...)` -> host del módulo time.
+    /// `time.X(...)` -> host del mÃ³dulo time.
     pub(crate) fn emit_time_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
         match member.member.as_str() {
@@ -391,7 +380,7 @@ impl<'a> FuncEmitter<'a> {
 
 
 
-    /// `random.X(...)` -> host del módulo random.
+    /// `random.X(...)` -> host del mÃ³dulo random.
     pub(crate) fn emit_random_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
         use HostFn::*;
         match member.member.as_str() {
@@ -418,12 +407,12 @@ impl<'a> FuncEmitter<'a> {
 
 
 
-    /// Valida la aridad de una llamada a host de módulo y devuelve el arg `i`.
-    /// Evita `c.args[i]` con índice fuera de rango (panic → error de compilación).
+    /// Valida la aridad de una llamada a host de mÃ³dulo y devuelve el arg `i`.
+    /// Evita `c.args[i]` con Ã­ndice fuera de rango (panic â†’ error de compilaciÃ³n).
     pub(crate) fn call_arg<'e>(&self, c: &'e CallExpr, i: usize, fn_name: &str) -> ClsResult<&'e Expression> {
         c.args.get(i).ok_or_else(|| {
             crate::error::ClsError::compile_at(
-                &format!("{} esperaba {} argumento(s), recibió {}", fn_name, i + 1, c.args.len()),
+                &format!("{} esperaba {} argumento(s), recibiÃ³ {}", fn_name, i + 1, c.args.len()),
                 &c.span,
             )
         })
@@ -431,7 +420,7 @@ impl<'a> FuncEmitter<'a> {
 
 
 
-    /// Tipo de retorno de una llamada o miembro de un módulo stdlib.
+    /// Tipo de retorno de una llamada o miembro de un mÃ³dulo stdlib.
     pub(crate) fn module_call_ret(&self, expr: &Expression) -> Option<WasTy> {
         if let Expression::Call(c) = expr {
             if let Expression::MemberAccess(member) = &*c.callee {
@@ -484,7 +473,7 @@ impl<'a> FuncEmitter<'a> {
                         };
                     }
                     if obj == "process" {
-                        // exit es void: no reportar valor (rompería `print(exit(0))`).
+                        // exit es void: no reportar valor (romperÃ­a `print(exit(0))`).
                         return match member.member.as_str() {
                             "exit" => None,
                             _ => Some(WasTy::I64),
@@ -516,7 +505,7 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
         }
-        // Miembros de módulos sin llamada: math.PI / math.E
+        // Miembros de mÃ³dulos sin llamada: math.PI / math.E
         if let Expression::MemberAccess(member) = expr {
             if let Expression::Identifier(obj, _) = &*member.object {
                 if obj == "math" && (member.member == "PI" || member.member == "E") {
@@ -527,34 +516,31 @@ impl<'a> FuncEmitter<'a> {
         None
     }
 
-    /// `net.X(...)` eliminado (dev-2): el módulo `net` ya no existe. Si un
-    /// usuario escribe `net.listen(...)` el dispatch cae al error genérico
+    /// `net.X(...)` eliminado (dev-2): el mÃ³dulo `net` ya no existe. Si un
+    /// usuario escribe `net.listen(...)` el dispatch cae al error genÃ©rico
     /// de miembro no soportado (no se compila, el typeck lo rechaza antes).
     /// Para sockets: usar `extension` con `when` por SO en el .clsx.
 
-    /// `strings.X(...)` -> internal `__intr_str_*` (si las internals están
-    /// fusionadas; call directo por nombre) o fallback al host del módulo
-    /// strings (misma firma/ABI, orden de stack idéntico).
+    /// `strings.X(...)` -> internal `__intr_str_*` (call directo por nombre).
     pub(crate) fn emit_strings_call(&mut self, member: &MemberAccessExpr, c: &CallExpr) -> ClsResult<()> {
-        use HostFn::*;
         match member.member.as_str() {
             "indexOf" => {
                 self.emit_expression(&c.args[0])?;
                 self.emit_expression(&c.args[1])?;
-                self.emit_str_host("__intr_str_index_of", StrIndexOf);
+                self.emit_str_host("__intr_str_index_of");
                 Ok(())
             }
             "slice" => {
                 self.emit_expression(&c.args[0])?;
                 self.emit_expression(&c.args[1])?;
                 self.emit_expression(&c.args[2])?;
-                self.emit_str_host("__intr_str_slice", StrSlice);
+                self.emit_str_host("__intr_str_slice");
                 Ok(())
             }
             "split" => {
                 self.emit_expression(&c.args[0])?;
                 self.emit_expression(&c.args[1])?;
-                self.emit_str_host("__intr_str_split", StrSplit);
+                self.emit_str_host("__intr_str_split");
                 Ok(())
             }
             _ => Err(self.unsupported_expr(&Expression::Call(c.clone()))),

@@ -1,4 +1,4 @@
-//! assignment.rs (Fase 1: extraido de cls-core/src/backend/wasm/emitter/binary.rs).
+﻿//! assignment.rs (Fase 1: extraido de cls-core/src/backend/wasm/emitter/binary.rs).
 
 use super::*;
 
@@ -38,7 +38,7 @@ impl<'a> FuncEmitter<'a> {
                             return Ok(());
                         }
                     }
-                    // Elegir operación según el tipo del identificador (int vs float).
+                    // Elegir operaciÃ³n segÃºn el tipo del identificador (int vs float).
                     let cls_t = self
                         .types
                         .get(&expr_span(&a.target))
@@ -46,11 +46,11 @@ impl<'a> FuncEmitter<'a> {
                         .unwrap_or(Type::Any);
                     let ty = self.value_type(&a.target)?;
                     self.emit_ident_load(name);
-                    // `s += x` con String: APPEND in-place (dev-2) — escribe la
+                    // `s += x` con String: APPEND in-place (dev-2) â€” escribe la
                     // pieza en el slack del buffer si hay, sin alocar.
                     if op == Operator::PlusEqual && matches!(cls_t, Type::String) {
                         self.emit_append_piece(&a.value)?;
-                        self.emit_str_host("__intr_str_append", HostFn::StrAppend);
+                        self.emit_str_host("__intr_str_append");
                         self.emit_ident_store(name);
                         self.emit_ident_load(name);
                         return Ok(());
@@ -63,8 +63,12 @@ impl<'a> FuncEmitter<'a> {
                             Operator::MinusEqual => self.body.push(Instruction::F64Sub),
                             Operator::StarEqual => self.body.push(Instruction::F64Mul),
                             Operator::SlashEqual => self.body.push(Instruction::F64Div),
-                            // `%=` float: WASM no tiene resto float -> host fmod.
-                            _ => self.host.call(HostFn::Fmod, &mut self.body),
+                            // `%=` float: WASM no tiene resto float -> __intr_math_fmod.
+                            _ => {
+                                if let Some(&idx) = self.func_indexes.get("__intr_math_fmod") {
+                                    self.body.push(Instruction::Call(idx));
+                                }
+                            }
                         }
                     } else {
                         match op {
@@ -76,13 +80,13 @@ impl<'a> FuncEmitter<'a> {
                         }
                     }
                 } else {
-                    // Frontera única: shape contiguo hacia destino dinámico.
+                    // Frontera Ãºnica: shape contiguo hacia destino dinÃ¡mico.
                     let dest = self
                         .local_cls_types
                         .get(name)
                         .cloned()
                         .or_else(|| self.types.get(&expr_span(&a.target)).cloned());
-                    // `s = s + x` con s:String: APPEND in-place (dev-2) — mismo
+                    // `s = s + x` con s:String: APPEND in-place (dev-2) â€” mismo
                     // buffer si hay slack, sin alocar ni copiar el contenido.
                     if matches!(dest.as_ref(), Some(Type::String)) {
                         if let Expression::Binary(bin) = &*a.value {
@@ -134,8 +138,8 @@ impl<'a> FuncEmitter<'a> {
                 let val_tmp = self.fresh_local_ty(elem_ty);
                 self.emit_expression(&i.object)?;
                 self.emit_expression(&i.index)?;
-                // Frontera única: shape contiguo (o literal) hacia valor de
-                // record dinámico -> hashmap.
+                // Frontera Ãºnica: shape contiguo (o literal) hacia valor de
+                // record dinÃ¡mico -> hashmap.
                 let dest_v = match self.types.get(&expr_span(&i.object)).cloned() {
                     Some(Type::Record(_, v)) => Some((*v).clone()),
                     _ => Some(Type::Any),
@@ -162,18 +166,16 @@ impl<'a> FuncEmitter<'a> {
                     .cloned()
                     .unwrap_or(Type::Any);
                 // Tag del RUNTIME (runtime_tag_code: 1=string 6=array 7=record),
-                // NO arr_kind_code (binding: 4=string 5=array 6=record) — el
+                // NO arr_kind_code (binding: 4=string 5=array 6=record) â€” el
                 // record_set y la lectura/stringify usan el esquema runtime.
                 self.body.push(Instruction::I64Const(runtime_tag_code(&cls_t)));
                 if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                     self.body.push(Instruction::Call(idx));
-                } else {
-                    self.host.call(HostFn::RecordSet, &mut self.body);
                 }
                 // write-back del ptr (el record pudo crecer y reallocarse).
                 // writeback_array maneja Identifier Y MemberAccess (`me.record`)
-                // y deja el ptr del record en el stack; aquí no se usa como
-                // receiver, así que se descarta (el statement devuelve el valor).
+                // y deja el ptr del record en el stack; aquÃ­ no se usa como
+                // receiver, asÃ­ que se descarta (el statement devuelve el valor).
                 self.writeback_array(&i.object)?;
                 self.body.push(Instruction::Drop);
                 self.body.push(match elem_ty {
@@ -192,8 +194,8 @@ impl<'a> FuncEmitter<'a> {
                     ));
                 }
                 // DEFAULT INVERTIDO: `s["campo"] = val` sobre un shape -> el
-                // valor vive como hashmap, así que es record_set + write-back
-                // (idéntico al caso Record dinámico de abajo).
+                // valor vive como hashmap, asÃ­ que es record_set + write-back
+                // (idÃ©ntico al caso Record dinÃ¡mico de abajo).
                 let shape = self.types.get(&expr_span(&i.object)).cloned();
                 let fields = match &shape {
                     Some(Type::Shape(f)) => f.clone(),
@@ -205,7 +207,7 @@ impl<'a> FuncEmitter<'a> {
                     }
                     _ => {
                         return Err(crate::error::ClsError::compile_at(
-                            "Índice dinámico no soportado en un record con shape (usa Record<K,V> o any)",
+                            "Ãndice dinÃ¡mico no soportado en un record con shape (usa Record<K,V> o any)",
                             &i.span,
                         ))
                     }
@@ -221,7 +223,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&i.object)?;
                 let ptr_tmp = self.fresh_local();
                 self.body.push(Instruction::LocalSet(ptr_tmp));
-                // Frontera única hacia el valor (destino = tipo del campo).
+                // Frontera Ãºnica hacia el valor (destino = tipo del campo).
                 self.emit_coerce(&a.value, Some(&field_ty))?;
                 let val_tmp = self.fresh_local();
                 self.body.push(Instruction::LocalSet(val_tmp));
@@ -238,8 +240,6 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Const(tag));
                 if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                     self.body.push(Instruction::Call(idx));
-                } else {
-                    self.host.call(HostFn::RecordSet, &mut self.body);
                 }
                 self.writeback_array(&i.object)?;
                 self.body.push(Instruction::Drop);
@@ -272,8 +272,8 @@ impl<'a> FuncEmitter<'a> {
                             self.body.push(Instruction::Drop);
                         }
                     }
-                    // write-back del objeto (el ptr no cambia en mutación in-place,
-                    // pero la reasignación del slot es paridad walker).
+                    // write-back del objeto (el ptr no cambia en mutaciÃ³n in-place,
+                    // pero la reasignaciÃ³n del slot es paridad walker).
                     if let Expression::Identifier(name, _) = &*i.object {
                         self.body.push(Instruction::LocalGet(obj_tmp));
                         self.emit_ident_store(name);
@@ -325,8 +325,10 @@ impl<'a> FuncEmitter<'a> {
                         WasTy::I64 => Instruction::LocalGet(v),
                     });
                     if elem_ty == WasTy::F64 && op == Operator::PercentEqual {
-                        // `farr[i] %= v` float: WASM no tiene resto float -> host fmod.
-                        self.host.call(HostFn::Fmod, &mut self.body);
+                        // `farr[i] %= v` float: WASM no tiene resto float -> __intr_math_fmod.
+                        if let Some(&idx) = self.func_indexes.get("__intr_math_fmod") {
+                            self.body.push(Instruction::Call(idx));
+                        }
                     } else {
                         apply_compound_ty(&mut self.body, op, elem_ty)?;
                     }
@@ -363,7 +365,7 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_expression(&i.index)?;
                     self.emit_expression(&a.value)?;
                     // Array de float con valor int: promover el RHS a f64 antes
-                    // del store (el layout del array es homogéneo).
+                    // del store (el layout del array es homogÃ©neo).
                     if elem_ty == WasTy::F64 {
                         self.f64_promote(&a.value)?;
                     }
@@ -375,12 +377,12 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             Expression::MemberAccess(m) => {
-                // `Clase.campo = v` (campo estático) -> global.set.
+                // `Clase.campo = v` (campo estÃ¡tico) -> global.set.
                 if let Expression::Identifier(cn, _) = &*m.object {
                     if let Some(&g) = self.static_fields.get(&format!("{}::{}", cn, m.member)) {
                         if is_compound(op) {
                             return Err(crate::error::ClsError::CompileError(
-                                "Operadores compuestos sobre campos estáticos no soportados en el JIT"
+                                "Operadores compuestos sobre campos estÃ¡ticos no soportados en el JIT"
                                     .to_string(),
                             ));
                         }
@@ -441,7 +443,7 @@ impl<'a> FuncEmitter<'a> {
                         let val_tmp = self.fresh_local_ty(w);
                         self.emit_expression(&m.object)?;
                         self.body.push(Instruction::LocalSet(obj_tmp));
-                        // Frontera única: shape contiguo hacia campo dinámico.
+                        // Frontera Ãºnica: shape contiguo hacia campo dinÃ¡mico.
                         self.emit_coerce(&a.value, Some(_t))?;
                         self.body.push(match w {
                             WasTy::F64 => Instruction::LocalSet(val_tmp),
@@ -547,7 +549,7 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(());
                     }
                 }
-                // Record dinámico: `r.campo = val` -> record_set(ptr, "campo",
+                // Record dinÃ¡mico: `r.campo = val` -> record_set(ptr, "campo",
                 // val_bits, tag) + write-back. El access por `.` sobre un
                 // Record<String,Any> (diferente del shape contiguo).
                 if matches!(
@@ -564,8 +566,8 @@ impl<'a> FuncEmitter<'a> {
                     let val_tmp = self.fresh_local();
                     self.emit_expression(&m.object)?;
                     self.body.push(Instruction::LocalSet(obj_tmp));
-                    // Frontera única: shape contiguo/literal hacia valor de
-                    // record dinámico -> hashmap.
+                    // Frontera Ãºnica: shape contiguo/literal hacia valor de
+                    // record dinÃ¡mico -> hashmap.
                     let dest_v = match self.types.get(&expr_span(&m.object)).cloned() {
                         Some(Type::Record(_, v)) => Some((*v).clone()),
                         _ => Some(Type::Any),
@@ -591,8 +593,6 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::I64Const(runtime_tag_code(&cls_t)));
                     if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                         self.body.push(Instruction::Call(idx));
-                    } else {
-                        self.host.call(HostFn::RecordSet, &mut self.body);
                     }
                     self.writeback_array(&m.object)?;
                     self.body.push(Instruction::Drop);
@@ -600,8 +600,8 @@ impl<'a> FuncEmitter<'a> {
                     return Ok(());
                 }
                 // DEFAULT INVERTIDO: `r.campo = val` sobre un shape -> el valor
-                // vive como hashmap, así que es record_set + write-back (igual
-                // que el caso Record dinámico de arriba).
+                // vive como hashmap, asÃ­ que es record_set + write-back (igual
+                // que el caso Record dinÃ¡mico de arriba).
                 if let Some(Type::Shape(fields)) = self.types.get(&expr_span(&m.object)).cloned() {
                     if is_compound(op) {
                         return Err(crate::error::ClsError::CompileError(
@@ -620,7 +620,7 @@ impl<'a> FuncEmitter<'a> {
                     let val_tmp = self.fresh_local();
                     self.emit_expression(&m.object)?;
                     self.body.push(Instruction::LocalSet(obj_tmp));
-                    // Frontera única hacia el valor (destino = tipo del campo).
+                    // Frontera Ãºnica hacia el valor (destino = tipo del campo).
                     self.emit_coerce(&a.value, Some(&field_ty))?;
                     self.body.push(Instruction::LocalSet(val_tmp));
                     self.body.push(Instruction::LocalGet(obj_tmp));
@@ -636,8 +636,6 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::I64Const(tag));
                     if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                         self.body.push(Instruction::Call(idx));
-                    } else {
-                        self.host.call(HostFn::RecordSet, &mut self.body);
                     }
                     self.writeback_array(&m.object)?;
                     self.body.push(Instruction::Drop);

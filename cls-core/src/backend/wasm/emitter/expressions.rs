@@ -501,7 +501,7 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::LocalSet(tmp));
             self.body.push(Instruction::LocalGet(acc));
             self.body.push(Instruction::LocalGet(tmp));
-            self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
+            self.emit_str_host("__intr_str_concat");
             self.body.push(Instruction::LocalSet(acc));
         }
         self.body.push(Instruction::LocalGet(acc));

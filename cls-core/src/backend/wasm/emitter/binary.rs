@@ -84,7 +84,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;
                 if is_str(&b.left) || is_str(&b.right) {
-                    self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
+                    self.emit_str_host("__intr_str_concat");
                 } else {
                     self.body.push(Instruction::I64Add);
                 }
@@ -109,7 +109,7 @@ impl<'a> FuncEmitter<'a> {
             Plus => {
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;
-                self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
+                self.emit_str_host("__intr_str_concat");
             }
             Minus if lt == WasTy::F64 || rt == WasTy::F64 => {
                 self.emit_expression(&b.left)?;
@@ -155,8 +155,6 @@ impl<'a> FuncEmitter<'a> {
                 self.f64_promote(&b.right)?;
                 if let Some(&idx) = self.func_indexes.get("__intr_math_fmod") {
                     self.body.push(Instruction::Call(idx));
-                } else {
-                    self.host.call(HostFn::Fmod, &mut self.body);
                 }
             }
             Percent => {
@@ -173,8 +171,6 @@ impl<'a> FuncEmitter<'a> {
                 self.f64_promote(&b.right)?;
                 if let Some(&idx) = self.func_indexes.get("__intr_math_pow") {
                     self.body.push(Instruction::Call(idx));
-                } else {
-                    self.host.call(HostFn::MathPow, &mut self.body);
                 }
             }
             StarStar => {
@@ -182,8 +178,6 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&b.right)?;
                 if let Some(&idx) = self.func_indexes.get("__intr_pow_num") {
                     self.body.push(Instruction::Call(idx));
-                } else {
-                    self.host.call(HostFn::PowNum, &mut self.body);
                 }
             }
             // Operadores bit a bit (enteros): ^ << >>
@@ -208,7 +202,7 @@ impl<'a> FuncEmitter<'a> {
                 if self.is_string_expr(&b.left) || self.is_string_expr(&b.right) {
                     self.emit_expression(&b.left)?;
                     self.emit_expression(&b.right)?;
-                    self.emit_str_host("__intr_str_eq", HostFn::StrEq);
+                    self.emit_str_host("__intr_str_eq");
                     return Ok(());
                 }
                 self.emit_expression(&b.left)?;
@@ -229,7 +223,7 @@ impl<'a> FuncEmitter<'a> {
                 if self.is_string_expr(&b.left) || self.is_string_expr(&b.right) {
                     self.emit_expression(&b.left)?;
                     self.emit_expression(&b.right)?;
-                    self.emit_str_host("__intr_str_eq", HostFn::StrEq);
+                    self.emit_str_host("__intr_str_eq");
                     self.body.push(Instruction::I32Eqz);
                     return Ok(());
                 }
@@ -357,7 +351,7 @@ impl<'a> FuncEmitter<'a> {
                 // `x in "texto"` -> substring (arrays en A4). StrContains(container, needle)
                 self.emit_expression(&b.right)?;
                 self.emit_expression(&b.left)?;
-                self.emit_str_host("__intr_str_contains", HostFn::StrContains);
+                self.emit_str_host("__intr_str_contains");
             }
             Is => {
                 // `v is Nivel` (enum), `p is Punto` (struct) o `o is Clase` (herencia)

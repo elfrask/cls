@@ -329,7 +329,7 @@ impl<'a> FuncEmitter<'a> {
             let pref = self.intern_string("Error de runtime: ");
             self.emit_load_str(pref);
             self.body.push(Instruction::LocalGet(msg_tmp));
-            self.emit_str_host("__intr_str_concat", HostFn::StrConcat);
+            self.emit_str_host("__intr_str_concat");
             let e_local = self.declare_var_ty(&catch.param_name, WasTy::I64);
             self.body.push(Instruction::LocalSet(e_local));
             self.dead_flow = false;

@@ -168,26 +168,26 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "upper" | "lower" | "trim" => {
-                        let (name, h) = match member.member.as_str() {
-                            "upper" => ("__intr_str_upper", HostFn::StrUpper),
-                            "lower" => ("__intr_str_lower", HostFn::StrLower),
-                            _ => ("__intr_str_trim", HostFn::StrTrim),
+                        let name = match member.member.as_str() {
+                            "upper" => "__intr_str_upper",
+                            "lower" => "__intr_str_lower",
+                            _ => "__intr_str_trim",
                         };
-                        self.emit_str_host(name, h);
+                        self.emit_str_host(name);
                         return Ok(true);
                     }
                     "contains" | "startsWith" | "endsWith" => {
                         self.emit_expression(&c.args[0])?;
-                        let (name, h) = match member.member.as_str() {
-                            "contains" => ("__intr_str_contains", HostFn::StrContains),
-                            "startsWith" => ("__intr_str_starts_with", HostFn::StrStartsWith),
-                            _ => ("__intr_str_ends_with", HostFn::StrEndsWith),
+                        let name = match member.member.as_str() {
+                            "contains" => "__intr_str_contains",
+                            "startsWith" => "__intr_str_starts_with",
+                            _ => "__intr_str_ends_with",
                         };
-                        self.emit_str_host(name, h);
+                        self.emit_str_host(name);
                         return Ok(true);
                     }
                     "isEmpty" => {
-                        self.emit_str_host("__intr_str_is_empty", HostFn::StrIsEmpty);
+                        self.emit_str_host("__intr_str_is_empty");
                         return Ok(true);
                     }
                     "toString" => { return Ok(true); },
@@ -207,8 +207,6 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_push") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::ArrPush, &mut self.body);
                         }
                         self.writeback_array(&member.object)?;
                         return Ok(true);
@@ -217,8 +215,6 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_pop") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::ArrPop, &mut self.body);
                         }
                         self.writeback_array(&member.object)?;
                         return Ok(true);
@@ -227,8 +223,6 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_shift") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::ArrShift, &mut self.body);
                         }
                         self.writeback_array(&member.object)?;
                         return Ok(true);
@@ -241,8 +235,6 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_unshift") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::ArrUnshift, &mut self.body);
                         }
                         self.writeback_array(&member.object)?;
                         return Ok(true);
@@ -251,8 +243,6 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_reverse") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::ArrReverse, &mut self.body);
                         }
                         self.writeback_array(&member.object)?;
                         return Ok(true);
@@ -263,8 +253,6 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_index_of") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::ArrIndexOf, &mut self.body);
                         }
                         return Ok(true);
                     }
@@ -274,8 +262,6 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_includes") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::ArrIncludes, &mut self.body);
                         }
                         return Ok(true);
                     }
@@ -286,8 +272,6 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(arr_kind_code(&cls_t)));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_join") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::ArrJoin, &mut self.body);
                         }
                         return Ok(true);
                     }
@@ -300,30 +284,20 @@ impl<'a> FuncEmitter<'a> {
                 match member.member.as_str() {
                     "has" => {
                         self.emit_expression(&c.args[0])?;
-                        eprintln!("DEBUG: func_indexes tiene __intr_record_has? {}", self.func_indexes.contains_key("__intr_record_has"));
-                        eprintln!("DEBUG: type del obj_ty = {:?}", self.types.get(&expr_span(&member.object)));
                         if let Some(&idx) = self.func_indexes.get("__intr_record_has") {
-                            eprintln!("DEBUG: emitiendo call({})", idx);
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            eprintln!("DEBUG: fallback a host.call(RecordHas)");
-                            self.host.call(HostFn::RecordHas, &mut self.body);
                         }
                         return Ok(true);
                     }
                     "keys" => {
                         if let Some(&idx) = self.func_indexes.get("__intr_record_keys") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::RecordKeys, &mut self.body);
                         }
                         return Ok(true);
                     }
                     "values" => {
                         if let Some(&idx) = self.func_indexes.get("__intr_record_values") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::RecordValues, &mut self.body);
                         }
                         return Ok(true);
                     }
@@ -346,8 +320,6 @@ impl<'a> FuncEmitter<'a> {
                         self.emit_expression(&c.args[0])?;
                         if let Some(&idx) = self.func_indexes.get("__intr_record_has") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::RecordHas, &mut self.body);
                         }
                         return Ok(true);
                     }
@@ -355,8 +327,6 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(0)); // kind dummy
                         if let Some(&idx) = self.func_indexes.get("__intr_record_keys") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::RecordKeys, &mut self.body);
                         }
                         return Ok(true);
                     }
@@ -364,8 +334,6 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(0)); // kind dummy
                         if let Some(&idx) = self.func_indexes.get("__intr_record_values") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::RecordValues, &mut self.body);
                         }
                         return Ok(true);
                     }
@@ -468,14 +436,12 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "toString" => {
-                        self.emit_str_host("__intr_str_int", HostFn::StrInt);
+                        self.emit_str_host("__intr_str_int");
                         return Ok(true);
                     }
                     "abs" => {
                         if let Some(&idx) = self.func_indexes.get("__intr_int_abs") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::IntAbs, &mut self.body);
                         }
                         return Ok(true);
                     }
@@ -486,7 +452,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "toString" => {
-                        self.emit_str_host("__intr_str_float", HostFn::StrFloat);
+                        self.emit_str_host("__intr_str_float");
                         return Ok(true);
                     }
                     "abs" => {
@@ -500,7 +466,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "toString" => {
-                        self.emit_str_host("__intr_str_bool", HostFn::StrBool);
+                        self.emit_str_host("__intr_str_bool");
                         return Ok(true);
                     }
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
@@ -510,7 +476,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "toString" => {
-                        self.emit_str_host("__intr_str_char", HostFn::StrChar);
+                        self.emit_str_host("__intr_str_char");
                         return Ok(true);
                     }
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
@@ -561,13 +527,11 @@ impl<'a> FuncEmitter<'a> {
                 let t = self.types.get(&expr_span(arg)).cloned().unwrap_or(Type::Any);
                 match t {
                     Type::String => {
-                        self.emit_str_host("__intr_str_length", HostFn::StrLength);
+                        self.emit_str_host("__intr_str_length");
                     }
                     Type::Record(_, _) | Type::Shape(_) => {
                         if let Some(&idx) = self.func_indexes.get("__intr_record_len") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::RecordLen, &mut self.body);
                         }
                     }
                     _ => self.emit_array_len(),

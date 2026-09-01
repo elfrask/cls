@@ -167,8 +167,6 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Const(n));
         if let Some(&idx) = self.func_indexes.get("__intr_record_new") {
             self.body.push(Instruction::Call(idx));
-        } else {
-            self.host.call(HostFn::RecordNew, &mut self.body);
         }
         let ptr = self.fresh_local();
         self.body.push(Instruction::LocalSet(ptr));
@@ -200,8 +198,6 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Const(runtime_tag_code(&cls_t)));
             if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                 self.body.push(Instruction::Call(idx));
-            } else {
-                self.host.call(HostFn::RecordSet, &mut self.body);
             }
             self.body.push(Instruction::Drop);
         }
@@ -311,8 +307,6 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Const(n));
         if let Some(&idx) = self.func_indexes.get("__intr_record_new") {
             self.body.push(Instruction::Call(idx));
-        } else {
-            self.host.call(HostFn::RecordNew, &mut self.body);
         }
         let rec_ptr = self.fresh_local();
         self.body.push(Instruction::LocalSet(rec_ptr));
@@ -356,8 +350,6 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Const(runtime_tag_code(t)));
             if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                 self.body.push(Instruction::Call(idx));
-            } else {
-                self.host.call(HostFn::RecordSet, &mut self.body);
             }
             self.body.push(Instruction::Drop);
         }
@@ -515,12 +507,10 @@ impl<'a> FuncEmitter<'a> {
                         | Type::Literal(LitVal::Int(_))
                 )
             ) {
-                self.emit_str_host("__intr_str_int", HostFn::StrInt);
+                self.emit_str_host("__intr_str_int");
             }
             if let Some(&idx) = self.func_indexes.get("__intr_record_get") {
                 self.body.push(Instruction::Call(idx));
-            } else {
-                self.host.call(HostFn::RecordGet, &mut self.body);
             }
             let elem_ty = self.index_elem_type(i)?;
             self.bits_to_elem(elem_ty)?;
@@ -546,8 +536,6 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_load_str(k);
                     if let Some(&idx) = self.func_indexes.get("__intr_record_get") {
                         self.body.push(Instruction::Call(idx));
-                    } else {
-                        self.host.call(HostFn::RecordGet, &mut self.body);
                     }
                     self.bits_to_elem(w)?;
                     return Ok(());
