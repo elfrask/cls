@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-pub use cls_jit::{cache_dir, load_import_modules, module_candidates};
+pub use cls_jit::{cache_dir, load_import_modules};
 
 /// Hooks del nodo al índice de módulos (caché del workspace, INFORMATIVO).
 struct ClxModuleIndexHook;

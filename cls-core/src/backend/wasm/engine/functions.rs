@@ -66,8 +66,6 @@ impl<'a> Engine<'a> {
     /// puntero (i64); si nada resuelve, error claro en vez de asumir i64.
     pub(crate) fn resolve_field_type(
         &self,
-        owner: &str,
-        field: &str,
         ann: &TypeAnnotation,
     ) -> ClsResult<Type> {
         let t = annotation_to_type(ann);
@@ -219,7 +217,7 @@ impl<'a> Engine<'a> {
             // Luego redirige el nombre al shadow para que el body lea f64.
             let is_arrow = f.name.starts_with("__arrow_");
             if is_arrow {
-                for (i, p) in f.params.iter().enumerate() {
+                for p in f.params.iter() {
                     let ann_t = p.type_ann.as_ref()
                         .map(|ta| crate::backend::wasm::types::annotation_to_type(ta))
                         .unwrap_or(Type::Any);

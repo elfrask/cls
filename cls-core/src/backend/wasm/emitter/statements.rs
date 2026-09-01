@@ -318,7 +318,6 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::LocalGet(span_tmp));
             self.body.push(Instruction::Throw(self.tag_idx));
             self.body.push(Instruction::Unreachable);
-            catch_dead = true;
         } else {
             let catch = &stmt.catch_clauses[0];
             let span_tmp = self.fresh_local();

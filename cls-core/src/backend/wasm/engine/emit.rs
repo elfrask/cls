@@ -54,7 +54,7 @@ impl<'a> Engine<'a> {
                 let mut offsets = Vec::new();
                 let mut off = 16i64;
                 for f in &s.fields {
-                    let t = self.resolve_field_type(&s.name, &f.name, &f.type_ann)?;
+                    let t = self.resolve_field_type(&f.type_ann)?;
                     let w = was_type(&t)?;
                     offsets.push(off);
                     fields.push((f.name.clone(), t, w));
@@ -99,7 +99,7 @@ impl<'a> Engine<'a> {
                         ClassMember::Property(p) if !p.is_static => {
                             let (w, t_cls) = match (&p.type_ann, &p.value) {
                                 (Some(ann), _) => {
-                                    let t = self.resolve_field_type(&c.name, &p.name, ann)?;
+                                    let t = self.resolve_field_type(ann)?;
                                     let w = was_type(&t).unwrap_or(WasTy::I64);
                                     (w, t)
                                 }

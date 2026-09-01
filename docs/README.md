@@ -36,6 +36,9 @@ backend los **fusiona dentro del módulo CLS** (cero imports de internals).
 - `lenguaje/errores.md` - `throw`, `try/catch/finally` y errores en runtime.
 - `lenguaje/multi-entorno.md` - directiva `when` (implementaciones por SO/arquitectura).
 - `lenguaje/extension.md` - FFI a librerías nativas del sistema (`extension`).
+- `lenguaje/extension-when.md` - el patrón combinado `when` + `extension` (sockets TCP portables, receta de migración host → `.clsx`).
+- `lenguaje/magics.md` - magic methods (`__add`, `__len`, ...) en runtime.
+- `lenguaje/estado-runtime.md` - estado real de WASI, async/concurrencia y límites del JIT.
 - `lenguaje/cmx.md` - el lenguaje de marcado CMX (JSX-like).
 
 ### Biblioteca estándar
@@ -69,6 +72,7 @@ backend los **fusiona dentro del módulo CLS** (cero imports de internals).
 - `desarrollo/testing.md` - cómo ejecutar y escribir tests.
 - `desarrollo/agregar-feature.md` - cómo agregar una feature al lenguaje.
 - `desarrollo/agregar-modulo-interno.md` - cómo agregar un módulo interno.
+- `desarrollo/minilaravel.md` - especificación del framework HTTP (minilaravel) en `.clsx` puro — para implementar por un dev.
 
 > Los planes de las 4 fases de rendimiento (refactor atómico, crate
 > `cls-internals`, adaptación del core, auditoría final) viven en

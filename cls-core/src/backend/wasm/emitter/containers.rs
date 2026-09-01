@@ -171,11 +171,6 @@ impl<'a> FuncEmitter<'a> {
         let ptr = self.fresh_local();
         self.body.push(Instruction::LocalSet(ptr));
         for (key, val) in &r.entries {
-            let cls_t = self
-                .types
-                .get(&expr_span(val))
-                .cloned()
-                .unwrap_or(Type::Any);
             self.body.push(Instruction::LocalGet(ptr));
             let k = self.intern_string(key);
             self.emit_load_str(k);
@@ -206,61 +201,6 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Emite un record con shape como struct contiguo: `[campo0][campo1]...`.
-    /// Los offsets se calculan del shape (cada campo con su WasTy).
-    pub(crate) fn emit_shape_record(&mut self, r: &RecordExpr, fields: &[(String, Type)]) -> ClsResult<()> {
-        let layout = self.shape_layout(fields)?;
-        let mut total = 0i64;
-        for (_, w, off) in &layout {
-            total = *off + elem_size_bytes(*w);
-        }
-        self.body.push(Instruction::I64Const(total));
-        let alloc = self.func_indexes["__alloc"];
-        self.body.push(Instruction::Call(alloc));
-        let ptr = self.fresh_local();
-        self.body.push(Instruction::LocalSet(ptr));
-        for (name, val) in &r.entries {
-            let (_, w, off) = layout
-                .iter()
-                .find(|(n, _, _)| n == name)
-                .cloned()
-                .ok_or_else(|| {
-                    crate::error::ClsError::compile_at(
-                        &format!("El record no tiene el campo '{}' en su shape", name),
-                        &r.span,
-                    )
-                })?;
-            self.emit_expression(val)?;
-            let val_tmp = self.fresh_local_ty(w);
-            self.body.push(Instruction::LocalSet(val_tmp));
-            self.body.push(Instruction::LocalGet(ptr));
-            self.body.push(Instruction::I64Const(off));
-            self.body.push(Instruction::I64Add);
-            self.body.push(Instruction::I32WrapI64);
-            self.body.push(Instruction::LocalGet(val_tmp));
-            match w {
-                WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
-                    offset: 0,
-                    align: 3,
-                    memory_index: 0,
-                })),
-                WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
-                    offset: 0,
-                    align: 2,
-                    memory_index: 0,
-                })),
-                WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
-                    offset: 0,
-                    align: 3,
-                    memory_index: 0,
-                })),
-            }
-        }
-        self.body.push(Instruction::LocalGet(ptr));
-        Ok(())
-    }
-
-
     /// Convierte un SHAPE (estructura contigua con offsets) a un HASHMAP
     /// (`[cap][len][(key,val,tag)*24]`). Se usa cuando un valor tipado Shape se
     /// guarda en un contenedor dinámico (`Record<String,any>`): la lectura/
@@ -282,79 +222,6 @@ impl<'a> FuncEmitter<'a> {
     /// y todas las transferencias lo heredan).
     pub(crate) fn emit_coerce(&mut self, expr: &Expression, _dest: Option<&Type>) -> ClsResult<()> {
         self.emit_expression(expr)
-    }
-
-    pub(crate) fn emit_shape_to_hashmap(&mut self, expr: &Expression, fields: &[(String, Type)]) -> ClsResult<()> {
-        self.emit_expression(expr)?;
-        let shape_ptr = self.fresh_local();
-        self.body.push(Instruction::LocalSet(shape_ptr));
-        self.shape_to_hashmap_from_local(shape_ptr, fields)?;
-        Ok(())
-    }
-
-    /// Convierte el shape contiguo apuntado por `shape_ptr` a hashmap (record
-    /// `[cap][len][(key,val,tag)*24]`) y deja el ptr del record en el stack.
-    /// RECURSIVO: los campos cuyo tipo es un Shape anidado se convierten también
-    /// (un ptr contiguo guardado con tag 7 no es legible como record).
-    fn shape_to_hashmap_from_local(
-        &mut self,
-        shape_ptr: u32,
-        fields: &[(String, Type)],
-    ) -> ClsResult<()> {
-        let layout = self.shape_layout(fields)?;
-        // record_new(cap = n)
-        let n = fields.len() as i64;
-        self.body.push(Instruction::I64Const(n));
-        if let Some(&idx) = self.func_indexes.get("__intr_record_new") {
-            self.body.push(Instruction::Call(idx));
-        }
-        let rec_ptr = self.fresh_local();
-        self.body.push(Instruction::LocalSet(rec_ptr));
-        for (name, t) in fields {
-            let (_, w, off) = layout
-                .iter()
-                .find(|(nm, _, _)| nm == name)
-                .cloned()
-                .unwrap();
-            // key = nombre del campo (string del pool)
-            let k = self.intern_string(name);
-            self.body.push(Instruction::LocalGet(rec_ptr));
-            self.emit_load_str(k);
-            // val = shape[off]
-            self.body.push(Instruction::LocalGet(shape_ptr));
-            self.body.push(Instruction::I64Const(off));
-            self.body.push(Instruction::I64Add);
-            self.body.push(Instruction::I32WrapI64);
-            match w {
-                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg { offset: 0, align: 2, memory_index: 0 })),
-                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 })),
-            }
-            // Normalizar a i64 (float -> bits; bool/char -> extender)
-            match w {
-                WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
-                WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
-                WasTy::I64 => {}
-            }
-            // Campo Shape anidado: convertir recursivamente antes de guardar.
-            if let Type::Shape(nested) = t {
-                let nested_ptr = self.fresh_local();
-                self.body.push(Instruction::LocalSet(nested_ptr));
-                self.shape_to_hashmap_from_local(nested_ptr, nested)?;
-                let conv_tmp = self.fresh_local();
-                self.body.push(Instruction::LocalSet(conv_tmp));
-                self.body.push(Instruction::LocalGet(rec_ptr));
-                self.emit_load_str(k);
-                self.body.push(Instruction::LocalGet(conv_tmp));
-            }
-            self.body.push(Instruction::I64Const(runtime_tag_code(t)));
-            if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
-                self.body.push(Instruction::Call(idx));
-            }
-            self.body.push(Instruction::Drop);
-        }
-        self.body.push(Instruction::LocalGet(rec_ptr));
-        Ok(())
     }
 
     /// Calcula `(nombre, WasTy, offset)` para cada campo de un shape (contiguo).
