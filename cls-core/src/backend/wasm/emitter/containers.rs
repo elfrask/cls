@@ -311,10 +311,11 @@ impl<'a> FuncEmitter<'a> {
                 .get(&expr_span(val))
                 .cloned()
                 .unwrap_or(Type::Any);
-            // Tag del valor en el record: tag del RUNTIME interno (Record -> 7,
-            // Array -> 6, String -> 1...). Antes usaba arr_kind_code, que devolvía
-            // 0 para records -> el binding los leía como int (ptr crudo).
-            self.body.push(Instruction::I64Const(runtime_tag_code(&cls_t)));
+            // Tag del valor en el record: para ARRAYS debe ser COMPUESTO
+            // (6<<8 | kind del elem): el formateador (`fmt_val_to_string`)
+            // interpreta kind=6 como "array de Cmx" (es=16) y lee ints a saltos
+            // de 16 -> basura (bug dev-2: `celulas: [1,2,3]` como floats/ptr).
+            self.body.push(Instruction::I64Const(runtime_tag_code_compound(&cls_t)));
             if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                 self.body.push(Instruction::Call(idx));
             }

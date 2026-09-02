@@ -196,7 +196,7 @@ impl<'a> FuncEmitter<'a> {
             WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
             _ => {}
         }
-        self.body.push(Instruction::I64Const(runtime_tag_code(&t)));
+        self.body.push(Instruction::I64Const(runtime_tag_code_compound(&t)));
         Ok(())
     }
 

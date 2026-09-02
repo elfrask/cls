@@ -96,6 +96,18 @@ pub(super) fn runtime_tag_code(t: &Type) -> i64 {
         _ => 8,
     }
 }
+
+/// Tag COMPUESTO para guardar un valor en un record/array heterogéneo: para
+/// arrays usa `6<<8 | arr_kind` (el formateador `fmt_val_to_string` interpreta
+/// kind=6 como "array de Cmx" con es=16 — un tag plano 6 hace que lea ints a
+/// saltos de 16 bytes -> basura). Los demás valores usan `runtime_tag_code`.
+/// Bug dev-2: `celulas: [1,2,3]` impreso como floats/punteros.
+pub(super) fn runtime_tag_code_compound(t: &Type) -> i64 {
+    match t {
+        Type::Array(e) => (6 << 8) | arr_kind_code(e),
+        _ => runtime_tag_code(t),
+    }
+}
 /// host usa para el marshalling de valores):
 /// 0=int 1=float 2=bool 3=char 4=string 5=array 6=record/shape 7=tuple
 /// 8=otro i64 (enum/struct/clase/named/union) 9=void 10=cmx 11=funcion 12=null.

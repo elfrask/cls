@@ -166,9 +166,10 @@ impl<'a> FuncEmitter<'a> {
                     .cloned()
                     .unwrap_or(Type::Any);
                 // Tag del RUNTIME (runtime_tag_code: 1=string 6=array 7=record),
-                // NO arr_kind_code (binding: 4=string 5=array 6=record) â€” el
+                // NO arr_kind_code (binding: 4=string 5=array 6=record) — el
                 // record_set y la lectura/stringify usan el esquema runtime.
-                self.body.push(Instruction::I64Const(runtime_tag_code(&cls_t)));
+                // Compuesto para arrays (bug dev-2: es/kind correcto).
+                self.body.push(Instruction::I64Const(runtime_tag_code_compound(&cls_t)));
                 if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                     self.body.push(Instruction::Call(idx));
                 }
@@ -236,7 +237,7 @@ impl<'a> FuncEmitter<'a> {
                     WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
                     _ => {}
                 }
-                let tag = runtime_tag_code(&field_ty);
+                let tag = runtime_tag_code_compound(&field_ty);
                 self.body.push(Instruction::I64Const(tag));
                 if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                     self.body.push(Instruction::Call(idx));
@@ -590,7 +591,7 @@ impl<'a> FuncEmitter<'a> {
                         .get(&expr_span(&a.value))
                         .cloned()
                         .unwrap_or(Type::Any);
-                    self.body.push(Instruction::I64Const(runtime_tag_code(&cls_t)));
+                    self.body.push(Instruction::I64Const(runtime_tag_code_compound(&cls_t)));
                     if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                         self.body.push(Instruction::Call(idx));
                     }
@@ -632,7 +633,7 @@ impl<'a> FuncEmitter<'a> {
                         WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
                         _ => {}
                     }
-                    let tag = runtime_tag_code(&field_ty);
+                    let tag = runtime_tag_code_compound(&field_ty);
                     self.body.push(Instruction::I64Const(tag));
                     if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                         self.body.push(Instruction::Call(idx));

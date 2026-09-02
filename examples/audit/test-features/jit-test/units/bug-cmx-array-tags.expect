@@ -1,0 +1,1 @@
+props: {edad: 21, nombre: "Carlos", vivo: {celulas: [1, 2, 3], state: true}}

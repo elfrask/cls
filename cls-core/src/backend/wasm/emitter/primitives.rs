@@ -96,10 +96,11 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(true);
                     }
                     self.emit_expression(&c.args[0])?;
-                    // kind = tag del RUNTIME del valor. Para tipos concretos
-                    // (bool/int/float/string/char/record/array) el tag se conoce
-                    // en compile-time y el host serializa por tag.
-                    let kind = runtime_tag_code(&t);
+                    // kind = tag del RUNTIME del valor (compuesto para arrays:
+                    // es/kind correcto en el formateo, bug dev-2). Para tipos
+                    // concretos (bool/int/float/string/char/record/array) el
+                    // tag se conoce en compile-time y el host serializa por tag.
+                    let kind = runtime_tag_code_compound(&t);
                     // Escalares: el valor debe viajar como i64 en el stack
                     // (host_json_stringify espera v: i64). Bool/char (i32) ->
                     // extender; float (f64) -> reinterpretar a bits i64.
