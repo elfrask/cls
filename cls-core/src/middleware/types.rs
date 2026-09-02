@@ -83,21 +83,19 @@ impl Type {
             (Type::Json, _) => true,
 
             // Cmx: contenedor dinámico concreto (réplica del patrón JSON).
-            // Un CmxValue es asignable a `Value` y a los tipos por los que se
-            // puede leer un campo (String/Int/... — el tag runtime decide);
-            // pero un primitivo NO es un CmxValue, y un CmxValue NO es
-            // invocable (Callable). Ver plan `completar-tipo-cmx.md`.
-            (Type::Cmx, Type::Value) | (Type::Value, Type::Cmx) => true,
+            // Un CmxValue es asignable a `Value` (el arm universal de Value ya
+            // lo cubre) y a los tipos por los que se puede leer un campo; pero
+            // un primitivo NO es un CmxValue, y un CmxValue NO es invocable
+            // (Callable). Ver plan `completar-tipo-cmx.md`.
             (Type::Cmx, Type::Callable) => false,
             (Type::Cmx, _) => true,
 
             // Callable: cualquier función (con aridad concreta) es invocable.
             // Value/Cmx NO son assignables a Callable en compile-time (son
             // dinámicos — el `is Callable` resuelve en runtime por tag-bit).
+            // `Callable -> Value`/`Any` lo cubren los arms universales.
             (Type::Fun(_, _), Type::Callable) => true,
             (Type::Callable, Type::Callable) => true,
-            (Type::Callable, Type::Value) => true,
-            (Type::Callable, Type::Any) => true,
 
             // Tipos idénticos
             (a, b) if a == b => true,
