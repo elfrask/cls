@@ -171,6 +171,10 @@ pub fn shift_expr_xy(e: &mut Expression, dl: u32, dc: i64) {
             *s = shift_span_xy(s.clone(), dl, dc);
             shift_expr_xy(inner, dl, dc);
         }
+        Expression::Spread(inner, s) => {
+            *s = shift_span_xy(s.clone(), dl, dc);
+            shift_expr_xy(inner, dl, dc);
+        }
     }
 }
 

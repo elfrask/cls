@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 pub struct CmxElement {
     pub tag: String,
     pub attributes: Vec<CmxAttribute>,
+    /// Spreads de props `{...expr}` en el tag (REST_SPREAD_PLAN): se evalúan
+    /// antes que los attributes; los atributos nombrados tienen prioridad.
+    pub spreads: Vec<Expression>,
     pub children: Vec<CmxChild>,
     pub span: Span,
 }

@@ -22,6 +22,7 @@ pub fn expr_span(expr: &Expression) -> Span {
         Expression::StringInterpolation(s) => s.span,
         Expression::NamespaceAccess(_, _, s) => *s,
         Expression::Await(_, s) => *s,
+        Expression::Spread(_, s) => *s,
     }
 }
 

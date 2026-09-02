@@ -96,4 +96,9 @@ pub enum Expression {
 
     // Await: espera una expresion
     Await(Box<Expression>, Span),
+
+    // Spread `...expr` en literals de array/tupla y args de llamada
+    // (REST_SPREAD_PLAN). En records se usa RecordExpr.spreads (Fase 2 ya
+    // implementada); en arrays/tuples/calls viaja como elemento Spread.
+    Spread(Box<Expression>, Span),
 }

@@ -60,8 +60,12 @@ impl TypeChecker {
                 Type::String
             }
             Expression::Cmx(c) => {
-                // Chequear las subexpresiones internas (attrs y children) para que
-                // sus spans queden en el type map (el emisor las evalúa).
+                // Chequear las subexpresiones internas (spreads, attrs y
+                // children) para que sus spans queden en el type map (el emisor
+                // las evalúa).
+                for s in &c.spreads {
+                    self.check_expression(s);
+                }
                 for attr in &c.attributes {
                     if let Some(CmxAttributeValue::Expression(expr)) = &attr.value {
                         self.check_expression(expr);
@@ -102,6 +106,7 @@ impl TypeChecker {
                 }
             }
             Expression::Await(expr, _) => self.check_expression(expr),
+            Expression::Spread(inner, _) => self.check_expression(inner),
         };
         if self.config.check {
             // Un literal de record anotado como Record<K,V> (var/return) registra

@@ -20,6 +20,7 @@ impl<'a> FuncEmitter<'a> {
 
 
     pub(crate) fn emit_array(&mut self, a: &ArrayExpr) -> ClsResult<()> {
+        let has_spread = a.elements.iter().any(|e| matches!(e, Expression::Spread(_, _)));
         let elem_ty = self.array_elem_type(a)?;
         // Array de Cmx -> entradas `[val, tag]` stride 16 (children del Cmx, etc.).
         let is_cmx = a
@@ -29,6 +30,111 @@ impl<'a> FuncEmitter<'a> {
             .map(|t| matches!(t, Type::Cmx))
             .unwrap_or(false);
         let elem_size = if is_cmx { 16 } else { elem_size_bytes(elem_ty) };
+        // Spread `[...arr, x]`: el tamaño final es dinámico -> construir con
+        // `__intr_arr_push` (maneja realloc) en vez de pre-alocar (REST_SPREAD_PLAN).
+        if has_spread {
+            if is_cmx {
+                return Err(self.unsupported_expr(&Expression::Array(a.clone())));
+            }
+            // Empezar con un array de capacidad 0 (solo el header 16 bytes).
+            self.body.push(Instruction::I64Const(0));
+            self.body.push(Instruction::I64Const(elem_size));
+            self.body.push(Instruction::I64Mul);
+            self.body.push(Instruction::I64Const(16));
+            self.body.push(Instruction::I64Add);
+            let alloc = self.func_indexes["__alloc"];
+            self.body.push(Instruction::Call(alloc));
+            let ptr = self.fresh_local();
+            self.body.push(Instruction::LocalSet(ptr));
+            self.body.push(Instruction::LocalGet(ptr));
+            self.body.push(Instruction::I64Const(0));
+            self.emit_i64_store(0); // cap
+            self.body.push(Instruction::LocalGet(ptr));
+            self.body.push(Instruction::I64Const(0));
+            self.emit_i64_store(8); // len
+            for el in &a.elements {
+                if let Expression::Spread(inner, _) = el {
+                    // Copiar cada elemento del array inner al nuevo (push).
+                    self.emit_expression(inner)?;
+                    let src_ptr = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(src_ptr));
+                    let src_len = self.fresh_local();
+                    self.body.push(Instruction::LocalGet(src_ptr));
+                    self.body.push(Instruction::I64Const(8));
+                    self.body.push(Instruction::I64Add);
+                    self.body.push(Instruction::I32WrapI64);
+                    self.body.push(Instruction::I64Load(MemArg {
+                        offset: 0,
+                        align: 3,
+                        memory_index: 0,
+                    }));
+                    self.body.push(Instruction::LocalSet(src_len));
+                    let i = self.fresh_local();
+                    self.body.push(Instruction::I64Const(0));
+                    self.body.push(Instruction::LocalSet(i));
+                    let d = self.block_depth;
+                    self.block_depth += 1;
+                    self.body.push(Instruction::Block(BlockType::Empty));
+                    let break_at = self.block_depth;
+                    self.block_depth += 1;
+                    self.body.push(Instruction::Loop(BlockType::Empty));
+                    // cond: i >= src_len -> break
+                    self.body.push(Instruction::LocalGet(i));
+                    self.body.push(Instruction::LocalGet(src_len));
+                    self.body.push(Instruction::I64GeS);
+                    self.body.push(Instruction::BrIf(break_at));
+                    // val = src[i]
+                    self.body.push(Instruction::LocalGet(src_ptr));
+                    self.body.push(Instruction::LocalGet(i));
+                    self.body.push(Instruction::I64Const(elem_size));
+                    self.body.push(Instruction::I64Mul);
+                    self.body.push(Instruction::I64Const(16));
+                    self.body.push(Instruction::I64Add);
+                    self.body.push(Instruction::I64Add);
+                    self.body.push(Instruction::I32WrapI64);
+                    self.body.push(Instruction::I64Load(MemArg {
+                        offset: 0,
+                        align: 3,
+                        memory_index: 0,
+                    }));
+                    // push(dst, val, es): guardar val en local, luego [ptr, val, es].
+                    let val_tmp = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(val_tmp));
+                    self.body.push(Instruction::LocalGet(ptr));
+                    self.body.push(Instruction::LocalGet(val_tmp));
+                    self.body.push(Instruction::I64Const(elem_size));
+                    if let Some(&idx) = self.func_indexes.get("__intr_arr_push") {
+                        self.body.push(Instruction::Call(idx));
+                    }
+                    self.body.push(Instruction::LocalSet(ptr)); // write-back (realloc)
+                    // i++
+                    self.body.push(Instruction::LocalGet(i));
+                    self.body.push(Instruction::I64Const(1));
+                    self.body.push(Instruction::I64Add);
+                    self.body.push(Instruction::LocalSet(i));
+                    self.body.push(Instruction::Br(0)); // continuar loop
+                    self.body.push(Instruction::End); // loop
+                    self.block_depth -= 1;
+                    self.body.push(Instruction::End); // block
+                    self.block_depth = d;
+                } else {
+                    // Elemento normal: push(dst, val, es) — primero el ptr,
+                    // luego el valor (el stack del push es [ptr, val, es]).
+                    self.body.push(Instruction::LocalGet(ptr));
+                    self.emit_expression(el)?;
+                    if elem_ty == WasTy::F64 {
+                        self.f64_promote(el)?;
+                    }
+                    self.body.push(Instruction::I64Const(elem_size));
+                    if let Some(&idx) = self.func_indexes.get("__intr_arr_push") {
+                        self.body.push(Instruction::Call(idx));
+                    }
+                    self.body.push(Instruction::LocalSet(ptr));
+                }
+            }
+            self.body.push(Instruction::LocalGet(ptr));
+            return Ok(());
+        }
         let n = a.elements.len() as i64;
         // layout: [cap:i64][len:i64][elem...] (base 16)
         self.body.push(Instruction::I64Const(n));
@@ -121,11 +227,17 @@ impl<'a> FuncEmitter<'a> {
 
 
     pub(crate) fn array_elem_type(&self, a: &ArrayExpr) -> ClsResult<WasTy> {
-        if let Some(first) = a.elements.first() {
+        // Los spreads `[...arr]` no aportan tipo directo (el inner es Array<T>);
+        // inferir de los elementos normales.
+        let normals: Vec<&Expression> = a
+            .elements
+            .iter()
+            .filter(|e| !matches!(e, Expression::Spread(_, _)))
+            .collect();
+        if let Some(first) = normals.first() {
             // Promoción: si CUALQUIER elemento es float, el array es de f64
             // (p.ej. `[1, 2.0]` -> f64). El store promueve los ints a f64.
-            let has_float = a
-                .elements
+            let has_float = normals
                 .iter()
                 .any(|el| matches!(self.value_type(el), Ok(WasTy::F64)));
             if has_float {
@@ -133,8 +245,8 @@ impl<'a> FuncEmitter<'a> {
             }
             return self.value_type(first);
         }
-        // Array vacío: usar el tipo anotado registrado por el typeck (span del literal),
-        // p.ej. `const out: int[] = []`.
+        // Solo spreads (`[...a]`) o array vacío: usar el tipo anotado registrado
+        // por el typeck (span del literal), p.ej. `const out: int[] = []`.
         if let Some(Type::Array(elem)) = self.types.get(&a.span) {
             if let Ok(w) = was_type(elem) {
                 return Ok(w);
@@ -284,6 +396,49 @@ impl<'a> FuncEmitter<'a> {
         self.host.call(HostFn::CmxNew, &mut self.body);
         let ptr = self.fresh_local();
         self.body.push(Instruction::LocalSet(ptr));
+        // Spreads de props `{...expr}` (REST_SPREAD_PLAN): las props del CmxValue
+        // viven como hashmap (offset 8). Si hay spreads, alocar props (record
+        // vacío), setear en el CmxValue y mergear cada spread.
+        if !c.spreads.is_empty() {
+            self.body.push(Instruction::I64Const(0));
+            if let Some(&idx) = self.func_indexes.get("__intr_record_new") {
+                self.body.push(Instruction::Call(idx));
+            }
+            let props_ptr = self.fresh_local();
+            self.body.push(Instruction::LocalSet(props_ptr));
+            // CmxValue.offset8 = props_ptr
+            self.body.push(Instruction::LocalGet(ptr));
+            self.body.push(Instruction::I64Const(8));
+            self.body.push(Instruction::I64Add);
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::LocalGet(props_ptr));
+            self.body.push(Instruction::I64Store(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
+            for spread in &c.spreads {
+                // merge(dst=props_ptr, src=spread_ptr) — primero dst, luego src.
+                self.body.push(Instruction::LocalGet(props_ptr));
+                self.emit_expression(spread)?;
+                if let Some(&idx) = self.func_indexes.get("__intr_record_merge") {
+                    self.body.push(Instruction::Call(idx));
+                }
+                self.body.push(Instruction::LocalSet(props_ptr)); // write-back
+            }
+            // Actualizar CmxValue.offset8 con el props_ptr final (el merge pudo
+            // reallocar). Sin esto, CmxSetProp/lectura usan el ptr viejo.
+            self.body.push(Instruction::LocalGet(ptr));
+            self.body.push(Instruction::I64Const(8));
+            self.body.push(Instruction::I64Add);
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::LocalGet(props_ptr));
+            self.body.push(Instruction::I64Store(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
+        }
         for attr in &c.attributes {
             self.body.push(Instruction::LocalGet(ptr));
             let k = self.intern_string(&attr.name);

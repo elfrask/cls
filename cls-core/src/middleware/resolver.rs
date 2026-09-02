@@ -327,6 +327,9 @@ impl NameResolver {
             Expression::Await(expr, _) => {
                 self.resolve_expression(expr)?;
             }
+            Expression::Spread(expr, _) => {
+                self.resolve_expression(expr)?;
+            }
         }
         Ok(())
     }

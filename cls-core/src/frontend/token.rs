@@ -284,6 +284,9 @@ pub enum CmxToken {
     AttrString { name: String, value: String },
     /// Inicio de atributo expresión: name={ -> el parser lee expresión hasta ExprEnd
     AttrExpr { name: String },
+    /// Spread de props: {...expr} en el tag (REST_SPREAD_PLAN) — el parser lee
+    /// la expresión hasta ExprEnd y la agrega a los spreads del CmxElement.
+    AttrSpread,
     /// Fin de expresión dentro de CMX ({ -> ... -> })
     ExprEnd,
 }
@@ -319,6 +322,7 @@ impl fmt::Display for CmxToken {
             CmxToken::Text { content } => write!(f, "text({})", content),
             CmxToken::AttrString { name, value } => write!(f, "{}=\"{}\"", name, value),
             CmxToken::AttrExpr { name } => write!(f, "{}={{...}}", name),
+            CmxToken::AttrSpread => write!(f, "{{...}}"),
             CmxToken::ExprEnd => write!(f, "}}"),
         }
     }

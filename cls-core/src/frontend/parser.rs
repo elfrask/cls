@@ -1542,14 +1542,22 @@ impl Parser {
         self.advance();
 
         let mut attributes = Vec::new();
+        let mut spreads: Vec<Expression> = Vec::new();
         loop {
             let is_attr_str = matches!(&self.current_token, Token::Cmx(CmxToken::AttrString { .. }));
             let is_attr_expr = matches!(&self.current_token, Token::Cmx(CmxToken::AttrExpr { .. }));
+            let is_attr_spread = matches!(&self.current_token, Token::Cmx(CmxToken::AttrSpread));
             if is_attr_str {
                 if let Token::Cmx(CmxToken::AttrString { name, value }) = &self.current_token {
                     attributes.push(CmxAttribute { name: name.clone(), value: Some(CmxAttributeValue::String(value.clone())), span: self.span() });
                 }
                 self.advance();
+            } else if is_attr_spread {
+                // {...expr} -> leer la expresión (el `}` del cierre ya se
+                // consumió en el lexer, ver lex_cmx_attrs_into) (REST_SPREAD_PLAN).
+                self.advance();
+                let expr = self.parse_expression()?;
+                spreads.push(expr);
             } else if is_attr_expr {
                 if let Token::Cmx(CmxToken::AttrExpr { name }) = &self.current_token {
                     let expr_name = name.clone();
@@ -1560,7 +1568,7 @@ impl Parser {
             } else { break; }
         }
 
-        if is_self_closing { return Ok(CmxElement { tag: tag_name, attributes, children: vec![], span: tag_span }); }
+        if is_self_closing { return Ok(CmxElement { tag: tag_name, attributes, spreads, children: vec![], span: tag_span }); }
 
         let mut children = Vec::new();
         loop {
@@ -1589,7 +1597,7 @@ impl Parser {
                 self.advance(); break;
             } else { break; }
         }
-        Ok(CmxElement { tag: tag_name, attributes, children, span: tag_span })
+        Ok(CmxElement { tag: tag_name, attributes, spreads, children, span: tag_span })
     }
 
     fn parse_block(&mut self) -> ClsResult<Block> {
@@ -2122,7 +2130,15 @@ impl Parser {
                 let mut elements = Vec::new();
                 if !self.check_symbol(Symbol::RBracket) {
                     loop {
-                        elements.push(self.parse_expression()?);
+                        // Spread `[..., ...arr, x]` (REST_SPREAD_PLAN).
+                        if self.check_symbol(Symbol::Ellipsis) {
+                            self.advance();
+                            let span = self.span();
+                            let inner = self.parse_expression()?;
+                            elements.push(Expression::Spread(Box::new(inner), span));
+                        } else {
+                            elements.push(self.parse_expression()?);
+                        }
                         if !self.consume_symbol(Symbol::Comma) {
                             break;
                         }

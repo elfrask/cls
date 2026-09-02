@@ -240,6 +240,7 @@ fn statement_span(stmt: &Statement) -> Span {
             Expression::StringInterpolation(s) => s.span,
             Expression::Cmx(c) => c.span,
             Expression::Await(_, span) => *span,
+            Expression::Spread(_, span) => *span,
             Expression::Literal(_) => Span { start_line: 0, start_col: 0, end_line: 0, end_col: 0 },
         },
         Statement::Import(s) => s.span,

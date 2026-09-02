@@ -68,6 +68,37 @@ impl TypeChecker {
     pub(crate) fn check_array(&mut self, arr: &ArrayExpr) -> Type {
         let mut elem_type = Type::Any;
         for elem in &arr.elements {
+            // Spread `[...arr]`: el inner es Array<T> -> los elementos son T.
+            if let Expression::Spread(inner, _) = elem {
+                let t = self.check_expression(inner);
+                let spread_elem = match t {
+                    Type::Array(e) => *e,
+                    _ => {
+                        self.error(
+                            &format!(
+                                "Spread de array esperaba un Array, encontró {}",
+                                t
+                            ),
+                            arr.span.clone(),
+                        );
+                        Type::Any
+                    }
+                };
+                if matches!(elem_type, Type::Any) {
+                    elem_type = spread_elem;
+                } else if !spread_elem.is_assignable_to(&elem_type) && !elem_type.is_assignable_to(&spread_elem) {
+                    self.error(
+                        &format!(
+                            "Array heterogéneo: los elementos son de tipos incompatibles \
+                             ({} y {}). Usa `Record<String, any>` o un array homogéneo.",
+                            elem_type, spread_elem
+                        ),
+                        arr.span.clone(),
+                    );
+                    elem_type = spread_elem;
+                }
+                continue;
+            }
             let t = self.check_expression(elem);
             if matches!(elem_type, Type::Any) {
                 elem_type = t;

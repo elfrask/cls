@@ -116,7 +116,8 @@ function App(props: Record<String, any>) -> String {
     return "App " + t;
 };
 
-var app = (<App titulo="demo"><p>hijo</p></App>);
+var base: Record<String, any> = {titulo: "demo"};
+var app = (<App {...base}><p>hijo</p></App>);   # spread de props en el tag
 
 if (app.tag is Callable) {
     var html: String = app.tag({...app.props, children: app.children});
@@ -127,7 +128,11 @@ if (app.tag is Callable) {
 - `app.tag is Callable` — true si el tag es un handle de función (runtime,
   tag-bit); false para tags minúscula (string).
 - Dentro del `if`, `app.tag` es invocable (el typeck estrecha por `is`).
-- `{...app.props, children: app.children}` — spread del record de props +
-  children (Fase 2 de REST_SPREAD_PLAN).
+- `<App {...base} />` — spread de props en el tag: fusiona el record en las
+  props del CmxValue; los atributos nombrados tienen prioridad. El source debe
+  estar anotado `Record<String, any>` (un Shape sin anotar no garantiza el
+  layout hashmap).
+- `{...app.props, children: app.children}` — spread de props + children al
+  invocar (REST_SPREAD_PLAN: spread en records y arrays).
 
 Ejemplo de uso real: `docs/desarrollo/minilaravel.md` (framework HTTP, F6).

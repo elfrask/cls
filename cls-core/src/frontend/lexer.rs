@@ -358,6 +358,28 @@ impl Lexer {
             }
             if ch == '{' {
                 self.advance();
+                // Spread de props: {...expr} (REST_SPREAD_PLAN). Después de `{`
+                // viene `...` -> token AttrSpread y la expresión hasta `}`.
+                if self.current_char() == '.' && self.pos + 1 < self.source.len() && self.source[self.pos + 1] == '.' {
+                    self.advance(); // .
+                    self.advance(); // .
+                    self.advance(); // .
+                    let span = self.current_span();
+                    tokens.push(SpannedToken::new(Token::Cmx(CmxToken::AttrSpread), span));
+                    self.in_cmx_expr = true;
+                    let mut depth: i32 = 1;
+                    while !self.is_eof() && depth > 0 {
+                        let t = self.next_token()?;
+                        match &t.token {
+                            Token::Symbol(Symbol::LBrace) => depth += 1,
+                            Token::Symbol(Symbol::RBrace) => { depth -= 1; if depth == 0 { break; } }
+                            _ => {}
+                        }
+                        tokens.push(t);
+                    }
+                    self.in_cmx_expr = false;
+                    continue;
+                }
                 let name = self.read_cmx_identifier().unwrap_or_default();
                 tokens.push(SpannedToken::new(Token::Cmx(CmxToken::AttrExpr { name }), self.current_span()));
                 continue;

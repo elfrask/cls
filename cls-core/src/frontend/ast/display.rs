@@ -132,6 +132,7 @@ pub fn expr_display(expr: &Expression) -> String {
         Expression::Cmx(c) => format!("<{} />", c.tag),
         Expression::NamespaceAccess(ns, name, _) => format!("{}::{}", ns, name),
         Expression::Await(inner, _) => format!("await {}", expr_display(inner)),
+        Expression::Spread(inner, _) => format!("...{}", expr_display(inner)),
     }
 }
 
