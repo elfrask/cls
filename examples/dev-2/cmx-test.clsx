@@ -1,0 +1,28 @@
+
+
+function main(params: String[]) -> int {
+  
+  const propiedades = {
+    nombre: "Carlos",
+    edad: 21,
+    vivo: {
+      state: true,
+      celulas: [1, 2, 3],
+      enums: [{e: (1, 2)}, { e: (3, 4) }]
+    }
+  };
+
+  const maqueta = (
+    <html {...propiedades}>
+      <div>
+        ¡Hola!, {propiedades.nombre}
+      </div>
+    </html>
+  );
+
+  print("maqueta:", maqueta);
+  print("maqueta.props:", maqueta.props);
+  print("maqueta.children[0]:", maqueta.children[0]);
+
+  return 0;
+}
