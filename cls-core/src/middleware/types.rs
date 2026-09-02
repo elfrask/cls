@@ -36,6 +36,11 @@ pub enum Type {
     // Tipos acrónimos (alias)
     I32, I64, I16, I8, F32, F64, Cmx,
 
+    // Valor invocable (función simple, closure u objeto con __call). En runtime
+    // se identifica por el tag-bit del handle (par = simple, impar = closure).
+    // Ver plan tipo-callable-is-narrowing-spread.md.
+    Callable,
+
     // Tipos nombrados por usuario
     Named(String, Vec<Type>), // Persona, Array<String>
 }
@@ -76,6 +81,23 @@ impl Type {
             (_, Type::Value) | (Type::Value, _) => true,
             (_, Type::Json) => matches!(self, Type::Json | Type::Value | Type::Record(_, _) | Type::Shape(_) | Type::Array(_)),
             (Type::Json, _) => true,
+
+            // Cmx: contenedor dinámico concreto (réplica del patrón JSON).
+            // Un CmxValue es asignable a `Value` y a los tipos por los que se
+            // puede leer un campo (String/Int/... — el tag runtime decide);
+            // pero un primitivo NO es un CmxValue, y un CmxValue NO es
+            // invocable (Callable). Ver plan `completar-tipo-cmx.md`.
+            (Type::Cmx, Type::Value) | (Type::Value, Type::Cmx) => true,
+            (Type::Cmx, Type::Callable) => false,
+            (Type::Cmx, _) => true,
+
+            // Callable: cualquier función (con aridad concreta) es invocable.
+            // Value/Cmx NO son assignables a Callable en compile-time (son
+            // dinámicos — el `is Callable` resuelve en runtime por tag-bit).
+            (Type::Fun(_, _), Type::Callable) => true,
+            (Type::Callable, Type::Callable) => true,
+            (Type::Callable, Type::Value) => true,
+            (Type::Callable, Type::Any) => true,
 
             // Tipos idénticos
             (a, b) if a == b => true,
@@ -226,6 +248,7 @@ impl Type {
             Type::F32 => "f32".to_string(),
             Type::F64 => "f64".to_string(),
             Type::Cmx => "cmx".to_string(),
+            Type::Callable => "Callable".to_string(),
             Type::Named(name, params) => {
                 if params.is_empty() {
                     name.clone()
@@ -331,5 +354,32 @@ mod tests {
         assert!(Type::Json.is_assignable_to(&Type::Value));
         assert!(Type::Value.is_assignable_to(&Type::Any));
         assert!(Type::Json.is_assignable_to(&Type::Any));
+    }
+
+    #[test]
+    fn cmx_value_assignable() {
+        // Un CmxValue es asignable a `Value` y a cualquier tipo (el tag decide
+        // en runtime); un primitivo NO es un CmxValue.
+        assert!(Type::Cmx.is_assignable_to(&Type::Value));
+        assert!(Type::Value.is_assignable_to(&Type::Cmx));
+        assert!(Type::Cmx.is_assignable_to(&Type::String));
+        assert!(Type::Cmx.is_assignable_to(&Type::Any));
+        assert!(Type::Cmx.is_assignable_to(&Type::Cmx));
+        assert!(!Type::Int.is_assignable_to(&Type::Cmx));
+        assert!(!Type::String.is_assignable_to(&Type::Cmx));
+    }
+
+    #[test]
+    fn callable_assignable() {
+        // Toda función es invocable; Callable es un Value; Cmx NO es Callable
+        // en compile-time (el `is Callable` resuelve en runtime). Value es el
+        // tipo dinámico universal: se asigna a todo (incluido Callable).
+        assert!(Type::Fun(vec![Type::Int], Box::new(Type::Int)).is_assignable_to(&Type::Callable));
+        assert!(Type::Callable.is_assignable_to(&Type::Callable));
+        assert!(Type::Callable.is_assignable_to(&Type::Value));
+        assert!(Type::Callable.is_assignable_to(&Type::Any));
+        assert!(Type::Value.is_assignable_to(&Type::Callable));
+        assert!(!Type::Cmx.is_assignable_to(&Type::Callable));
+        assert!(!Type::Int.is_assignable_to(&Type::Callable));
     }
 }

@@ -1,6 +1,7 @@
 //! flow.rs (Fase 1: extraido de cls-core/src/middleware/typeck/statements.rs).
 
 use super::*;
+use crate::frontend::token::Operator;
 
 impl TypeChecker {
 
@@ -14,15 +15,54 @@ impl TypeChecker {
                 i.span.clone(),
             );
         }
+        // Narrowing por `is`: si la condición es `x is Tipo`, estrechar `x` al
+        // tipo dentro del bloque (scope anidado, se restaura al salir). Réplica
+        // del narrowing de TypeScript. Ver plan tipo-callable-is-narrowing-spread.md.
+        let narrowed = self.narrowed_var(&i.condition);
+        if let Some((name, ty)) = &narrowed {
+            self.push_scope();
+            self.define(name, ty.clone());
+        }
         self.check_block(&i.then_block);
+        if narrowed.is_some() {
+            self.pop_scope();
+        }
         for elif in &i.elif_branches {
+            let en = self.narrowed_var(&elif.condition);
+            if let Some((name, ty)) = &en {
+                self.push_scope();
+                self.define(name, ty.clone());
+            }
             self.check_expression(&elif.condition);
             self.check_block(&elif.block);
+            if en.is_some() {
+                self.pop_scope();
+            }
         }
         if let Some(else_block) = &i.else_block {
             self.check_block(else_block);
         }
         Type::Void
+    }
+
+    /// Si `cond` es `Identifier(x) is Tipo` (builtin/Callable), devuelve
+    /// `(x, tipo_estrecho)` para narrowing dentro del bloque.
+    fn narrowed_var(&self, cond: &Expression) -> Option<(String, Type)> {
+        if let Expression::Binary(b) = cond {
+            if b.op == Operator::Is {
+                if let Expression::Identifier(name, _) = &*b.left {
+                    if let Expression::Identifier(right, _) = &*b.right {
+                        if let Some(t) = crate::middleware::typeck::helpers::builtin_type_name(right) {
+                            return Some((name.clone(), t));
+                        }
+                        if right == "Callable" {
+                            return Some((name.clone(), Type::Callable));
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 
 

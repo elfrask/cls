@@ -2,8 +2,9 @@ function suma(a: int, b: int) -> int {
     return a + b;
 };
 
-function App(props: String) -> String {
-    return "app";
+function App(props: Record<String, any>) -> String {
+    var t: String = props.titulo;
+    return "app " + t;
 };
 
 function main(args: String[]) -> int {
@@ -15,6 +16,10 @@ function main(args: String[]) -> int {
     print("tag:", app.tag);
     print("titulo:", app.props.titulo);
     print("cmx:", app);
-    print("app.tag():", app.tag());
+    print("es callable:", app.tag is Callable);
+    if (app.tag is Callable) {
+        var r: String = app.tag({...app.props});
+        print("app.tag():", r);
+    }
     return 0;
 };

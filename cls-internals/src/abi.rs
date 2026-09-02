@@ -71,6 +71,7 @@ pub static INTERNALS_FUNCTIONS: &[InternalsFn] = &[
     InternalsFn { name: "__intr_record_keys", params: &[I64], results: &[I64] },
     InternalsFn { name: "__intr_record_values", params: &[I64], results: &[I64] },
     InternalsFn { name: "__intr_record_to_string", params: &[I64], results: &[I64] },
+    InternalsFn { name: "__intr_record_merge", params: &[I64, I64], results: &[I64] },
     // ── math ──────────────────────────────────────────────────────────────
     InternalsFn { name: "__intr_math_sqrt", params: &[F64], results: &[F64] },
     InternalsFn { name: "__intr_math_pow", params: &[F64, F64], results: &[F64] },

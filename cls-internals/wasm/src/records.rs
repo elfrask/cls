@@ -160,3 +160,23 @@ pub extern "C" fn __intr_record_to_string(ptr: i64) -> i64 {
         mem::write_str(&s)
     }
 }
+
+/// Spread de records `{...src}`: copia los campos de `src` a `dst` (los campos
+/// existentes en dst con la misma key se sobrescriben — el último set gana).
+/// Devuelve `dst` (que puede reallocarse al crecer). REST_SPREAD_PLAN Fase 2.
+#[no_mangle]
+pub extern "C" fn __intr_record_merge(dst: i64, src: i64) -> i64 {
+    unsafe {
+        let s = src as usize;
+        let n = rec_len(s) as usize;
+        let mut d = dst;
+        for i in 0..n {
+            let key = mem::read_i64(s + 16 + i * 24);
+            let val = mem::read_i64(s + 16 + i * 24 + 8);
+            let tag = mem::read_i64(s + 16 + i * 24 + 16);
+            // record_set puede reallocar dst -> usar el ptr retornado.
+            d = __intr_record_set(d, key, val, tag);
+        }
+        d
+    }
+}

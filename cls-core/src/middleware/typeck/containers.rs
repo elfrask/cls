@@ -12,9 +12,9 @@ impl TypeChecker {
         match obj {
             Type::Array(inner) => *inner,
             Type::Record(_k, v) => *v,
-            // JSON / Value: el índice (clave u offset) devuelve un `Value`
+            // JSON / Value / Cmx: el índice (clave u offset) devuelve un `Value`
             // dinámico; el tag runtime viaja con el valor.
-            Type::Json | Type::Value => Type::Value,
+            Type::Json | Type::Value | Type::Cmx => Type::Value,
             // Shape: índice literal con clave conocida -> tipo del campo; clave
             // desconocida -> error (la estructura del record es fija).
             Type::Shape(fields) => {
@@ -105,6 +105,21 @@ impl TypeChecker {
 
 
     pub(crate) fn check_record(&mut self, rec: &RecordExpr) -> Type {
+        // Spread `{...expr, ...}`: el tipo resultante es Record<String, Value>
+        // (campos dinámicos — no se conocen estáticamente). Los spreads se
+        // chequean; las entries extra se evalúan y el conjunto tipa dinámico.
+        // Ver REST_SPREAD_PLAN Fase 2.
+        if !rec.spreads.is_empty() {
+            for s in &rec.spreads {
+                self.check_expression(s);
+            }
+            for (_, expr) in &rec.entries {
+                self.check_expression(expr);
+            }
+            let r = Type::Record(Box::new(Type::String), Box::new(Type::Value));
+            self.types_by_span.insert(rec.span.clone(), r.clone());
+            return r;
+        }
         let mut fields: Vec<(String, Type)> = Vec::new();
         // Si el span ya tiene un tipo esperado (p.ej. `var d: Record<K,V> = {...}`
         // o `return {...}` con función tipada Record), propagarlo: el literal

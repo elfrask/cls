@@ -163,13 +163,25 @@ impl<'a> FuncEmitter<'a> {
     /// VALOR que se guarda en un contenedor dinámico (`Record<String,any>`):
     /// un shape contiguo NO es legible como hashmap por la lectura/stringify.
     pub(crate) fn emit_record_hashmap(&mut self, r: &RecordExpr) -> ClsResult<()> {
-        let n = r.entries.len() as i64;
+        let n = (r.entries.len() + r.spreads.len()) as i64;
         self.body.push(Instruction::I64Const(n));
         if let Some(&idx) = self.func_indexes.get("__intr_record_new") {
             self.body.push(Instruction::Call(idx));
         }
         let ptr = self.fresh_local();
         self.body.push(Instruction::LocalSet(ptr));
+        // Spreads `{...expr, ...}`: evaluar cada uno (deja ptr de record) y
+        // mergear sus campos al nuevo record (REST_SPREAD_PLAN Fase 2).
+        // merge(dst, src): dst = ptr nuevo (LocalGet), src = expr del spread.
+        for spread in &r.spreads {
+            self.body.push(Instruction::LocalGet(ptr));
+            self.emit_expression(spread)?;
+            if let Some(&idx) = self.func_indexes.get("__intr_record_merge") {
+                self.body.push(Instruction::Call(idx));
+            }
+            // Write-back: merge puede reallocar (copiar N campos al nuevo).
+            self.body.push(Instruction::LocalSet(ptr));
+        }
         for (key, val) in &r.entries {
             self.body.push(Instruction::LocalGet(ptr));
             let k = self.intern_string(key);
@@ -194,7 +206,10 @@ impl<'a> FuncEmitter<'a> {
             if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                 self.body.push(Instruction::Call(idx));
             }
-            self.body.push(Instruction::Drop);
+            // Write-back: record_set puede reallocar si el capacity se excede
+            // (p. ej. con spreads que ya llenaron el record). El ptr retornado
+            // reemplaza al local para que el siguiente set/lectura use el nuevo.
+            self.body.push(Instruction::LocalSet(ptr));
         }
         self.body.push(Instruction::LocalGet(ptr));
         Ok(())

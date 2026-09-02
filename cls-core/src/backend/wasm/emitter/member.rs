@@ -333,6 +333,8 @@ impl<'a> FuncEmitter<'a> {
                 "tag" => self.emit_cmx_field(0),
                 "props" => self.emit_cmx_field(8),
                 "children" => self.emit_cmx_field(16),
+                // kind en offset 24: 0=elemento, 1=texto (layout host_cmx_new).
+                "kind" => self.emit_cmx_field(24),
                 _ => Err(self.unsupported_expr(&Expression::MemberAccess(m.clone()))),
             },
             Type::Named(name, _) => {

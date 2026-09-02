@@ -12,8 +12,19 @@ impl TypeChecker {
         // Métodos de primitivos (callee MemberAccess): el tipo del miembro ES el
         // resultado (`.join(sep)` -> String, `.contains(x)` -> Bool, ...).
         if let Expression::MemberAccess(m) = &*call.callee {
+            // `app.tag()`: el tag de un Cmx es invocable si es mayúscula (handle
+            // de función). El runtime despacha por tag-bit; aquí permitimos la
+            // llamada y tipamos el retorno como Value (dinámico). Réplica del
+            // patrón JSON/Value (ver plan completar-tipo-cmx.md).
+            let obj_ty0 = self.check_expression(&m.object);
+            if matches!(obj_ty0, Type::Cmx) && m.member == "tag" {
+                for arg in &call.args {
+                    self.check_expression(arg);
+                }
+                return Type::Value;
+            }
             // Array.map(f) -> Array(retorno de f)
-            let obj_ty = self.check_expression(&m.object);
+            let obj_ty = obj_ty0;
             if matches!(&obj_ty, Type::Array(_)) && m.member == "map" {
                 for arg in &call.args {
                     self.check_expression(arg);

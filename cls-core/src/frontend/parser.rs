@@ -530,7 +530,7 @@ impl Parser {
             "unknown" => return Ok(TypeKind::Unknown),
             "null" => return Ok(TypeKind::Null),
             "Void" | "void" => return Ok(TypeKind::Void),
-            "cmx" | "Cmx" => return Ok(TypeKind::Cmx),
+            "cmx" | "Cmx" | "CMX" => return Ok(TypeKind::Cmx),
             "i32" => return Ok(TypeKind::I32),
             "i64" => return Ok(TypeKind::I64),
             "i16" => return Ok(TypeKind::I16),
@@ -2137,8 +2137,19 @@ impl Parser {
             Token::Symbol(Symbol::LBrace) => {
                 self.advance();
                 let mut entries = Vec::new();
+                let mut spreads = Vec::new();
                 if !self.check_symbol(Symbol::RBrace) {
                     loop {
+                        // Spread `{...expr, key: val}` (REST_SPREAD_PLAN Fase 2).
+                        if self.check_symbol(Symbol::Ellipsis) {
+                            self.advance();
+                            let expr = self.parse_expression()?;
+                            spreads.push(expr);
+                            if !self.consume_symbol(Symbol::Comma) {
+                                break;
+                            }
+                            continue;
+                        }
                         let key = match &self.current_token {
                             Token::Identifier(name) => name.clone(),
                             Token::StringLiteral(s) => s.clone(),
@@ -2156,6 +2167,7 @@ impl Parser {
                 self.expect_symbol(Symbol::RBrace)?;
                 Ok(Expression::Record(RecordExpr {
                     entries,
+                    spreads,
                     span: self.span(),
                 }))
             }

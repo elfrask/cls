@@ -139,6 +139,27 @@ interface Marcador<T> {
 
 `A & B` fusiona ambos shapes; si un campo conflictúa en tipo, es error.
 
+## Callable
+
+`Callable` es el tipo de los **valores invocables**: función simple, closure u
+objeto con `__call`. En runtime se identifica por el tag-bit del handle
+(par = función simple, impar = closure).
+
+- Toda función es asignable a `Callable` (`Fun(..) → Callable`).
+- `Callable` es asignable a `Value` (un callable es un valor).
+- `Value`/`Cmx` NO son asignables a `Callable` en compile-time (son dinámicos —
+  el `is Callable` resuelve en runtime).
+
+```clx
+var f = suma;                    # f: Fun(..)
+if (f is Callable) {             # narrowing: f es Callable dentro del bloque
+    f(2, 3);
+}
+```
+
+`is Callable` chequea en runtime que el valor sea un handle de función
+(`v != 0 && v>>32 == 0`). Ver `docs/lenguaje/cmx.md` (invocar componentes).
+
 ## Typechecking
 
 - `clx check` - chequea un nivel (un solo archivo).

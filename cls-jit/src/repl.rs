@@ -665,6 +665,7 @@ fn annotation_from_type(t: &Type) -> Option<TypeAnnotation> {
         Type::Json => TypeKind::Json,
         Type::Value => TypeKind::Value,
         Type::Cmx => TypeKind::Cmx,
+        Type::Callable => TypeKind::Named("Callable".into(), vec![]),
         Type::Array(inner) => TypeKind::Array(Box::new(annotation_from_type(inner)?)),
         Type::Tuple(items) => TypeKind::Tuple(
             items

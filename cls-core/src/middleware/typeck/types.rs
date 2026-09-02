@@ -208,6 +208,7 @@ impl TypeChecker {
                     "Float" => Type::Float,
                     "Character" => Type::Char,
                     "Boolean" => Type::Bool,
+                    "Callable" => Type::Callable,
                     // Record<K, V> -> diccionario tipado
                     "Record" if param_types.len() == 2 => Type::Record(
                         Box::new(param_types[0].clone()),

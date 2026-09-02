@@ -165,10 +165,17 @@ impl TypeChecker {
                         )),
                 }
             }
+            // Cmx: tipo de primera clase (réplica del patrón JSON, ver plan
+            // completar-tipo-cmx.md). `.tag` es Value (string para tag
+            // minúscula, handle para mayúscula — el tag-bit decide en
+            // runtime); `.props` es Record<String, Value>; `.kind` distingue
+            // texto (1) de elemento (0), necesario para un renderer CLS puro.
             Type::Cmx => match member.member.as_str() {
-                "tag" => Type::Fun(vec![Type::Any], Box::new(Type::String)),
-                "props" => Type::Record(Box::new(Type::String), Box::new(Type::Any)),
+                "tag" => Type::Value,
+                "props" => Type::Record(Box::new(Type::String), Box::new(Type::Value)),
                 "children" => Type::Array(Box::new(Type::Cmx)),
+                "kind" => Type::Int,
+                "toString" => Type::String,
                 _ => Type::Any,
             },
             Type::Int | Type::Float => match member.member.as_str() {

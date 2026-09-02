@@ -370,6 +370,26 @@ impl<'a> FuncEmitter<'a> {
                             .push(Instruction::I32Const(if matches { 1 } else { 0 }));
                         return Ok(());
                     }
+                    // `v is Callable`: el valor es un handle de función si
+                    // v != 0 && v>>32 == 0 (el mismo predicado que print usa
+                    // para formatear `<function X>`). Par = función simple,
+                    // impar = closure — ambos son handles invocables.
+                    if right_name == "Callable" {
+                        self.emit_expression(&b.left)?;
+                        let v = self.fresh_local();
+                        self.body.push(Instruction::LocalSet(v));
+                        // v != 0
+                        self.body.push(Instruction::LocalGet(v));
+                        self.body.push(Instruction::I64Eqz);
+                        self.body.push(Instruction::I32Eqz);
+                        // && (v>>32 == 0)
+                        self.body.push(Instruction::LocalGet(v));
+                        self.body.push(Instruction::I64Const(32));
+                        self.body.push(Instruction::I64ShrU);
+                        self.body.push(Instruction::I64Eqz);
+                        self.body.push(Instruction::I32And);
+                        return Ok(());
+                    }
                 }
                 self.emit_expression(&b.left)?;
                 if let Expression::Identifier(right_name, _) = &*b.right {

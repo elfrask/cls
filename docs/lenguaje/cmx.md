@@ -104,4 +104,30 @@ function render(cmx: any) -> String {
 expresiones), y las funciones como tags no se ejecutan. Todo contenido
 interpolado debe escaparse salvo `raw()` explícito (riesgo de inyección).
 
+### Invocar un componente (tag mayúscula)
+
+El tag mayúscula guarda la **referencia** (handle de función) sin ejecutarla.
+Para invocarlo como componente, se usa el tipo `Callable` con `is` + narrowing
+y spread de props:
+
+```clx
+function App(props: Record<String, any>) -> String {
+    var t: String = props.titulo;
+    return "App " + t;
+};
+
+var app = (<App titulo="demo"><p>hijo</p></App>);
+
+if (app.tag is Callable) {
+    var html: String = app.tag({...app.props, children: app.children});
+    print(html);   # "App demo"
+}
+```
+
+- `app.tag is Callable` — true si el tag es un handle de función (runtime,
+  tag-bit); false para tags minúscula (string).
+- Dentro del `if`, `app.tag` es invocable (el typeck estrecha por `is`).
+- `{...app.props, children: app.children}` — spread del record de props +
+  children (Fase 2 de REST_SPREAD_PLAN).
+
 Ejemplo de uso real: `docs/desarrollo/minilaravel.md` (framework HTTP, F6).
