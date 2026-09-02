@@ -56,7 +56,10 @@ pub(super) fn cmx_tag_for_type(t: &Type) -> i64 {
     }
 }
 /// Código del tipo de elemento para `arr_join`/`arr_to_string`
-/// (0=int, 1=string, 2=float, 3=bool, 4=char, 5=cmx).
+/// (0=int, 1=string, 2=float, 3=bool, 4=char, 5=cmx, 6=array/tuple, 7=record).
+/// Los contenedores (6/7) hacen que el formateador despache cada elemento por
+/// su tag compuesto (`fmt_val_to_string(e, kind<<8)`), no como int crudo
+/// (bug dev-2: `enums: [{...}]` imprimía punteros).
 pub(super) fn arr_kind_code(t: &Type) -> i64 {
     match t {
         Type::String => 1,
@@ -64,6 +67,8 @@ pub(super) fn arr_kind_code(t: &Type) -> i64 {
         Type::Bool => 3,
         Type::Char => 4,
         Type::Cmx => 5,
+        Type::Array(_) | Type::Tuple(_) => 6,
+        Type::Record(_, _) | Type::Shape(_) => 7,
         _ => 0,
     }
 }
@@ -100,11 +105,15 @@ pub(super) fn runtime_tag_code(t: &Type) -> i64 {
 /// Tag COMPUESTO para guardar un valor en un record/array heterogéneo: para
 /// arrays usa `6<<8 | arr_kind` (el formateador `fmt_val_to_string` interpreta
 /// kind=6 como "array de Cmx" con es=16 — un tag plano 6 hace que lea ints a
-/// saltos de 16 bytes -> basura). Los demás valores usan `runtime_tag_code`.
-/// Bug dev-2: `celulas: [1,2,3]` impreso como floats/punteros.
+/// saltos de 16 bytes -> basura). Las TUPLAS se guardan como array (layout
+/// contiguo `[cap][len][slots]`, igual que un array) — tag 6<<8|0, NO 7 (record):
+/// el formateador de records asume hashmap y una tupla no lo es (bug dev-2:
+/// `enums: [{e: (1,2)}]` trapeaba al formatear la tupla como record).
+/// Los demás valores usan `runtime_tag_code`.
 pub(super) fn runtime_tag_code_compound(t: &Type) -> i64 {
     match t {
         Type::Array(e) => (6 << 8) | arr_kind_code(e),
+        Type::Tuple(_) => 6 << 8,
         _ => runtime_tag_code(t),
     }
 }

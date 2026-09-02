@@ -47,8 +47,10 @@ pub fn fmt_val_to_string(val: i64, tag: i64) -> String {
             4 => char::from_u32(val as u32).unwrap_or('?').to_string(),
             5 => cmx_format(val as usize),
             6 => {
-                let es = if kind == 5 || kind == 6 { 16 } else { 8 };
-                let arr_kind = if kind == 6 { 5 } else { kind };
+                // kind 5 = array de Cmx (entradas `[val, tag]` stride 16);
+                // cualquier otro kind = array/tupla contigua con es=8 (ints/ptr).
+                let es = if kind == 5 { 16 } else { 8 };
+                let arr_kind = if kind == 5 { 5 } else { kind };
                 arr_to_string(val, es, arr_kind as i64)
             }
             7 => record_to_string(val),
@@ -102,6 +104,11 @@ pub fn arr_to_string(ptr: i64, es: i64, kind: i64) -> String {
                         out.push_str(&fmt_val_to_string(e, tg));
                     }
                 }
+                // Contenedores (6=array/tupla, 7=record): cada elemento es un
+                // ptr a un contenedor anidado; despachar por su tag compuesto.
+                // Bug dev-2: `enums: [{...}]` imprimía punteros crudos porque
+                // el kind 0 (default) los trataba como ints.
+                6 | 7 => out.push_str(&fmt_val_to_string(e, kind << 8)),
                 _ => out.push_str(&e.to_string()),
             }
         }

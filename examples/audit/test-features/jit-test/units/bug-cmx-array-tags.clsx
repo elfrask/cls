@@ -1,10 +1,12 @@
-# Bug dev-2: ints en arrays anidados en records se imprimian como floats/punteros.
-# `celulas: [1, 2, 3]` -> el tag del array debe ser compuesto (6<<8|kind).
+# Bug dev-2: formateo de contenedores anidados.
+# 1. ints en arrays anidados en records: `celulas: [1, 2, 3]` -> tag compuesto.
+# 2. arrays de records/tuplas: `enums: [{e: (1,2)}, {e: (3,4)}]` -> recursivo
+#    (antes punteros crudos, y tuplas trapeaban al formatearse como records).
 function main(args: String[]) -> int {
     var props: Record<String, any> = {
         nombre: "Carlos",
         edad: 21,
-        vivo: {state: true, celulas: [1, 2, 3]}
+        vivo: {state: true, celulas: [1, 2, 3], enums: [{e: (1, 2)}, {e: (3, 4)}]}
     };
     var maqueta = (<html {...props} />);
     print("props:", maqueta.props);
