@@ -14,6 +14,213 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
+    /// Convierte un valor (ya en el stack, cargado según `w`) a su string según
+    /// el TIPO CLS `t`. RECURSIVO para contenedores y tipos Named: un campo que
+    /// es struct/clase/enum/array/record/tuple se serializa con su formato, no
+    /// como int/ptr (bug dev-2: campos anidados mostraban punteros).
+    /// Deja el string packed en el stack.
+    pub(crate) fn emit_typed_value_to_string(&mut self, w: WasTy, t: &Type) -> ClsResult<()> {
+        match t {
+            Type::String => {} // ya es string packed
+            Type::Bool => self.emit_str_host("__intr_str_bool"),
+            Type::Char => self.emit_str_host("__intr_str_char"),
+            Type::Float | Type::F32 | Type::F64 => self.emit_str_host("__intr_str_float"),
+            Type::Named(name, _) if self.struct_defs.contains_key(name) => {
+                let ptr = self.fresh_local();
+                self.body.push(Instruction::LocalSet(ptr));
+                self.emit_struct_to_string(name, ptr)?;
+            }
+            Type::Named(name, _) if self.enum_variants(name).is_some() => {
+                self.emit_enum_to_string(name)?;
+            }
+            Type::Named(name, _) if self.class_defs.contains_key(name) => {
+                if let Some(idx) = self.func_indexes.get(&format!("{}::__toString", name)) {
+                    self.body.push(Instruction::Call(*idx));
+                } else if let Some(idx) = self.func_indexes.get(&format!("{}::__repr", name)) {
+                    self.body.push(Instruction::Call(*idx));
+                } else {
+                    let ptr = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(ptr));
+                    self.emit_class_to_string(name, ptr)?;
+                }
+            }
+            Type::Array(elem) => {
+                let ew = was_type(elem)?;
+                let kind = arr_kind_code(elem);
+                let es = if matches!(**elem, Type::Cmx) {
+                    16
+                } else {
+                    elem_size_bytes(ew)
+                };
+                self.body.push(Instruction::I64Const(es));
+                self.body.push(Instruction::I64Const(kind));
+                self.emit_str_host("__intr_arr_to_string");
+            }
+            Type::Tuple(slots) => {
+                let _ = w;
+                let ptr = self.fresh_local();
+                self.body.push(Instruction::LocalSet(ptr));
+                self.emit_tuple_to_string(slots)?;
+            }
+            Type::Record(_, _) | Type::Shape(_) => {
+                self.emit_str_host("__intr_record_to_string");
+            }
+            Type::Fun(..) => {
+                self.host.call(HostFn::FnToString, &mut self.body);
+            }
+            _ => match w {
+                WasTy::F64 => self.emit_str_host("__intr_str_float"),
+                WasTy::I32 => {
+                    self.body.push(Instruction::I64ExtendI32U);
+                    self.emit_str_host("__intr_str_int");
+                }
+                _ => self.emit_str_host("__intr_str_int"),
+            },
+        }
+        Ok(())
+    }
+
+    /// Formatea `<Clase {campo: valor, ...}>` (el ptr de la instancia está en
+    /// `ptr`) y deja el string en el stack. Recursivo: los campos que son
+    /// contenedores/Named se serializan con su tipo (bug dev-2: campos anidados
+    /// mostraban punteros). Extraído del inline de print.rs.
+    pub(crate) fn emit_class_to_string(&mut self, name: &str, ptr: u32) -> ClsResult<()> {
+        let info = self.class_defs[name].clone();
+        let open = format!("<{} {{", name);
+        let s = self.intern_string(&open);
+        self.emit_load_str(s);
+        let res = self.fresh_local();
+        self.body.push(Instruction::LocalSet(res));
+        for (i, (fname, t_cls, w, off, _vis)) in info.fields.iter().enumerate() {
+            let label = format!("{}: ", fname);
+            let ls = self.intern_string(&label);
+            self.emit_load_str(ls);
+            let lt = self.fresh_local();
+            self.body.push(Instruction::LocalSet(lt));
+            self.body.push(Instruction::LocalGet(res));
+            self.body.push(Instruction::LocalGet(lt));
+            self.emit_str_host("__intr_str_concat");
+            self.body.push(Instruction::LocalSet(res));
+            // valor
+            self.body.push(Instruction::LocalGet(ptr));
+            self.body.push(Instruction::I64Const(*off));
+            self.body.push(Instruction::I64Add);
+            self.body.push(Instruction::I32WrapI64);
+            match w {
+                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
+                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                    offset: 0,
+                    align: 2,
+                    memory_index: 0,
+                })),
+                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
+            }
+            if matches!(t_cls, Type::String) {
+                // el valor ya es un string (ptr<<32|len): concatenar directo
+            } else {
+                self.emit_typed_value_to_string(*w, t_cls)?;
+            }
+            let sv = self.fresh_local();
+            self.body.push(Instruction::LocalSet(sv));
+            self.body.push(Instruction::LocalGet(res));
+            self.body.push(Instruction::LocalGet(sv));
+            self.emit_str_host("__intr_str_concat");
+            self.body.push(Instruction::LocalSet(res));
+            if i < info.fields.len() - 1 {
+                let sep = self.intern_string(", ");
+                self.emit_load_str(sep);
+                let st = self.fresh_local();
+                self.body.push(Instruction::LocalSet(st));
+                self.body.push(Instruction::LocalGet(res));
+                self.body.push(Instruction::LocalGet(st));
+                self.emit_str_host("__intr_str_concat");
+                self.body.push(Instruction::LocalSet(res));
+            }
+        }
+        let close = self.intern_string("}>");
+        self.emit_load_str(close);
+        let ct = self.fresh_local();
+        self.body.push(Instruction::LocalSet(ct));
+        self.body.push(Instruction::LocalGet(res));
+        self.body.push(Instruction::LocalGet(ct));
+        self.emit_str_host("__intr_str_concat");
+        self.body.push(Instruction::LocalSet(res));
+        self.body.push(Instruction::LocalGet(res));
+        Ok(())
+    }
+
+    /// Formatea un valor enum (en el stack, `(def_id<<32)|idx`) a su nombre de
+    /// variante (`Activo`) y deja el string en el stack. Extraído del inline
+    /// de print.rs (sin el PrintStr final).
+    pub(crate) fn emit_enum_to_string(&mut self, name: &str) -> ClsResult<()> {
+        let variants = self.enum_variants(name).unwrap().clone();
+        // index = v & 0xffffffff
+        self.body.push(Instruction::I64Const(0xffff_ffff));
+        self.body.push(Instruction::I64And);
+        let idx = self.fresh_local();
+        self.body.push(Instruction::LocalSet(idx));
+        // Enum def como valor (index 0xffffffff) -> `<enum X>`.
+        self.body.push(Instruction::LocalGet(idx));
+        self.body.push(Instruction::I64Const(0xffff_ffff));
+        self.body.push(Instruction::I64Eq);
+        self.block_depth += 1;
+        self.body.push(Instruction::If(BlockType::Result(ValType::I64)));
+        let eds = self.intern_string(&format!("<enum {}>", name));
+        self.emit_load_str(eds);
+        self.body.push(Instruction::Else);
+        let n = variants.len();
+        if n == 0 {
+            let s = self.intern_string("");
+            self.emit_load_str(s);
+        } else {
+            self.body.push(Instruction::LocalGet(idx));
+            self.body.push(Instruction::I64Const(0));
+            self.body.push(Instruction::I64Eq);
+            self.block_depth += 1;
+            self.body.push(Instruction::If(BlockType::Result(ValType::I64)));
+            let s0 = self.intern_string(&variants[0]);
+            self.emit_load_str(s0);
+            if n > 1 {
+                for (i, variant) in variants.iter().enumerate().skip(1) {
+                    self.body.push(Instruction::Else);
+                    if i == n - 1 {
+                        let s = self.intern_string(variant);
+                        self.emit_load_str(s);
+                    } else {
+                        self.body.push(Instruction::LocalGet(idx));
+                        self.body.push(Instruction::I64Const(i as i64));
+                        self.body.push(Instruction::I64Eq);
+                        self.block_depth += 1;
+                        self.body.push(Instruction::If(BlockType::Result(ValType::I64)));
+                        let s = self.intern_string(variant);
+                        self.emit_load_str(s);
+                    }
+                }
+                // Cierra los Ifs anidados del loop: para n>1 hay n-1 Ifs
+                // (idx==0 + los intermedios). El último Else no abre If.
+                for _ in 0..(n - 1) {
+                    self.body.push(Instruction::End);
+                    self.block_depth -= 1;
+                }
+            } else {
+                // n == 1: un solo If (idx==0) -> un End.
+                self.body.push(Instruction::End);
+                self.block_depth -= 1;
+            }
+        }
+        self.body.push(Instruction::End);
+        self.block_depth -= 1;
+        Ok(())
+    }
+
 
     /// Construye la representación `Punto { x: 3, y: 4 }` de un struct y la deja
     /// en el stack (el ptr del struct está en `ptr`).
@@ -79,19 +286,10 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_str_host("__intr_str_concat");
                 self.body.push(Instruction::LocalSet(res));
             } else {
-                // No-String: el host de string correcto depende del TIPO CLS,
-                // no solo del WasTy. Un bool/char (i32) debe usar __intr_str_bool/
-                // __intr_str_char (toman i32); __intr_str_int espera i64 y un
-                // i32 en el stack -> type mismatch (bug dev-2: struct con
-                // campo bool generaba WASM invalido).
-                match t_cls {
-                    Type::Bool => self.emit_str_host("__intr_str_bool"),
-                    Type::Char => self.emit_str_host("__intr_str_char"),
-                    _ => match w {
-                        WasTy::F64 => self.emit_str_host("__intr_str_float"),
-                        _ => self.emit_str_host("__intr_str_int"),
-                    },
-                }
+                // No-String: despacho recursivo por tipo CLS (bool/char/float/
+                // int, y contenedores/Named: struct/clase/enum/array/record/
+                // tuple anidados se serializan, no como ptr — bug dev-2).
+                self.emit_typed_value_to_string(*w, t_cls)?;
                 let sv = self.fresh_local();
                 self.body.push(Instruction::LocalSet(sv));
                 self.body.push(Instruction::LocalGet(res));
