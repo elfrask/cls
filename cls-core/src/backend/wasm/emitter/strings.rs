@@ -79,9 +79,18 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_str_host("__intr_str_concat");
                 self.body.push(Instruction::LocalSet(res));
             } else {
-                match w {
-                    WasTy::F64 => self.emit_str_host("__intr_str_float"),
-                    _ => self.emit_str_host("__intr_str_int"),
+                // No-String: el host de string correcto depende del TIPO CLS,
+                // no solo del WasTy. Un bool/char (i32) debe usar __intr_str_bool/
+                // __intr_str_char (toman i32); __intr_str_int espera i64 y un
+                // i32 en el stack -> type mismatch (bug dev-2: struct con
+                // campo bool generaba WASM invalido).
+                match t_cls {
+                    Type::Bool => self.emit_str_host("__intr_str_bool"),
+                    Type::Char => self.emit_str_host("__intr_str_char"),
+                    _ => match w {
+                        WasTy::F64 => self.emit_str_host("__intr_str_float"),
+                        _ => self.emit_str_host("__intr_str_int"),
+                    },
                 }
                 let sv = self.fresh_local();
                 self.body.push(Instruction::LocalSet(sv));

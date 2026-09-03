@@ -430,9 +430,16 @@ impl<'a> FuncEmitter<'a> {
                         if matches!(t_cls, Type::String) {
                             // el valor ya es un string (ptr<<32|len): concatenar directo
                         } else {
-                            match w {
-                                WasTy::F64 => self.emit_str_host("__intr_str_float"),
-                                _ => self.emit_str_host("__intr_str_int"),
+                            // No-String: despachar por tipo CLS, no solo WasTy
+                            // (bool/char i32 -> __intr_str_bool/char, no str_int
+                            // que espera i64 -> type mismatch, bug dev-2).
+                            match t_cls {
+                                Type::Bool => self.emit_str_host("__intr_str_bool"),
+                                Type::Char => self.emit_str_host("__intr_str_char"),
+                                _ => match w {
+                                    WasTy::F64 => self.emit_str_host("__intr_str_float"),
+                                    _ => self.emit_str_host("__intr_str_int"),
+                                },
                             }
                         }
                         let sv = self.fresh_local();
