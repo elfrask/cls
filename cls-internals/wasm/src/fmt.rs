@@ -54,6 +54,11 @@ pub fn fmt_val_to_string(val: i64, tag: i64) -> String {
                 arr_to_string(val, es, arr_kind as i64)
             }
             7 => record_to_string(val),
+            // 8 = valores Named sin serializar (legacy, se muestran como int).
+            // 9 = string RAW (serializado por el emisor: tuplas/structs/clases/
+            // enums/arrays de contenedores ya formateados). Se imprime sin
+            // comillas, a diferencia del tag 1 (string con comillas en records).
+            9 => mem::read_str(val),
             _ => val.to_string(),
         }
     }

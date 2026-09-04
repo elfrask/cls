@@ -1949,6 +1949,9 @@ fn fmt_val_to_string<C: HostCtx>(ctx: &mut C, val: i64, tag: i64) -> String {
             arr_to_string(ctx, val, es, arr_kind as i64)
         }
         7 => record_to_string(ctx, val),
+        // 9 = string RAW (serializado por el emisor: tuplas/structs/clases/
+        // enums/arrays de contenedores). Se imprime sin comillas.
+        9 => ctx.read_str(val),
         _ => val.to_string(),
     }
 }

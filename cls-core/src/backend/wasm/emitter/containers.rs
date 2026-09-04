@@ -307,15 +307,15 @@ impl<'a> FuncEmitter<'a> {
                 .cloned()
                 .unwrap_or(Type::Any);
             // Valores Named (struct/clase/enum) y tuplas en un record dinámico:
-            // se guardan SERIALIZADOS a string (tag 1) para que el formateo no
-            // muestre punteros ni corchetes (bug dev-2: la tupla se imprimia
-            // como array [a, b] porque comparte layout y el tag 6<<8 la trata
-            // como array). El registro dinámico no conoce los tipos del
-            // programa; el string es la representación portable.
+            // se guardan SERIALIZADOS a string RAW (tag 9) para que el formateo
+            // no muestre punteros, corchetes ni comillas (bug dev-2: la tupla
+            // se imprimia como array [a, b] o como string "(a, b)" con
+            // comillas). El registro dinámico no conoce los tipos del programa;
+            // el string es la representación portable.
             if matches!(cls_t, Type::Named(_, _) | Type::Tuple(_)) {
                 let w = self.value_type(val)?;
                 self.emit_typed_value_to_string(w, &cls_t)?;
-                self.body.push(Instruction::I64Const(1)); // tag string
+                self.body.push(Instruction::I64Const(9)); // tag string raw
             } else if let Type::Array(elem) = &cls_t {
                 // Array de contenedores (Named: struct/clase/enum; record/tuple/
                 // array anidado): serializar el array completo a string (el
@@ -327,7 +327,7 @@ impl<'a> FuncEmitter<'a> {
                 );
                 if elem_is_container {
                     self.emit_named_array_to_string(elem)?;
-                    self.body.push(Instruction::I64Const(1)); // tag string
+                    self.body.push(Instruction::I64Const(9)); // tag string raw
                 } else {
                     match self.value_type(val)? {
                         WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
@@ -515,7 +515,7 @@ impl<'a> FuncEmitter<'a> {
                 // El valor (ptr del struct/clase o i64 del enum) está en stack.
                 let cls_t = val_type.clone().unwrap_or(Type::Any);
                 self.emit_typed_value_to_string(was, &cls_t)?;
-                self.body.push(Instruction::I64Const(1 << 8)); // tag string
+                self.body.push(Instruction::I64Const(9 << 8)); // tag raw (sin comillas)
             } else {
                 match was {
                     WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
