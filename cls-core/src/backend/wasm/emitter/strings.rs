@@ -342,14 +342,23 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_struct_to_string(&name, ptr)?;
             }
             Type::Named(name, _) if self.class_defs.contains_key(&name) => {
-                // toString(obj) -> __toString si existe; si no, __repr; el ptr está en stack.
+                // toString(obj) -> __toString si existe; si no, __repr; el ptr
+                // está en stack. Fallback: formato <Clase {...}> recursivo
+                // (antes __intr_str_int -> ptr, bug dev-2).
                 if let Some(idx) = self.func_indexes.get(&format!("{}::__toString", name)) {
                     self.body.push(Instruction::Call(*idx));
                 } else if let Some(idx) = self.func_indexes.get(&format!("{}::__repr", name)) {
                     self.body.push(Instruction::Call(*idx));
                 } else {
-                    self.emit_str_host("__intr_str_int");
+                    let ptr = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(ptr));
+                    self.emit_class_to_string(&name, ptr)?;
                 }
+            }
+            Type::Named(name, _) if self.enum_variants(&name).is_some() => {
+                // str(enum) -> nombre de la variante (antes caía a str_int con
+                // el valor crudo (def_id<<32)|idx, bug dev-2).
+                self.emit_enum_to_string(&name)?;
             }
             Type::Array(elem) => {
                 // `[e1, e2, ...]` como el walker (paridad en interpolación).

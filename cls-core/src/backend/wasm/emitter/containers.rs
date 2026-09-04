@@ -468,14 +468,29 @@ impl<'a> FuncEmitter<'a> {
                 Some(t) => was_type(t).unwrap_or(WasTy::I64),
                 None => WasTy::I64,
             };
-            match was {
-                WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
-                WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
-                WasTy::I64 => {}
+            // Valores Named (struct/clase/enum) y contenedores como props CMX:
+            // se guardan serializados a STRING (tag 1) para que el formateo del
+            // CmxValue no muestre punteros (bug dev-2: `metadata="1900568"`).
+            // El CmxValue es un DOM de props planas; el string es la repr.
+            let is_named_container = matches!(
+                val_type,
+                Some(Type::Named(_, _))
+            );
+            if is_named_container {
+                // El valor (ptr del struct/clase o i64 del enum) está en stack.
+                let cls_t = val_type.clone().unwrap_or(Type::Any);
+                self.emit_typed_value_to_string(was, &cls_t)?;
+                self.body.push(Instruction::I64Const(1 << 8)); // tag string
+            } else {
+                match was {
+                    WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+                    WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+                    WasTy::I64 => {}
+                }
+                let cls = val_type.unwrap_or(Type::Any);
+                self.body
+                    .push(Instruction::I64Const(cmx_tag_for_type(&cls)));
             }
-            let cls = val_type.unwrap_or(Type::Any);
-            self.body
-                .push(Instruction::I64Const(cmx_tag_for_type(&cls)));
             self.host.call(HostFn::CmxSetProp, &mut self.body);
             self.body.push(Instruction::Drop);
         }
