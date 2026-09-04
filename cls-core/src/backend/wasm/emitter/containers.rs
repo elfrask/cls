@@ -306,11 +306,13 @@ impl<'a> FuncEmitter<'a> {
                 .get(&expr_span(val))
                 .cloned()
                 .unwrap_or(Type::Any);
-            // Valores Named (struct/clase/enum) en un record dinámico: se
-            // guardan SERIALIZADOS a string (tag 1) para que el formateo no
-            // muestre punteros (bug dev-2). El registro dinámico no conoce los
-            // tipos del programa; el string es la representación portable.
-            if matches!(cls_t, Type::Named(_, _)) {
+            // Valores Named (struct/clase/enum) y tuplas en un record dinámico:
+            // se guardan SERIALIZADOS a string (tag 1) para que el formateo no
+            // muestre punteros ni corchetes (bug dev-2: la tupla se imprimia
+            // como array [a, b] porque comparte layout y el tag 6<<8 la trata
+            // como array). El registro dinámico no conoce los tipos del
+            // programa; el string es la representación portable.
+            if matches!(cls_t, Type::Named(_, _) | Type::Tuple(_)) {
                 let w = self.value_type(val)?;
                 self.emit_typed_value_to_string(w, &cls_t)?;
                 self.body.push(Instruction::I64Const(1)); // tag string

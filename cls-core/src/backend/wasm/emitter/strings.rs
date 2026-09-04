@@ -57,9 +57,8 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_str_host("__intr_arr_to_string");
             }
             Type::Tuple(slots) => {
-                let _ = w;
-                let ptr = self.fresh_local();
-                self.body.push(Instruction::LocalSet(ptr));
+                // El ptr de la tupla está en el stack; emit_tuple_to_string
+                // hace su propio LocalSet.
                 self.emit_tuple_to_string(slots)?;
             }
             Type::Record(_, _) | Type::Shape(_) => {
