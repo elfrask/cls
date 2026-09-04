@@ -222,6 +222,95 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
+    /// Serializa un array de valores Named (ptr del array en el stack) a
+    /// `[e1, e2, ...]` donde cada elemento se serializa con su tipo (struct/
+    /// clase/enum). El formateo genérico de arrays no conoce tipos del programa
+    /// -> mostraba ptrs (bug dev-2: `celulas: [1900568]`).
+    pub(crate) fn emit_named_array_to_string(&mut self, elem: &Type) -> ClsResult<()> {
+        // ptr del array en stack -> local
+        let arr_ptr = self.fresh_local();
+        self.body.push(Instruction::LocalSet(arr_ptr));
+        let open = self.intern_string("[");
+        self.emit_load_str(open);
+        let res = self.fresh_local();
+        self.body.push(Instruction::LocalSet(res));
+        let len = self.fresh_local();
+        self.body.push(Instruction::LocalGet(arr_ptr));
+        self.body.push(Instruction::I64Const(8));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::I64Load(MemArg {
+            offset: 0,
+            align: 3,
+            memory_index: 0,
+        }));
+        self.body.push(Instruction::LocalSet(len));
+        let i = self.fresh_local();
+        self.body.push(Instruction::I64Const(0));
+        self.body.push(Instruction::LocalSet(i));
+        let d = self.block_depth;
+        self.block_depth += 1;
+        self.body.push(Instruction::Block(BlockType::Empty));
+        let break_at = self.block_depth;
+        self.block_depth += 1;
+        self.body.push(Instruction::Loop(BlockType::Empty));
+        // cond: i >= len -> break
+        self.body.push(Instruction::LocalGet(i));
+        self.body.push(Instruction::LocalGet(len));
+        self.body.push(Instruction::I64GeS);
+        self.body.push(Instruction::BrIf(break_at));
+        // separador ", " si i > 0
+        self.body.push(Instruction::LocalGet(i));
+        self.body.push(Instruction::I64Const(0));
+        self.body.push(Instruction::I64GtS);
+        self.body.push(Instruction::If(BlockType::Empty));
+        self.body.push(Instruction::LocalGet(res));
+        let sep = self.intern_string(", ");
+        self.emit_load_str(sep);
+        self.emit_str_host("__intr_str_concat");
+        self.body.push(Instruction::LocalSet(res));
+        self.body.push(Instruction::End);
+        // elemento = arr[i] (es=8, ptrs/i64)
+        self.body.push(Instruction::LocalGet(arr_ptr));
+        self.body.push(Instruction::LocalGet(i));
+        self.body.push(Instruction::I64Const(8));
+        self.body.push(Instruction::I64Mul);
+        self.body.push(Instruction::I64Const(16));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::I64Load(MemArg {
+            offset: 0,
+            align: 3,
+            memory_index: 0,
+        }));
+        // serializar el elemento por su tipo
+        self.emit_typed_value_to_string(WasTy::I64, elem)?;
+        let sv = self.fresh_local();
+        self.body.push(Instruction::LocalSet(sv));
+        self.body.push(Instruction::LocalGet(res));
+        self.body.push(Instruction::LocalGet(sv));
+        self.emit_str_host("__intr_str_concat");
+        self.body.push(Instruction::LocalSet(res));
+        // i++
+        self.body.push(Instruction::LocalGet(i));
+        self.body.push(Instruction::I64Const(1));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::LocalSet(i));
+        self.body.push(Instruction::Br(0));
+        self.body.push(Instruction::End); // loop
+        self.block_depth -= 1;
+        self.body.push(Instruction::End); // block
+        self.block_depth = d;
+        let close = self.intern_string("]");
+        self.body.push(Instruction::LocalGet(res));
+        self.emit_load_str(close);
+        self.emit_str_host("__intr_str_concat");
+        self.body.push(Instruction::LocalSet(res));
+        self.body.push(Instruction::LocalGet(res));
+        Ok(())
+    }
+
     /// Construye la representación `Punto { x: 3, y: 4 }` de un struct y la deja
     /// en el stack (el ptr del struct está en `ptr`).
     pub(crate) fn emit_struct_to_string(&mut self, name: &str, ptr: u32) -> ClsResult<()> {

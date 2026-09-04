@@ -314,6 +314,27 @@ impl<'a> FuncEmitter<'a> {
                 let w = self.value_type(val)?;
                 self.emit_typed_value_to_string(w, &cls_t)?;
                 self.body.push(Instruction::I64Const(1)); // tag string
+            } else if let Type::Array(elem) = &cls_t {
+                // Array de contenedores (Named: struct/clase/enum; record/tuple/
+                // array anidado): serializar el array completo a string (el
+                // formateo genérico no conoce el tipo de los elementos -> ptrs).
+                // Recorre y construye [e1, e2, ...].
+                let elem_is_container = matches!(
+                    **elem,
+                    Type::Named(_, _) | Type::Record(_, _) | Type::Shape(_) | Type::Tuple(_) | Type::Array(_)
+                );
+                if elem_is_container {
+                    self.emit_named_array_to_string(elem)?;
+                    self.body.push(Instruction::I64Const(1)); // tag string
+                } else {
+                    match self.value_type(val)? {
+                        WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+                        WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+                        WasTy::I64 => {}
+                    }
+                    self.body
+                        .push(Instruction::I64Const(runtime_tag_code_compound(&cls_t)));
+                }
             } else {
                 match self.value_type(val)? {
                     WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
