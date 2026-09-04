@@ -301,21 +301,33 @@ impl<'a> FuncEmitter<'a> {
             // Valor anidado: los literals viven como hashmap (default invertido),
             // así que la emisión recursiva ya produce un record legible.
             self.emit_expression(val)?;
-            match self.value_type(val)? {
-                WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
-                WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
-                WasTy::I64 => {}
-            }
             let cls_t = self
                 .types
                 .get(&expr_span(val))
                 .cloned()
                 .unwrap_or(Type::Any);
-            // Tag del valor en el record: para ARRAYS debe ser COMPUESTO
-            // (6<<8 | kind del elem): el formateador (`fmt_val_to_string`)
-            // interpreta kind=6 como "array de Cmx" (es=16) y lee ints a saltos
-            // de 16 -> basura (bug dev-2: `celulas: [1,2,3]` como floats/ptr).
-            self.body.push(Instruction::I64Const(runtime_tag_code_compound(&cls_t)));
+            // Valores Named (struct/clase/enum) en un record dinámico: se
+            // guardan SERIALIZADOS a string (tag 1) para que el formateo no
+            // muestre punteros (bug dev-2). El registro dinámico no conoce los
+            // tipos del programa; el string es la representación portable.
+            if matches!(cls_t, Type::Named(_, _)) {
+                let w = self.value_type(val)?;
+                self.emit_typed_value_to_string(w, &cls_t)?;
+                self.body.push(Instruction::I64Const(1)); // tag string
+            } else {
+                match self.value_type(val)? {
+                    WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+                    WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+                    WasTy::I64 => {}
+                }
+                // Tag del valor en el record: para ARRAYS debe ser COMPUESTO
+                // (6<<8 | kind del elem): el formateador (`fmt_val_to_string`)
+                // interpreta kind=6 como "array de Cmx" (es=16) y lee ints a
+                // saltos de 16 -> basura (bug dev-2: `celulas: [1,2,3]` como
+                // floats/ptr).
+                self.body
+                    .push(Instruction::I64Const(runtime_tag_code_compound(&cls_t)));
+            }
             if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                 self.body.push(Instruction::Call(idx));
             }
