@@ -1,0 +1,98 @@
+# 1. Declaración de Enums
+enum Estado {
+  Inactivo,
+  Activo,
+  Pendiente
+}
+
+# 2. Declaración de Structs
+structure Celula {
+  id: int,
+  energia: float,
+  activa: bool,
+}
+
+# 3. Declaración de Clases
+class Organismo {
+  var nombre: String;
+  var edad: int;
+  var vivo: bool;
+  var celulaMadre: Celula;
+
+  function main(nombre: String, edad: int, vivo: bool, celulaMadre: Celula) {
+    me.nombre = nombre;
+    me.edad = edad;
+    me.vivo = vivo;
+    me.celulaMadre = celulaMadre;
+  }
+
+  function obtenerResumen() -> String {
+    return me.nombre + " - Edad: " + me.edad.toString();
+  }
+}
+
+function main(params: String[]) -> int {
+
+  # Instanciación de tipos complejos
+  const estadoActual: Estado = Estado.Activo;
+  
+  # const c1: Celula = { id: 101, energia: 98.5, activa: true };
+  # const c2: Celula = { id: 102, energia: 45.0, activa: false };
+  
+  const c1: Celula = Celula(101, 98.5, true);
+  const c2: Celula = Celula(102, 45.0, false);
+
+  const carlos = Organismo("Carlos", 21, true, c1);
+
+  # Contenedor de prueba para validar serialización
+  const datasetPrueba = {
+    estado: estadoActual,
+    vivo: true,
+    celulas: [c1, c2],
+    enums: [Estado.Inactivo, Estado.Activo, Estado.Pendiente],
+    instanciaClase: carlos,
+    relaciones: {
+      lider: carlos,
+      coordenadas: (10, 20),
+      historialEstados: [{ e: (Estado.Activo, Estado.Pendiente) }]
+    }
+  };
+
+  # Arbol JSX
+  const maqueta = (
+    <html {...datasetPrueba} metadata={c1} referenciaClase={carlos}>
+      <head>
+        <title>Depuración de Serialización de Tipos</title>
+      </head>
+      <body>
+        <div>
+          <span>Estado actual enum: {datasetPrueba.estado}</span>
+          <span>Organismo: {carlos.nombre}</span>
+        </div>
+      </body>
+    </html>
+  );
+
+  # --- SECCIÓN DE IMPRESIÓN Y DEPURACIÓN ---
+
+  print("=== 1. IMPRESIÓN DIRECTA DE ESTRUCTURAS, ENUMS Y CLASES ===");
+  print("Enum Estado.Activo:", estadoActual);
+  print("Struct Celula (c1):", c1);
+  print("Instancia Class (carlos):", carlos);
+
+  print("\n=== 2. IMPRESIÓN DEL ÁRBOLETO JSX COMPLETO (REPRESENTACIÓN STRING) ===");
+  print("maqueta:", maqueta);
+
+  print("\n=== 3. INSPECCIÓN DE PROPS (SERIALIZACIÓN DE ATRIBUTOS JSX) ===");
+  print("maqueta.props:", maqueta.props);
+  print("maqueta.props.estado:", maqueta.props.estado);
+  print("maqueta.props.celulas:", maqueta.props.celulas);
+  print("maqueta.props.enums:", maqueta.props.enums);
+  print("maqueta.props.instanciaClase:", maqueta.props.instanciaClase);
+
+  print("\n=== 4. INSPECCIÓN DE ATRIBUTOS DIRECTOS EN MAQUETA ===");
+  print("maqueta.props.metadata (Struct Directa):", maqueta.props.metadata);
+  print("maqueta.props.referenciaClase (Class Directa):", maqueta.props.referenciaClase);
+
+  return 0;
+}
