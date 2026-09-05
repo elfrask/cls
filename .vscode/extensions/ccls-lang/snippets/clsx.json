@@ -329,6 +329,36 @@
     ],
     "description": "Elemento CMX"
   },
+  "Spread en record": {
+    "prefix": "sprr",
+    "body": [
+      "{...${1:base}, ${2:c}: ${3:valor}}"
+    ],
+    "description": "Spread de un record dentro de otro"
+  },
+  "Spread en array": {
+    "prefix": "spra",
+    "body": [
+      "[${1:0}, ...${2:arr}, ${3:4}]"
+    ],
+    "description": "Spread de un array dentro de otro"
+  },
+  "Spread en props CMX": {
+    "prefix": "sprp",
+    "body": [
+      "<${1:Comp} {...${2:props}} />"
+    ],
+    "description": "Spread de props en un elemento CMX"
+  },
+  "is con narrowing": {
+    "prefix": "isn",
+    "body": [
+      "if (${1:valor} is ${2:Tipo}) {",
+      "    ${3:# aquí ${1:valor} es ${2:Tipo}}",
+      "}"
+    ],
+    "description": "Type guard: estrecha la variable dentro del bloque"
+  },
   "Magic method __toString": {
     "prefix": "tostr",
     "body": [
@@ -429,7 +459,7 @@
   "Directiva when": {
     "prefix": "when",
     "body": [
-      "when ${1:os}: ${2:linux} {",
+      "when (${1|os,arch,abi,platform,target|}: ${2:linux}) {",
       "    ${3:# implementación}",
       "}"
     ],
@@ -438,7 +468,7 @@
   "Directiva when target": {
     "prefix": "whent",
     "body": [
-      "when target: \"${1:riscv32-none-elf}\" {",
+      "when (target: \"${1:riscv32-none-elf}\") {",
       "    ${2:# implementación}",
       "}"
     ],
@@ -503,7 +533,7 @@
   "when multi-entorno": {
     "prefix": "whenx",
     "body": [
-      "when ${1:os}: ${2:linux} ${3:and} ${4:arch}: ${5:arm64} {",
+      "when (${1:os}: ${2:linux}) ${3:and} (${4:arch}: ${5:arm64}) {",
       "    ${6:# implementación}",
       "}"
     ],
@@ -512,7 +542,7 @@
   "Extensión multi-plataforma": {
     "prefix": "extw",
     "body": [
-      "when ${1:os}: ${2:windows} {",
+      "when (${1:os}: ${2:windows}) {",
       "    extension \"${3:libreria}\" as C {",
       "        ${4:function f(param: CString) -> CInt; }",
       "    }",
