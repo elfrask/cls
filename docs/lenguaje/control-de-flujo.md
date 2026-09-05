@@ -1,7 +1,7 @@
 # Control de flujo
 
-Sintaxis verificada en `features/07-control-flujo.clsx` y
-`tests/all-features-jit2.clsx`. Todas las formas listadas aquí las soporta el
+Sintaxis verificada en `examples/audit/test-features/jit-test/units/` y
+`examples/audit/test-features/`. Todas las formas listadas aquí las soporta el
 JIT.
 
 ## if / elif / else
@@ -102,15 +102,73 @@ for (var m = 0; m < 5; m++) {
 
 ## when (compile-time)
 
-`when` evalúa la arquitectura en compilación (no en runtime) y es soportado por
-el JIT:
+`when` selecciona código por **entorno objetivo** (SO, arquitectura, ABI) en
+**compilación** (no en runtime). El JIT solo emite la rama que matchea el
+`Target` activo; las demás se descartan. La condición **lleva paréntesis**:
 
 ```clx
 var saludo = "generic";
-when (arch: cls-arch) {
+when (os: windows) {
     saludo = "native";
 }
 ```
+
+- Prefijos: `os:`, `arch:`, `abi:`, `platform:`, `target:` (tripla
+  `arch-os-abi`).
+- Combinadores `and` / `or` / `not` con paréntesis por condición:
+
+```clx
+when (os: linux) or (os: macos) {
+    # unix
+}
+```
+
+- `default { ... }` es la rama que siempre matchea.
+- `when` funciona a **cualquier nivel de anidamiento** (no solo top-level) y
+  típicamente envuelve bloques `extension` (FFI por plataforma — ver
+  `extension-when.md`).
+
+Referencia completa: [multi-entorno.md](multi-entorno.md).
+
+## is (type guard / narrowing)
+
+El operador `is` además de validar el tipo **estrecha la variable** dentro del
+bloque: el typeck usa el tipo de la derecha para los usos posteriores.
+
+```clx
+if (app.tag is Callable) {
+    app.tag({...app.props, children: app.children});  # aquí tag: Callable
+}
+```
+
+- `x is Clase` → en el bloque `x` se trata como `Clase` (acceso a campos y
+  métodos sin error de tipo).
+- `x is Callable` → el chequeo runtime usa el tag-bit del handle (función
+  simple vs closure); habilita invocar un tag de componente CMX.
+
+Ver `oop.md` para `is` sobre clases y `tipos.md` para el tipo `Callable`.
+
+## spreads de contenedores
+
+El operador `...` (spread) expande un contenedor dentro de otro:
+
+```clx
+# record: mezcla (los props propios ganan sobre el spread)
+var base = {a: 1, b: 2};
+var ext = {...base, c: 3};          # {a: 1, b: 2, c: 3}
+
+# array: expande en posición
+var arr = [0, ...base_vals, 4];     # [0, 1, 2, 4]
+
+# props CMX (JSX-style)
+<App {...app.props} />
+```
+
+Los spreads se resuelven en compile-time/runtime del emisor
+(`__intr_record_merge` para records/props, construcción con push para arrays).
+No confundir con *rest params* (`function f(...nums)`) ni *spread en llamadas*
+(`f(1, ...args)`), que **no están implementados** (el `call_indirect` exige
+aridad estática).
 
 ## try / catch / finally
 
@@ -130,6 +188,8 @@ soporte de excepciones (ver `runtime/jit.md`).
 
 ## Flujo interno
 
-El intérprete resuelve `return`/`break`/`continue` con señales de flujo
-(`Flow`); el JIT las maneja en la emisión WASM. No se requiere `break` al
-final de bloques en `switch` ni `;` tras `}`.
+El JIT maneja `return`/`break`/`continue` en la **emisión WASM**: cada bloque
+termina con ramas que cortan el flujo (`br`/`unreachable` tras un `return`), y
+el emisor cierra las funciones con un default de retorno para flujo vivo sin
+`return` (dead-flow). No se requiere `break` al final de bloques en `switch` ni
+`;` tras `}`.

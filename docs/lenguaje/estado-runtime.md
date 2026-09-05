@@ -21,12 +21,11 @@
   necesite red/sockets usa `extension` + `when` (patrón de
   `docs/lenguaje/extension-when.md`).
 
-## Async / concurrencia — NO existe en el JIT
+## Async / concurrencia — NO existe
 
-- **No hay `async`/`await` en el JIT** (solo el walker deprecado lo tenía
-  planeado; ver `agent-context/ASYNC_PLAN.md`).
-- El módulo `async` del core (mencionado en `docs/stdlib/core.md`) NO está
-  implementado en el JIT.
+- **No hay `async`/`await`**: el JIT no lo compila (error explícito del
+  emisor) y el tree-walker que lo ejecutaba se eliminó en dev-2. No existe
+  ningún intérprete que lo corra.
 - Un programa CLS es **bloqueante**: una llamada a socket/lectura bloquea hasta
   completar.
 - **Servidor HTTP**: single-thread por request. La concurrencia (threads por

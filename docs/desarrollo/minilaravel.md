@@ -254,11 +254,17 @@ app.get("/", (req: Request) -> Response {
 | Loops | `{arr.map((x: T) -> <li>{x}</li>)}` — el renderer expande arrays de children |
 | Condicionales | `{cond ? a : b}` como expresión, o `if` fuera del marcado construyendo el CmxValue por partes |
 | Layouts/herencia | Composición de funciones: `layout_base(titulo, body)` que recibe el CmxValue del body |
-| Componentes reutilizables | Llamar la función y pasar el resultado: `{home_view(...)}` (los tags en mayúscula NO se invocan — CMX guarda la referencia sin ejecutar) |
+| Componentes reutilizables | Llamar la función y pasar el resultado: `{home_view(...)}`; invocar tags mayúscula con `if (tag is Callable) { tag({...props, children}) }` (ver `cmx.md`) |
+| Spreads en children/props | `{...items}` expande arrays dentro de children (spread de arrays) y `{...props}` en attributes (ver `control-de-flujo.md`) |
 | Raw HTML (sin escape) | El renderer escapa por defecto; una función `raw(html)` marca el valor para que el renderer no lo escape (solo para contenido confiable) |
 
 **Escape**: `e()` en el renderer (texto y props). Sin escape = riesgo de
 inyección HTML — documentar que TODO lo interpolado se escapa salvo `raw()`.
+
+> Nota (dev-2): la serialización recursiva de tipos compuestos (tuplas `(a, b)`,
+> structs/clases/enums anidados, ver `datos.md`) aplica al **print/toString** de
+> depuración; el renderer `render()` del framework recorre el `CmxValue` y
+> construye HTML — no usa esa serialización.
 
 ## F7. Demo completa (`examples/http-framework/`)
 
@@ -332,7 +338,7 @@ curl http://localhost:8080/no-existe     # 404
 4. No se tocó ningún archivo de `cls-core/`, `cls-jit/`, `cls-internals/`, `nodos/clx/src/modules/`.
 5. Suites de auditoría siguen verdes:
    ```powershell
-   powershell -File examples/audit/test-features/jit-test/run-tests.ps1     # 28 PASS
+   powershell -File examples/audit/test-features/jit-test/run-tests.ps1     # 32 PASS
    powershell -File examples/audit/test-features/jit-test/run-availible.ps1 # 24 PASS
    ```
 

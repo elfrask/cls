@@ -2,12 +2,15 @@
 
 Los módulos desktop existen **solo en el nodo `clx`** (implementación en
 `nodos/clx/src/modules/`). `clxr` no los incluye: su resolver expone únicamente
-el core (`math`, `json`, `async`).
+la stdlib core.
 
-Están disponibles en `clx run` tanto con el JIT (host functions `env.*` del
-nodo) como con el walker. Las firmas canónicas viven en `cls-runtime/clsi/`
-(`fs.clsi`, `http.clsi`, `os.clsi`, `path.clsi`, `process.clsi`, `time.clsi`,
-`random.clsi`, `Lib.clsi`).
+Están disponibles en `clx run` con el JIT (host functions `env.*` del nodo).
+Las firmas canónicas viven en `cls-runtime/clsi/` (`fs.clsi`, `http.clsi`,
+`strings.clsi`).
+
+> Los módulos `os`, `path`, `process`, `time`, `random` se **eliminaron en
+> dev-2** (no tenían consumidores; sus capacidades se cubren con `when (os:)`
+> + `extension` — ver `lenguaje/multi-entorno.md` y `lenguaje/extension.md`).
 
 ## `fs` - sistema de archivos
 
@@ -38,74 +41,16 @@ VFS del nodo (ver `runtime/vfs.md`); los demás van al filesystem real.
 | `get` | `get(url: String) -> String` | GET; devuelve el body de la respuesta. |
 | `post` | `post(url: String, body: String) -> String` | POST; devuelve el body de la respuesta. |
 
-## `os` - sistema operativo
+## `strings` - utilidades de strings (internals fusionadas)
 
 | Función | Firma | Descripción |
 |---|---|---|
-| `platform` | `platform() -> String` | Nombre del SO (`windows`/`linux`/`macos`/...). |
-| `arch` | `arch() -> String` | Arquitectura de la CPU (`x86_64`, `aarch64`, ...). |
-| `version` | `version() -> String` | Versión del sistema operativo. |
-| `hostname` | `hostname() -> String` | Nombre del host. |
-| `home` | `home() -> String` | Directorio home del usuario. |
-| `tempdir` | `tempdir() -> String` | Directorio temporal del sistema. |
-| `cpus` | `cpus() -> int` | Número de núcleos de CPU disponibles. |
-| `pid` | `pid() -> int` | PID del proceso actual. |
-| `uptime` | `uptime() -> int` | Segundos desde el boot (**0 si no disponible**; la implementación actual siempre devuelve 0). |
-| `env` | `env(key: String) -> String` | Variable de entorno (`""` si no existe). |
-| `sep` | `sep() -> String` | Separador de rutas del sistema. |
-| `isWindows` | `isWindows() -> bool` | ¿El sistema es Windows? |
-| `isUnix` | `isUnix() -> bool` | ¿El sistema es Unix? |
+| `indexOf` | `indexOf(s: String, sub: String) -> int` | Índice de `sub` en `s` (`-1` si no está). |
+| `slice` | `slice(s: String, start: int, end: int) -> String` | Substring `[start, end)`. |
+| `split` | `split(s: String, sep: String) -> Array` | Divide por separador (array de `String`). |
 
-## `path` - rutas de archivo
-
-| Función | Firma | Descripción |
-|---|---|---|
-| `join` | `join(a: String, b: String) -> String` | Une dos segmentos de ruta. |
-| `basename` | `basename(path: String) -> String` | Último componente de la ruta. |
-| `dirname` | `dirname(path: String) -> String` | Directorio padre (`"."` si no tiene). |
-| `extname` | `extname(path: String) -> String` | Extensión con punto (`.txt`; `""` si no tiene). |
-| `resolve` | `resolve(path: String) -> String` | Ruta absoluta (relativa -> unida al cwd). |
-| `normalize` | `normalize(path: String) -> String` | Normaliza `.` y `..` sin tocar el filesystem. |
-| `isAbsolute` | `isAbsolute(path: String) -> bool` | ¿La ruta es absoluta? |
-| `sep` | `sep() -> String` | Separador de rutas del sistema. |
-
-## `process` - proceso actual
-
-| Función | Firma | Descripción |
-|---|---|---|
-| `args` | `args() -> Array` | Args de la aplicación (los de después de `--` al invocar `clx run`). |
-| `cwd` | `cwd() -> String` | Directorio de trabajo actual. |
-| `env` | `env(key: String) -> String` | Variable de entorno (`""` si no existe). |
-| `exit` | `exit(code: int)` | Termina el proceso con un código de salida. |
-| `pid` | `pid() -> int` | PID del proceso actual. |
-| `platform` | `platform() -> String` | Nombre del sistema operativo. |
-| `title` | `title() -> String` | Título del proceso (`""` si no disponible; la implementación actual siempre devuelve `""`). |
-
-## `time` - fecha y hora (UTC)
-
-| Función | Firma | Descripción |
-|---|---|---|
-| `now` | `now() -> int` | Milisegundos desde la epoch Unix. |
-| `seconds` | `seconds() -> int` | Segundos desde la epoch Unix. |
-| `iso` | `iso() -> String` | Fecha y hora ISO 8601 (UTC, `YYYY-MM-DDTHH:MM:SSZ`). |
-| `date` | `date() -> String` | Fecha UTC (`YYYY-MM-DD`). |
-| `clock` | `clock() -> String` | Hora UTC (`HH:MM:SS`). |
-| `year` | `year() -> int` | Año UTC. |
-| `month` | `month() -> int` | Mes UTC (1-12). |
-| `day` | `day() -> int` | Día UTC (1-31). |
-| `hour` | `hour() -> int` | Hora UTC (0-23). |
-| `minute` | `minute() -> int` | Minuto UTC (0-59). |
-| `second` | `second() -> int` | Segundo UTC (0-59). |
-| `sleep` | `sleep(ms: int)` | Duerme el hilo actual `ms` milisegundos. |
-
-## `random` - aleatoriedad
-
-| Función | Firma | Descripción |
-|---|---|---|
-| `random` | `random() -> float` | Aleatorio en `[0, 1)`. |
-| `int` | `int(min: int, max: int) -> int` | Entero aleatorio en `[min, max]` (**inclusivo**). |
-| `float` | `float(min: float, max: float) -> float` | Float aleatorio en `[min, max)`. |
-| `uuid` | `uuid() -> String` | UUID v4. |
+Implementadas como internals fusionadas (`__intr_str_*`): 0 cruces
+WASM→host.
 
 ## `Lib` - librerías compiladas
 

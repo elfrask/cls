@@ -1,14 +1,16 @@
 # Catálogo de Magic Methods en CLS 2.0
 
 > Referencia de los métodos mágicos (`__nombre`) de CLS 2.0: qué hacen,
-> cuándo se invocan y su estado de soporte en cada intérprete.
+> cuándo se invocan y su estado de soporte.
 >
 > - **JIT** (`clx run`, `clxr`, `nodos/clx/src/jit.rs` +
->   `cls-core/src/backend/wasm`) — intérprete objetivo.
-> - **Walker** (`clx run --ast-walker`, `cls-runtime`) — referencia
->   sintáctica, deprecado tras CLS 2.0-dev1.
+>   `cls-core/src/backend/wasm`) — único intérprete (el tree-walker se eliminó
+>   en dev-2).
 >
 > Leyenda: ✅ implementado · ⚠️ parcial · ❌ no implementado.
+>
+> \* Las columnas **Walker** son históricas: el tree-walker se eliminó en
+> dev-2; hoy solo existe el JIT.
 
 ---
 
@@ -26,12 +28,12 @@ end-to-end en el JIT**, salvo donde se indica explícitamente.
 
 ## 1. Conversión a string
 
-| Magic | Walker | JIT | Contrato |
+| Magic | Walker* | JIT | Contrato |
 |-------|:------:|:---:|----------|
 | `__toString` | ✅ | ✅ | `__toString() -> String` — representación canónica (usada por `toString(obj)` y por `value_to_string`). El JIT la busca en `func_indexes["Clase::__toString"]`; si no existe cae a `__repr`. |
-| `__repr` | ✅ | ✅ | `__repr() -> String` — representación de impresión (prioridad sobre `__toString` en `print`). El walker usa `__repr` primero; el JIT la usa si `__toString` no existe. |
+| `__repr` | ✅ | ✅ | `__repr() -> String` — representación de impresión (prioridad sobre `__toString` en `print`). El JIT la usa si `__toString` no existe. |
 
-**Precedencia de impresión** (walker): `__repr` → `__toString` → formato
+**Precedencia de impresión**: `__repr` → `__toString` → formato
 por defecto. **`print(obj)`** invoca `__repr` (y luego `__toString`)
 por cada argumento.
 
@@ -59,7 +61,7 @@ print(Punto(3));   // Punto(3)
 
 **Dispatch** (JIT, `try_binary_magic` en `emitter/classes.rs:145`):
 intenta `left.__op(right)` y si no lo implementa, `right.__op(left)`
-(simetría, paridad con el walker).
+(simetría).
 
 ```clx
 class Vector {

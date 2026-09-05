@@ -58,12 +58,10 @@ function main(args: String[]) -> int {
 
 ## Runtime
 
-El tree-walker evalúa el elemento en `evaluate_cmx` (atributos y children
-recursivamente) y construye el `CmxValue`. El JIT compila CMX a host
-functions `cmx_*`. El lexer usa un buffer FIFO (`cmx_buffer`) con detección de
-`<`/`>` balanceados por tokens, y el parser construye el elemento
-(`parse_cmx_element`) con soporte de expresiones en atributos y arrow
-functions con `()`.
+El **JIT** compila CMX a host functions `cmx_*`: el lexer usa un buffer FIFO
+(`cmx_buffer`) con detección de `<`/`>` balanceados por tokens, y el parser
+construye el elemento (`parse_cmx_element`) con soporte de expresiones en
+atributos, spreads `{...props}` y arrow functions con `()`.
 
 Ejemplo completo: `examples/audit/features/12-cmx.clsx`.
 

@@ -80,7 +80,7 @@ Reasignar una variable declarada antes la actualiza:
 100
 ```
 
-**Truthiness de condiciones** (paridad con el walker): `if`, `while` y `for`
+**Truthiness de condiciones**: `if`, `while` y `for`
 aceptan cualquier valor como condición - numéricos `!= 0`, strings no vacíos,
 arrays/records con elementos, objetos siempre verdaderos:
 

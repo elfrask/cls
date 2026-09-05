@@ -1,21 +1,17 @@
 # Biblioteca estándar core
 
-La stdlib core es la que existe **siempre** (con `clx run`, `clxr` y el REPL),
-tanto en el JIT como en el tree-walker. Se compone de dos partes:
+La stdlib core es la que existe **siempre** (con `clx run`, `clxr` y el REPL).
+Se compone de dos partes:
 
 - **Intrinsics globales**: funciones sin módulo, disponibles directamente.
-- **Módulos core**: `math`, `json` y `async` (este último solo en el walker -
-  el JIT no compila `await`).
+- **Módulos core**: `math` y `json`.
 
 Las firmas canónicas viven en `cls-runtime/clsi/` (`core.clsi`, `math.clsi`,
-`json.clsi`, `async.clsi`) y son la fuente de verdad para el typechecker y el
-LSP.
+`json.clsi`) y son la fuente de verdad para el typechecker y el LSP.
 
 ## Intrinsics globales
 
-Registrados en el `Interpreter` (globales del nodo + `register_core_intrinsics`)
-y en el typeck vía `core.clsi`. Iguales en el JIT (host functions `env.*`) y en
-el walker.
+Registrados en el JIT (host functions `env.*`) y en el typeck vía `core.clsi`.
 
 | Función | Firma | Descripción |
 |---|---|---|
@@ -92,20 +88,13 @@ json.stringify(d);                  # "{\"a\":1}"
 `stringify` respeta el magic method `__toJson`: si el objeto lo define, lo usa
 para la serialización; si no, la representación nativa.
 
-## Módulo `async` (solo tree-walker)
+## Módulo `async` (no implementado)
 
 ```clx
-import "async" as async;
-
-var p = async.delay(1000);   # Promise
+import "async" as async;   # ERROR: no hay módulo async en el JIT
 ```
 
-| Función | Firma | Descripción |
-|---|---|---|
-| `delay` | `delay(ms: int) -> Promise` | Promesa que resuelve después de `ms` milisegundos. |
-| `all` | `all(promises: Array) -> Promise` | Resuelve cuando todas las promesas resolvieron (con todos los resultados). |
-| `race` | `race(promises: Array) -> Promise` | Resuelve con la primera promesa que resuelve. |
-
-> **El JIT no compila `async`**: `await` y el módulo `async` del walker no
-> entran en el subconjunto WASM; el emisor aborta con error explícito. Este
-> módulo solo funciona en el tree-walker (deprecado).
+`async`/`await` existen en el parser pero **no están implementados**: el JIT
+no los compila (error explícito del emisor) y el tree-walker que los ejecutaba
+se eliminó en dev-2. No existe ningún intérprete que los corra. Ver
+`lenguaje/estado-runtime.md`.

@@ -1,7 +1,7 @@
 # Inicio rápido
 
-`clx run` compila CLS a WASM y lo ejecuta con el JIT (wasmtime). Es el
-intérprete objetivo; el tree-walker (`--ast-walker`) está deprecado.
+`clx run` compila CLS a WASM y lo ejecuta con el JIT (wasmtime). Es el único
+intérprete (el tree-walker se eliminó en dev-2).
 
 ## Hola mundo
 

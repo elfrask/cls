@@ -70,8 +70,6 @@ verificables:
 ## Alcance
 
 - **Aplica a**: typeck, emisor WASM/JIT, runtime.
-- **No aplica a**: walker deprecado (referencia sintáctica; ver
-  `AGENTS.md` §"el JIT es el intérprete objetivo").
 - **No se discute**: el widening `Int → Float` ya está implementado y se
   mantiene. Esta decisión **lo blinda** y prohíbe extenderlo.
 

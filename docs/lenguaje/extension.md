@@ -88,9 +88,6 @@ Tags runtime de los valores dentro de records: `0=int 1=string 2=float 3=bool
 - **Records con shape** (`var r = {a:1,b:"x"}` inferido) se emiten como struct
   contiguo, no como hashmap: usa `CRecord` para `Record<K,V>` o `json.parse`, y
   `CStruct`/`Struct` para shapes.
-- **Walker**: el tree-walker no expone la memoria del módulo; los args se
-  serializan a un buffer host y los retornos estructurados llegan como `Int`
-  crudo (ptr).
 
 Ejemplos: `examples/jit-examples/ffi-struct-real.clsx`,
 `examples/jit-examples/ffi-record-typed.clsx`,
@@ -144,8 +141,7 @@ nativa, sin recompilar el core), ver [extension-when.md](extension-when.md).
 
 ## Soporte por intérprete
 
-- **Tree-walker**: sí, vía el backend nativo inyectado por el nodo.
-- **JIT**: sí; el emisor compila las llamadas a host functions
-  `env.<sym>__<sig>@<lib>` que delegan en el backend del nodo.
+- **JIT** (`clx run`, `clxr`): sí; el emisor compila las llamadas a host
+  functions `env.<sym>__<sig>@<lib>` que delegan en el backend del nodo.
 - **clxb** (bindings): **no** - backend dummy con error claro
   (`extension nativa 'lib.sym' no soportada por el binding (clxb)`).

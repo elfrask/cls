@@ -39,7 +39,7 @@ Los métodos de transformación devuelven un string **nuevo** (asignar:
 | `endsWith` | método | `endsWith(suffix: String) -> bool` | ¿Termina con el sufijo? |
 | `isEmpty` | método | `isEmpty() -> bool` | ¿Está vacío? |
 | `toString` | método | `toString() -> String` | El string mismo. |
-| `length` | **getter** | `length() -> int` | Longitud: **bytes en el JIT**, caracteres en el walker. |
+| `length` | **getter** | `length() -> int` | Longitud: **bytes en el JIT**. |
 
 ## `Int` y `Float` (inmutables)
 

@@ -60,8 +60,8 @@ engine.compileSource("export function usa() -> int { return triple(5); };");
 
 ## Sandbox
 
-Por defecto el embedding **no expone** `fs`, `http`, `os`, `path`, `process`,
-`time` ni `random` (solo core: `math`, `json`, primitivos). Intentar usarlos
+Por defecto el embedding **no expone** los módulos desktop `fs`, `http`,
+`strings` (solo core: `math`, `json`, primitivos). Intentar usarlos
 produce un error de runtime (trap WASM). Para habilitar módulos del sistema:
 
 ```js

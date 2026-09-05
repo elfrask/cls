@@ -7,12 +7,12 @@ CLS es un workspace Rust (edición 2021) con 4 crates de librería y 3 nodos.
 | Crate | Rol |
 |---|---|
 | `cls-core` | Frontend (lexer/parser/AST), middleware (typeck/resolver/optimizer), backend (`wasm/`, `json`), config, error, `ansi` |
-| `cls-runtime` | Tree-walker deprecado (`walker/`), `Value`, stdlib core, VFS, `error_report`, `.clslib`/`ClsLibIndex`, FFI (`extension`) |
+| `cls-runtime` | `Value`, stdlib core, VFS, `error_report`, `.clslib`/`ClsLibIndex`, FFI (`extension`) |
 | `cls-jit` | Motor JIT reusable: compile/engine/flatten/host/repl/resolve/state + `wasmtime_rt` / `wasmi_rt` |
 | `cls-internals` | Módulos internos e intrinsics **precompilados a WASM** (`cls-internals/wasm/` → `wasm32-unknown-unknown`, embebido con `include_bytes!`); se fusionan dentro del módulo CLS en la emisión (cero imports) |
-| `nodos/clx` | CLI de desarrollo + LSP + `maptype` + backend nativo + módulos desktop (`fs`, `http`, `Lib`, `os`, `path`, `process`, `time`, `random`) |
+| `nodos/clx` | CLI de desarrollo + LSP + `maptype` + backend nativo + módulos desktop (`fs`, `http`, `strings`) |
 | `nodos/clxb` | Bindings C (`clsb`) - motor de embedding (compile, call, run_main, eval) |
-| `nodos/clxr` | Runtime ligero (solo `cls-core` + `cls-runtime`) |
+| `nodos/clxr` | Runtime ligero (JIT-only) |
 
 ## Pipeline del compilador
 
@@ -108,15 +108,14 @@ Constructores:
 | Nodo | Dependencias | Notas |
 |---|---|---|
 | `clx` | `cls-core` (wasm-backend), `cls-runtime`, `cls-jit` (wasmi-runtime), `tokio`/`tower-lsp` (LSP), `libloading` (extensiones dinámicas) | `cargo build --bin clx` |
-| `clxr` | `cls-core`, `cls-runtime`, `zip` | Walker deprecado; no lleva JIT |
+| `clxr` | `cls-core`, `cls-runtime`, `cls-jit` | Runtime ligero JIT-only (`clxr <archivo.clsx|.clsapp>`) |
 | `clxb` | core+runtime+jit; lib name `clsb`, `crate-type = ["rlib","cdylib"]` | `cargo build -p clxb` |
 
 ## Reglas de arquitectura
 
 1. **Core/runtime agnósticos al entorno** - el nodo inyecta resolvers de
-   módulos, internals (`fs`, `http`, ...), VFS y backends nativos. El
-   runtime centraliza la carga/ejecución/exports
-   (`Interpreter::load_module_source`).
+   módulos, internals (`fs`, `http`, ...), VFS y backends nativos. El JIT
+   centraliza la carga/ejecución/exports (`flatten.rs`).
 2. **Errores runtime con trace completo** - `build_error_report` ->
    `error_report.rs` (formatos Plain/Console/Html/Json; el nodo elige).
    Typecheck de un solo nivel (ver `runtime/errores.md`).
@@ -125,9 +124,8 @@ Constructores:
    los métodos de primitivos se compilan a llamadas directas a internals/host
    functions; el typeck es la fuente de tipos para la emisión. Las internals
    viven **fusionadas dentro del módulo CLS** (cero imports de internals).
-5. **Sin paridad con el walker** - el walker (`cls-runtime/src/walker/`)
-   está deprecado (se elimina tras 2.0-dev1) y solo sirve de referencia
-   sintáctica.
+5. **JIT = único intérprete** - el tree-walker se eliminó en dev-2; toda
+   ejecución (`clx run`, `clxr`) usa el JIT.
 
 ## Configuración
 

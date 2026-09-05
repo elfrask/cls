@@ -65,8 +65,8 @@ engine.compile_source('export function usa() -> int { return triple(5); };')
 
 ## Sandbox
 
-Por defecto el embedding **no expone** `fs`, `http`, `os`, `path`, `process`,
-`time` ni `random` (solo core: `math`, `json`, primitivos). Intentar usarlos
+Por defecto el embedding **no expone** los módulos desktop `fs`, `http`,
+`strings` (solo core: `math`, `json`, primitivos). Intentar usarlos
 produce un error de runtime. El `exit(n)` de un script devuelve `n` como exit
 code de `run_main` sin matar el proceso de Python.
 

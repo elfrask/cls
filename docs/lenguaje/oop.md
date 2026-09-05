@@ -186,8 +186,7 @@ magics: aritmética, unarios, conversiones, contenedores, callable, iteración).
 ### Contratos de comportamiento
 
 - **Aritmética binaria** (`__add` … `__pow`): `left.__op(right)`; si el lado
-  izquierdo no lo define, se prueba `right.__op(left)` (simetría, paridad
-  walker).
+  izquierdo no lo define, se prueba `right.__op(left)` (simetría).
 - **Igualdad y orden**: `__equals` -> el resultado se usa como truthy (`!=`
   lo niega); `__compare` -> devuelve un entero (`<0`, `0`, `>0`) comparado
   contra 0 según el operador.
@@ -202,7 +201,7 @@ magics: aritmética, unarios, conversiones, contenedores, callable, iteración).
 - **Anotación obligatoria**: los magic methods deben anotar su tipo de retorno
   (y el de los parámetros de clase). El JIT despacha estáticamente por la firma
   declarada del método - un parámetro sin anotar tipa `Any` y no se puede
-  despachar (el walker sí lo tolera).
+  despachar.
 - **Sentinel de iteración**: `return null` dentro de `__next` termina el `for
   each` con un sentinel interno distinto de `0` - un iterador puede devolver
   `0` como valor legítimo (p. ej. `Rango(3)` -> `0 1 2`).

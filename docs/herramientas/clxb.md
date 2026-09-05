@@ -189,9 +189,9 @@ int main(void) {
 `clsb_engine_new` con `enable_fs = 0` **y** `enable_http = 0` (o `cfg = NULL`)
 activa el sandbox:
 
-- Los módulos del nodo desktop - `fs`, `http`, `os`, `path`, `process`,
-  `time`, `random` - **no se registran**: los imports desconocidos se definen
-  como traps (la instanciación es OK; acceder a ellos da error de runtime).
+- Los módulos del nodo desktop - `fs`, `http`, `strings` - **no se registran**:
+  los imports desconocidos se definen como traps (la instanciación es OK;
+  acceder a ellos da error de runtime).
 - Solo queda el core: print/math/json/strings.
 
 `exit()`/`trap()` **no matan el proceso del host**: lanzan traps WASM con

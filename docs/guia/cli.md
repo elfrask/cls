@@ -66,8 +66,7 @@ clx run app.clsx -- a1 a2
 Opciones:
 
 - `--jit, -j` - obsoleto, sin efecto (el JIT ya es el default).
-- `--ast-walker` - ejecuta con el tree-walker **DEPRECADO** (imprime una
-  advertencia en stderr; solo referencia sintáctica).
+- `--ast-walker` - obsoleto, sin efecto (se ignora; el JIT es el único intérprete desde dev-2).
 - `--target <tripla>, -t` - simula el entorno (`arch-os-abi`) para la
   directiva `when` (no cambia la compilación).
 - `--` - separador de argumentos de la aplicación.

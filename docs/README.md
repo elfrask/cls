@@ -9,9 +9,9 @@ Node.js (`bindings/js`, paquete `@cls-embed/node`), ambos sobre la ABI C
 `clsb_v1_*`. `cls-internals` precompila los módulos internos a WASM y el
 backend los **fusiona dentro del módulo CLS** (cero imports de internals).
 
-> **JIT = intérprete objetivo.** El tree-walker (`clx run --ast-walker`) está
-> **DEPRECADO**: es solo referencia sintáctica y se eliminará tras
-> CLS 2.0-dev1. Toda ejecución normal usa el JIT.
+> **JIT = único intérprete.** `clx run` (CLS → WASM → wasmtime) es el motor
+> de ejecución. El tree-walker se eliminó en dev-2; `--ast-walker` se acepta
+> por compatibilidad pero se ignora.
 
 ## Estructura de la documentación
 
@@ -44,13 +44,13 @@ backend los **fusiona dentro del módulo CLS** (cero imports de internals).
 ### Biblioteca estándar
 
 - `stdlib/core.md` - intrinsics globales (`print`, `input`, `toString`, `int`, ...) y módulos core `math`, `json`, `async`.
-- `stdlib/desktop.md` - módulos del nodo desktop: `fs`, `http`, `os`, `path`, `process`, `time`, `random`, `Lib`.
+- `stdlib/desktop.md` - módulos del nodo desktop: `fs`, `http`, `strings`, `Lib`.
 - `stdlib/primitivos.md` - métodos de tipos primitivos (sin boxing).
 
 ### Runtime y ejecución
 
 - `runtime/jit.md` - el JIT: pipeline CLS -> WASM -> wasmtime, caché, internals fusionadas, host functions, límites.
-- `runtime/walker.md` - el tree-walker DEPRECADO (referencia sintáctica).
+- `runtime/walker.md` - el tree-walker ELIMINADO en dev-2 (stub histórico).
 - `runtime/errores.md` - el sistema de errores y sus formatos.
 - `runtime/vfs.md` - VFS (sistema de archivos virtual), protocolos y `.clsapp`.
 

@@ -29,8 +29,6 @@ function main(args: String[]) -> int {
 ```
 
 - `alias::funcion` (`NamespaceAccess`) es el acceso soportado por el JIT.
-- `alias.funcion()` y `alias.var` (member access sobre el Record del módulo)
-  funcionan en el tree-walker.
 - Si no se da alias, el runtime usa el path como nombre (`import "mod"` ->
   `mod::sym`).
 
@@ -77,9 +75,8 @@ export enum Color { Rojo, Verde, Azul, };
 
 Declaraciones exportables: `export function`, `export var`/`const`,
 `export class`, `export enum`, `export structure`, `export extension`.
-La carga del módulo (centralizada en `Interpreter::load_module_source`)
-ejecuta el archivo en un scope aislado y devuelve únicamente los símbolos
-exportados.
+El JIT aplana el módulo importado en el módulo único y solo los símbolos
+marcados `export` quedan visibles bajo el prefijo del alias.
 
 ## Resolución de módulos
 
@@ -87,8 +84,9 @@ El `ModuleResolver` del runtime consulta en orden:
 **caché -> internals -> hook externo -> error**.
 
 1. **Caché** - módulos ya cargados en esta ejecución.
-2. **Internals** del core: `math`, `json`, `async`. Del nodo desktop:
-   `fs`, `http`, `Lib`, `os`, `path`, `process`, `time`, `random`.
+2. **Internals** del core: `math`, `json`. Del nodo desktop: `fs`, `http`,
+   `strings` (los módulos `os`, `path`, `process`, `time`, `random` se
+   eliminaron en dev-2).
 3. **Hook externo** - el nodo resuelve módulos de usuario; en `clx` el orden de
    candidatos es:
    1. `{dir del archivo}/{path}.clsx` (junto al archivo que importa)
@@ -117,8 +115,7 @@ línea únicos. Los exports de cada import quedan namespaced bajo prefijos
 Existen las declaraciones de agrupación `module Nombre { ... };` y
 `namespace Nombre { ... };`. En runtime ambas ejecutan el body en un scope
 aislado y registran los símbolos definidos como un `Record` con el nombre dado
-en el scope actual (son equivalentes en comportamiento; ver
-`Interpreter::execute_module_decl` / `execute_namespace_decl`), accesibles
-luego vía `Nombre.miembro` / `Nombre::miembro`.
+en el scope actual (son equivalentes en comportamiento), accesibles luego vía
+`Nombre.miembro` / `Nombre::miembro`.
 
 Ejemplos completos: `examples/jit-examples/modules/src/`.
