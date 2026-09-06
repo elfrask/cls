@@ -42,6 +42,26 @@ pub extern "C" fn __intr_str_char(v: i32) -> i64 {
     }
 }
 
+/// `s[i]` — byte `i` del string como String de 1 byte (semántica de bytes,
+/// igual que `length`/`slice`/`indexOf`). Fuera de rango devuelve string vacío.
+#[no_mangle]
+pub extern "C" fn __intr_str_char_at(s: i64, i: i64) -> i64 {
+    unsafe {
+        let ptr = (s >> 32) as usize;
+        let len = (s & 0xffff_ffff) as usize;
+        if i < 0 || i as usize >= len {
+            return 0; // string vacío (ptr=0, len=0)
+        }
+        let b = core::ptr::read((ptr as *const u8).add(i as usize));
+        let out = crate::allocator::bump_alloc(1);
+        if out == 0 {
+            return 0;
+        }
+        core::ptr::write(out as *mut u8, b);
+        ((out as i64) << 32) | 1
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn __intr_str_upper(v: i64) -> i64 {
     unsafe {

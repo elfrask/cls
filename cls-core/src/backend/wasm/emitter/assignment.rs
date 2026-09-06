@@ -1,11 +1,8 @@
-﻿//! assignment.rs (Fase 1: extraido de cls-core/src/backend/wasm/emitter/binary.rs).
+//! assignment.rs (Fase 1: extraido de cls-core/src/backend/wasm/emitter/binary.rs).
 
 use super::*;
 
 impl<'a> FuncEmitter<'a> {
-
-
-
     pub(crate) fn emit_assignment(&mut self, a: &AssignmentExpr) -> ClsResult<()> {
         let op = a.op;
         match &*a.target {
@@ -99,7 +96,10 @@ impl<'a> FuncEmitter<'a> {
                                         )
                                     {
                                         self.emit_str_append(
-                                            &Expression::Identifier(lhs.clone(), expr_span(&bin.left)),
+                                            &Expression::Identifier(
+                                                lhs.clone(),
+                                                expr_span(&bin.left),
+                                            ),
                                             &bin.right,
                                         )?;
                                         self.emit_ident_store(name);
@@ -169,7 +169,8 @@ impl<'a> FuncEmitter<'a> {
                 // NO arr_kind_code (binding: 4=string 5=array 6=record) — el
                 // record_set y la lectura/stringify usan el esquema runtime.
                 // Compuesto para arrays (bug dev-2: es/kind correcto).
-                self.body.push(Instruction::I64Const(runtime_tag_code_compound(&cls_t)));
+                self.body
+                    .push(Instruction::I64Const(runtime_tag_code_compound(&cls_t)));
                 if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                     self.body.push(Instruction::Call(idx));
                 }
@@ -352,11 +353,17 @@ impl<'a> FuncEmitter<'a> {
                         WasTy::I64 => Instruction::LocalGet(res),
                     });
                 } else {
-                    // Las tuplas son inmutables: escritura -> error.
+                    // Las tuplas y strings son inmutables: escritura -> error.
                     let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
                     if matches!(obj_ty, Some(Type::Tuple(_))) {
                         return Err(crate::error::ClsError::compile_at(
                             "Las tuplas son inmutables (no se puede escribir t[i] = v)",
+                            &i.span,
+                        ));
+                    }
+                    if matches!(obj_ty, Some(Type::String)) {
+                        return Err(crate::error::ClsError::compile_at(
+                            "Los strings son inmutables (no se puede escribir s[i] = v; usa s = s + ... o slice)",
                             &i.span,
                         ));
                     }
@@ -408,7 +415,7 @@ impl<'a> FuncEmitter<'a> {
                         let fidx = info
                             .fields
                             .iter()
-                   .position(|(n, _, _, _, _)| *n == m.member)
+                            .position(|(n, _, _, _, _)| *n == m.member)
                             .ok_or_else(|| {
                                 crate::error::ClsError::compile_at(
                                     &format!(
@@ -500,7 +507,10 @@ impl<'a> FuncEmitter<'a> {
                             .position(|(n, _, _)| *n == m.member)
                             .ok_or_else(|| {
                                 crate::error::ClsError::compile_at(
-                                    &format!("El campo '{}' no existe en el struct '{}'", m.member, sn),
+                                    &format!(
+                                        "El campo '{}' no existe en el struct '{}'",
+                                        m.member, sn
+                                    ),
                                     &m.span,
                                 )
                             })?;
@@ -591,7 +601,8 @@ impl<'a> FuncEmitter<'a> {
                         .get(&expr_span(&a.value))
                         .cloned()
                         .unwrap_or(Type::Any);
-                    self.body.push(Instruction::I64Const(runtime_tag_code_compound(&cls_t)));
+                    self.body
+                        .push(Instruction::I64Const(runtime_tag_code_compound(&cls_t)));
                     if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                         self.body.push(Instruction::Call(idx));
                     }
@@ -648,5 +659,4 @@ impl<'a> FuncEmitter<'a> {
             other => Err(self.unsupported_expr(other)),
         }
     }
-
 }

@@ -1,0 +1,23 @@
+# str[i]: indexacion de strings (bug dev-2: tipaba Any / no soportado)
+# + parametro llamado 'path' (colisionaba con el modulo path eliminado).
+
+function juntar(path: String) -> String {
+    var current = "";
+    var i = 0;
+    while (i < path.length) {
+        current = current + path[i];
+        i = i + 1;
+    };
+    return current;
+}
+
+function main(args: String[]) -> int {
+    var s = "hola";
+    print("s[0]:", s[0]);
+    print("s[1]:", s[1]);
+    print("s[3]:", s[3]);
+    print("path param:", juntar("abc"));
+    print("fuera de rango:", "[" + s[99] + "]");
+    print("concat en loop:", juntar(s));
+    return 0;
+};

@@ -95,6 +95,11 @@ s.length;              # getter
 
 - Inmutables: `s = s.upper();` devuelve un string nuevo.
 - `length`: bytes en el JIT.
+- **Indexación** `s[i]`: devuelve el byte `i` como `String` de 1 byte
+  (semántica de bytes, igual que `length`/`slice`); fuera de rango devuelve
+  `""`. Escribir `s[i] = x` es error (inmutable). Para caracteres multi-byte
+  (UTF-8) un índice puede caer en medio de un carácter — usar `slice` si se
+  necesita recorrer por caracteres.
 - Concatenación con `+`: `"a" + "b"`. **Solo `String + String`**: mezclar con
   otro tipo (`"x" + int`, `"x" + any`) NO compila — convertir antes con
   `.toString()` / `str()` / interpolación (ver [decisión 001](../decisiones/001-no-implicit-coercion.md)). Acceder a un `Record<String, any>` por clave devuelve `Any`; para concatenarlo hay que convertir: `r["k"].toString()`.

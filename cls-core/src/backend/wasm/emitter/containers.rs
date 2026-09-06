@@ -1,10 +1,8 @@
-﻿//! Containers: array/record/cmx/index access, writeback (Fase 1: extraido de emitter/mod.rs).
+//! Containers: array/record/cmx/index access, writeback (Fase 1: extraido de emitter/mod.rs).
 
 use super::*;
 
 impl<'a> FuncEmitter<'a> {
-
-
     /// Carga un campo del CmxValue (tag/props/children) - el ptr está en el stack.
     pub(crate) fn emit_cmx_field(&mut self, offset: i64) -> ClsResult<()> {
         self.body.push(Instruction::I64Const(offset));
@@ -18,9 +16,11 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-
     pub(crate) fn emit_array(&mut self, a: &ArrayExpr) -> ClsResult<()> {
-        let has_spread = a.elements.iter().any(|e| matches!(e, Expression::Spread(_, _)));
+        let has_spread = a
+            .elements
+            .iter()
+            .any(|e| matches!(e, Expression::Spread(_, _)));
         let elem_ty = self.array_elem_type(a)?;
         // Array de Cmx -> entradas `[val, tag]` stride 16 (children del Cmx, etc.).
         let is_cmx = a
@@ -107,7 +107,7 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::Call(idx));
                     }
                     self.body.push(Instruction::LocalSet(ptr)); // write-back (realloc)
-                    // i++
+                                                                // i++
                     self.body.push(Instruction::LocalGet(i));
                     self.body.push(Instruction::I64Const(1));
                     self.body.push(Instruction::I64Add);
@@ -225,7 +225,6 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-
     pub(crate) fn array_elem_type(&self, a: &ArrayExpr) -> ClsResult<WasTy> {
         // Los spreads `[...arr]` no aportan tipo directo (el inner es Array<T>);
         // inferir de los elementos normales.
@@ -257,7 +256,6 @@ impl<'a> FuncEmitter<'a> {
             &a.span,
         ))
     }
-
 
     /// Literal de record `{ a: 1, b: "x" }` -> record_new + record_set.
     pub(crate) fn emit_record(&mut self, r: &RecordExpr) -> ClsResult<()> {
@@ -323,7 +321,11 @@ impl<'a> FuncEmitter<'a> {
                 // Recorre y construye [e1, e2, ...].
                 let elem_is_container = matches!(
                     **elem,
-                    Type::Named(_, _) | Type::Record(_, _) | Type::Shape(_) | Type::Tuple(_) | Type::Array(_)
+                    Type::Named(_, _)
+                        | Type::Record(_, _)
+                        | Type::Shape(_)
+                        | Type::Tuple(_)
+                        | Type::Array(_)
                 );
                 if elem_is_container {
                     self.emit_named_array_to_string(elem)?;
@@ -363,7 +365,6 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-
     /// Convierte un SHAPE (estructura contigua con offsets) a un HASHMAP
     /// (`[cap][len][(key,val,tag)*24]`). Se usa cuando un valor tipado Shape se
     /// guarda en un contenedor dinámico (`Record<String,any>`): la lectura/
@@ -388,7 +389,10 @@ impl<'a> FuncEmitter<'a> {
     }
 
     /// Calcula `(nombre, WasTy, offset)` para cada campo de un shape (contiguo).
-    pub(crate) fn shape_layout(&self, fields: &[(String, Type)]) -> ClsResult<Vec<(String, WasTy, i64)>> {
+    pub(crate) fn shape_layout(
+        &self,
+        fields: &[(String, Type)],
+    ) -> ClsResult<Vec<(String, WasTy, i64)>> {
         let mut out = Vec::with_capacity(fields.len());
         let mut off = 0i64;
         for (name, t) in fields {
@@ -398,7 +402,6 @@ impl<'a> FuncEmitter<'a> {
         }
         Ok(out)
     }
-
 
     /// Construye un `CmxValue` en memoria: [tag][props_ptr][children_ptr].
     pub(crate) fn emit_cmx(&mut self, c: &CmxElement) -> ClsResult<()> {
@@ -507,10 +510,7 @@ impl<'a> FuncEmitter<'a> {
             // se guardan serializados a STRING (tag 1) para que el formateo del
             // CmxValue no muestre punteros (bug dev-2: `metadata="1900568"`).
             // El CmxValue es un DOM de props planas; el string es la repr.
-            let is_named_container = matches!(
-                val_type,
-                Some(Type::Named(_, _))
-            );
+            let is_named_container = matches!(val_type, Some(Type::Named(_, _)));
             if is_named_container {
                 // El valor (ptr del struct/clase o i64 del enum) está en stack.
                 let cls_t = val_type.clone().unwrap_or(Type::Any);
@@ -559,12 +559,14 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-
     pub(crate) fn emit_index_get(&mut self, i: &IndexExpr) -> ClsResult<()> {
         // Record: r["key"] -> record_get(ptr, key)
         let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
         // `o.x[0]` con `o.x` Any/Value/JSON (json.parse anidado): indexar despachando por tag.
-        if matches!(obj_ty, Some(Type::Any) | Some(Type::Json) | Some(Type::Value)) {
+        if matches!(
+            obj_ty,
+            Some(Type::Any) | Some(Type::Json) | Some(Type::Value)
+        ) {
             let expr = Expression::Index(i.clone());
             self.emit_any_chain(&expr)?;
             // Resultado (val, tag) -> dejar solo el val.
@@ -636,6 +638,17 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::Drop);
             return Ok(());
         }
+        // String: s[i] -> byte i como String de 1 byte (semántica de bytes,
+        // igual que length/slice/indexOf). El resultado es un string packed
+        // (i64), sin conversión de bits.
+        if matches!(obj_ty, Some(Type::String)) {
+            self.emit_expression(&i.object)?;
+            self.emit_expression(&i.index)?;
+            if let Some(&idx) = self.func_indexes.get("__intr_str_char_at") {
+                self.body.push(Instruction::Call(idx));
+            }
+            return Ok(());
+        }
         let elem_ty = self.index_elem_type(i)?;
         self.emit_expression(&i.object)?;
         self.emit_expression(&i.index)?;
@@ -648,7 +661,6 @@ impl<'a> FuncEmitter<'a> {
         };
         self.emit_index_access(elem_ty, elem_size, i)
     }
-
 
     /// Asume [ptr, idx] en stack; deja el valor del elemento (con bounds check).
     pub(crate) fn emit_index_access(
@@ -692,7 +704,6 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-
     /// Emite el check `0 <= idx < len[ptr]`, trap si falla. Usa locals.
     pub(crate) fn bounds_check(&mut self, ptr: u32, idx: u32, span: &Span) {
         self.body.push(Instruction::LocalGet(idx));
@@ -715,7 +726,6 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::End);
         self.block_depth -= 1;
     }
-
 
     pub(crate) fn index_elem_type(&self, i: &IndexExpr) -> ClsResult<WasTy> {
         let span = expr_span(&i.object);
@@ -747,7 +757,6 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-
     /// Tamaño de slot de un contenedor: tuplas usan slots de 8 bytes; arrays el
     /// tamaño del tipo del elemento.
     pub(crate) fn container_elem_size(&self, i: &IndexExpr, elem_ty: WasTy) -> i64 {
@@ -757,7 +766,6 @@ impl<'a> FuncEmitter<'a> {
             _ => elem_size_bytes(elem_ty),
         }
     }
-
 
     /// Asume [arr_ptr, idx, value] en stack. Escribe el valor.
     pub(crate) fn emit_index_set(&mut self, i: &IndexExpr, elem_size: i64) -> ClsResult<()> {
@@ -801,7 +809,6 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-
     pub(crate) fn emit_array_len(&mut self) {
         // ptr está en stack -> len = i64.load(ptr+8)
         self.body.push(Instruction::I32WrapI64);
@@ -811,7 +818,6 @@ impl<'a> FuncEmitter<'a> {
             memory_index: 0,
         }));
     }
-
 
     /// Tipo WASM del elemento de un array (del type map del object).
     pub(crate) fn array_elem_was_type(&self, obj: &Expression) -> ClsResult<WasTy> {
@@ -824,7 +830,6 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-
     /// Tipo CLS del elemento de un array.
     pub(crate) fn array_elem_cls_type(&self, obj: &Expression) -> ClsResult<Type> {
         let span = expr_span(obj);
@@ -836,7 +841,6 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-
     /// Convierte el valor en stack (del elem type) a i64 bits (para los hosts).
     pub(crate) fn elem_to_bits(&mut self, _arg: &Expression, elem_ty: WasTy) -> ClsResult<()> {
         match elem_ty {
@@ -847,7 +851,6 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-
     /// Convierte i64 bits (del host) al valor del elem type.
     pub(crate) fn bits_to_elem(&mut self, elem_ty: WasTy) -> ClsResult<()> {
         match elem_ty {
@@ -857,7 +860,6 @@ impl<'a> FuncEmitter<'a> {
         }
         Ok(())
     }
-
 
     /// Escribe de vuelta el ptr mutado (resultado de push/unshift/reverse) a la
     /// variable y deja el valor como resultado (para `drop` del statement).
@@ -912,7 +914,6 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-
     pub(crate) fn emit_i64_store(&mut self, offset: u32) {
         // stack: [addr(i64), value] -> reordenar con wrap
         let v = self.fresh_local();
@@ -925,5 +926,4 @@ impl<'a> FuncEmitter<'a> {
             memory_index: 0,
         }));
     }
-
 }

@@ -3,104 +3,115 @@
 use super::*;
 
 impl TypeChecker {
-
-
-
     pub(crate) fn check_member_access(&mut self, member: &MemberAccessExpr) -> Type {
+        // El scope local (variables/parámetros) GANA sobre los módulos internos:
+        // `function f(path: String) { path.length }` es el String, no el módulo
+        // `path` (bug dev-2: parámetro llamado path/os/fs/... se tipaba como
+        // módulo -> Any, rompiendo path.length / s.length en parámetros).
+        // Un alias de import (`import "math" as math`) NO es una variable local:
+        // sigue el camino de módulo (module_member_type, abajo).
+        let is_local = match &*member.object {
+            Expression::Identifier(name, _) => {
+                self.lookup(name).is_some() && !self.import_aliases.contains_key(name)
+            }
+            _ => false,
+        };
         // Módulos internos del nodo (resueltos por nombre en el JIT): se manejan
         // ANTES de evaluar el object (que no está definido como variable).
-        if let Expression::Identifier(name, _) = &*member.object {
-            if self.enums.contains(name) {
-                return Type::Named(name.clone(), vec![]);
-            }
-            if name == "http" {
-                return match member.member.as_str() {
-                    "get" | "post" => Type::String,
-                    _ => Type::Any,
-                };
-            }
-            if name == "fs" {
-                return match member.member.as_str() {
-                    "exists" => Type::Bool,
-                    "cwd" | "readFile" => Type::String,
-                    "listDir" => Type::Array(Box::new(Type::String)),
-                    _ => Type::Any,
-                };
-            }
-            if name == "json" {
-                return match member.member.as_str() {
-                    // parse devuelve un JSON (objeto/array/valor dinámico tipado).
-                    // El tag runtime viaja con el valor: acceso por índice, print
-                    // y stringify despachan por tag sin perder el tipo.
-                    "parse" => Type::Json,
-                    "stringify" => Type::String,
-                    _ => Type::Any,
-                };
-            }
-            if name == "math" {
-                return match member.member.as_str() {
-                    "range" => Type::Array(Box::new(Type::Int)),
-                    "random" => Type::Float,
-                    "sqrt" | "floor" | "ceil" | "round" | "sin" | "cos" | "tan"
-                    | "log" | "pow" | "min" | "max" => Type::Float,
-                    "abs" => Type::Int,
-                    _ => Type::Any,
-                };
-            }
-            if name == "os" {
-                return match member.member.as_str() {
-                    "platform" | "arch" | "version" | "hostname" | "home"
-                    | "tempdir" | "env" | "sep" => Type::String,
-                    "cpus" | "pid" | "uptime" => Type::Int,
-                    "isWindows" | "isUnix" => Type::Bool,
-                    _ => Type::Any,
-                };
-            }
-            if name == "path" {
-                return match member.member.as_str() {
-                    "join" | "basename" | "dirname" | "extname" | "resolve"
-                    | "normalize" | "sep" => Type::String,
-                    "isAbsolute" => Type::Bool,
-                    _ => Type::Any,
-                };
-            }
-            if name == "process" {
-                return match member.member.as_str() {
-                    "args" => Type::Array(Box::new(Type::String)),
-                    "cwd" | "env" | "platform" | "title" => Type::String,
-                    "pid" => Type::Int,
-                    "exit" => Type::Void,
-                    _ => Type::Any,
-                };
-            }
-            if name == "time" {
-                return match member.member.as_str() {
-                    "iso" | "date" | "clock" => Type::String,
-                    "now" | "seconds" | "year" | "month" | "day" | "hour"
-                    | "minute" | "second" => Type::Int,
-                    "sleep" => Type::Void,
-                    _ => Type::Any,
-                };
-            }
-            if name == "random" {
-                return match member.member.as_str() {
-                    "random" | "float" => Type::Float,
-                    "int" => Type::Int,
-                    "uuid" => Type::String,
-                    _ => Type::Any,
-                };
-            }
-            // net eliminado (dev-2): no hay miembros conocidos. Si el usuario
-            // escribe `net.X` el typeck cae al default (Any/Unknown) y el
-            // emisor lo rechaza con "miembro no soportado".
-            // Para sockets: `extension` con `when` por SO en el .clsx.
-            if name == "strings" {
-                return match member.member.as_str() {
-                    "indexOf" => Type::Int,
-                    "slice" => Type::String,
-                    "split" => Type::Array(Box::new(Type::String)),
-                    _ => Type::Any,
-                };
+        if !is_local {
+            if let Expression::Identifier(name, _) = &*member.object {
+                if self.enums.contains(name) {
+                    return Type::Named(name.clone(), vec![]);
+                }
+                if name == "http" {
+                    return match member.member.as_str() {
+                        "get" | "post" => Type::String,
+                        _ => Type::Any,
+                    };
+                }
+                if name == "fs" {
+                    return match member.member.as_str() {
+                        "exists" => Type::Bool,
+                        "cwd" | "readFile" => Type::String,
+                        "listDir" => Type::Array(Box::new(Type::String)),
+                        _ => Type::Any,
+                    };
+                }
+                if name == "json" {
+                    return match member.member.as_str() {
+                        // parse devuelve un JSON (objeto/array/valor dinámico tipado).
+                        // El tag runtime viaja con el valor: acceso por índice, print
+                        // y stringify despachan por tag sin perder el tipo.
+                        "parse" => Type::Json,
+                        "stringify" => Type::String,
+                        _ => Type::Any,
+                    };
+                }
+                if name == "math" {
+                    return match member.member.as_str() {
+                        "range" => Type::Array(Box::new(Type::Int)),
+                        "random" => Type::Float,
+                        "sqrt" | "floor" | "ceil" | "round" | "sin" | "cos" | "tan" | "log"
+                        | "pow" | "min" | "max" => Type::Float,
+                        "abs" => Type::Int,
+                        _ => Type::Any,
+                    };
+                }
+                if name == "os" {
+                    return match member.member.as_str() {
+                        "platform" | "arch" | "version" | "hostname" | "home" | "tempdir"
+                        | "env" | "sep" => Type::String,
+                        "cpus" | "pid" | "uptime" => Type::Int,
+                        "isWindows" | "isUnix" => Type::Bool,
+                        _ => Type::Any,
+                    };
+                }
+                if name == "path" {
+                    return match member.member.as_str() {
+                        "join" | "basename" | "dirname" | "extname" | "resolve" | "normalize"
+                        | "sep" => Type::String,
+                        "isAbsolute" => Type::Bool,
+                        _ => Type::Any,
+                    };
+                }
+                if name == "process" {
+                    return match member.member.as_str() {
+                        "args" => Type::Array(Box::new(Type::String)),
+                        "cwd" | "env" | "platform" | "title" => Type::String,
+                        "pid" => Type::Int,
+                        "exit" => Type::Void,
+                        _ => Type::Any,
+                    };
+                }
+                if name == "time" {
+                    return match member.member.as_str() {
+                        "iso" | "date" | "clock" => Type::String,
+                        "now" | "seconds" | "year" | "month" | "day" | "hour" | "minute"
+                        | "second" => Type::Int,
+                        "sleep" => Type::Void,
+                        _ => Type::Any,
+                    };
+                }
+                if name == "random" {
+                    return match member.member.as_str() {
+                        "random" | "float" => Type::Float,
+                        "int" => Type::Int,
+                        "uuid" => Type::String,
+                        _ => Type::Any,
+                    };
+                }
+                // net eliminado (dev-2): no hay miembros conocidos. Si el usuario
+                // escribe `net.X` el typeck cae al default (Any/Unknown) y el
+                // emisor lo rechaza con "miembro no soportado".
+                // Para sockets: `extension` con `when` por SO en el .clsx.
+                if name == "strings" {
+                    return match member.member.as_str() {
+                        "indexOf" => Type::Int,
+                        "slice" => Type::String,
+                        "split" => Type::Array(Box::new(Type::String)),
+                        _ => Type::Any,
+                    };
+                }
             }
         }
         let obj_type = self.check_expression(&member.object);
@@ -149,22 +160,23 @@ impl TypeChecker {
                 "length" => Type::Int,
                 _ => Type::Value,
             },
-            Type::Shape(fields) => {
-                match member.member.as_str() {
-                    "length" | "size" => Type::Int,
-                    "keys" => Type::Array(Box::new(Type::String)),
-                    "values" => Type::Array(Box::new(Type::Any)),
-                    "has" => Type::Bool,
-                    "toString" => Type::String,
-                    name => fields.iter()
-                        .find(|(n, _)| *n == name)
-                        .map(|(_, t)| t.clone())
-                        .unwrap_or_else(|| self.error(
+            Type::Shape(fields) => match member.member.as_str() {
+                "length" | "size" => Type::Int,
+                "keys" => Type::Array(Box::new(Type::String)),
+                "values" => Type::Array(Box::new(Type::Any)),
+                "has" => Type::Bool,
+                "toString" => Type::String,
+                name => fields
+                    .iter()
+                    .find(|(n, _)| *n == name)
+                    .map(|(_, t)| t.clone())
+                    .unwrap_or_else(|| {
+                        self.error(
                             &format!("El record no tiene el campo '{}'", name),
                             member.span.clone(),
-                        )),
-                }
-            }
+                        )
+                    }),
+            },
             // Cmx: tipo de primera clase (réplica del patrón JSON, ver plan
             // completar-tipo-cmx.md). `.tag` es Value (string para tag
             // minúscula, handle para mayúscula — el tag-bit decide en
@@ -213,5 +225,4 @@ impl TypeChecker {
             _ => Type::Any,
         }
     }
-
 }
