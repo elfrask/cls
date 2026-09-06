@@ -88,6 +88,9 @@ function main(args: String[]) -> int {
 
 ## Control de flujo
 
+> Las condiciones de `if`/`elif`/`while`/`for`/`switch` **siempre llevan
+> paréntesis** (obligatorios, no opcionales como en Rust/Swift).
+
 ```clx
 function main(args: String[]) -> int {
     # if / elif / else

@@ -4,6 +4,11 @@ Sintaxis verificada en `examples/audit/test-features/jit-test/units/` y
 `examples/audit/test-features/`. Todas las formas listadas aquí las soporta el
 JIT.
 
+> **Los paréntesis de la condición son OBLIGATORIOS** en `if`, `elif`, `while`,
+> `for`, `switch` y `when`: `if (condicion) { ... }`. A diferencia de Rust o
+> Swift, CLS **no** acepta `if condicion { ... }` — es un error de sintaxis
+> (`Esperaba símbolo '('`).
+
 ## if / elif / else
 
 ```clx
@@ -17,6 +22,8 @@ if (n > 10) {
 }
 ```
 
+La condición va **entre paréntesis**; la forma sin paréntesis no compila.
+
 ## while
 
 ```clx
@@ -27,7 +34,8 @@ while (i < 3) {
 }
 ```
 
-Condición vacía = `true`.
+Condición vacía = `true`. Los paréntesis son obligatorios (igual que en
+`if`).
 
 ## loop (infinito)
 

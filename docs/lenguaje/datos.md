@@ -95,7 +95,9 @@ s.length;              # getter
 
 - Inmutables: `s = s.upper();` devuelve un string nuevo.
 - `length`: bytes en el JIT.
-- Concatenación con `+`: `"a" + "b"`.
+- Concatenación con `+`: `"a" + "b"`. **Solo `String + String`**: mezclar con
+  otro tipo (`"x" + int`, `"x" + any`) NO compila — convertir antes con
+  `.toString()` / `str()` / interpolación (ver [decisión 001](../decisiones/001-no-implicit-coercion.md)). Acceder a un `Record<String, any>` por clave devuelve `Any`; para concatenarlo hay que convertir: `r["k"].toString()`.
 - Interpolación con `$var` y `${expr}` (ver `sintaxis.md`). Backticks también
   interpolan: `` `Template $nombre ${edad + 1}` ``.
 

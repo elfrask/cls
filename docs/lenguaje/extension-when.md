@@ -69,7 +69,7 @@ when (os: macos) {
 # Esta capa ES CLS puro (no es FFI), asi es uniforme en todos los SOs.
 function net_listen(port: Int) -> Int {
     var sock = socket(2, 1, 0);   # AF_INET, SOCK_STREAM, 0
-    if sock < 0 { return 0; }
+    if (sock < 0) { return 0; }
     # ... bind a 127.0.0.1:port + listen ...
     return sock;
 }
