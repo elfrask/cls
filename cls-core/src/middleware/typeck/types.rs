@@ -199,6 +199,30 @@ impl TypeChecker {
                 if let Some(t) = bindings.get(name) {
                     return t.clone();
                 }
+                // Tipo calificado de módulo importado: `alias::Clase` /
+                // `alias::Enum` / `alias::Alias` (el alias está en
+                // import_aliases). Se resuelve contra los exports del módulo.
+                if let Some((alias, member)) = name.split_once("::") {
+                    if self.import_aliases.contains_key(alias) {
+                        if let Some(t) = self.module_member_type(alias, member) {
+                            // Aplicar params genéricos si el export los tiene
+                            // (p. ej. `alias::Caja<Int>`): por ahora se devuelve
+                            // el tipo del export sin instanciar (igual que las
+                            // clases locales con params).
+                            return t;
+                        }
+                        return self.error(
+                            &format!(
+                                "El módulo '{}' no exporta el tipo '{}'",
+                                alias, member
+                            ),
+                            ann.span.clone(),
+                        );
+                    }
+                    // alias desconocido: dejar Named calificado (error claro en
+                    // el uso, no acá)
+                    return Type::Named(name.clone(), vec![]);
+                }
                 let param_types: Vec<Type> = params.iter()
                     .map(|p| self.resolve_annotation_with(p, bindings))
                     .collect();

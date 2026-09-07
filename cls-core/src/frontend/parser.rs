@@ -542,6 +542,18 @@ impl Parser {
 
         // Tipo nombrado (puede tener parámetros genéricos <T, U>)
         let mut type_params = Vec::new();
+
+        // Nombre calificado de módulo: `alias::Tipo` / `mod::Clase` (los tipos
+        // exportados por módulos importados se anotan con ::, igual que los
+        // valores: http::Request). Se guarda como Named("alias::Tipo") y el
+        // typeck lo resuelve contra el módulo importado.
+        let mut qualified = name_str.to_string();
+        while self.consume_operator(Operator::ColonColon) {
+            let part = self.expect_identifier()?;
+            qualified.push_str("::");
+            qualified.push_str(part.as_str());
+        }
+
         // `<T>` simple tokenizado como CMX: reinterpretarlo como un arg genérico
         if let Some(tag) = self.consume_cmx_simple_tag() {
             type_params.push(TypeAnnotation {
@@ -569,7 +581,7 @@ impl Parser {
             }
         }
 
-        Ok(TypeKind::Named(name, type_params))
+        Ok(TypeKind::Named(qualified, type_params))
     }
 
     fn parse_fun_type(&mut self) -> ClsResult<TypeAnnotation> {
@@ -1930,7 +1942,7 @@ impl Parser {
                 // Acceso a miembro
                 Token::Symbol(Symbol::Dot) => {
                     self.advance();
-                    let member = self.expect_identifier()?;
+                    let member = self.expect_member_name()?;
                     expr = Expression::MemberAccess(MemberAccessExpr {
                         object: Box::new(expr),
                         member,
@@ -1940,7 +1952,7 @@ impl Parser {
                 // Namespace access
                 Token::Operator(Operator::ColonColon) => {
                     self.advance();
-                    let member = self.expect_identifier()?;
+                    let member = self.expect_member_name()?;
                     expr = Expression::NamespaceAccess(
                         match expr {
                             Expression::Identifier(name, _) => name,
@@ -2169,6 +2181,16 @@ impl Parser {
                         let key = match &self.current_token {
                             Token::Identifier(name) => name.clone(),
                             Token::StringLiteral(s) => s.clone(),
+                            // Keywords como keys de record: `{method: ..., if: ...}`
+                            // son nombres de campo válidos (el lexer los marca
+                            // keyword pero en posición de key son desambiguables
+                            // porque siempre sigue `:`). Se excluyen los literales
+                            // true/false.
+                            Token::Keyword(k)
+                                if !matches!(k, Keyword::True | Keyword::False) =>
+                            {
+                                k.to_string()
+                            }
                             _ => return Err(self.syntax_err("Key de record inválida")),
                         };
                         self.advance();
@@ -2329,11 +2351,44 @@ impl Parser {
         let params = self.parse_parameters()?;
         self.expect_symbol(Symbol::RParen)?;
         self.expect_operator(Operator::Arrow)?;
-        // Determinar si hay tipo de retorno: si despues de -> viene un
-        // identificador seguido de { , es return_type { body }
-        // si viene cualquier otra cosa, es el body directamente
-        let has_return_type = matches!(&self.current_token, Token::Identifier(_))
-            && self.tokens.peek().map(|t| matches!(&t.token, Token::Symbol(Symbol::LBrace))).unwrap_or(false);
+        // Determinar si hay tipo de retorno: si despues de -> viene un tipo
+        // (identificador, posiblemente calificado con :: o con genericos <T>)
+        // seguido de { , es return_type { body }.
+        // OJO: `-> http::Response {` — el tipo calificado tiene :: entre el
+        // alias y el miembro; hay que mirar hasta encontrar el { del body.
+        let mut has_return_type = matches!(&self.current_token, Token::Identifier(_));
+        if has_return_type {
+            // Explorar: Identifier (:: Identifier)* [< ... >] {  => tipo de retorno
+            // El primer Identifier ya está en current_token (consumido); el
+            // cursor arranca en el token siguiente.
+            let mut cursor = self.tokens.clone();
+            let mut expecting_ident = true;
+            let mut found_lbrace = false;
+            let mut gen_depth = 0i32;
+            while let Some(t) = cursor.peek() {
+                match &t.token {
+                    Token::Identifier(_) if !expecting_ident => {
+                        expecting_ident = true;
+                    }
+                    Token::Operator(Operator::ColonColon) if expecting_ident => {
+                        expecting_ident = false; // espera otro Identifier
+                    }
+                    Token::Operator(Operator::LessThan) | Token::Symbol(Symbol::LParen) if expecting_ident => {
+                        gen_depth += 1;
+                    }
+                    Token::Operator(Operator::GreaterThan) | Token::Symbol(Symbol::RParen) if gen_depth > 0 => {
+                        gen_depth -= 1;
+                    }
+                    Token::Symbol(Symbol::LBrace) if expecting_ident && gen_depth == 0 => {
+                        found_lbrace = true;
+                        break;
+                    }
+                    _ => break,
+                }
+                cursor.next();
+            }
+            has_return_type = found_lbrace;
+        }
         let return_type = if has_return_type {
             Some(self.parse_type_annotation()?)
         } else {
@@ -2458,6 +2513,29 @@ impl Parser {
         match &self.current_token {
             Token::Identifier(name) => {
                 let name = name.clone();
+                self.advance();
+                Ok(name)
+            }
+            _ => Err(self.syntax_err(format!(
+                "Esperaba identificador, encontró {}",
+                self.current_token
+            )))
+        }
+    }
+
+    /// Nombre de miembro tras `.` o `::`: acepta identifiers Y keywords
+    /// (`r.method`, `mod::default`) — el lexer marca `method`/`default`/... como
+    /// keyword pero en posición de miembro son nombres de campo válidos. Se
+    /// excluyen los literales true/false.
+    fn expect_member_name(&mut self) -> ClsResult<String> {
+        match &self.current_token {
+            Token::Identifier(name) => {
+                let name = name.clone();
+                self.advance();
+                Ok(name)
+            }
+            Token::Keyword(k) if !matches!(k, Keyword::True | Keyword::False) => {
+                let name = k.to_string();
                 self.advance();
                 Ok(name)
             }

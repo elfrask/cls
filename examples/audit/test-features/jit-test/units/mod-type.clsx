@@ -1,0 +1,18 @@
+import "str-type-mod/mi_mod" as mi;
+
+# Tipos calificados de modulo en anotaciones: `alias::Enum`.
+# (bug dev-2: el parser de tipos no consumia '::' -> 'Esperaba simbolo )').
+
+function estado_a_texto(e: mi::Estado) -> String {
+    if (e == mi::Estado.Activo) { return "activo"; };
+    return "otro";
+}
+
+function main(args: String[]) -> int {
+    var e: mi::Estado = mi::Estado.Activo;
+    print(estado_a_texto(e));
+    print(mi::parsear("hola").toString());
+    var rec = {method: "GET", default: 1};
+    print(rec.method);
+    return 0;
+};
