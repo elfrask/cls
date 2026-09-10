@@ -483,6 +483,17 @@ impl<'a> FuncEmitter<'a> {
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
                 }
             }
+            // Any/Unknown (valor dinámico leído de un Record/JSON):
+            // `x.toString()` -> string por TAG en runtime (__intr_any_to_string),
+            // un solo eval del receiver. Otros métodos sobre Any no se despachan
+            // acá (caen al camino dinámico de emit_call).
+            Type::Any | Type::Unknown => {
+                if member.member.as_str() == "toString" {
+                    self.emit_any_chain(&member.object)?; // (val, tag)
+                    self.emit_str_host("__intr_any_to_string");
+                    return Ok(true);
+                }
+            }
             _ => {}
         }
     }

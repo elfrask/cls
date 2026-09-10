@@ -222,6 +222,14 @@ impl TypeChecker {
                 }
                 Type::Any
             }
+            // Any/Unknown (valor dinámico leído de un Record/JSON): `toString`
+            // siempre produce String (despacho por tag en runtime:
+            // __intr_any_to_string). Sin esto, `record[k].toString()` tipaba
+            // Any y rompía la concatenación `String + Any` (reporte dev).
+            Type::Any | Type::Unknown => match member.member.as_str() {
+                "toString" => Type::String,
+                _ => Type::Any,
+            },
             _ => Type::Any,
         }
     }
