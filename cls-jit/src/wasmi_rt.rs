@@ -383,7 +383,13 @@ fn register_native_hosts(
                 Err(_) => 0,
             }
         };
-        let params: Vec<char> = sig.chars().skip(1).collect();
+        let params: Vec<char> = sig
+            .chars()
+            .skip(1)
+            // Retorno struct: el nombre del import trae el tamaño total en
+            // bytes (`make_punto__S32@lib`) -> esos dígitos no son params.
+            .skip_while(|c| c.is_ascii_digit())
+            .collect();
         let rcode = sig.chars().next().unwrap_or('i');
         let lib2 = lib.clone();
         let sym2 = sym.clone();
@@ -410,6 +416,12 @@ fn register_native_hosts(
                     ptypes.push(native_type(letter));
                 }
                 let r = backend.call_function(&lib2, &sym2, &vals, &ptypes, native_type(rcode));
+                // Un fallo de la llamada nativa no puede quedar en silencio:
+                // sin esto CLS recibe 0 y el usuario no sabe por qué "no hace
+                // nada" (misma política que el wrapper de wasmtime).
+                if let Err(e) = &r {
+                    eprintln!("[JIT] Extensión '{}' ({} de '{}'): {}", sym2, sig, lib2, e);
+                }
                 match rcode {
                     'v' => Ok(()),
                     's' => {

@@ -25,6 +25,7 @@ impl<'a> Engine<'a> {
             &self.struct_defs,
             &self.native_indexes,
             &self.native_ret,
+            &self.native_params,
             &self.globals,
             &self.static_fields,
             &self.class_defs,

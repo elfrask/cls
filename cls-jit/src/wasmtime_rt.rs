@@ -156,6 +156,7 @@ fn ffi_copy_own_layout(
     caller: &mut Caller<'_, HostState>,
     host_ptr: i64,
     rcode: char,
+    ret_struct_size: i64,
 ) -> i64 {
     let host = host_ptr as usize;
     if host == 0 {
@@ -176,11 +177,15 @@ fn ffi_copy_own_layout(
         return if ok { wasm_off } else { 0 };
     }
     if rcode == 'S' {
-        // Struct: layout CLS `[def_id][len][campos contiguos]`. El `len` del
-        // header = número de campos; los campos CLS se alinean a 8 bytes (es el
-        // stride de int/float/ptr en structs CLS). Copia cruda del bloque.
-        let n = len.max(0);
-        let size = 16 + n * 8;
+        // Struct: layout CLS `[def_id][len][data C]`; el tamaño total viene en
+        // el nombre del import (`S<bytes>`), así el bloque copiado es exacto
+        // aunque el struct tenga campos angostos (i16/i32). Fallback (sin
+        // tamaño en el nombre): 16 + n*8 (campos CLS de 8 bytes).
+        let size = if ret_struct_size > 0 {
+            ret_struct_size
+        } else {
+            16 + len.max(0) * 8
+        };
         let wasm_off = caller.alloc(size);
         let ok = caller.write_bytes(wasm_off as usize, unsafe {
             std::slice::from_raw_parts(host as *const u8, size as usize)
@@ -516,8 +521,26 @@ pub fn register_native_hosts(
                 Err(_) => 0,
             }
         };
-        let params: Vec<char> = sig.chars().skip(1).collect();
+        let params: Vec<char> = sig
+            .chars()
+            .skip(1)
+            // Retorno struct: el nombre del import trae el tamaño total en
+            // bytes (`make_punto__S32@ffi_struct.dll`) -> el wrapper copia ese
+            // bloque exacto del buffer del DLL (con campos angostos i16/i32 el
+            // layout C es menor que 16 + n*8).
+            .skip_while(|c| c.is_ascii_digit())
+            .collect();
         let rcode = sig.chars().next().unwrap_or('i');
+        let ret_struct_size: i64 = if rcode == 'S' {
+            sig.chars()
+                .skip(1)
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse()
+                .unwrap_or(0)
+        } else {
+            0
+        };
         let lib2 = lib.clone();
         let sym2 = sym.clone();
         let letters = params.clone();
@@ -547,6 +570,12 @@ pub fn register_native_hosts(
                     ptypes.push(native_type(letter));
                 }
                 let r = backend.call_function(&lib2, &sym2, &vals, &ptypes, native_type(rcode));
+                // Un fallo de la llamada nativa (DLL ausente/símbolo no
+                // encontrado/ABI) no puede quedar en silencio: sin esto CLS
+                // recibe 0 y el usuario no sabe por qué "no hace nada".
+                if let Err(e) = &r {
+                    eprintln!("[JIT] Extensión '{}' ({} de '{}'): {}", sym2, sig, lib2, e);
+                }
                 match rcode {
                     'v' => Ok(()),
                     's' => {
@@ -583,7 +612,8 @@ pub fn register_native_hosts(
                                     // la memoria del módulo): re-serializar el
                                     // layout a la memoria del módulo re-mapeando
                                     // punteros internos (keys/strings del DLL).
-                                    results[0] = Val::I64(ffi_copy_own_layout(&mut caller, host_ptr, rcode));
+                                    results[0] =
+                                        Val::I64(ffi_copy_own_layout(&mut caller, host_ptr, rcode, ret_struct_size));
                                     Ok(())
                                 } else {
                                     results[0] = Val::I64(0);

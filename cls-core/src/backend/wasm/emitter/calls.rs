@@ -21,12 +21,20 @@ impl<'a> FuncEmitter<'a> {
                 self.body
                     .push(Instruction::I64Const(info.fields.len() as i64));
                 self.emit_i64_store(8);
+                // Los args consumen los campos ESCALARES en orden (los arrays
+                // inline `T[n]` no tienen arg: quedan en cero en la memoria
+                // recién alocada por el bump allocator).
+                let mut arg = 0usize;
                 for (i, (_, _, w)) in info.fields.iter().enumerate() {
-                    if i < c.args.len() {
-                        self.emit_expression(&c.args[i])?;
+                    let Some(fw) = info.kinds[i].scalar() else {
+                        continue;
+                    };
+                    if arg < c.args.len() {
+                        self.emit_expression(&c.args[arg])?;
                     } else {
                         self.body.push(Instruction::I64Const(0));
                     }
+                    arg += 1;
                     let val_tmp = self.fresh_local_ty(*w);
                     let addr_tmp = self.fresh_local();
                     self.body.push(match w {
@@ -45,23 +53,9 @@ impl<'a> FuncEmitter<'a> {
                         WasTy::I32 => Instruction::LocalGet(val_tmp),
                         WasTy::I64 => Instruction::LocalGet(val_tmp),
                     });
-                    match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        })),
-                        WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
-                            offset: 0,
-                            align: 2,
-                            memory_index: 0,
-                        })),
-                        WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        })),
-                    }
+                    // Almacenamiento con el ancho C del campo (`i16` -> 2 bytes,
+                    // `i32` -> 4): el struct queda binario-compatible con el C.
+                    fw.push_store(&mut self.body, *w);
                 }
                 self.body.push(Instruction::LocalGet(ptr));
                 return Ok(());
@@ -77,8 +71,19 @@ impl<'a> FuncEmitter<'a> {
         // Llamada a función nativa (extensión): import `env.<sym>__<sig>@<lib>`.
         if let Expression::Identifier(name, _) = &*c.callee {
             if let Some(idx) = self.native_indexes.get(name) {
-                for a in &c.args {
+                let codes = self.native_params.get(name.as_str());
+                for (i, a) in c.args.iter().enumerate() {
                     self.emit_expression(a)?;
+                    // Param struct ('S') con un valor struct CLS: el DLL recibe
+                    // la DATA (base+16), no el header CLS — así ve el layout C
+                    // real (offsets desde 0) y puede leer/escribir in-place.
+                    // Un `Int` crudo (puntero del usuario) pasa sin ajuste.
+                    if matches!(codes.and_then(|cs| cs.get(i)), Some('S'))
+                        && matches!(self.types.get(&expr_span(a)), Some(Type::Named(..)))
+                    {
+                        self.body.push(Instruction::I64Const(16));
+                        self.body.push(Instruction::I64Add);
+                    }
                 }
                 self.body.push(Instruction::Call(*idx));
                 return Ok(());

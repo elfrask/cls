@@ -158,10 +158,15 @@ compuestos se guardan como string raw (tag 9) para no exponer punteros (ver
 
 **FFI estructurado** (`CRecord`/`CArray`/`CStruct`): los valores viajan como
 puntero al layout de la memoria lineal (`array [cap][len][elems*8]`, `record
-[cap][len][(key,val,tag)*24]`, `struct` contiguo). El wrapper del JIT traduce el
-offset wasm a la dirección host (`ffi_wasm_to_host`/`ffi_host_to_wasm`) para que
-el DLL lea/escriba el layout zero-copy; el backend del nodo pasa el ptr como
-`Value::Int`. Ver `docs/lenguaje/extension.md` y `examples/jit-examples/`.
+[cap][len][(key,val,tag)*24]`, `struct` = header CLS de 16B + data con layout
+ABI C alineado). Los params struct reciben la dirección de la **data**
+(`base+16`), así el DLL ve el struct C con offsets desde 0 (read/write
+in-place: `getsockname`, `accept`). El wrapper del JIT traduce el offset wasm a
+la dirección host (`ffi_wasm_to_host`/`ffi_host_to_wasm`) para que el DLL
+lea/escriba el layout zero-copy; el backend del nodo pasa el ptr como
+`Value::Int`. Un fallo de la llamada nativa se reporta por stderr (no se
+silencia). Ver `docs/lenguaje/extension.md`, `docs/lenguaje/estructuras.md` y
+`examples/jit-examples/`.
 
 Los magic methods se despachan por la **vtable de la clase** con la firma
 declarada del método (`call_indirect`): el emisor busca el magic en el tipo

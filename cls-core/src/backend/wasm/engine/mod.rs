@@ -65,6 +65,11 @@ pub(super) struct Engine<'a> {
     struct_defs: HashMap<String, StructInfo>,
     native_indexes: HashMap<String, u32>,
     native_ret: HashMap<String, char>,
+    /// Letras de tipo C de los params de cada función de extensión (misma
+    /// codificación que el nombre del import: 'i','f','b','c','s','I','S',...).
+    /// El emisor las usa en el call site: un param 'S' con un valor struct CLS
+    /// recibe la dirección de la DATA (base+16), no la del header.
+    native_params: HashMap<String, Vec<char>>,
     globals: HashMap<String, u32>,
     global_inits: Vec<(u32, Expression)>,
     /// Índices WASM de las globals de usuario (var/const top-level y static
@@ -128,6 +133,7 @@ impl<'a> Engine<'a> {
             struct_defs: HashMap::new(),
             native_indexes: HashMap::new(),
             native_ret: HashMap::new(),
+            native_params: HashMap::new(),
             globals: HashMap::new(),
         global_inits: Vec::new(),
         user_global_idxs: Vec::new(),

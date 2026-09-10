@@ -96,8 +96,23 @@ class Socket {
 ```
 
 **Notas**:
-- En Windows hay que llamar `WSAStartup` una vez antes de `socket` (declarar en la extension e invocar al iniciar).
-- `sockaddr_in` se construye en memoria lineal: alocar 16 bytes, escribir `family=2` (i16), `port` (i16 en network byte order vía `htons`), `addr` (i32 vía `inet_addr("0.0.0.0")`). Usar `CStruct`/`structure` de `extension.md` si facilita el layout.
+- En Windows hay que llamar `WSAStartup` una vez antes de `socket` (declarar en la extension e invocar al iniciar). `WSADATA` ocupa 408 bytes en x64: declararlo completo con arrays inline (`i8[257]`/`i8[129]`) o la DLL escribe fuera de la alocacion.
+- `sockaddr_in` con `structure` y el layout C (ver `lenguaje/estructuras.md`): el `structure` CLS ya usa ABI C, así que se declara con los tipos C reales y se pasa como `CStruct` — el DLL recibe la data (`base+16`):
+
+  ```clx
+  when (os: windows) {
+      extension "ws2_32.dll" as C {
+          function socket(af: CInt, type: CInt, protocol: CInt) -> CInt;
+          function bind(s: CInt, name: CStruct, namelen: CInt) -> CInt;
+          function listen(s: CInt, backlog: CInt) -> CInt;
+          function htons(hostshort: CInt) -> CInt;
+          function WSAStartup(wVersionRequired: CInt, lpWSAData: CStruct) -> CInt;
+      };
+      structure sockaddr_in { sin_family: i16, sin_port: i16, sin_addr: i32, sin_zero: i8[8] };
+  };
+  # addr = sockaddr_in(2, htons(9999), 0); bind(sock, addr, 16);
+  ```
+  Test de referencia (oráculo con `getsockname`): `examples/audit/test-features/jit-test/units/ffi-cstruct.clsx`.
 - Aridad: todas las llamadas ≤ 16 args (decisión 002). Si alguna excede, empaquetar en struct.
 - El socket fd viaja como `int` (handle opaco — ver "tipos con layout opaco" en extension-when.md).
 

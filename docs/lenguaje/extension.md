@@ -43,8 +43,8 @@ Ejemplos: `examples/audit/test-features/extension-demo.clsx`,
 | `CPtr` | puntero (`void*`) |
 | `CRecord` | record CLS como ptr al layout `[cap][len][(key,val,tag)*24]` |
 | `CArray` | array CLS como ptr al layout `[cap][len][elems*8]` |
-| `CStruct` | struct CLS como ptr al layout contiguo (offsets) |
-| `Struct(nombre)` | layout C de una `structure` declarada |
+| `CStruct` | ptr a la **data** del struct CLS (`base+16`, layout ABI C) |
+| `Struct(nombre)` | igual que `CStruct` para la `structure` declarada |
 | `Bool` | `i32` (0/1) |
 | `Void` | sin retorno |
 | `Any` | sin anotación: el backend decide |
@@ -61,7 +61,7 @@ Estos tipos viajan como **puntero al layout canónico de la memoria lineal**
 string  : (ptr<<32)|len
 array   : [cap:i64][len:i64][elems*es]     (es=4 bool/char, 8 resto)
 record  : [cap:i64][len:i64][(key,val,tag)*24]
-struct  : ptr + offsets contiguos
+struct  : [def_id:i64][n_campos:i64][data con layout ABI C]   (data en +16)
 ```
 
 Tags runtime de los valores dentro de records: `0=int 1=string 2=float 3=bool
@@ -71,6 +71,15 @@ Tags runtime de los valores dentro de records: `0=int 1=string 2=float 3=bool
   recibe su puntero. El wrapper del JIT traduce el offset de la memoria lineal
   del módulo a la dirección host (la memoria lineal es una alocación del host),
   así el DLL lee/escribe el mismo layout en su espacio de direcciones.
+  - Los params **struct** (`CStruct`, `Struct(nombre)` o el nombre de la
+    `structure` declarada) reciben la dirección de la **data** (`base+16`): el
+    DLL ve el struct C con sus offsets desde 0, sin el header CLS. Un `Int`
+    crudo (puntero del usuario) viaja tal cual, sin ajuste.
+  - Los campos se guardan con su **ancho C** (`i16` -> 2 bytes, `i32` -> 4) y
+    alineación natural, así que un `structure` CLS con los mismos tipos que el
+    struct C es binario-compatible (`sockaddr_in`, `WSADATA`, ...). Los arrays
+    inline `T[n]` (`i8[8]`, `i8[257]`) ocupan su tamaño real — ver
+    `estructuras.md`.
 - **Retorno**: el DLL escribe el layout y CLS lo vuelve a usar como
   record/array/struct.
   - Si el puntero devuelto cae dentro de la memoria lineal del módulo
@@ -83,15 +92,20 @@ Tags runtime de los valores dentro de records: `0=int 1=string 2=float 3=bool
     **offsets relativos al buffer** (bajos, < 1MB) en los bits altos:
     `(offset<<32)|len`.
   - `CStruct` como retorno: se declara el `structure` en la `extension` y se
-    usa `-> NombreDelStruct`; el wrapper copia el layout contiguo y los campos
-    se acceden por offsets (`p.x`, `p.y`).
+    usa `-> NombreDelStruct`; el wrapper copia el bloque exacto (el tamaño total
+    viaja en el nombre del import, `S<bytes>`) y los campos se acceden por
+    offsets (`p.x`, `p.y`). Para out-params (el DLL escribe el struct) alcanza
+    con declarar el param como `CStruct` y leer los campos después de la llamada
+    (`getsockname`).
 - **Records con shape** (`var r = {a:1,b:"x"}` inferido) se emiten como struct
   contiguo, no como hashmap: usa `CRecord` para `Record<K,V>` o `json.parse`, y
   `CStruct`/`Struct` para shapes.
 
 Ejemplos: `examples/jit-examples/ffi-struct-real.clsx`,
 `examples/jit-examples/ffi-record-typed.clsx`,
-`examples/jit-examples/ffi-bump4.clsx`.
+`examples/jit-examples/ffi-bump4.clsx`,
+`examples/audit/test-features/jit-test/units/ffi-cstruct.clsx` (bind/listen con
+`sockaddr_in`).
 
 ## Variables nativas
 
@@ -109,6 +123,10 @@ extension "libm" as C {
 ```
 
 Declaran un layout C; luego `Punto(3, 4)` instancia con campos posicionales.
+Los campos usan el layout ABI C (anchos `i8`/`i16`/`i32`/`i64`/`f32`/`f64` y
+arrays inline `T[n]`), por lo que la estructura es binario-compatible con el
+struct C homónimo al pasarla por FFI. Detalle completo:
+`docs/lenguaje/estructuras.md` (sección "Layout en memoria").
 
 ## Kinds de extensión
 

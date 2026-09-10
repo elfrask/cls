@@ -33,6 +33,19 @@ impl<'a> Engine<'a> {
         }
     }
 
+    /// Letra C de un param de extensión. `CStruct`, `Struct(Nombre)` y el propio
+    /// nombre de un `structure` declarado van como 'S': el emisor le pasa al DLL
+    /// la dirección de la DATA (base+16) y el wrapper traduce el offset a la
+    /// dirección host. El resto delega en `ty_code`.
+    fn native_param_letter(&self, t: &Type) -> (char, WasTy) {
+        match t {
+            Type::Named(n, _) if self.struct_defs.contains_key(n.as_str()) => {
+                ('S', WasTy::I64)
+            }
+            t => ty_code(t),
+        }
+    }
+
     pub(crate) fn emit(&mut self, module: &Module) -> ClsResult<Vec<u8>> {
         self.collect_functions(module)?;
 
@@ -46,27 +59,29 @@ impl<'a> Engine<'a> {
                 def_id += 1;
             }
         }
-        // Recolectar structures -> offsets de campos (layout [def_id][len][campos]).
+        // Recolectar structures -> layout C ABI de campos: header CLS
+        // `[def_id][len]` (16B) + data C con alineación natural (i16->2, i32->4,
+        // i64->8). Es lo que permite pasarlas por FFI como struct C.
         let mut sdef_id = 0u32;
         for stmt in self.effective_statements(&module.statements) {
             if let Statement::StructureDecl(s) = stmt {
                 let mut fields = Vec::new();
-                let mut offsets = Vec::new();
-                let mut off = 16i64;
+                let mut kinds = Vec::new();
                 for f in &s.fields {
                     let t = self.resolve_field_type(&f.type_ann)?;
                     let w = was_type(&t)?;
-                    offsets.push(off);
+                    kinds.push(field_width(&f.type_ann, &t));
                     fields.push((f.name.clone(), t, w));
-                    off += elem_size_bytes(w);
                 }
+                let (offsets, total) = c_struct_layout(&kinds);
                 self.struct_defs.insert(
                     s.name.clone(),
                     StructInfo {
                         def_id: sdef_id,
                         fields,
                         offsets,
-                        total: off,
+                        kinds,
+                        total,
                     },
                 );
                 sdef_id += 1;
@@ -178,6 +193,36 @@ impl<'a> Engine<'a> {
         // `when`-aware: respeta las ramas activas (dev-2 fix).
         for stmt in self.effective_statements(&module.statements) {
             if let Statement::Extension(e) = stmt {
+                // Pasada 1: structures declaradas en `extension` -> `struct_defs`
+                // (antes de las funciones: los params `Struct(Nombre)`/`CStruct`/
+                // el nombre del struct necesitan su layout C ya registrado).
+                for d in &e.declarations {
+                    if let NativeDecl::Structure(s) = d {
+                        if !self.struct_defs.contains_key(&s.name) {
+                            let mut fields = Vec::new();
+                            let mut kinds = Vec::new();
+                            for f in &s.fields {
+                                let t = annotation_to_type(&f.type_ann);
+                                let w = was_type(&t)?;
+                                kinds.push(field_width(&f.type_ann, &t));
+                                fields.push((f.name.clone(), t, w));
+                            }
+                            let (offsets, total) = c_struct_layout(&kinds);
+                            self.struct_defs.insert(
+                                s.name.clone(),
+                                StructInfo {
+                                    def_id: 0,
+                                    fields,
+                                    offsets,
+                                    kinds,
+                                    total,
+                                },
+                            );
+                        }
+                    }
+                }
+                // Pasada 2: funciones -> import `env.<sym>__<ret><params>@<lib>`,
+                // con el marshalling de structs (letters 'S').
                 for d in &e.declarations {
                     if let NativeDecl::Function(f) = d {
                         let mut params_was = Vec::new();
@@ -188,7 +233,10 @@ impl<'a> Engine<'a> {
                                 .as_ref()
                                 .map(annotation_to_type)
                                 .unwrap_or(Type::Int);
-                            let (c, w) = ty_code(&t);
+                            // Struct por valor (CStruct / Struct(Nombre) / el
+                            // nombre del structure): letter 'S' -> el emisor le
+                            // pasa al DLL la DATA (base+16, layout C).
+                            let (c, w) = self.native_param_letter(&t);
                             params_was.push(was_to_val(w));
                             params_code.push(c);
                         }
@@ -198,21 +246,31 @@ impl<'a> Engine<'a> {
                             .map(annotation_to_type)
                             .unwrap_or(Type::Void);
                         // Struct de extensión como retorno (`-> Punto`): se
-                        // tipa como Named(Punto); el rcode debe ser 'S' (struct)
-                        // para que el wrapper copie el layout contiguo.
-                        let (rc, rw) = match &ret_t {
-                            Type::Named(n, _) if self.struct_defs.contains_key(n.as_str()) => {
-                                ('S', WasTy::I64)
+                        // tipa como Named(Punto); el rcode es 'S' + el tamaño
+                        // total en bytes, para que el wrapper copie el bloque
+                        // exacto del buffer del DLL (con campos angostos el
+                        // layout C es menor que 16 + n*8).
+                        let ret_total = match &ret_t {
+                            Type::Named(n, _) => {
+                                self.struct_defs.get(n.as_str()).map(|i| i.total)
                             }
-                            t => ty_code(t),
+                            _ => None,
+                        };
+                        let (rc, rw) = match ret_total {
+                            Some(_) => ('S', WasTy::I64),
+                            None => ty_code(&ret_t),
                         };
                         let results = if rc == 'v' {
                             vec![]
                         } else {
                             vec![was_to_val(rw)]
                         };
+                        let rc_code = match ret_total {
+                            Some(total) => format!("S{}", total),
+                            None => rc.to_string(),
+                        };
                         let import_name =
-                            format!("{}__{}{}@{}", f.name, rc, params_code, e.library);
+                            format!("{}__{}{}@{}", f.name, rc_code, params_code, e.library);
                         let tidx = self.register_func_type(params_was, results);
                         let idx = self.func_count;
                         self.func_count += 1;
@@ -220,32 +278,7 @@ impl<'a> Engine<'a> {
                             .import("env", &import_name, EntityType::Function(tidx));
                         self.native_indexes.insert(f.name.clone(), idx);
                         self.native_ret.insert(f.name.clone(), rc);
-                    }
-                    // Structures declaradas en `extension`: registrar en
-                    // `struct_defs` para que `Struct(Nombre)` como retorno
-                    // (o `CStruct`) permita acceder a campos por offsets.
-                    if let NativeDecl::Structure(s) = d {
-                        if !self.struct_defs.contains_key(&s.name) {
-                            let mut fields = Vec::new();
-                            let mut offsets = Vec::new();
-                            let mut off = 16i64;
-                            for f in &s.fields {
-                                let t = annotation_to_type(&f.type_ann);
-                                let w = was_type(&t)?;
-                                offsets.push(off);
-                                fields.push((f.name.clone(), t, w));
-                                off += elem_size_bytes(w);
-                            }
-                            self.struct_defs.insert(
-                                s.name.clone(),
-                                StructInfo {
-                                    def_id: 0,
-                                    fields,
-                                    offsets,
-                                    total: off,
-                                },
-                            );
-                        }
+                        self.native_params.insert(f.name.clone(), params_code.chars().collect());
                     }
                 }
             }
@@ -560,6 +593,7 @@ impl<'a> Engine<'a> {
                 &self.struct_defs,
                 &self.native_indexes,
                 &self.native_ret,
+                &self.native_params,
                 &self.globals,
                 &self.static_fields,
                 &self.class_defs,

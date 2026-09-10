@@ -516,6 +516,16 @@ impl<'a> FuncEmitter<'a> {
                             })?;
                         let w = info.fields[fidx].2;
                         let off = info.offsets[fidx];
+                        let width = info.kinds[fidx].scalar().ok_or_else(|| {
+                            crate::error::ClsError::compile_at(
+                                &format!(
+                                    "El campo '{}' es un array inline (T[n]) del struct '{}': \
+                                     no se accede como escalar (solo layout C)",
+                                    m.member, sn
+                                ),
+                                &m.span,
+                            )
+                        })?;
                         let obj_tmp = self.fresh_local();
                         let val_tmp = self.fresh_local_ty(w);
                         self.emit_expression(&m.object)?;
@@ -535,23 +545,8 @@ impl<'a> FuncEmitter<'a> {
                             WasTy::I32 => Instruction::LocalGet(val_tmp),
                             WasTy::I64 => Instruction::LocalGet(val_tmp),
                         });
-                        match w {
-                            WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
-                                offset: 0,
-                                align: 3,
-                                memory_index: 0,
-                            })),
-                            WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
-                                offset: 0,
-                                align: 2,
-                                memory_index: 0,
-                            })),
-                            WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
-                                offset: 0,
-                                align: 3,
-                                memory_index: 0,
-                            })),
-                        }
+                        // Store con el ancho C del campo (i16 -> 2 bytes).
+                        width.push_store(&mut self.body, w);
                         self.body.push(match w {
                             WasTy::F64 => Instruction::LocalGet(val_tmp),
                             WasTy::I32 => Instruction::LocalGet(val_tmp),

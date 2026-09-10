@@ -4,12 +4,33 @@ use crate::frontend::token::Operator;
 use crate::middleware::types::{LitVal, Type};
 use wasm_encoder::Instruction;
 
-use super::types::WasTy;
+use super::types::{FieldKind, WasTy};
 pub(super) fn elem_size_bytes(w: WasTy) -> i64 {
     match w {
         WasTy::I64 | WasTy::F64 => 8,
         WasTy::I32 => 4,
     }
+}
+
+/// Layout C ABI de los campos de un `structure`: offsets ABSOLUTOS desde la
+/// base (el header CLS `[def_id:i64][n_campos:i64]` ocupa los primeros 16 bytes
+/// y la data C empieza en +16) y tamaño total. Cada campo se alinea a su tamaño
+/// natural (i8->1, i16->2, i32->4, i64/f64->8); el total se redondea a 8 para
+/// que el allocator no solape un struct con el siguiente.
+///
+/// El DLL recibe `base + 16` en los params `CStruct`/`Struct(...)`, así que ve
+/// exactamente el layout C (offset C 0 = byte +16). Ver docs/lenguaje/extension.md.
+pub(super) fn c_struct_layout(kinds: &[FieldKind]) -> (Vec<i64>, i64) {
+    let mut offsets = Vec::with_capacity(kinds.len());
+    let mut off = 16i64;
+    for k in kinds {
+        let a = k.align();
+        off = (off + a - 1) & !(a - 1);
+        offsets.push(off);
+        off += k.size();
+    }
+    let total = (off + 7) & !7;
+    (offsets, total)
 }
 /// Aplica el operador compuesto a los dos valores del stack (según el tipo).
 pub(super) fn apply_compound_ty(

@@ -320,6 +320,10 @@ impl<'a> FuncEmitter<'a> {
         let res = self.fresh_local();
         self.body.push(Instruction::LocalSet(res));
         for (i, (fname, t_cls, w)) in info.fields.iter().enumerate() {
+            // Los arrays inline (`T[n]`) solo ocupan espacio: no se imprimen.
+            let Some(fw) = info.kinds[i].scalar() else {
+                continue;
+            };
             let label = format!("{}: ", fname);
             let ls = self.intern_string(&label);
             self.emit_load_str(ls);
@@ -333,23 +337,8 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Const(info.offsets[i]));
             self.body.push(Instruction::I64Add);
             self.body.push(Instruction::I32WrapI64);
-            match w {
-                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
-                    offset: 0,
-                    align: 3,
-                    memory_index: 0,
-                })),
-                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
-                    offset: 0,
-                    align: 2,
-                    memory_index: 0,
-                })),
-                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
-                    offset: 0,
-                    align: 3,
-                    memory_index: 0,
-                })),
-            }
+            // Carga con el ancho C del campo (i16 -> 2 bytes + extend).
+            fw.push_load(&mut self.body, *w);
             if matches!(t_cls, Type::String) {
                 let q = self.intern_string("\"");
                 self.emit_load_str(q);

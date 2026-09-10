@@ -350,26 +350,21 @@ impl<'a> FuncEmitter<'a> {
                             ))
                         })?;
                     let w = info.fields[fidx].2;
+                    let fw = info.kinds[fidx].scalar().ok_or_else(|| {
+                        crate::error::ClsError::compile_at(
+                            &format!(
+                                "El campo '{}' es un array inline (T[n]) del struct '{}': \
+                                 no se accede como escalar (solo layout C)",
+                                m.member, name
+                            ),
+                            &m.span,
+                        )
+                    })?;
                     self.body.push(Instruction::I64Const(info.offsets[fidx]));
                     self.body.push(Instruction::I64Add);
                     self.body.push(Instruction::I32WrapI64);
-                    match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        })),
-                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
-                            offset: 0,
-                            align: 2,
-                            memory_index: 0,
-                        })),
-                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        })),
-                    }
+                    // Carga con el ancho C del campo (i16 -> 2 bytes + extend).
+                    fw.push_load(&mut self.body, w);
                     Ok(())
                 } else if let Some(info) = self.class_defs.get(name.as_str()) {
                     let fidx = info
