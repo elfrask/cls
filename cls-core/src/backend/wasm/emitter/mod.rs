@@ -56,6 +56,9 @@ pub(crate) struct FuncEmitter<'a> {
     struct_defs: &'a HashMap<String, StructInfo>,
     native_indexes: &'a HashMap<String, u32>,
     native_ret: &'a HashMap<String, char>,
+    /// letras C de los params de cada función de extensión (para el ajuste
+    /// base+16 de los params struct: ver `emit_call`).
+    native_params: &'a HashMap<String, Vec<char>>,
     globals: &'a HashMap<String, u32>,
     static_fields: &'a HashMap<String, u32>,
     class_defs: &'a HashMap<String, ClassInfo>,
@@ -125,6 +128,7 @@ impl<'a> FuncEmitter<'a> {
         struct_defs: &'a HashMap<String, StructInfo>,
         native_indexes: &'a HashMap<String, u32>,
         native_ret: &'a HashMap<String, char>,
+        native_params: &'a HashMap<String, Vec<char>>,
         globals: &'a HashMap<String, u32>,
         static_fields: &'a HashMap<String, u32>,
         class_defs: &'a HashMap<String, ClassInfo>,
@@ -159,6 +163,7 @@ impl<'a> FuncEmitter<'a> {
             struct_defs,
             native_indexes,
             native_ret,
+            native_params,
             globals,
             static_fields,
             class_defs,
@@ -213,37 +218,16 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Carga un identificador: global (si es un `export var` top-level) o local.
+    /// Carga un identificador: una variable del scope (global, captura, local)
+    /// gana sobre el handle de un builtin/función/enum/struct con el mismo
+    /// nombre. Sin esto, `var len = Punto(1); len.x` cargaba el handle de la
+    /// función `len` en vez de la variable (el typeck sí resuelve el scope
+    /// primero, así que la variable quedaba con tipo correcto pero valor 0).
     pub(crate) fn emit_ident_load(&mut self, name: &str) {
         if name == "super" && self.current_class.is_some() {
             self.body.push(Instruction::LocalGet(0));
-        } else if let Some(&ti) = self.fn_table_idx.get(name) {
-            // Función CLS como valor -> handle [tabla_idx][capturas=0][nombre]
-            // con tag-bit (ptr<<1)|1. El nombre se guarda para fn_to_string.
-            let n = self.intern_string(&format!("<function {}>", name));
-            self.body.push(Instruction::I64Const(ti as i64));
-            self.emit_load_str(n);
-            self.body.push(Instruction::I64Const(0));
-            self.host.call(HostFn::FnHandle, &mut self.body);
-        } else if let Some((def_id, _)) = self.enum_defs.get(name) {
-            // Enum def como valor -> marker `def_id<<32 | 0xffff_ffff` (imprime `<enum X>`).
-            let v = ((*def_id as i64) << 32) | 0xffff_ffff;
-            self.body.push(Instruction::I64Const(v));
-        } else if self.struct_defs.contains_key(name) {
-            // Struct def como valor -> ptr 0 (marker: imprime `<function X>`).
-            self.body.push(Instruction::I64Const(0));
         } else if let Some(g) = self.globals.get(name) {
             self.body.push(Instruction::GlobalGet(*g));
-        } else if let Some(fidx) = self.intrinsic_handle_idx(name) {
-            // Intrinsic (print/input/now/...) como valor -> handle de función con
-            // índice de tabla sintético (negativo, estable por nombre): se
-            // imprime `<function print>` (paridad walker). Un var/global de
-            // usuario con el mismo nombre gana (shadowing).
-            let n = self.intern_string(&format!("<function {}>", name));
-            self.body.push(Instruction::I64Const(fidx));
-            self.emit_load_str(n);
-            self.body.push(Instruction::I64Const(0));
-            self.host.call(HostFn::FnHandle, &mut self.body);
         } else if let Some(&ci) = self.captures.get(name) {
             // Variable capturada (closure): el bloque guarda el valor (si no es
             // promovida) o el PTR al slot (si es promovida). Acceder al slot.
@@ -276,6 +260,35 @@ impl<'a> FuncEmitter<'a> {
                 align: 3,
                 memory_index: 0,
             }));
+        } else if self.locals.contains_key(name) {
+            // Local declarado (var/param/foreach): gana sobre builtins y
+            // funciones top-level con el mismo nombre.
+            let idx = self.local_for(name);
+            self.body.push(Instruction::LocalGet(idx));
+        } else if let Some(&ti) = self.fn_table_idx.get(name) {
+            // Función CLS como valor -> handle [tabla_idx][capturas=0][nombre]
+            // con tag-bit (ptr<<1)|1. El nombre se guarda para fn_to_string.
+            let n = self.intern_string(&format!("<function {}>", name));
+            self.body.push(Instruction::I64Const(ti as i64));
+            self.emit_load_str(n);
+            self.body.push(Instruction::I64Const(0));
+            self.host.call(HostFn::FnHandle, &mut self.body);
+        } else if let Some((def_id, _)) = self.enum_defs.get(name) {
+            // Enum def como valor -> marker `def_id<<32 | 0xffff_ffff` (imprime `<enum X>`).
+            let v = ((*def_id as i64) << 32) | 0xffff_ffff;
+            self.body.push(Instruction::I64Const(v));
+        } else if self.struct_defs.contains_key(name) {
+            // Struct def como valor -> ptr 0 (marker: imprime `<function X>`).
+            self.body.push(Instruction::I64Const(0));
+        } else if let Some(fidx) = self.intrinsic_handle_idx(name) {
+            // Intrinsic (print/input/now/...) como valor -> handle de función con
+            // índice de tabla sintético (negativo, estable por nombre): se
+            // imprime `<function print>` (paridad walker).
+            let n = self.intern_string(&format!("<function {}>", name));
+            self.body.push(Instruction::I64Const(fidx));
+            self.emit_load_str(n);
+            self.body.push(Instruction::I64Const(0));
+            self.host.call(HostFn::FnHandle, &mut self.body);
         } else {
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalGet(idx));
