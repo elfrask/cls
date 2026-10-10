@@ -250,6 +250,7 @@ pub fn load_import_modules_hooked(
             Statement::Import(i) => Some((i.path.clone(), i.span.clone())),
             Statement::FromImport(fi) => Some((fi.path.clone(), fi.span.clone())),
             Statement::Include(inc) => Some((inc.path.clone(), inc.span.clone())),
+            Statement::ExportList(el) => el.from.clone().map(|p| (p, el.span.clone())),
             _ => None,
         };
         if let Some((path, span)) = import {

@@ -76,6 +76,9 @@ pub struct TypeChecker {
     /// compile-time: solo la rama que matchea este target se procesa (mismo
     /// comportamiento que el emisor WASM y el resolver). Default: el host.
     target: Target,
+    /// Nombres exportados del módulo en proceso (detecta duplicados entre
+    /// `export { ... }`, exports directos y colisiones). Se reinicia por módulo.
+    exported_names: std::collections::HashSet<String>,
 }
 
 impl TypeChecker {
@@ -104,6 +107,7 @@ impl TypeChecker {
             const_symbols: std::collections::HashSet::new(),
             pre_registered: std::collections::HashSet::new(),
             target,
+            exported_names: std::collections::HashSet::new(),
         };
         // Registrar funciones built-in (core intrinsics) como CONSTANTES (no
         // redefinibles): print, input, args, toString, int, float, str, bool,
@@ -192,6 +196,7 @@ impl TypeChecker {
         // debe validar que la concatenacion es valida). Esto tambien define los
         // exports en scope[0] del modulo principal.
         for (_path, m) in prelude {
+            self.exported_names.clear();
             for stmt in &m.statements {
                 self.check_statement(stmt);
             }
@@ -209,6 +214,7 @@ impl TypeChecker {
         // pre-registrado. Y en `check_include` del modulo principal, saltar
         // exports que ya estan en scope[0] (porque ya fueron definidos por la
         // pasada del prelude).
+        self.exported_names.clear();
         for stmt in &module.statements {
             self.check_statement(stmt);
         }

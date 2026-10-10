@@ -194,6 +194,37 @@ impl<'a> FuncEmitter<'a> {
         l
     }
 
+    /// Resuelve el nombre real de una clase en `class_defs` a partir del nombre
+    /// que trae el type map. Las clases aplanadas bajo un prefijo de módulo
+    /// (`lib::Clase`) conservan el nombre LOCAL en los tipos del método (`me`,
+    /// params), así que si el nombre exacto no existe se busca `*::nombre`.
+    pub(crate) fn resolve_class_key(&self, name: &str) -> Option<String> {
+        if self.class_defs.contains_key(name) {
+            return Some(name.to_string());
+        }
+        let suffix = format!("::{}", name);
+        self.class_defs.keys().find(|k| k.ends_with(&suffix)).cloned()
+    }
+
+    /// Clave real de clase para una expresión objeto. `me` dentro de un método
+    /// usa la clase ACTUAL (la clave aplanada real, p.ej. `lib::Clase` o el
+    /// nombre renombrado por un import con alias), no el type map — que puede
+    /// conservar el nombre original de la declaración. Para otros objetos,
+    /// resuelve el tipo `Named` a la clave de `class_defs`.
+    pub(crate) fn object_class_key(&self, object: &Expression) -> Option<String> {
+        if let Expression::Identifier(n, _) = object {
+            if n == "me" {
+                if let Some(cur) = &self.current_class {
+                    return Some(cur.clone());
+                }
+            }
+        }
+        match self.types.get(&expr_span(object)) {
+            Some(Type::Named(n, _)) => self.resolve_class_key(n),
+            _ => None,
+        }
+    }
+
 
     /// Registra un type de función (para `call_indirect` de funciones como valor).
     pub(crate) fn register_func_type(&mut self, params: Vec<ValType>, results: Vec<ValType>) -> u32 {

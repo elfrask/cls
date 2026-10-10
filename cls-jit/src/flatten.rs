@@ -7,8 +7,15 @@
 //! aporta sus exports al merged. El dedup por hash de source evita traer el
 //! mismo módulo dos veces si llegó por rutas distintas (módulos duplicados en
 //! el sistema de archivos con el mismo contenido).
+//!
+//! Los exports provienen de DOS fuentes (aditivas):
+//! - `export <decl>` (prefijo clásico) — nombre exportado == nombre declarado.
+//! - `export { a, b as c, ns::member as X, ns::* } [from "path"]` — puede
+//!   renombrar, reexportar bindings importados y aplanar namespaces.
 
-use cls_core::frontend::ast::{Module as ClsModule, Statement, Visibility};
+use cls_core::frontend::ast::{
+    ExportRef, ExportSpec, Module as ClsModule, Statement, Visibility,
+};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
@@ -27,20 +34,20 @@ pub fn flatten_imports(module: &ClsModule, imports: &[(String, ClsModule)]) -> C
                 if let Some(m) = imports.iter().find(|(p, _)| *p == fi.path) {
                     for im in &fi.names {
                         let local = im.alias.clone().unwrap_or_else(|| im.name.clone());
-                        push_export(&mut statements, &m.1, &im.name, &local);
+                        push_export(&mut statements, &m.1, &im.name, &local, imports);
                     }
                 }
             }
             Statement::Include(inc) => {
                 if let Some(m) = imports.iter().find(|(p, _)| *p == inc.path) {
-                    push_all_exports(&mut statements, &m.1);
+                    push_all_exports(&mut statements, &m.1, imports);
                 }
             }
             Statement::Import(imp) => {
                 // `import "m" as x` -> exports bajo el prefijo `x::` (namespaced).
                 if let Some(m) = imports.iter().find(|(p, _)| *p == imp.path) {
                     let prefix = imp.alias.clone().unwrap_or_else(|| imp.path.clone());
-                    push_prefixed_exports(&mut statements, &m.1, &prefix);
+                    push_prefixed_exports(&mut statements, &m.1, &prefix, imports);
                 }
             }
             other => statements.push(other.clone()),
@@ -81,21 +88,21 @@ fn flatten_nested_imports(
                 if let Some(sub) = imports.iter().find(|(p, _)| *p == fi.path) {
                     for im in &fi.names {
                         let local = im.alias.clone().unwrap_or_else(|| im.name.clone());
-                        push_export(out, &sub.1, &im.name, &local);
+                        push_export(out, &sub.1, &im.name, &local, imports);
                     }
                     flatten_nested_imports(out, &sub.1, imports, seen);
                 }
             }
             Statement::Include(inc) => {
                 if let Some(sub) = imports.iter().find(|(p, _)| *p == inc.path) {
-                    push_all_exports(out, &sub.1);
+                    push_all_exports(out, &sub.1, imports);
                     flatten_nested_imports(out, &sub.1, imports, seen);
                 }
             }
             Statement::Import(imp) => {
                 if let Some(sub) = imports.iter().find(|(p, _)| *p == imp.path) {
                     let prefix = imp.alias.clone().unwrap_or_else(|| imp.path.clone());
-                    push_prefixed_exports(out, &sub.1, &prefix);
+                    push_prefixed_exports(out, &sub.1, &prefix, imports);
                     flatten_nested_imports(out, &sub.1, imports, seen);
                 }
             }
@@ -134,157 +141,242 @@ fn dedupe_statements(stmts: Vec<Statement>) -> Vec<Statement> {
     out
 }
 
-/// Inserta un export del módulo `m` con nombre `export_name`, renombrado a `local`.
-fn push_export(out: &mut Vec<Statement>, m: &ClsModule, export_name: &str, local: &str) {
+// ── Resolución de exports (directo + `export { ... }`) ──────────────────────
+
+/// Nombre exportado de un `ExportSpec` (`as` o el nombre del ref). `None` para
+/// `ns::*` (que expande a varios nombres).
+fn spec_exported_name(spec: &ExportSpec) -> Option<String> {
+    match &spec.reference {
+        ExportRef::Name(n) => Some(spec.exported.clone().unwrap_or_else(|| n.clone())),
+        ExportRef::NamespaceMember(_, _) => spec.exported.clone(),
+        ExportRef::NamespaceAll(_) => None,
+    }
+}
+
+/// Renombra la declaración a `name`.
+fn rename_stmt(stmt: &mut Statement, name: &str) {
+    match stmt {
+        Statement::FunctionDecl(f) => f.name = name.to_string(),
+        Statement::VarDecl(v) | Statement::ConstDecl(v) => v.name = name.to_string(),
+        Statement::EnumDecl(e) => e.name = name.to_string(),
+        Statement::ClassDecl(c) => c.name = name.to_string(),
+        Statement::StructureDecl(s) => s.name = name.to_string(),
+        Statement::InterfaceDecl(i) => i.name = name.to_string(),
+        Statement::TypeAlias(t) => t.name = name.to_string(),
+        _ => {}
+    }
+}
+
+/// Declaración local de `m` con ese nombre (cualquier visibilidad).
+fn local_decl(m: &ClsModule, name: &str) -> Option<Statement> {
+    for stmt in &m.statements {
+        let hit = match stmt {
+            Statement::FunctionDecl(f) => f.name == name,
+            Statement::VarDecl(v) | Statement::ConstDecl(v) => v.name == name,
+            Statement::EnumDecl(e) => e.name == name,
+            Statement::ClassDecl(c) => c.name == name,
+            Statement::StructureDecl(s) => s.name == name,
+            Statement::InterfaceDecl(i) => i.name == name,
+            Statement::TypeAlias(t) => t.name == name,
+            _ => false,
+        };
+        if hit {
+            return Some(stmt.clone());
+        }
+    }
+    None
+}
+
+/// Declaración con `export` directo y el nombre dado.
+fn direct_export_decl(m: &ClsModule, name: &str) -> Option<Statement> {
+    for stmt in &m.statements {
+        let hit = match stmt {
+            Statement::FunctionDecl(f) => f.visibility == Visibility::Export && f.name == name,
+            Statement::VarDecl(v) | Statement::ConstDecl(v) => {
+                v.visibility == Visibility::Export && v.name == name
+            }
+            Statement::EnumDecl(e) => e.visibility == Visibility::Export && e.name == name,
+            Statement::ClassDecl(c) => c.visibility == Visibility::Export && c.name == name,
+            Statement::StructureDecl(s) => s.visibility == Visibility::Export && s.name == name,
+            Statement::InterfaceDecl(i) => i.visibility == Visibility::Export && i.name == name,
+            Statement::TypeAlias(t) => t.visibility == Visibility::Export && t.name == name,
+            _ => false,
+        };
+        if hit {
+            return Some(stmt.clone());
+        }
+    }
+    None
+}
+
+/// Path del módulo importado con el alias `ns` dentro de `m`.
+fn resolve_ns_path_in(m: &ClsModule, ns: &str) -> Option<String> {
+    for stmt in &m.statements {
+        if let Statement::Import(imp) = stmt {
+            let alias = imp.alias.as_deref().unwrap_or(&imp.path);
+            if alias == ns {
+                return Some(imp.path.clone());
+            }
+        }
+    }
+    None
+}
+
+/// Declaración fuente del export `exported` del módulo `m` (sin renombrar).
+fn resolve_export_decl(
+    m: &ClsModule,
+    exported: &str,
+    imports: &[(String, ClsModule)],
+) -> Option<Statement> {
+    if let Some(s) = direct_export_decl(m, exported) {
+        return Some(s);
+    }
+    for stmt in &m.statements {
+        if let Statement::ExportList(el) = stmt {
+            for spec in &el.specs {
+                if let ExportRef::NamespaceAll(ns) = &spec.reference {
+                    if let Some(path) = resolve_ns_path_in(m, ns) {
+                        if let Some(sub) = imports.iter().find(|(p, _)| *p == path) {
+                            if let Some(s) = resolve_export_decl(&sub.1, exported, imports) {
+                                return Some(s);
+                            }
+                        }
+                    }
+                    continue;
+                }
+                if spec_exported_name(spec).as_deref() == Some(exported) {
+                    return resolve_spec_decl(m, &el.from, spec, imports);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Declaración fuente de un `ExportSpec`.
+fn resolve_spec_decl(
+    m: &ClsModule,
+    from: &Option<String>,
+    spec: &ExportSpec,
+    imports: &[(String, ClsModule)],
+) -> Option<Statement> {
+    if let Some(from) = from {
+        if let ExportRef::Name(local) = &spec.reference {
+            let sub = imports.iter().find(|(p, _)| p == from)?;
+            return resolve_export_decl(&sub.1, local, imports);
+        }
+        return None;
+    }
+    match &spec.reference {
+        ExportRef::Name(local) => resolve_local_decl(m, local, imports),
+        ExportRef::NamespaceMember(ns, member) => {
+            let path = resolve_ns_path_in(m, ns)?;
+            let sub = imports.iter().find(|(p, _)| *p == path)?;
+            resolve_export_decl(&sub.1, member, imports)
+        }
+        ExportRef::NamespaceAll(_) => None,
+    }
+}
+
+/// Declaración fuente de un ref simple: local o binding de `from-import`.
+fn resolve_local_decl(
+    m: &ClsModule,
+    name: &str,
+    imports: &[(String, ClsModule)],
+) -> Option<Statement> {
+    if let Some(s) = local_decl(m, name) {
+        return Some(s);
+    }
+    for stmt in &m.statements {
+        if let Statement::FromImport(fi) = stmt {
+            for im in &fi.names {
+                let local = im.alias.as_deref().unwrap_or(&im.name);
+                if local == name {
+                    let sub = imports.iter().find(|(p, _)| *p == fi.path)?;
+                    return resolve_export_decl(&sub.1, &im.name, imports);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Todos los nombres exportados de `m` (directos + `export { ... }`, con `ns::*`
+/// expandido a los exports del submódulo).
+fn all_exported_names(m: &ClsModule, imports: &[(String, ClsModule)]) -> Vec<String> {
+    let mut names = Vec::new();
     for stmt in &m.statements {
         match stmt {
-            Statement::FunctionDecl(f)
-                if f.visibility == Visibility::Export && f.name == export_name =>
-            {
-                let mut f2 = f.clone();
-                f2.name = local.to_string();
-                out.push(Statement::FunctionDecl(f2));
-                return;
+            Statement::FunctionDecl(f) if f.visibility == Visibility::Export => {
+                names.push(f.name.clone())
             }
-            Statement::VarDecl(v)
-                if v.visibility == Visibility::Export && v.name == export_name =>
+            Statement::VarDecl(v) | Statement::ConstDecl(v)
+                if v.visibility == Visibility::Export =>
             {
-                let mut v2 = v.clone();
-                v2.name = local.to_string();
-                out.push(Statement::VarDecl(v2));
-                return;
+                names.push(v.name.clone())
             }
-            Statement::ConstDecl(v)
-                if v.visibility == Visibility::Export && v.name == export_name =>
-            {
-                let mut v2 = v.clone();
-                v2.name = local.to_string();
-                out.push(Statement::ConstDecl(v2));
-                return;
+            Statement::EnumDecl(e) if e.visibility == Visibility::Export => names.push(e.name.clone()),
+            Statement::ClassDecl(c) if c.visibility == Visibility::Export => names.push(c.name.clone()),
+            Statement::StructureDecl(s) if s.visibility == Visibility::Export => {
+                names.push(s.name.clone())
             }
-            Statement::EnumDecl(e)
-                if e.visibility == Visibility::Export && e.name == export_name =>
-            {
-                let mut e2 = e.clone();
-                e2.name = local.to_string();
-                out.push(Statement::EnumDecl(e2));
-                return;
+            Statement::InterfaceDecl(i) if i.visibility == Visibility::Export => {
+                names.push(i.name.clone())
             }
-            Statement::ClassDecl(c)
-                if c.visibility == Visibility::Export && c.name == export_name =>
-            {
-                let mut c2 = c.clone();
-                c2.name = local.to_string();
-                out.push(Statement::ClassDecl(c2));
-                return;
-            }
-            Statement::StructureDecl(s)
-                if s.visibility == Visibility::Export && s.name == export_name =>
-            {
-                let mut s2 = s.clone();
-                s2.name = local.to_string();
-                out.push(Statement::StructureDecl(s2));
-                return;
-            }
-            Statement::InterfaceDecl(i)
-                if i.visibility == Visibility::Export && i.name == export_name =>
-            {
-                let mut i2 = i.clone();
-                i2.name = local.to_string();
-                out.push(Statement::InterfaceDecl(i2));
-                return;
-            }
-            Statement::TypeAlias(t)
-                if t.visibility == Visibility::Export && t.name == export_name =>
-            {
-                let mut t2 = t.clone();
-                t2.name = local.to_string();
-                out.push(Statement::TypeAlias(t2));
-                return;
+            Statement::TypeAlias(t) if t.visibility == Visibility::Export => names.push(t.name.clone()),
+            Statement::ExportList(el) => {
+                for spec in &el.specs {
+                    if let ExportRef::NamespaceAll(ns) = &spec.reference {
+                        if let Some(path) = resolve_ns_path_in(m, ns) {
+                            if let Some(sub) = imports.iter().find(|(p, _)| *p == path) {
+                                names.extend(all_exported_names(&sub.1, imports));
+                            }
+                        }
+                    } else if let Some(n) = spec_exported_name(spec) {
+                        names.push(n);
+                    }
+                }
             }
             _ => {}
         }
     }
+    names
+}
+
+/// Inserta el export `export_name` del módulo `m` renombrado a `local`.
+fn push_export(
+    out: &mut Vec<Statement>,
+    m: &ClsModule,
+    export_name: &str,
+    local: &str,
+    imports: &[(String, ClsModule)],
+) {
+    if let Some(mut s) = resolve_export_decl(m, export_name, imports) {
+        rename_stmt(&mut s, local);
+        out.push(s);
+    }
 }
 
 /// Inserta los exports del módulo `m` renombrados con prefijo `{prefix}::`.
-fn push_prefixed_exports(out: &mut Vec<Statement>, m: &ClsModule, prefix: &str) {
-    for stmt in &m.statements {
-        match stmt {
-            Statement::FunctionDecl(f) if f.visibility == Visibility::Export => {
-                let mut f2 = f.clone();
-                f2.name = format!("{}::{}", prefix, f.name);
-                out.push(Statement::FunctionDecl(f2));
-            }
-            Statement::VarDecl(v) if v.visibility == Visibility::Export => {
-                let mut v2 = v.clone();
-                v2.name = format!("{}::{}", prefix, v.name);
-                out.push(Statement::VarDecl(v2));
-            }
-            Statement::ConstDecl(v) if v.visibility == Visibility::Export => {
-                let mut v2 = v.clone();
-                v2.name = format!("{}::{}", prefix, v.name);
-                out.push(Statement::ConstDecl(v2));
-            }
-            Statement::EnumDecl(e) if e.visibility == Visibility::Export => {
-                let mut e2 = e.clone();
-                e2.name = format!("{}::{}", prefix, e.name);
-                out.push(Statement::EnumDecl(e2));
-            }
-            Statement::ClassDecl(c) if c.visibility == Visibility::Export => {
-                let mut c2 = c.clone();
-                c2.name = format!("{}::{}", prefix, c.name);
-                out.push(Statement::ClassDecl(c2));
-            }
-            Statement::StructureDecl(s) if s.visibility == Visibility::Export => {
-                let mut s2 = s.clone();
-                s2.name = format!("{}::{}", prefix, s.name);
-                out.push(Statement::StructureDecl(s2));
-            }
-            Statement::InterfaceDecl(i) if i.visibility == Visibility::Export => {
-                let mut i2 = i.clone();
-                i2.name = format!("{}::{}", prefix, i.name);
-                out.push(Statement::InterfaceDecl(i2));
-            }
-            Statement::TypeAlias(t) if t.visibility == Visibility::Export => {
-                let mut t2 = t.clone();
-                t2.name = format!("{}::{}", prefix, t.name);
-                out.push(Statement::TypeAlias(t2));
-            }
-            _ => {}
+fn push_prefixed_exports(
+    out: &mut Vec<Statement>,
+    m: &ClsModule,
+    prefix: &str,
+    imports: &[(String, ClsModule)],
+) {
+    for name in all_exported_names(m, imports) {
+        if let Some(mut s) = resolve_export_decl(m, &name, imports) {
+            rename_stmt(&mut s, &format!("{}::{}", prefix, name));
+            out.push(s);
         }
     }
 }
 
 /// Inserta todos los exports del módulo `m` (sin renombrar).
-fn push_all_exports(out: &mut Vec<Statement>, m: &ClsModule) {
-    for stmt in &m.statements {
-        match stmt {
-            Statement::FunctionDecl(f) if f.visibility == Visibility::Export => {
-                out.push(Statement::FunctionDecl(f.clone()));
-            }
-            Statement::VarDecl(v) if v.visibility == Visibility::Export => {
-                out.push(Statement::VarDecl(v.clone()));
-            }
-            Statement::ConstDecl(v) if v.visibility == Visibility::Export => {
-                out.push(Statement::ConstDecl(v.clone()));
-            }
-            Statement::EnumDecl(e) if e.visibility == Visibility::Export => {
-                out.push(Statement::EnumDecl(e.clone()));
-            }
-            Statement::ClassDecl(c) if c.visibility == Visibility::Export => {
-                out.push(Statement::ClassDecl(c.clone()));
-            }
-            Statement::StructureDecl(s) if s.visibility == Visibility::Export => {
-                out.push(Statement::StructureDecl(s.clone()));
-            }
-            Statement::InterfaceDecl(i) if i.visibility == Visibility::Export => {
-                out.push(Statement::InterfaceDecl(i.clone()));
-            }
-            Statement::TypeAlias(t) if t.visibility == Visibility::Export => {
-                out.push(Statement::TypeAlias(t.clone()));
-            }
-            _ => {}
+fn push_all_exports(out: &mut Vec<Statement>, m: &ClsModule, imports: &[(String, ClsModule)]) {
+    for name in all_exported_names(m, imports) {
+        if let Some(s) = resolve_export_decl(m, &name, imports) {
+            out.push(s);
         }
     }
 }

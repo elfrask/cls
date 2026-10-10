@@ -47,7 +47,7 @@ impl<'a> FuncEmitter<'a> {
         obj_ptr: u32,
         args: &[Expression],
     ) -> ClsResult<bool> {
-        let mut cur = Some(class_name.to_string());
+        let mut cur = self.resolve_class_key(class_name);
         while let Some(c) = cur {
             if let Some(info) = self.class_defs.get(&c) {
                 if let Some(slot) = info.methods.iter().position(|m| m == name) {
@@ -91,7 +91,7 @@ impl<'a> FuncEmitter<'a> {
     /// heredado se registra como `Base::__add`, no `Hijo::__add`). `None` si no.
     pub(crate) fn class_magic_method(&self, ty: &Option<Type>, name: &str) -> Option<String> {
         if let Some(Type::Named(cn, _)) = ty {
-            let mut cur = Some(cn.clone());
+            let mut cur = self.resolve_class_key(cn);
             while let Some(c) = cur {
                 if let Some(info) = self.class_defs.get(&c) {
                     if info.methods.iter().any(|m| m == name) {

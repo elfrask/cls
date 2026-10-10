@@ -1521,7 +1521,12 @@ impl Parser {
         };
         
         self.advance(); // consume modifier
-        
+
+        // `export { ... }` — lista de exportación (no un modifier sobre una decl).
+        if visibility == Visibility::Export && self.check_symbol(Symbol::LBrace) {
+            return self.parse_export_list();
+        }
+
         // Luego parsear la declaración
         let mut stmt = self.parse_statement()?;
         
@@ -1538,6 +1543,66 @@ impl Parser {
         }
         
         Ok(stmt)
+    }
+
+    /// `export { a, b as c, ns::member as X, ns::*, d } [from "path"]? ;`
+    ///
+    /// La lista es una fuente ADICIONAL de exports (el `export <decl>` sigue
+    /// funcionando igual). Referencias:
+    /// - `ident`: declaración local, binding de `from-import`, o export directo.
+    /// - `ns::member as X`: miembro de un módulo importado con namespace
+    ///   (`as` obligatorio).
+    /// - `ns::*`: todo el contenido de ese módulo, aplanado.
+    /// - `from "path"`: los `ref` se resuelven contra ese módulo (reexport).
+    fn parse_export_list(&mut self) -> ClsResult<Statement> {
+        let start = self.span();
+        self.expect_symbol(Symbol::LBrace)?;
+        let mut specs = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.check_symbol(Symbol::RBrace) {
+                break;
+            }
+            let reference = self.parse_export_ref()?;
+            let exported = if self.consume_keyword(Keyword::As) {
+                Some(self.expect_identifier()?)
+            } else {
+                None
+            };
+            specs.push(ExportSpec { reference, exported });
+            self.skip_newlines();
+            if !self.consume_symbol(Symbol::Comma) {
+                break;
+            }
+        }
+        self.skip_newlines();
+        self.expect_symbol(Symbol::RBrace)?;
+        let from = if self.consume_keyword(Keyword::From) {
+            Some(self.expect_string()?)
+        } else {
+            None
+        };
+        self.consume_symbol(Symbol::Semicolon);
+        Ok(Statement::ExportList(ExportListDecl {
+            specs,
+            from,
+            span: start,
+        }))
+    }
+
+    /// `ident` | `ns::member` | `ns::*`
+    fn parse_export_ref(&mut self) -> ClsResult<ExportRef> {
+        let name = self.expect_identifier()?;
+        if matches!(self.current_token, Token::Operator(Operator::ColonColon)) {
+            self.advance(); // consume '::'
+            if matches!(self.current_token, Token::Operator(Operator::Star)) {
+                self.advance();
+                return Ok(ExportRef::NamespaceAll(name));
+            }
+            let member = self.expect_member_name()?;
+            return Ok(ExportRef::NamespaceMember(name, member));
+        }
+        Ok(ExportRef::Name(name))
     }
 
     fn parse_cmx(&mut self) -> ClsResult<Statement> {

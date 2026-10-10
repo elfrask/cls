@@ -197,6 +197,9 @@ impl NameResolver {
             Statement::Include(_include) => {
                 // TODO: procesar include
             }
+            Statement::ExportList(_) => {
+                // `export { ... }` referencia símbolos ya definidos; no crea símbolos.
+            }
             Statement::When(w) => {
                 // `when` es compile-time: solo se procesa la rama que matchea
                 // el target del host. Antes del fix (dev-2) se iteraban TODAS

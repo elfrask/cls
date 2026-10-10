@@ -161,6 +161,7 @@ impl<'a> FuncEmitter<'a> {
             | Statement::Import(_)
             | Statement::FromImport(_)
             | Statement::Include(_)
+            | Statement::ExportList(_)
             | Statement::InterfaceDecl(_)
             | Statement::NamespaceDecl(_)
             | Statement::ModuleDecl(_)

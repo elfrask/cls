@@ -9,6 +9,7 @@ mod class_member;
 mod config_directive;
 mod elif_branch;
 mod enum_decl;
+mod export_list_decl;
 mod extension_decl;
 mod extension_kind;
 mod field_decl;
@@ -50,6 +51,7 @@ pub use class_member::*;
 pub use config_directive::*;
 pub use elif_branch::*;
 pub use enum_decl::*;
+pub use export_list_decl::*;
 pub use extension_decl::*;
 pub use extension_kind::*;
 pub use field_decl::*;
@@ -131,6 +133,8 @@ pub enum Statement {
     Import(ImportStatement),
     FromImport(FromImportStatement),
     Include(IncludeStatement),
+    /// `export { a, b as c } [from "path"];`
+    ExportList(ExportListDecl),
 
     // Nativo (FFI a librerías del sistema)
     Extension(ExtensionDecl),

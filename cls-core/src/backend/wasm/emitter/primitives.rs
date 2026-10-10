@@ -160,6 +160,10 @@ impl<'a> FuncEmitter<'a> {
             .get(&expr_span(&member.object))
             .cloned()
             .unwrap_or(Type::Any);
+        let obj_ty = match self.object_class_key(&member.object) {
+            Some(key) => Type::Named(key, vec![]),
+            None => obj_ty,
+        };
         match obj_ty {
             Type::Tuple(_) => match member.member.as_str() {
                 "join" => { self.emit_tuple_join(member, c)?; return Ok(true); },
@@ -342,6 +346,10 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
             Type::Named(name, _) => {
+                let name = match self.resolve_class_key(&name) {
+                    Some(k) => k,
+                    None => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
+                };
                 if let Some(info) = self.class_defs.get(name.as_str()) {
                     let method_slot = info
                         .methods

@@ -74,9 +74,68 @@ export enum Color { Rojo, Verde, Azul, };
 ```
 
 Declaraciones exportables: `export function`, `export var`/`const`,
-`export class`, `export enum`, `export structure`, `export extension`.
+`export class`, `export enum`, `export structure`, `export interface`,
+`export alias`, `export extension`.
 El JIT aplana el módulo importado en el módulo único y solo los símbolos
 marcados `export` quedan visibles bajo el prefijo del alias.
+
+### `export { ... };` (lista de exportación)
+
+Forma adicional (estilo TypeScript) para exportar símbolos ya declarados
+(locales o importados), con renombrado opcional. Es **aditiva**: el
+`export <decl>` sigue funcionando igual.
+
+```clx
+class Caja { ... }              # sin prefijo `export`
+const VERSION = "1.0";
+function helper() -> int { return 1; };
+
+export { Caja, VERSION, helper as help };
+```
+
+Los elementos pueden ser:
+
+| Forma | Origen | `as` |
+|-------|--------|:----:|
+| `export { Foo }` | declaración local, binding de `from-import`, o export directo | opcional |
+| `export { Foo as Bar }` | idem, renombrado | opcional |
+| `export { ns::Foo as Bar }` | miembro de `import "..." as ns` | **obligatorio** |
+| `export { ns::* }` | todo el contenido de `ns`, aplanado | — |
+| `export { a, b as c } from "mod"` | reexport desde otro módulo | opcional |
+
+Reglas:
+- La lista no puede estar vacía.
+- No se puede exportar el mismo nombre dos veces (incluye colisiones de
+  `ns::*` con locales o exports directos).
+- `ns::member` requiere `as` (la exportación es plana).
+
+Módulos índice (barrel): un `.clsx` que solo reexporta otros módulos.
+
+```clx
+# framework/index.clsx
+import "framework/router" as router;
+import "framework/request" as request;
+
+export { router::* };                       # todo router, aplanado
+export { request::Request as Request };     # un miembro, renombrado
+```
+
+```clx
+# framework/reexport.clsx (forma `from`)
+export { Router, Request } from "framework/router";
+```
+
+El consumidor importa con la sintaxis ya existente:
+
+```clx
+from "framework/index" import Router, Request;
+```
+
+> Nota (limitación conocida): el **renombrado `as` de un tipo nombrado**
+> (`export { Clase as Otra }`, `enum As E`) hereda la limitación del aplanado:
+> el type map conserva el nombre original de la declaración. El `as` funciona
+> para funciones y variables/constantes. Las clases/enums/structs/interfaces se
+> reexportan con su **mismo nombre** (`export { Caja }`, `ns::Caja as Caja`).
 
 ## Resolución de módulos
 

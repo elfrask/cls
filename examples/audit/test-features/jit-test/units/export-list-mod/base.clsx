@@ -1,0 +1,24 @@
+# Base: mezcla de export directo y `export { ... }` promoviendo locales.
+
+export function saludo(nombre: String) -> String {
+    return "Hola " + nombre;
+};
+
+class Caja {
+    public var valor: int;
+    function main(v: int) { me.valor = v; }
+    function get() -> int { return me.valor; }
+};
+
+const VERSION = "1.0";
+
+enum Color { Rojo, Verde, Azul };
+
+alias Punto = (Int, Int);
+
+interface Saludador {
+    saludar(n: String): String,
+};
+
+# Promociona locales (clase/const/enum/alias/interface) sin prefijo `export`.
+export { Caja, VERSION, Color, Punto, Saludador };

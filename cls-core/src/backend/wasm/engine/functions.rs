@@ -92,8 +92,33 @@ impl<'a> Engine<'a> {
     }
 
 
+    /// Separa `{clase}::{metodo}` para métodos de clase. La clase puede contener
+    /// `::` (namespaced: `lib::Clase`), así que se toma el prefijo más largo que
+    /// sea una clase conocida (`rfind("::")`). `None` si no es un método de una
+    /// clase conocida (p.ej. `mod::fn`).
+    fn split_class_method(&self, name: &str) -> Option<(String, String)> {
+        let idx = name.rfind("::")?;
+        let class = &name[..idx];
+        let method = &name[idx + 2..];
+        if self.class_defs.contains_key(class) {
+            Some((class.to_string(), method.to_string()))
+        } else {
+            None
+        }
+    }
+
+
     pub(crate) fn compile_function(&mut self, f: &FunctionDecl) -> ClsResult<Function> {
         let (param_types, ret) = self.func_types[&f.name].clone();
+        // Métodos de clase: `me` (la instancia) es el primer param implícito.
+        // La clase puede contener `::` (namespaced: `lib::Clase`), así que se
+        // resuelve como el prefijo más largo que sea una clase conocida.
+        // (se calcula ANTES de crear el emitter, que toma prestado `self` mut.)
+        let (class_name, method_name) = match self.split_class_method(&f.name) {
+            Some((c, m)) => (Some(c), Some(m)),
+            None => (None, None),
+        };
+        let is_method = class_name.is_some();
         let mut fe = FuncEmitter::new(
             self.types,
             HostCaller {
@@ -125,32 +150,17 @@ impl<'a> Engine<'a> {
             self.exceptions,
             &self.intrinsics,
         );
-        // Métodos de clase: `me` (la instancia) es el primer param implícito.
-        // `Clase::metodo` es método si el prefijo es una clase conocida; si no,
-        // es un símbolo de mí³dulo importado (`mod::fn`, sin `me`).
-
-        let is_method = f
-            .name
-            .split("::")
-            .next()
-            .map(|c| self.class_defs.contains_key(c))
-            .unwrap_or(false);
         // Un método static NO recibe `me` ni establece la clase actual (así que
         // `me.` dentro de él da error de variable no definida, paridad walker).
         let is_static = f
             .modifiers
             .contains(&crate::frontend::ast::FunctionModifier::Static);
-        let current_class = if is_method && !is_static {
-            f.name.split("::").next().map(|s| s.to_string())
+        fe.current_class = if is_method && !is_static {
+            class_name.clone()
         } else {
             None
         };
-        fe.current_class = current_class;
-        fe.current_method = if is_method {
-            f.name.split("::").nth(1).map(|s| s.to_string())
-        } else {
-            None
-        };
+        fe.current_method = method_name;
         fe.current_fn_span = f.span.clone();
         // Retorno declarado (frontera de `return`): convertir Shape→hashmap si
         // el retorno es dinámico y el valor es un shape contiguo.

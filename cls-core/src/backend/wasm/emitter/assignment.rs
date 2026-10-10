@@ -405,8 +405,13 @@ impl<'a> FuncEmitter<'a> {
                     }
                 }
                 let obj_ty = self.types.get(&expr_span(&m.object)).cloned();
+                let obj_ty = match self.object_class_key(&m.object) {
+                    Some(key) => Some(Type::Named(key, vec![])),
+                    None => obj_ty,
+                };
                 if let Some(Type::Named(name, _)) = obj_ty {
-                    if let Some(info) = self.class_defs.get(name.as_str()) {
+                    if let Some(key) = self.resolve_class_key(&name) {
+                        let info = self.class_defs.get(&key).unwrap();
                         if is_compound(op) {
                             return Err(crate::error::ClsError::CompileError(
                                 "Operadores compuestos sobre campos de clase no soportados en el JIT (B3)".to_string(),
@@ -420,20 +425,20 @@ impl<'a> FuncEmitter<'a> {
                                 crate::error::ClsError::compile_at(
                                     &format!(
                                         "El campo '{}' no existe en la clase '{}'",
-                                        m.member, name
+                                        m.member, key
                                     ),
                                     &m.span,
                                 )
                             })?;
                         let (_, _t, w, off, vis) = &info.fields[fidx];
                         // Escritura: private/protected desde fuera, o readonly.
-                        self.check_field_access(name.as_str(), m.member.as_str(), *vis, &m.span)?;
+                        self.check_field_access(key.as_str(), m.member.as_str(), *vis, &m.span)?;
                         if vis.is_readonly() {
                             // readonly: solo escritura interna (me.campo).
                             let inside = self
                                 .current_class
                                 .as_deref()
-                                .map(|c| c == name.as_str())
+                                .map(|c| c == key.as_str())
                                 .unwrap_or(false);
                             if !inside {
                                 return Err(crate::error::ClsError::compile_at(

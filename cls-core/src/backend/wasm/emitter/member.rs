@@ -257,6 +257,10 @@ impl<'a> FuncEmitter<'a> {
             .get(&expr_span(&m.object))
             .cloned()
             .unwrap_or(Type::Any);
+        let obj_ty = match self.object_class_key(&m.object) {
+            Some(key) => Type::Named(key, vec![]),
+            None => obj_ty,
+        };
         self.emit_expression(&m.object)?;
         match obj_ty {
             Type::String => match m.member.as_str() {
@@ -366,7 +370,8 @@ impl<'a> FuncEmitter<'a> {
                     // Carga con el ancho C del campo (i16 -> 2 bytes + extend).
                     fw.push_load(&mut self.body, w);
                     Ok(())
-                } else if let Some(info) = self.class_defs.get(name.as_str()) {
+                } else if let Some(key) = self.resolve_class_key(&name) {
+                    let info = self.class_defs.get(&key).unwrap();
                     let fidx = info
                         .fields
                         .iter()
@@ -375,14 +380,14 @@ impl<'a> FuncEmitter<'a> {
                             crate::error::ClsError::compile_at(
                                 &format!(
                                     "El campo '{}' no existe en la clase '{}'",
-                                    m.member, name
+                                    m.member, key
                                 ),
                                 &m.span,
                             )
                         })?;
                     let (_, _t, w, off, vis) = &info.fields[fidx];
                     // Validar visibilidad: private/protected desde fuera.
-                    self.check_field_access(name.as_str(), m.member.as_str(), *vis, &m.span)?;
+                    self.check_field_access(key.as_str(), m.member.as_str(), *vis, &m.span)?;
                     let w = *w;
                     let off = *off;
                     self.body.push(Instruction::I64Const(off));

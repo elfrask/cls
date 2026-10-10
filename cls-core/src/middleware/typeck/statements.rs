@@ -7,6 +7,13 @@ impl TypeChecker {
 
 
     pub(crate) fn check_statement(&mut self, stmt: &Statement) -> Type {
+        // Registrar el nombre de un export directo (`export function/class/...`)
+        // para detectar colisiones con `export { ... }` en el mismo módulo.
+        if self.scopes.len() == 1 {
+            if let Some(name) = self.direct_export_name(stmt) {
+                self.exported_names.insert(name);
+            }
+        }
         match stmt {
             Statement::VarDecl(v) => self.check_var_decl(v, false),
             Statement::ConstDecl(v) => self.check_var_decl(v, true),
@@ -119,6 +126,7 @@ impl TypeChecker {
             Statement::Import(imp) => self.check_import(imp),
             Statement::FromImport(fi) => self.check_from_import(fi),
             Statement::Include(inc) => self.check_include(inc),
+            Statement::ExportList(el) => self.check_export_list(el),
             Statement::When(w) => {
                 // `when` es compile-time: solo se procesa la rama que matchea
                 // el target del host. Antes del fix (dev-2) se iteraban TODAS

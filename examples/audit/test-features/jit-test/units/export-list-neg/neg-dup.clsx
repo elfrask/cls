@@ -1,0 +1,4 @@
+class A { };
+class B { };
+export { A as X, B as X };
+function main(args: String[]) -> int { return 0; };
