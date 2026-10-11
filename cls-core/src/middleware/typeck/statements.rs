@@ -143,58 +143,6 @@ impl TypeChecker {
                 }
                 Type::Void
             }
-            Statement::Extension(e) => {
-                // Funciones/structs/variables nativas se registran como símbolos.
-                for decl in &e.declarations {
-                    match decl {
-                        NativeDecl::Function(f) => {
-                            let mut param_tys = Vec::new();
-                            for p in &f.params {
-                                let t = p.type_ann.as_ref()
-                                    .map(|ta| self.resolve_type_annotation(ta))
-                                    .unwrap_or(Type::Any);
-                                param_tys.push(t);
-                            }
-                            let ret = f.return_type.as_ref()
-                                .map(|ta| self.resolve_type_annotation(ta))
-                                .unwrap_or(Type::Void);
-                            // Retorno de FFI estructurado: CArray/CRecord son
-                            // punteros al layout, pero CLS los usa como
-                            // Array/Record indexable (len(), [i], has()).
-                            // CStruct queda opaco (Named); `Struct(Nombre)`
-                            // referencia un `structure` declarado -> se tipa
-                            // como el struct (acceso a campos por offsets).
-                            let ret = match ret {
-                                Type::Named(n, _) if n == "CArray" => {
-                                    Type::Array(Box::new(Type::Any))
-                                }
-                                Type::Named(n, _) if n == "CRecord" => {
-                                    Type::Record(Box::new(Type::String), Box::new(Type::Any))
-                                }
-                                Type::Named(n, ref args) if n == "Struct" => {
-                                    if let Some(Type::Named(sn, _)) = args.first() {
-                                        Type::Named(sn.clone(), vec![])
-                                    } else {
-                                        Type::Named("Struct".to_string(), args.clone())
-                                    }
-                                }
-                                r => r,
-                            };
-                            self.define(&f.name, Type::Fun(param_tys, Box::new(ret)));
-                        }
-                        NativeDecl::Structure(s) => {
-                            self.define(&s.name, Type::Named(s.name.clone(), vec![]));
-                        }
-                        NativeDecl::Var(v) => {
-                            let t = v.type_ann.as_ref()
-                                .map(|ta| self.resolve_type_annotation(ta))
-                                .unwrap_or(Type::Any);
-                            self.define(&v.name, t);
-                        }
-                    }
-                }
-                Type::Void
-            }
             Statement::Config(_) | Statement::Meta(_) => Type::Void,
             Statement::Cmx(c) => {
                 self.check_expression(&Expression::Cmx(c.clone()));

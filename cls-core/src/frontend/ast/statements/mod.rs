@@ -10,7 +10,6 @@ mod config_directive;
 mod elif_branch;
 mod enum_decl;
 mod export_list_decl;
-mod extension_decl;
 mod extension_kind;
 mod field_decl;
 mod for_each_statement;
@@ -27,7 +26,6 @@ mod interface_field;
 mod meta_directive;
 mod module_decl;
 mod namespace_decl;
-mod native_decl;
 mod native_info;
 mod parameter;
 mod signature_decl;
@@ -53,7 +51,6 @@ pub use config_directive::*;
 pub use elif_branch::*;
 pub use enum_decl::*;
 pub use export_list_decl::*;
-pub use extension_decl::*;
 pub use extension_kind::*;
 pub use field_decl::*;
 pub use for_each_statement::*;
@@ -70,7 +67,6 @@ pub use interface_field::*;
 pub use meta_directive::*;
 pub use module_decl::*;
 pub use namespace_decl::*;
-pub use native_decl::*;
 pub use native_info::*;
 pub use parameter::*;
 pub use signature_decl::*;
@@ -137,9 +133,6 @@ pub enum Statement {
     Include(IncludeStatement),
     /// `export { a, b as c } [from "path"];`
     ExportList(ExportListDecl),
-
-    // Nativo (FFI a librerías del sistema)
-    Extension(ExtensionDecl),
 
     // Directiva multi-entorno (implementaciones por plataforma/arquitectura)
     When(WhenBlock),

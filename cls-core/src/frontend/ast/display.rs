@@ -165,7 +165,6 @@ impl fmt::Display for Statement {
             Statement::FromImport(fi) => f.write_fmt(format_args!("from \"{}\" import ...", fi.path)),
             Statement::Include(i) => f.write_fmt(format_args!("include \"{}\"", i.path)),
             Statement::ExportList(_) => f.write_str("export { ... }"),
-            Statement::Extension(e) => f.write_fmt(format_args!("extension \"{}\" as {}", e.library, e.kind.name())),
             Statement::When(w) => f.write_fmt(format_args!("when {{ {} rama(s) }}", w.branches.len())),
             Statement::Expression(e) => f.write_fmt(format_args!("expr: {:?}", e)),
             Statement::Config(c) => f.write_fmt(format_args!("#config({} = {})", c.key, c.value)),

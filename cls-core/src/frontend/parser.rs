@@ -43,8 +43,8 @@ impl Parser {
         let mut statements = Vec::new();
 
         while !self.is_eof() {
-            match self.parse_statement() {
-                Ok(stmt) => statements.push(stmt),
+            match self.parse_statement_multi() {
+                Ok(mut stmts) => statements.append(&mut stmts),
                 Err(e) => {
                     // Intentar recuperarse del error
                     self.recover();
@@ -55,9 +55,25 @@ impl Parser {
         }
 
         Ok(Module {
-            statements: desugar_extensions(statements),
+            statements,
             span: Span::new(1, 1, 1, 1),
         })
+    }
+
+    /// Parsea sentencias y devuelve **una o más**: un bloque
+    /// `extension "lib" { ... }` se desenvuelve al vuelo en sus declaraciones
+    /// nativas (su equivalente nativo del lenguaje), de modo que el AST nunca
+    /// contiene `Statement::Extension`. El resto del pipeline (typeck, flatten,
+    /// emisor, módulos) las trata como `function`/`structure`/`var` normales
+    /// marcadas con `native`.
+    fn parse_statement_multi(&mut self) -> ClsResult<Vec<Statement>> {
+        while matches!(self.current_token, Token::Newline) {
+            self.advance();
+        }
+        if matches!(self.current_token, Token::Keyword(Keyword::Extension)) {
+            return self.parse_extension_decl();
+        }
+        Ok(vec![self.parse_statement()?])
     }
 
     fn parse_statement(&mut self) -> ClsResult<Statement> {
@@ -115,9 +131,6 @@ impl Parser {
             Token::Keyword(Keyword::Import) => self.parse_import(),
             Token::Keyword(Keyword::From) => self.parse_from_import(),
             Token::Keyword(Keyword::Include) => self.parse_include(),
-
-            // Nativo (FFI)
-            Token::Keyword(Keyword::Extension) => self.parse_extension_decl(),
 
             // Directiva multi-entorno
             Token::Keyword(Keyword::When) => self.parse_when(),
@@ -1238,8 +1251,7 @@ impl Parser {
         let mut body = Vec::new();
         while !self.check_symbol(Symbol::RBrace) && !self.is_eof() {
             self.skip_newlines();
-            let stmt = self.parse_statement()?;
-            body.push(stmt);
+            body.append(&mut self.parse_statement_multi()?);
         }
         
         self.expect_symbol(Symbol::RBrace)?;
@@ -1261,8 +1273,7 @@ impl Parser {
         let mut body = Vec::new();
         while !self.check_symbol(Symbol::RBrace) && !self.is_eof() {
             self.skip_newlines();
-            let stmt = self.parse_statement()?;
-            body.push(stmt);
+            body.append(&mut self.parse_statement_multi()?);
         }
         
         self.expect_symbol(Symbol::RBrace)?;
@@ -1336,7 +1347,9 @@ impl Parser {
     }
 
     /// `extension "<lib>" [as <Tipo>] { function ...; structure ...; var ...; }` - FFI nativo.
-    fn parse_extension_decl(&mut self) -> ClsResult<Statement> {
+    /// Devuelve **directamente** las declaraciones nativas (su equivalente nativo
+    /// del lenguaje): `FunctionDecl`/`StructureDecl`/`VarDecl` marcadas con `native`.
+    fn parse_extension_decl(&mut self) -> ClsResult<Vec<Statement>> {
         self.expect_keyword(Keyword::Extension)?;
         let library = self.expect_string()?;
         let kind = if self.consume_keyword(Keyword::As) {
@@ -1360,7 +1373,7 @@ impl Parser {
                     if let Statement::FunctionDecl(mut f) = stmt {
                         if is_export { f.visibility = Visibility::Export; }
                         f.native = Some(NativeInfo { library: library.clone(), kind: kind.clone(), symbol: f.name.clone() });
-                        declarations.push(NativeDecl::Function(f));
+                        declarations.push(Statement::FunctionDecl(f));
                     }
                 }
                 Token::Keyword(Keyword::Structure) => {
@@ -1368,7 +1381,7 @@ impl Parser {
                     if let Statement::StructureDecl(mut s) = stmt {
                         if is_export { s.visibility = Visibility::Export; }
                         s.native = Some(NativeInfo { library: library.clone(), kind: kind.clone(), symbol: s.name.clone() });
-                        declarations.push(NativeDecl::Structure(s));
+                        declarations.push(Statement::StructureDecl(s));
                     }
                 }
                 Token::Keyword(Keyword::Var) | Token::Keyword(Keyword::Let) => {
@@ -1376,7 +1389,7 @@ impl Parser {
                     if let Statement::VarDecl(mut v) = stmt {
                         if is_export { v.visibility = Visibility::Export; }
                         v.native = Some(NativeInfo { library: library.clone(), kind: kind.clone(), symbol: v.name.clone() });
-                        declarations.push(NativeDecl::Var(v));
+                        declarations.push(Statement::VarDecl(v));
                     }
                 }
                 _ => {
@@ -1389,12 +1402,7 @@ impl Parser {
         }
         self.expect_symbol(Symbol::RBrace)?;
         self.consume_symbol(Symbol::Semicolon);
-        Ok(Statement::Extension(ExtensionDecl {
-            library,
-            kind,
-            declarations,
-            span: self.span(),
-        }))
+        Ok(declarations)
     }
 
     /// Directiva multi-entorno: `when <cond> { declaraciones }`.
@@ -1693,8 +1701,7 @@ impl Parser {
             if self.check_symbol(Symbol::RBrace) {
                 break;
             }
-            let stmt = self.parse_statement()?;
-            statements.push(stmt);
+            statements.append(&mut self.parse_statement_multi()?);
         }
         
         self.expect_symbol(Symbol::RBrace)?;
@@ -2667,49 +2674,6 @@ fn parse_expr_from_str(expr_str: &str) -> ClsResult<Expression> {
         ClsError::SyntaxError(format!("Error en expresión interpolada: {}", e))
     })?;
     Ok(expr)
-}
-
-/// Desugar de `extension "lib" { ... }`: sus declaraciones nativas (funciones,
-/// structs, vars) pasan a ser **declaraciones top-level marcadas con `native`**
-/// — su equivalente nativo del lenguaje. Así el resto del pipeline (typeck,
-/// flatten, emisor, exports/imports) las trata uniformemente, sin una capa
-/// especial para FFI. Recursivo en `when` y en `module`/`namespace`.
-pub(crate) fn desugar_extensions(stmts: Vec<Statement>) -> Vec<Statement> {
-    let mut out = Vec::new();
-    for stmt in stmts {
-        match stmt {
-            Statement::Extension(e) => {
-                for d in e.declarations {
-                    match d {
-                        NativeDecl::Function(f) => out.push(Statement::FunctionDecl(f)),
-                        NativeDecl::Structure(s) => out.push(Statement::StructureDecl(s)),
-                        NativeDecl::Var(v) => out.push(Statement::VarDecl(v)),
-                    }
-                }
-            }
-            Statement::When(mut w) => {
-                for b in &mut w.branches {
-                    desugar_block(&mut b.block);
-                }
-                out.push(Statement::When(w));
-            }
-            Statement::ModuleDecl(mut m) => {
-                m.body = desugar_extensions(m.body);
-                out.push(Statement::ModuleDecl(m));
-            }
-            Statement::NamespaceDecl(mut n) => {
-                n.body = desugar_extensions(n.body);
-                out.push(Statement::NamespaceDecl(n));
-            }
-            other => out.push(other),
-        }
-    }
-    out
-}
-
-fn desugar_block(b: &mut Block) {
-    let stmts = std::mem::take(&mut b.statements);
-    b.statements = desugar_extensions(stmts);
 }
 
 #[cfg(test)]

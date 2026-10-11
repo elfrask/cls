@@ -365,7 +365,6 @@ pub fn shift_stmt(s: &mut Statement, offset: u32) {
         Statement::ExportList(e) => {
             e.span = shift_span(e.span.clone(), offset);
         }
-        Statement::Extension(_) => {}
         Statement::When(w) => {
             for b in &mut w.branches {
                 shift_block(&mut b.block, offset);

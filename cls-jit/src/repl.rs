@@ -186,7 +186,6 @@ impl ReplSession {
                 | Statement::Import(_)
                 | Statement::FromImport(_)
                 | Statement::Include(_)
-                | Statement::Extension(_)
                 | Statement::When(_)
                 | Statement::Config(_)
                 | Statement::Meta(_) => other.push(stmt.clone()),
