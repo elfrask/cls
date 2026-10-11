@@ -1,0 +1,5 @@
+# Barrel: reexporta funciones FFI de otro modulo (miembros de namespace).
+
+import "ffi-export-mod/ffi" as ffi;
+
+export { ffi::strlen as strlen, ffi::atoi as atoi };

@@ -221,7 +221,7 @@ impl TypeChecker {
             None => return Vec::new(),
         };
         let mut names = Vec::new();
-        for stmt in &m.statements {
+        for stmt in self.effective_stmt_refs(m) {
             match stmt {
                 Statement::FunctionDecl(f) if f.visibility == Visibility::Export => {
                     names.push(f.name.clone());
@@ -259,6 +259,22 @@ impl TypeChecker {
                                     names.push(n);
                                 }
                             }
+                        }
+                    }
+                }
+                Statement::Extension(e) => {
+                    for d in &e.declarations {
+                        match d {
+                            NativeDecl::Function(f) if f.visibility == Visibility::Export => {
+                                names.push(f.name.clone());
+                            }
+                            NativeDecl::Structure(s) if s.visibility == Visibility::Export => {
+                                names.push(s.name.clone());
+                            }
+                            NativeDecl::Var(v) if v.visibility == Visibility::Export => {
+                                names.push(v.name.clone());
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -425,7 +441,8 @@ impl TypeChecker {
                 _ => {}
             }
         }
-        None
+        // FFI: declaraciones nativas exportadas (`export function` en extension).
+        self.native_decl_type(m, name, true)
     }
 
 
@@ -457,7 +474,8 @@ impl TypeChecker {
                 _ => {}
             }
         }
-        None
+        // FFI: declaraciones nativas (extension) — pueden promoverse con `export { }`.
+        self.native_decl_type(m, name, false)
     }
 
 
@@ -466,6 +484,100 @@ impl TypeChecker {
             .map(|ta| self.resolve_type_annotation(ta))
             .or_else(|| v.value.as_ref().map(|val| self.infer_literal_type(val)))
             .unwrap_or(Type::Any)
+    }
+
+
+    /// Tipo de una función nativa (`extension`) — mismo mapeo que el arm
+    /// `Statement::Extension` de `check_statement` (`CArray`/`CRecord`/`Struct`).
+    fn native_fn_type(&mut self, f: &FunctionDecl) -> Type {
+        let param_tys: Vec<Type> = f
+            .params
+            .iter()
+            .map(|p| {
+                p.type_ann
+                    .as_ref()
+                    .map(|ta| self.resolve_type_annotation(ta))
+                    .unwrap_or(Type::Any)
+            })
+            .collect();
+        let ret = f
+            .return_type
+            .as_ref()
+            .map(|ta| self.resolve_type_annotation(ta))
+            .unwrap_or(Type::Void);
+        let ret = match ret {
+            Type::Named(n, _) if n == "CArray" => Type::Array(Box::new(Type::Any)),
+            Type::Named(n, _) if n == "CRecord" => {
+                Type::Record(Box::new(Type::String), Box::new(Type::Any))
+            }
+            Type::Named(n, ref args) if n == "Struct" => {
+                if let Some(Type::Named(sn, _)) = args.first() {
+                    Type::Named(sn.clone(), vec![])
+                } else {
+                    Type::Named("Struct".to_string(), args.clone())
+                }
+            }
+            r => r,
+        };
+        Type::Fun(param_tys, Box::new(ret))
+    }
+
+
+    /// Statements "efectivos" del módulo para el sistema de módulos: los de
+    /// nivel superior + los de las ramas de `when` que matchean el target
+    /// (donde vive el FFI cross-OS). Las `extension` se incluyen tal cual.
+    fn effective_stmt_refs<'a>(&self, m: &'a Module) -> Vec<&'a Statement> {
+        fn walk<'a>(target: &Target, stmts: &'a [Statement], out: &mut Vec<&'a Statement>) {
+            for s in stmts {
+                match s {
+                    Statement::When(w) => {
+                        for b in &w.branches {
+                            if target.matches(&b.cond) {
+                                walk(target, &b.block.statements, out);
+                            }
+                        }
+                    }
+                    _ => out.push(s),
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(&self.target, &m.statements, &mut out);
+        out
+    }
+
+
+    /// Tipo de una declaración nativa de `extension` por nombre (función,
+    /// struct o var). `require_export` filtra por `Visibility::Export`.
+    fn native_decl_type(&mut self, m: &Module, name: &str, require_export: bool) -> Option<Type> {
+        for s in self.effective_stmt_refs(m) {
+            if let Statement::Extension(e) = s {
+                for d in &e.declarations {
+                    match d {
+                        NativeDecl::Function(f)
+                            if f.name == name
+                                && (!require_export || f.visibility == Visibility::Export) =>
+                        {
+                            return Some(self.native_fn_type(f));
+                        }
+                        NativeDecl::Structure(sd)
+                            if sd.name == name
+                                && (!require_export || sd.visibility == Visibility::Export) =>
+                        {
+                            return Some(Type::Named(sd.name.clone(), vec![]));
+                        }
+                        NativeDecl::Var(v)
+                            if v.name == name
+                                && (!require_export || v.visibility == Visibility::Export) =>
+                        {
+                            return Some(self.var_decl_type(v));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        None
     }
 
 

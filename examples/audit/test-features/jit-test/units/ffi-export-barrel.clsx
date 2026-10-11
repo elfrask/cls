@@ -1,0 +1,7 @@
+from "ffi-export-mod/barrel" import strlen, atoi;
+
+function main(args: String[]) -> int {
+    print("barrel strlen:", strlen("mundo"));
+    print("barrel atoi:", atoi("99"));
+    return 0;
+};

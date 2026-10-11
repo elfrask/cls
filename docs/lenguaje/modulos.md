@@ -137,6 +137,35 @@ from "framework/index" import Router, Request;
 > para funciones y variables/constantes. Las clases/enums/structs/interfaces se
 > reexportan con su **mismo nombre** (`export { Caja }`, `ns::Caja as Caja`).
 
+### FFI en el sistema de módulos
+
+Las declaraciones de `extension` (funciones nativas) son tratadas como el
+**equivalente nativo del lenguaje** (`function`), así que participan del sistema
+de módulos con las mismas reglas:
+
+```clx
+# ffi.clsx (cross-OS)
+when (os: windows) {
+    extension "msvcrt.dll" as C { export function strlen(s: CString) -> CInt; };
+};
+when (os: linux) {
+    extension "libc.so.6" as C { export function strlen(s: CString) -> CInt; };
+};
+```
+
+```clx
+# consumidor
+from "ffi" import strlen;          # import normal
+import "ffi" as f;                 # namespacing: f::strlen(...)
+# o reexport (barrel):  export { f::strlen as strlen };
+```
+
+Funciona: `export function ffiFn`, `export { ffiFn }` (promoción), reexport por
+namespace/`from`, y el patrón `when`+`extension` cross-OS (se transporta al
+módulo fusionado). **Limitación conocida**: el renombrado `as` de una función
+nativa (`export { strlen as len }`) aún no está soportado (requiere un wrapper
+con la ABI de retorno).
+
 ## Resolución de módulos
 
 El `ModuleResolver` del runtime consulta en orden:

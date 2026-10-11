@@ -106,9 +106,28 @@ fn flatten_nested_imports(
                     flatten_nested_imports(out, &sub.1, imports, seen);
                 }
             }
+            // FFI: las declaraciones `extension` (y su `when` cross-OS) del
+            // módulo importado deben llegar al módulo fusionado para que el
+            // emisor registre los imports nativos. Es el equivalente de exponer
+            // una función nativa como una `function` del lenguaje.
+            Statement::Extension(_) => out.push(stmt.clone()),
+            Statement::When(w) => {
+                if w.branches.iter().any(|b| block_has_extension(&b.block)) {
+                    out.push(stmt.clone());
+                }
+            }
             _ => {}
         }
     }
+}
+
+/// ¿El bloque (o un `when` anidado) declara `extension` (FFI)?
+fn block_has_extension(b: &cls_core::frontend::ast::Block) -> bool {
+    b.statements.iter().any(|s| match s {
+        Statement::Extension(_) => true,
+        Statement::When(w) => w.branches.iter().any(|br| block_has_extension(&br.block)),
+        _ => false,
+    })
 }
 
 /// Elimina declaraciones duplicadas por nombre (función/var/const/enum/clase/
@@ -127,6 +146,13 @@ fn dedupe_statements(stmts: Vec<Statement>) -> Vec<Statement> {
             Statement::StructureDecl(s) => Some(format!("struct:{}", s.name)),
             Statement::InterfaceDecl(i) => Some(format!("iface:{}", i.name)),
             Statement::TypeAlias(t) => Some(format!("alias:{}", t.name)),
+            // FFI: dedup de bloques `extension`/`when` idénticos (el mismo
+            // símbolo nativo cargado por rutas distintas del grafo).
+            Statement::Extension(_) | Statement::When(_) => {
+                let mut h = DefaultHasher::new();
+                format!("{:?}", stmt).hash(&mut h);
+                Some(format!("ffi:{:x}", h.finish()))
+            }
             _ => None,
         };
         match key {
