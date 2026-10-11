@@ -27,6 +27,11 @@ impl<'a> Engine<'a> {
 
 
     pub(crate) fn collect_function(&mut self, f: &FunctionDecl) -> ClsResult<()> {
+        // Declaración nativa (FFI): se emite como import en `emit`, no como
+        // función CLS. No se registra en `func_types`/`func_indexes`.
+        if f.native.is_some() {
+            return Ok(());
+        }
         let mut params: Vec<Type> = Vec::new();
         let mut defaults: Vec<Option<Expression>> = Vec::new();
         for p in &f.params {

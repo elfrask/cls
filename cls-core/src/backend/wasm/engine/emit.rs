@@ -189,98 +189,73 @@ impl<'a> Engine<'a> {
                 );
             }
         }
-        // Recolectar extensiones -> imports `env.<sym>__<sig>@<lib>`.
-        // `when`-aware: respeta las ramas activas (dev-2 fix).
+        // Recolectar declaraciones nativas (FFI) -> imports
+        // `env.<symbol>__<ret><params>@<lib>`. Tras el desugar son `FunctionDecl`
+        // top-level marcadas con `native` (su equivalente nativo del lenguaje);
+        // los `structure` nativos ya se recolectaron arriba (layout C ABI).
+        // `when`-aware: respeta las ramas activas del target.
+        // Dedup por import name: una native materializada con rename (`aInt` ->
+        // símbolo `strlen`) y la original transportada comparten el mismo import.
+        let mut native_import_idx: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
         for stmt in self.effective_statements(&module.statements) {
-            if let Statement::Extension(e) = stmt {
-                // Pasada 1: structures declaradas en `extension` -> `struct_defs`
-                // (antes de las funciones: los params `Struct(Nombre)`/`CStruct`/
-                // el nombre del struct necesitan su layout C ya registrado).
-                for d in &e.declarations {
-                    if let NativeDecl::Structure(s) = d {
-                        if !self.struct_defs.contains_key(&s.name) {
-                            let mut fields = Vec::new();
-                            let mut kinds = Vec::new();
-                            for f in &s.fields {
-                                let t = annotation_to_type(&f.type_ann);
-                                let w = was_type(&t)?;
-                                kinds.push(field_width(&f.type_ann, &t));
-                                fields.push((f.name.clone(), t, w));
-                            }
-                            let (offsets, total) = c_struct_layout(&kinds);
-                            self.struct_defs.insert(
-                                s.name.clone(),
-                                StructInfo {
-                                    def_id: 0,
-                                    fields,
-                                    offsets,
-                                    kinds,
-                                    total,
-                                },
-                            );
-                        }
-                    }
+            if let Statement::FunctionDecl(f) = stmt {
+                let Some(info) = &f.native else { continue };
+                let mut params_was = Vec::new();
+                let mut params_code = String::new();
+                for p in &f.params {
+                    let t = p
+                        .type_ann
+                        .as_ref()
+                        .map(annotation_to_type)
+                        .unwrap_or(Type::Int);
+                    // Struct por valor (CStruct / Struct(Nombre) / el nombre del
+                    // structure): letter 'S' -> el emisor le pasa al DLL la DATA
+                    // (base+16, layout C).
+                    let (c, w) = self.native_param_letter(&t);
+                    params_was.push(was_to_val(w));
+                    params_code.push(c);
                 }
-                // Pasada 2: funciones -> import `env.<sym>__<ret><params>@<lib>`,
-                // con el marshalling de structs (letters 'S').
-                for d in &e.declarations {
-                    if let NativeDecl::Function(f) = d {
-                        let mut params_was = Vec::new();
-                        let mut params_code = String::new();
-                        for p in &f.params {
-                            let t = p
-                                .type_ann
-                                .as_ref()
-                                .map(annotation_to_type)
-                                .unwrap_or(Type::Int);
-                            // Struct por valor (CStruct / Struct(Nombre) / el
-                            // nombre del structure): letter 'S' -> el emisor le
-                            // pasa al DLL la DATA (base+16, layout C).
-                            let (c, w) = self.native_param_letter(&t);
-                            params_was.push(was_to_val(w));
-                            params_code.push(c);
-                        }
-                        let ret_t = f
-                            .return_type
-                            .as_ref()
-                            .map(annotation_to_type)
-                            .unwrap_or(Type::Void);
-                        // Struct de extensión como retorno (`-> Punto`): se
-                        // tipa como Named(Punto); el rcode es 'S' + el tamaño
-                        // total en bytes, para que el wrapper copie el bloque
-                        // exacto del buffer del DLL (con campos angostos el
-                        // layout C es menor que 16 + n*8).
-                        let ret_total = match &ret_t {
-                            Type::Named(n, _) => {
-                                self.struct_defs.get(n.as_str()).map(|i| i.total)
-                            }
-                            _ => None,
-                        };
-                        let (rc, rw) = match ret_total {
-                            Some(_) => ('S', WasTy::I64),
-                            None => ty_code(&ret_t),
-                        };
-                        let results = if rc == 'v' {
-                            vec![]
-                        } else {
-                            vec![was_to_val(rw)]
-                        };
-                        let rc_code = match ret_total {
-                            Some(total) => format!("S{}", total),
-                            None => rc.to_string(),
-                        };
-                        let import_name =
-                            format!("{}__{}{}@{}", f.name, rc_code, params_code, e.library);
-                        let tidx = self.register_func_type(params_was, results);
-                        let idx = self.func_count;
-                        self.func_count += 1;
-                        self.imports_sec
-                            .import("env", &import_name, EntityType::Function(tidx));
-                        self.native_indexes.insert(f.name.clone(), idx);
-                        self.native_ret.insert(f.name.clone(), rc);
-                        self.native_params.insert(f.name.clone(), params_code.chars().collect());
-                    }
-                }
+                let ret_t = f
+                    .return_type
+                    .as_ref()
+                    .map(annotation_to_type)
+                    .unwrap_or(Type::Void);
+                // Struct nativo como retorno (`-> Punto`): rcode 'S' + tamaño
+                // total en bytes (el wrapper copia el bloque exacto del DLL).
+                let ret_total = match &ret_t {
+                    Type::Named(n, _) => self.struct_defs.get(n.as_str()).map(|i| i.total),
+                    _ => None,
+                };
+                let (rc, rw) = match ret_total {
+                    Some(_) => ('S', WasTy::I64),
+                    None => ty_code(&ret_t),
+                };
+                let results = if rc == 'v' {
+                    vec![]
+                } else {
+                    vec![was_to_val(rw)]
+                };
+                let rc_code = match ret_total {
+                    Some(total) => format!("S{}", total),
+                    None => rc.to_string(),
+                };
+                let import_name =
+                    format!("{}__{}{}@{}", info.symbol, rc_code, params_code, info.library);
+                let idx = if let Some(&existing) = native_import_idx.get(&import_name) {
+                    existing
+                } else {
+                    let tidx = self.register_func_type(params_was, results);
+                    let idx = self.func_count;
+                    self.func_count += 1;
+                    self.imports_sec
+                        .import("env", &import_name, EntityType::Function(tidx));
+                    native_import_idx.insert(import_name.clone(), idx);
+                    idx
+                };
+                self.native_indexes.insert(f.name.clone(), idx);
+                self.native_ret.insert(f.name.clone(), rc);
+                self.native_params.insert(f.name.clone(), params_code.chars().collect());
             }
         }
 
@@ -702,7 +677,7 @@ impl<'a> Engine<'a> {
                     modifiers: vec![],
                     span: a.span,
                     type_params: vec![],
-                    is_native: false,
+                    native: None,
                 });
             }
         }

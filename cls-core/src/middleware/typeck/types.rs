@@ -94,7 +94,31 @@ impl TypeChecker {
         let ret = f.return_type.as_ref()
             .map(|ta| self.resolve_type_annotation(ta))
             .unwrap_or(Type::Void);
+        // Función nativa (FFI): el retorno usa el mapeo C (`CArray`/`CRecord`/
+        // `Struct(Nombre)`), igual que el emisor.
+        let ret = if f.native.is_some() { self.map_native_ret(ret) } else { ret };
         Type::Fun(params, Box::new(ret))
+    }
+
+
+    /// Mapeo del retorno de una función nativa: `CArray`/`CRecord` son punteros
+    /// al layout indexables como Array/Record; `Struct(Nombre)` referencia un
+    /// `structure` declarado (acceso a campos por offsets).
+    pub(crate) fn map_native_ret(&self, ret: Type) -> Type {
+        match ret {
+            Type::Named(n, _) if n == "CArray" => Type::Array(Box::new(Type::Any)),
+            Type::Named(n, _) if n == "CRecord" => {
+                Type::Record(Box::new(Type::String), Box::new(Type::Any))
+            }
+            Type::Named(n, ref args) if n == "Struct" => {
+                if let Some(Type::Named(sn, _)) = args.first() {
+                    Type::Named(sn.clone(), vec![])
+                } else {
+                    Type::Named("Struct".to_string(), args.clone())
+                }
+            }
+            r => r,
+        }
     }
 
 

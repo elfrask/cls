@@ -223,6 +223,7 @@ impl ReplSession {
                 is_readonly: false,
                 pool_only: true,
                 pool_seed: true,
+                native: None,
             }));
         }
         // Reasignaciones a vars hoisted (nombre, span del valor): B2 las
@@ -538,6 +539,7 @@ impl ReplSession {
                 is_readonly: v.is_readonly,
                 pool_only: true,
                 pool_seed: false,
+                native: None,
             };
             hoisted.push(if *is_const {
                 Statement::ConstDecl(decl)
@@ -646,7 +648,7 @@ fn synthesize_main(body: Vec<Statement>) -> FunctionDecl {
         modifiers: vec![],
         span,
         type_params: vec![],
-        is_native: false,
+        native: None,
     }
 }
 

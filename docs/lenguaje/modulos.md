@@ -139,9 +139,11 @@ from "framework/index" import Router, Request;
 
 ### FFI en el sistema de módulos
 
-Las declaraciones de `extension` (funciones nativas) son tratadas como el
-**equivalente nativo del lenguaje** (`function`), así que participan del sistema
-de módulos con las mismas reglas:
+Las declaraciones de `extension` se **desenvuelven** a su equivalente nativo del
+lenguaje: cada `function`/`structure`/`var` del bloque se convierte en una
+declaración top-level marcada como nativa (con su librería/`kind`/símbolo). Así
+participan del sistema de módulos con las **mismas reglas** que cualquier
+`function` — sin un camino paralelo para FFI.
 
 ```clx
 # ffi.clsx (cross-OS)
@@ -157,14 +159,15 @@ when (os: linux) {
 # consumidor
 from "ffi" import strlen;          # import normal
 import "ffi" as f;                 # namespacing: f::strlen(...)
-# o reexport (barrel):  export { f::strlen as strlen };
+# reexport (barrel):   export { f::strlen as strlen };
+# rename:              export { strlen as len };   # el símbolo C se conserva
 ```
 
-Funciona: `export function ffiFn`, `export { ffiFn }` (promoción), reexport por
-namespace/`from`, y el patrón `when`+`extension` cross-OS (se transporta al
-módulo fusionado). **Limitación conocida**: el renombrado `as` de una función
-nativa (`export { strlen as len }`) aún no está soportado (requiere un wrapper
-con la ABI de retorno).
+Funciona: `export function ffiFn`, `export { ffiFn }` (promoción), rename `as`
+(para funciones nativas y cross-OS), reexport por namespace/`from`, e `include`.
+El `when`+`extension` cross-OS se transporta al módulo fusionado (el emisor elige
+la rama por target). La ABI (firma, `library`, símbolo C real) no cambia con el
+rename: el nombre exportado es solo el binding del lenguaje.
 
 ## Resolución de módulos
 

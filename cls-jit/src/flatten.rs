@@ -17,7 +17,7 @@ use cls_core::frontend::ast::{
     ExportRef, ExportSpec, Module as ClsModule, Statement, Visibility,
 };
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
 /// Fusiona los imports aplanados en el módulo principal: reemplaza los
@@ -82,6 +82,10 @@ fn flatten_nested_imports(
     if !seen.insert(h.finish()) {
         return;
     }
+    // Renombres de declaraciones nativas definidos por el `export { ... }` del
+    // propio módulo (`export { strlen as len }`): al transportar los nativos se
+    // aplica el nombre exportado, para que el consumidor use `len`.
+    let renames = native_renames(m);
     for stmt in &m.statements {
         match stmt {
             Statement::FromImport(fi) => {
@@ -106,14 +110,36 @@ fn flatten_nested_imports(
                     flatten_nested_imports(out, &sub.1, imports, seen);
                 }
             }
-            // FFI: las declaraciones `extension` (y su `when` cross-OS) del
-            // módulo importado deben llegar al módulo fusionado para que el
-            // emisor registre los imports nativos. Es el equivalente de exponer
-            // una función nativa como una `function` del lenguaje.
-            Statement::Extension(_) => out.push(stmt.clone()),
+            // FFI (ya desugarizado a declaraciones nativas): las declaraciones
+            // nativas del módulo importado (y su `when` cross-OS) deben llegar
+            // al módulo fusionado para que el emisor registre los imports
+            // nativos. Es el equivalente de exponer una `function` nativa.
+            Statement::FunctionDecl(f) if f.native.is_some() => {
+                let mut s = stmt.clone();
+                if let Some(new) = renames.get(&f.name) {
+                    rename_stmt(&mut s, new);
+                }
+                out.push(s);
+            }
+            Statement::StructureDecl(sd) if sd.native.is_some() => {
+                let mut s = stmt.clone();
+                if let Some(new) = renames.get(&sd.name) {
+                    rename_stmt(&mut s, new);
+                }
+                out.push(s);
+            }
+            Statement::VarDecl(v) if v.native.is_some() => {
+                let mut s = stmt.clone();
+                if let Some(new) = renames.get(&v.name) {
+                    rename_stmt(&mut s, new);
+                }
+                out.push(s);
+            }
             Statement::When(w) => {
-                if w.branches.iter().any(|b| block_has_extension(&b.block)) {
-                    out.push(stmt.clone());
+                if w.branches.iter().any(|b| block_has_native(&b.block)) {
+                    let mut s = stmt.clone();
+                    apply_native_renames(&mut s, &renames);
+                    out.push(s);
                 }
             }
             _ => {}
@@ -121,11 +147,61 @@ fn flatten_nested_imports(
     }
 }
 
-/// ¿El bloque (o un `when` anidado) declara `extension` (FFI)?
-fn block_has_extension(b: &cls_core::frontend::ast::Block) -> bool {
+/// Renombres `local -> exportado` de declaraciones nativas declarados por el
+/// `export { local as exportado }` del módulo.
+fn native_renames(m: &ClsModule) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for stmt in &m.statements {
+        if let Statement::ExportList(el) = stmt {
+            if el.from.is_some() {
+                continue;
+            }
+            for spec in &el.specs {
+                if let (ExportRef::Name(local), Some(exported)) = (&spec.reference, &spec.exported) {
+                    map.insert(local.clone(), exported.clone());
+                }
+            }
+        }
+    }
+    map
+}
+
+/// Aplica los renombres a las declaraciones nativas dentro de un `when`.
+fn apply_native_renames(stmt: &mut Statement, renames: &HashMap<String, String>) {
+    if let Statement::When(w) = stmt {
+        for b in &mut w.branches {
+            for s in &mut b.block.statements {
+                match s {
+                    Statement::FunctionDecl(f) if f.native.is_some() => {
+                        if let Some(new) = renames.get(&f.name) {
+                            f.name = new.clone();
+                        }
+                    }
+                    Statement::StructureDecl(sd) if sd.native.is_some() => {
+                        if let Some(new) = renames.get(&sd.name) {
+                            sd.name = new.clone();
+                        }
+                    }
+                    Statement::VarDecl(v) if v.native.is_some() => {
+                        if let Some(new) = renames.get(&v.name) {
+                            v.name = new.clone();
+                        }
+                    }
+                    Statement::When(_) => apply_native_renames(s, renames),
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+/// ¿El bloque (o un `when` anidado) declara algo nativo (FFI)?
+fn block_has_native(b: &cls_core::frontend::ast::Block) -> bool {
     b.statements.iter().any(|s| match s {
-        Statement::Extension(_) => true,
-        Statement::When(w) => w.branches.iter().any(|br| block_has_extension(&br.block)),
+        Statement::FunctionDecl(f) => f.native.is_some(),
+        Statement::StructureDecl(sd) => sd.native.is_some(),
+        Statement::VarDecl(v) => v.native.is_some(),
+        Statement::When(w) => w.branches.iter().any(|br| block_has_native(&br.block)),
         _ => false,
     })
 }
@@ -146,12 +222,12 @@ fn dedupe_statements(stmts: Vec<Statement>) -> Vec<Statement> {
             Statement::StructureDecl(s) => Some(format!("struct:{}", s.name)),
             Statement::InterfaceDecl(i) => Some(format!("iface:{}", i.name)),
             Statement::TypeAlias(t) => Some(format!("alias:{}", t.name)),
-            // FFI: dedup de bloques `extension`/`when` idénticos (el mismo
-            // símbolo nativo cargado por rutas distintas del grafo).
-            Statement::Extension(_) | Statement::When(_) => {
+            // FFI: dedup de bloques `when` (cross-OS) idénticos cargados por
+            // rutas distintas del grafo.
+            Statement::When(_) => {
                 let mut h = DefaultHasher::new();
                 format!("{:?}", stmt).hash(&mut h);
-                Some(format!("ffi:{:x}", h.finish()))
+                Some(format!("when:{:x}", h.finish()))
             }
             _ => None,
         };
@@ -194,14 +270,16 @@ fn rename_stmt(stmt: &mut Statement, name: &str) {
 }
 
 /// Declaración local de `m` con ese nombre (cualquier visibilidad).
+/// Las declaraciones nativas se excluyen: se transportan aparte (con su
+/// `when`/renombres), no se materializan por `push_*`.
 fn local_decl(m: &ClsModule, name: &str) -> Option<Statement> {
     for stmt in &m.statements {
         let hit = match stmt {
-            Statement::FunctionDecl(f) => f.name == name,
-            Statement::VarDecl(v) | Statement::ConstDecl(v) => v.name == name,
+            Statement::FunctionDecl(f) => f.name == name && f.native.is_none(),
+            Statement::VarDecl(v) | Statement::ConstDecl(v) => v.name == name && v.native.is_none(),
             Statement::EnumDecl(e) => e.name == name,
             Statement::ClassDecl(c) => c.name == name,
-            Statement::StructureDecl(s) => s.name == name,
+            Statement::StructureDecl(s) => s.name == name && s.native.is_none(),
             Statement::InterfaceDecl(i) => i.name == name,
             Statement::TypeAlias(t) => t.name == name,
             _ => false,
@@ -217,13 +295,17 @@ fn local_decl(m: &ClsModule, name: &str) -> Option<Statement> {
 fn direct_export_decl(m: &ClsModule, name: &str) -> Option<Statement> {
     for stmt in &m.statements {
         let hit = match stmt {
-            Statement::FunctionDecl(f) => f.visibility == Visibility::Export && f.name == name,
+            Statement::FunctionDecl(f) => {
+                f.visibility == Visibility::Export && f.name == name && f.native.is_none()
+            }
             Statement::VarDecl(v) | Statement::ConstDecl(v) => {
-                v.visibility == Visibility::Export && v.name == name
+                v.visibility == Visibility::Export && v.name == name && v.native.is_none()
             }
             Statement::EnumDecl(e) => e.visibility == Visibility::Export && e.name == name,
             Statement::ClassDecl(c) => c.visibility == Visibility::Export && c.name == name,
-            Statement::StructureDecl(s) => s.visibility == Visibility::Export && s.name == name,
+            Statement::StructureDecl(s) => {
+                s.visibility == Visibility::Export && s.name == name && s.native.is_none()
+            }
             Statement::InterfaceDecl(i) => i.visibility == Visibility::Export && i.name == name,
             Statement::TypeAlias(t) => t.visibility == Visibility::Export && t.name == name,
             _ => false,

@@ -92,6 +92,12 @@ impl TypeChecker {
         let return_type = func.return_type.as_ref()
             .map(|t| self.resolve_type_annotation(t))
             .unwrap_or(Type::Void);
+        // Función nativa (FFI): mapeo C del retorno (`CArray`/`CRecord`/`Struct`).
+        let return_type = if func.native.is_some() {
+            self.map_native_ret(return_type)
+        } else {
+            return_type
+        };
 
         let param_types: Vec<(String, Type)> = func.params.iter()
             .map(|p| {

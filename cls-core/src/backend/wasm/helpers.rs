@@ -1,4 +1,4 @@
-﻿//! Helpers sueltos del backend WASM (Fase 1: extraido de wasm/mod.rs).
+//! Helpers sueltos del backend WASM (Fase 1: extraido de wasm/mod.rs).
 
 use crate::error::Span;
 use crate::frontend::ast::*;
@@ -22,7 +22,7 @@ pub(super) fn noop_main_decl() -> FunctionDecl {
         modifiers: vec![],
         span,
         type_params: vec![],
-        is_native: false,
+        native: None,
     }
 }
 /// Tipo CLS de un literal (fallback cuando el type map no lo tiene).

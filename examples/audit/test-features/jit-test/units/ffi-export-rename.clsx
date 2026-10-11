@@ -1,0 +1,7 @@
+from "ffi-export-mod/ren" import len, aInt;
+
+function main(args: String[]) -> int {
+    print("len:", len("hola"));
+    print("aInt:", aInt("42"));
+    return 0;
+};

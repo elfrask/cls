@@ -55,7 +55,7 @@ impl Parser {
         }
 
         Ok(Module {
-            statements,
+            statements: desugar_extensions(statements),
             span: Span::new(1, 1, 1, 1),
         })
     }
@@ -193,6 +193,7 @@ impl Parser {
             is_readonly: false,
             pool_only: false,
             pool_seed: false,
+            native: None,
         }))
     }
 
@@ -225,6 +226,7 @@ impl Parser {
             is_readonly: false,
             pool_only: false,
             pool_seed: false,
+            native: None,
         }))
     }
 
@@ -249,12 +251,12 @@ impl Parser {
             None
         };
 
-        // Body (o declaración nativa si hay ';' sin '{')
-        let (body, is_native) = if self.check_symbol(Symbol::Semicolon) {
+        // Body (o declaración sin body si hay ';' — p.ej. símbolo nativo).
+        let body = if self.check_symbol(Symbol::Semicolon) {
             self.advance(); // consume ';'
-            (Block { statements: Vec::new(), span: self.span() }, true)
+            Block { statements: Vec::new(), span: self.span() }
         } else {
-            (self.parse_block()?, false)
+            self.parse_block()?
         };
 
         self.consume_symbol(Symbol::Semicolon);
@@ -268,7 +270,7 @@ impl Parser {
             modifiers: Vec::new(),
             span: fn_span,
             type_params,
-            is_native,
+            native: None,
         }))
     }
 
@@ -304,7 +306,7 @@ impl Parser {
             modifiers: Vec::new(),
             span: self.span(),
             type_params: Vec::new(),
-            is_native: false,
+            native: None,
         }))
     }
 
@@ -1081,6 +1083,7 @@ impl Parser {
             fields,
             span: self.span(),
             visibility: Visibility::Default,
+            native: None,
         }))
     }
 
@@ -1356,6 +1359,7 @@ impl Parser {
                     let stmt = self.parse_function_decl()?;
                     if let Statement::FunctionDecl(mut f) = stmt {
                         if is_export { f.visibility = Visibility::Export; }
+                        f.native = Some(NativeInfo { library: library.clone(), kind: kind.clone(), symbol: f.name.clone() });
                         declarations.push(NativeDecl::Function(f));
                     }
                 }
@@ -1363,6 +1367,7 @@ impl Parser {
                     let stmt = self.parse_structure_decl()?;
                     if let Statement::StructureDecl(mut s) = stmt {
                         if is_export { s.visibility = Visibility::Export; }
+                        s.native = Some(NativeInfo { library: library.clone(), kind: kind.clone(), symbol: s.name.clone() });
                         declarations.push(NativeDecl::Structure(s));
                     }
                 }
@@ -1370,6 +1375,7 @@ impl Parser {
                     let stmt = self.parse_var_decl()?;
                     if let Statement::VarDecl(mut v) = stmt {
                         if is_export { v.visibility = Visibility::Export; }
+                        v.native = Some(NativeInfo { library: library.clone(), kind: kind.clone(), symbol: v.name.clone() });
                         declarations.push(NativeDecl::Var(v));
                     }
                 }
@@ -2661,6 +2667,49 @@ fn parse_expr_from_str(expr_str: &str) -> ClsResult<Expression> {
         ClsError::SyntaxError(format!("Error en expresión interpolada: {}", e))
     })?;
     Ok(expr)
+}
+
+/// Desugar de `extension "lib" { ... }`: sus declaraciones nativas (funciones,
+/// structs, vars) pasan a ser **declaraciones top-level marcadas con `native`**
+/// — su equivalente nativo del lenguaje. Así el resto del pipeline (typeck,
+/// flatten, emisor, exports/imports) las trata uniformemente, sin una capa
+/// especial para FFI. Recursivo en `when` y en `module`/`namespace`.
+pub(crate) fn desugar_extensions(stmts: Vec<Statement>) -> Vec<Statement> {
+    let mut out = Vec::new();
+    for stmt in stmts {
+        match stmt {
+            Statement::Extension(e) => {
+                for d in e.declarations {
+                    match d {
+                        NativeDecl::Function(f) => out.push(Statement::FunctionDecl(f)),
+                        NativeDecl::Structure(s) => out.push(Statement::StructureDecl(s)),
+                        NativeDecl::Var(v) => out.push(Statement::VarDecl(v)),
+                    }
+                }
+            }
+            Statement::When(mut w) => {
+                for b in &mut w.branches {
+                    desugar_block(&mut b.block);
+                }
+                out.push(Statement::When(w));
+            }
+            Statement::ModuleDecl(mut m) => {
+                m.body = desugar_extensions(m.body);
+                out.push(Statement::ModuleDecl(m));
+            }
+            Statement::NamespaceDecl(mut n) => {
+                n.body = desugar_extensions(n.body);
+                out.push(Statement::NamespaceDecl(n));
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+fn desugar_block(b: &mut Block) {
+    let stmts = std::mem::take(&mut b.statements);
+    b.statements = desugar_extensions(stmts);
 }
 
 #[cfg(test)]
