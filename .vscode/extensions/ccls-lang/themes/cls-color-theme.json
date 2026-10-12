@@ -85,9 +85,24 @@
         "keyword.operator.logical.ccls",
         "keyword.operator.logical.single.ccls",
         "keyword.self.ccls",
-        "keyword.operator.arrow.ccls"
+        "keyword.operator.arrow.ccls",
+        "keyword.config.ccls"
       ],
       "settings": { "foreground": "#c586c0" }
+    },
+    {
+      "name": "Operadores CLS",
+      "scope": [
+        "keyword.operator.namespace.ccls",
+        "keyword.operator.comparison.ccls",
+        "keyword.operator.arithmetic.ccls",
+        "keyword.operator.assignment.ccls",
+        "keyword.operator.assignment.compound.ccls",
+        "keyword.operator.power.ccls",
+        "keyword.operator.range.ccls",
+        "keyword.operator.spread.ccls"
+      ],
+      "settings": { "foreground": "#d19a66" }
     },
     {
       "name": "CMX: tags y atributos",

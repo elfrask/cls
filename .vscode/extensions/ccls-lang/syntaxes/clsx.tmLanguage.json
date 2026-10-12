@@ -161,8 +161,11 @@
           "begin": "<",
           "end": ">",
           "patterns": [
+            { "include": "#keywords" },
             { "include": "#types" },
             { "include": "#generic" },
+            { "include": "#operators" },
+            { "include": "#constants" },
             {
               "name": "entity.name.type.ccls",
               "match": "\\b([A-Z][A-Za-z0-9_]*)\\b"
@@ -227,9 +230,12 @@
           "begin": "(?<=:)(?=[^\\S\\n]*[A-Za-z_(])",
           "end": "(?=\\s*(=|,|\\)|;|\\{|->))",
           "patterns": [
+            { "include": "#keywords" },
             { "include": "#types" },
             { "include": "#generic" },
             { "include": "#fun-type" },
+            { "include": "#operators" },
+            { "include": "#constants" },
             {
               "name": "entity.name.type.ccls",
               "match": "\\b([A-Z][A-Za-z0-9_]*)\\b"
@@ -266,9 +272,12 @@
             "1": { "name": "keyword.operator.arrow.ccls" }
           },
           "patterns": [
+            { "include": "#keywords" },
             { "include": "#types" },
             { "include": "#generic" },
             { "include": "#fun-type" },
+            { "include": "#operators" },
+            { "include": "#constants" },
             {
               "name": "entity.name.type.ccls",
               "match": "\\b([A-Z][A-Za-z0-9_]*)\\b"
@@ -290,6 +299,9 @@
           "begin": "\\bfun\\s*\\(",
           "end": "(?=\\s*->|;|,|\\))",
           "patterns": [
+            { "include": "#keywords" },
+            { "include": "#operators" },
+            { "include": "#constants" },
             { "include": "#type-annotations" },
             { "include": "#types" }
           ]
