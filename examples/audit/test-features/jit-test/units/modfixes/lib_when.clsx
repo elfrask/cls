@@ -1,0 +1,10 @@
+# Lib de regresion: `export structure` dentro de `when`.
+when (os: windows) {
+    export structure W {
+        a: i32,
+    };
+};
+
+export function make_w() -> W {
+    return W(5);
+};

@@ -1,0 +1,7 @@
+from "modfixes/lib_badstruct" import make_hidden;
+
+function main(args: String[]) -> int {
+    var h = make_hidden();
+    print("hidden:", h);
+    return 0;
+};

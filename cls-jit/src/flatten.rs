@@ -36,6 +36,11 @@ pub fn flatten_imports(module: &ClsModule, imports: &[(String, ClsModule)]) -> C
                         let local = im.alias.clone().unwrap_or_else(|| im.name.clone());
                         push_export(&mut statements, &m.1, &im.name, &local, imports);
                     }
+                    // Una funcion/tipo importada puede referenciar los TIPOS
+                    // exportados del modulo (p. ej. una `structure` como tipo de
+                    // retorno): se transportan para que el cuerpo compilado los
+                    // resuelva. `include` ya lo hacia (push_all_exports).
+                    push_exported_types(&mut statements, &m.1, imports);
                 }
             }
             Statement::Include(inc) => {
@@ -94,6 +99,8 @@ fn flatten_nested_imports(
                         let local = im.alias.clone().unwrap_or_else(|| im.name.clone());
                         push_export(out, &sub.1, &im.name, &local, imports);
                     }
+                    // Tipos exportados del modulo (deps de la firma/cuerpo).
+                    push_exported_types(out, &sub.1, imports);
                     flatten_nested_imports(out, &sub.1, imports, seen);
                 }
             }
@@ -291,30 +298,52 @@ fn local_decl(m: &ClsModule, name: &str) -> Option<Statement> {
     None
 }
 
-/// Declaración con `export` directo y el nombre dado.
+/// Declaración con `export` directo y el nombre dado. Busca también dentro de
+/// ramas `when` (tipos/funciones nativas exportadas cross-OS).
 fn direct_export_decl(m: &ClsModule, name: &str) -> Option<Statement> {
-    for stmt in &m.statements {
-        let hit = match stmt {
-            Statement::FunctionDecl(f) => {
-                f.visibility == Visibility::Export && f.name == name && f.native.is_none()
+    fn scan(stmts: &[Statement], name: &str) -> Option<Statement> {
+        for stmt in stmts {
+            match stmt {
+                Statement::When(w) => {
+                    for b in &w.branches {
+                        if let Some(s) = scan(&b.block.statements, name) {
+                            return Some(s);
+                        }
+                    }
+                }
+                Statement::FunctionDecl(f)
+                    if f.visibility == Visibility::Export && f.name == name && f.native.is_none() =>
+                {
+                    return Some(stmt.clone())
+                }
+                Statement::VarDecl(v) | Statement::ConstDecl(v)
+                    if v.visibility == Visibility::Export && v.name == name && v.native.is_none() =>
+                {
+                    return Some(stmt.clone())
+                }
+                Statement::EnumDecl(e) if e.visibility == Visibility::Export && e.name == name => {
+                    return Some(stmt.clone())
+                }
+                Statement::ClassDecl(c) if c.visibility == Visibility::Export && c.name == name => {
+                    return Some(stmt.clone())
+                }
+                Statement::StructureDecl(s)
+                    if s.visibility == Visibility::Export && s.name == name && s.native.is_none() =>
+                {
+                    return Some(stmt.clone())
+                }
+                Statement::InterfaceDecl(i) if i.visibility == Visibility::Export && i.name == name => {
+                    return Some(stmt.clone())
+                }
+                Statement::TypeAlias(t) if t.visibility == Visibility::Export && t.name == name => {
+                    return Some(stmt.clone())
+                }
+                _ => {}
             }
-            Statement::VarDecl(v) | Statement::ConstDecl(v) => {
-                v.visibility == Visibility::Export && v.name == name && v.native.is_none()
-            }
-            Statement::EnumDecl(e) => e.visibility == Visibility::Export && e.name == name,
-            Statement::ClassDecl(c) => c.visibility == Visibility::Export && c.name == name,
-            Statement::StructureDecl(s) => {
-                s.visibility == Visibility::Export && s.name == name && s.native.is_none()
-            }
-            Statement::InterfaceDecl(i) => i.visibility == Visibility::Export && i.name == name,
-            Statement::TypeAlias(t) => t.visibility == Visibility::Export && t.name == name,
-            _ => false,
-        };
-        if hit {
-            return Some(stmt.clone());
         }
+        None
     }
-    None
+    scan(&m.statements, name)
 }
 
 /// Path del módulo importado con el alias `ns` dentro de `m`.
@@ -445,10 +474,53 @@ fn all_exported_names(m: &ClsModule, imports: &[(String, ClsModule)]) -> Vec<Str
                     }
                 }
             }
+            // Declaraciones exportadas dentro de `when` (cross-OS): también son
+            // parte de la API del módulo.
+            Statement::When(w) => {
+                for b in &w.branches {
+                    collect_when_export_names(&b.block.statements, &mut names);
+                }
+            }
             _ => {}
         }
     }
+    names.sort();
+    names.dedup();
     names
+}
+
+/// Nombres exportados simples dentro de un bloque `when` (recursivo; sin
+/// `export { ... }`, que no se usa dentro de `when`).
+fn collect_when_export_names(stmts: &[Statement], names: &mut Vec<String>) {
+    for stmt in stmts {
+        match stmt {
+            Statement::FunctionDecl(f) if f.visibility == Visibility::Export => {
+                names.push(f.name.clone())
+            }
+            Statement::VarDecl(v) | Statement::ConstDecl(v)
+                if v.visibility == Visibility::Export =>
+            {
+                names.push(v.name.clone())
+            }
+            Statement::EnumDecl(e) if e.visibility == Visibility::Export => names.push(e.name.clone()),
+            Statement::ClassDecl(c) if c.visibility == Visibility::Export => names.push(c.name.clone()),
+            Statement::StructureDecl(s) if s.visibility == Visibility::Export => {
+                names.push(s.name.clone())
+            }
+            Statement::InterfaceDecl(i) if i.visibility == Visibility::Export => {
+                names.push(i.name.clone())
+            }
+            Statement::TypeAlias(t) if t.visibility == Visibility::Export => {
+                names.push(t.name.clone())
+            }
+            Statement::When(w) => {
+                for b in &w.branches {
+                    collect_when_export_names(&b.block.statements, names);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Inserta el export `export_name` del módulo `m` renombrado a `local`.
@@ -485,6 +557,49 @@ fn push_all_exports(out: &mut Vec<Statement>, m: &ClsModule, imports: &[(String,
     for name in all_exported_names(m, imports) {
         if let Some(s) = resolve_export_decl(m, &name, imports) {
             out.push(s);
+        }
+    }
+}
+
+/// ¿Es una declaración de tipo (no función/var)?
+fn is_type_decl(s: &Statement) -> bool {
+    matches!(
+        s,
+        Statement::StructureDecl(_)
+            | Statement::ClassDecl(_)
+            | Statement::EnumDecl(_)
+            | Statement::InterfaceDecl(_)
+            | Statement::TypeAlias(_)
+    )
+}
+
+/// Nombre de la declaración (función/var/const/enum/clase/struct/interface/alias).
+fn decl_name(s: &Statement) -> Option<&str> {
+    match s {
+        Statement::FunctionDecl(f) => Some(&f.name),
+        Statement::VarDecl(v) | Statement::ConstDecl(v) => Some(&v.name),
+        Statement::EnumDecl(e) => Some(&e.name),
+        Statement::ClassDecl(c) => Some(&c.name),
+        Statement::StructureDecl(s) => Some(&s.name),
+        Statement::InterfaceDecl(i) => Some(&i.name),
+        Statement::TypeAlias(t) => Some(&t.name),
+        _ => None,
+    }
+}
+
+/// Transporta los TIPOS exportados de `m` (structures/classes/enums/interfaces/
+/// aliases). Necesario para `from "m" import f` cuando `f` referencia un tipo
+/// del módulo (p. ej. lo retorna): sin esto, el tipo queda fuera del módulo
+/// fusionado y el emisor falla al resolverlo. No pisa declaraciones ya presentes.
+fn push_exported_types(out: &mut Vec<Statement>, m: &ClsModule, imports: &[(String, ClsModule)]) {
+    for name in all_exported_names(m, imports) {
+        if out.iter().any(|e| decl_name(e) == Some(name.as_str())) {
+            continue;
+        }
+        if let Some(s) = resolve_export_decl(m, &name, imports) {
+            if is_type_decl(&s) {
+                out.push(s);
+            }
         }
     }
 }

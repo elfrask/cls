@@ -286,6 +286,14 @@ pub(super) fn annotation_to_type(ann: &TypeAnnotation) -> Type {
         TypeKind::Record(k, v) => {
             Type::Record(Box::new(annotation_to_type(k)), Box::new(annotation_to_type(v)))
         }
+        // Tipo función `(A, B) -> C` / `fun(A) -> C`: el valor viaja como
+        // handle i64 (call_indirect); la firma concreta vive aquí para el
+        // dispatch dinámico. Sin este brazo caía en `_ => Any` y el JIT lo
+        // rechazaba en params de funciones top-level.
+        TypeKind::Fun(params, ret) => Type::Fun(
+            params.iter().map(annotation_to_type).collect(),
+            Box::new(annotation_to_type(ret)),
+        ),
         // Shape literal `{ campo: tipo, ... }`.
         TypeKind::Shape(fields) => Type::Shape(
             fields

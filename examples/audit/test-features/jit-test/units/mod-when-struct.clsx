@@ -1,0 +1,7 @@
+from "modfixes/lib_when" import make_w;
+
+function main(args: String[]) -> int {
+    var w = make_w();
+    print("w:", w);
+    return 0;
+};

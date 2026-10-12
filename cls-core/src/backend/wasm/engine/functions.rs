@@ -58,7 +58,7 @@ impl<'a> Engine<'a> {
         let t = annotation_to_type(ann);
         match t {
             Type::Any | Type::Unknown => Err(crate::error::ClsError::CompileError(
-                "Anotació de tipo no soportada por el JIT (se requiere tipo concreto)".to_string(),
+                "Anotación de tipo no soportada por el JIT (se requiere tipo concreto)".to_string(),
             )),
             other => Ok(other),
         }

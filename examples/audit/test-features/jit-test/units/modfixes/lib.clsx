@@ -1,0 +1,27 @@
+# Lib de regresion: structure exportada + clase con arrow en un metodo.
+export structure Pt {
+    x: i32,
+    y: i32,
+};
+
+export function make_pt(a: int, b: int) -> Pt {
+    return Pt(a, b);
+};
+
+export class Acc {
+    var items: Int[];
+
+    function main() { me.items = []; };
+
+    function add(fn: (Int) -> Int) {
+        me.items.push(fn(1));
+    };
+
+    function setup() {
+        me.add((x: Int) -> x + 41);
+    };
+
+    function first() -> Int {
+        return me.items[0];
+    };
+};

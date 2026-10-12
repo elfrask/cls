@@ -267,31 +267,68 @@ pub fn load_import_modules_hooked(
                     found = true;
                     continue;
                 }
-                if let Ok(source) = std::fs::read_to_string(candidate) {
-                    if let Ok(toks) = cls_core::frontend::Lexer::new(&source).tokenize() {
-                        if let Ok(m) = cls_core::frontend::Parser::new(toks).parse() {
-                            seen.insert(key);
-                            load_import_modules_hooked(&m, base_dir, seen, out, manifest, hook)?;
-                            out.push((path.clone(), source, m));
-                            found = true;
-                            break;
-                        }
-                    }
-                }
+                // Solo seguimos al siguiente candidato si el archivo NO existe.
+                let source = match std::fs::read_to_string(candidate) {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
+                // El archivo EXISTE: si no lexea/parsea, es un error real del
+                // módulo (no un "módulo no encontrado"). Lo propagamos con el
+                // path y la causa, en vez de silenciarlo y reportar el error
+                // genérico de resolución (que desorienta).
+                let toks = cls_core::frontend::Lexer::new(&source)
+                    .tokenize()
+                    .map_err(|e| {
+                        ClsError::compile_at(
+                            &format!(
+                                "El módulo '{}' ({}) tiene un error de lexing: {}",
+                                path,
+                                candidate.display(),
+                                e
+                            ),
+                            &span,
+                        )
+                    })?;
+                let m = cls_core::frontend::Parser::new(toks).parse().map_err(|e| {
+                    ClsError::compile_at(
+                        &format!(
+                            "El módulo '{}' ({}) tiene un error de sintaxis: {}",
+                            path,
+                            candidate.display(),
+                            e
+                        ),
+                        &span,
+                    )
+                })?;
+                seen.insert(key);
+                load_import_modules_hooked(&m, base_dir, seen, out, manifest, hook)?;
+                out.push((path.clone(), source, m));
+                found = true;
+                break;
             }
             // Hook del nodo: el import no está en disco -> el nodo provee el source.
             if !found {
                 if let Some(h) = hook {
                     if let Some(source) = h.resolve_source(&path, base_dir) {
-                        if let Ok(toks) = cls_core::frontend::Lexer::new(&source).tokenize() {
-                            if let Ok(m) = cls_core::frontend::Parser::new(toks).parse() {
-                                let key = format!("hook:{}", path);
-                                seen.insert(key);
-                                load_import_modules_hooked(&m, base_dir, seen, out, manifest, hook)?;
-                                out.push((path.clone(), source, m));
-                                found = true;
-                            }
-                        }
+                        let toks = cls_core::frontend::Lexer::new(&source)
+                            .tokenize()
+                            .map_err(|e| {
+                                ClsError::compile_at(
+                                    &format!("El módulo '{}' (hook del nodo) tiene un error de lexing: {}", path, e),
+                                    &span,
+                                )
+                            })?;
+                        let m = cls_core::frontend::Parser::new(toks).parse().map_err(|e| {
+                            ClsError::compile_at(
+                                &format!("El módulo '{}' (hook del nodo) tiene un error de sintaxis: {}", path, e),
+                                &span,
+                            )
+                        })?;
+                        let key = format!("hook:{}", path);
+                        seen.insert(key);
+                        load_import_modules_hooked(&m, base_dir, seen, out, manifest, hook)?;
+                        out.push((path.clone(), source, m));
+                        found = true;
                     }
                 }
             }

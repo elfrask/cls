@@ -659,6 +659,13 @@ impl<'a> Engine<'a> {
             for f in &cls_funcs {
                 collect_arrows_in_block(&f.body, &mut arrows);
             }
+            // Arrows dentro de métodos/ctor de clase: sus cuerpos viven en
+            // `cls_funcs_extra`, no en `cls_funcs`. Sin esto, un arrow dentro de
+            // un método (`me.use(() -> ...)`) moría con "Arrow function sin
+            // función sintética (recolección)".
+            for (_, f) in &self.cls_funcs_extra {
+                collect_arrows_in_block(&f.body, &mut arrows);
+            }
             for (n, a) in arrows.iter().enumerate() {
                 let name = format!("__arrow_{}", n);
                 self.arrow_names.insert(a.span, name.clone());

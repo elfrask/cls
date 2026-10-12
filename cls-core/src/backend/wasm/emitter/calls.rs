@@ -349,6 +349,22 @@ impl<'a> FuncEmitter<'a> {
                 ));
             }
         }
+        // Callee identificador sin resolver: típicamente una `structure`/`class`/
+        // `function` de un módulo incluido/importado que NO se exportó (el
+        // flatten solo transporta lo exportado) — el error clásico era el
+        // engañoso "aún no soporta esta expresión". Mensaje accionable.
+        if let Expression::Identifier(name, _) = &*c.callee {
+            return Err(crate::error::ClsError::compile_at(
+                &format!(
+                    "No se encontró '{}' (función, clase, estructura o variable). Si vive \
+                     en un módulo incluido/importado, expórtalo con \
+                     `export function`/`export class`/`export structure`: el sistema de \
+                     módulos solo transporta lo exportado.",
+                    name
+                ),
+                &expr_span(&c.callee),
+            ));
+        }
         Err(self.unsupported_expr(&Expression::Call(c.clone())))
     }
 

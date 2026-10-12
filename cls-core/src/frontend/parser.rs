@@ -502,8 +502,17 @@ impl Parser {
             })));
         }
 
-        // Paréntesis: (Int) agrupación | (Int, String) tupla
+        // Paréntesis: (Int) agrupación | (Int, String) tupla | () -> T función
         if self.consume_symbol(Symbol::LParen) {
+            // `()` vacío: función sin parámetros `() -> T`, o tupla vacía.
+            if self.check_symbol(Symbol::RParen) {
+                self.advance(); // consume ')'
+                if self.consume_operator(Operator::Arrow) {
+                    let ret = self.parse_type_annotation()?;
+                    return Ok(TypeKind::Fun(vec![], Box::new(ret)));
+                }
+                return Ok(TypeKind::Tuple(vec![]));
+            }
             let first = self.parse_type_annotation()?;
             let mut elems = vec![first];
             let mut is_tuple = false;

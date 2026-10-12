@@ -1,0 +1,8 @@
+# Lib de regresion: `structure` SIN export usada por un export (error claro).
+structure Hidden {
+    a: i32,
+};
+
+export function make_hidden() -> Hidden {
+    return Hidden(9);
+};
