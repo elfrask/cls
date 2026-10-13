@@ -1,4 +1,4 @@
-include "libmod";
+from "libmod" import *;
 
 function main(args: String[]) -> int {
     print("=== include ===");

@@ -361,7 +361,7 @@ pub fn shift_stmt(s: &mut Statement, offset: u32) {
         Statement::EnumDecl(e) => {
             e.span = shift_span(e.span.clone(), offset);
         }
-        Statement::Import(_) | Statement::FromImport(_) | Statement::Include(_) => {}
+        Statement::Import(_) | Statement::FromImport(_) => {}
         Statement::ExportList(e) => {
             e.span = shift_span(e.span.clone(), offset);
         }

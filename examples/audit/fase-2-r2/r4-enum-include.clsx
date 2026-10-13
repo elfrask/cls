@@ -1,5 +1,5 @@
-# R4: enum via include (sin namespace) - print, is, iteracion
-include "libmod";
+# R4: enum via from-import * (sin namespace) - print, is, iteracion
+from "libmod" import *;
 function main(args: String[]) -> int {
     var c = Color.Rojo;
     print("c:", c);

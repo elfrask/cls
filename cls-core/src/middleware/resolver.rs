@@ -193,9 +193,10 @@ impl NameResolver {
                     let alias = name.alias.as_ref().unwrap_or(&name.name);
                     self.define(alias.clone(), SymbolKind::Variable);
                 }
-            }
-            Statement::Include(_include) => {
-                // TODO: procesar include
+                // `from "m" import * as ns` -> namespace.
+                if let Some(ns) = &from_import.namespace {
+                    self.define(ns.clone(), SymbolKind::Module);
+                }
             }
             Statement::ExportList(_) => {
                 // `export { ... }` referencia símbolos ya definidos; no crea símbolos.

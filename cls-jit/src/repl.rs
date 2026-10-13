@@ -185,7 +185,6 @@ impl ReplSession {
                 | Statement::EnumDecl(_)
                 | Statement::Import(_)
                 | Statement::FromImport(_)
-                | Statement::Include(_)
                 | Statement::When(_)
                 | Statement::Config(_)
                 | Statement::Meta(_) => other.push(stmt.clone()),

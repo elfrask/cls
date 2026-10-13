@@ -1,6 +1,6 @@
 import "lib/mathx" as mathx;
 from "lib/stringsx" import gritar as gritarFn, repetir;
-include "lib/colores";
+from "lib/colores" import *;
 
 function main(args: String[]) -> int {
     print("=== import as (namespaced) ===");

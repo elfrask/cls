@@ -163,7 +163,6 @@ impl fmt::Display for Statement {
             Statement::EnumDecl(e) => f.write_fmt(format_args!("enum {}", e.name)),
             Statement::Import(i) => f.write_fmt(format_args!("import \"{}\"", i.path)),
             Statement::FromImport(fi) => f.write_fmt(format_args!("from \"{}\" import ...", fi.path)),
-            Statement::Include(i) => f.write_fmt(format_args!("include \"{}\"", i.path)),
             Statement::ExportList(_) => f.write_str("export { ... }"),
             Statement::When(w) => f.write_fmt(format_args!("when {{ {} rama(s) }}", w.branches.len())),
             Statement::Expression(e) => f.write_fmt(format_args!("expr: {:?}", e)),

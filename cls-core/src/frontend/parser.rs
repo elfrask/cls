@@ -130,7 +130,10 @@ impl Parser {
             // Imports
             Token::Keyword(Keyword::Import) => self.parse_import(),
             Token::Keyword(Keyword::From) => self.parse_from_import(),
-            Token::Keyword(Keyword::Include) => self.parse_include(),
+            // `include` fue eliminado: `from "<path>" import *;` es el reemplazo.
+            Token::Keyword(Keyword::Include) => {
+                Err(self.syntax_err("`include` fue eliminado del lenguaje; usá `from \"...\" import *;`"))
+            }
 
             // Directiva multi-entorno
             Token::Keyword(Keyword::When) => self.parse_when(),
@@ -1319,38 +1322,46 @@ impl Parser {
         self.expect_keyword(Keyword::From)?;
         let path = self.expect_string()?;
         self.expect_keyword(Keyword::Import)?;
-        
+
         let mut names = Vec::new();
+        let mut import_all = false;
+        let mut namespace: Option<String> = None;
         loop {
-            let name = self.expect_identifier()?;
-            let alias = if self.consume_keyword(Keyword::As) {
-                Some(self.expect_identifier()?)
+            // `*` (todos los exports) o `* as ns` (namespace).
+            if self.consume_operator(Operator::Star) {
+                if self.consume_keyword(Keyword::As) {
+                    if namespace.is_some() {
+                        return Err(self.syntax_err("Ya hay un `* as ns` en este import"));
+                    }
+                    namespace = Some(self.expect_identifier()?);
+                } else {
+                    if import_all {
+                        return Err(self.syntax_err("`*` ya está en este import"));
+                    }
+                    import_all = true;
+                }
             } else {
-                None
-            };
-            names.push(ImportName { name, alias });
-            
+                let name = self.expect_identifier()?;
+                let alias = if self.consume_keyword(Keyword::As) {
+                    Some(self.expect_identifier()?)
+                } else {
+                    None
+                };
+                names.push(ImportName { name, alias });
+            }
+
             if !self.consume_symbol(Symbol::Comma) {
                 break;
             }
         }
-        
+
         self.consume_symbol(Symbol::Semicolon);
-        
+
         Ok(Statement::FromImport(FromImportStatement {
             path,
             names,
-            span: self.span(),
-        }))
-    }
-
-    fn parse_include(&mut self) -> ClsResult<Statement> {
-        self.expect_keyword(Keyword::Include)?;
-        let path = self.expect_string()?;
-        self.consume_symbol(Symbol::Semicolon);
-        
-        Ok(Statement::Include(IncludeStatement {
-            path,
+            import_all,
+            namespace,
             span: self.span(),
         }))
     }

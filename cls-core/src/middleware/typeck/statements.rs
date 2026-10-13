@@ -125,7 +125,6 @@ impl TypeChecker {
             }
             Statement::Import(imp) => self.check_import(imp),
             Statement::FromImport(fi) => self.check_from_import(fi),
-            Statement::Include(inc) => self.check_include(inc),
             Statement::ExportList(el) => self.check_export_list(el),
             Statement::When(w) => {
                 // `when` es compile-time: solo se procesa la rama que matchea

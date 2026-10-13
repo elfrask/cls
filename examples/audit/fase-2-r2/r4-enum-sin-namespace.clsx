@@ -1,6 +1,6 @@
-# R4: enum namespaced con variable de tipado - print, is, ==, iteracion via include
-# (cubre Color.Rojo sin namespace)
-include "libmod";
+# R4: enum namespaced con variable de tipado - print, is, ==, iteracion via
+# from-import * (cubre Color.Rojo sin namespace)
+from "libmod" import *;
 function main(args: String[]) -> int {
     var c = Color.Rojo;
     print("c:", c);

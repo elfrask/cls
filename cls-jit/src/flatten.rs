@@ -36,16 +36,20 @@ pub fn flatten_imports(module: &ClsModule, imports: &[(String, ClsModule)]) -> C
                         let local = im.alias.clone().unwrap_or_else(|| im.name.clone());
                         push_export(&mut statements, &m.1, &im.name, &local, imports);
                     }
+                    // `from "m" import *` -> todos los exports al scope actual
+                    // (reemplaza al antiguo `include`).
+                    if fi.import_all {
+                        push_all_exports(&mut statements, &m.1, imports);
+                    }
+                    // `from "m" import * as ns` -> namespace `ns::sym`.
+                    if let Some(ns) = &fi.namespace {
+                        push_prefixed_exports(&mut statements, &m.1, ns, imports);
+                    }
                     // Una funcion/tipo importada puede referenciar los TIPOS
                     // exportados del modulo (p. ej. una `structure` como tipo de
                     // retorno): se transportan para que el cuerpo compilado los
-                    // resuelva. `include` ya lo hacia (push_all_exports).
+                    // resuelva.
                     push_exported_types(&mut statements, &m.1, imports);
-                }
-            }
-            Statement::Include(inc) => {
-                if let Some(m) = imports.iter().find(|(p, _)| *p == inc.path) {
-                    push_all_exports(&mut statements, &m.1, imports);
                 }
             }
             Statement::Import(imp) => {
@@ -99,14 +103,14 @@ fn flatten_nested_imports(
                         let local = im.alias.clone().unwrap_or_else(|| im.name.clone());
                         push_export(out, &sub.1, &im.name, &local, imports);
                     }
+                    if fi.import_all {
+                        push_all_exports(out, &sub.1, imports);
+                    }
+                    if let Some(ns) = &fi.namespace {
+                        push_prefixed_exports(out, &sub.1, ns, imports);
+                    }
                     // Tipos exportados del modulo (deps de la firma/cuerpo).
                     push_exported_types(out, &sub.1, imports);
-                    flatten_nested_imports(out, &sub.1, imports, seen);
-                }
-            }
-            Statement::Include(inc) => {
-                if let Some(sub) = imports.iter().find(|(p, _)| *p == inc.path) {
-                    push_all_exports(out, &sub.1, imports);
                     flatten_nested_imports(out, &sub.1, imports, seen);
                 }
             }

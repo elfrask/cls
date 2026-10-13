@@ -28,6 +28,8 @@ impl TypeChecker {
 
 
     /// `from "path" import a as fa, b` -> define cada nombre en el scope actual.
+    /// `from "path" import *` -> todos los exports (reemplaza `include`).
+    /// `from "path" import * as ns` -> namespace (`ns::sym`).
     pub(crate) fn check_from_import(&mut self, fi: &FromImportStatement) -> Type {
         for im in &fi.names {
             if let Some(t) = self.find_export_type(&fi.path, &im.name) {
@@ -58,6 +60,23 @@ impl TypeChecker {
                     fi.span.clone(),
                 );
             }
+        }
+        // `import *` -> todos los exports al scope actual.
+        if fi.import_all {
+            for name in self.module_export_names(&fi.path) {
+                if self.lookup(&name).is_some() {
+                    continue;
+                }
+                if let Some(t) = self.find_export_type(&fi.path, &name) {
+                    self.define(&name, t);
+                }
+            }
+        }
+        // `* as ns` -> namespace (equivalente a `import "m" as ns`).
+        if let Some(ns) = &fi.namespace {
+            let ns = ns.clone();
+            self.import_aliases.insert(ns.clone(), fi.path.clone());
+            self.define_decl(&ns, Type::Named(ns.clone(), vec![]), &fi.span);
         }
         Type::Void
     }
@@ -269,94 +288,6 @@ impl TypeChecker {
     }
 
 
-    /// `include "path"` -> define TODOS los exports en el scope actual.
-    pub(crate) fn check_include(&mut self, inc: &IncludeStatement) -> Type {
-        let m = match self.find_prelude_module(&inc.path) {
-            Some(m) => m.clone(),
-            None => return Type::Void,
-        };
-        for stmt in &m.statements {
-            // Bug fix dev-2 (Fase 7): si el export ya esta en scope[0],
-            // no re-definir. Esto pasa cuando la pasada del prelude ya proceso
-            // el modulo (lo hizo en check_with_prelude) y dejo los exports
-            // definidos en scope[0].
-            if let Some(name) = match stmt {
-                Statement::FunctionDecl(f) if f.visibility == Visibility::Export => Some(&f.name),
-                Statement::VarDecl(v) | Statement::ConstDecl(v)
-                    if v.visibility == Visibility::Export => Some(&v.name),
-                Statement::EnumDecl(e) if e.visibility == Visibility::Export => Some(&e.name),
-                Statement::ClassDecl(c) if c.visibility == Visibility::Export => Some(&c.name),
-                Statement::StructureDecl(s) if s.visibility == Visibility::Export => Some(&s.name),
-                Statement::InterfaceDecl(i) if i.visibility == Visibility::Export => Some(&i.name),
-                Statement::TypeAlias(t) if t.visibility == Visibility::Export => Some(&t.name),
-                _ => None,
-            } {
-                if self.scopes.len() == 1 && self.scopes[0].contains_key(name) {
-                    continue;
-                }
-            }
-            match stmt {
-                Statement::FunctionDecl(f) if f.visibility == Visibility::Export => {
-                    let t = self.function_decl_type(f);
-                    self.define_decl(&f.name, t, &inc.span);
-                }
-                Statement::VarDecl(v) | Statement::ConstDecl(v)
-                    if v.visibility == Visibility::Export =>
-                {
-                    let t = v.type_ann.as_ref()
-                        .map(|ta| self.resolve_type_annotation(ta))
-                        .or_else(|| v.value.as_ref().map(|val| self.infer_literal_type(val)))
-                        .unwrap_or(Type::Any);
-                    self.define_decl(&v.name, t, &inc.span);
-                }
-                Statement::EnumDecl(e) if e.visibility == Visibility::Export => {
-                    self.define_decl(&e.name, Type::Named(e.name.clone(), vec![]), &inc.span);
-                }
-                Statement::ClassDecl(c) if c.visibility == Visibility::Export => {
-                    self.define_decl(&c.name, Type::Named(c.name.clone(), vec![]), &inc.span);
-                }
-                Statement::StructureDecl(s) if s.visibility == Visibility::Export => {
-                    self.define_decl(&s.name, Type::Named(s.name.clone(), vec![]), &inc.span);
-                }
-                Statement::InterfaceDecl(i) if i.visibility == Visibility::Export => {
-                    self.define_decl(&i.name, Type::Named(i.name.clone(), vec![]), &inc.span);
-                }
-                Statement::TypeAlias(t) if t.visibility == Visibility::Export => {
-                    let ty = self.resolve_type_annotation(&t.type_ann);
-                    self.define_decl(&t.name, ty, &inc.span);
-                }
-                Statement::ExportList(el) => {
-                    for spec in &el.specs {
-                        if let ExportRef::NamespaceAll(ns) = &spec.reference {
-                            if let Some(sub_path) = self.resolve_ns_path_in(&m, ns) {
-                                for name in self.module_export_names(&sub_path) {
-                                    if self.scopes.len() == 1 && self.scopes[0].contains_key(&name) {
-                                        continue;
-                                    }
-                                    if let Some(t) = self.find_export_type(&sub_path, &name) {
-                                        self.define_decl(&name, t, &inc.span);
-                                    }
-                                }
-                            }
-                            continue;
-                        }
-                        if let (Some(exported), Some(t)) =
-                            (Self::spec_exported_name(spec), self.resolve_spec_type(&m, &el.from, spec))
-                        {
-                            if self.scopes.len() == 1 && self.scopes[0].contains_key(&exported) {
-                                continue;
-                            }
-                            self.define_decl(&exported, t, &inc.span);
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        Type::Void
-    }
-
-
     /// Tipo de un export por nombre en el módulo del prelude (path).
     /// Considera tanto `export <decl>` como `export { ... }`.
     pub(crate) fn find_export_type(&mut self, path: &str, name: &str) -> Option<Type> {
@@ -505,6 +436,12 @@ impl TypeChecker {
                     let local = im.alias.as_deref().unwrap_or(&im.name);
                     if local == name {
                         return self.find_export_type(&fi.path, &im.name);
+                    }
+                }
+                // `from "m" import *`: el símbolo puede venir de cualquier export.
+                if fi.import_all {
+                    if let Some(t) = self.find_export_type(&fi.path, name) {
+                        return Some(t);
                     }
                 }
             }

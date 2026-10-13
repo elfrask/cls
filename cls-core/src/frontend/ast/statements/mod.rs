@@ -20,7 +20,6 @@ mod function_modifier;
 mod if_statement;
 mod import_name;
 mod import_statement;
-mod include_statement;
 mod interface_decl;
 mod interface_field;
 mod meta_directive;
@@ -61,7 +60,6 @@ pub use function_modifier::*;
 pub use if_statement::*;
 pub use import_name::*;
 pub use import_statement::*;
-pub use include_statement::*;
 pub use interface_decl::*;
 pub use interface_field::*;
 pub use meta_directive::*;
@@ -130,7 +128,6 @@ pub enum Statement {
     // Imports
     Import(ImportStatement),
     FromImport(FromImportStatement),
-    Include(IncludeStatement),
     /// `export { a, b as c } [from "path"];`
     ExportList(ExportListDecl),
 
