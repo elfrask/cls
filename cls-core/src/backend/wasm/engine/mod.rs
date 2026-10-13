@@ -97,6 +97,10 @@ pub(super) struct Engine<'a> {
     /// se re-mapea a table_index 1.
     internals_elem: Vec<u32>,
     target: Target,
+    /// `import "mod" as alias` / `from "mod" import * as alias` -> alias -> path.
+    /// Permite referenciar los módulos internos (math/json/strings/fs/...) con
+    /// cualquier alias, no solo con el nombre literal del módulo.
+    pub(crate) import_aliases: HashMap<String, String>,
 }
 
 /// Definición de una clase compilada: layout de objeto + vtable.
@@ -155,6 +159,7 @@ impl<'a> Engine<'a> {
             internals_bodies: Vec::new(),
             internals_elem: Vec::new(),
             target,
+            import_aliases: HashMap::new(),
         }
     }
 

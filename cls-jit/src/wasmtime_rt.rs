@@ -39,6 +39,18 @@ impl HostCtx for Caller<'_, HostState> {
         String::new()
     }
 
+    fn read_bytes(&mut self, packed: i64) -> Vec<u8> {
+        let ptr = (packed >> 32) as usize;
+        let len = (packed & 0xffff_ffff) as usize;
+        if let Some(memory) = self.get_export("memory").and_then(|e| e.into_memory()) {
+            let data = memory.data(self);
+            if ptr + len <= data.len() {
+                return data[ptr..ptr + len].to_vec();
+            }
+        }
+        Vec::new()
+    }
+
     fn write_str(&mut self, s: &str) -> i64 {
         let len = s.len() as i64;
         let cap = (len * 2 + 16).max(64);

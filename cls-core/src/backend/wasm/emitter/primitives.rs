@@ -38,6 +38,13 @@ impl<'a> FuncEmitter<'a> {
         }
         // Módulos stdlib: math / json / fs
         if let Expression::Identifier(obj_name, _) = &*member.object {
+            // Resolver alias de import: `import "math" as m` -> m es math.
+            let canonical = self
+                .import_aliases
+                .get(obj_name)
+                .cloned()
+                .unwrap_or_else(|| obj_name.clone());
+            let obj_name = &canonical;
             if obj_name == "math" {
                 self.emit_math_call(member, c)?; return Ok(true);
             }
@@ -193,6 +200,22 @@ impl<'a> FuncEmitter<'a> {
                     }
                     "isEmpty" => {
                         self.emit_str_host("__intr_str_is_empty");
+                        return Ok(true);
+                    }
+                    "indexOf" => {
+                        self.emit_expression(&c.args[0])?;
+                        self.emit_str_host("__intr_str_index_of");
+                        return Ok(true);
+                    }
+                    "slice" => {
+                        self.emit_expression(&c.args[0])?;
+                        self.emit_expression(&c.args[1])?;
+                        self.emit_str_host("__intr_str_slice");
+                        return Ok(true);
+                    }
+                    "split" => {
+                        self.emit_expression(&c.args[0])?;
+                        self.emit_str_host("__intr_str_split");
                         return Ok(true);
                     }
                     "toString" => { return Ok(true); },

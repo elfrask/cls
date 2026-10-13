@@ -425,6 +425,13 @@ impl<'a> FuncEmitter<'a> {
         if let Expression::Call(c) = expr {
             if let Expression::MemberAccess(member) = &*c.callee {
                 if let Expression::Identifier(obj, _) = &*member.object {
+                    // Resolver alias de import (`import "math" as m`).
+                    let canonical = self
+                        .import_aliases
+                        .get(obj)
+                        .cloned()
+                        .unwrap_or_else(|| obj.clone());
+                    let obj = &canonical;
                     if obj == "math" {
                         return match member.member.as_str() {
                             "sqrt" | "pow" | "min" | "max" | "floor" | "ceil" | "round"
@@ -508,6 +515,12 @@ impl<'a> FuncEmitter<'a> {
         // Miembros de mÃ³dulos sin llamada: math.PI / math.E
         if let Expression::MemberAccess(member) = expr {
             if let Expression::Identifier(obj, _) = &*member.object {
+                let canonical = self
+                    .import_aliases
+                    .get(obj)
+                    .cloned()
+                    .unwrap_or_else(|| obj.clone());
+                let obj = &canonical;
                 if obj == "math" && (member.member == "PI" || member.member == "E") {
                     return Some(WasTy::F64);
                 }

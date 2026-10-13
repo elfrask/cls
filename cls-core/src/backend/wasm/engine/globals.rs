@@ -9,6 +9,7 @@ impl<'a> Engine<'a> {
         }
         let mut fe = FuncEmitter::new(
             self.types,
+            &self.import_aliases,
             HostCaller {
                 indexes: self.host_indexes.clone(),
             },

@@ -39,10 +39,40 @@ impl TypeChecker {
             for arg in &call.args {
                 self.check_expression(arg);
             }
+            // Aridad de los métodos de String (el emisor accede a c.args[i] y
+            // un índice fuera de rango paniquea; error de tipo claro aquí).
+            if matches!(&obj_ty, Type::String) {
+                let arity = match m.member.as_str() {
+                    "slice" => Some(2usize),
+                    "indexOf" | "split" | "contains" | "startsWith" | "endsWith" => Some(1),
+                    "upper" | "lower" | "trim" | "isEmpty" | "toString" | "length" => Some(0),
+                    _ => None,
+                };
+                if let Some(a) = arity {
+                    if call.args.len() != a {
+                        self.error(
+                            &format!(
+                                "String.{} esperaba {} argumento(s), recibió {}",
+                                m.member,
+                                a,
+                                call.args.len()
+                            ),
+                            call.span.clone(),
+                        );
+                    }
+                }
+            }
             // `math.abs` devuelve el tipo del primer argumento (int->Int, float->Float);
             // `math.pow` SIEMPRE devuelve Float (el walker usa `powf` incondicional
             // y el emisor emite MathPow f64). Paridad con module_call_ret del backend.
             if let Expression::Identifier(obj, _) = &*m.object {
+                // Resolver alias de import (`import "math" as m` -> `m` es math).
+                let canonical = self
+                    .import_aliases
+                    .get(obj)
+                    .cloned()
+                    .unwrap_or_else(|| obj.clone());
+                let obj = &canonical;
                 // Validar aridad de los módulos internos del nodo (os/path/process/
                 // time/random): el emisor accede a c.args[i] y un índice fuera de
                 // rango paniquea. Error de tipo claro aquí, antes de emitir.

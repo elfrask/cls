@@ -23,6 +23,15 @@ impl TypeChecker {
                 if self.enums.contains(name) {
                     return Type::Named(name.clone(), vec![]);
                 }
+                // Resolver alias de import: `import "math" as m` -> `m.sqrt` es
+                // `math.sqrt`. Sin esto el dispatch por nombre literal era rígido
+                // (solo funcionaba con el alias igual al módulo).
+                let canonical = self
+                    .import_aliases
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| name.clone());
+                let name = &canonical;
                 if name == "http" {
                     return match member.member.as_str() {
                         "get" | "post" => Type::String,
@@ -120,8 +129,10 @@ impl TypeChecker {
         match obj_type {
             Type::String => match member.member.as_str() {
                 "length" => Type::Int,
-                "upper" | "lower" | "trim" | "toString" => Type::String,
+                "upper" | "lower" | "trim" | "toString" | "slice" => Type::String,
                 "contains" | "startsWith" | "endsWith" | "isEmpty" => Type::Bool,
+                "indexOf" => Type::Int,
+                "split" => Type::Array(Box::new(Type::String)),
                 _ => Type::Any,
             },
             Type::Array(elem) => match member.member.as_str() {

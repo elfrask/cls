@@ -54,6 +54,10 @@ pub fn flatten_imports(module: &ClsModule, imports: &[(String, ClsModule)]) -> C
                     // funciones exportadas los referencian, asi que deben existir
                     // en el modulo fusionado (R1b/R1c).
                     push_module_internals(&mut statements, &m.1);
+                } else {
+                    // Modulo interno del host (math/json/strings/...): se conserva
+                    // el `from` para que el emisor arme el mapa alias->modulo.
+                    statements.push(stmt.clone());
                 }
             }
             Statement::Import(imp) => {
@@ -63,6 +67,10 @@ pub fn flatten_imports(module: &ClsModule, imports: &[(String, ClsModule)]) -> C
                     push_prefixed_exports(&mut statements, &m.1, &prefix, imports);
                     push_exported_types(&mut statements, &m.1, imports);
                     push_module_internals(&mut statements, &m.1);
+                } else {
+                    // Modulo interno del host: se conserva `import "math" as m`
+                    // para que el emisor resuelva el alias (math/json/strings/...).
+                    statements.push(stmt.clone());
                 }
             }
             other => statements.push(other.clone()),
@@ -121,6 +129,9 @@ fn flatten_nested_imports(
                     // las funciones exportadas del modulo (R1b/R1c).
                     push_module_internals(out, &sub.1);
                     flatten_nested_imports(out, &sub.1, imports, seen);
+                } else {
+                    // Modulo interno del host: se conserva para el mapa alias.
+                    out.push(stmt.clone());
                 }
             }
             Statement::Import(imp) => {
@@ -130,6 +141,9 @@ fn flatten_nested_imports(
                     push_exported_types(out, &sub.1, imports);
                     push_module_internals(out, &sub.1);
                     flatten_nested_imports(out, &sub.1, imports, seen);
+                } else {
+                    // Modulo interno del host: se conserva para el mapa alias.
+                    out.push(stmt.clone());
                 }
             }
             // FFI (ya desugarizado a declaraciones nativas): las declaraciones

@@ -35,6 +35,9 @@ impl HostCaller {
 /// Emisor con el estado de compilación de una función.
 pub(crate) struct FuncEmitter<'a> {
     types: &'a HashMap<Span, Type>,
+    /// Alias de imports (`m` -> `math`) para despachar módulos internos por
+    /// cualquier alias, no solo por el nombre literal del módulo.
+    import_aliases: &'a HashMap<String, String>,
     pub(crate) body: Vec<Instruction<'static>>,
     locals: HashMap<String, u32>,
     pub(crate) local_tys: HashMap<u32, WasTy>,
@@ -114,6 +117,7 @@ pub(crate) struct FuncEmitter<'a> {
 impl<'a> FuncEmitter<'a> {
     pub(crate) fn new(
         types: &'a HashMap<Span, Type>,
+        import_aliases: &'a HashMap<String, String>,
         host: HostCaller,
         string_pool: &'a mut Vec<String>,
         string_index: &'a mut HashMap<String, u32>,
@@ -143,6 +147,7 @@ impl<'a> FuncEmitter<'a> {
     ) -> Self {
         Self {
             types,
+            import_aliases,
             body: Vec::new(),
             locals: HashMap::new(),
             local_tys: HashMap::new(),

@@ -13,9 +13,16 @@ use crate::mem;
 #[no_mangle]
 pub extern "C" fn __intr_str_concat(a: i64, b: i64) -> i64 {
     unsafe {
-        let sa = mem::read_str(a);
-        let sb = mem::read_str(b);
-        mem::write_str(&format!("{}{}", sa, sb))
+        let sa = mem::read_bytes(a);
+        let sb = mem::read_bytes(b);
+        let total = sa.len() + sb.len();
+        let ptr = crate::allocator::bump_alloc(total);
+        if ptr == 0 {
+            return 0;
+        }
+        core::ptr::copy_nonoverlapping(sa.as_ptr(), ptr as *mut u8, sa.len());
+        core::ptr::copy_nonoverlapping(sb.as_ptr(), (ptr + sa.len()) as *mut u8, sb.len());
+        ((ptr as i64) << 32) | (total as i64)
     }
 }
 
@@ -89,9 +96,9 @@ pub extern "C" fn __intr_str_trim(v: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn __intr_str_contains(a: i64, b: i64) -> i32 {
     unsafe {
-        let sa = mem::read_str(a);
-        let sb = mem::read_str(b);
-        if sa.contains(&sb) {
+        let hay = mem::read_bytes(a);
+        let needle = mem::read_bytes(b);
+        if needle.is_empty() || hay.windows(needle.len()).any(|w| w == needle) {
             1
         } else {
             0
@@ -102,9 +109,9 @@ pub extern "C" fn __intr_str_contains(a: i64, b: i64) -> i32 {
 #[no_mangle]
 pub extern "C" fn __intr_str_starts_with(a: i64, b: i64) -> i32 {
     unsafe {
-        let sa = mem::read_str(a);
-        let sb = mem::read_str(b);
-        if sa.starts_with(&sb) {
+        let hay = mem::read_bytes(a);
+        let needle = mem::read_bytes(b);
+        if hay.starts_with(needle) {
             1
         } else {
             0
@@ -115,9 +122,9 @@ pub extern "C" fn __intr_str_starts_with(a: i64, b: i64) -> i32 {
 #[no_mangle]
 pub extern "C" fn __intr_str_ends_with(a: i64, b: i64) -> i32 {
     unsafe {
-        let sa = mem::read_str(a);
-        let sb = mem::read_str(b);
-        if sa.ends_with(&sb) {
+        let hay = mem::read_bytes(a);
+        let needle = mem::read_bytes(b);
+        if hay.ends_with(needle) {
             1
         } else {
             0
@@ -152,10 +159,7 @@ pub extern "C" fn __intr_str_repr(v: i64) -> i64 {
 
 #[no_mangle]
 pub extern "C" fn __intr_str_length(v: i64) -> i64 {
-    unsafe {
-        let s = mem::read_str(v);
-        s.len() as i64
-    }
+    (v & 0xffff_ffff) as i64
 }
 
 /// `str.indexOf(s, sub) -> int`. Índice de la primera ocurrencia de `sub` en
@@ -163,12 +167,20 @@ pub extern "C" fn __intr_str_length(v: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn __intr_str_index_of(s: i64, sub: i64) -> i64 {
     unsafe {
-        let s = mem::read_str(s);
-        let sub = mem::read_str(sub);
-        match s.find(&sub) {
-            Some(idx) => idx as i64,
-            None => -1,
+        let hay = mem::read_bytes(s);
+        let needle = mem::read_bytes(sub);
+        if needle.is_empty() {
+            return 0;
         }
+        if needle.len() > hay.len() {
+            return -1;
+        }
+        for i in 0..=(hay.len() - needle.len()) {
+            if &hay[i..i + needle.len()] == needle {
+                return i as i64;
+            }
+        }
+        -1
     }
 }
 
@@ -178,15 +190,15 @@ pub extern "C" fn __intr_str_index_of(s: i64, sub: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn __intr_str_slice(s: i64, start: i64, end: i64) -> i64 {
     unsafe {
-        let s = mem::read_str(s);
-        let len = s.len() as i64;
+        let bytes = mem::read_bytes(s);
+        let len = bytes.len() as i64;
         let start = start.max(0).min(len);
         let end = if end < 0 {
             len
         } else {
             end.max(start).min(len)
         };
-        mem::write_str(&s[start as usize..end as usize])
+        mem::write_bytes(&bytes[start as usize..end as usize])
     }
 }
 
@@ -196,13 +208,25 @@ pub extern "C" fn __intr_str_slice(s: i64, start: i64, end: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn __intr_str_split(s: i64, sep: i64) -> i64 {
     unsafe {
-        let s = mem::read_str(s);
-        let sep = mem::read_str(sep);
-        let parts: Vec<String> = if sep.is_empty() {
-            vec![s]
+        let hay = mem::read_bytes(s);
+        let needle = mem::read_bytes(sep);
+        let mut parts: Vec<&[u8]> = Vec::new();
+        if needle.is_empty() {
+            parts.push(hay);
         } else {
-            s.split(&sep).map(|p| p.to_string()).collect()
-        };
+            let mut start = 0usize;
+            let mut i = 0usize;
+            while i + needle.len() <= hay.len() {
+                if &hay[i..i + needle.len()] == needle {
+                    parts.push(&hay[start..i]);
+                    i += needle.len();
+                    start = i;
+                } else {
+                    i += 1;
+                }
+            }
+            parts.push(&hay[start..]);
+        }
         let n = parts.len() as i64;
         let array_ptr = mem::alloc(n * 8 + 16);
         if array_ptr == 0 {
@@ -211,7 +235,7 @@ pub extern "C" fn __intr_str_split(s: i64, sep: i64) -> i64 {
         mem::write_i64(array_ptr, n);
         mem::write_i64(array_ptr + 8, n);
         for (i, part) in parts.iter().enumerate() {
-            let sp = mem::write_str(part);
+            let sp = mem::write_bytes(part);
             mem::write_i64(array_ptr + 16 + i * 8, sp);
         }
         array_ptr as i64
@@ -256,8 +280,8 @@ unsafe fn alloc_with_cap(bytes: usize) -> usize {
 #[no_mangle]
 pub extern "C" fn __intr_str_concat_slack(a: i64, b: i64) -> i64 {
     unsafe {
-        let sa = mem::read_str(a);
-        let sb = mem::read_str(b);
+        let sa = mem::read_bytes(a);
+        let sb = mem::read_bytes(b);
         let total = sa.len() + sb.len();
         let cap = (total * 2).max(total + 16);
         let ptr = alloc_with_cap(cap);
@@ -281,9 +305,9 @@ pub extern "C" fn __intr_str_concat_slack(a: i64, b: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn __intr_str_append(old: i64, v_val: i64, v_tag: i64) -> i64 {
     unsafe {
-        let piece: String = match v_tag {
-            1 => mem::read_str(v_val),
-            _ => crate::fmt::fmt_val_to_string(v_val, v_tag),
+        let piece: Vec<u8> = match v_tag {
+            1 => mem::read_bytes(v_val).to_vec(),
+            _ => crate::fmt::fmt_val_to_string(v_val, v_tag).into_bytes(),
         };
         let old_ptr = (old >> 32) as usize;
         let old_len = (old & 0xffff_ffff) as usize;
@@ -317,8 +341,8 @@ pub extern "C" fn __intr_str_append(old: i64, v_val: i64, v_tag: i64) -> i64 {
         }
 
         // Slow path: `old` viene sin slack (literal/json/host) → concat con slack
-        // para habilitar appends futuros. Reutiliza old leyéndolo como string.
-        let so = mem::read_str(old);
+        // para habilitar appends futuros. Copia los bytes crudos de `old`.
+        let so = mem::read_bytes(old);
         let cap = (so.len() * 2).max(so.len() + 16);
         let ptr = alloc_with_cap(cap);
         if ptr == 0 {

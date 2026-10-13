@@ -238,6 +238,9 @@ pub trait HostCtx {
     fn state_mut(&mut self) -> &mut HostState;
     /// Lee un string empaquetado `(ptr<<32)|len` de la memoria del módulo.
     fn read_str(&mut self, packed: i64) -> String;
+    /// Lee los **bytes crudos** de un string empaquetado, SIN decodificar UTF-8
+    /// (semántica de bytes del lenguaje). Paridad con `cls-internals::mem::read_bytes`.
+    fn read_bytes(&mut self, packed: i64) -> Vec<u8>;
     /// Aloca + escribe un string en la memoria del módulo y lo empaqueta.
     /// Registra la capacidad para que `str_concat` reutilice el buffer.
     fn write_str(&mut self, s: &str) -> i64;
@@ -255,6 +258,20 @@ pub trait HostCtx {
 
 fn format_float(v: f64) -> String {
     format!("{}", v)
+}
+
+/// Aloca + escribe bytes crudos en la memoria del módulo y los empaqueta
+/// `(ptr<<32)|len`. Paridad con `cls-internals::mem::write_bytes`.
+fn write_packed_bytes<C: HostCtx>(ctx: &mut C, bytes: &[u8]) -> i64 {
+    if bytes.is_empty() {
+        return 0;
+    }
+    let ptr = ctx.alloc(bytes.len() as i64);
+    if ptr == 0 {
+        return 0;
+    }
+    ctx.write_bytes(ptr as usize, bytes);
+    (ptr << 32) | (bytes.len() as i64)
 }
 
 fn print_arg<C: HostCtx>(ctx: &mut C, value: &str) {
@@ -400,20 +417,22 @@ pub fn host_parse_bool<C: HostCtx>(ctx: &mut C, v: i64) -> i32 {
 pub fn host_str_concat<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i64 {
     let a_ptr = (a >> 32) as usize;
     let a_len = (a & 0xffff_ffff) as usize;
-    let sa = ctx.read_str(a);
-    let sb = ctx.read_str(b);
-    let out = format!("{}{}", sa, sb);
+    let sa = ctx.read_bytes(a);
+    let sb = ctx.read_bytes(b);
+    let mut out = Vec::with_capacity(sa.len() + sb.len());
+    out.extend_from_slice(&sa);
+    out.extend_from_slice(&sb);
     // Reutilizar el buffer de `a` si tiene capacidad (amortizado): evita alocar
     // nuevo en cada iteración de un loop de concat.
     let cap = ctx.state().string_caps.get(&(a_ptr as i64)).copied();
     if let Some(cap) = cap {
         if (out.len() as i64) <= cap && out.len() >= a_len {
-            if ctx.write_bytes(a_ptr, out.as_bytes()) {
+            if ctx.write_bytes(a_ptr, &out) {
                 return ((a_ptr as i64) << 32) | (out.len() as i64);
             }
         }
     }
-    ctx.write_str(&out)
+    write_packed_bytes(ctx, &out)
 }
 
 /// Magic del header de capacidad (misma convención que
@@ -436,8 +455,8 @@ fn read_cap_host<C: HostCtx>(ctx: &mut C, ptr: usize) -> Option<usize> {
 /// Concat con slack: aloca cap x2 y escribe el header en `ptr-8`, habilitando
 /// appends in-place subsiguientes. Paridad con `__intr_str_concat_slack`.
 pub fn host_str_concat_slack<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i64 {
-    let sa = ctx.read_str(a);
-    let sb = ctx.read_str(b);
+    let sa = ctx.read_bytes(a);
+    let sb = ctx.read_bytes(b);
     let total = sa.len() + sb.len();
     let cap = (total * 2).max(total + 16);
     let block = ctx.alloc((cap + 8) as i64) as usize;
@@ -445,8 +464,8 @@ pub fn host_str_concat_slack<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i64 {
         return 0;
     }
     let ptr = block + 8;
-    ctx.write_bytes(ptr, sa.as_bytes());
-    ctx.write_bytes(ptr + sa.len(), sb.as_bytes());
+    ctx.write_bytes(ptr, &sa);
+    ctx.write_bytes(ptr + sa.len(), &sb);
     ctx.write_i64(block, cap as i64 | APPEND_CAP_MAGIC);
     ((ptr as i64) << 32) | (total as i64)
 }
@@ -454,41 +473,45 @@ pub fn host_str_concat_slack<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i64 {
 /// Append in-place si hay slack; degrada a re-aloca x2. Paridad con
 /// `__intr_str_append`.
 pub fn host_str_append<C: HostCtx>(ctx: &mut C, old: i64, v_val: i64, v_tag: i64) -> i64 {
-    let piece = fmt_val_to_string(ctx, v_val, v_tag);
+    let piece: Vec<u8> = if v_tag == 1 {
+        ctx.read_bytes(v_val)
+    } else {
+        fmt_val_to_string(ctx, v_val, v_tag).into_bytes()
+    };
     let old_ptr = (old >> 32) as usize;
     let old_len = (old & 0xffff_ffff) as usize;
     let total = old_len + piece.len();
 
     if let Some(cap) = read_cap_host(ctx, old_ptr) {
         if total <= cap {
-            ctx.write_bytes(old_ptr + old_len, piece.as_bytes());
+            ctx.write_bytes(old_ptr + old_len, &piece);
             return ((old_ptr as i64) << 32) | (total as i64);
         }
-        // Overflow con header válido: re-aloca x2 (amortizado). read_str es
+        // Overflow con header válido: re-aloca x2 (amortizado). read_bytes es
         // bounds-safe y esta rama corre una vez por cadena de appends.
-        let so = ctx.read_str(old);
+        let so = ctx.read_bytes(old);
         let new_cap = (cap * 2).max(total + 16);
         let block = ctx.alloc((new_cap + 8) as i64) as usize;
         if block == 0 {
             return 0;
         }
         let nptr = block + 8;
-        ctx.write_bytes(nptr, so.as_bytes());
-        ctx.write_bytes(nptr + old_len, piece.as_bytes());
+        ctx.write_bytes(nptr, &so);
+        ctx.write_bytes(nptr + old_len, &piece);
         ctx.write_i64(block, new_cap as i64 | APPEND_CAP_MAGIC);
         return ((nptr as i64) << 32) | (total as i64);
     }
 
     // Slow path: sin slack previo → concat con slack.
-    let so = ctx.read_str(old);
+    let so = ctx.read_bytes(old);
     let cap = (so.len() * 2).max(so.len() + 16);
     let block = ctx.alloc((cap + 8) as i64) as usize;
     if block == 0 {
         return 0;
     }
     let ptr = block + 8;
-    ctx.write_bytes(ptr, so.as_bytes());
-    ctx.write_bytes(ptr + so.len(), piece.as_bytes());
+    ctx.write_bytes(ptr, &so);
+    ctx.write_bytes(ptr + so.len(), &piece);
     ctx.write_i64(block, cap as i64 | APPEND_CAP_MAGIC);
     ((ptr as i64) << 32) | (total as i64)
 }
@@ -526,9 +549,9 @@ pub fn host_str_trim<C: HostCtx>(ctx: &mut C, v: i64) -> i64 {
 }
 
 pub fn host_str_contains<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i32 {
-    let sa = ctx.read_str(a);
-    let sb = ctx.read_str(b);
-    if sa.contains(&sb) {
+    let hay = ctx.read_bytes(a);
+    let needle = ctx.read_bytes(b);
+    if needle.is_empty() || hay.windows(needle.len()).any(|w| w == needle.as_slice()) {
         1
     } else {
         0
@@ -536,9 +559,9 @@ pub fn host_str_contains<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i32 {
 }
 
 pub fn host_str_starts_with<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i32 {
-    let sa = ctx.read_str(a);
-    let sb = ctx.read_str(b);
-    if sa.starts_with(&sb) {
+    let hay = ctx.read_bytes(a);
+    let needle = ctx.read_bytes(b);
+    if hay.starts_with(&needle) {
         1
     } else {
         0
@@ -546,9 +569,9 @@ pub fn host_str_starts_with<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i32 {
 }
 
 pub fn host_str_ends_with<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i32 {
-    let sa = ctx.read_str(a);
-    let sb = ctx.read_str(b);
-    if sa.ends_with(&sb) {
+    let hay = ctx.read_bytes(a);
+    let needle = ctx.read_bytes(b);
+    if hay.ends_with(&needle) {
         1
     } else {
         0
@@ -574,9 +597,8 @@ pub fn host_str_repr<C: HostCtx>(ctx: &mut C, v: i64) -> i64 {
     ctx.write_str(&format!("\"{}\"", escaped))
 }
 
-pub fn host_str_length<C: HostCtx>(ctx: &mut C, v: i64) -> i64 {
-    let s = ctx.read_str(v);
-    s.len() as i64
+pub fn host_str_length<C: HostCtx>(_ctx: &mut C, v: i64) -> i64 {
+    (v & 0xffff_ffff) as i64
 }
 
 /// Igualdad de strings por contenido (fallback del interno `__intr_str_eq`).
@@ -2108,38 +2130,57 @@ fn cmx_format<C: HostCtx>(ctx: &mut C, p: usize) -> String {
 /// `str.indexOf(s, sub) -> int`. Índice de la primera ocurrencia de `sub` en
 /// `s` (bytes), o -1 si no está.
 pub fn host_str_index_of<C: HostCtx>(ctx: &mut C, s: i64, sub: i64) -> i64 {
-    let s = ctx.read_str(s);
-    let sub = ctx.read_str(sub);
-    match s.find(&sub) {
-        Some(idx) => idx as i64,
-        None => -1,
+    let hay = ctx.read_bytes(s);
+    let needle = ctx.read_bytes(sub);
+    if needle.is_empty() {
+        return 0;
     }
+    if needle.len() > hay.len() {
+        return -1;
+    }
+    for i in 0..=(hay.len() - needle.len()) {
+        if &hay[i..i + needle.len()] == needle.as_slice() {
+            return i as i64;
+        }
+    }
+    -1
 }
 
 /// `str.slice(s, start, end) -> String`. Substring de `s` desde `start`
 /// (inclusive) hasta `end` (exclusive), en bytes. `end < 0` = hasta el final.
 pub fn host_str_slice<C: HostCtx>(ctx: &mut C, s: i64, start: i64, end: i64) -> i64 {
-    let s = ctx.read_str(s);
-    let len = s.len() as i64;
+    let bytes = ctx.read_bytes(s);
+    let len = bytes.len() as i64;
     let start = start.max(0).min(len);
     let end = if end < 0 {
         len
     } else {
         end.max(start).min(len)
     };
-    let out = s[start as usize..end as usize].to_string();
-    ctx.write_str(&out)
+    write_packed_bytes(ctx, &bytes[start as usize..end as usize])
 }
 
 /// `str.split(s, sep) -> String[]`. Divide `s` por el separador `sep`.
 pub fn host_str_split<C: HostCtx>(ctx: &mut C, s: i64, sep: i64) -> i64 {
-    let s = ctx.read_str(s);
-    let sep = ctx.read_str(sep);
-    let parts: Vec<String> = if sep.is_empty() {
-        vec![s]
+    let hay = ctx.read_bytes(s);
+    let needle = ctx.read_bytes(sep);
+    let mut parts: Vec<&[u8]> = Vec::new();
+    if needle.is_empty() {
+        parts.push(&hay);
     } else {
-        s.split(&sep).map(|p| p.to_string()).collect()
-    };
+        let mut start = 0usize;
+        let mut i = 0usize;
+        while i + needle.len() <= hay.len() {
+            if &hay[i..i + needle.len()] == needle.as_slice() {
+                parts.push(&hay[start..i]);
+                i += needle.len();
+                start = i;
+            } else {
+                i += 1;
+            }
+        }
+        parts.push(&hay[start..]);
+    }
     // Array<String> en memoria: header [cap:i64][len:i64] + elems packed.
     let n = parts.len() as i64;
     let array_ptr = ctx.alloc(n * 8 + 16);
@@ -2149,7 +2190,7 @@ pub fn host_str_split<C: HostCtx>(ctx: &mut C, s: i64, sep: i64) -> i64 {
     ctx.write_i64(array_ptr as usize, n);
     ctx.write_i64(array_ptr as usize + 8, n);
     for (i, part) in parts.iter().enumerate() {
-        let sp = ctx.write_str(part);
+        let sp = write_packed_bytes(ctx, part);
         ctx.write_i64(array_ptr as usize + 16 + i * 8, sp);
     }
     array_ptr

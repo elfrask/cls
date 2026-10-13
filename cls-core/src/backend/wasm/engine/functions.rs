@@ -126,6 +126,7 @@ impl<'a> Engine<'a> {
         let is_method = class_name.is_some();
         let mut fe = FuncEmitter::new(
             self.types,
+            &self.import_aliases,
             HostCaller {
                 indexes: self.host_indexes.clone(),
             },

@@ -201,8 +201,14 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Const(val));
                 return Ok(());
             }
-            // Constantes de módulos stdlib: math.PI / math.E
-            if obj_name == "math" {
+            // Constantes de módulos stdlib: math.PI / math.E. Soporta alias
+            // (`import "math" as m` -> `m.PI`).
+            let canon = self
+                .import_aliases
+                .get(obj_name)
+                .cloned()
+                .unwrap_or_else(|| obj_name.clone());
+            if canon == "math" {
                 match m.member.as_str() {
                     "PI" => {
                         self.body.push(Instruction::F64Const(Ieee64::new(

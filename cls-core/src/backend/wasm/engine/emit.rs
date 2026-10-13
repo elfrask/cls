@@ -49,6 +49,29 @@ impl<'a> Engine<'a> {
     pub(crate) fn emit(&mut self, module: &Module) -> ClsResult<Vec<u8>> {
         self.collect_functions(module)?;
 
+        // Alias de imports -> path del módulo. Permite referenciar los módulos
+        // internos (math/json/strings/fs/http/os/...) por cualquier alias
+        // (`import "math" as m`), no solo por el nombre literal del módulo.
+        for stmt in self.effective_statements(&module.statements) {
+            match stmt {
+                Statement::Import(imp) => {
+                    let alias = imp.alias.clone().unwrap_or_else(|| imp.path.clone());
+                    self.import_aliases
+                        .entry(alias)
+                        .or_insert_with(|| imp.path.clone());
+                }
+                Statement::FromImport(fi) => {
+                    if let Some(ns) = &fi.namespace {
+                        self.import_aliases
+                            .entry(ns.clone())
+                            .or_insert_with(|| fi.path.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+
         // Recolectar enums -> (def_id, variantes) para constantes `Nivel.Alto`.
         // `when`-aware: respeta las ramas activas del target actual (dev-2 fix).
         let mut def_id = 0u32;
@@ -552,6 +575,7 @@ impl<'a> Engine<'a> {
         if !seed.is_empty() {
             let mut fe = FuncEmitter::new(
                 self.types,
+                &self.import_aliases,
                 HostCaller {
                     indexes: self.host_indexes.clone(),
                 },
