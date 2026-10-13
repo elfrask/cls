@@ -50,6 +50,10 @@ pub fn flatten_imports(module: &ClsModule, imports: &[(String, ClsModule)]) -> C
                     // retorno): se transportan para que el cuerpo compilado los
                     // resuelva.
                     push_exported_types(&mut statements, &m.1, imports);
+                    // Helpers/globales internos (no exportados) del modulo: sus
+                    // funciones exportadas los referencian, asi que deben existir
+                    // en el modulo fusionado (R1b/R1c).
+                    push_module_internals(&mut statements, &m.1);
                 }
             }
             Statement::Import(imp) => {
@@ -57,6 +61,8 @@ pub fn flatten_imports(module: &ClsModule, imports: &[(String, ClsModule)]) -> C
                 if let Some(m) = imports.iter().find(|(p, _)| *p == imp.path) {
                     let prefix = imp.alias.clone().unwrap_or_else(|| imp.path.clone());
                     push_prefixed_exports(&mut statements, &m.1, &prefix, imports);
+                    push_exported_types(&mut statements, &m.1, imports);
+                    push_module_internals(&mut statements, &m.1);
                 }
             }
             other => statements.push(other.clone()),
@@ -111,6 +117,9 @@ fn flatten_nested_imports(
                     }
                     // Tipos exportados del modulo (deps de la firma/cuerpo).
                     push_exported_types(out, &sub.1, imports);
+                    // Helpers/globales internos (no exportados): los referencian
+                    // las funciones exportadas del modulo (R1b/R1c).
+                    push_module_internals(out, &sub.1);
                     flatten_nested_imports(out, &sub.1, imports, seen);
                 }
             }
@@ -118,6 +127,8 @@ fn flatten_nested_imports(
                 if let Some(sub) = imports.iter().find(|(p, _)| *p == imp.path) {
                     let prefix = imp.alias.clone().unwrap_or_else(|| imp.path.clone());
                     push_prefixed_exports(out, &sub.1, &prefix, imports);
+                    push_exported_types(out, &sub.1, imports);
+                    push_module_internals(out, &sub.1);
                     flatten_nested_imports(out, &sub.1, imports, seen);
                 }
             }
@@ -604,6 +615,35 @@ fn push_exported_types(out: &mut Vec<Statement>, m: &ClsModule, imports: &[(Stri
             if is_type_decl(&s) {
                 out.push(s);
             }
+        }
+    }
+}
+
+/// Transporta las declaraciones **internas** (no exportadas) de un módulo:
+/// funciones, vars/consts y tipos. Las funciones exportadas del módulo las
+/// referencian por nombre, así que deben existir en el módulo fusionado.
+/// Sin esto: una función interna devolvía basura (R1b) y los globales de módulo
+/// no se inicializaban (R1c). El dedupe por nombre mantiene una sola copia.
+fn push_module_internals(out: &mut Vec<Statement>, m: &ClsModule) {
+    for stmt in &m.statements {
+        let keep = match stmt {
+            Statement::FunctionDecl(f) => {
+                f.visibility != Visibility::Export && f.native.is_none()
+            }
+            Statement::VarDecl(v) | Statement::ConstDecl(v) => {
+                v.visibility != Visibility::Export && v.native.is_none()
+            }
+            Statement::StructureDecl(s) => {
+                s.visibility != Visibility::Export && s.native.is_none()
+            }
+            Statement::ClassDecl(c) => c.visibility != Visibility::Export,
+            Statement::EnumDecl(e) => e.visibility != Visibility::Export,
+            Statement::InterfaceDecl(i) => i.visibility != Visibility::Export,
+            Statement::TypeAlias(t) => t.visibility != Visibility::Export,
+            _ => false,
+        };
+        if keep {
+            out.push(stmt.clone());
         }
     }
 }

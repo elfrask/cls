@@ -33,7 +33,6 @@ $expectedErrors = @{
     "synerr.clsx" = "error de sintaxis intencional"
     "syn2.clsx"   = "error de sintaxis intencional"
     "mod-synerr.clsx" = "modulo con error de sintaxis (mensaje debe apuntar al modulo)"
-    "mod-badstruct.clsx" = "structure sin export usada por un export (error claro)"
 }
 
 # Args de app por test (se pasan tras `--`). Migracion dev-2 (Fase 8):

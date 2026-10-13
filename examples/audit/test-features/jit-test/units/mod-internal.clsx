@@ -1,0 +1,7 @@
+# R1b/R1c: funcion interna (no exportada) y globales de un modulo.
+from "modfixes/lib_internal" import t, gv, gs;
+
+function main(args: String[]) -> int {
+    print("internal:", t(), gv(), gs());
+    return 0;
+};
