@@ -1,0 +1,9 @@
+{
+  "name": "pkg",
+  "version": "1.0.0",
+  "description": "Modulo con entry propio; sus scripts se resuelven desde su raiz",
+  "export": {
+    "entry": "index.clsx",
+    "types": "api.clsi"
+  }
+}

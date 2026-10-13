@@ -1,0 +1,7 @@
+# Barrel: export { X } de un simbolo traido por import *.
+from "modfixes/barrel2" import star_a;
+
+function main(args: String[]) -> int {
+    print("barrel2:", star_a());
+    return 0;
+};

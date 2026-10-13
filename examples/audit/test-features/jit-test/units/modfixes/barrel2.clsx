@@ -1,0 +1,4 @@
+# Barrel: reexporta un simbolo traido por `from ... import *`.
+from "modfixes/star" import *;
+
+export { star_a };

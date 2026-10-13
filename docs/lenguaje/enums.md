@@ -68,7 +68,7 @@ export enum Color {
 ```
 
 ```clx
-include "lib/colores";
+from "lib/colores" import *;
 
 function main(args: String[]) -> int {
     var c = Color.Azul;

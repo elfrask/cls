@@ -1,0 +1,7 @@
+{
+  "name": "modules-isolation",
+  "version": "0.1.0",
+  "description": "Ejemplo: modulo con cls.json (export.entry) y aislamiento de resolucion",
+  "entry": "src/main.clsx",
+  "dependencies": {}
+}

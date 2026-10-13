@@ -9,7 +9,8 @@ CLS tiene dos sistemas de módulos: los **módulos fuente** (`.clsx`, con
 ```clx
 import "lib/mathx" as mathx;              # namespaced
 from "lib/stringsx" import gritar as gritarFn, repetir;
-include "lib/colores";
+from "lib/colores" import *;              # todos los exports (antes `include`)
+from "lib/colores" import * as colores;   # namespace
 ```
 
 ### `import "mod" as alias;`
@@ -49,19 +50,32 @@ function main(args: String[]) -> int {
 Solo se puede importar lo que está marcado `export`; importar algo no
 exportado da error (el typeck sugiere: `el módulo exporta: ...`).
 
-### `include "mod";`
+### `from "mod" import *;`
 
-Inyecta **todos** los exports del módulo en el scope actual, sin namespacing.
-Útil para enums u otros símbolos que quieras usar desnudos:
+Importa **todos** los exports del módulo al scope actual, sin namespacing.
+Reemplaza al antiguo `include` (eliminado del lenguaje en dev-2):
 
 ```clx
-include "lib/colores";
+from "lib/colores" import *;
 
 function main(args: String[]) -> int {
     var c = Color.Azul;      # sin prefijo
     return 0;
 };
 ```
+
+### `from "mod" import * as ns;`
+
+Binding del **namespace** (equivalente a `import "mod" as ns`). Se puede
+combinar con imports nombrados en la misma sentencia:
+
+```clx
+from "lib/colores" import Rojo, * as colores;
+# Rojo (desnudo) y colores::Azul
+```
+
+> `include "..."` **ya no es sintaxis válida**: da un error de migración. Usá
+> `from "..." import *;`.
 
 ## Exports
 
@@ -179,27 +193,69 @@ El `ModuleResolver` del runtime consulta en orden:
    `strings` (los módulos `os`, `path`, `process`, `time`, `random` se
    eliminaron en dev-2).
 3. **Hook externo** - el nodo resuelve módulos de usuario; en `clx` el orden de
-   candidatos es:
-   1. `{dir del archivo}/{path}.clsx` (junto al archivo que importa)
-   2. `{workspace}/modules/{nombre}/mod.clsx`
+   candidatos es (para un **nombre simple**; una ruta con `/` o absoluta es un
+   path explícito relativo al archivo que importa):
+   1. `{base_dir}/{path}.clsx` — `base_dir` es el dir del **entry** (o el de la
+      **raíz del módulo** cuando el import ocurre dentro de un módulo con
+      aislamiento; ver abajo)
+   2. `{workspace}/modules/{nombre}/<export.entry>` o `.../mod.clsx`
    3. `{cwd}/{path}.clsx`
-   4. `{cwd}/modules/{nombre}/mod.clsx`
-   5. `~/.cls/modules/{nombre}@{version}/mod.clsx` (globales versionadas;
-      filtra por el rango semver declarado en `cls.json`)
-   6. `~/.cls/modules/{nombre}/mod.clsx` (globales sin versión)
+   4. `{cwd}/modules/{nombre}/<export.entry>` o `.../mod.clsx`
+   5. `~/.cls/modules/{nombre}@{version}/...` (globales versionadas; filtra por
+      el rango semver declarado en el `cls.json` del importador)
+   6. `~/.cls/modules/{nombre}/...` (globales sin versión)
 4. **Error** - `Módulo 'X' no encontrado`.
+
+### Aislamiento por módulo (`cls.json` con `export`)
+
+Cada módulo puede tener su **propio** `cls.json` que lo declara como módulo:
+
+```json
+{
+  "name": "pkg",
+  "version": "1.0.0",
+  "export": {
+    "entry": "index.clsx",
+    "types": "api.clsi"
+  }
+}
+```
+
+- **`export.entry`**: script que expone la API pública del módulo. `import "pkg"`
+  carga ese entry (no `mod.clsx`). El consumidor solo ve lo que el entry exporta.
+- **`export.types`**: ruta del `.clsi` de tipos (typeck/maptype).
+- **Aislamiento**: si el módulo tiene su `cls.json` con `export`, sus imports
+  internos se resuelven desde **su raíz** (el dir de su `cls.json`), no desde el
+  proyecto principal; y su manifiesto se usa para el versionado de sus
+  dependencias. Así `index.clsx` puede hacer `from "lib/util" import *;` y
+  resolver `modules/pkg/lib/util.clsx` sin rutas absolutas.
+
+Módulos **sin** `cls.json` conservan la resolución clásica (todo relativo al
+entry) — es una limitación de compatibilidad, no el modo recomendado.
 
 Para módulos que requieren bindings nativos del SO (sockets, threads,
 ficheros de bajo nivel, etc.), ver [extension-when.md](extension-when.md):
 el patrón `when` + `extension` permite declarar esos bindings en un
 `.clsx` sin necesidad de recompilar cls-core o cls-jit.
 
+## Colisiones y reuso
+
+- `from "m" import *` (y `include`, ya eliminado) traen los símbolos **al scope
+  actual**; dos `import *` con el mismo nombre colisionan (gana el primero).
+  Para evitar colisiones usá namespaces: `import "m" as ns` / `from "m" import *
+  as ns` y referí con `ns::sym`.
+- Un módulo puede ser reutilizado por varios módulos (`a` y `b` importan `part`)
+  sin "declaración múltiple": el chequeo de tipos procesa cada módulo en su
+  propio scope.
+
 ## Módulos en el JIT
 
 El JIT **aplana** los imports: compila el entry y todos sus módulos en **un
 solo** módulo WASM (`flatten_imports`), fusionando los spans con offsets de
-línea únicos. Los exports de cada import quedan namespaced bajo prefijos
-`alias::`. Editar cualquier `.clsx` del grafo invalida el caché.
+línea únicos. Los exports de `import ... as`/`... import * as ns` quedan
+namespaced bajo prefijos `alias::`; el mismo módulo se aplana **una sola vez**
+(dedupe) aunque lo importen varios. Editar cualquier `.clsx` del grafo invalida
+el caché.
 
 ## `module` y `namespace`
 
@@ -210,3 +266,4 @@ en el scope actual (son equivalentes en comportamiento), accesibles luego vía
 `Nombre.miembro` / `Nombre::miembro`.
 
 Ejemplos completos: `examples/jit-examples/modules/src/`.
+Aislamiento: `examples/jit-examples/modules-isolation/`.

@@ -1,0 +1,5 @@
+# index del modulo `pkg`: define la API publica. Sus imports internos se
+# resuelven desde la RAIZ del modulo (`modules/pkg/`), no del proyecto.
+from "lib/util" import *;
+
+export { util_fn, PKG_NAME };

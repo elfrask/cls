@@ -1,0 +1,7 @@
+# `from "m" import *` reemplaza include.
+from "modfixes/star" import *;
+
+function main(args: String[]) -> int {
+    print("star:", star_a(), star_b(), STAR_V);
+    return 0;
+};

@@ -1,0 +1,8 @@
+# Reuso: dos modulos importan el mismo `star`; no debe colisionar (bug M).
+from "modfixes/usea" import usea;
+from "modfixes/useb" import useb;
+
+function main(args: String[]) -> int {
+    print("reuse:", usea(), useb());
+    return 0;
+};
