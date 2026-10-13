@@ -52,8 +52,26 @@ pub struct ModuleManifest {
     #[serde(default, rename = "devDependencies")]
     pub dev_dependencies: HashMap<String, String>,
 
+    /// Configuración de módulo: `export.entry` (index público) y `export.types`.
+    /// Solo aplica cuando este `cls.json` describe un **módulo** (no un proyecto).
+    #[serde(default, rename = "export", skip_serializing_if = "Option::is_none")]
+    pub export_config: Option<ModuleExport>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lockfile_version: Option<u32>,
+}
+
+/// Sección `export` de un `cls.json` de módulo: qué script expone la API y
+/// dónde viven los tipos. Permite que un módulo se importe por su `entry` y que
+/// sus scripts internos se resuelvan desde la raíz del módulo (no del proyecto).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ModuleExport {
+    /// Ruta (relativa a la raíz del módulo) del script de entrada/index.
+    pub entry: String,
+    /// Ruta (relativa) del archivo de tipos `.clsi`, si aplica.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub types: Option<String>,
 }
 
 fn default_registry() -> String {
@@ -126,6 +144,7 @@ impl ModuleManifest {
             interpreter: InterpreterConfig::default(),
             dependencies: HashMap::new(),
             dev_dependencies: HashMap::new(),
+            export_config: None,
             lockfile_version: None,
         }
     }

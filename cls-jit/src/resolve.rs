@@ -178,9 +178,9 @@ pub fn module_candidates(
     } else {
         // Módulo por nombre: buscar en orden.
         candidates.push(base_dir.join(format!("{}.clsx", name)));
-        candidates.push(proj.join("modules").join(name).join("mod.clsx"));
+        push_module_dir_candidates(&proj.join("modules").join(name), &mut candidates);
         candidates.push(cwd.join(format!("{}.clsx", name)));
-        candidates.push(cwd.join("modules").join(name).join("mod.clsx"));
+        push_module_dir_candidates(&cwd.join("modules").join(name), &mut candidates);
         if let Some(ref um) = user_modules {
             let declared = manifest.and_then(|m| m.dependency_version(name).map(|s| s.to_string()));
             // Versiones instaladas (nombre@versión): ordenar desc y filtrar por rango.
@@ -201,16 +201,57 @@ pub fn module_candidates(
                             continue;
                         }
                     }
-                    candidates.push(p.join("mod.clsx"));
+                    push_module_dir_candidates(&p, &mut candidates);
                 }
             }
             // Sin versión (fallback): solo si no hay rango declarado que exigir.
             if declared.is_none() {
-                candidates.push(um.join(name).join("mod.clsx"));
+                push_module_dir_candidates(&um.join(name), &mut candidates);
             }
         }
     }
     candidates
+}
+
+/// Candidatos de un directorio de módulo `{root}/modules/{name}` (o global
+/// `~/.cls/modules/{name}[@ver]`): primero el `export.entry` de su `cls.json`
+/// (aislamiento de módulo), luego `mod.clsx`.
+fn push_module_dir_candidates(dir: &std::path::Path, candidates: &mut Vec<std::path::PathBuf>) {
+    if let Some(entry) = module_manifest_entry(dir) {
+        candidates.push(entry);
+    }
+    candidates.push(dir.join("mod.clsx"));
+}
+
+/// `dir/cls.json` con `export.entry` -> `dir/<entry>` (si el archivo existe).
+fn module_manifest_entry(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let manifest_path = dir.join("cls.json");
+    if !manifest_path.exists() {
+        return None;
+    }
+    let m = cls_core::config::ModuleManifest::from_file(&manifest_path).ok()?;
+    let entry = m.export_config?.entry;
+    if entry.is_empty() {
+        return None;
+    }
+    let p = dir.join(&entry);
+    if p.exists() {
+        Some(p)
+    } else {
+        None
+    }
+}
+
+/// ¿`dir/cls.json` describe un **módulo** (tiene sección `export`)? Si no,
+/// el módulo no tiene aislamiento propio.
+fn module_has_export(dir: &std::path::Path) -> bool {
+    let manifest_path = dir.join("cls.json");
+    if !manifest_path.exists() {
+        return false;
+    }
+    cls_core::config::ModuleManifest::from_file(&manifest_path)
+        .map(|m| m.export_config.is_some())
+        .unwrap_or(false)
 }
 
 /// Resuelve los imports de un módulo (recursivamente) y los carga como AST.
@@ -300,7 +341,18 @@ pub fn load_import_modules_hooked(
                     )
                 })?;
                 seen.insert(key);
-                load_import_modules_hooked(&m, base_dir, seen, out, manifest, hook)?;
+                // Aislamiento de módulo: si el directorio del módulo tiene su
+                // propio `cls.json` con sección `export`, sus imports internos
+                // se resuelven desde esa raíz (no desde el proyecto principal).
+                let (mod_base, mod_manifest) = match candidate.parent() {
+                    Some(d) if module_has_export(d) => {
+                        let mb = d.to_path_buf();
+                        let mm = cls_core::config::ModuleManifest::find_in_dir(&mb);
+                        (mb, mm)
+                    }
+                    _ => (base_dir.to_path_buf(), manifest.cloned()),
+                };
+                load_import_modules_hooked(&m, &mod_base, seen, out, mod_manifest.as_ref(), hook)?;
                 out.push((path.clone(), source, m));
                 found = true;
                 break;

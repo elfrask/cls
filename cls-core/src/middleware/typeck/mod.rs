@@ -193,13 +193,18 @@ impl TypeChecker {
         }
         // Checkear los statements del prelude. Esto es necesario para validar
         // tipos internos de los exports (e.g. `function saludar() { return "..."; }`
-        // debe validar que la concatenacion es valida). Esto tambien define los
-        // exports en scope[0] del modulo principal.
+        // debe validar que la concatenacion es valida). Cada módulo se chequea en
+        // su PROPIO scope: así sus declaraciones y sus imports (`from ... import *`)
+        // no se mezclan con los de otros módulos. Antes compartían scope[0] y un
+        // módulo reutilizado por varios (`a` y `b` importan `part`) disparaba
+        // "ya está declarado" (bug M).
         for (_path, m) in prelude {
             self.exported_names.clear();
+            self.push_scope();
             for stmt in &m.statements {
                 self.check_statement(stmt);
             }
+            self.pop_scope();
         }
         // Bug fix dev-2 (Fase 7): antes la pasada tambien checkeaba los
         // statements del prelude (linea 190-194 originales). Esto era
