@@ -384,7 +384,42 @@ impl<'a> FuncEmitter<'a> {
     /// hoy pass-through: existe como PUNTO único de coerción para futuros
     /// layouts (si algo vuelve a ser contiguo, la conversión se implementa aquí
     /// y todas las transferencias lo heredan).
-    pub(crate) fn emit_coerce(&mut self, expr: &Expression, _dest: Option<&Type>) -> ClsResult<()> {
+    pub(crate) fn emit_coerce(&mut self, expr: &Expression, dest: Option<&Type>) -> ClsResult<()> {
+        // Cmx -> String: el resultado es el **tag** como String, con un handle de
+        // componente (función, tag-bit) convertido a "" (vacío). Así un renderer
+        // CLS puede distinguir componentes (`tag.length == 0` -> se invoca la
+        // función) de elementos (`tag` = nombre del tag). Aplica a `x.tag` y a un
+        // valor Cmx completo (`var s: String = cmx`).
+        if matches!(dest, Some(Type::String)) {
+            let tag_source: Option<&Expression> = match expr {
+                Expression::MemberAccess(m)
+                    if m.member == "tag"
+                        && matches!(self.types.get(&expr_span(&m.object)), Some(Type::Cmx)) =>
+                {
+                    Some(&m.object)
+                }
+                _ if matches!(self.types.get(&expr_span(expr)), Some(Type::Cmx)) => Some(expr),
+                _ => None,
+            };
+            if let Some(src) = tag_source {
+                self.emit_expression(src)?; // ptr del CmxValue
+                self.emit_cmx_field(0)?; // tag (i64)
+                let tmp = self.fresh_local_ty(WasTy::I64);
+                self.body.push(Instruction::LocalSet(tmp));
+                // if (tag >> 32) == 0 -> handle (o vacío) -> 0 ("")
+                self.body.push(Instruction::LocalGet(tmp));
+                self.body.push(Instruction::I64Const(32));
+                self.body.push(Instruction::I64ShrU);
+                self.body.push(Instruction::I64Eqz);
+                self.body
+                    .push(Instruction::If(BlockType::Result(ValType::I64)));
+                self.body.push(Instruction::I64Const(0));
+                self.body.push(Instruction::Else);
+                self.body.push(Instruction::LocalGet(tmp));
+                self.body.push(Instruction::End);
+                return Ok(());
+            }
+        }
         self.emit_expression(expr)
     }
 
