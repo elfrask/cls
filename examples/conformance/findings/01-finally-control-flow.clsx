@@ -1,0 +1,53 @@
+# FINDING #1 - `finally` NO se ejecuta cuando el `try` sale por control abrupto
+#              (`return`, `break`, `continue`).
+#
+#   return   dentro de try -> finally se SALTA      (esperado: corre)
+#   break    dentro de try -> finally se SALTA      (esperado: corre)
+#   continue dentro de try -> finally se SALTA      (esperado: corre)
+#   throw    propagando   -> finally SI corre
+#   salida normal         -> finally SI corre
+#   (tras catch local, tambien corre: ver eje "excepciones" de la suite)
+#
+# Pure CLS (sin FFI, sin host_calls).
+# Repro:
+#   target\debug\clx.exe run examples\conformance\findings\01-finally-control-flow.clsx
+#
+# Esperado: fin_return=1 fin_break=1 fin_continue=3 ; exit 0
+# Obtenido: fin_return=0 fin_break=0 fin_continue=0 ; exit 1
+
+var t_return = 0;
+var t_break = 0;
+var t_continue = 0;
+
+function f_return() -> int {
+    try { return 1; } finally { t_return = 1; }
+}
+
+function f_break() -> int {
+    var i = 0;
+    while (i < 3) {
+        try { break; } finally { t_break = t_break + 1; }
+        i = i + 1;
+    }
+    return i;
+}
+
+function f_continue() -> int {
+    var i = 0;
+    while (i < 3) {
+        i = i + 1;
+        try { continue; } finally { t_continue = t_continue + 1; }
+    }
+    return i;
+}
+
+function main(args: String[]) -> int {
+    var r = f_return();
+    var b = f_break();
+    var c = f_continue();
+    print("return:   r=" + str(r) + " fin=" + str(t_return) + "   (esperado fin=1)");
+    print("break:    b=" + str(b) + " fin=" + str(t_break) + "   (esperado fin=1)");
+    print("continue: c=" + str(c) + " fin=" + str(t_continue) + "   (esperado fin=3)");
+    if (t_return == 1 && t_break == 1 && t_continue == 3) { return 0; }
+    return 1;
+}

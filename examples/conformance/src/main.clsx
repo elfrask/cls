@@ -1,0 +1,614 @@
+# main.clsx - Runner de la suite de conformidad de CLS 2.0.
+#
+# Compara, eje por eje, el computo en CLS puro contra el oraculo C (FFI):
+#   arith/bitwise, floats, promocion int->float, strings (UTF-8 multibyte),
+#   control de flujo, closures, arrays/records/tuplas, excepciones.
+#
+# Exit 0 si TODOS los casos coinciden; 1 si hay cualquier divergencia.
+#
+# Uso (desde la raiz del repo, por la ruta relativa del .dll):
+#   target\debug\clx.exe run examples\conformance\src\main.clsx --add-path-module=modules
+
+import "expr" as e;
+
+var g_pass = 0;
+var g_fail = 0;
+
+# Globals para el caso de excepciones con return dentro de try/finally.
+var g_body3 = 0;
+var g_fin3 = 0;
+
+function b2i(b: bool) -> int { if (b) { return 1; } return 0; }
+
+function chk_i(label: String, got: int, exp: int) {
+    if (got != exp) {
+        g_fail = g_fail + 1;
+        print("    [FAIL] " + label + "  cls=" + str(got) + " c=" + str(exp));
+    } else {
+        g_pass = g_pass + 1;
+    }
+}
+
+function chk_s(label: String, got: String, exp: String) {
+    if (got != exp) {
+        g_fail = g_fail + 1;
+        print("    [FAIL] " + label + "  cls='" + got + "' c='" + exp + "'");
+    } else {
+        g_pass = g_pass + 1;
+    }
+}
+
+# =========================================================================
+# Eje arith/bitwise (enteros i64)
+# =========================================================================
+
+function check_pair(a: int, b: int) {
+    var ops: int[] = [0, 1, 2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+    var i = 0;
+    while (i < ops.length) {
+        var op = ops[i];
+        chk_i("int op=" + str(op) + " a=" + str(a) + " b=" + str(b),
+              e::dispatch_binop(op, a, b), e::orc_binop(op, a, b));
+        i = i + 1;
+    }
+}
+
+function check_divmod(a: int, b: int) {
+    var ops: int[] = [3, 4];
+    var i = 0;
+    while (i < ops.length) {
+        var op = ops[i];
+        chk_i("divmod op=" + str(op) + " a=" + str(a) + " b=" + str(b),
+              e::dispatch_binop(op, a, b), e::orc_binop(op, a, b));
+        i = i + 1;
+    }
+}
+
+function check_unop(a: int) {
+    var ops: int[] = [0, 1];
+    var i = 0;
+    while (i < ops.length) {
+        var op = ops[i];
+        chk_i("unop op=" + str(op) + " a=" + str(a),
+              e::dispatch_unop(op, a), e::orc_unop(op, a));
+        i = i + 1;
+    }
+}
+
+function axis_int() {
+    var mn = e::i64_min();
+    var mx = e::i64_max();
+
+    # sanity del propio oraculo C (wrap de INT64_MAX+1)
+    chk_i("C selfcheck wrap", e::orc_selfcheck(), 1);
+
+    check_pair(0, 0);
+    check_pair(1, 0);
+    check_pair(0, 1);
+    check_pair(1, 1);
+    check_pair(-1, 1);
+    check_pair(1, -1);
+    check_pair(-1, -1);
+    check_pair(7, 3);
+    check_pair(-7, 3);
+    check_pair(7, -3);
+    check_pair(-7, -3);
+    check_pair(2, 63);
+    check_pair(2, 64);
+    check_pair(2, 65);
+    check_pair(2, 127);
+    check_pair(-8, 1);
+    check_pair(-8, 3);
+    check_pair(-1, 63);
+    check_pair(-1, 64);
+    check_pair(mx, 1);
+    check_pair(mx, -1);
+    check_pair(mx, mx);
+    check_pair(mn, 1);
+    check_pair(mn, -1);
+    check_pair(mn, mx);
+    check_pair(mn, mn);
+    check_pair(123456789, 987654321);
+    check_pair(-123456789, 987654321);
+    check_pair(255, 8);
+    check_pair(1, 62);
+    check_pair(1, 63);
+    check_pair(1, 64);
+
+    check_divmod(7, 3);
+    check_divmod(-7, 3);
+    check_divmod(7, -3);
+    check_divmod(-7, -3);
+    check_divmod(mx, 2);
+    check_divmod(mn, 2);
+    check_divmod(mn, 3);
+    check_divmod(-1, 2);
+    check_divmod(100, -7);
+    check_divmod(-100, 7);
+    check_divmod(0, 5);
+    check_divmod(-9, 4);
+    check_divmod(9, -4);
+
+    check_unop(0);
+    check_unop(1);
+    check_unop(-5);
+    check_unop(mx);
+    check_unop(mn);
+}
+
+# =========================================================================
+# Eje floats + promocion int->float
+# =========================================================================
+
+# El FFI no pasa args CDouble por XMM (bug: se mandan como i64). Para no perder
+# el eje flotante, el oraculo recibe los operandos Y el resultado de CLS como
+# strings (CString, que si funciona), los parsea con strtod, computa en C y
+# compara bit a bit (o_fcmp / o_mix_cmp). Ver findings/FFI.
+var g_fc = 0;
+
+function chk_fc(op: int, a: float, b: float) {
+    if (op == 3 && b == 0.0) { return; }
+    var res = e::dispatch_binop_f(op, a, b);
+    var okc = e::orc_fcmp(op, str(a), str(b), str(res));
+    g_fc = g_fc + 1;
+    chk_i("float#" + str(g_fc) + " op=" + str(op), okc, 1);
+}
+
+function chk_mc(op: int, a: int, b: float) {
+    if (op == 3 && b == 0.0) { return; }
+    var res = e::dispatch_mix(op, a, b);
+    var okc = e::orc_mix_cmp(op, str(a), str(b), str(res));
+    g_fc = g_fc + 1;
+    chk_i("mix#" + str(g_fc) + " op=" + str(op), okc, 1);
+}
+
+function check_fpair(a: float, b: float) {
+    var ops: int[] = [0, 1, 2, 3, 10, 11, 12, 13, 14, 15];
+    var i = 0;
+    while (i < ops.length) {
+        chk_fc(ops[i], a, b);
+        i = i + 1;
+    }
+}
+
+function check_mix(a: int, b: float) {
+    var ops: int[] = [0, 1, 2, 3];
+    var i = 0;
+    while (i < ops.length) {
+        chk_mc(ops[i], a, b);
+        i = i + 1;
+    }
+}
+
+function axis_float() {
+    check_fpair(0.0, 0.0);
+    check_fpair(1.0, 0.0);
+    check_fpair(0.0, 1.0);
+    check_fpair(2.5, 0.5);
+    check_fpair(1.0, 3.0);
+    check_fpair(-1.0, 3.0);
+    check_fpair(3.0, -2.0);
+    check_fpair(-2.25, 0.5);
+    check_fpair(0.1, 0.2);
+    check_fpair(1.5, 1.5);
+    check_fpair(100.0, 0.0);
+    check_fpair(0.0, 5.0);
+    check_fpair(1e300, 1e-300);
+    check_fpair(1e-300, 1e300);
+    check_fpair(-0.0, 0.0);
+
+    check_mix(7, 2.0);
+    check_mix(1, 3.0);
+    check_mix(-5, 2.5);
+    check_mix(0, 1.0);
+    check_mix(123456, 0.001);
+    check_mix(1000000, 7.0);
+    check_mix(-1, 0.0);
+}
+
+# =========================================================================
+# Eje strings (semantica de bytes / UTF-8 multibyte)
+# =========================================================================
+
+function axis_strings() {
+    var strs: String[] = [
+        "", "a", "abc", "Hello World", "café", "汉字", "😀🎉",
+        "café😀!", "  trim  ", "áéíóú", "naïve", "a,b,c", "aaaa"
+    ];
+
+    var i = 0;
+    while (i < strs.length) {
+        var s = strs[i];
+        chk_i("strlen[" + str(i) + "]", s.length, e::orc_strlen(s));
+        chk_i("isEmpty[" + str(i) + "]", b2i(s.isEmpty()), 1 - b2i(e::orc_strlen(s) > 0));
+        i = i + 1;
+    }
+
+    var hays: String[] = ["Hello World", "café😀!", "汉字汉字", "abc", "aaaa", "😀x😀y", ""];
+    var ndls: String[] = ["", "l", "World", "😀", "汉", "z", "a", "café", "😀x"];
+    var h = 0;
+    while (h < hays.length) {
+        var hay = hays[h];
+        var n = 0;
+        while (n < ndls.length) {
+            var ndl = ndls[n];
+            var hlab = "h" + str(h) + " n" + str(n);
+            chk_i("indexOf " + hlab, hay.indexOf(ndl), e::orc_indexof(hay, ndl));
+            chk_i("contains " + hlab, b2i(hay.contains(ndl)), e::orc_contains(hay, ndl));
+            chk_i("startsWith " + hlab, b2i(hay.startsWith(ndl)), e::orc_startswith(hay, ndl));
+            chk_i("endsWith " + hlab, b2i(hay.endsWith(ndl)), e::orc_endswith(hay, ndl));
+            n = n + 1;
+        }
+        h = h + 1;
+    }
+
+    # El retorno CString no es byte-transparente: un slice que parte un caracter
+    # UTF-8 vuelve normalizado a U+FFFD. Por eso:
+    #   - la LONGITUD en bytes se compara con o_slice_len para todos los strings;
+    #   - el CONTENIDO se compara con o_slice solo para strings ASCII.
+    var ascii: String[] = ["", "a", "abc", "Hello World", "  trim  ", "a,b,c", "aaaa"];
+    var starts: int[] = [0, 1, 2, 5, -1, -5, 10, 100];
+    var ends: int[] = [0, 1, 3, 5, -1, -3, 10, 100];
+    var si = 0;
+    while (si < strs.length) {
+        var s2 = strs[si];
+        var a = 0;
+        while (a < starts.length) {
+            var b = 0;
+            while (b < ends.length) {
+                var lab = "s" + str(si) + " " + str(starts[a]) + ".." + str(ends[b]);
+                var got = s2.slice(starts[a], ends[b]);
+                chk_i("slice_len " + lab, got.length, e::orc_slice_len(s2, starts[a], ends[b]));
+                b = b + 1;
+            }
+            a = a + 1;
+        }
+        si = si + 1;
+    }
+
+    si = 0;
+    while (si < ascii.length) {
+        var s3 = ascii[si];
+        var a2 = 0;
+        while (a2 < starts.length) {
+            var b2 = 0;
+            while (b2 < ends.length) {
+                var lab2 = "ascii" + str(si) + " " + str(starts[a2]) + ".." + str(ends[b2]);
+                chk_s("slice " + lab2, s3.slice(starts[a2], ends[b2]), e::orc_slice(s3, starts[a2], ends[b2]));
+                b2 = b2 + 1;
+            }
+            a2 = a2 + 1;
+        }
+        si = si + 1;
+    }
+}
+
+# =========================================================================
+# Eje control de flujo / recursion
+# =========================================================================
+
+function cls_sum_to(n: int) -> int {
+    var acc = 0;
+    var i = 1;
+    while (i <= n) { acc = acc + i; i = i + 1; }
+    return acc;
+}
+
+function cls_fib(n: int) -> int {
+    if (n < 2) { return n; }
+    return cls_fib(n - 1) + cls_fib(n - 2);
+}
+
+function cls_fact(n: int) -> int {
+    var acc = 1;
+    var i = 2;
+    while (i <= n) { acc = acc * i; i = i + 1; }
+    return acc;
+}
+
+function cls_collatz(n: int) -> int {
+    var steps = 0;
+    while (n != 1) {
+        if (n % 2 == 0) { n = n / 2; } else { n = 3 * n + 1; }
+        steps = steps + 1;
+    }
+    return steps;
+}
+
+function cls_gcd(a: int, b: int) -> int {
+    while (b != 0) {
+        var t = b;
+        b = a % b;
+        a = t;
+    }
+    if (a < 0) { return -a; }
+    return a;
+}
+
+function cls_flow_sum(n: int) -> int {
+    var acc = 0;
+    var i = 0;
+    while (i < n) {
+        if (i % 3 == 0) { i = i + 1; continue; }
+        if (i > 40) { break; }
+        acc = acc + i;
+        i = i + 1;
+    }
+    return acc;
+}
+
+function axis_control() {
+    var ns: int[] = [0, 1, 2, 5, 10, 100, 1000];
+    var i = 0;
+    while (i < ns.length) {
+        chk_i("sum_to " + str(ns[i]), cls_sum_to(ns[i]), e::orc_sum_to(ns[i]));
+        chk_i("fact " + str(ns[i]), cls_fact(ns[i]), e::orc_fact(ns[i]));
+        i = i + 1;
+    }
+
+    var fn: int[] = [0, 1, 2, 3, 5, 10, 15, 20];
+    i = 0;
+    while (i < fn.length) {
+        chk_i("fib " + str(fn[i]), cls_fib(fn[i]), e::orc_fib(fn[i]));
+        i = i + 1;
+    }
+
+    var cn: int[] = [1, 2, 3, 6, 7, 27, 97, 871];
+    i = 0;
+    while (i < cn.length) {
+        chk_i("collatz " + str(cn[i]), cls_collatz(cn[i]), e::orc_collatz(cn[i]));
+        i = i + 1;
+    }
+
+    chk_i("gcd 12,18", cls_gcd(12, 18), e::orc_gcd(12, 18));
+    chk_i("gcd 270,192", cls_gcd(270, 192), e::orc_gcd(270, 192));
+    chk_i("gcd -12,18", cls_gcd(-12, 18), e::orc_gcd(-12, 18));
+    chk_i("gcd 17,5", cls_gcd(17, 5), e::orc_gcd(17, 5));
+
+    var fl: int[] = [0, 5, 10, 40, 41, 50, 100];
+    i = 0;
+    while (i < fl.length) {
+        chk_i("flow_sum " + str(fl[i]), cls_flow_sum(fl[i]), e::orc_flow_sum(fl[i]));
+        i = i + 1;
+    }
+}
+
+# =========================================================================
+# Eje closures / funciones como valor
+# =========================================================================
+
+function axis_closures() {
+    var ks: int[] = [0, 1, 10, -5, 100];
+    var xs: int[] = [0, 1, 2, -3, 7];
+    var i = 0;
+    while (i < ks.length) {
+        var base = ks[i];
+        var f = (x: int) -> x + base;
+        var j = 0;
+        while (j < xs.length) {
+            chk_i("closure base=" + str(base) + " x=" + str(xs[j]),
+                  f(xs[j]), e::orc_closure_add(base, xs[j]));
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+
+    var b = 10;
+    var g = (x: int) -> x + b;
+    var r1 = g(5);
+    b = 100;
+    var r2 = g(5);
+    chk_i("closure recapture r1", r1, e::orc_closure_add(10, 5));
+    chk_i("closure recapture r2", r2, e::orc_closure_add(100, 5));
+
+    var arr: int[] = [1, 2, 3, 4];
+    var k = 3;
+    var h = (x: int) -> k * x + k;
+    var mapped = arr.map(h);
+    var s = 0;
+    var m = 0;
+    while (m < mapped.length) { s = s + mapped[m]; m = m + 1; }
+    var csum = 0;
+    m = 0;
+    while (m < arr.length) { csum = csum + e::orc_apply(k, arr[m]); m = m + 1; }
+    chk_i("closure map sum", s, csum);
+}
+
+# =========================================================================
+# Eje arrays / records / tuplas
+# =========================================================================
+
+function cls_arr_script(n: int) -> int {
+    var a: int[] = [];
+    var i = 0;
+    while (i < n) {
+        if (i % 3 == 0) { a.push(i); }
+        elif (i % 3 == 1) { a.unshift(i); }
+        else { a.reverse(); }
+        i = i + 1;
+    }
+    var len = a.length;
+    var sum = 0;
+    var j = 0;
+    while (j < len) { sum = sum + a[j]; j = j + 1; }
+    var first = 0;
+    if (len > 0) { first = a[0]; }
+    var idx = a.indexOf(0);
+    var idxc = 0;
+    if (idx < 0) { idxc = 1000; } else { idxc = idx; }
+    return sum + 1000 * len + 1000000 * first + 1000000000 * idxc;
+}
+
+function cls_arr_indexof_sum(n: int, needle: int) -> int {
+    var a: int[] = [];
+    var i = 0;
+    while (i < n) { a.push((i * 7) % 13); i = i + 1; }
+    var idx = a.indexOf(needle);
+    var sum = 0;
+    var j = 0;
+    while (j < n) { sum = sum + a[j]; j = j + 1; }
+    var idxc = 0;
+    if (idx < 0) { idxc = 999; } else { idxc = idx; }
+    return sum + 1000 * idxc;
+}
+
+function cls_rec_checks() -> int {
+    var r: Record<String, Int> = {"a": 1, "b": 2, "c": 3};
+    var sum = r["a"] + r["b"] + r["c"];
+    var keys = r.keys();
+    var sumkl = 0;
+    var i = 0;
+    while (i < keys.length) { sumkl = sumkl + keys[i].length; i = i + 1; }
+    return sum + 10 * r.length + 100 * b2i(r.has("b")) + 1000 * sumkl;
+}
+
+function cls_tuple_checks() -> int {
+    var t = (10, 20, 30, 40);
+    var sum = t[0] + t[1] + t[2] + t[3];
+    return sum + 10 * t.length + 1000 * t[0] + 100000 * t[3];
+}
+
+function axis_collections() {
+    var ns: int[] = [0, 1, 2, 3, 5, 10, 20, 50];
+    var i = 0;
+    while (i < ns.length) {
+        chk_i("arr_script " + str(ns[i]), cls_arr_script(ns[i]), e::orc_arr_script(ns[i]));
+        i = i + 1;
+    }
+
+    chk_i("arr_indexof 20,5", cls_arr_indexof_sum(20, 5), e::orc_arr_indexof_sum(20, 5));
+    chk_i("arr_indexof 50,9", cls_arr_indexof_sum(50, 9), e::orc_arr_indexof_sum(50, 9));
+    chk_i("arr_indexof 10,99", cls_arr_indexof_sum(10, 99), e::orc_arr_indexof_sum(10, 99));
+
+    chk_i("rec_checks", cls_rec_checks(), e::orc_rec_checks());
+    chk_i("tuple_checks", cls_tuple_checks(), e::orc_tuple_checks());
+}
+
+# =========================================================================
+# Eje excepciones (try/catch/finally) - se compara la traza con C
+# =========================================================================
+
+function cls_exc_trace(mode: int) -> int {
+    var value = 0;
+    var body = 0;
+    var cth = 0;
+    var fin = 0;
+
+    if (mode == 0) {
+        try {
+            body = 1;
+            value = 1;
+        } catch (err) {
+            cth = 1;
+            value = 99;
+        } finally {
+            fin = 1;
+            value = 2;
+        }
+    } elif (mode == 1) {
+        try {
+            body = 1;
+            value = 1;
+            throw("boom");
+        } catch (err) {
+            cth = 1;
+            value = 2;
+        } finally {
+            fin = 1;
+            value = 3;
+        }
+    } elif (mode == 2) {
+        try {
+            try {
+                body = 1;
+                value = 1;
+                throw("boom");
+            } finally {
+                fin = 1;
+            }
+        } catch (err) {
+            cth = 1;
+            value = 2;
+        }
+    }
+
+    return value * 100 + body * 10 + cth + fin * 10000;
+}
+
+# return dentro de try: el finally debe correr antes de salir.
+function cls_exc_return() -> int {
+    try {
+        g_body3 = 1;
+        return 7;
+    } finally {
+        g_fin3 = 1;
+    }
+}
+
+function axis_exceptions() {
+    var modes: int[] = [0, 1, 2];
+    var i = 0;
+    while (i < modes.length) {
+        chk_i("exc mode=" + str(modes[i]), cls_exc_trace(modes[i]), e::orc_exc_trace(modes[i]));
+        i = i + 1;
+    }
+
+    g_body3 = 0;
+    g_fin3 = 0;
+    var r = cls_exc_return();
+    var encoded = r * 100 + g_body3 * 10 + g_fin3 * 10000;
+    chk_i("exc return-in-try", encoded, e::orc_exc_trace(3));
+}
+
+# =========================================================================
+# Runner
+# =========================================================================
+
+function run_axis(name: String, fails_before: int, passes_before: int) {
+    var df = g_fail - fails_before;
+    var dp = g_pass - passes_before;
+    var tag = " OK ";
+    if (df > 0) { tag = "FAIL"; }
+    print("  [${tag}] " + name + ": casos=" + str(dp + df) + " coinciden=" + str(dp) + " divergen=" + str(df));
+}
+
+function main(args: String[]) -> int {
+    print("=== Conformance CLS vs oraculo C (FFI, differential) ===");
+
+    var p0 = g_pass;
+    var f0 = g_fail;
+    axis_int();
+    run_axis("arith/bitwise", f0, p0);
+
+    p0 = g_pass; f0 = g_fail;
+    axis_float();
+    run_axis("floats+mix", f0, p0);
+
+    p0 = g_pass; f0 = g_fail;
+    axis_strings();
+    run_axis("strings(utf8)", f0, p0);
+
+    p0 = g_pass; f0 = g_fail;
+    axis_control();
+    run_axis("control/recursion", f0, p0);
+
+    p0 = g_pass; f0 = g_fail;
+    axis_closures();
+    run_axis("closures/callable", f0, p0);
+
+    p0 = g_pass; f0 = g_fail;
+    axis_collections();
+    run_axis("arrays/records/tuplas", f0, p0);
+
+    p0 = g_pass; f0 = g_fail;
+    axis_exceptions();
+    run_axis("excepciones", f0, p0);
+
+    print("");
+    if (g_fail == 0) {
+        print("RESULTADO: OK (" + str(g_pass) + " casos, 0 divergencias)");
+        return 0;
+    }
+    print("RESULTADO: ${g_fail} divergencia(s) de ${g_pass + g_fail} casos");
+    return 1;
+}

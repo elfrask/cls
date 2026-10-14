@@ -1,0 +1,32 @@
+# FINDING #3 - FFI: el retorno CString no es byte-transparente.
+#
+# Un `char*` devuelto por C que contiene bytes NO validos en UTF-8 (p.ej. un
+# fragmento de un caracter multibyte) se normaliza a U+FFFD (EF BF BD) al
+# convertirse a String en el retorno. No se puede obtener bytes crudos por
+# CString (misma familia que el corte en NUL).
+#
+#   primer byte de "汉字" = 0xE6 -> o_slice(s,0,1) deberia medir 1 byte;
+#   mide 3 (el U+FFFD de reemplazo).
+#
+# El `.slice` de CLS SI es byte-exacto (mide 1). El problema es solo el retorno
+# CString del FFI (por eso la suite compara slices multibyte por LONGITUD, no
+# por contenido).
+#
+# Repro:
+#   target\debug\clx.exe run examples\conformance\findings\03-cstring-return-utf8.clsx
+
+extension "examples/conformance/oracle/oracle.dll" as C {
+    function o_slice(s: CString, start: CLong, end: CLong) -> CString;
+    function o_slice_len(s: CString, start: CLong, end: CLong) -> CLong;
+};
+
+function main(args: String[]) -> int {
+    var s = "汉字";
+    var c = o_slice(s, 0, 1);       # C devuelve el byte 0xE6
+    var cls = s.slice(0, 1);        # CLS devuelve el byte 0xE6
+    print("oraculo C len=" + str(c.length) + " (esperado 1)");
+    print("CLS slice len=" + str(cls.length) + " (esperado 1)");
+    print("o_slice_len=" + str(int(o_slice_len(s, 0, 1))) + " (esperado 1)");
+    if (c.length == 1) { return 0; }
+    return 1;
+}
