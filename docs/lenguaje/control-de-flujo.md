@@ -1,7 +1,7 @@
 # Control de flujo
 
-Sintaxis verificada en `examples/audit/test-features/jit-test/units/` y
-`examples/audit/test-features/`. Todas las formas listadas aquí las soporta el
+Sintaxis verificada en `examples/test/jit-test/units/` y
+`examples/test/jit-test/`. Todas las formas listadas aquí las soporta el
 JIT.
 
 > **Los paréntesis de la condición son OBLIGATORIOS** en `if`, `elif`, `while`,

@@ -77,8 +77,8 @@ function main(args: String[]) -> int {
 };
 ```
 
-Ejemplo completo: `examples/jit-examples/modules/src/` y
-`examples/audit/features/10-enums.clsx`.
+Ejemplo completo: `examples/test/jit-examples/modules/src/` y
+`examples/test/jit-test/units/10-enums.clsx`.
 
 ## En el type checker
 

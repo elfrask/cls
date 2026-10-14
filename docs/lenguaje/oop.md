@@ -180,7 +180,7 @@ function main(args: String[]) -> int {
 }
 ```
 
-Verificado en `examples/audit/test-features/tests/jit-magic-all.clsx` (24
+Verificado en `examples/test/jit-test/units/jit-magic-all.clsx` (24
 magics: aritmética, unarios, conversiones, contenedores, callable, iteración).
 
 ### Contratos de comportamiento
@@ -211,6 +211,6 @@ magics: aritmética, unarios, conversiones, contenedores, callable, iteración).
   `var items: int[] = []` no se ejecuta - inicializar en el constructor
   (`function main() { me.items = []; }`).
 
-Referencia de ejemplos: `examples/audit/features/09-clases.clsx`,
-`examples/audit/features/16-magic-methods.clsx` y
-`examples/audit/test-features/tests/jit-magic-all.clsx`.
+Referencia de ejemplos: `examples/test/jit-test/units/09-clases.clsx`,
+`examples/test/jit-test/units/16-magic-methods.clsx` y
+`examples/test/jit-test/units/jit-magic-all.clsx`.

@@ -271,5 +271,5 @@ aislado y registran los símbolos definidos como un `Record` con el nombre dado
 en el scope actual (son equivalentes en comportamiento), accesibles luego vía
 `Nombre.miembro` / `Nombre::miembro`.
 
-Ejemplos completos: `examples/jit-examples/modules/src/`.
-Aislamiento: `examples/jit-examples/modules-isolation/`.
+Ejemplos completos: `examples/test/jit-examples/modules/src/`.
+Aislamiento: `examples/test/jit-examples/modules-isolation/`.

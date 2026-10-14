@@ -64,7 +64,7 @@ verificables:
   dev no lo borre "por limpieza" ni lo extienda a otros pares.
 - `docs/lenguaje/tipos.md:26` — enlaza a este doc en lugar de afirmar la
   coerción como una nota suelta.
-- `examples/audit/test-features/tests/test-types.clsx` — incluye test de
+- `examples/test/jit-test/units/test-types.clsx` — incluye test de
   regresión del widening (ver al final del archivo).
 
 ## Alcance

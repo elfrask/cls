@@ -35,7 +35,7 @@
 | Estado real del runtime (WASI NO, async NO) | `docs/lenguaje/estado-runtime.md` |
 | **CMX (sintaxis de vistas)** | `docs/lenguaje/cmx.md` + tests `b8-cmx.clsx`, `10-cmx.clsx` |
 | Módulo `fs` (para static) y `json` | `docs/stdlib/desktop.md`, `docs/stdlib/core.md` |
-| Ejemplos funcionales de FFI | `examples/audit/test-features/extension-demo.clsx`, `examples/audit/test-features/tests/test-ffi-arity.clsx` |
+| Ejemplos funcionales de FFI | `examples/test/jit-test/extension-demo.clsx`, `examples/test/jit-test/units/test-ffi-arity.clsx` |
 
 ## Restricciones del lenguaje (NO negociables)
 
@@ -112,7 +112,7 @@ class Socket {
   };
   # addr = sockaddr_in(2, htons(9999), 0); bind(sock, addr, 16);
   ```
-  Test de referencia (oráculo con `getsockname`): `examples/audit/test-features/jit-test/units/ffi-cstruct.clsx`.
+  Test de referencia (oráculo con `getsockname`): `examples/test/jit-test/units/ffi-cstruct.clsx`.
 - Aridad: todas las llamadas ≤ 16 args (decisión 002). Si alguna excede, empaquetar en struct.
 - El socket fd viaja como `int` (handle opaco — ver "tipos con layout opaco" en extension-when.md).
 
@@ -353,8 +353,8 @@ curl http://localhost:8080/no-existe     # 404
 4. No se tocó ningún archivo de `cls-core/`, `cls-jit/`, `cls-internals/`, `nodos/clx/src/modules/`.
 5. Suites de auditoría siguen verdes:
    ```powershell
-   powershell -File examples/audit/test-features/jit-test/run-tests.ps1     # 32 PASS
-   powershell -File examples/audit/test-features/jit-test/run-availible.ps1 # 24 PASS
+   powershell -File examples/test/jit-test/run-tests.ps1     # 32 PASS
+   powershell -File examples/test/jit-test/run-availible.ps1 # 24 PASS
    ```
 
 ## Limitaciones documentadas (v1)

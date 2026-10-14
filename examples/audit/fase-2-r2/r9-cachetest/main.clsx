@@ -1,5 +1,0 @@
-import 'libmod' as lib;
-function main(args: String[]) -> int {
-    print('VALOR_MODULO:', lib::getValor());
-    return 0;
-};

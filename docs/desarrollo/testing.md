@@ -7,82 +7,67 @@ integración en `tests/`. Se ejecutan con:
 
 ```ps
 cargo test                 # todo el workspace
-cargo test -p clxr         # solo un crate
+cargo test -p clx          # solo un crate
 ```
 
-| Crate | Dónde | Tests (contados en el código) |
+| Crate | Dónde | Tests |
 |---|---|---|
-| `cls-core` | `src/frontend/lexer.rs` (8), `src/frontend/parser.rs` (22), `src/middleware/typeck/tests.rs` (21), `src/error/mod.rs` (9) | span/merge/fábricas de error, lexer, parser, typeck |
-| `cls-runtime` | `src/stdlib/primitive.rs` (10), `src/value.rs`, `src/vfs/resolver.rs` (10), `src/vfs/security.rs` (5), `src/error_report.rs` (6) | dispatch tables de primitivos, VFS, formato de errores |
-| `cls-jit` | `tests/` - `wasmi_smoke.rs`, `host_call.rs`, `exports.rs`, `debug_kinds.rs` (8 tests) | **`wasmi_smoke` requiere la feature `wasmi-runtime`** |
-| `nodos/clxb` | `tests/embed.rs` (5 tests de integración) | `cargo test -p clxb` |
-
-Los tests de `clxb` (`tests/embed.rs`) cubren, con `ClsEngine`:
-
-- `call_exports_scalares` - exports `int/float/bool/String` (suma, ratio, mayor, startsWith).
-- `call_exports_arrays_records` - arrays y records como valores.
-- `run_main_y_eval` - `run_main` y `eval`.
-- `output_capturado` - captura de `print` vía `OutputSink`.
-- `sdk_intrinsics` - SDK de nodo (intrinsics + resolver del host).
+| `cls-core` | `src/frontend/lexer.rs`, `src/frontend/parser.rs`, `src/middleware/typeck/tests.rs`, `src/error/mod.rs` | span/merge/fábricas de error, lexer, parser, typeck |
+| `cls-runtime` | `src/stdlib/primitive.rs`, `src/value.rs`, `src/vfs/*`, `src/error_report.rs` | dispatch tables de primitivos, VFS, formato de errores |
+| `cls-jit` | `tests/` — `wasmi_smoke.rs`, `host_call.rs`, `exports.rs`, `debug_kinds.rs` | **`wasmi_smoke` requiere la feature `wasmi-runtime`** |
+| `cls-internals` | `tests/internals_test.rs` | paridad host ↔ internals (WASM fusionado) |
+| `nodos/clxb` | `tests/embed.rs` | embedding (`ClsEngine`): exports, arrays/records, `run_main`/`eval`, `OutputSink`, SDK |
 
 ```ps
 cargo test -p clxb
 ```
 
-## QA de features (JIT)
-
-### `examples/audit/features/`
-
-18 scripts de QA por feature (`01-basics.clsx` … `18-shapes.clsx`):
-variables, operadores, strings, arrays, tuplas, records, control de flujo,
-funciones, clases, enums, structs, CMX, stdlib, intrinsics, try/catch,
-magic methods, genéricos, shapes.
-
-### `examples/audit/test-features/`
+## Suite de features (JIT): `examples/test/jit-test/`
 
 | Ruta | Contenido |
 |---|---|
-| `test-features/jit-test/availible/` | Features disponibles del JIT (25 scripts, `01-operadores.clsx` … `25-bitops.clsx`) |
-| `test-features/jit-test/units/` | Unit tests del JIT (`a1`–`a11`, `b1`–`b9`, `f64arr`, `synerr`, `bench_fib`, ...) + `.wat`/`.js` de referencia |
-| `test-features/tests/` | Suite de features (imports, VFS, async, errores, magic, clases, ...) - incluye `jit-magic-all.clsx` (test integral de los 24 magic methods con `clx run`) |
+| `units/` | Unit tests + oráculos `.expect` (`a1`–`a11`, `b1`–`b9`, `f64arr`, `deadflow`, `mod-*`, `str-*`, `ffi-*`, `synerr`, ...) y módulos auxiliares (`modfixes/`, `export-list-mod/`, `ffi-export-mod/`) |
+| `availible/` | Features disponibles del JIT (`01-operadores.clsx` … `25-bitops.clsx`) |
+| `feats/`, `print-test/` | Pruebas adicionales |
 
-Convención: los tests de features comparan el JIT contra **oracles `.expect`**
-(excepto los de `examples/jit-examples/`, JIT-only). Los unit tests del emisor
-incluyen `units/deadflow.clsx` - verifica el fix de **dead-flow** (`unreachable`
-tras `return`/`break`/`if` con todas las ramas terminadas + default de retorno;
-commit `3e1cd80`).
+Runners (PowerShell):
 
-Logs de corridas: `examples/audit/_logs/*.jit.log` (cada script de QA escribe
-`<nombre>.jit.log` con stdout/stderr/exit/time).
-
-## Scripts PowerShell
-
-| Script | Propósito (del encabezado del archivo) |
+| Script | Propósito |
 |---|---|
-| `examples/audit/run-audit.ps1` | Runner de auditoría QA práctico (v3, Start-Process con streams limpios). Uso: `powershell -File run-audit.ps1 <ruta.clsx>` - corre el script con JIT y guarda logs en `_logs/`. |
-| `examples/audit/cli-tests.ps1` | CLI tests - batería de subcomandos (`--version`, `run`, `check`, `ast`, `--help`, ...) con exit codes y logs en `_logs/cli-tests.log`. |
-| `examples/audit/test-features/jit-test/run-availible.ps1` | Prueba las features disponibles del JIT (carpeta `availible/`); ejecuta cada script y compara contra el oracle `.expect`. |
-| `examples/audit/test-features/jit-test/run-tests.ps1` | Prueba cada feature del JIT comparando salidas contra oracles `.expect`, sobre `units/`; algunos scripts se marcan SKIP por requerir condiciones especiales (DLL de extension, args de app, red, sintaxis). |
-| `examples/audit/test-features/jit-test/bench-jit.ps1` | Benchmark de compilación JIT (`bench5000.clsx`, 5000 llamadas) con timing por fase (`CLS_JIT_TIMING=1`); corrida 1 = cache miss, corrida 2 = cacheada. |
-| `examples/audit/benchmarks-modules/run-bench.ps1` | Benchmarks CLS con múltiples módulos sobre `examples/benchmarks-modules`. |
-| `examples/audit/benchmark/run-all.cmd` | Ejecuta los tres benchmarks con los mismos parámetros: CLS (JIT, `scripts/clx.cmd`), Node.js (`benchmark.js`) y Python (`benchmark.py`). |
-| `examples/audit/fase-1/_runner.ps1` (y `fase-1-r2`, `fase-2`, `fase-2-r2`) | Runner de re-auditoría por fase: captura stdout/stderr a archivos UTF-8, exit code, tiempo y detección de cuelgues (mata el proceso si supera `-HangTimeoutMs`). |
-| `examples/audit/release/_release-*.ps1` | Scripts de la auditoría de release (builds, caché, CLI, DX, libs). |
-| `examples/audit/validacion/_runner.ps1`, `B-floats.ps1` | Auditoría de validación (runner genérico + caso floats). |
-| `examples/audit/migracion/_run.ps1` | Smokes de migración (`smoke-*.clsx`). |
-| `examples/jit-examples/run-jit.ps1` | Ejecuta los ejemplos JIT-only **exclusivamente** con `clx run`; falla si el script no pasa. |
+| `examples/test/jit-test/run-tests.ps1` | Corre `units/` y compara la salida contra el oráculo `.expect` |
+| `examples/test/jit-test/run-availible.ps1` | Corre `availible/` y compara contra `.expect` |
+| `examples/test/jit-test/generate-oracles.ps1` | Regenera los `.expect` desde la salida actual del JIT |
+| `examples/test/jit-test/bench-jit.ps1` | Benchmark de compilación JIT (cache miss vs cacheada) |
 
-## Ejemplos de uso
+Convención: los oráculos `.expect` son la salida **conocida-correcta del JIT**
+(el walker se eliminó). Un test de programa debe declarar
+`function main(args: String[]) -> int` **anotado** (el JIT lo exige). Los tests
+de error intencional se validan por `exit != 0` + stderr.
 
-- `examples/hello` - proyecto mínimo (`cls.json` + `src/main.clsx`).
-- `examples/dev-quest` - proyecto de ejemplo con módulos (`main.clsx`,
-  `modelo.clsx`, `estadisticas.clsx`, `frases.clsx`).
-- `examples/jit-examples` - ejemplos **JIT-only** (validados solo con
-  `clx run --jit`): `modules/` demuestra `import ... as`, `from ... import`
-  e `include` con múltiples módulos.
+## `clx test`
 
-## Benchmark
+`cls.json` acepta `testEntry` (array de rutas o globs `*`/`**`/`?`). El
+subcomando:
 
-`examples/audit/benchmark/` compara CLS vs Node.js vs Python:
-`benchmark.clsx`, `benchmark.js`, `benchmark.py` + `run-all.cmd`
-(cada script usa los mismos parámetros `N_*` y la misma lógica).
+```ps
+clx test                       # usa testEntry
+clx test tests/foo.clsx        # archivos/globs explícitos
+clx test --filter user         # filtra por subcadena de ruta
+clx test --list                # solo lista los tests descubiertos
+```
+
+Hoy cada archivo se ejecuta con el JIT y su **exit code** decide pass/fail. Los
+intrínsecos de test en el lenguaje (`test()`, aserciones, nombres reservados)
+son la **fase final** — propuestas en `docs/lenguaje/testing.md`.
+
+## Ejemplos
+
+- `examples/test/hello` — proyecto mínimo (`cls.json` + `src/main.clsx`).
+- `examples/test/jit-examples` — ejemplos **JIT-only** (validados solo con
+  `clx run`): FFI (`ffi-*`), módulos (`modules/`) y aislamiento por `cls.json`
+  (`modules-isolation/`). Runner: `run-jit.ps1`.
+- `examples/test/benchmark-langs` — CLS vs C++ / JS / Python / Rust; ver
+  `REPORTE-BENCHMARKS.md`.
+
+> Nota: `examples/` se usa para **proyectos que ponen a prueba CLS**; los
+> ejemplos viejos de auditoría (`examples/audit/`) se eliminaron.

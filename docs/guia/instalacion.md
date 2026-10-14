@@ -90,7 +90,7 @@ Muestra la ayuda completa con el encabezado `clx 2.0.0 - CLS Toolchain`.
 Para probar una ejecución real:
 
 ```ps
-clx run examples/hello/src/main.clsx
+clx run examples/test/hello/src/main.clsx
 ```
 
 Debe imprimir `Hello from CLS!` y salir con código 0.

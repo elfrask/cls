@@ -1,6 +1,0 @@
-from "modules/colores" import Color;
-
-function main(args: String[]) -> int {
-    var c: Color = Color.Rojo;
-    return 0;
-};

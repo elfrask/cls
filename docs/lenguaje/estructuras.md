@@ -102,4 +102,4 @@ extension "msvcrt.dll" as C {
 };
 ```
 
-Ejemplo: `examples/audit/features/11-structs.clsx`.
+Ejemplo: `examples/test/jit-test/units/11-structs.clsx`.

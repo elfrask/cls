@@ -63,7 +63,7 @@ El **JIT** compila CMX a host functions `cmx_*`: el lexer usa un buffer FIFO
 construye el elemento (`parse_cmx_element`) con soporte de expresiones en
 atributos, spreads `{...props}` y arrow functions con `()`.
 
-Ejemplo completo: `examples/audit/features/12-cmx.clsx`.
+Ejemplo completo: `examples/test/jit-test/units/12-cmx.clsx`.
 
 ## Renderizar CMX a HTML
 

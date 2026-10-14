@@ -59,9 +59,9 @@ Lo que permite `clx run`:
 ### 6. Tests
 
 - Unit tests en cada capa tocada (lexer, parser, typeck, emisor).
-- QA: `examples/audit/features/NN-nombre.clsx` más
-  `examples/audit/test-features/jit-test/availible/` si entra en el subset.
-- **Si la feature es solo JIT**, va en `examples/jit-examples/` o
+- QA: `examples/test/jit-test/units/NN-nombre.clsx` más
+  `examples/test/jit-test/availible/` si entra en el subset.
+- **Si la feature es solo JIT**, va en `examples/test/jit-examples/` o
   `jit-test/availible/`.
 
 ## Reglas

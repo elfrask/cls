@@ -2,7 +2,7 @@
 
 Referencia del léxico y la estructura básica del lenguaje. Fuentes:
 `cls-core/src/frontend/lexer.rs`, `cls-core/src/frontend/token.rs` y los QA
-validados en `examples/audit/features/`.
+validados en `examples/test/jit-test/units/`.
 
 ## Estructura de un programa
 

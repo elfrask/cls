@@ -86,7 +86,7 @@ Toda la configuración de un proyecto vive en `cls.json`
 
 ## Ejemplo real
 
-`examples/hello/cls.json`:
+`examples/test/hello/cls.json`:
 
 ```json
 {

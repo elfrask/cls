@@ -129,7 +129,7 @@ internals u host (sin objetos ni boxing).
 - **Dead-flow**: el emisor cierra las funciones con `unreachable` tras
   `return`/`break`/`if` con todas las ramas terminadas y un default de retorno
   para flujo vivo sin `return` (cranelift exige stack balanceado; test
-  `examples/audit/test-features/jit-test/units/deadflow.clsx`).
+  `examples/test/jit-test/units/deadflow.clsx`).
 - Errores de tipo del typeck estricto abortan antes de emitir.
 
 ## Límites del subconjunto JIT
@@ -166,14 +166,14 @@ la dirección host (`ffi_wasm_to_host`/`ffi_host_to_wasm`) para que el DLL
 lea/escriba el layout zero-copy; el backend del nodo pasa el ptr como
 `Value::Int`. Un fallo de la llamada nativa se reporta por stderr (no se
 silencia). Ver `docs/lenguaje/extension.md`, `docs/lenguaje/estructuras.md` y
-`examples/jit-examples/`.
+`examples/test/jit-examples/`.
 
 Los magic methods se despachan por la **vtable de la clase** con la firma
 declarada del método (`call_indirect`): el emisor busca el magic en el tipo
 estático del objeto y emite `me` + args + dispatch. Los magics deben **anotar
 su retorno** (el JIT no puede tipar `Any`); la iteración usa el protocolo
 `__iter` -> Array u objeto iterador con `__next` hasta `null`. Verificado en
-`examples/audit/test-features/tests/jit-magic-all.clsx`.
+`examples/test/jit-test/units/jit-magic-all.clsx`.
 
 **Truthiness de condiciones**: `if`/`while`/`for`/`elif`
 coaccionan la condición a bool - numéricos `!= 0`, strings no vacíos

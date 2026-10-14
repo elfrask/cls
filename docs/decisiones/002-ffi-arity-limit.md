@@ -131,6 +131,6 @@ rechazar también en typeck (hoy no se valida, solo runtime).
 
 - `nodos/clx/src/native.rs`: nuevo `enum RawArg`, funciones
   `call_typed_0..call_typed_16`, comentario del módulo actualizado.
-- `examples/audit/test-features/tests/test-ffi-arity.clsx`: test de
+- `examples/test/jit-test/units/test-ffi-arity.clsx`: test de
   regresión. Documenta el caso end-to-end conocido (strlen, atoi).
 - `docs/lenguaje/extension.md`: actualizar el límite documentado de 4 a 16.

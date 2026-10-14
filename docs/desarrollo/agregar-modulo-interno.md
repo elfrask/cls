@@ -120,7 +120,7 @@ para agregar o modificar una internals:
    poda de la Fase 8).
 4. **Re-verificar**: el WAT del módulo no debe importar el `env.<area>_*`
    correspondiente; correr las suites de paridad
-   (`examples/audit/test-features/jit-test/run-availible.ps1` + `run-tests.ps1`,
+   (`examples/test/jit-test/run-availible.ps1` + `run-tests.ps1`,
    wasmtime y wasmi).
 
 `build.rs` de `cls-core` hashea `src/backend/wasm` + las fuentes de

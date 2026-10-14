@@ -1,3 +1,0 @@
-export function getValor() -> int {
-    return 3;
-};

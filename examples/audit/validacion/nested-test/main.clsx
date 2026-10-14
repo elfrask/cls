@@ -1,5 +1,0 @@
-import "mid" as m;
-function main(args: String[]) -> int {
-    print("suma:", m::suma(5));
-    return 0;
-};

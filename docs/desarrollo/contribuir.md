@@ -45,10 +45,10 @@ Convenciones observadas:
    acepta pero se ignora.
 2. **No invertir tiempo en paridad con el walker**: no existe. Toda feature
    nueva debe funcionar en el **JIT**.
-3. **Tests de features** en `examples/audit/test-features/jit-test/` comparan
+3. **Tests de features** en `examples/test/jit-test/` comparan
    el JIT contra oracles `.expect` (`run-availible.ps1`, `run-tests.ps1`). Si
-   un test solo aplica al JIT, va en `examples/jit-examples/` o
-   `examples/audit/test-features/jit-test/` (ver `desarrollo/testing.md`).
+   un test solo aplica al JIT, va en `examples/test/jit-examples/` o
+   `examples/test/jit-test/` (ver `desarrollo/testing.md`).
 4. **Rendimiento**: cualquier decisión de diseño prioriza el costo en
    runtime del JIT/WASM - nada de boxing, dispatch dinámico ni alocaciones
    innecesarias.
@@ -73,6 +73,6 @@ Convenciones observadas:
 1. Verifica el estado del JIT (`docs/runtime/jit.md`).
 2. Implementa por capas (ver `desarrollo/agregar-feature.md`).
 3. Agrega tests en cada capa (`cargo test`) y QA en
-   `examples/audit/features/` o `jit-test/`.
+   `examples/test/jit-test/units/` o `jit-test/`.
 4. `clx check --strict` + ejecución con `clx run` antes de commitear.
 5. Commit en español con prefijo (ej. `feat(jit): ...`).

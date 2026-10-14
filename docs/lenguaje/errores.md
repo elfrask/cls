@@ -45,7 +45,7 @@ function main(args: String[]) -> int {
 - El call stack CLS se conserva al capturar; `execute_try` restaura la
   profundidad previa.
 
-Ejemplo completo: `examples/audit/features/15-try-catch.clsx`.
+Ejemplo completo: `examples/test/jit-test/units/15-try-catch.clsx`.
 
 ## Errores no capturados
 

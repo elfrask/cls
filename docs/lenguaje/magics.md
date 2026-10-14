@@ -20,7 +20,7 @@ El catálogo original marcaba muchos magics como `❌` en el JIT, pero
 estaban implementados en el emisor (a través de
 `emit_class_method_args` y `try_binary_magic`) sin tests que los
 ejercitaran. La auditoría los validó con
-`examples/audit/test-features/tests/jit-magic-all.clsx` y
+`examples/test/jit-test/units/jit-magic-all.clsx` y
 `test-magic.clsx` — **todos los magics del catálogo funcionan
 end-to-end en el JIT**, salvo donde se indica explícitamente.
 
@@ -244,4 +244,4 @@ funcionan en el JIT, validados con `jit-magic-all.clsx` y
    usar `emit_class_method_args` o `emit_class_method_call_on`
    directamente.
 4. Test E2E: agregar caso en
-   `examples/audit/test-features/tests/jit-magic-all.clsx`.
+   `examples/test/jit-test/units/jit-magic-all.clsx`.

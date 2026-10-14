@@ -26,7 +26,7 @@ Cada SO tiene su librería y a veces nombres diferentes. La receta:
 
 ```clx
 # modulo de sockets portable
-# (extracto; el modulo completo vive en examples/audit/test-features/extension-demo.clsx)
+# (extracto; el modulo completo vive en examples/test/jit-test/extension-demo.clsx)
 
 when (os: windows) {
     extension "ws2_32.dll" as C {
@@ -239,7 +239,7 @@ nativo en cls-jit:
   (distinto del FFI: cubre `import`/`from`/`include`).
 - [decisiones/001-no-implicit-coercion.md](../decisiones/001-no-implicit-coercion.md) —
   ejemplo de como se estructura una decision de diseno en este repo.
-- `examples/audit/test-features/extension-demo.clsx` — ejemplo
+- `examples/test/jit-test/extension-demo.clsx` — ejemplo
   funcional real de `extension` con `libm` y `msvcrt.dll`.
-- `examples/audit/test-features/jit-test/units/a10.clsx` — ejemplo
+- `examples/test/jit-test/units/a10.clsx` — ejemplo
   de `when` con `os:`, `arch:`, `cls-arch`.

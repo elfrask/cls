@@ -20,4 +20,4 @@
 
 - El intérprete actual: [runtime/jit.md](jit.md).
 - Los scripts de auditoría comparan el JIT contra oracles `.expect`
-  (`examples/audit/test-features/jit-test/`).
+  (`examples/test/jit-test/`).

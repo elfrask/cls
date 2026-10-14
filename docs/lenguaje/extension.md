@@ -27,8 +27,8 @@ extension "msvcrt.dll" as C {
   exportable a otros módulos.
 - Dentro del bloque solo se permiten `function`, `structure` y `var`.
 
-Ejemplos: `examples/audit/test-features/extension-demo.clsx`,
-`examples/audit/test-features/native-lib.clsx`.
+Ejemplos: `examples/test/jit-test/extension-demo.clsx`,
+`examples/test/jit-test/native-lib.clsx`.
 
 ## Tipos C
 
@@ -101,10 +101,10 @@ Tags runtime de los valores dentro de records: `0=int 1=string 2=float 3=bool
   contiguo, no como hashmap: usa `CRecord` para `Record<K,V>` o `json.parse`, y
   `CStruct`/`Struct` para shapes.
 
-Ejemplos: `examples/jit-examples/ffi-struct-real.clsx`,
-`examples/jit-examples/ffi-record-typed.clsx`,
-`examples/jit-examples/ffi-bump4.clsx`,
-`examples/audit/test-features/jit-test/units/ffi-cstruct.clsx` (bind/listen con
+Ejemplos: `examples/test/jit-examples/ffi-struct-real.clsx`,
+`examples/test/jit-examples/ffi-record-typed.clsx`,
+`examples/test/jit-examples/ffi-bump4.clsx`,
+`examples/test/jit-test/units/ffi-cstruct.clsx` (bind/listen con
 `sockaddr_in`).
 
 ## Variables nativas
