@@ -58,6 +58,13 @@ pub struct ModuleManifest {
     #[serde(default, rename = "testEntry")]
     pub test_entry: Vec<String>,
 
+    /// Rutas adicionales de búsqueda de módulos (equivale a
+    /// `clx run --add-path-module=<path>`, repetible). Relativas a la raíz del
+    /// proyecto (CWD). Se combinan con el flag CLI: primero `cls.json`, luego
+    /// los `--add-path-module`. Ver `examples/patrones.md` §11.
+    #[serde(default, rename = "pathModules", skip_serializing_if = "Vec::is_empty")]
+    pub path_modules: Vec<String>,
+
     /// Configuración de módulo: `export.entry` (index público) y `export.types`.
     /// Solo aplica cuando este `cls.json` describe un **módulo** (no un proyecto).
     #[serde(default, rename = "export", skip_serializing_if = "Option::is_none")]
@@ -151,6 +158,7 @@ impl ModuleManifest {
             dependencies: HashMap::new(),
             dev_dependencies: HashMap::new(),
             test_entry: Vec::new(),
+            path_modules: Vec::new(),
             export_config: None,
             lockfile_version: None,
         }

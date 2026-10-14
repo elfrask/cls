@@ -1,0 +1,62 @@
+# `/modules` — módulos compartidos de CLS
+
+Módulos **CLS puro** reutilizables entre los proyectos de prueba de `examples/`.
+Son los ladrillos de la **stdlib autocontenida**: se apoyan solo en
+intrínsecos primitivos, `print`/`input` y **FFI a C** (ver
+`examples/patrones.md` §2 y §11).
+
+## Reglas
+
+1. **CLS puro + FFI.** Nada de `host_calls` ni intrínsecos nuevos. Si falta una
+   capacidad, se resuelve con FFI (`extension`), no desde el nodo.
+2. **Sin dependencias externas** fuera de CLS + FFI.
+3. **Un módulo = una carpeta** en `modules/<nombre>/` con su `cls.json`.
+4. **No copiar/pegar** módulos entre proyectos: se referencian (ver abajo).
+5. Si un módulo reemplaza a un `host_call` (`fs`, `http`, `json`, `strings`),
+   se anota en la tabla de deuda de `examples/patrones.md` §2.7.
+
+## Estructura de un módulo
+
+```
+modules/<nombre>/
+├── cls.json          # { "name": "...", "version": "...", "export": { "entry": "mod.clsx" } }
+└── mod.clsx          # API pública (export function/var/const/class/enum/structure)
+```
+
+Si el módulo tiene más de un archivo, `export.entry` apunta al index y sus
+imports internos se resuelven desde la raíz del módulo (aislamiento).
+
+## Cómo consumirlo desde un proyecto
+
+Como `modules/` está fuera de cada proyecto (`examples/<prueba>/`), hay que
+indicar la ruta de búsqueda con **una** de estas dos formas (o ambas):
+
+**Flag de CLI** (relativa al CWD):
+
+```bash
+clx run examples/brainfuck/src/main.clsx --add-path-module=modules
+clx run app.clsx --add-path-module=modules --add-path-module=libs
+```
+
+**`cls.json` del proyecto** (`pathModules`, relativa a la raíz del proyecto):
+
+```json
+{
+  "name": "brainfuck",
+  "entry": "src/main.clsx",
+  "pathModules": ["../../modules"]
+}
+```
+
+Luego, en el código:
+
+```clx
+from "str" import *;                 # usa modules/str/
+import "sha256" as sha;              # usa modules/sha256/  -> sha::hash(...)
+```
+
+## Módulos
+
+| Módulo | Estado | Reemplaza a | Notas |
+|--------|--------|-------------|-------|
+| `diag` | Activo | — | CLS puro. Diagnóstico para runners de prueba: `hexByte`, `bytesToHex`. Usado por `examples/brainfuck`. |

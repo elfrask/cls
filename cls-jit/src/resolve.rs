@@ -1,6 +1,27 @@
 //! Caché CLS->WASM en disco y resolución de imports de módulos de usuario.
 
 use cls_core::frontend::ast::Module as ClsModule;
+use std::path::PathBuf;
+use std::sync::OnceLock;
+
+/// Rutas adicionales de búsqueda de módulos. Las configura el nodo (CLI
+/// `--add-path-module=<path>` o `cls.json` -> `pathModules`) antes de compilar.
+/// Ver `examples/patrones.md` §11.
+static EXTRA_MODULE_PATHS: OnceLock<Vec<PathBuf>> = OnceLock::new();
+
+/// Fija las rutas adicionales de búsqueda de módulos. Idempotente: el proceso
+/// compila una sola vez, así que la primera llamada gana.
+pub fn set_extra_module_paths(paths: Vec<PathBuf>) {
+    let _ = EXTRA_MODULE_PATHS.set(paths);
+}
+
+/// Rutas adicionales de búsqueda de módulos (vacío si no se configuraron).
+pub fn extra_module_paths() -> &'static [PathBuf] {
+    EXTRA_MODULE_PATHS
+        .get()
+        .map(|v| v.as_slice())
+        .unwrap_or(&[])
+}
 
 /// Directorio del caché de compilación: `~/.cache/cls/` (HOME o USERPROFILE).
 pub fn cache_dir() -> std::path::PathBuf {
@@ -158,6 +179,7 @@ fn scoped_parts(name: &str) -> Option<(&str, &str)> {
 /// Orden (RESOLVERS.md):
 ///   1. {base_dir}/{path}.clsx            (junto al archivo que importa)
 ///   2. {proyecto}/modules/{name}/mod.clsx (módulos del workspace)
+///   2b. rutas extra (--add-path-module / cls.json pathModules): {ruta}/{name}/
 ///   3. {cwd}/{path}.clsx                 (relativo al CWD)
 ///   4. {cwd}/modules/{name}/mod.clsx     (módulos del proyecto)
 ///   5. {home}/.cls/modules/{name}@{version}/mod.clsx (globales usuario, versionado)
@@ -180,6 +202,7 @@ pub fn module_candidates(
         .map(|h| std::path::PathBuf::from(h).join(".cls").join("modules"));
     let name = path.trim_start_matches(['/', '\\']).trim();
     let proj = project_root(base_dir);
+    let extras = extra_module_paths();
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
     // Paquete con scope `scope/nombre`: layout global anidado
     // `~/.cls/modules/{scope}/{nombre}@{version}/` (filtrado por el rango de
@@ -214,6 +237,9 @@ pub fn module_candidates(
         }
         // Fallbacks (módulos propios o path relativo).
         push_module_dir_candidates(&proj.join("modules").join(scope).join(pkg), &mut candidates);
+        for e in extras {
+            push_module_dir_candidates(&e.join(scope).join(pkg), &mut candidates);
+        }
         push_module_dir_candidates(&cwd.join("modules").join(scope).join(pkg), &mut candidates);
         candidates.push(base_dir.join(format!("{}.clsx", name)));
         return candidates;
@@ -235,6 +261,10 @@ pub fn module_candidates(
         // Módulo por nombre: buscar en orden.
         candidates.push(base_dir.join(format!("{}.clsx", name)));
         push_module_dir_candidates(&proj.join("modules").join(name), &mut candidates);
+        for e in extras {
+            push_module_dir_candidates(&e.join(name), &mut candidates);
+            candidates.push(e.join(format!("{}.clsx", name)));
+        }
         candidates.push(cwd.join(format!("{}.clsx", name)));
         push_module_dir_candidates(&cwd.join("modules").join(name), &mut candidates);
         if let Some(ref um) = user_modules {

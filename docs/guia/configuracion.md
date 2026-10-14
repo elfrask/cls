@@ -21,6 +21,7 @@ Toda la configuración de un proyecto vive en `cls.json`
 | `dependencies` | map | `{}` | Dependencias (`"<pkg>": "^1.0.0"` o exacta) |
 | `devDependencies` | map | `{}` | Dependencias de desarrollo (renombrada de `devDependencies`) |
 | `testEntry` | string[] | `[]` | Archivos/globs de test para `clx test` (p.ej. `["tests/**/*.clsx"]`) |
+| `pathModules` | string[] | `[]` | Rutas adicionales de búsqueda de módulos (equivale a `clx run --add-path-module`). Relativas a la raíz del proyecto. Ver `examples/patrones.md` §11 |
 | `lockfileVersion` | number | ausente | Versión del lockfile |
 
 ### `project`

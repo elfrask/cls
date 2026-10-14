@@ -29,7 +29,7 @@ pub mod wasmtime_rt;
 pub use compile::{compile_file, compile_source, parse_clx_exports, CompileOptions, CompiledModule, ExportSig, TypeDesc};
 pub use engine::{run_jit, run_jit_with, run_jit_with_opts};
 pub use host::{HostCallArg, HostCallHandler, HostCallResult, ModuleSourceResolver, OutputSink};
-pub use resolve::{cache_dir, load_import_modules, module_candidates};
+pub use resolve::{cache_dir, extra_module_paths, load_import_modules, module_candidates, set_extra_module_paths};
 
 use std::path::Path;
 use std::sync::Arc;

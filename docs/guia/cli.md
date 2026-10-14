@@ -121,11 +121,15 @@ Opciones:
 - `--ast-walker` - obsoleto, sin efecto (se ignora; el JIT es el único intérprete desde dev-2).
 - `--target <tripla>, -t` - simula el entorno (`arch-os-abi`) para la
   directiva `when` (no cambia la compilación).
+- `--add-path-module <dir>` (o `--add-path-module=<dir>`) - agrega una ruta de
+  búsqueda de módulos, repetible. Equivale a declarar `pathModules` en
+  `cls.json`. Ver `examples/patrones.md` §11.
 - `--` - separador de argumentos de la aplicación.
 
-Los `import "mod"` se resuelven con el resolver del JIT: caché de módulos ->
-directorio del archivo que importa -> `modules/` del proyecto -> módulos
-globales `~/.cls/modules/` (ver `lenguaje/modulos.md`).
+Los `import "mod"` se resuelven con el resolver del JIT: directorio del archivo
+que importa -> `modules/` del proyecto -> rutas de `pathModules` /
+`--add-path-module` -> CWD y `modules/` del CWD -> módulos globales
+`~/.cls/modules/` (ver `lenguaje/modulos.md` y `examples/patrones.md` §11).
 
 ## `clx check [archivo|dir] [--strict]`
 
