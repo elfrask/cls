@@ -428,11 +428,14 @@ fn register_native_hosts(
                     ptypes.push(native_type(letter));
                 }
                 let r = backend.call_function(&lib2, &sym2, &vals, &ptypes, native_type(rcode));
-                // Un fallo de la llamada nativa no puede quedar en silencio:
-                // sin esto CLS recibe 0 y el usuario no sabe por qué "no hace
-                // nada" (misma política que el wrapper de wasmtime).
+                // Un fallo de la llamada nativa es FATAL: se propaga como trap
+                // (misma política que el wrapper de wasmtime) para no devolver
+                // 0 y continuar en silencio (falso éxito).
                 if let Err(e) = &r {
-                    eprintln!("[JIT] Extensión '{}' ({} de '{}'): {}", sym2, sig, lib2, e);
+                    return Err(wasmi::Error::new(format!(
+                        "Extensión '{}' ({} de '{}'): {}",
+                        sym2, sig, lib2, e
+                    )));
                 }
                 match rcode {
                     'v' => Ok(()),

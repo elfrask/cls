@@ -620,6 +620,14 @@ impl<'a> Engine<'a> {
         let mut cls_funcs: Vec<FunctionDecl> = Vec::new();
         for stmt in &module.statements {
             if let Statement::FunctionDecl(f) = stmt {
+                // Las funciones nativas (FFI) no son funciones CLS: ya se
+                // emitieron como imports en el bucle de extensiones de arriba
+                // (`native_indexes`) y no están en `func_types`. Saltarlas evita
+                // el panic `no entry found for key` de un `extension` a nivel
+                // superior (fuera de `when`).
+                if f.native.is_some() {
+                    continue;
+                }
                 let (params, ret) = self.func_types[&f.name].clone();
                 let mut pv: Vec<ValType> = Vec::new();
                 // Firma uniforme (B5): toda funcion CLS top-level (excepto main,

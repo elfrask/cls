@@ -131,6 +131,26 @@ impl TypeChecker {
                     bin.span.clone(),
                 )
             }
+            // `&` / `|`: bit a bit sobre enteros (Int) o lógicos sobre Bool.
+            Operator::BitAnd | Operator::BitOr => {
+                let l_int = matches!(left, Type::Int | Type::I32 | Type::I64 | Type::I8 | Type::I16);
+                let r_int = matches!(right, Type::Int | Type::I32 | Type::I64 | Type::I8 | Type::I16);
+                if l_int && r_int {
+                    return Type::Int;
+                }
+                let l_bool = matches!(left, Type::Bool) || left.is_assignable_to(&Type::Bool);
+                let r_bool = matches!(right, Type::Bool) || right.is_assignable_to(&Type::Bool);
+                if l_bool && r_bool {
+                    return Type::Bool;
+                }
+                self.error(
+                    &format!(
+                        "Operador bit a bit requiere enteros o Bool, encontró {} y {}",
+                        left, right
+                    ),
+                    bin.span.clone(),
+                )
+            }
             Operator::StrictEqual | Operator::NotEqual
             | Operator::LessThan | Operator::LessEqual
             | Operator::GreaterThan | Operator::GreaterEqual

@@ -583,10 +583,15 @@ pub fn register_native_hosts(
                 }
                 let r = backend.call_function(&lib2, &sym2, &vals, &ptypes, native_type(rcode));
                 // Un fallo de la llamada nativa (DLL ausente/símbolo no
-                // encontrado/ABI) no puede quedar en silencio: sin esto CLS
-                // recibe 0 y el usuario no sabe por qué "no hace nada".
+                // encontrado/ABI) es FATAL: se propaga como trap WASM para que
+                // el runtime muestre el trace completo y el proceso salga con
+                // código != 0. Antes se imprimía el error pero se devolvía 0 y
+                // el programa seguía como si nada (falso éxito).
                 if let Err(e) = &r {
-                    eprintln!("[JIT] Extensión '{}' ({} de '{}'): {}", sym2, sig, lib2, e);
+                    return Err(wasmtime::Error::msg(format!(
+                        "Extensión '{}' ({} de '{}'): {}",
+                        sym2, sig, lib2, e
+                    )));
                 }
                 match rcode {
                     'v' => Ok(()),

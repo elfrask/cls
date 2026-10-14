@@ -413,12 +413,12 @@ impl Parser {
         }
 
         // Unión: tipo | tipo | tipo
-        if self.check_operator(Operator::Or) {
+        if self.check_operator(Operator::BitOr) {
             let mut members = vec![TypeAnnotation {
                 kind: kind.clone(),
                 span: span.clone(),
             }];
-            while self.consume_operator(Operator::Or) {
+            while self.consume_operator(Operator::BitOr) {
                 let m_kind = self.parse_base_type()?;
                 members.push(TypeAnnotation {
                     kind: m_kind,
@@ -429,12 +429,12 @@ impl Parser {
         }
 
         // Conjunción: shape1 & shape2 (merge de campos) u otros tipos
-        if self.check_operator(Operator::And) {
+        if self.check_operator(Operator::BitAnd) {
             let mut members = vec![TypeAnnotation {
                 kind: kind.clone(),
                 span: span.clone(),
             }];
-            while self.consume_operator(Operator::And) {
+            while self.consume_operator(Operator::BitAnd) {
                 let m_kind = self.parse_base_type()?;
                 members.push(TypeAnnotation {
                     kind: m_kind,
@@ -1804,11 +1804,11 @@ impl Parser {
     }
 
     fn parse_logical_and(&mut self) -> ClsResult<Expression> {
-        let mut expr = self.parse_equality()?;
-        
+        let mut expr = self.parse_bitwise_or()?;
+
         while self.check_operator(Operator::And) {
             self.advance();
-            let right = self.parse_equality()?;
+            let right = self.parse_bitwise_or()?;
             let bin_span = expr_span(&expr).merge(&expr_span(&right));
             expr = Expression::Binary(BinaryExpr {
                 left: Box::new(expr),
@@ -1817,7 +1817,45 @@ impl Parser {
                 span: bin_span,
             });
         }
-        
+
+        Ok(expr)
+    }
+
+    /// `a | b` - OR bit a bit (enteros) o unión lógica de Bools.
+    fn parse_bitwise_or(&mut self) -> ClsResult<Expression> {
+        let mut expr = self.parse_bitwise_and()?;
+
+        while self.check_operator(Operator::BitOr) {
+            self.advance();
+            let right = self.parse_bitwise_and()?;
+            let bin_span = expr_span(&expr).merge(&expr_span(&right));
+            expr = Expression::Binary(BinaryExpr {
+                left: Box::new(expr),
+                op: Operator::BitOr,
+                right: Box::new(right),
+                span: bin_span,
+            });
+        }
+
+        Ok(expr)
+    }
+
+    /// `a & b` - AND bit a bit (enteros) o conjunción lógica de Bools.
+    fn parse_bitwise_and(&mut self) -> ClsResult<Expression> {
+        let mut expr = self.parse_equality()?;
+
+        while self.check_operator(Operator::BitAnd) {
+            self.advance();
+            let right = self.parse_equality()?;
+            let bin_span = expr_span(&expr).merge(&expr_span(&right));
+            expr = Expression::Binary(BinaryExpr {
+                left: Box::new(expr),
+                op: Operator::BitAnd,
+                right: Box::new(right),
+                span: bin_span,
+            });
+        }
+
         Ok(expr)
     }
 

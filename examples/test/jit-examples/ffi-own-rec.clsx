@@ -1,4 +1,4 @@
-extension "ffi_own.dll" as C {
+extension "examples/test/jit-examples/ffi_own.dll" as C {
     function make_record_own() -> CRecord;
 };
 

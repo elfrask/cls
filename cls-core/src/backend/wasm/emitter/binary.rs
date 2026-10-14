@@ -186,6 +186,41 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&b.right)?;
                 self.body.push(Instruction::I64Xor);
             }
+            // `&`: bit a bit sobre enteros (i64.and) o conjunción lógica sobre Bool.
+            BitAnd if lt == WasTy::I64 || rt == WasTy::I64 => {
+                self.emit_expression(&b.left)?;
+                self.emit_expression(&b.right)?;
+                self.body.push(Instruction::I64And);
+            }
+            BitAnd => {
+                self.emit_expression(&b.left)?;
+                self.body.push(Instruction::I32Eqz);
+                self.block_depth += 1;
+                self.body
+                    .push(Instruction::If(BlockType::Result(ValType::I32)));
+                self.body.push(Instruction::I32Const(0));
+                self.body.push(Instruction::Else);
+                self.emit_expression(&b.right)?;
+                self.body.push(Instruction::End);
+                self.block_depth -= 1;
+            }
+            // `|`: bit a bit sobre enteros (i64.or) o disyunción lógica sobre Bool.
+            BitOr if lt == WasTy::I64 || rt == WasTy::I64 => {
+                self.emit_expression(&b.left)?;
+                self.emit_expression(&b.right)?;
+                self.body.push(Instruction::I64Or);
+            }
+            BitOr => {
+                self.emit_expression(&b.left)?;
+                self.block_depth += 1;
+                self.body
+                    .push(Instruction::If(BlockType::Result(ValType::I32)));
+                self.body.push(Instruction::I32Const(1));
+                self.body.push(Instruction::Else);
+                self.emit_expression(&b.right)?;
+                self.body.push(Instruction::End);
+                self.block_depth -= 1;
+            }
             ShiftLeft => {
                 self.emit_expression(&b.left)?;
                 self.emit_expression(&b.right)?;

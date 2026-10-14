@@ -36,6 +36,8 @@ pub fn expr_display(expr: &Expression) -> String {
                 Operator::GreaterEqual => ">=",
                 Operator::And => "&&",
                 Operator::Or => "||",
+                Operator::BitAnd => "&",
+                Operator::BitOr => "|",
                 Operator::In => "in",
                 Operator::Is => "is",
                 Operator::Caret => "^",

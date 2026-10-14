@@ -519,9 +519,39 @@ impl<'a> FuncEmitter<'a> {
             Type::Bool => self.body.push(Instruction::I64ExtendI32U),
             Type::String => {
                 self.emit_call_site(&span);
+                if !self.exceptions {
+                    // wasmi (sin excepciones WASM): no se puede trapear con
+                    // mensaje; comportamiento previo (0 en fallo).
+                    if let Some(&idx) = self.func_indexes.get("__intr_parse_int") {
+                        self.body.push(Instruction::Call(idx));
+                    }
+                    return Ok(());
+                }
+                // Parsear y, si falla (flag de error de las internals), lanzar
+                // una excepción CLS clara en vez de devolver 0 en silencio
+                // (paridad con `host_parse_int`, que devuelve Err).
+                let s_local = self.fresh_local();
+                self.body.push(Instruction::LocalSet(s_local));
+                self.body.push(Instruction::LocalGet(s_local));
                 if let Some(&idx) = self.func_indexes.get("__intr_parse_int") {
                     self.body.push(Instruction::Call(idx));
                 }
+                let r_local = self.fresh_local();
+                self.body.push(Instruction::LocalSet(r_local));
+                if let Some(&idx) = self.func_indexes.get("__intr_parse_error_get") {
+                    self.body.push(Instruction::Call(idx));
+                    self.block_depth += 1;
+                    self.body.push(Instruction::If(BlockType::Empty));
+                    let msg = self.intern_string("int: no se puede convertir la cadena a entero");
+                    self.emit_load_str(msg);
+                    let packed = ((span.start_line as i64) << 32) | (span.start_col as i64);
+                    self.body.push(Instruction::I64Const(packed));
+                    self.body.push(Instruction::Throw(self.tag_idx));
+                    self.body.push(Instruction::Unreachable);
+                    self.body.push(Instruction::End);
+                    self.block_depth -= 1;
+                }
+                self.body.push(Instruction::LocalGet(r_local));
             }
             _ => {}
         }

@@ -3,4 +3,5 @@ cleanup interno
 catch externo: Error de runtime: algo
 === try/finally sin excepcion ===
 try normal
+finally normal
 despues del finally

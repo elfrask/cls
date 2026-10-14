@@ -1,4 +1,4 @@
-extension "C:/Users/Frask/Documents/cls/examples/jit-examples/ffi_read.dll" as C {
+extension "examples/test/jit-examples/ffi_read.dll" as C {
     function array_len_probe(arr: CArray) -> CLong;
     function array_elem_probe(arr: CArray, i: CLong) -> CLong;
     function sum_record_ints(rec: CRecord) -> CLong;

@@ -151,10 +151,14 @@ pub enum Operator {
     In,             // in (contiene)
 
     // Lógicos
-    And,        // &
-    Or,         // |
+    And,        // &&
+    Or,         // ||
     Not,        // !
     Question,   // ?
+
+    // Bit a bit (enteros)
+    BitAnd,     // &
+    BitOr,      // |
 
     // Asignación compuesta
     PlusEqual,      // +=
@@ -211,9 +215,9 @@ impl Operator {
             "<=" => Some(Self::LessEqual),
             ">=" => Some(Self::GreaterEqual),
             "==" => Some(Self::StrictEqual),
-            "&" => Some(Self::And),
+            "&" => Some(Self::BitAnd),
             "&&" => Some(Self::And),
-            "|" => Some(Self::Or),
+            "|" => Some(Self::BitOr),
             "||" => Some(Self::Or),
             "!" => Some(Self::Not),
             "?" => Some(Self::Question),
@@ -430,8 +434,10 @@ impl fmt::Display for Operator {
             Operator::StrictEqual => "==",
             Operator::Is => "is",
             Operator::In => "in",
-            Operator::And => "&",
-            Operator::Or => "|",
+            Operator::And => "&&",
+            Operator::Or => "||",
+            Operator::BitAnd => "&",
+            Operator::BitOr => "|",
             Operator::Not => "!",
             Operator::Question => "?",
             Operator::PlusEqual => "+=",

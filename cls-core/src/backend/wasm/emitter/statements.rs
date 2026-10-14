@@ -255,8 +255,10 @@ impl<'a> FuncEmitter<'a> {
 
 
     /// `try { ... } catch (e) { ... } finally { ... }` - excepciones WASM (try_table).
-    /// Paridad con el walker: el finally solo se ejecuta si NO hubo catch; el catch
-    /// recibe `e = "Error de runtime: " + msg` (e.to_string() del walker).
+    /// El `finally` se ejecuta SIEMPRE: en la salida normal del `try`, tras un
+    /// `catch` local que captura la excepción, y antes de re-lanzar cuando la
+    /// excepción propaga (sin `catch`). El `catch` recibe
+    /// `e = "Error de runtime: " + msg` (paridad con `e.to_string()`).
     pub(crate) fn emit_try(&mut self, stmt: &TryStatement) -> ClsResult<()> {
         if !self.exceptions {
             return Err(crate::error::ClsError::compile_at(
@@ -266,12 +268,29 @@ impl<'a> FuncEmitter<'a> {
             ));
         }
         let was_dead = self.dead_flow;
-        // block $outer (Empty)
+        let has_catch = !stmt.catch_clauses.is_empty();
+        let has_finally = stmt.finally_block.is_some();
+
+        // Sin `catch`, la excepción propaga SIEMPRE: se guarda el payload en
+        // locales y se re-lanza TRAS el `finally` (mismo tag, mismo span).
+        let (pend_msg, pend_span, pend_flag) = if !has_catch {
+            let m = self.fresh_local();
+            let s = self.fresh_local();
+            let f = self.fresh_local();
+            self.body.push(Instruction::I64Const(0));
+            self.body.push(Instruction::LocalSet(f));
+            (m, s, f)
+        } else {
+            (0, 0, 0)
+        };
+
+        // block $finally_label (Empty): ambas salidas (normal y capturada)
+        // convergen aquí; tras su End corre el `finally` una sola vez.
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::Empty));
-        let outer = self.block_depth;
-        // block $handler (result [i64, i64]) - su label (continuation, tras su End)
-        // es donde aterriza el catch con el payload [msg, span].
+        let finally_label = self.block_depth;
+        // block $handler (result [i64, i64]) - el catch aterriza tras su End con
+        // el payload [msg, span].
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::FunctionType(
             self.eh_handler_ty,
@@ -295,30 +314,14 @@ impl<'a> FuncEmitter<'a> {
         let try_dead = self.dead_flow;
         self.body.push(Instruction::End); // cierra try_table
         self.block_depth -= 1;
-        // flujo normal (sin excepción) -> br al $outer (salta el handler)
-        let br_outer = self.block_depth - outer;
-        self.body.push(Instruction::Br(br_outer));
+        // flujo normal (sin excepción) -> br a $finally_label (salta el handler).
+        let br_finally = self.block_depth - finally_label;
+        self.body.push(Instruction::Br(br_finally));
         self.body.push(Instruction::End); // cierra $handler -> el catch aterriza AQUÍ con [msg, span]
         self.block_depth -= 1;
         // handler: payload [msg, span] en el stack (span arriba, msg debajo)
         let mut catch_dead = true;
-        if stmt.catch_clauses.is_empty() {
-            let span_tmp = self.fresh_local();
-            self.body.push(Instruction::LocalSet(span_tmp));
-            let msg_tmp = self.fresh_local();
-            self.body.push(Instruction::LocalSet(msg_tmp));
-            if let Some(f) = &stmt.finally_block {
-                self.dead_flow = false;
-                for s in &f.statements {
-                    self.emit_statement(s)?;
-                }
-            }
-            // re-lanzar con el mismo payload (equivalente a Rethrow)
-            self.body.push(Instruction::LocalGet(msg_tmp));
-            self.body.push(Instruction::LocalGet(span_tmp));
-            self.body.push(Instruction::Throw(self.tag_idx));
-            self.body.push(Instruction::Unreachable);
-        } else {
+        if has_catch {
             let catch = &stmt.catch_clauses[0];
             let span_tmp = self.fresh_local();
             self.body.push(Instruction::LocalSet(span_tmp));
@@ -336,10 +339,48 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_statement(s)?;
             }
             catch_dead = self.dead_flow;
+        } else {
+            // sin catch: guardar el payload y marcar re-lanzamiento pendiente.
+            self.body.push(Instruction::LocalSet(pend_span));
+            self.body.push(Instruction::LocalSet(pend_msg));
+            self.body.push(Instruction::I64Const(1));
+            self.body.push(Instruction::LocalSet(pend_flag));
         }
-        self.body.push(Instruction::End); // cierra $outer
+        self.body.push(Instruction::End); // cierra $finally_label
         self.block_depth -= 1;
-        self.dead_flow = was_dead || (try_dead && catch_dead);
+        // finally: se ejecuta en TODOS los caminos vivos.
+        let mut finally_dead = false;
+        if let Some(f) = &stmt.finally_block {
+            self.dead_flow = false;
+            for s in &f.statements {
+                self.emit_statement(s)?;
+            }
+            finally_dead = self.dead_flow;
+        }
+        // Re-lanzar si quedó una excepción pendiente (sin catch).
+        if !has_catch {
+            self.dead_flow = false;
+            self.body.push(Instruction::LocalGet(pend_flag));
+            self.body.push(Instruction::I64Eqz);
+            self.body.push(Instruction::I32Eqz);
+            self.block_depth += 1;
+            self.body.push(Instruction::If(BlockType::Empty));
+            self.body.push(Instruction::LocalGet(pend_msg));
+            self.body.push(Instruction::LocalGet(pend_span));
+            self.body.push(Instruction::Throw(self.tag_idx));
+            self.body.push(Instruction::Unreachable);
+            self.body.push(Instruction::End);
+            self.block_depth -= 1;
+        }
+        // Vivo si algún camino sobrevive (normal y/o capturado) y el finally no
+        // terminó el flujo.
+        let normal_alive = !try_dead;
+        let caught_alive = has_catch && !catch_dead;
+        let mut alive = normal_alive || caught_alive;
+        if has_finally && finally_dead {
+            alive = false;
+        }
+        self.dead_flow = was_dead || !alive;
         Ok(())
     }
 

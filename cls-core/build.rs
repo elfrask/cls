@@ -39,17 +39,20 @@ fn main() {
 
 fn hash_dir(dir: &Path, h: &mut DefaultHasher, n: &mut u32) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
-    let mut files: Vec<_> = entries
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| p.is_file() && p.extension().map_or(false, |x| x == "rs"))
-        .collect();
-    files.sort();
-    for f in files {
-        if let Ok(bytes) = std::fs::read(&f) {
-            f.to_string_lossy().to_string().hash(h);
-            bytes.hash(h);
-            *n += 1;
+    // Recursivo: el backend vive en subcarpetas (`emitter/`, `engine/`). Sin
+    // esta recursión, editar p.ej. `emitter/statements.rs` NO cambiaba el hash
+    // y el caché CLS->WASM de cls-jit servía módulos stale.
+    let mut paths: Vec<_> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+    paths.sort();
+    for p in paths {
+        if p.is_dir() {
+            hash_dir(&p, h, n);
+        } else if p.is_file() && p.extension().map_or(false, |x| x == "rs") {
+            if let Ok(bytes) = std::fs::read(&p) {
+                p.to_string_lossy().to_string().hash(h);
+                bytes.hash(h);
+                *n += 1;
+            }
         }
     }
 }

@@ -1,4 +1,4 @@
-extension "ffi_struct.dll" as C {
+extension "examples/test/jit-examples/ffi_struct.dll" as C {
     structure Punto { x: int, y: int };
     function make_punto_own() -> Punto;
 };

@@ -156,6 +156,16 @@ nativa, sin recompilar el core), ver [extension-when.md](extension-when.md).
 | `libm` / `m` | `msvcrt.dll` | `libm.so.6` | `libSystem.B.dylib` |
 
 - Las librerías se cachean por path (no se re-abren por llamada).
+- **Resolución de la ruta**: un string que no sea un nombre conocido se pasa
+  tal cual al cargador (`LoadLibraryExW`/`dlopen`). Una ruta **relativa** se
+  resuelve respecto al **directorio de trabajo (CWD)**, no al archivo `.clsx`
+  que la declara ni a la carpeta del módulo. Para módulos FFI reutilizables usa
+  una **ruta absoluta** o documenta el CWD requerido (limitación conocida; ver
+  `examples/brainfuck/README.md`).
+- **`CString` de retorno**: se convierte a `String` con `strlen`, por lo que se
+  trunca en el primer byte `NUL` (semántica de string C, no un bug). Para
+  transferir bytes crudos con `NUL` usa `CArray` (ver `bf_read_bytes` del
+  oráculo Brainfuck).
 
 ## Soporte por intérprete
 
