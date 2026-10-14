@@ -1,0 +1,24 @@
+# diag - Modulo CLS PURO de diagnostico reutilizable (sin FFI, sin host_calls).
+#
+# Utilidades para los runners de prueba: formateo de bytes a hex para reportar
+# divergencias byte a byte. Es un ladrillo de la stdlib autocontenida
+# (examples/patrones.md §11).
+
+export function hexByte(b: int) -> String {
+    var digits = "0123456789abcdef";
+    return digits[(b / 16) % 16] + digits[b % 16];
+}
+
+# Prefijo hex (hasta maxN bytes) de un arreglo de bytes.
+export function bytesToHex(a: int[], maxN: int) -> String {
+    var out = "";
+    var n = a.length;
+    if (n > maxN) { n = maxN; }
+    var i = 0;
+    while (i < n) {
+        out = out + hexByte(a[i]);
+        if (i + 1 < n) { out = out + " "; }
+        i = i + 1;
+    }
+    return out;
+}

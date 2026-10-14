@@ -1,0 +1,89 @@
+# main.clsx - Runner de la prueba Brainfuck (CLS puro vs oraculo C).
+#
+# Para cada programa `.bf`:
+#   1. corre el interprete en CLS puro (bf::bf_run_cls)
+#   2. corre el oraculo C por FFI (bf::bf_oracle)
+#   3. compara ambos byte a byte contra el `.out` dorado
+# Reporta longitudes, primera divergencia y tiempos. Exit != 0 si algo difiere.
+#
+# Uso (desde la raiz del repo, CWD = raiz):
+#   target\debug\clx.exe run examples\brainfuck\src\main.clsx --add-path-module=modules
+#
+# El directorio de programas es relativo a la raiz del repo (igual que la ruta
+# del .dll del oraculo declarada en bf.clsx).
+
+import "bf" as bf;
+import "diag" as diag;
+
+function pad(s: String, n: int) -> String {
+    var out = s;
+    while (out.length < n) { out = out + " "; }
+    return out;
+}
+
+function main(args: String[]) -> int {
+    var root = "examples/brainfuck/programs/";
+    var names: String[] = ["hello", "wrap", "torture", "bench", "ptr", "cat"];
+    # Entrada para `,` por programa (cat usa el contenido de cat.in).
+    var inputs: String[] = ["", "", "", "", "", bf::read_text(root + "cat.in")];
+
+    print("=== Brainfuck: CLS puro vs oraculo C (FFI) ===");
+    var failures = 0;
+    var i = 0;
+    while (i < names.length) {
+        var name = names[i];
+        var path = root + name + ".bf";
+        var prog = bf::read_text(path);
+
+        if (prog.length == 0) {
+            # Leer el .bf falló (p.ej. el .dll del oráculo no cargó). No se
+            # puede validar: cuenta como fallo para que el test no de falso OK.
+            print("  [FAIL] " + name + ": no se pudo leer " + path);
+            failures = failures + 1;
+            i = i + 1;
+            continue;
+        }
+
+        # --- interprete CLS ---
+        var t0 = now();
+        var cls_out = bf::bf_run_cls(prog, inputs[i]);
+        var t1 = now();
+
+        # --- oraculo C ---
+        var c_out = bf::bf_oracle(prog, inputs[i]);
+        var t2 = now();
+
+        # --- dorado (.out) ---
+        var golden = bf::read_bytes(root + name + ".out");
+
+        var d_cc = bf::first_diff(cls_out, c_out);
+        var d_cg = bf::first_diff(cls_out, golden);
+
+        var ok = (d_cc == -2) && (d_cg == -2);
+        var tag = "FAIL";
+        if (ok) { tag = " OK "; }
+        print("  [${tag}] ${pad(name, 9)} len cls=${cls_out.length} oracle=${c_out.length} golden=${golden.length} | t_cls=${t1 - t0}ms t_c=${t2 - t1}ms");
+
+        if (!ok) {
+            if (d_cc != -2) {
+                print("          divergencia CLS vs C en indice ${d_cc}");
+                print("          cls : " + diag::bytesToHex(cls_out, 16));
+                print("          C   : " + diag::bytesToHex(c_out, 16));
+            }
+            if (d_cg != -2) {
+                print("          divergencia CLS vs golden en indice ${d_cg}");
+                print("          cls   : " + diag::bytesToHex(cls_out, 16));
+                print("          golden: " + diag::bytesToHex(golden, 16));
+            }
+            failures = failures + 1;
+        }
+        i = i + 1;
+    }
+
+    if (failures == 0) {
+        print("RESULTADO: OK (todos los programas coinciden byte a byte)");
+        return 0;
+    }
+    print("RESULTADO: ${failures} programa(s) con divergencia");
+    return 1;
+}

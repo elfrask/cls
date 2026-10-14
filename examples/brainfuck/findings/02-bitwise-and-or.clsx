@@ -1,0 +1,20 @@
+# REGRESION 2: los operadores `&` y `|` entre enteros generan WASM INVALIDO
+# (mismatch i32/i64). `^`, `<<`, `>>`, `~`, `%` funcionan; `&` y `|` no.
+#
+# Comando:
+#   target\debug\clx.exe run examples\brainfuck\findings\02-bitwise-and-or.clsx
+#
+# Esperado:  6 & 3 = 2 ; 6 | 3 = 7
+# Obtenido:  [JIT] Modulo WASM invalido ...: Invalid input WebAssembly code ...
+#            type mismatch: expected i32, found i64   (exit 1)
+#
+# Nota: `&&` y `||` (logicos) SI funcionan. El problema es el operador
+# bit-a-bit con operandos Int (i64): el emisor usa la instruccion i32.
+#
+# Impacto: no se puede enmascarar con `& 255`; hay que usar `% 256`.
+
+function main(args: String[]) -> int {
+    print(6 & 3);
+    print(6 | 3);
+    return 0;
+};

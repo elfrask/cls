@@ -1,0 +1,23 @@
+# REGRESION 1: un bloque `extension` a NIVEL SUPERIOR (fuera de `when`) que
+# declara al menos una `function` hace PANICAR al emisor WASM.
+#
+# Comando (desde la raiz del repo):
+#   target\debug\clx.exe run examples\brainfuck\findings\01-ffi-toplevel-extension.clsx
+#
+# Esperado:  4
+# Obtenido:  panic en cls-core\src\backend\wasm\engine\emit.rs:623
+#            "no entry found for key"  (exit 101)
+#
+# Workaround: envolver el `extension` en `when (os: windows) { ... }` (ver
+# 01b, que si funciona). El patron documentado en docs/lenguaje/extension.md y
+# los ejemplos ffi-*.clsx existentes (ffi-struct-real, ffi-bump4, ffi-own-ret)
+# usan extension a nivel superior y HOY estan rotos.
+
+extension "msvcrt.dll" as C {
+    function strlen(s: CString) -> CLong;
+};
+
+function main(args: String[]) -> int {
+    print(strlen("hola"));
+    return 0;
+};

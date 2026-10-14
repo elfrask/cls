@@ -1,0 +1,24 @@
+# REGRESION 4: si la libreria nativa de un `extension` no carga, el error se
+# imprime en stderr pero la ejecucion CONTINUA: la llamada devuelve 0 y el
+# programa termina con exit 0 (falso exito).
+#
+# Comando:
+#   target\debug\clx.exe run examples\brainfuck\findings\04-ffi-lib-missing-continues.clsx
+#   echo $LASTEXITCODE
+#
+# Esperado:  error de runtime fatal (exit != 0)
+# Obtenido:  "[JIT] Extension 'foo' ... No se pudo cargar la libreria nativa..."
+#            "result 0"
+#            exit 0
+
+when (os: windows) {
+    extension "no_such_lib_xyz.dll" as C {
+        function foo() -> CInt;
+    };
+};
+
+function main(args: String[]) -> int {
+    var r = foo();
+    print("result ${r}");
+    return 0;
+};

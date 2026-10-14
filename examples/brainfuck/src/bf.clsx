@@ -1,0 +1,144 @@
+# bf.clsx - Interprete de Brainfuck en CLS puro + puente FFI al oraculo C.
+#
+# Exporta:
+#   bf_run_cls(prog, input) -> int[]   interprete BF escrito en CLS puro
+#   bf_oracle(prog, input)  -> int[]   interprete de referencia (C, via FFI)
+#   read_text(path)         -> String  lectura de archivo (FFI, texto)
+#   read_bytes(path)        -> int[]   lectura de archivo (FFI, bytes crudos)
+#   first_diff(a, b)        -> int     -2 si iguales; indice de la 1a diferencia
+#
+# La semantica de ambos interpretes es identica:
+#   - tape de 30000 celdas u8, puntero con wrap circular
+#   - `+`/`-` con wrap modulo 256
+#   - `,` = byte de entrada, 0 en EOF
+#   - saltos `[` `]` por tabla de parejas precalculada
+#
+# FFI: el unico acceso externo es a bf.dll (oraculo C + puente de I/O del SO).
+# El oraculo devuelve un int[] (CArray), por lo que CLS nunca toca punteros.
+#
+# `extension` a nivel superior (sin `when`): el emisor WASM ya soporta
+# declaraciones nativas a nivel de modulo (fix del panic del emisor).
+
+extension "examples/brainfuck/oracle/bf.dll" as C {
+    function bf_run(program: CString, input: CString) -> CArray;
+    function bf_read_file(path: CString) -> CString;
+    function bf_read_bytes(path: CString) -> CArray;
+    function bf_ord(s: CString, i: CLong) -> CLong;
+};
+
+# Codigo de instruccion (0..7) o -1 si el caracter no es una instruccion.
+function cmd_of(ch: String) -> int {
+    if (ch == ">") { return 0; }
+    if (ch == "<") { return 1; }
+    if (ch == "+") { return 2; }
+    if (ch == "-") { return 3; }
+    if (ch == ".") { return 4; }
+    if (ch == ",") { return 5; }
+    if (ch == "[") { return 6; }
+    if (ch == "]") { return 7; }
+    return -1;
+}
+
+# Interprete en CLS puro. Devuelve los bytes de salida como int[].
+export function bf_run_cls(prog: String, input: String) -> int[] {
+    # 1. Filtrar a un arreglo de codigos (descarta comentarios/espacios).
+    var cmds: int[] = [];
+    var i = 0;
+    var n = prog.length;
+    while (i < n) {
+        var c = cmd_of(prog[i]);
+        if (c >= 0) { cmds.push(c); }
+        i = i + 1;
+    }
+    var m = cmds.length;
+
+    # 2. Tabla de parejas de brackets.
+    var jump: int[] = [];
+    var k = 0;
+    while (k < m) { jump.push(-1); k = k + 1; }
+    var stack: int[] = [];
+    k = 0;
+    while (k < m) {
+        var cc = cmds[k];
+        if (cc == 6) {
+            stack.push(k);
+        } elif (cc == 7) {
+            if (stack.length > 0) {
+                var o = stack[stack.length - 1];
+                stack.pop();
+                jump[o] = k;
+                jump[k] = o;
+            }
+        }
+        k = k + 1;
+    }
+
+    # 3. Tape de 30000 celdas.
+    var tape: int[] = [];
+    var t = 0;
+    while (t < 30000) { tape.push(0); t = t + 1; }
+
+    # 4. Bucle principal.
+    var out: int[] = [];
+    var tp = 0;
+    var pc = 0;
+    var ip = 0;
+    var inlen = input.length;
+    while (pc < m) {
+        var op = cmds[pc];
+        if (op == 0) {
+            tp = tp + 1;
+            if (tp >= 30000) { tp = 0; }
+        } elif (op == 1) {
+            tp = tp - 1;
+            if (tp < 0) { tp = 29999; }
+        } elif (op == 2) {
+            tape[tp] = (tape[tp] + 1) % 256;
+        } elif (op == 3) {
+            tape[tp] = (tape[tp] + 255) % 256;
+        } elif (op == 4) {
+            out.push(tape[tp]);
+        } elif (op == 5) {
+            if (ip < inlen) {
+                tape[tp] = bf_ord(input, ip);
+                ip = ip + 1;
+            } else {
+                tape[tp] = 0;
+            }
+        } elif (op == 6) {
+            if (tape[tp] == 0) { pc = jump[pc]; }
+        } elif (op == 7) {
+            if (tape[tp] != 0) { pc = jump[pc]; }
+        }
+        pc = pc + 1;
+    }
+    return out;
+}
+
+# Interprete de referencia (C, via FFI). Mismo contrato que bf_run_cls.
+export function bf_oracle(prog: String, input: String) -> int[] {
+    return bf_run(prog, input);
+}
+
+# Lectura de archivo (FFI). Texto null-terminated.
+export function read_text(path: String) -> String {
+    return bf_read_file(path);
+}
+
+# Lectura de archivo (FFI). Bytes crudos (seguro con NUL).
+export function read_bytes(path: String) -> int[] {
+    return bf_read_bytes(path);
+}
+
+# -2 si a == b; si no, el indice de la primera diferencia.
+export function first_diff(a: int[], b: int[]) -> int {
+    var la = a.length;
+    var lb = b.length;
+    var i = 0;
+    while (i < la && i < lb) {
+        if (a[i] != b[i]) { return i; }
+        i = i + 1;
+    }
+    if (la != lb) { return i; }
+    return -2;
+}
