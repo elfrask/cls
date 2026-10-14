@@ -262,7 +262,7 @@ fn format_float(v: f64) -> String {
 
 /// Aloca + escribe bytes crudos en la memoria del módulo y los empaqueta
 /// `(ptr<<32)|len`. Paridad con `cls-internals::mem::write_bytes`.
-fn write_packed_bytes<C: HostCtx>(ctx: &mut C, bytes: &[u8]) -> i64 {
+pub(crate) fn write_packed_bytes<C: HostCtx>(ctx: &mut C, bytes: &[u8]) -> i64 {
     if bytes.is_empty() {
         return 0;
     }

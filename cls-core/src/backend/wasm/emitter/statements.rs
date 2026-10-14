@@ -108,6 +108,26 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             Statement::Return(e) => {
+                // Salida abrupta que cruza un `finally` abierto: diferirla. Se
+                // guarda el valor (si lo hay) y se salta al `finally`; el
+                // despacho tras el `finally` completa el `return`.
+                if let Some(&frame_label) = self.finally_stack.last() {
+                    let kind = self.ensure_exit_kind_local();
+                    if self.returns_value() {
+                        if let Some(expr) = e {
+                            let dest = self.fn_ret.clone();
+                            self.emit_coerce(expr, dest.as_ref())?;
+                            let val = self.ensure_exit_val_local();
+                            self.body.push(Instruction::LocalSet(val));
+                        }
+                    }
+                    self.body.push(Instruction::I64Const(1));
+                    self.body.push(Instruction::LocalSet(kind));
+                    let depth = self.block_depth - frame_label;
+                    self.body.push(Instruction::Br(depth));
+                    self.dead_flow = true;
+                    return Ok(());
+                }
                 if e.is_some() {
                     let expr = e.as_ref().unwrap();
                     // Frontera única: shape contiguo hacia retorno dinámico.
@@ -122,19 +142,45 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             Statement::Break(bspan) => {
-                let ctx = self.loop_stack.last().ok_or_else(|| {
+                let break_at = self.loop_stack.last().ok_or_else(|| {
                     crate::error::ClsError::compile_at("break fuera de loop", bspan)
-                })?;
-                let depth = self.block_depth.saturating_sub(ctx.break_at);
+                })?.break_at;
+                // Si el `finally` más interno está DENTRO del loop (su label es
+                // más profundo que el target del break), el break sale del
+                // `try`: diferirlo para que corra el `finally` antes de saltar.
+                if let Some(&frame_label) = self.finally_stack.last() {
+                    if frame_label > break_at {
+                        let kind = self.ensure_exit_kind_local();
+                        self.body.push(Instruction::I64Const(2));
+                        self.body.push(Instruction::LocalSet(kind));
+                        let depth = self.block_depth - frame_label;
+                        self.body.push(Instruction::Br(depth));
+                        self.dead_flow = true;
+                        return Ok(());
+                    }
+                }
+                let depth = self.block_depth.saturating_sub(break_at);
                 self.body.push(Instruction::Br(depth));
                 self.dead_flow = true;
                 Ok(())
             }
             Statement::Continue(cspan) => {
-                let ctx = self.loop_stack.last().ok_or_else(|| {
+                let continue_at = self.loop_stack.last().ok_or_else(|| {
                     crate::error::ClsError::compile_at("continue fuera de loop", cspan)
-                })?;
-                let depth = self.block_depth.saturating_sub(ctx.continue_at);
+                })?.continue_at;
+                // Igual que `break` pero contra el target del `continue`.
+                if let Some(&frame_label) = self.finally_stack.last() {
+                    if frame_label > continue_at {
+                        let kind = self.ensure_exit_kind_local();
+                        self.body.push(Instruction::I64Const(3));
+                        self.body.push(Instruction::LocalSet(kind));
+                        let depth = self.block_depth - frame_label;
+                        self.body.push(Instruction::Br(depth));
+                        self.dead_flow = true;
+                        return Ok(());
+                    }
+                }
+                let depth = self.block_depth.saturating_sub(continue_at);
                 self.body.push(Instruction::Br(depth));
                 self.dead_flow = true;
                 Ok(())
@@ -271,9 +317,11 @@ impl<'a> FuncEmitter<'a> {
         let has_catch = !stmt.catch_clauses.is_empty();
         let has_finally = stmt.finally_block.is_some();
 
-        // Sin `catch`, la excepción propaga SIEMPRE: se guarda el payload en
-        // locales y se re-lanza TRAS el `finally` (mismo tag, mismo span).
-        let (pend_msg, pend_span, pend_flag) = if !has_catch {
+        // Excepción pendiente de re-lanzar TRAS el `finally`: (a) sin `catch`,
+        // la del cuerpo del `try`; (b) con `catch` Y `finally`, la que lance el
+        // propio cuerpo del `catch` (si no, saltaría el `finally`). Se guarda el
+        // payload en locales y se re-lanza con el mismo tag/span.
+        let (pend_msg, pend_span, pend_flag) = if !has_catch || has_finally {
             let m = self.fresh_local();
             let s = self.fresh_local();
             let f = self.fresh_local();
@@ -289,6 +337,11 @@ impl<'a> FuncEmitter<'a> {
         self.block_depth += 1;
         self.body.push(Instruction::Block(BlockType::Empty));
         let finally_label = self.block_depth;
+        // Registrar el `finally` abierto: las salidas abruptas desde el cuerpo
+        // del `try`/`catch` que lo cruzan se diferirán a este label.
+        if has_finally {
+            self.finally_stack.push(finally_label);
+        }
         // block $handler (result [i64, i64]) - el catch aterriza tras su End con
         // el payload [msg, span].
         self.block_depth += 1;
@@ -334,11 +387,49 @@ impl<'a> FuncEmitter<'a> {
             self.emit_str_host("__intr_str_concat");
             let e_local = self.declare_var_ty(&catch.param_name, WasTy::I64);
             self.body.push(Instruction::LocalSet(e_local));
-            self.dead_flow = false;
-            for s in &catch.block.statements {
-                self.emit_statement(s)?;
+            if has_finally {
+                // El cuerpo del `catch` también puede salir abruptamente con una
+                // excepción: se envuelve en un try_table que captura el tag y lo
+                // deja PENDIENTE para re-lanzarlo tras el `finally` (sin esto, la
+                // excepción del `catch` saltaría el `finally`).
+                self.block_depth += 1;
+                self.body.push(Instruction::Block(BlockType::FunctionType(
+                    self.eh_handler_ty,
+                )));
+                let guard = self.block_depth;
+                self.block_depth += 1;
+                let guard_label = self.block_depth - guard - 1;
+                self.body.push(Instruction::TryTable(
+                    BlockType::Empty,
+                    Cow::Owned(vec![Catch::One {
+                        tag: self.tag_idx,
+                        label: guard_label,
+                    }]),
+                ));
+                self.dead_flow = false;
+                for s in &catch.block.statements {
+                    self.emit_statement(s)?;
+                }
+                self.body.push(Instruction::End); // cierra try_table
+                self.block_depth -= 1;
+                // salida normal del catch -> al `finally` (salta el handler).
+                let d = self.block_depth - finally_label;
+                self.body.push(Instruction::Br(d));
+                self.body.push(Instruction::End); // cierra $guard (handler)
+                self.block_depth -= 1;
+                // handler: payload [msg, span] -> excepción pendiente.
+                self.body.push(Instruction::LocalSet(pend_span));
+                self.body.push(Instruction::LocalSet(pend_msg));
+                self.body.push(Instruction::I64Const(1));
+                self.body.push(Instruction::LocalSet(pend_flag));
+                catch_dead = false;
+            } else {
+                self.dead_flow = false;
+                for s in &catch.block.statements {
+                    self.emit_statement(s)?;
+                }
+                catch_dead = self.dead_flow;
             }
-            catch_dead = self.dead_flow;
         } else {
             // sin catch: guardar el payload y marcar re-lanzamiento pendiente.
             self.body.push(Instruction::LocalSet(pend_span));
@@ -348,6 +439,12 @@ impl<'a> FuncEmitter<'a> {
         }
         self.body.push(Instruction::End); // cierra $finally_label
         self.block_depth -= 1;
+        // El `finally` ya no está "abierto": una salida abrupta dentro del
+        // propio `finally` no debe re-diferirse a él (evita bucles), sino a los
+        // `finally` externos.
+        if has_finally {
+            self.finally_stack.pop();
+        }
         // finally: se ejecuta en TODOS los caminos vivos.
         let mut finally_dead = false;
         if let Some(f) = &stmt.finally_block {
@@ -357,8 +454,9 @@ impl<'a> FuncEmitter<'a> {
             }
             finally_dead = self.dead_flow;
         }
-        // Re-lanzar si quedó una excepción pendiente (sin catch).
-        if !has_catch {
+        // Re-lanzar si quedó una excepción pendiente (sin `catch`, o lanzada
+        // por el cuerpo del `catch` cuando hay `finally`).
+        if !has_catch || has_finally {
             self.dead_flow = false;
             self.body.push(Instruction::LocalGet(pend_flag));
             self.body.push(Instruction::I64Eqz);
@@ -372,6 +470,12 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::End);
             self.block_depth -= 1;
         }
+        // Despachar las salidas abruptas diferidas: si `exit_kind` quedó fijado
+        // (return/break/continue desde el `try`/`catch`), saltar al `finally`
+        // externo (si la salida todavía debe cruzarlo) o completar la salida.
+        if has_finally {
+            self.emit_deferred_exit_dispatch();
+        }
         // Vivo si algún camino sobrevive (normal y/o capturado) y el finally no
         // terminó el flujo.
         let normal_alive = !try_dead;
@@ -382,6 +486,83 @@ impl<'a> FuncEmitter<'a> {
         }
         self.dead_flow = was_dead || !alive;
         Ok(())
+    }
+
+
+
+    /// Despacha una salida abrupta diferida a un `finally` (ver `emit_try`).
+    ///
+    /// Se emite tras ejecutar el `finally` y lee el local compartido
+    /// `exit_kind` (0 = normal, 1 = return, 2 = break, 3 = continue):
+    /// - si la salida todavía debe cruzar otro `finally` externo, salta a él
+    ///   dejando `exit_kind` intacto (su despacho completará la salida);
+    /// - si no, completa la salida (`return` con su valor, o `br` al loop).
+    ///
+    /// Los `break`/`continue` targetean el loop más interno vivo en el punto del
+    /// `try` (el único al que una salida diferida puede apuntar: si el loop
+    /// estuviera dentro del `try`, el `finally` no se cruzaría y no se difiere).
+    pub(crate) fn emit_deferred_exit_dispatch(&mut self) {
+        let kind = match self.exit_kind_local {
+            Some(k) => k,
+            None => return,
+        };
+        let has_val = self.returns_value();
+        let val = self.exit_val_local.unwrap_or(0);
+        let outer_finally = self.finally_stack.last().copied();
+        let loop_targets = self.loop_stack.last().map(|c| (c.break_at, c.continue_at));
+
+        // --- return (exit_kind == 1) ---
+        self.body.push(Instruction::LocalGet(kind));
+        self.body.push(Instruction::I64Const(1));
+        self.body.push(Instruction::I64Eq);
+        self.block_depth += 1;
+        self.body.push(Instruction::If(BlockType::Empty));
+        if let Some(lbl) = outer_finally {
+            let d = self.block_depth - lbl;
+            self.body.push(Instruction::Br(d));
+        } else {
+            if has_val {
+                self.body.push(Instruction::LocalGet(val));
+            }
+            self.emit_fn_exit();
+            self.body.push(Instruction::Return);
+        }
+        self.body.push(Instruction::End);
+        self.block_depth -= 1;
+
+        // --- break / continue (exit_kind == 2 / 3) ---
+        if let Some((break_at, continue_at)) = loop_targets {
+            self.emit_deferred_loop_exit(kind, 2, break_at, outer_finally);
+            self.emit_deferred_loop_exit(kind, 3, continue_at, outer_finally);
+        }
+    }
+
+    /// Una rama del despacho diferido para `break` (code 2) o `continue`
+    /// (code 3): salta al `finally` externo si aún está dentro del loop, o al
+    /// target del loop (limpiando `exit_kind` para no re-disparar el despacho).
+    fn emit_deferred_loop_exit(
+        &mut self,
+        kind: u32,
+        code: i64,
+        target: u32,
+        outer_finally: Option<u32>,
+    ) {
+        self.body.push(Instruction::LocalGet(kind));
+        self.body.push(Instruction::I64Const(code));
+        self.body.push(Instruction::I64Eq);
+        self.block_depth += 1;
+        self.body.push(Instruction::If(BlockType::Empty));
+        if let Some(lbl) = outer_finally.filter(|l| *l > target) {
+            let d = self.block_depth - lbl;
+            self.body.push(Instruction::Br(d));
+        } else {
+            self.body.push(Instruction::I64Const(0));
+            self.body.push(Instruction::LocalSet(kind));
+            let d = self.block_depth - target;
+            self.body.push(Instruction::Br(d));
+        }
+        self.body.push(Instruction::End);
+        self.block_depth -= 1;
     }
 
 

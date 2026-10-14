@@ -427,7 +427,7 @@ fn register_native_hosts(
                     vals.push(v);
                     ptypes.push(native_type(letter));
                 }
-                let r = backend.call_function(&lib2, &sym2, &vals, &ptypes, native_type(rcode));
+                let r = backend.call_function_raw(&lib2, &sym2, &vals, &ptypes, native_type(rcode));
                 // Un fallo de la llamada nativa es FATAL: se propaga como trap
                 // (misma política que el wrapper de wasmtime) para no devolver
                 // 0 y continuar en silencio (falso éxito).
@@ -440,30 +440,39 @@ fn register_native_hosts(
                 match rcode {
                     'v' => Ok(()),
                     's' => {
-                        let s = match r {
-                            Ok(Value::String(s)) => s,
-                            _ => String::new(),
+                        // Retorno `CString` byte-transparente (bytes crudos).
+                        let bytes = match r {
+                            Ok(cls_runtime::ffi::NativeRet::Bytes(b)) => b,
+                            Ok(cls_runtime::ffi::NativeRet::Value(Value::String(s))) => {
+                                s.into_bytes()
+                            }
+                            _ => Vec::new(),
                         };
-                        results[0] = Val::I64(caller.write_str(&s));
-                        Ok(())
-                    }
-                    'f' => {
-                        results[0] = Val::F64(ret_to_f64(r).into());
-                        Ok(())
-                    }
-                    'b' | 'c' => {
-                        results[0] = Val::I32(ret_to_i32(r));
-                        Ok(())
-                    }
-                    'r' | 'a' | 'S' => {
-                        // En wasmi (browser/wasm32) no hay DLLs nativas; el
-                        // ptr del layout se devuelve tal cual (passthrough).
-                        results[0] = Val::I64(ret_to_i64(r));
+                        results[0] = Val::I64(host::write_packed_bytes(&mut caller, &bytes));
                         Ok(())
                     }
                     _ => {
-                        results[0] = Val::I64(ret_to_i64(r));
-                        Ok(())
+                        let rv = r.map(|x| x.into_value());
+                        match rcode {
+                            'f' => {
+                                results[0] = Val::F64(ret_to_f64(rv).into());
+                                Ok(())
+                            }
+                            'b' | 'c' => {
+                                results[0] = Val::I32(ret_to_i32(rv));
+                                Ok(())
+                            }
+                            'r' | 'a' | 'S' => {
+                                // En wasmi (browser/wasm32) no hay DLLs nativas; el
+                                // ptr del layout se devuelve tal cual (passthrough).
+                                results[0] = Val::I64(ret_to_i64(rv));
+                                Ok(())
+                            }
+                            _ => {
+                                results[0] = Val::I64(ret_to_i64(rv));
+                                Ok(())
+                            }
+                        }
                     }
                 }
             },

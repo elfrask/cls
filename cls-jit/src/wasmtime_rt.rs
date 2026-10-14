@@ -581,7 +581,7 @@ pub fn register_native_hosts(
                     vals.push(v);
                     ptypes.push(native_type(letter));
                 }
-                let r = backend.call_function(&lib2, &sym2, &vals, &ptypes, native_type(rcode));
+                let r = backend.call_function_raw(&lib2, &sym2, &vals, &ptypes, native_type(rcode));
                 // Un fallo de la llamada nativa (DLL ausente/símbolo no
                 // encontrado/ABI) es FATAL: se propaga como trap WASM para que
                 // el runtime muestre el trace completo y el proceso salga con
@@ -596,60 +596,76 @@ pub fn register_native_hosts(
                 match rcode {
                     'v' => Ok(()),
                     's' => {
-                        let s = match r {
-                            Ok(Value::String(s)) => s,
-                            _ => String::new(),
-                        };
-                        results[0] = Val::I64(caller.write_str(&s));
-                        Ok(())
-                    }
-                    'f' => {
-                        results[0] = Val::F64(ret_to_f64(r).to_bits());
-                        Ok(())
-                    }
-                    'b' | 'c' => {
-                        results[0] = Val::I32(ret_to_i32(r));
-                        Ok(())
-                    }
-                    'r' | 'a' | 'S' => {
-                        // El backend devolvió el ptr HOST del layout (el DLL
-                        // escribió in-place en la memoria del módulo, que es
-                        // una alocación del host). Se traduce host -> offset
-                        // WASM y se devuelve al CLS.
-                        match r {
-                            Ok(Value::Int(host_ptr)) => {
-                                let wasm_off = ffi_host_to_wasm(&mut caller, host_ptr);
-                                if wasm_off != 0 {
-                                    // In-place sobre la memoria del módulo: usar
-                                    // el offset directo (cero copias).
-                                    results[0] = Val::I64(wasm_off);
-                                    Ok(())
-                                } else if host_ptr != 0 {
-                                    // El DLL devolvió un buffer PROPIO (fuera de
-                                    // la memoria del módulo): re-serializar el
-                                    // layout a la memoria del módulo re-mapeando
-                                    // punteros internos (keys/strings del DLL).
-                                    results[0] =
-                                        Val::I64(ffi_copy_own_layout(&mut caller, host_ptr, rcode, ret_struct_size));
-                                    Ok(())
-                                } else {
-                                    results[0] = Val::I64(0);
-                                    Ok(())
-                                }
+                        // Retorno `CString` byte-transparente: se escriben los
+                        // bytes crudos en la memoria del módulo (sin normalizar
+                        // UTF-8). Se corta en el primer NUL (semántica C).
+                        let bytes = match r {
+                            Ok(cls_runtime::ffi::NativeRet::Bytes(b)) => b,
+                            Ok(cls_runtime::ffi::NativeRet::Value(Value::String(s))) => {
+                                s.into_bytes()
                             }
-                            Ok(v) => {
-                                results[0] = Val::I64(host::ffi_write_value(&mut caller, &v));
+                            _ => Vec::new(),
+                        };
+                        results[0] = Val::I64(host::write_packed_bytes(&mut caller, &bytes));
+                        Ok(())
+                    }
+                    _ => {
+                        let rv = r.map(|x| x.into_value());
+                        match rcode {
+                            'f' => {
+                                results[0] = Val::F64(ret_to_f64(rv).to_bits());
                                 Ok(())
                             }
-                            Err(_) => {
-                                results[0] = Val::I64(0);
+                            'b' | 'c' => {
+                                results[0] = Val::I32(ret_to_i32(rv));
+                                Ok(())
+                            }
+                            'r' | 'a' | 'S' => {
+                                // El backend devolvió el ptr HOST del layout (el DLL
+                                // escribió in-place en la memoria del módulo, que es
+                                // una alocación del host). Se traduce host -> offset
+                                // WASM y se devuelve al CLS.
+                                match rv {
+                                    Ok(Value::Int(host_ptr)) => {
+                                        let wasm_off = ffi_host_to_wasm(&mut caller, host_ptr);
+                                        if wasm_off != 0 {
+                                            // In-place sobre la memoria del módulo: usar
+                                            // el offset directo (cero copias).
+                                            results[0] = Val::I64(wasm_off);
+                                            Ok(())
+                                        } else if host_ptr != 0 {
+                                            // El DLL devolvió un buffer PROPIO (fuera de
+                                            // la memoria del módulo): re-serializar el
+                                            // layout a la memoria del módulo re-mapeando
+                                            // punteros internos (keys/strings del DLL).
+                                            results[0] = Val::I64(ffi_copy_own_layout(
+                                                &mut caller,
+                                                host_ptr,
+                                                rcode,
+                                                ret_struct_size,
+                                            ));
+                                            Ok(())
+                                        } else {
+                                            results[0] = Val::I64(0);
+                                            Ok(())
+                                        }
+                                    }
+                                    Ok(v) => {
+                                        results[0] =
+                                            Val::I64(host::ffi_write_value(&mut caller, &v));
+                                        Ok(())
+                                    }
+                                    Err(_) => {
+                                        results[0] = Val::I64(0);
+                                        Ok(())
+                                    }
+                                }
+                            }
+                            _ => {
+                                results[0] = Val::I64(ret_to_i64(rv));
                                 Ok(())
                             }
                         }
-                    }
-                    _ => {
-                        results[0] = Val::I64(ret_to_i64(r));
-                        Ok(())
                     }
                 }
             },

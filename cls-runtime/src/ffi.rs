@@ -50,6 +50,27 @@ pub enum NativeType {
     CStruct,
 }
 
+/// Resultado de una llamada nativa. `Value` es el caso general; `Bytes`
+/// transporta un retorno `CString` **byte a byte**: CLS usa semántica de bytes y
+/// un `char*` de C no tiene por qué ser UTF-8 válido, así que no debe
+/// normalizarse a U+FFFD antes de escribirlo en la memoria del módulo.
+#[derive(Debug, Clone)]
+pub enum NativeRet {
+    Value(Value),
+    Bytes(Vec<u8>),
+}
+
+impl NativeRet {
+    /// Extrae el `Value`. `Bytes` sólo aparece en el retorno `CString` (que el
+    /// JIT consume como bytes); fuera de ese camino se degrada a `String`.
+    pub fn into_value(self) -> Value {
+        match self {
+            NativeRet::Value(v) => v,
+            NativeRet::Bytes(b) => Value::String(String::from_utf8_lossy(&b).into_owned()),
+        }
+    }
+}
+
 /// Backend que resuelve símbolos de librerías del sistema (linkadas por el SO).
 pub trait NativeBackend: Send + Sync {
     /// Llama una función nativa declarada en `extension`.
@@ -61,6 +82,21 @@ pub trait NativeBackend: Send + Sync {
         param_types: &[NativeType],
         ret: NativeType,
     ) -> ClsResult<Value>;
+
+    /// Variante del camino FFI del JIT: igual que `call_function` pero entrega
+    /// los retornos `CString` como bytes crudos (`NativeRet::Bytes`), para que
+    /// sean byte-transparentes. Por defecto delega en `call_function`.
+    fn call_function_raw(
+        &self,
+        library: &str,
+        symbol: &str,
+        args: &[Value],
+        param_types: &[NativeType],
+        ret: NativeType,
+    ) -> ClsResult<NativeRet> {
+        self.call_function(library, symbol, args, param_types, ret)
+            .map(NativeRet::Value)
+    }
 
     /// Lee una variable nativa (símbolo `extern`).
     fn get_variable(&self, library: &str, name: &str, ty: NativeType) -> ClsResult<Value>;

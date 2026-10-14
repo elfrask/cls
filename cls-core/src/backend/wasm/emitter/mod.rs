@@ -44,6 +44,18 @@ pub(crate) struct FuncEmitter<'a> {
     pub(crate) next_local: u32,
     block_depth: u32,
     loop_stack: Vec<LoopGuard>,
+    /// Pila de `finally` abiertos: label del block `$finally_label` de cada
+    /// `try ... finally` en emisión. Las salidas abruptas (`return`/`break`/
+    /// `continue`) que cruzan un `finally` se difieren: saltan a su label, y el
+    /// despacho tras el `finally` (ver `emit_try`) completa la salida. Sin esto
+    /// el `return`/`br` saltaría el `finally` (bug de flujo).
+    finally_stack: Vec<u32>,
+    /// Local compartido de la acción diferida: 0 = normal, 1 = return,
+    /// 2 = break, 3 = continue. `None` hasta que un `try/finally` la necesita.
+    exit_kind_local: Option<u32>,
+    /// Local del valor de retorno diferido (mismo tipo WASM que el retorno de
+    /// la función). `None` si la función no devuelve valor.
+    exit_val_local: Option<u32>,
     host: HostCaller,
     string_pool: &'a mut Vec<String>,
     string_index: &'a mut HashMap<String, u32>,
@@ -154,6 +166,9 @@ impl<'a> FuncEmitter<'a> {
             next_local: 0,
             block_depth: 0,
             loop_stack: Vec::new(),
+            finally_stack: Vec::new(),
+            exit_kind_local: None,
+            exit_val_local: None,
             host,
             string_pool,
             string_index,
@@ -242,6 +257,45 @@ impl<'a> FuncEmitter<'a> {
 
     pub(crate) fn fresh_local(&mut self) -> u32 {
         self.fresh_local_ty(WasTy::I64)
+    }
+
+
+    /// `true` si la función/método en emisión devuelve un valor (no `Void`).
+    pub(crate) fn returns_value(&self) -> bool {
+        match &self.fn_ret {
+            Some(Type::Void) | Some(Type::Empty) | None => false,
+            Some(_) => true,
+        }
+    }
+
+    /// Tipo WASM del valor de retorno de la función (I64 si no resuelve).
+    pub(crate) fn return_was_ty(&self) -> WasTy {
+        match &self.fn_ret {
+            Some(t) => was_type(t).unwrap_or(WasTy::I64),
+            None => WasTy::I64,
+        }
+    }
+
+    /// Local compartido de la acción diferida (`exit_kind`), creado la primera
+    /// vez que un `try/finally` lo necesita.
+    pub(crate) fn ensure_exit_kind_local(&mut self) -> u32 {
+        if let Some(l) = self.exit_kind_local {
+            return l;
+        }
+        let l = self.fresh_local();
+        self.exit_kind_local = Some(l);
+        l
+    }
+
+    /// Local del valor de retorno diferido, con el tipo del retorno declarado.
+    pub(crate) fn ensure_exit_val_local(&mut self) -> u32 {
+        if let Some(l) = self.exit_val_local {
+            return l;
+        }
+        let ty = self.return_was_ty();
+        let l = self.fresh_local_ty(ty);
+        self.exit_val_local = Some(l);
+        l
     }
 
 

@@ -142,12 +142,13 @@ nativa, sin recompilar el core), ver [extension-when.md](extension-when.md).
 
 ## Límites y mapeo de librerías
 
-- Hasta **16 argumentos** por función nativa (dispatcher dinámico
-  `call_typed_0..call_typed_16`; más de 16 -> error claro sugiriendo
-  empaquetar en un struct). Ver
+- Hasta **16 argumentos** por función nativa; más de 16 -> error claro
+  sugiriendo empaquetar en un struct. La llamada se emite con **libffi** usando
+  la firma ABI real por slot (`i64` -> registro entero, `f64` -> registro
+  XMM/FP), así que los parámetros `CDouble` llegan correctamente a C en cualquier
+  SO/arquitectura. Ver
   [decisión 002](../decisiones/002-ffi-arity-limit.md) para el
-  rationale (por qué 16, por qué no ilimitado, por qué no matches
-  estáticos 2^N).
+  rationale del límite de aridad.
 - Mapeo de nombres de librería por SO:
 
 | Nombre | Windows | Linux | macOS |
@@ -162,8 +163,9 @@ nativa, sin recompilar el core), ver [extension-when.md](extension-when.md).
   que la declara ni a la carpeta del módulo. Para módulos FFI reutilizables usa
   una **ruta absoluta** o documenta el CWD requerido (limitación conocida; ver
   `examples/brainfuck/README.md`).
-- **`CString` de retorno**: se convierte a `String` con `strlen`, por lo que se
-  trunca en el primer byte `NUL` (semántica de string C, no un bug). Para
+- **`CString` de retorno**: **byte-transparente** (los bytes del `char*` se
+  copian tal cual a la memoria del módulo, sin normalizar UTF-8 a U+FFFD). Se
+  corta en el primer byte `NUL` (semántica de string C, no un bug). Para
   transferir bytes crudos con `NUL` usa `CArray` (ver `bf_read_bytes` del
   oráculo Brainfuck).
 
