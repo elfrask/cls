@@ -11,7 +11,8 @@ clx <subcomando> [opciones] [argumentos]
 
 | Subcomando | Estado |
 |---|---|
-| `new`, `add`, `remove`/`rm`, `install`/`i`, `run`, `check`, `repl`, `build`, `lsp`, `ast`, `maptype`, `clean`, `-v`/`--version`, `-h`/`--help` | Implementados |
+| `new`, `add`, `remove`/`rm`, `install`/`i`, `ls`, `info`, `audit`, `test`, `run`, `check`, `repl`, `build`, `lsp`, `ast`, `maptype`, `clean`, `-v`/`--version`, `-h`/`--help` | Implementados |
+| `login`, `publish`, `yank`, `search` | **Fase B/C** (requieren el registry) |
 | `init`, `tree`, `fmt` | **Placeholder** - imprimen "no implementado" y salen con código 1 |
 | `--quiet` | Silencia logs; se usa **antes** del subcomando: `clx --quiet run ...` |
 
@@ -26,7 +27,7 @@ Crea un proyecto nuevo con la estructura mínima:
 <nombre>/
 ├── cls.json          # manifiesto (entry: "src/main.clsx")
 ├── .gitignore        # modules/, dist/, .cls-types
-├── modules/          # dependencias instaladas
+├── modules/          # MÓDULOS PROPIOS del usuario (dev local)
 └── src/
     └── main.clsx     # function main(args: String[]) -> int
 ```
@@ -36,18 +37,69 @@ Crea un proyecto nuevo con la estructura mínima:
 - El nombre no puede empezar con `-` (los flags se interpretan como opciones);
   `clx new -h` muestra la ayuda del subcomando.
 
-## `clx add <paquete> [--dev]` · `clx remove|rm <paquete>` · `clx install|i`
+## Paquetes: `add`, `remove`, `install`, `ls`, `info`, `audit`
 
-Gestión de dependencias con `cls.json`:
+**Dónde vive cada cosa**:
 
-- `add` - agrega `"<paquete>": "^1.0.0"` a `dependencies` (o `devDependencies`
-  con `--dev`). Requiere un `cls.json` en el directorio actual.
-- `remove` - quita el paquete de `dependencies` o `devDependencies`.
-- `install` - descarga cada dependencia desde el registry como
-  `modules/<paquete>/mod.clsx` y escribe el lockfile `cls.lock`.
+- `./modules/{nombre}/` - **módulos propios** del usuario (dev local). El resolver
+  los mira **primero**.
+- `~/.cls/modules/[scope/]nombre@versión/` - paquetes **instalados** (global,
+  versionado).
+- `cls.json → dependencies` - `nombre → rango|exacta`; el resolver elige la
+  versión global que cumpla el rango.
+- `cls.lock` - versiones exactas resueltas (reproducibilidad).
 
-El registry se toma de, en orden: `CLS_REGISTRY` > `cls.json["registry"]` >
-`https://registry.cls-lang.org`. Si la descarga falla, se usa el caché local.
+### `clx add <spec> [--dev]`
+
+Solo edita `cls.json` (no descarga). `<spec>` = `[scope/]nombre[@versión]`:
+
+- con versión → **fija** (`"foo": "1.2.3"`);
+- sin versión → **rango** `^<última>` (registry si hay red → global → error
+  "módulo no resuelto").
+- `--dev` → `devDependencies`.
+
+### `clx remove|rm <spec>`
+
+Quita la dependencia de `cls.json` (no toca el store global).
+
+### `clx install [<ruta|zip|spec>...] [-S|--save] [-f|--force]`
+
+- **Sin argumentos**: instala las deps de `cls.json` (rangos → última que cumpla)
+  y escribe `cls.lock`.
+- **Con rutas**: instala paquetes locales (directorio o `.zip`/`.clsapp`) en
+  `~/.cls/modules/[scope/]nombre@versión/`. **Requiere `name` y `version`
+  (semver) y `export.entry`.** `--save` registra la dep exacta en `cls.json`.
+- **Con specs**: instala por nombre; si no está en global, lo baja del registry
+  (Fase B) usando el **driver de git** (`gix`).
+- `--force` sobrescribe la versión ya instalada.
+
+### `clx ls [-l|--local] [-g|--global]`
+
+Lista los paquetes locales (`./modules`) y globales (`~/.cls/modules`).
+
+### `clx info [ruta|paquete]`
+
+Info de un directorio, `cls.json`, `.zip`/`.clsapp` o paquete por nombre; sin
+argumento, del proyecto actual.
+
+### `clx audit [-l|-g]`
+
+Audita manifiesto, `entry`/`export.entry`, dependencias no instaladas y
+duplicados. Exit 1 si encuentra problemas.
+
+### Driver de git (`gix`)
+
+El registry **no guarda código**: publica `{repo, commit}`. `clx` obtiene el
+código con un **driver aparte** que enlaza `gix` (no pesa en el binario),
+cargado dinámicamente. Se busca en `CLS_GIX_DRIVER`, junto al binario, o en
+`~/.cls/drivers/`. Compilarlo: `scripts/gix-driver-build.cmd|.sh` (crate
+standalone en `drivers/gix-driver/`).
+
+## `clx test [archivos|globs] [--filter <s>] [--list]`
+
+Ejecuta los tests del proyecto. Sin argumentos usa `testEntry` de `cls.json`
+(array de rutas o globs, admite `*`, `**`, `?`). Cada archivo se ejecuta con el
+JIT; su exit code determina pass/fail. Ver `lenguaje/testing.md`.
 
 ## `clx run [archivo] [--] [args...]`
 
@@ -130,7 +182,8 @@ workspace `[cwd]/.cls-cache/`.
 
 | Variable | Efecto |
 |---|---|
-| `CLS_REGISTRY` | Registry para `clx install` |
+| `CLS_REGISTRY` | Registry para `clx install`/`add` |
+| `CLS_GIX_DRIVER` | Ruta al driver de git (`clxgix.dll`/`.so`) para instalar del registry |
 | `CLS_JIT_RUNTIME=wasmi` | Usa wasmi en lugar de wasmtime (sin excepciones) |
 | `CLS_DUMP_WAT` | Imprime el WAT del módulo compilado en stderr |
 | `CLS_JIT_TIMING=1` | Log de tiempos por fase del JIT |

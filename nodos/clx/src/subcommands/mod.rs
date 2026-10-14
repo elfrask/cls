@@ -8,3 +8,7 @@ pub mod repl;
 pub mod lsp;
 pub mod maptype;
 pub mod clean;
+pub mod info;
+pub mod ls;
+pub mod audit;
+pub mod test;

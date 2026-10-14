@@ -52,6 +52,12 @@ pub struct ModuleManifest {
     #[serde(default, rename = "devDependencies")]
     pub dev_dependencies: HashMap<String, String>,
 
+    /// Archivos/patrones de test (globs permitidos), relativos a la raíz del
+    /// proyecto. `clx test` los descubre y ejecuta. Se serializa como
+    /// `testEntry` (array).
+    #[serde(default, rename = "testEntry")]
+    pub test_entry: Vec<String>,
+
     /// Configuración de módulo: `export.entry` (index público) y `export.types`.
     /// Solo aplica cuando este `cls.json` describe un **módulo** (no un proyecto).
     #[serde(default, rename = "export", skip_serializing_if = "Option::is_none")]
@@ -144,6 +150,7 @@ impl ModuleManifest {
             interpreter: InterpreterConfig::default(),
             dependencies: HashMap::new(),
             dev_dependencies: HashMap::new(),
+            test_entry: Vec::new(),
             export_config: None,
             lockfile_version: None,
         }

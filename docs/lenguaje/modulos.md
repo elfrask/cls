@@ -204,6 +204,12 @@ El `ModuleResolver` del runtime consulta en orden:
    5. `~/.cls/modules/{nombre}@{version}/...` (globales versionadas; filtra por
       el rango semver declarado en el `cls.json` del importador)
    6. `~/.cls/modules/{nombre}/...` (globales sin versión)
+
+   Para un **paquete con scope** (`usuario/foo`, exactamente un `/` sin
+   extensión) se busca primero el layout global anidado
+   `~/.cls/modules/{usuario}/{foo}@{version}/...` (filtrado por
+   `dependencies["usuario/foo"]`), y luego los `modules/{usuario}/{foo}`
+   locales; recién después cae al path relativo.
 4. **Error** - `Módulo 'X' no encontrado`.
 
 ### Aislamiento por módulo (`cls.json` con `export`)

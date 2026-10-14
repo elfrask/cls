@@ -134,6 +134,25 @@ fn project_root(start: &std::path::Path) -> std::path::PathBuf {
     start.to_path_buf()
 }
 
+/// `scope/nombre` de un paquete con scope (exactamente un `/`, sin `.`/`..`,
+/// sin extensión). `None` si es un path explícito o un nombre plano.
+fn scoped_parts(name: &str) -> Option<(&str, &str)> {
+    if name.contains('\\') {
+        return None;
+    }
+    let (a, b) = name.split_once('/')?;
+    if a.is_empty() || b.is_empty() || b.contains('/') {
+        return None;
+    }
+    if a == "." || a == ".." || a.starts_with('.') {
+        return None;
+    }
+    if std::path::Path::new(b).extension().is_some() {
+        return None;
+    }
+    Some((a, b))
+}
+
 /// Candidatos de archivo para un import de módulo, en orden de búsqueda.
 ///
 /// Orden (RESOLVERS.md):
@@ -162,6 +181,43 @@ pub fn module_candidates(
     let name = path.trim_start_matches(['/', '\\']).trim();
     let proj = project_root(base_dir);
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    // Paquete con scope `scope/nombre`: layout global anidado
+    // `~/.cls/modules/{scope}/{nombre}@{version}/` (filtrado por el rango de
+    // `dependencies[{scope/name}]`). Se resuelve ANTES del path directo.
+    if let Some((scope, pkg)) = scoped_parts(name) {
+        if let Some(ref um) = user_modules {
+            let declared = manifest.and_then(|m| m.dependency_version(name).map(|s| s.to_string()));
+            let scope_dir = um.join(scope);
+            if let Ok(entries) = std::fs::read_dir(&scope_dir) {
+                let mut versions: Vec<(String, std::path::PathBuf)> = entries
+                    .flatten()
+                    .filter(|e| e.path().is_dir())
+                    .filter_map(|e| {
+                        let n = e.file_name().to_string_lossy().to_string();
+                        n.strip_prefix(&format!("{}@", pkg))
+                            .map(|ver| (ver.to_string(), e.path()))
+                    })
+                    .collect();
+                versions.sort_by(|a, b| cmp_semver(&a.0, &b.0).reverse());
+                for (ver, p) in versions {
+                    if let Some(ref d) = declared {
+                        if !semver_matches(d, &ver) {
+                            continue;
+                        }
+                    }
+                    push_module_dir_candidates(&p, &mut candidates);
+                }
+            }
+            if declared.is_none() {
+                push_module_dir_candidates(&scope_dir.join(pkg), &mut candidates);
+            }
+        }
+        // Fallbacks (módulos propios o path relativo).
+        push_module_dir_candidates(&proj.join("modules").join(scope).join(pkg), &mut candidates);
+        push_module_dir_candidates(&cwd.join("modules").join(scope).join(pkg), &mut candidates);
+        candidates.push(base_dir.join(format!("{}.clsx", name)));
+        return candidates;
+    }
     if name.contains('/') || name.contains('\\') || std::path::Path::new(name).is_absolute() {
         // Path explícito: directo. Agregar `.clsx` si no lo trae.
         let p = std::path::Path::new(&path);

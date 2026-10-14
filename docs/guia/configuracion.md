@@ -18,8 +18,9 @@ Toda la configuración de un proyecto vive en `cls.json`
 | `project` | object | - | Ver `project` |
 | `compiler` | object | - | Ver `compiler` |
 | `interpreter` | object | - | Ver `interpreter` |
-| `dependencies` | map | `{}` | Dependencias (`"<pkg>": "^1.0.0"`) |
+| `dependencies` | map | `{}` | Dependencias (`"<pkg>": "^1.0.0"` o exacta) |
 | `devDependencies` | map | `{}` | Dependencias de desarrollo (renombrada de `devDependencies`) |
+| `testEntry` | string[] | `[]` | Archivos/globs de test para `clx test` (p.ej. `["tests/**/*.clsx"]`) |
 | `lockfileVersion` | number | ausente | Versión del lockfile |
 
 ### `project`
@@ -115,6 +116,7 @@ Toda la configuración de un proyecto vive en `cls.json`
 | Variable | Efecto |
 |---|---|
 | `CLS_REGISTRY` | Registry para `clx install` (prioridad sobre `cls.json["registry"]`) |
+| `CLS_GIX_DRIVER` | Ruta al driver de git (`clxgix.dll`/`.so`) para instalar del registry |
 | `CLS_JIT_RUNTIME=wasmi` | Usa wasmi en lugar de wasmtime (sin excepciones CLS) |
 | `CLS_DUMP_WAT` | Imprime el WAT del módulo compilado en stderr |
 | `CLS_JIT_TIMING=1` | Log de tiempos por fase del JIT |
@@ -140,10 +142,18 @@ clx clean --all  # además borra el directorio completo y [cwd]/.cls-cache/
 ## Dependencias y registry
 
 ```ps
-clx add <paquete>        # agrega "<paquete>": "^1.0.0" a dependencies
-clx add <paquete> --dev  # idem, en devDependencies
-clx install              # descarga a modules/<paquete>/mod.clsx
+clx add <spec> [--dev]     # edita cls.json (con versión = fija; sin versión = ^última)
+clx install                # resuelve deps de cls.json -> ~/.cls/modules/<name>@<v>/
+clx install <ruta|zip> -S  # instala paquete local y lo registra (--save)
+clx ls [-g]                # lista paquetes locales y globales
+clx info [ruta|paquete]    # info de un paquete/proyecto
+clx audit [-g]             # audita manifiesto/entry/deps/duplicados
 ```
+
+- `<spec>` = `[scope/]nombre[@versión]` (p.ej. `foo`, `foo@1.2.3`, `usuario/foo`).
+- Los paquetes instalados viven en `~/.cls/modules/[scope/]nombre@versión/`
+  (layout anidado para scopes).
+- `./modules/` es para los **módulos propios** del usuario.
 
 `clx install` escribe el lockfile `cls.lock`:
 
@@ -151,9 +161,14 @@ clx install              # descarga a modules/<paquete>/mod.clsx
 {
   "lockfileVersion": 1,
   "registry": "https://registry.cls-lang.org",
-  "packages": { "<paquete>": { "version": "latest" } }
+  "packages": {
+    "foo": { "version": "1.2.3", "channel": "stable", "resolved": "global" }
+  }
 }
 ```
+
+El registry **no almacena código**: publica `{repo_url, commit}` y `clx` lo baja
+con el **driver de git** (`gix`), cargado dinámicamente (`CLS_GIX_DRIVER`).
 
 ## Resolución de `.clslib` (`ClsLibResolver`)
 
