@@ -680,10 +680,14 @@ pub fn register_native_hosts(
 
 // ── Ejecución ───────────────────────────────────────────────────────────────
 
-/// Config de wasmtime: habilita la propuesta de excepciones (try/catch).
+/// Config de wasmtime: habilita la propuesta de excepciones (try/catch) y la
+/// interrupción por epoch (para el límite de tiempo del sandbox).
 fn wasmtime_config() -> Option<wasmtime::Config> {
     let mut config = wasmtime::Config::new();
     config.wasm_exceptions(true);
+    if crate::limits::time_limit() > 0 {
+        config.epoch_interruption(true);
+    }
     Some(config)
 }
 
@@ -741,6 +745,14 @@ pub(crate) fn run_wasm_wasmtime(
         crate::engine::maybe_write_module_index(entry, modules, ctx);
     }
 
+    let mem_limit = crate::limits::memory_limit();
+    let limits = {
+        let mut b = wasmtime::StoreLimitsBuilder::new();
+        if mem_limit > 0 {
+            b = b.memory_size(mem_limit as usize);
+        }
+        b.build()
+    };
     let mut store = Store::new(
         &engine,
         HostState {
@@ -754,8 +766,22 @@ pub(crate) fn run_wasm_wasmtime(
             host_call: ctx.host_call_handler.clone(),
             output: ctx.output.clone(),
             app_args: app_args.to_vec(),
+            limits: Some(limits),
         },
     );
+    // Sandbox: la memoria lineal no puede crecer más allá del límite declarado
+    // (`interpreter.runtime.memoryLimit` / `CLS_MEMORY_LIMIT`; default 1 GiB).
+    store.limiter(|s| s.limits.as_mut().unwrap());
+    // Sandbox: límite de tiempo por interrupción de epoch (opt-in).
+    let time_limit = crate::limits::time_limit();
+    if time_limit > 0 {
+        store.set_epoch_deadline(1);
+        let engine_wd = engine.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(time_limit));
+            engine_wd.increment_epoch();
+        });
+    }
     let mut linker = Linker::new(&engine);
     t = tick(timing, "Store+Linker", t);
 

@@ -73,7 +73,7 @@ Toda la configuración de un proyecto vive en `cls.json`
 
 | Campo | Default | Descripción |
 |---|---|---|
-| `memoryLimit` | `"512MB"` | Límite de memoria |
+| `memoryLimit` | `"1GB"` | Límite de memoria lineal del sandbox (bytes; `"512MB"`, `"1GiB"`, `"500"`...). **Aplicado** por el JIT (wasmtime `StoreLimits`); `"0"` = sin límite. Override: env `CLS_MEMORY_LIMIT` |
 | `stackSize` | `"8MB"` | Tamaño de stack |
 | `gc` | object | GC (`GcConfig`: `enabled` `false`, `strategy` `"compiled"`, `threshold` `"64MB"`) |
 
@@ -83,7 +83,11 @@ Toda la configuración de un proyecto vive en `cls.json`
 |---|---|---|
 | `allowFs` | `false` | Permitir acceso a filesystem |
 | `allowNet` | `false` | Permitir acceso a red |
-| `maxExecutionTime` | `5000` | Tiempo máximo de ejecución (ms) |
+| `maxExecutionTime` | `5000` | Tiempo máximo de ejecución (ms). **Reservado**: hoy se aplica por env `CLS_TIME_LIMIT=<ms>` (interrupción por epoch de wasmtime), no desde `cls.json`, para no cortar corridas largas legítimas |
+
+> **Sandbox de memoria**: `memoryLimit` (o `CLS_MEMORY_LIMIT`) sí se aplica —
+> la memoria lineal del módulo WASM no puede crecer más allá del límite; al
+> superarlo, la ejecución trapea con un error de ejecución (exit ≠ 0).
 
 ## Ejemplo real
 
@@ -121,6 +125,8 @@ Toda la configuración de un proyecto vive en `cls.json`
 | `CLS_JIT_RUNTIME=wasmi` | Usa wasmi en lugar de wasmtime (sin excepciones CLS) |
 | `CLS_DUMP_WAT` | Imprime el WAT del módulo compilado en stderr |
 | `CLS_JIT_TIMING=1` | Log de tiempos por fase del JIT |
+| `CLS_MEMORY_LIMIT` | Límite de memoria lineal del sandbox (p.ej. `1GB`, `512MB`); prioridad sobre `cls.json` |
+| `CLS_TIME_LIMIT` | Límite de tiempo de ejecución en ms (opt-in; interrupción por epoch) |
 | `CLS_LIB_PATH` | Directorio del binario `clsb` (bindings Python: `clsb.dll`/`.so`/`.dylib`) |
 
 ## Caché de compilación

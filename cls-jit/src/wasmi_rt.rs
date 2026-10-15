@@ -533,6 +533,7 @@ pub(crate) fn run_wasm_wasmi(
             host_call: ctx.host_call_handler.clone(),
             output: ctx.output.clone(),
             app_args: app_args.to_vec(),
+            limits: None,
         },
     );
     let mut linker = Linker::new(&engine);

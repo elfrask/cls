@@ -407,6 +407,7 @@ impl ReplSession {
                 host_call: ctx.host_call_handler.clone(),
                 output: ctx.output.clone(),
                 app_args: Vec::new(),
+                limits: None,
             },
         );
         let mut linker = Linker::new(&self.engine);

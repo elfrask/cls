@@ -43,5 +43,17 @@ pub fn run_jit(entry: &str, app_args: &[String], target_str: Option<&str>) -> i3
     // `CLS_JIT_TRACE=0` -> omitir el shadow call stack (pierde el trace de
     // errores de runtime a cambio de menos código WASM; `clx run --release`).
     let trace_calls = !matches!(std::env::var("CLS_JIT_TRACE").as_deref(), Ok("0"));
+    // Sandbox: límite de memoria. Prioridad: env `CLS_MEMORY_LIMIT` >
+    // `cls.json` -> `interpreter.runtime.memoryLimit` > default 1 GiB.
+    let mem = std::env::var("CLS_MEMORY_LIMIT")
+        .ok()
+        .and_then(|s| cls_jit::limits::parse_size(&s))
+        .or_else(|| cls_jit::limits::manifest_memory_limit(entry))
+        .unwrap_or(cls_jit::limits::DEFAULT_MEMORY_LIMIT);
+    cls_jit::limits::set_memory_limit(mem);
+    // Sandbox: límite de tiempo opt-in (ms) por env `CLS_TIME_LIMIT`.
+    if let Some(ms) = std::env::var("CLS_TIME_LIMIT").ok().and_then(|s| s.parse::<u64>().ok()) {
+        cls_jit::limits::set_time_limit(ms);
+    }
     cls_jit::run_jit_with_opts(entry, app_args, target_str, &ctx, runtime, trace_calls)
 }
