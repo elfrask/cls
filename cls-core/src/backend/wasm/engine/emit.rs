@@ -449,6 +449,15 @@ impl<'a> Engine<'a> {
                 next_global += 1;
                 self.user_global_idxs.push(idx);
                 self.globals.insert(v.name.clone(), idx);
+                // Global de un módulo importado (`mod::KIND`): registrar el
+                // nombre base como alias para que las referencias internas del
+                // módulo (`return KIND;`) resuelvan sin prefijo (el body se
+                // fusiona tal cual). Mismo criterio que el alias de funciones.
+                if let Some((_, base)) = v.name.split_once("::") {
+                    if !self.globals.contains_key(base) {
+                        self.globals.insert(base.to_string(), idx);
+                    }
+                }
                 // mutable=true siempre: __init_globals las setea (incluso const, que
                 // no se vuelve a escribir en runtime).
                 self.globals_sec.global(

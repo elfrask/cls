@@ -573,62 +573,54 @@ impl<'a> FuncEmitter<'a> {
 
     pub(crate) fn emit_if(&mut self, i: &IfStatement) -> ClsResult<()> {
         let was_dead = self.dead_flow;
+        // La cadena `if / elif / elif / ... / else` se anida: el `else` de cada
+        // rama contiene la condición de la siguiente, de modo que se ejecuta
+        // EXACTAMENTE una rama (el `elif` no cae por fall-through al `else`).
+        // Cada rama abre un `If` y todos se cierran al final.
+        let n_ifs = 1 + i.elif_branches.len();
+        let has_else = i.else_block.is_some();
+
+        // Rama `then`.
         self.emit_expression(&i.condition)?;
         self.coerce_to_bool(&i.condition)?;
         self.block_depth += 1;
         self.body.push(Instruction::If(BlockType::Empty));
         self.dead_flow = false;
         self.emit_scoped_block(&i.then_block)?;
-        let then_dead = self.dead_flow;
-        let has_elif = !i.elif_branches.is_empty();
-        let has_else = i.else_block.is_some();
-        if has_elif || has_else {
+        let mut branch_deads: Vec<bool> = vec![self.dead_flow];
+
+        // Cada `elif` vive en el `else` de la rama anterior.
+        for branch in &i.elif_branches {
             self.body.push(Instruction::Else);
-        }
-        // Cadena de elifs anidados dentro del else; el último cede al else final.
-        let mut branch_deads: Vec<bool> = Vec::new();
-        let mut else_dead = false;
-        for (k, branch) in i.elif_branches.iter().enumerate() {
             self.dead_flow = false;
             self.emit_expression(&branch.condition)?;
             self.coerce_to_bool(&branch.condition)?;
             self.block_depth += 1;
             self.body.push(Instruction::If(BlockType::Empty));
-            self.dead_flow = false;
             self.emit_scoped_block(&branch.block)?;
             branch_deads.push(self.dead_flow);
-            let last = k == i.elif_branches.len() - 1;
-            if last {
-                if let Some(else_b) = &i.else_block {
-                    self.body.push(Instruction::Else);
-                    self.dead_flow = false;
-                    self.emit_scoped_block(else_b)?;
-                    else_dead = self.dead_flow;
-                }
-            } else {
-                self.body.push(Instruction::Else);
-            }
-            self.body.push(Instruction::End);
-            self.block_depth -= 1;
         }
-        if !has_elif && has_else {
+
+        // `else` final: es el `else` de la última rama (o del `if` inicial).
+        let mut else_dead = false;
+        if let Some(else_b) = &i.else_block {
+            self.body.push(Instruction::Else);
             self.dead_flow = false;
-            let else_b = i.else_block.as_ref().unwrap();
             self.emit_scoped_block(else_b)?;
             else_dead = self.dead_flow;
         }
-        self.body.push(Instruction::End);
-        self.block_depth -= 1;
-        // Flujo muerto tras el if: todas las ramas terminaron (then + toda la
-        // cadena elif + else final cuando existe).
-        let chain_dead = if has_elif {
-            branch_deads.iter().all(|d| *d) && (if has_else { else_dead } else { false })
-        } else if has_else {
-            else_dead
-        } else {
-            false
-        };
-        self.dead_flow = was_dead || (then_dead && chain_dead);
+
+        // Cierra todos los `If` abiertos (uno por rama condicional).
+        for _ in 0..n_ifs {
+            self.body.push(Instruction::End);
+            self.block_depth -= 1;
+        }
+
+        // Flujo muerto tras el if: todas las ramas terminaron (then + cadena
+        // elif + else final cuando existe).
+        let chain_dead =
+            branch_deads.iter().all(|d| *d) && if has_else { else_dead } else { false };
+        self.dead_flow = was_dead || chain_dead;
         Ok(())
     }
 

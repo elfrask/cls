@@ -53,7 +53,10 @@ use wasm_encoder::{
 
 /// Constantes del layout de memoria, públicas para el host (JIT/REPL). El
 /// REPL transfiere la región de heap `[HEAP_START ..]` entre instancias.
-pub use layout::{HEAP_START, INTERNALS_WINDOW_END, SHADOW_STACK_BASE, STRING_DATA_BASE, STRING_TABLE_BASE};
+pub use layout::{
+    FRAME_SIZE, HEAP_START, INTERNALS_WINDOW_END, SHADOW_MAX_FRAMES, SHADOW_STACK_BASE,
+    STRING_DATA_BASE, STRING_TABLE_BASE,
+};
 
 
 

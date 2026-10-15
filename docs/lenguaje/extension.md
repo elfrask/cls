@@ -52,6 +52,31 @@ Ejemplos: `examples/test/jit-test/extension-demo.clsx`,
 Nota: **`CFloat` no está soportado** por el dispatcher (`f32`); usar
 `CDouble`.
 
+## Callbacks C→CLS (punteros a función) — no soportado
+
+El FFI permite **CLS → C** (llamar símbolos C con argumentos escalares,
+strings y punteros a layouts). El inverso, **C → CLS** (que una función C
+invoque una función CLS, p. ej. el callback de `sqlite3_exec`, `qsort`, o los
+handlers de libuv), **no está implementado** y hoy no es expresable sin exponer
+punteros o tocar el host:
+
+- Declarar un parámetro `Callable` en una `extension` **no** crea un *function
+  pointer*: el valor se marshalla como un entero (el handle de función), pero no
+  existe un **trampoline** que C pueda invocar; el símbolo C que espera un
+  callback simplemente no lo llama (o el shim no existe).
+- `CPtr` obligaría a exponer direcciones de memoria crudas al lenguaje, lo que
+  viola la regla de "sin punteros expuestos".
+
+La forma limpia de soportarlo sería un tipo **`CFunc(firma)`** en el que el
+host instale un **trampoline** (un *shim* generado que reciba el puntero del
+lenguaje y despache a la función CLS por su handle), sin que el programa vea
+direcciones. Requiere soporte del compilador + runtime (registro de la firma,
+llamada desde `libffi`/C) y queda como **feature pendiente** (bloqueo reportado
+en `examples/sqlite-orm/findings/06-ffi-callback-c-to-cls.clsx`). Mientras no
+exista, los patrones que necesiten un callback C→CLS deben reformularse (p. ej.
+usar la variante *streaming* `sqlite3_step`/`sqlite3_column_*` en vez de
+`sqlite3_exec` con callback).
+
 ## Valores estructurados (`CRecord` / `CArray` / `CStruct`)
 
 Estos tipos viajan como **puntero al layout canónico de la memoria lineal**

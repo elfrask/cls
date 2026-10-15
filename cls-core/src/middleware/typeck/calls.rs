@@ -108,9 +108,11 @@ impl TypeChecker {
                 }
             }
             // Llamar una función como valor (`app.tag()`, `f()`): el resultado es
-            // su retorno, no el tipo de la función.
+            // su retorno, no el tipo de la función. Un `Callable` no expone su
+            // firma en compile-time -> resultado dinámico (`Any`, tag int).
             return match callee_type {
                 Type::Fun(_, ret) => *ret,
+                Type::Callable => Type::Any,
                 t => t,
             };
         }
@@ -222,6 +224,12 @@ impl TypeChecker {
                 callee_type.clone()
             }
             Type::Any => Type::Any,
+            // Un valor `Callable` es invocable en runtime por tag-bit (handle de
+            // función simple o closure); su firma/retorno no se conoce en
+            // compile-time -> resultado dinámico (`Any`, tag int). Cubre
+            // `Record<String,Callable>["k"](...)`, `Callable[i](...)` y campos
+            // `var f: Callable` (`me.f(...)`).
+            Type::Callable => Type::Any,
             _ => self.error(
                 &format!("No se puede llamar como función: {}", callee_type),
                 call.span.clone(),
