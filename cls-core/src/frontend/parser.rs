@@ -2466,10 +2466,18 @@ impl Parser {
                     i += 1;
                 }
             } else {
-                // Texto normal
+                // Texto normal. Ojo: un `$` en la ÚLTIMA posición (sin carácter
+                // siguiente) también cae acá (la guarda `i + 1 < chars.len()` del
+                // `if` de arriba lo excluye). El `while` no avanzaría porque
+                // `chars[i] == '$'` -> bucle infinito. Consumirlo garantiza
+                // progreso y cierra el literal correctamente.
                 let mut text = String::new();
                 while i < chars.len() && chars[i] != '$' {
                     text.push(chars[i]);
+                    i += 1;
+                }
+                if text.is_empty() {
+                    text.push('$');
                     i += 1;
                 }
                 parts.push(InterpolationPart::Text(text));

@@ -136,7 +136,12 @@ impl TypeChecker {
                 // as C { ... } }`. Ver extension-when.md y decision 002.
                 for branch in &w.branches {
                     if self.target.matches(&branch.cond) {
-                        self.check_block(&branch.block);
+                        // `when` NO abre un scope propio: las declaraciones
+                        // (extension/structure/enum) deben escapar al scope
+                        // contenedor (patrón canónico extension-when).
+                        for stmt in &branch.block.statements {
+                            self.check_statement(stmt);
+                        }
                         break;
                     }
                 }
@@ -153,9 +158,15 @@ impl TypeChecker {
 
 
     pub(crate) fn check_block(&mut self, block: &Block) {
+        // Cada bloque `{ }` es un scope propio: el `var` redeclarado en bloques
+        // hermanos/anidados no debe colisionar y el shadowing debe respetarse.
+        // (Antes no había push/pop -> todo el cuerpo de la función compartía el
+        // scope de la función y el chequeo de duplicados daba falsos positivos.)
+        self.push_scope();
         for stmt in &block.statements {
             self.check_statement(stmt);
         }
+        self.pop_scope();
     }
 
 }

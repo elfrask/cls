@@ -356,7 +356,9 @@ pub extern "C" fn __intr_str_append(old: i64, v_val: i64, v_tag: i64) -> i64 {
 }
 
 /// Igualdad de strings por CONTENIDO (no por puntero). `a`, `b` = packed.
-/// Devuelve 1 si son iguales, 0 si no. Si comparten el mismo puntero -> true.
+/// Devuelve 1 si son iguales, 0 si no. Compara la LONGITUD primero: el atajo de
+/// puntero solo es válido con longitudes iguales (dos literales pueden compartir
+/// ptr si uno es vacío — el pool no avanza por un literal de 0 bytes).
 #[no_mangle]
 pub extern "C" fn __intr_str_eq(a: i64, b: i64) -> i32 {
     unsafe {
@@ -364,11 +366,11 @@ pub extern "C" fn __intr_str_eq(a: i64, b: i64) -> i32 {
         let a_len = (a & 0xffff_ffff) as usize;
         let b_ptr = (b >> 32) as usize;
         let b_len = (b & 0xffff_ffff) as usize;
-        if a_ptr == b_ptr {
-            return 1;
-        }
         if a_len != b_len {
             return 0;
+        }
+        if a_ptr == b_ptr {
+            return 1;
         }
         let sa = core::slice::from_raw_parts(a_ptr as *const u8, a_len);
         let sb = core::slice::from_raw_parts(b_ptr as *const u8, b_len);

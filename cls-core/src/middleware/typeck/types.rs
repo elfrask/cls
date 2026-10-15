@@ -103,9 +103,25 @@ impl TypeChecker {
 
     /// Mapeo del retorno de una función nativa: `CArray`/`CRecord` son punteros
     /// al layout indexables como Array/Record; `Struct(Nombre)` referencia un
-    /// `structure` declarado (acceso a campos por offsets).
+    /// `structure` declarado (acceso a campos por offsets). Los escalares C se
+    /// mapean a su tipo CLS equivalente **independientemente de los params**
+    /// (si no, `CString` quedaba como `Named("CString")` y no era asignable a
+    /// `String`; además la inferencia genérica de `check_call` lo trataba como
+    /// variable de tipo y lo sustituía según los args).
     pub(crate) fn map_native_ret(&self, ret: Type) -> Type {
         match ret {
+            Type::Named(n, _) if n == "CString" => Type::String,
+            Type::Named(n, _)
+                if matches!(
+                    n.as_str(),
+                    "CInt" | "CUInt" | "CShort" | "CUShort" | "CChar" | "CUChar"
+                        | "CLong" | "CULong"
+                ) =>
+            {
+                Type::Int
+            }
+            Type::Named(n, _) if n == "CDouble" || n == "Double" => Type::Float,
+            Type::Named(n, _) if n == "CBool" => Type::Bool,
             Type::Named(n, _) if n == "CArray" => Type::Array(Box::new(Type::Any)),
             Type::Named(n, _) if n == "CRecord" => {
                 Type::Record(Box::new(Type::String), Box::new(Type::Any))

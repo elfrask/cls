@@ -490,9 +490,24 @@ impl<'a> FuncEmitter<'a> {
 
 
     pub(crate) fn declare_var_ty(&mut self, name: &str, ty: WasTy) -> u32 {
-        let idx = self.local_for(name);
-        self.local_tys.entry(idx).or_insert(ty);
+        // Cada `var` recibe un local NUEVO (aunque el nombre ya exista): así dos
+        // bloques hermanos pueden reusar el nombre con tipos WASM distintos sin
+        // colisionar. El binding se restaura al salir del bloque (`exit_var_scope`).
+        let idx = self.fresh_local_ty(ty);
+        self.locals.insert(name.to_string(), idx);
         idx
+    }
+
+    /// Snapshot de los bindings de variables visibles (nombre->local y
+    /// nombre->tipo CLS) al entrar a un bloque `{ }`. Se restaura al salir para
+    /// implementar scoping por bloque (el shadowing interior no escapa).
+    pub(crate) fn enter_var_scope(&mut self) -> (HashMap<String, u32>, HashMap<String, Type>) {
+        (self.locals.clone(), self.local_cls_types.clone())
+    }
+
+    pub(crate) fn exit_var_scope(&mut self, saved: (HashMap<String, u32>, HashMap<String, Type>)) {
+        self.locals = saved.0;
+        self.local_cls_types = saved.1;
     }
 
 

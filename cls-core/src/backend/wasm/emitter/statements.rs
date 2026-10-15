@@ -230,6 +230,20 @@ impl<'a> FuncEmitter<'a> {
         ))
     }
 
+    /// Emite un bloque `{ ... }` con su PROPIO scope de variables: los `var`
+    /// declarados dentro no escapan y el shadowing se restaura al salir (paridad
+    /// con el typeck). Sin esto, dos bloques que reusan un nombre con tipos WASM
+    /// distintos (int/float/bool) producían WASM inválido, y un shadowing dejaba
+    /// el binding interior activo tras el bloque.
+    pub(crate) fn emit_scoped_block(&mut self, block: &Block) -> ClsResult<()> {
+        let saved = self.enter_var_scope();
+        for s in &block.statements {
+            self.emit_statement(s)?;
+        }
+        self.exit_var_scope(saved);
+        Ok(())
+    }
+
 
 
     /// `switch (v) { case (p) { ... } case default { ... } }` (sin fallthrough).
@@ -260,9 +274,7 @@ impl<'a> FuncEmitter<'a> {
             // Cada case es una rama independiente (alcanzable por el else del
             // case anterior): el flujo muerto de un case no se propaga al otro.
             self.dead_flow = false;
-            for st in &case.block.statements {
-                self.emit_statement(st)?;
-            }
+            self.emit_scoped_block(&case.block)?;
             let depth = self.block_depth.saturating_sub(done_at);
             self.body.push(Instruction::Br(depth));
             self.body.push(Instruction::End);
@@ -270,9 +282,7 @@ impl<'a> FuncEmitter<'a> {
         }
         if let Some(def) = &s.default {
             self.dead_flow = false;
-            for st in &def.statements {
-                self.emit_statement(st)?;
-            }
+            self.emit_scoped_block(def)?;
         }
         self.body.push(Instruction::End); // block done
         self.block_depth -= 1;
@@ -288,6 +298,7 @@ impl<'a> FuncEmitter<'a> {
 
     /// `with x in (expr) { ... }` -> local temporal + bloque.
     pub(crate) fn emit_with(&mut self, w: &WithStatement) -> ClsResult<()> {
+        let saved = self.enter_var_scope();
         self.emit_expression(&w.value)?;
         let ty = self.value_type(&w.value)?;
         let idx = self.declare_var_ty(&w.name, ty);
@@ -295,6 +306,7 @@ impl<'a> FuncEmitter<'a> {
         for st in &w.block.statements {
             self.emit_statement(st)?;
         }
+        self.exit_var_scope(saved);
         Ok(())
     }
 
@@ -361,9 +373,7 @@ impl<'a> FuncEmitter<'a> {
             }]),
         ));
         self.dead_flow = false;
-        for s in &stmt.try_block.statements {
-            self.emit_statement(s)?;
-        }
+        self.emit_scoped_block(&stmt.try_block)?;
         let try_dead = self.dead_flow;
         self.body.push(Instruction::End); // cierra try_table
         self.block_depth -= 1;
@@ -407,9 +417,7 @@ impl<'a> FuncEmitter<'a> {
                     }]),
                 ));
                 self.dead_flow = false;
-                for s in &catch.block.statements {
-                    self.emit_statement(s)?;
-                }
+                self.emit_scoped_block(&catch.block)?;
                 self.body.push(Instruction::End); // cierra try_table
                 self.block_depth -= 1;
                 // salida normal del catch -> al `finally` (salta el handler).
@@ -425,9 +433,7 @@ impl<'a> FuncEmitter<'a> {
                 catch_dead = false;
             } else {
                 self.dead_flow = false;
-                for s in &catch.block.statements {
-                    self.emit_statement(s)?;
-                }
+                self.emit_scoped_block(&catch.block)?;
                 catch_dead = self.dead_flow;
             }
         } else {
@@ -449,9 +455,7 @@ impl<'a> FuncEmitter<'a> {
         let mut finally_dead = false;
         if let Some(f) = &stmt.finally_block {
             self.dead_flow = false;
-            for s in &f.statements {
-                self.emit_statement(s)?;
-            }
+            self.emit_scoped_block(f)?;
             finally_dead = self.dead_flow;
         }
         // Re-lanzar si quedó una excepción pendiente (sin `catch`, o lanzada
@@ -574,9 +578,7 @@ impl<'a> FuncEmitter<'a> {
         self.block_depth += 1;
         self.body.push(Instruction::If(BlockType::Empty));
         self.dead_flow = false;
-        for s in &i.then_block.statements {
-            self.emit_statement(s)?;
-        }
+        self.emit_scoped_block(&i.then_block)?;
         let then_dead = self.dead_flow;
         let has_elif = !i.elif_branches.is_empty();
         let has_else = i.else_block.is_some();
@@ -593,18 +595,14 @@ impl<'a> FuncEmitter<'a> {
             self.block_depth += 1;
             self.body.push(Instruction::If(BlockType::Empty));
             self.dead_flow = false;
-            for s in &branch.block.statements {
-                self.emit_statement(s)?;
-            }
+            self.emit_scoped_block(&branch.block)?;
             branch_deads.push(self.dead_flow);
             let last = k == i.elif_branches.len() - 1;
             if last {
                 if let Some(else_b) = &i.else_block {
                     self.body.push(Instruction::Else);
                     self.dead_flow = false;
-                    for s in &else_b.statements {
-                        self.emit_statement(s)?;
-                    }
+                    self.emit_scoped_block(else_b)?;
                     else_dead = self.dead_flow;
                 }
             } else {
@@ -616,9 +614,7 @@ impl<'a> FuncEmitter<'a> {
         if !has_elif && has_else {
             self.dead_flow = false;
             let else_b = i.else_block.as_ref().unwrap();
-            for s in &else_b.statements {
-                self.emit_statement(s)?;
-            }
+            self.emit_scoped_block(else_b)?;
             else_dead = self.dead_flow;
         }
         self.body.push(Instruction::End);
@@ -657,9 +653,7 @@ impl<'a> FuncEmitter<'a> {
         let depth = self.block_depth.saturating_sub(break_at);
         self.body.push(Instruction::BrIf(depth));
         self.dead_flow = false;
-        for s in &w.block.statements {
-            self.emit_statement(s)?;
-        }
+        self.emit_scoped_block(&w.block)?;
         let depth = self.block_depth.saturating_sub(continue_at);
         self.body.push(Instruction::Br(depth));
         self.body.push(Instruction::End); // loop
@@ -688,9 +682,7 @@ impl<'a> FuncEmitter<'a> {
         });
         let _ = d;
         self.dead_flow = false;
-        for s in &b.statements {
-            self.emit_statement(s)?;
-        }
+        self.emit_scoped_block(b)?;
         let depth = self.block_depth.saturating_sub(continue_at);
         self.body.push(Instruction::Br(depth));
         self.body.push(Instruction::End); // loop
@@ -705,6 +697,8 @@ impl<'a> FuncEmitter<'a> {
 
 
     pub(crate) fn emit_for(&mut self, f: &ForStatement) -> ClsResult<()> {
+        // El `var` del init vive en el scope del `for` (no escapa al bloque contenedor).
+        let saved = self.enter_var_scope();
         if let Some(init) = &f.init {
             self.emit_statement(init)?;
         }
@@ -732,9 +726,7 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::BrIf(depth));
         }
         self.dead_flow = false;
-        for s in &f.block.statements {
-            self.emit_statement(s)?;
-        }
+        self.emit_scoped_block(&f.block)?;
         // cerrar el continue block -> se ejecuta el update
         self.body.push(Instruction::End);
         self.block_depth -= 1;
@@ -754,6 +746,7 @@ impl<'a> FuncEmitter<'a> {
         self.block_depth -= 1;
         self.loop_stack.pop();
         self.dead_flow = false;
+        self.exit_var_scope(saved);
         Ok(())
     }
 

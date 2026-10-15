@@ -240,6 +240,7 @@ impl<'a> FuncEmitter<'a> {
         };
         if let Some(key) = enum_key {
             if let Some((def_id, variants)) = self.enum_defs.get(&key).cloned() {
+                let saved = self.enter_var_scope();
                 let n = variants.len() as i64;
                 let i = self.fresh_local();
                 self.body.push(Instruction::I64Const(0));
@@ -276,9 +277,7 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::LocalSet(idx_local));
                 }
                 self.dead_flow = false;
-                for st in &fe.block.statements {
-                    self.emit_statement(st)?;
-                }
+                self.emit_scoped_block(&fe.block)?;
                 // cerrar el continue block -> incremento
                 self.body.push(Instruction::End);
                 self.block_depth -= 1;
@@ -295,6 +294,7 @@ impl<'a> FuncEmitter<'a> {
                 self.block_depth -= 1;
                 self.loop_stack.pop();
                 self.dead_flow = false;
+                self.exit_var_scope(saved);
                 return Ok(());
             }
         }
@@ -383,6 +383,7 @@ impl<'a> FuncEmitter<'a> {
         let i = self.fresh_local();
         self.body.push(Instruction::I64Const(0));
         self.body.push(Instruction::LocalSet(i));
+        let saved = self.enter_var_scope();
         let item_local = self.declare_var_ty(&fe.item_name, elem_ty);
         if let Some(iname) = &fe.index_name {
             self.declare_var_ty(iname, WasTy::I64);
@@ -450,9 +451,7 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::LocalSet(idx_local));
         }
         self.dead_flow = false;
-        for st in &fe.block.statements {
-            self.emit_statement(st)?;
-        }
+        self.emit_scoped_block(&fe.block)?;
         // cerrar el continue block -> i++
         self.body.push(Instruction::End);
         self.block_depth -= 1;
@@ -470,6 +469,7 @@ impl<'a> FuncEmitter<'a> {
         self.loop_stack.pop();
         let _ = d;
         self.dead_flow = false;
+        self.exit_var_scope(saved);
         Ok(())
     }
 
@@ -488,6 +488,7 @@ impl<'a> FuncEmitter<'a> {
                 )))
             }
         };
+        let saved = self.enter_var_scope();
         let item_local = self.declare_var_ty(&fe.item_name, item_was);
         if let Some(iname) = &fe.index_name {
             self.declare_var_ty(iname, WasTy::I64);
@@ -540,9 +541,7 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::LocalSet(idx_local));
         }
         self.dead_flow = false;
-        for st in &fe.block.statements {
-            self.emit_statement(st)?;
-        }
+        self.emit_scoped_block(&fe.block)?;
         // cerrar el continue block -> i++
         self.body.push(Instruction::End);
         self.block_depth -= 1;
@@ -559,6 +558,7 @@ impl<'a> FuncEmitter<'a> {
         self.block_depth -= 1;
         self.loop_stack.pop();
         self.dead_flow = false;
+        self.exit_var_scope(saved);
         Ok(())
     }
 

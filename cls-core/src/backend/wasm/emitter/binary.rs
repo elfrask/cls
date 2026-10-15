@@ -278,6 +278,14 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I32Eqz);
             }
             LessThan => {
+                if self.is_string_expr(&b.left) || self.is_string_expr(&b.right) {
+                    self.emit_expression(&b.left)?;
+                    self.emit_expression(&b.right)?;
+                    self.emit_string_cmp();
+                    self.body.push(Instruction::I64Const(0));
+                    self.body.push(Instruction::I64LtS);
+                    return Ok(());
+                }
                 self.emit_expression(&b.left)?;
                 if lt == WasTy::F64 || rt == WasTy::F64 {
                     self.f64_promote(&b.left)?;
@@ -297,6 +305,14 @@ impl<'a> FuncEmitter<'a> {
                 )?;
             }
             LessEqual => {
+                if self.is_string_expr(&b.left) || self.is_string_expr(&b.right) {
+                    self.emit_expression(&b.left)?;
+                    self.emit_expression(&b.right)?;
+                    self.emit_string_cmp();
+                    self.body.push(Instruction::I64Const(0));
+                    self.body.push(Instruction::I64LeS);
+                    return Ok(());
+                }
                 self.emit_expression(&b.left)?;
                 if lt == WasTy::F64 || rt == WasTy::F64 {
                     self.f64_promote(&b.left)?;
@@ -316,6 +332,14 @@ impl<'a> FuncEmitter<'a> {
                 )?;
             }
             GreaterThan => {
+                if self.is_string_expr(&b.left) || self.is_string_expr(&b.right) {
+                    self.emit_expression(&b.left)?;
+                    self.emit_expression(&b.right)?;
+                    self.emit_string_cmp();
+                    self.body.push(Instruction::I64Const(0));
+                    self.body.push(Instruction::I64GtS);
+                    return Ok(());
+                }
                 self.emit_expression(&b.left)?;
                 if lt == WasTy::F64 || rt == WasTy::F64 {
                     self.f64_promote(&b.left)?;
@@ -335,6 +359,14 @@ impl<'a> FuncEmitter<'a> {
                 )?;
             }
             GreaterEqual => {
+                if self.is_string_expr(&b.left) || self.is_string_expr(&b.right) {
+                    self.emit_expression(&b.left)?;
+                    self.emit_expression(&b.right)?;
+                    self.emit_string_cmp();
+                    self.body.push(Instruction::I64Const(0));
+                    self.body.push(Instruction::I64GeS);
+                    return Ok(());
+                }
                 self.emit_expression(&b.left)?;
                 if lt == WasTy::F64 || rt == WasTy::F64 {
                     self.f64_promote(&b.left)?;
@@ -557,6 +589,141 @@ impl<'a> FuncEmitter<'a> {
             self.types.get(&expr_span(expr)),
             Some(Type::String)
         )
+    }
+
+    /// `strcmp` lexicográfico por bytes (semántica de C `strcmp`/`memcmp`) para
+    /// los operadores relacionales de `String` (`>`,`<`,`>=`,`<=`). Consume dos
+    /// strings empaquetados `(ptr<<32)|len` del stack y deja un `i64`:
+    /// -1 si `a < b`, 0 si `a == b`, 1 si `a > b`. Los bytes se comparan SIN
+    /// signo (`i32.load8_u`); si un string es prefijo del otro, el más corto es
+    /// menor. Implementado inline en WASM (sin host_calls ni exponer punteros).
+    pub(crate) fn emit_string_cmp(&mut self) {
+        use Instruction::*;
+        let b = self.fresh_local();
+        self.body.push(LocalSet(b));
+        let a = self.fresh_local();
+        self.body.push(LocalSet(a));
+        let (a_ptr, a_len) = (self.fresh_local(), self.fresh_local());
+        let (b_ptr, b_len) = (self.fresh_local(), self.fresh_local());
+        for (src, ptr, len) in [(a, a_ptr, a_len), (b, b_ptr, b_len)] {
+            self.body.push(LocalGet(src));
+            self.body.push(I64Const(32));
+            self.body.push(I64ShrU);
+            self.body.push(LocalSet(ptr));
+            self.body.push(LocalGet(src));
+            self.body.push(I64Const(0xffff_ffff));
+            self.body.push(I64And);
+            self.body.push(LocalSet(len));
+        }
+        // n = min(a_len, b_len)
+        let n = self.fresh_local();
+        self.body.push(LocalGet(a_len));
+        self.body.push(LocalGet(b_len));
+        self.body.push(I64LtS);
+        self.block_depth += 1;
+        self.body.push(If(BlockType::Result(ValType::I64)));
+        self.body.push(LocalGet(a_len));
+        self.body.push(Else);
+        self.body.push(LocalGet(b_len));
+        self.body.push(End);
+        self.block_depth -= 1;
+        self.body.push(LocalSet(n));
+        // i = 0, res = 0
+        let i = self.fresh_local();
+        let res = self.fresh_local();
+        self.body.push(I64Const(0));
+        self.body.push(LocalSet(i));
+        self.body.push(I64Const(0));
+        self.body.push(LocalSet(res));
+        // block $done { loop $loop { ... } }
+        self.block_depth += 1;
+        self.body.push(Block(BlockType::Empty));
+        let done_at = self.block_depth;
+        self.block_depth += 1;
+        self.body.push(Loop(BlockType::Empty));
+        let loop_at = self.block_depth;
+        // if i >= n -> break
+        self.body.push(LocalGet(i));
+        self.body.push(LocalGet(n));
+        self.body.push(I64GeS);
+        self.body.push(BrIf(self.block_depth - done_at));
+        // ba = byte(a + i), bb = byte(b + i)
+        let ba = self.fresh_local();
+        self.body.push(LocalGet(a_ptr));
+        self.body.push(LocalGet(i));
+        self.body.push(I64Add);
+        self.body.push(I32WrapI64);
+        self.body.push(I32Load8U(MemArg { offset: 0, align: 0, memory_index: 0 }));
+        self.body.push(I64ExtendI32U);
+        self.body.push(LocalSet(ba));
+        let bb = self.fresh_local();
+        self.body.push(LocalGet(b_ptr));
+        self.body.push(LocalGet(i));
+        self.body.push(I64Add);
+        self.body.push(I32WrapI64);
+        self.body.push(I32Load8U(MemArg { offset: 0, align: 0, memory_index: 0 }));
+        self.body.push(I64ExtendI32U);
+        self.body.push(LocalSet(bb));
+        // if ba != bb { res = ba < bb ? -1 : 1; break }
+        self.body.push(LocalGet(ba));
+        self.body.push(LocalGet(bb));
+        self.body.push(I64Ne);
+        self.block_depth += 1;
+        self.body.push(If(BlockType::Empty));
+        self.body.push(LocalGet(ba));
+        self.body.push(LocalGet(bb));
+        self.body.push(I64LtU);
+        self.block_depth += 1;
+        self.body.push(If(BlockType::Result(ValType::I64)));
+        self.body.push(I64Const(-1));
+        self.body.push(Else);
+        self.body.push(I64Const(1));
+        self.body.push(End);
+        self.block_depth -= 1;
+        self.body.push(LocalSet(res));
+        self.body.push(Br(self.block_depth - done_at));
+        self.body.push(End);
+        self.block_depth -= 1;
+        // i++
+        self.body.push(LocalGet(i));
+        self.body.push(I64Const(1));
+        self.body.push(I64Add);
+        self.body.push(LocalSet(i));
+        self.body.push(Br(self.block_depth - loop_at));
+        self.body.push(End); // loop
+        self.block_depth -= 1;
+        self.body.push(End); // block $done (solo envuelve el loop)
+        self.block_depth -= 1;
+        // prefijo común -> decide la longitud. Va FUERA del block: el `br` de
+        // salida del loop aterriza acá (si estuviera dentro, el `br` saltaría
+        // esta decisión y devolvería 0 para todos los prefijos).
+        self.body.push(LocalGet(res));
+        self.body.push(I64Eqz);
+        self.block_depth += 1;
+        self.body.push(If(BlockType::Empty));
+        self.body.push(LocalGet(a_len));
+        self.body.push(LocalGet(b_len));
+        self.body.push(I64LtS);
+        self.block_depth += 1;
+        self.body.push(If(BlockType::Result(ValType::I64)));
+        self.body.push(I64Const(-1));
+        self.body.push(Else);
+        self.body.push(LocalGet(a_len));
+        self.body.push(LocalGet(b_len));
+        self.body.push(I64GtS);
+        self.block_depth += 1;
+        self.body.push(If(BlockType::Result(ValType::I64)));
+        self.body.push(I64Const(1));
+        self.body.push(Else);
+        self.body.push(I64Const(0));
+        self.body.push(End);
+        self.block_depth -= 1;
+        self.body.push(End);
+        self.block_depth -= 1;
+        self.body.push(LocalSet(res));
+        self.body.push(End);
+        self.block_depth -= 1;
+        self.body.push(LocalGet(res));
     }
 
     pub(crate) fn coerce_to_bool(&mut self, expr: &Expression) -> ClsResult<()> {

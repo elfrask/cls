@@ -602,9 +602,16 @@ pub fn host_str_length<C: HostCtx>(_ctx: &mut C, v: i64) -> i64 {
 }
 
 /// Igualdad de strings por contenido (fallback del interno `__intr_str_eq`).
+/// Atajo de puntero solo con longitudes iguales (dos literales pueden compartir
+/// ptr si uno es vacío).
 pub fn host_str_eq<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i32 {
     let a_ptr = (a >> 32) as usize;
+    let a_len = (a & 0xffff_ffff) as usize;
     let b_ptr = (b >> 32) as usize;
+    let b_len = (b & 0xffff_ffff) as usize;
+    if a_len != b_len {
+        return 0;
+    }
     if a_ptr == b_ptr {
         return 1;
     }
