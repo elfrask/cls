@@ -27,6 +27,7 @@ const DEFAULT: WasmBackendOptions = WasmBackendOptions {
     require_main: true,
     intrinsics: Vec::new(),
     trace_calls: true,
+    memory_max_pages: None,
 };
 
 const LIBRARY: WasmBackendOptions = WasmBackendOptions {
@@ -34,6 +35,7 @@ const LIBRARY: WasmBackendOptions = WasmBackendOptions {
     require_main: false,
     intrinsics: Vec::new(),
     trace_calls: true,
+    memory_max_pages: None,
 };
 
 #[test]

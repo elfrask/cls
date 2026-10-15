@@ -359,6 +359,7 @@ impl ReplSession {
             require_main: true,
             intrinsics: ctx.host_intrinsics.to_vec(),
             trace_calls: true,
+            memory_max_pages: None,
         };
         let backend = cls_core::backend::wasm::WasmBackend::with_options(
             type_map,
@@ -408,6 +409,7 @@ impl ReplSession {
                 output: ctx.output.clone(),
                 app_args: Vec::new(),
                 limits: None,
+                config_handle: None,
             },
         );
         let mut linker = Linker::new(&self.engine);

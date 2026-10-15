@@ -1,0 +1,17 @@
+﻿project.name: test-config
+project.version: 0.1.0
+project.target: executable
+interpreter.mode: pure-ast
+interpreter.runtime.memoryLimit: 1GB
+sandbox.allowFs: true
+sandbox.allowNet: false
+sandboxEnabled(fs): true
+sandboxEnabled(net): false
+sandboxEnabled(process): false
+sandbox.maxExecutionTime: 5000
+sandbox.maxOutputBytes: 0
+runtime.runtime: wasmtime
+runtime.timeLimitMs: 5000
+runtime.memoryLimitBytes: 1000000000
+runtime.traceCalls: true
+missing.key: 

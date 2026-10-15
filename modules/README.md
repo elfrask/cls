@@ -60,3 +60,14 @@ import "sha256" as sha;              # usa modules/sha256/  -> sha::hash(...)
 | Módulo | Estado | Reemplaza a | Notas |
 |--------|--------|-------------|-------|
 | `diag` | Activo | — | CLS puro. Diagnóstico para runners de prueba: `hexByte`, `bytesToHex`. Usado por `examples/brainfuck`. |
+| `config` | Activo | — | CLS puro. Introspección de la configuración del host **solo lectura**: `all`, `get`, `getBool`, `getInt`, `sandboxEnabled`. Envuelve el intrinsic `config()` con caché perezosa (una sola llamada al host). |
+
+## Excepción sancionada: `config()`
+
+`config` es un **intrinsic de introspección autorizado** (excepción explícita a
+la regla 5.1.6 de no tocar el host): no añade una *feature* del lenguaje, solo
+**lee parámetros del host** (`cls.json` + flags de CLI) y los expone como un
+`Record<String, String>` plano de solo lectura. El módulo `config/` es la capa
+CLS idiomática sobre él (caché perezosa + helpers tipados). Ver
+`docs/guia/configuracion.md`.
+

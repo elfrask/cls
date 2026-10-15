@@ -178,6 +178,7 @@ fn compile_module(
         require_main: opts.require_main,
         intrinsics: ctx.host_intrinsics.to_vec(),
         trace_calls: opts.trace_calls,
+        memory_max_pages: None,
     };
     let backend =
         cls_core::backend::wasm::WasmBackend::with_options(checker.type_map(), target, backend_opts);

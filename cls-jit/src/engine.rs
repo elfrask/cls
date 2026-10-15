@@ -117,9 +117,19 @@ pub fn run_jit_with_opts(
         return 1;
     }
     // Clave de caché: source + versión + target + sources de módulos + runtime
-    // (wasmtime y wasmi emiten bytes distintos: el tag de excepciones).
+    // (wasmtime y wasmi emiten bytes distintos: el tag de excepciones) + el
+    // máximo de memoria (cambia la sección memory del WASM).
     let module_sources: Vec<String> = imports.iter().map(|(_, src, _)| src.clone()).collect();
-    let key = cache_key(&source, target_str, entry_path, &module_sources, runtime.as_str(), trace_calls);
+    let memory_max_pages = memory_max_pages_from_limit(crate::limits::memory_limit());
+    let key = cache_key(
+        &source,
+        target_str,
+        entry_path,
+        &module_sources,
+        runtime.as_str(),
+        trace_calls,
+        memory_max_pages,
+    );
     let cache_path = cache_dir().join(format!("{:016x}.wasm", key));
     if let Ok(cached) = std::fs::read(&cache_path) {
         if timing {
@@ -178,6 +188,7 @@ pub fn run_jit_with_opts(
         require_main: true,
         intrinsics: ctx.host_intrinsics.to_vec(),
         trace_calls,
+        memory_max_pages,
     };
     let backend = cls_core::backend::wasm::WasmBackend::with_options(type_map, target, opts);
     let wasm_bytes = match backend.emit(&merged) {
@@ -226,6 +237,17 @@ fn run_wasm_dispatch(
             );
             1
         }
+    }
+}
+
+/// Máximo de la memoria lineal en páginas WASM (64 KiB) a partir del límite en
+/// bytes del sandbox. `0` = sin límite -> `None`. Piso de 32 páginas (2 MiB) —
+/// el mínimo que el propio módulo necesita para la ventana de internals.
+pub(crate) fn memory_max_pages_from_limit(bytes: u64) -> Option<u64> {
+    if bytes == 0 {
+        None
+    } else {
+        Some((bytes / 65536).max(32))
     }
 }
 

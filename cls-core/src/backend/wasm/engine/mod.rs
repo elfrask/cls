@@ -33,6 +33,9 @@ pub(super) struct Engine<'a> {
     /// `true` = emitir el shadow call stack (fn_enter/exit/call_site) para el
     /// trace de errores. `false` = omitir (pierde el trace; `clx run --release`).
     pub(crate) trace_calls: bool,
+    /// Máximo de la memoria lineal en páginas (64 KiB). `None` = sin máximo.
+    /// Lo fija el nodo desde el sandbox (`interpreter.runtime.memoryLimit`).
+    pub(crate) memory_max_pages: Option<u64>,
     /// Funciones host del nodo por nombre (canal `env.host_call`).
     pub(crate) intrinsics: HashMap<String, HostIntrinsic>,
     /// Metadatos de los exports tipados (JSON, sección custom `clx:exports`).
@@ -121,6 +124,7 @@ impl<'a> Engine<'a> {
             exceptions: true,
             require_main: true,
             trace_calls: true,
+            memory_max_pages: None,
             intrinsics: HashMap::new(),
             exports_meta: Vec::new(),
             func_indexes: HashMap::new(),

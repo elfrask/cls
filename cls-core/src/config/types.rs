@@ -234,12 +234,41 @@ pub struct SandboxConfig {
     #[serde(default)]
     pub allow_net: bool,
 
-    #[serde(default = "default_timeout")]
-    pub max_execution_time: u64,
-}
+    /// Permitir crear procesos / ejecutar comandos.
+    #[serde(default)]
+    pub allow_process: bool,
 
-fn default_timeout() -> u64 {
-    5000
+    /// Permitir leer variables de entorno.
+    #[serde(default)]
+    pub allow_env: bool,
+
+    /// Rutas permitidas de lectura (vacío = ninguna restricción declarada).
+    #[serde(default)]
+    pub read_paths: Vec<String>,
+
+    /// Rutas permitidas de escritura (vacío = ninguna restricción declarada).
+    #[serde(default)]
+    pub write_paths: Vec<String>,
+
+    /// Hosts de red permitidos (vacío = ninguno declarado).
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
+
+    /// Tiempo máximo de ejecución (ms; `0` = sin límite). Si es `> 0` el JIT
+    /// activa la interrupción por epoch de wasmtime. Override: env
+    /// `CLS_TIME_LIMIT`.
+    #[serde(default)]
+    pub max_execution_time: u64,
+
+    /// Límite de bytes escritos a stdout/stderr (`0` = sin límite). Reservado:
+    /// se expone en `config()` pero el enforcement queda para una fase futura.
+    #[serde(default)]
+    pub max_output_bytes: u64,
+
+    /// Límite de tamaño de archivo (bytes; `0` = sin límite). Reservado: se
+    /// expone en `config()` pero el enforcement queda para una fase futura.
+    #[serde(default)]
+    pub max_file_size: u64,
 }
 
 impl Default for SandboxConfig {
@@ -247,7 +276,14 @@ impl Default for SandboxConfig {
         Self {
             allow_fs: false,
             allow_net: false,
-            max_execution_time: default_timeout(),
+            allow_process: false,
+            allow_env: false,
+            read_paths: Vec::new(),
+            write_paths: Vec::new(),
+            allowed_hosts: Vec::new(),
+            max_execution_time: 0,
+            max_output_bytes: 0,
+            max_file_size: 0,
         }
     }
 }

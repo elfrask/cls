@@ -653,6 +653,12 @@ impl<'a> FuncEmitter<'a> {
                 self.host.call(HostFn::Now, &mut self.body);
                 return Ok(true);
             }
+            // `config()` -> intrinsic de introspección (Record<String, String>
+            // construido y cacheado por el host). Sin argumentos.
+            "config" => {
+                self.host.call(HostFn::ConfigRecord, &mut self.body);
+                return Ok(true);
+            }
             "exit" => {
                 self.emit_expression(&c.args[0])?;
                 self.host.call(HostFn::Exit, &mut self.body);

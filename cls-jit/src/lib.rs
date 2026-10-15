@@ -20,6 +20,7 @@ pub mod host;
 pub mod limits;
 pub mod repl;
 pub mod resolve;
+pub mod runtime_config;
 pub mod state;
 pub mod timing;
 

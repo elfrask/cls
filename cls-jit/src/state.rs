@@ -35,4 +35,7 @@ pub struct HostState {
     /// Límites de recursos del `Store` de wasmtime (memoria lineal). `None` en
     /// el runtime wasmi (aplica los suyos aparte). Ver `crate::limits`.
     pub limits: Option<wasmtime::StoreLimits>,
+    /// Handle del `Record<String, String>` del snapshot de config. Se construye
+    /// una sola vez (lazy) y se reutiliza en llamadas posteriores a `config()`.
+    pub config_handle: Option<i64>,
 }

@@ -231,6 +231,39 @@ pub fn host_host_call<C: HostCtx>(ctx: &mut C, id: i64, ptr: i64, n: i64) -> i64
     }
 }
 
+/// Intrinsic de introspección `config()`: materializa el snapshot de config
+/// (fijado por el nodo en [`crate::runtime_config`]) como un
+/// `Record<String, String>` plano en la memoria lineal del módulo.
+///
+/// Se construye **una sola vez**: el handle queda cacheado en
+/// [`HostState::config_handle`] y las llamadas posteriores lo devuelven sin
+/// volver a escribir. Sin snapshot (nodo que no lo fijó) devuelve un record
+/// vacío.
+pub fn host_config_record<C: HostCtx>(ctx: &mut C) -> i64 {
+    if let Some(handle) = ctx.state().config_handle {
+        return handle;
+    }
+    let entries = crate::runtime_config::config();
+    let n = entries.len() as i64;
+    let ptr = ctx.alloc(n * 24 + 16);
+    if ptr == 0 {
+        return 0;
+    }
+    ctx.write_i64(ptr as usize, n);
+    ctx.write_i64(ptr as usize + 8, n);
+    for (i, (k, v)) in entries.iter().enumerate() {
+        let key = ctx.write_str(k);
+        let val = ctx.write_str(v);
+        let base = ptr as usize + 16 + i * 24;
+        ctx.write_i64(base, key);
+        ctx.write_i64(base + 8, val);
+        // Tag runtime 1 = string (paridad con el layout de records del emisor).
+        ctx.write_i64(base + 16, 1);
+    }
+    ctx.state_mut().config_handle = Some(ptr);
+    ptr
+}
+
 /// Acceso del host a la memoria lineal del módulo, al allocator y al estado.
 /// Lo implementa cada runtime (wasmtime: `Caller<'_, HostState>`; wasmi: el suyo).
 pub trait HostCtx {

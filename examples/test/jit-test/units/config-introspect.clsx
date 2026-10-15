@@ -1,0 +1,28 @@
+# config-introspect - Introspeccion determinista de la configuracion del host.
+#
+# Usa `modules/config` (CLS puro sobre el intrinsic autorizado `config()`).
+# Lee el `cls.json` del proyecto del entry (la raiz del repo, `test-config`) y
+# expone el snapshot como solo lectura. No es un test diferencial: la salida es
+# un valor conocido.
+from "config" import *;
+
+function main(args: String[]) -> int {
+    print("project.name:", get("project.name"));
+    print("project.version:", get("project.version"));
+    print("project.target:", get("project.target"));
+    print("interpreter.mode:", get("interpreter.mode"));
+    print("interpreter.runtime.memoryLimit:", get("interpreter.runtime.memoryLimit"));
+    print("sandbox.allowFs:", getBool("sandbox.allowFs"));
+    print("sandbox.allowNet:", getBool("sandbox.allowNet"));
+    print("sandboxEnabled(fs):", sandboxEnabled("fs"));
+    print("sandboxEnabled(net):", sandboxEnabled("net"));
+    print("sandboxEnabled(process):", sandboxEnabled("process"));
+    print("sandbox.maxExecutionTime:", get("sandbox.maxExecutionTime"));
+    print("sandbox.maxOutputBytes:", getInt("sandbox.maxOutputBytes"));
+    print("runtime.runtime:", get("runtime.runtime"));
+    print("runtime.timeLimitMs:", get("runtime.timeLimitMs"));
+    print("runtime.memoryLimitBytes:", get("runtime.memoryLimitBytes"));
+    print("runtime.traceCalls:", get("runtime.traceCalls"));
+    print("missing.key:", get("no.such.key"));
+    return 0;
+};

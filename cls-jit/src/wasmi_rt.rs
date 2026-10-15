@@ -221,6 +221,7 @@ pub fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), Str
     w!("host_call", |mut c: Caller<'_, HostState>, id: i64, ptr: i64, n: i64| -> i64 {
         host::host_host_call(&mut c, id, ptr, n)
     });
+    w!("config_record", |mut c: Caller<'_, HostState>| -> i64 { host::host_config_record(&mut c) });
     // Módulo os
     w!("os_platform", |mut c: Caller<'_, HostState>| -> i64 { host::host_os_platform(&mut c) });
     w!("os_arch", |mut c: Caller<'_, HostState>| -> i64 { host::host_os_arch(&mut c) });
@@ -534,6 +535,7 @@ pub(crate) fn run_wasm_wasmi(
             output: ctx.output.clone(),
             app_args: app_args.to_vec(),
             limits: None,
+            config_handle: None,
         },
     );
     let mut linker = Linker::new(&engine);

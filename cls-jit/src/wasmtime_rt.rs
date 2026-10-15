@@ -356,6 +356,7 @@ pub fn register_host_functions_opt(
     w!("host_call", |mut c: Caller<'_, HostState>, id: i64, ptr: i64, n: i64| -> i64 {
         host::host_host_call(&mut c, id, ptr, n)
     });
+    w!("config_record", |mut c: Caller<'_, HostState>| -> i64 { host::host_config_record(&mut c) });
     if !sandbox {
         // Módulo os
         w!("os_platform", |mut c: Caller<'_, HostState>| -> i64 { host::host_os_platform(&mut c) });
@@ -682,9 +683,18 @@ pub fn register_native_hosts(
 
 /// Config de wasmtime: habilita la propuesta de excepciones (try/catch) y la
 /// interrupción por epoch (para el límite de tiempo del sandbox).
+///
+/// Endurecimiento de memoria: reduce la **reserva virtual** por memoria lineal
+/// de los 4 GiB por defecto a 64 MiB, con guard de 64 KiB y un crecimiento tras
+/// la reserva también acotado (16 MiB). Con una reserva menor que el máximo del
+/// módulo, Cranelift inserta bounds checks explícitos (correcto, algo más
+/// lento); el tope real de memoria lo pone el `StoreLimits` del sandbox.
 fn wasmtime_config() -> Option<wasmtime::Config> {
     let mut config = wasmtime::Config::new();
     config.wasm_exceptions(true);
+    config.memory_reservation(64 * 1024 * 1024);
+    config.memory_guard_size(64 * 1024);
+    config.memory_reservation_for_growth(16 * 1024 * 1024);
     if crate::limits::time_limit() > 0 {
         config.epoch_interruption(true);
     }
@@ -767,6 +777,7 @@ pub(crate) fn run_wasm_wasmtime(
             output: ctx.output.clone(),
             app_args: app_args.to_vec(),
             limits: Some(limits),
+            config_handle: None,
         },
     );
     // Sandbox: la memoria lineal no puede crecer más allá del límite declarado

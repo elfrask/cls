@@ -326,6 +326,7 @@ impl<'a> Engine<'a> {
             // stack vive en la memoria lineal del módulo (plan-performance/
             // shadow-stack-wasm.md).
             HostCall,
+            ConfigRecord,
             OsPlatform,
             OsArch,
             OsVersion,
@@ -391,9 +392,18 @@ impl<'a> Engine<'a> {
         // Memoria (1 página = 64KB). Mínimo 32 páginas (2MB): la ventana de
         // internals ocupa [0..1.11MB) + strings [1.11..1.56MB] + tabla
         // [1.56..1.81MB] + heap [1.81MB..] con grow a partir de ahí.
+        //
+        // `maximum`: si el sandbox fija un límite de memoria, se declara como
+        // máximo de páginas (piso 32 = 2MB, el mínimo que el propio módulo ya
+        // necesita). Sin límite (`0`/no declarado) queda `None` (solo el
+        // `StoreLimits` del runtime lo acota).
+        let memory_maximum = self
+            .memory_max_pages
+            .filter(|p| *p > 0)
+            .map(|p| p.max(32));
         self.memories_sec.memory(MemoryType {
             minimum: 32,
-            maximum: None,
+            maximum: memory_maximum,
             memory64: false,
             shared: false,
             page_size_log2: None,

@@ -53,6 +53,7 @@ pub(crate) fn cache_key(
     module_sources: &[String],
     runtime: &str,
     trace_calls: bool,
+    memory_max_pages: Option<u64>,
 ) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -66,6 +67,8 @@ pub(crate) fn cache_key(
     runtime.hash(&mut h);
     // El shadow call stack (trace_calls) cambia el WASM: incluirlo en la key.
     trace_calls.hash(&mut h);
+    // El máximo de memoria (páginas) cambia la sección memory del WASM.
+    memory_max_pages.hash(&mut h);
     // Integridad de los módulos importados: se hashean los SOURCES de los módulos
     // resueltos (locales del proyecto Y globales de ~/.cls). Así editar cualquier
     // .clsx importado invalida el caché aunque esté fuera del workspace.

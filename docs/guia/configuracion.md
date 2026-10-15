@@ -81,13 +81,53 @@ Toda la configuración de un proyecto vive en `cls.json`
 
 | Campo | Default | Descripción |
 |---|---|---|
-| `allowFs` | `false` | Permitir acceso a filesystem |
-| `allowNet` | `false` | Permitir acceso a red |
-| `maxExecutionTime` | `5000` | Tiempo máximo de ejecución (ms). **Reservado**: hoy se aplica por env `CLS_TIME_LIMIT=<ms>` (interrupción por epoch de wasmtime), no desde `cls.json`, para no cortar corridas largas legítimas |
+| `allowFs` | `false` | Permitir acceso a filesystem (expuesto en `config()`; el módulo `fs` de CLS es futuro, ver limitaciones) |
+| `allowNet` | `false` | Permitir acceso a red (expuesto en `config()`) |
+| `allowProcess` | `false` | Permitir procesos/comandos (expuesto en `config()`) |
+| `allowEnv` | `false` | Permitir leer variables de entorno (expuesto en `config()`) |
+| `readPaths` | `[]` | Rutas de lectura permitidas |
+| `writePaths` | `[]` | Rutas de escritura permitidas |
+| `allowedHosts` | `[]` | Hosts de red permitidos |
+| `maxExecutionTime` | `0` | Tiempo máximo de ejecución (ms; `0` = sin límite). Si es `> 0` el JIT activa la interrupción por epoch de wasmtime. Override: env `CLS_TIME_LIMIT`. **Aplicado** |
+| `maxOutputBytes` | `0` | Límite de bytes de salida (`0` = sin límite). Expuesto en `config()` |
+| `maxFileSize` | `0` | Límite de tamaño de archivo en bytes (`0` = sin límite). Expuesto en `config()` |
 
 > **Sandbox de memoria**: `memoryLimit` (o `CLS_MEMORY_LIMIT`) sí se aplica —
-> la memoria lineal del módulo WASM no puede crecer más allá del límite; al
-> superarlo, la ejecución trapea con un error de ejecución (exit ≠ 0).
+> se declara como máximo de páginas de la memoria lineal del módulo WASM y
+> además se fija como `StoreLimits` de wasmtime; al superarlo, la ejecución
+> trapea con un error de ejecución (exit ≠ 0). La reserva virtual por memoria
+> se reduce a 64 MiB (guard 64 KiB) para acotar el VA reservado.
+>
+> **Alcance**: el sandbox (`StoreLimits`, `memoryLimit`, `maxExecutionTime`) es
+> **solo runtime-WASM** — limita la ejecución del programa, **no** al compilador
+> ni a `clx build`. El compilador/emisión corre en el host sin esos límites.
+
+### `config()` — introspección de la configuración (solo lectura)
+
+El lenguaje expone la configuración efectiva del host como un **intrinsic de
+introspección autorizado** (excepción sancionada a la regla de no añadir
+`host_calls`; no añade features, solo **lee parámetros del host**):
+
+```clx
+from "config" import *;   # o import "config" as cfg;
+
+config();                 // intrinsic crudo: Record<String, String> (host level)
+get("project.name");      // "" si no existe
+getBool("sandbox.allowNet");
+getInt("sandbox.maxOutputBytes");
+sandboxEnabled("net");    // -> sandbox.allowNet
+```
+
+- El intrinsic crudo `config()` devuelve un `Record<String, String>` **plano**
+  (claves con puntos), construido **una sola vez** en el host y cacheado. Es
+  **de solo lectura**: no expone punteros ni permite modificar la config.
+- `modules/config/` (`modules/config/mod.clsx`, CLS puro) es la capa idiomática:
+  `all()`, `get(key)`, `getBool(key)`, `getInt(key)`, `sandboxEnabled(name)`,
+  con **caché perezosa** (una sola llamada al host).
+- Claves del snapshot: `project.*`, `compiler.*`, `interpreter.*`, `sandbox.*`
+  y `runtime.*` (valores efectivos: `runtime.memoryLimitBytes`,
+  `runtime.timeLimitMs`, `runtime.runtime` = `wasmtime`/`wasmi`,
+  `runtime.traceCalls`, `runtime.pathModules`, `runtime.target`).
 
 ## Ejemplo real
 

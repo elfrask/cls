@@ -1,0 +1,56 @@
+# config - Modulo CLS PURO de introspeccion de configuracion (SOLO LECTURA).
+#
+# Envuelve el intrinsic `config()` con una cache perezosa a nivel de modulo: el
+# Record<String, String> del snapshot de configuracion se pide al host UNA sola
+# vez y se reutiliza. Es un ladrillo de la stdlib autocontenida
+# (examples/patrones.md §11): NO anade host_calls; usa el intrinsic de
+# introspeccion autorizado, que solo lee parametros del host (no expone
+# punteros ni capacidades nuevas).
+
+var _loaded: bool = false;
+var _cache: Record<String, String>;
+
+# Snapshot completo de configuracion (cacheado; una sola llamada al host).
+export function all() -> Record<String, String> {
+    if (_loaded == false) {
+        _cache = config();
+        _loaded = true;
+    }
+    return _cache;
+}
+
+# Valor de una clave; "" si no existe.
+export function get(key: String) -> String {
+    var r = all();
+    if (r.has(key)) {
+        return r[key];
+    }
+    return "";
+}
+
+# Valor booleano: "true" -> true; cualquier otra cosa -> false.
+export function getBool(key: String) -> bool {
+    return get(key) == "true";
+}
+
+# Valor entero; 0 si la clave no existe o no es numerica.
+export function getInt(key: String) -> int {
+    var v = get(key);
+    if (v == "") {
+        return 0;
+    }
+    return int(v);
+}
+
+# Pone en mayuscula la primera letra ("fs" -> "Fs").
+function capFirst(s: String) -> String {
+    if (s.length == 0) {
+        return s;
+    }
+    return s[0].upper() + s.slice(1, s.length);
+}
+
+# Sandbox: p.ej. sandboxEnabled("fs") -> sandbox.allowFs; "net" -> allowNet.
+export function sandboxEnabled(name: String) -> bool {
+    return getBool("sandbox.allow" + capFirst(name));
+}

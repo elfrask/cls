@@ -49,6 +49,10 @@ pub enum HostFn {
     /// Canal genérico de funciones host del nodo: `host_call(id, ptr, n) -> i64`
     /// con args empaquetados `[n:i64][(val:i64, tag:i64)*n]`.
     HostCall,
+    /// Intrinsic de introspección de configuración (solo lectura): devuelve el
+    /// snapshot de config como `Record<String, String>` en la memoria lineal.
+    /// Construido una sola vez; llamadas posteriores devuelven el mismo handle.
+    ConfigRecord,
     // Módulo os
     OsPlatform,
     OsArch,
@@ -145,6 +149,7 @@ impl HostFn {
             FnExit => "fn_exit",
             CallSite => "fn_call_site",
             HostCall => "host_call",
+            ConfigRecord => "config_record",
             OsPlatform => "os_platform",
             OsArch => "os_arch",
             OsVersion => "os_version",
@@ -249,6 +254,7 @@ impl HostFn {
                 vec![],
             ),
             HostCall => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
+            ConfigRecord => (vec![], vec![ValType::I64]),
             // Módulo os: sin args -> i64 (string) o i32 (bool); env(key) -> i64
             OsPlatform | OsArch | OsVersion | OsHostname | OsHome | OsTempdir
             | OsCpus | OsPid | OsUptime | OsSep => (vec![], vec![ValType::I64]),
