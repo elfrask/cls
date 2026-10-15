@@ -1,0 +1,157 @@
+# lexer.clsx - Tokenizador de clsh (CLS puro, sin estado).
+#
+# Devuelve dos arrays paralelos (envueltos en Any[]): kinds y texts.
+#   K_WORD  = 0  palabra (texto crudo, con comillas/expansiones sin interpretar)
+#   K_SEP   = 1  separador de comandos (`;` o salto de linea)
+#   K_AND   = 2  `&&`
+#   K_OR    = 3  `||`
+#   K_PIPE  = 4  `|`
+#   K_LP    = 5  `(`
+#   K_RP    = 6  `)`
+#   K_REDIR = 7  redireccion (`<`, `>`, `>>`, `2>`, `2>>`, `>&`)
+#
+# El tokenizador reconoce operadores sin espacios (`a>b`), comillas simples y
+# dobles, escapes `\` y sustitucion de comandos `$(...)`. NO interpreta nada:
+# la expansion vive en shell.clsx.
+
+import "ffi" as ffi;
+
+const K_WORD = 0;
+const K_SEP = 1;
+const K_AND = 2;
+const K_OR = 3;
+const K_PIPE = 4;
+const K_LP = 5;
+const K_RP = 6;
+const K_REDIR = 7;
+
+# Salta un `$(...)`: `j` apunta justo despues de `$(`. Devuelve el indice tras `)`.
+export function skip_cmdsubst(src: String, j0: int) -> int {
+    var n = src.length;
+    var j = j0;
+    var depth = 1;
+    while (j < n && depth > 0) {
+        var c = src[j];
+        if (c == "'") {
+            j = j + 1;
+            while (j < n && src[j] != "'") { j = j + 1; }
+            j = j + 1;
+        } elif (c == "\"") {
+            j = j + 1;
+            while (j < n && src[j] != "\"") {
+                if (src[j] == "\\") { j = j + 2; }
+                else { j = j + 1; }
+            }
+            j = j + 1;
+        } elif (c == "\\") {
+            j = j + 2;
+        } elif (c == "(") {
+            depth = depth + 1; j = j + 1;
+        } elif (c == ")") {
+            depth = depth - 1; j = j + 1;
+        } else {
+            j = j + 1;
+        }
+    }
+    return j;
+}
+
+# True si el byte es un caracter de operador no-cita.
+function isOpByte(c: String) -> bool {
+    if (c == ";") { return true; }
+    if (c == "&") { return true; }
+    if (c == "|") { return true; }
+    if (c == "(") { return true; }
+    if (c == ")") { return true; }
+    if (c == "<") { return true; }
+    if (c == ">") { return true; }
+    return false;
+}
+
+export function tokenize(src: String) -> Any[] {
+    var kinds: int[] = [];
+    var texts: String[] = [];
+    var n = src.length;
+    var i = 0;
+    var DOL = ffi::dollar();    while (i < n) {
+        var c = src[i];
+
+        # espacios / continuacion de linea
+        if (c == " " || c == "\t" || c == "\r") { i = i + 1; continue; }
+        if (c == "\\" && i + 1 < n && src[i + 1] == "\n") { i = i + 2; continue; }
+
+        # comentario hasta fin de linea (solo en posicion de inicio de token)
+        if (c == "#") {
+            while (i < n && src[i] != "\n") { i = i + 1; }
+            continue;
+        }
+
+        if (c == "\n") { kinds.push(K_SEP); texts.push("\n"); i = i + 1; continue; }
+        if (c == ";") { kinds.push(K_SEP); texts.push(";"); i = i + 1; continue; }
+
+        if (c == "&") {
+            if (i + 1 < n && src[i + 1] == "&") { kinds.push(K_AND); texts.push("&&"); i = i + 2; }
+            else { kinds.push(K_SEP); texts.push("&"); i = i + 1; }
+            continue;
+        }
+        if (c == "|") {
+            if (i + 1 < n && src[i + 1] == "|") { kinds.push(K_OR); texts.push("||"); i = i + 2; }
+            else { kinds.push(K_PIPE); texts.push("|"); i = i + 1; }
+            continue;
+        }
+        if (c == "(") { kinds.push(K_LP); texts.push("("); i = i + 1; continue; }
+        if (c == ")") { kinds.push(K_RP); texts.push(")"); i = i + 1; continue; }
+
+        if (c == "<") { kinds.push(K_REDIR); texts.push("<"); i = i + 1; continue; }
+        if (c == ">") {
+            if (i + 1 < n && src[i + 1] == ">") { kinds.push(K_REDIR); texts.push(">>"); i = i + 2; }
+            elif (i + 1 < n && src[i + 1] == "&") { kinds.push(K_REDIR); texts.push(">&"); i = i + 2; }
+            else { kinds.push(K_REDIR); texts.push(">"); i = i + 1; }
+            continue;
+        }
+        if (c == "2" && i + 1 < n && src[i + 1] == ">") {
+            if (i + 2 < n && src[i + 2] == ">") { kinds.push(K_REDIR); texts.push("2>>"); i = i + 3; }
+            else { kinds.push(K_REDIR); texts.push("2>"); i = i + 2; }
+            continue;
+        }
+
+        # --- palabra ---
+        var start = i;
+        while (i < n) {
+            var d = src[i];
+            if (d == " " || d == "\t" || d == "\r" || d == "\n") { break; }
+            if (isOpByte(d)) { break; }
+            if (d == "'") {
+                i = i + 1;
+                while (i < n && src[i] != "'") { i = i + 1; }
+                i = i + 1;
+                continue;
+            }
+            if (d == "\"") {
+                i = i + 1;
+                while (i < n && src[i] != "\"") {
+                    if (src[i] == "\\") { i = i + 2; continue; }
+                    if (src[i] == DOL && i + 1 < n && src[i + 1] == "(") {
+                        i = skip_cmdsubst(src, i + 2);
+                        continue;
+                    }
+                    i = i + 1;
+                }
+                i = i + 1;
+                continue;
+            }
+            if (d == "\\") { i = i + 2; continue; }
+            if (d == DOL && i + 1 < n && src[i + 1] == "(") {
+                i = skip_cmdsubst(src, i + 2);
+                continue;
+            }
+            i = i + 1;
+        }
+        texts.push(ffi::slice(src, start, i));
+        kinds.push(K_WORD);
+    }
+    var out: Any[] = [];
+    out.push(kinds);
+    out.push(texts);
+    return out;
+}

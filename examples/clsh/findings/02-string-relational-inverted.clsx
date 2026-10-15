@@ -1,0 +1,21 @@
+# REPRO (regresion del lenguaje): los operadores RELACIONALES de String
+# (`>`, `<`, `>=`, `<=`) devuelven el resultado INVERTIDO. `==`/`!=` funcionan.
+#
+# Uso:  target\debug\clx.exe run examples\clsh\findings\02-string-relational-inverted.clsx
+#   Esperado:  x>a=T  a<x=T  b>=a=T  x>=a=T
+#   Obtenido:  x>a=F  a<x=F  b>=a=F  x>=a=F   (exit 1)
+function b(x: bool) -> String { if (x) { return "T"; } return "F"; }
+
+function main(args: String[]) -> int {
+    var bad = 0;
+    if ("x" > "a"  == false) { bad = bad + 1; }
+    if ("a" < "x"  == false) { bad = bad + 1; }
+    if ("b" >= "a" == false) { bad = bad + 1; }
+    if ("x" >= "a" == false) { bad = bad + 1; }
+    print("x>a="  + b("x" > "a"));
+    print("a<x="  + b("a" < "x"));
+    print("b>=a=" + b("b" >= "a"));
+    print("x>=a=" + b("x" >= "a"));
+    if (bad > 0) { return 1; }
+    return 0;
+};

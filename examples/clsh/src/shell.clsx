@@ -1,0 +1,973 @@
+# shell.clsx - Interprete del subconjunto POSIX de clsh (CLS puro + FFI).
+#
+# Modelo: tokeniza (lexer.clsx) y ejecuta por descenso recursivo sobre los
+# arrays de tokens (interpreta al vuelo). Los cuerpos de if/while/for se
+# recuerdan como rangos de tokens y se re-ejecutan por iteracion.
+#
+# Todo el texto se maneja con slicing por FFI (ffi::slice) para preservar bytes
+# UTF-8 exactos; NUNCA se concatenan bytes sueltos de un String (evita el bug de
+# corrupcion de pool de strings hallado, ver findings/).
+
+import "ffi" as ffi;
+import "lexer" as lex;
+
+const K_WORD = 0;
+const K_SEP = 1;
+const K_AND = 2;
+const K_OR = 3;
+const K_PIPE = 4;
+const K_LP = 5;
+const K_RP = 6;
+const K_REDIR = 7;
+
+export class Sh {
+    var tk: int[];
+    var tx: String[];
+    var n: int;
+    var p: int;
+    var vars: Record<String, String>;
+    var status: int;
+    var exiting: bool;
+    var outFd: int;
+    var errFd: int;
+    var capDepth: int;
+    var capBuf: String;
+    var input: String;
+    var hasInput: bool;
+    var inputPos: int;
+    var cwd: String;
+    var curWords: String[];
+    var curRK: String[];
+    var curRT: String[];
+    var curAssign: String[];
+
+    public function init() {
+        me.tk = [];
+        me.tx = [];
+        me.n = 0;
+        me.p = 0;
+        me.vars = {};
+        me.status = 0;
+        me.exiting = false;
+        me.outFd = 1;
+        me.errFd = 2;
+        me.capDepth = 0;
+        me.capBuf = "";
+        me.input = "";
+        me.hasInput = false;
+        me.inputPos = 0;
+        me.cwd = ffi::getcwd();
+        me.curWords = [];
+        me.curRK = [];
+        me.curRT = [];
+        me.curAssign = [];
+    };
+
+    public function load(src: String) {
+        var t = lex::tokenize(src);
+        var ks: int[] = t[0];
+        var xs: String[] = t[1];
+        me.tk = ks;
+        me.tx = xs;
+        me.n = ks.length;
+        me.p = 0;
+    };
+
+    # --- estado -------------------------------------------------------------
+
+    public function getVar(name: String) -> String {
+        if (name == "?") { return me.status.toString(); }
+        if (me.vars.has(name)) { return me.vars[name]; }
+        return "";
+    };
+
+    public function setVar(name: String, val: String) { me.vars[name] = val; };
+
+    public function emitOut(s: String) {
+        if (me.capDepth > 0) { me.capBuf = me.capBuf + s; }
+        else { ffi::write_fd(me.outFd, s); }
+    };
+
+    public function emitErr(s: String) {
+        ffi::write_fd(me.errFd, s);
+    };
+
+    # --- navegacion de tokens ----------------------------------------------
+
+    function isCurWord(w: String) -> bool {
+        if (me.p >= me.n) { return false; }
+        if (me.tk[me.p] != K_WORD) { return false; }
+        return me.tx[me.p] == w;
+    };
+
+    function isOpenerWord(w: String) -> bool {
+        if (w == "if") { return true; }
+        if (w == "while") { return true; }
+        if (w == "for") { return true; }
+        if (w == "case") { return true; }
+        return false;
+    };
+
+    function isCloserWord(w: String) -> bool {
+        if (w == "fi") { return true; }
+        if (w == "done") { return true; }
+        if (w == "esac") { return true; }
+        return false;
+    };
+
+    function isStopper(w: String) -> bool {
+        if (w == "then") { return true; }
+        if (w == "do") { return true; }
+        if (w == "done") { return true; }
+        if (w == "fi") { return true; }
+        if (w == "elif") { return true; }
+        if (w == "else") { return true; }
+        if (w == "esac") { return true; }
+        if (w == "in") { return true; }
+        return false;
+    };
+
+    function containsStr(arr: String[], s: String) -> bool {
+        var i = 0;
+        while (i < arr.length) {
+            if (arr[i] == s) { return true; }
+            i = i + 1;
+        }
+        return false;
+    };
+
+    # Indice del primer token que es stopword (a profundidad 0) desde `from`.
+    function scanKw(startIdx: int, stops: String[]) -> int {
+        var i = startIdx;
+        var depth = 0;
+        while (i < me.n) {
+            var k = me.tk[i];
+            if (k == K_LP) { depth = depth + 1; i = i + 1; continue; }
+            if (k == K_RP) {
+                if (depth == 0) { return i; }
+                depth = depth - 1; i = i + 1; continue;
+            }
+            if (k == K_WORD) {
+                var w = me.tx[i];
+                if (depth == 0 && me.containsStr(stops, w)) { return i; }
+                if (me.isOpenerWord(w)) { depth = depth + 1; }
+                elif (me.isCloserWord(w)) { depth = depth - 1; }
+            }
+            i = i + 1;
+        }
+        return i;
+    };
+
+    function skipToKw(w: String) {
+        var arr: String[] = [w];
+        var i = me.scanKw(me.p, arr);
+        me.p = i;
+        if (me.isCurWord(w)) { me.p = me.p + 1; }
+    };
+
+    function skipUntilKw(a: String, b: String) {
+        var arr: String[] = [a, b, "fi"];
+        var i = me.scanKw(me.p, arr);
+        me.p = i;
+    };
+
+    # --- ejecucion ----------------------------------------------------------
+
+    public function run() {
+        me.p = 0;
+        while (me.p < me.n && !me.exiting) {
+            var before = me.p;
+            me.run_list();
+            if (me.p < me.n && me.tk[me.p] == K_RP) { me.p = me.p + 1; continue; }
+            if (me.p < me.n && me.tk[me.p] == K_WORD && me.isStopper(me.tx[me.p])) { me.p = me.p + 1; continue; }
+            if (me.p == before) { me.p = me.p + 1; }
+        }
+    };
+
+    function run_list() {
+        while (me.p < me.n) {
+            var k = me.tk[me.p];
+            if (k == K_SEP) { me.p = me.p + 1; continue; }
+            if (k == K_RP) { return; }
+            if (k == K_WORD && me.isStopper(me.tx[me.p])) { return; }
+            me.run_andor();
+            if (me.exiting) { return; }
+            if (me.p < me.n && me.tk[me.p] == K_SEP) { me.p = me.p + 1; }
+        }
+    };
+
+    function run_andor() {
+        me.run_pipeline();
+        while (me.p < me.n) {
+            var k = me.tk[me.p];
+            if (k == K_AND) {
+                me.p = me.p + 1;
+                if (me.status == 0) { me.run_pipeline(); }
+                else { me.skip_pipeline(); }
+            } elif (k == K_OR) {
+                me.p = me.p + 1;
+                if (me.status != 0) { me.run_pipeline(); }
+                else { me.skip_pipeline(); }
+            } else { break; }
+        }
+    };
+
+    function skip_pipeline() {
+        var i = me.p;
+        var depth = 0;
+        while (i < me.n) {
+            var k = me.tk[i];
+            if (k == K_LP) { depth = depth + 1; }
+            elif (k == K_RP) { if (depth == 0) { break; } depth = depth - 1; }
+            elif (depth == 0) {
+                if (k == K_SEP || k == K_AND || k == K_OR) { break; }
+                if (k == K_WORD && me.isStopper(me.tx[i])) { break; }
+            }
+            i = i + 1;
+        }
+        me.p = i;
+    };
+
+    function pipeAhead() -> bool {
+        var i = me.p;
+        var depth = 0;
+        while (i < me.n) {
+            var k = me.tk[i];
+            if (k == K_LP) { depth = depth + 1; }
+            elif (k == K_RP) { if (depth == 0) { return false; } depth = depth - 1; }
+            elif (depth == 0) {
+                if (k == K_PIPE) { return true; }
+                if (k == K_SEP || k == K_AND || k == K_OR) { return false; }
+                if (k == K_WORD && me.isStopper(me.tx[i])) { return false; }
+            }
+            i = i + 1;
+        }
+        return false;
+    };
+
+    function run_pipeline() {
+        while (true) {
+            var hasNext = me.pipeAhead();
+            if (hasNext) {
+                var saveBuf = me.capBuf;
+                me.capBuf = "";
+                me.capDepth = me.capDepth + 1;
+                me.run_command();
+                me.capDepth = me.capDepth - 1;
+                var cap = me.capBuf;
+                me.capBuf = saveBuf;
+                me.input = cap;
+                me.hasInput = true;
+                me.inputPos = 0;
+                if (me.p < me.n && me.tk[me.p] == K_PIPE) { me.p = me.p + 1; }
+            } else {
+                me.run_command();
+                break;
+            }
+            if (me.exiting) { break; }
+        }
+    };
+
+    function run_command() {
+        if (me.p < me.n && me.tk[me.p] == K_WORD) {
+            var w = me.tx[me.p];
+            if (w == "if") { me.run_if(); return; }
+            if (w == "while") { me.run_while(); return; }
+            if (w == "for") { me.run_for(); return; }
+        }
+        if (me.p < me.n && me.tk[me.p] == K_LP) { me.run_subshell(); return; }
+        me.parse_simple();
+        me.exec_simple();
+    };
+
+    function run_subshell() {
+        me.p = me.p + 1;
+        me.run_list();
+        if (me.p < me.n && me.tk[me.p] == K_RP) { me.p = me.p + 1; }
+    };
+
+    function run_if() {
+        me.p = me.p + 1;
+        me.run_list();
+        var cs = me.status;
+        if (me.isCurWord("then")) { me.p = me.p + 1; }
+        if (cs == 0) {
+            me.run_list();
+            me.skipToKw("fi");
+        } else {
+            me.skipUntilKw("elif", "else");
+            me.run_else_chain();
+        }
+    };
+
+    function run_else_chain() {
+        while (me.p < me.n) {
+            if (me.isCurWord("elif")) {
+                me.p = me.p + 1;
+                me.run_list();
+                var cs = me.status;
+                if (me.isCurWord("then")) { me.p = me.p + 1; }
+                if (cs == 0) { me.run_list(); me.skipToKw("fi"); return; }
+                me.skipUntilKw("elif", "else");
+            } elif (me.isCurWord("else")) {
+                me.p = me.p + 1;
+                me.run_list();
+                me.skipToKw("fi");
+                return;
+            } elif (me.isCurWord("fi")) {
+                me.p = me.p + 1;
+                return;
+            } else { return; }
+        }
+    };
+
+    function run_while() {
+        me.p = me.p + 1;
+        var condStart = me.p;
+        var doIdx = me.scanKw(condStart, me.kwArr("do"));
+        me.p = doIdx;
+        if (me.isCurWord("do")) { me.p = me.p + 1; }
+        var bodyStart = me.p;
+        var doneIdx = me.scanKw(bodyStart, me.kwArr("done"));
+        var guard = 0;
+        while (true) {
+            guard = guard + 1;
+            if (guard > 100000) { break; }
+            me.p = condStart;
+            me.run_list();
+            if (me.isCurWord("do")) { me.p = me.p + 1; }
+            if (me.status != 0) { break; }
+            me.p = bodyStart;
+            me.run_list();
+            if (me.exiting) { break; }
+        }
+        me.p = doneIdx;
+        if (me.isCurWord("done")) { me.p = me.p + 1; }
+        me.status = 0;
+    };
+
+    function run_for() {
+        me.p = me.p + 1;
+        var name = "";
+        if (me.p < me.n && me.tk[me.p] == K_WORD) { name = me.tx[me.p]; me.p = me.p + 1; }
+        var items: String[] = [];
+        if (me.isCurWord("in")) {
+            me.p = me.p + 1;
+            while (me.p < me.n && me.tk[me.p] == K_WORD && !me.isCurWord("do")) {
+                var f = me.expand(me.tx[me.p]);
+                var k = 0;
+                while (k < f.length) { items.push(f[k]); k = k + 1; }
+                me.p = me.p + 1;
+            }
+        }
+        while (me.p < me.n && me.tk[me.p] == K_SEP) { me.p = me.p + 1; }
+        if (me.isCurWord("do")) { me.p = me.p + 1; }
+        var bodyStart = me.p;
+        var doneIdx = me.scanKw(bodyStart, me.kwArr("done"));
+        var idx = 0;
+        while (idx < items.length) {
+            me.setVar(name, items[idx]);
+            me.p = bodyStart;
+            me.run_list();
+            if (me.exiting) { break; }
+            me.p = doneIdx;
+            idx = idx + 1;
+        }
+        me.p = doneIdx;
+        if (me.isCurWord("done")) { me.p = me.p + 1; }
+        me.status = 0;
+    };
+
+    function kwArr(w: String) -> String[] {
+        var a: String[] = [w];
+        return a;
+    };
+
+    # --- analisis de comando simple ----------------------------------------
+
+    function findChar(s: String, ch: String) -> int {
+        var i = 0;
+        var n = s.length;
+        while (i < n) {
+            if (s[i] == ch) { return i; }
+            i = i + 1;
+        }
+        return -1;
+    };
+
+    function isNameStart(c: String) -> bool {
+        if (c == "_") { return true; }
+        if ("abcdefghijklmnopqrstuvwxyz".contains(c)) { return true; }
+        if ("ABCDEFGHIJKLMNOPQRSTUVWXYZ".contains(c)) { return true; }
+        return false;
+    };
+
+    function isNameChar(c: String) -> bool {
+        if (me.isNameStart(c)) { return true; }
+        if ("0123456789".contains(c)) { return true; }
+        return false;
+    };
+
+    function isAssignment(raw: String) -> bool {
+        var eq = me.findChar(raw, "=");
+        if (eq <= 0) { return false; }
+        var name = ffi::slice(raw, 0, eq);
+        var i = 0;
+        var n = name.length;
+        if (n == 0) { return false; }
+        if (!me.isNameStart(name[0])) { return false; }
+        while (i < n) {
+            if (!me.isNameChar(name[i])) { return false; }
+            i = i + 1;
+        }
+        return true;
+    };
+
+    function parse_simple() {
+        me.curWords = [];
+        me.curRK = [];
+        me.curRT = [];
+        me.curAssign = [];
+        var cmdSeen = false;
+        while (me.p < me.n) {
+            var k = me.tk[me.p];
+            if (k == K_WORD) {
+                var raw = me.tx[me.p];
+                if (!cmdSeen && me.isAssignment(raw)) {
+                    me.curAssign.push(raw);
+                } else {
+                    me.curWords.push(raw);
+                    cmdSeen = true;
+                }
+                me.p = me.p + 1;
+            } elif (k == K_REDIR) {
+                var op = me.tx[me.p];
+                me.p = me.p + 1;
+                var tgt = "";
+                if (op == ">&") {
+                    if (me.p < me.n && me.tk[me.p] == K_WORD) { tgt = me.tx[me.p]; me.p = me.p + 1; }
+                } else {
+                    if (me.p < me.n && me.tk[me.p] == K_WORD) { tgt = me.tx[me.p]; me.p = me.p + 1; }
+                }
+                me.curRK.push(op);
+                me.curRT.push(tgt);
+            } else { break; }
+        }
+    };
+
+    function applyRedirs() {
+        var i = 0;
+        while (i < me.curRK.length) {
+            var op = me.curRK[i];
+            var tgt = me.expandOne(me.curRT[i]);
+            var fd = 0;
+            if (op == "<") {
+                me.input = ffi::read_file(tgt);
+                me.hasInput = true;
+                me.inputPos = 0;
+            } elif (op == ">") {
+                fd = ffi::open(tgt, 1 + 256 + 512 + 32768, 420);
+                if (fd >= 0) { me.outFd = fd; }
+            } elif (op == ">>") {
+                fd = ffi::open(tgt, 1 + 256 + 8 + 32768, 420);
+                if (fd >= 0) { me.outFd = fd; }
+            } elif (op == "2>") {
+                fd = ffi::open(tgt, 1 + 256 + 512 + 32768, 420);
+                if (fd >= 0) { me.errFd = fd; }
+            } elif (op == "2>>") {
+                fd = ffi::open(tgt, 1 + 256 + 8 + 32768, 420);
+                if (fd >= 0) { me.errFd = fd; }
+            } elif (op == ">&") {
+                if (tgt == "2") { me.outFd = 2; }
+                if (tgt == "1") { me.outFd = 1; }
+            }
+            i = i + 1;
+        }
+    };
+
+    function exec_simple() {
+        var so = me.outFd;
+        var se = me.errFd;
+        var sin = me.input;
+        var sHas = me.hasInput;
+        var sPos = me.inputPos;
+
+        var ai = 0;
+        while (ai < me.curAssign.length) {
+            var a = me.curAssign[ai];
+            var eq = me.findChar(a, "=");
+            var name = ffi::slice(a, 0, eq);
+            var rawv = ffi::slice(a, eq + 1, a.length);
+            me.setVar(name, me.expandOne(rawv));
+            ai = ai + 1;
+        }
+
+        var argv: String[] = [];
+        var wi = 0;
+        while (wi < me.curWords.length) {
+            var fields = me.expand(me.curWords[wi]);
+            var fi = 0;
+            while (fi < fields.length) { argv.push(fields[fi]); fi = fi + 1; }
+            wi = wi + 1;
+        }
+
+        me.applyRedirs();
+
+        if (argv.length == 0) {
+            me.status = 0;
+        } else {
+            var cmdName = argv[0];
+            if (me.isBuiltin(cmdName)) { me.runBuiltin(cmdName, argv); }
+            else {
+                me.emitErr("clsh: " + cmdName + ": not found\n");
+                me.status = 127;
+            }
+        }
+
+        me.outFd = so;
+        me.errFd = se;
+        me.input = sin;
+        me.hasInput = sHas;
+        me.inputPos = sPos;
+    };
+
+    # --- expansion ----------------------------------------------------------
+
+    # Valor de una palabra sin division de campos (para redirecciones/assign).
+    function expandOne(raw: String) -> String {
+        var f = me.expand(raw);
+        if (f.length == 0) { return ""; }
+        var out = f[0];
+        var i = 1;
+        while (i < f.length) { out = out + " " + f[i]; i = i + 1; }
+        return out;
+    };
+
+    function isIfs(c: String) -> bool {
+        if (c == " ") { return true; }
+        if (c == "\t") { return true; }
+        if (c == "\n") { return true; }
+        return false;
+    };
+
+    function splitIfs(v: String) -> String[] {
+        var out: String[] = [];
+        var n = v.length;
+        var i = 0;
+        while (i < n) {
+            while (i < n && me.isIfs(v[i])) { i = i + 1; }
+            if (i >= n) { break; }
+            var s = i;
+            while (i < n && !me.isIfs(v[i])) { i = i + 1; }
+            out.push(ffi::slice(v, s, i));
+        }
+        return out;
+    };
+
+    # [valor, nuevoIndice]
+    function parseDollar(raw: String, i0: int) -> Any[] {
+        var n = raw.length;
+        var i = i0;
+        var res: Any[] = [];
+        var DOL = ffi::dollar();
+        var c1 = "";
+        if (i + 1 < n) { c1 = raw[i + 1]; }
+        if (c1 == "?") { res.push(me.status.toString()); res.push(i + 2); return res; }
+        if (c1 == DOL) { res.push(""); res.push(i + 2); return res; }
+        if (c1 == "(") {
+            var close = lex::skip_cmdsubst(raw, i + 2);
+            var inner = ffi::slice(raw, i + 2, close - 1);
+            var outv = me.runSubshell(inner);
+            var ln = outv.length;
+            while (ln > 0 && outv[ln - 1] == "\n") { ln = ln - 1; }
+            res.push(ffi::slice(outv, 0, ln));
+            res.push(close);
+            return res;
+        }
+        if (c1 == "{") {
+            var j = i + 2;
+            while (j < n && raw[j] != "}") { j = j + 1; }
+            var nm = ffi::slice(raw, i + 2, j);
+            res.push(me.getVar(nm));
+            res.push(j + 1);
+            return res;
+        }
+        if (me.isNameStart(c1)) {
+            var j2 = i + 1;
+            while (j2 < n && me.isNameChar(raw[j2])) { j2 = j2 + 1; }
+            var nm2 = ffi::slice(raw, i + 1, j2);
+            res.push(me.getVar(nm2));
+            res.push(j2);
+            return res;
+        }
+        res.push(DOL);
+        res.push(i + 1);
+        return res;
+    };
+
+    function expand(raw: String) -> String[] {
+        var fields: String[] = [];
+        var cur = "";
+        var quotedAny = false;
+        var n = raw.length;
+        var i = 0;
+        var DOL = ffi::dollar();
+        while (i < n) {
+            var c = raw[i];
+            if (c == "'") {
+                quotedAny = true;
+                i = i + 1;
+                var s = i;
+                while (i < n && raw[i] != "'") { i = i + 1; }
+                cur = cur + ffi::slice(raw, s, i);
+                if (i < n) { i = i + 1; }
+            } elif (c == "\"") {
+                quotedAny = true;
+                i = i + 1;
+                while (i < n && raw[i] != "\"") {
+                    if (raw[i] == "\\" && i + 1 < n) {
+                        var nx = raw[i + 1];
+                        if (nx == "\"" || nx == "\\" || nx == DOL || nx == "`") {
+                            cur = cur + ffi::slice(raw, i + 1, i + 2);
+                            i = i + 2;
+                        } elif (nx == "\n") {
+                            i = i + 2;
+                        } else {
+                            cur = cur + ffi::slice(raw, i, i + 2);
+                            i = i + 2;
+                        }
+                    } elif (raw[i] == DOL) {
+                        var r = me.parseDollar(raw, i);
+                        var v: String = r[0];
+                        cur = cur + v;
+                        i = int(r[1]);
+                    } else {
+                        var s2 = i;
+                        while (i < n && raw[i] != "\"" && raw[i] != "\\" && raw[i] != DOL) { i = i + 1; }
+                        cur = cur + ffi::slice(raw, s2, i);
+                    }
+                }
+                if (i < n) { i = i + 1; }
+            } elif (c == "\\") {
+                if (i + 1 < n) {
+                    cur = cur + ffi::slice(raw, i + 1, i + 2);
+                    i = i + 2;
+                } else {
+                    cur = cur + "\\";
+                    i = i + 1;
+                }
+            } elif (c == DOL) {
+                var r2 = me.parseDollar(raw, i);
+                var v2: String = r2[0];
+                i = int(r2[1]);
+                var parts = me.splitIfs(v2);
+                if (parts.length > 0) {
+                    cur = cur + parts[0];
+                    var k = 1;
+                    while (k < parts.length) {
+                        fields.push(cur);
+                        cur = parts[k];
+                        k = k + 1;
+                    }
+                }
+            } else {
+                var s3 = i;
+                while (i < n) {
+                    var d = raw[i];
+                    if (d == "'" || d == "\"" || d == "\\" || d == DOL) { break; }
+                    i = i + 1;
+                }
+                cur = cur + ffi::slice(raw, s3, i);
+            }
+        }
+        if (cur != "" || quotedAny || fields.length > 0) { fields.push(cur); }
+        return fields;
+    };
+
+    function runSubshell(src: String) -> String {
+        var sub = Sh();
+        sub.init();
+        sub.load(src);
+        var save = sub.capBuf;
+        sub.capBuf = "";
+        sub.capDepth = sub.capDepth + 1;
+        sub.run();
+        sub.capDepth = sub.capDepth - 1;
+        var out = sub.capBuf;
+        sub.capBuf = save;
+        return out;
+    };
+
+    # --- builtins -----------------------------------------------------------
+
+    function isBuiltin(name: String) -> bool {
+        if (name == "echo") { return true; }
+        if (name == "pwd") { return true; }
+        if (name == "cd") { return true; }
+        if (name == "exit") { return true; }
+        if (name == "export") { return true; }
+        if (name == "read") { return true; }
+        if (name == "test") { return true; }
+        if (name == "[") { return true; }
+        if (name == "true") { return true; }
+        if (name == "false") { return true; }
+        if (name == ":") { return true; }
+        if (name == "unset") { return true; }
+        return false;
+    };
+
+    function runBuiltin(name: String, argv: String[]) {
+        if (name == "echo") { me.biEcho(argv); }
+        elif (name == "pwd") { me.biPwd(); }
+        elif (name == "cd") { me.biCd(argv); }
+        elif (name == "exit") { me.biExit(argv); }
+        elif (name == "export") { me.biExport(argv); }
+        elif (name == "read") { me.biRead(argv); }
+        elif (name == "test") { me.biTest(argv, false); }
+        elif (name == "[") { me.biTest(argv, true); }
+        elif (name == "true") { me.status = 0; }
+        elif (name == "false") { me.status = 1; }
+        elif (name == ":") { me.status = 0; }
+        elif (name == "unset") {
+            var i = 1;
+            while (i < argv.length) { me.setVar(argv[i], ""); i = i + 1; }
+            me.status = 0;
+        }
+    };
+
+    function unescapeArg(s: String) -> Any[] {
+        var out = "";
+        var i = 0;
+        var n = s.length;
+        var stop = false;
+        while (i < n) {
+            var c = s[i];
+            if (c == "\\" && i + 1 < n) {
+                var d = s[i + 1];
+                if (d == "n") { out = out + "\n"; i = i + 2; }
+                elif (d == "t") { out = out + "\t"; i = i + 2; }
+                elif (d == "r") { out = out + "\r"; i = i + 2; }
+                elif (d == "b") { out = out + "\b"; i = i + 2; }
+                elif (d == "\\") { out = out + "\\"; i = i + 2; }
+                elif (d == "c") { stop = true; i = i + 2; }
+                else { out = out + ffi::slice(s, i, i + 2); i = i + 2; }
+            } else {
+                var st = i;
+                while (i < n && s[i] != "\\") { i = i + 1; }
+                out = out + ffi::slice(s, st, i);
+            }
+        }
+        var r: Any[] = [];
+        r.push(out);
+        var sflag = 0;
+        if (stop) { sflag = 1; }
+        r.push(sflag);
+        return r;
+    };
+
+    function biEcho(argv: String[]) {
+        var start = 1;
+        var nl = true;
+        if (argv.length > 1 && argv[1] == "-n") { nl = false; start = 2; }
+        var sb = "";
+        var stop = false;
+        var i = start;
+        while (i < argv.length) {
+            if (i > start) { sb = sb + " "; }
+            var r = me.unescapeArg(argv[i]);
+            var text: String = r[0];
+            var st: int = r[1];
+            sb = sb + text;
+            if (st == 1) { stop = true; break; }
+            i = i + 1;
+        }
+        if (nl && !stop) { sb = sb + "\n"; }
+        me.emitOut(sb);
+        me.status = 0;
+    };
+
+    function biPwd() {
+        var cw = ffi::getcwd();
+        me.emitOut(cw + "\n");
+        me.status = 0;
+    };
+
+    function biCd(argv: String[]) {
+        var target = "";
+        if (argv.length < 2) {
+            target = me.getVar("HOME");
+        } elif (argv[1] == "-") {
+            target = me.getVar("OLDPWD");
+            me.emitOut(target + "\n");
+        } else {
+            target = argv[1];
+        }
+        if (target == "") { me.status = 1; return; }
+        var oldp = ffi::getcwd();
+        var rc = ffi::chdir(target);
+        if (rc != 0) {
+            me.emitErr("cd: " + target + ": No such file or directory\n");
+            me.status = 1;
+            return;
+        }
+        me.setVar("OLDPWD", oldp);
+        me.cwd = ffi::getcwd();
+        me.status = 0;
+    };
+
+    function biExit(argv: String[]) {
+        var code = me.status;
+        if (argv.length > 1) { code = int(argv[1]); }
+        me.status = code;
+        me.exiting = true;
+    };
+
+    function biExport(argv: String[]) {
+        var i = 1;
+        while (i < argv.length) {
+            var a = argv[i];
+            var eq = me.findChar(a, "=");
+            if (eq > 0) {
+                var name = ffi::slice(a, 0, eq);
+                var val = ffi::slice(a, eq + 1, a.length);
+                me.setVar(name, val);
+            } else {
+                if (!me.vars.has(a)) { me.setVar(a, ""); }
+            }
+            i = i + 1;
+        }
+        me.status = 0;
+    };
+
+    function readLineFromInput() -> String {
+        var s = me.input;
+        var n = s.length;
+        var start = me.inputPos;
+        var i = start;
+        while (i < n && s[i] != "\n") { i = i + 1; }
+        var line = ffi::slice(s, start, i);
+        if (i < n) { i = i + 1; }
+        me.inputPos = i;
+        return line;
+    };
+
+    function biRead(argv: String[]) {
+        if (argv.length < 2) { me.status = 1; return; }
+        var line = "";
+        var got = true;
+        if (me.hasInput) {
+            if (me.inputPos >= me.input.length) { got = false; }
+            else { line = me.readLineFromInput(); }
+        } else {
+            line = ffi::read_line(0);
+            got = line != "";
+        }
+        if (!got) { me.status = 1; return; }
+        var name = argv[1];
+        if (argv.length == 2) {
+            me.setVar(name, line);
+        } else {
+            var f = me.splitIfs(line);
+            var k = 1;
+            while (k < argv.length) {
+                var val = "";
+                if (k - 1 < f.length) { val = f[k - 1]; }
+                me.setVar(argv[k], val);
+                k = k + 1;
+            }
+        }
+        me.status = 0;
+    };
+
+    function isNumber(s: String) -> bool {
+        var n = s.length;
+        if (n == 0) { return false; }
+        var i = 0;
+        if (s[0] == "-") { i = 1; }
+        if (i >= n) { return false; }
+        while (i < n) {
+            var c = s[i];
+            if (!"0123456789".contains(c)) { return false; }
+            i = i + 1;
+        }
+        return true;
+    };
+
+    function biTest(argv: String[], bracket: bool) {
+        var args: String[] = [];
+        var i = 1;
+        while (i < argv.length) { args.push(argv[i]); i = i + 1; }
+        if (bracket) {
+            if (args.length > 0 && args[args.length - 1] == "]") { args.pop(); }
+        }
+        var st = me.evalTest(args);
+        me.status = st;
+        if (bracket && !me.maybeCloseBracket(argv)) { me.status = 2; }
+    };
+
+    function maybeCloseBracket(argv: String[]) -> bool {
+        if (argv.length < 2) { return false; }
+        return argv[argv.length - 1] == "]";
+    };
+
+    function evalTest(args: String[]) -> int {
+        var n = args.length;
+        if (n == 0) { return 1; }
+        if (args[0] == "!") {
+            var rest: String[] = [];
+            var i = 1;
+            while (i < n) { rest.push(args[i]); i = i + 1; }
+            var r = me.evalTest(rest);
+            if (r == 0) { return 1; }
+            return 0;
+        }
+        if (n == 1) {
+            if (args[0] != "") { return 0; }
+            return 1;
+        }
+        if (n == 2) {
+            var op = args[0];
+            var v = args[1];
+            if (op == "-z") { if (v == "") { return 0; } return 1; }
+            if (op == "-n") { if (v != "") { return 0; } return 1; }
+            if (op == "-e") { return me.boolToStatus(ffi::exists(v)); }
+            if (op == "-f") { return me.boolToStatus(ffi::isfile(v)); }
+            if (op == "-d") { return me.boolToStatus(ffi::isdir(v)); }
+            return 1;
+        }
+        if (n == 3) {
+            var a = args[0];
+            var op3 = args[1];
+            var b = args[2];
+            if (op3 == "=") { if (a == b) { return 0; } return 1; }
+            if (op3 == "==") { if (a == b) { return 0; } return 1; }
+            if (op3 == "!=") { if (a != b) { return 0; } return 1; }
+            if (op3 == "-eq") { return me.intCmp(a, b, 0); }
+            if (op3 == "-ne") { return me.intCmp(a, b, 1); }
+            if (op3 == "-lt") { return me.intCmp(a, b, 2); }
+            if (op3 == "-le") { return me.intCmp(a, b, 3); }
+            if (op3 == "-gt") { return me.intCmp(a, b, 4); }
+            if (op3 == "-ge") { return me.intCmp(a, b, 5); }
+            return 1;
+        }
+        return 1;
+    };
+
+    function boolToStatus(b: int) -> int {
+        if (b != 0) { return 0; }
+        return 1;
+    };
+
+    function intCmp(a: String, b: String, mode: int) -> int {
+        if (!me.isNumber(a) || !me.isNumber(b)) { return 2; }
+        var x = int(a);
+        var y = int(b);
+        if (mode == 0) { if (x == y) { return 0; } return 1; }
+        if (mode == 1) { if (x != y) { return 0; } return 1; }
+        if (mode == 2) { if (x < y) { return 0; } return 1; }
+        if (mode == 3) { if (x <= y) { return 0; } return 1; }
+        if (mode == 4) { if (x > y) { return 0; } return 1; }
+        if (mode == 5) { if (x >= y) { return 0; } return 1; }
+        return 1;
+    };
+};

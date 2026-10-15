@@ -1,0 +1,18 @@
+# REPRO (regresion del lenguaje): un literal de String que TERMINA en `$`
+# (p.ej. "$") cuelga el compilador (parseo/typeck en bucle infinito, CPU 100%,
+# nunca retorna). Cancela con Ctrl+C / mata el proceso.
+#
+# Uso:  target\debug\clx.exe check examples\clsh\findings\01-dollar-string-hang.clsx
+#   Esperado: compila y corre (imprime "$").
+#   Obtenido: cuelga indefinidamente.
+#
+# El disparador es SOLO el `$` en la ULTIMA posicion antes de la comilla:
+#   "$"     -> cuelga        "$x"    -> ok
+#   "x$"    -> cuelga        "ab$cd" -> ok
+#   "$$"    -> cuelga        "${x}"  -> ok
+#   "\$"    -> cuelga
+function main(args: String[]) -> int {
+    var s = "$";
+    print(s);
+    return 0;
+};

@@ -1,0 +1,65 @@
+# ffi.clsx - Puente FFI de clsh (unico acceso al SO).
+#
+# Regla de autocontencion (examples/patrones.md §2): CLS puro + FFI a C; nada de
+# fs/http/json/strings ni host_calls. No se exponen punteros crudos al codigo
+# CLS: todo via CString/CArray/CLong/CInt.
+#
+# La ruta del .dll es relativa al CWD (limitacion conocida del FFI): por eso la
+# prueba exige correr desde la raiz del repo (ver README).
+
+extension "examples/clsh/oracle/clsh_io.dll" as C {
+    # NOTA (workaround de regresion del typeck): una funcion nativa SIN param
+    # resuelve su retorno al tipo C crudo (CString), no asignable a String ->
+    # el typeck aborta. Con un param `CString` el retorno infiere String. Por
+    # eso `clsh_getcwd` lleva un `CString` dummy que el C homonimo ignora (arg
+    # extra de la ABI x64). Bug caracterizado en findings/.
+    function clsh_read_file(path: CString) -> CString;
+    function clsh_str_len(s: CString) -> CLong;
+    function clsh_slice(s: CString, start: CLong, end: CLong) -> CString;
+    function clsh_getcwd(_dummy: CString) -> CString;
+    function clsh_chdir(path: CString) -> CInt;
+    function clsh_read_line(fd: CInt, _dummy: CString) -> CString;
+    function clsh_exists(path: CString) -> CInt;
+    function clsh_isdir(path: CString) -> CInt;
+    function clsh_isfile(path: CString) -> CInt;
+};
+
+extension "msvcrt.dll" as C {
+    function _write(fd: CInt, buf: CString, n: CLong) -> CLong;
+    function _open(path: CString, flags: CInt, mode: CInt) -> CInt;
+    function _close(fd: CInt) -> CInt;
+    function _setmode(fd: CInt, mode: CInt) -> CInt;
+};
+
+# _O_* de msvcrt
+export const O_RDONLY = 0;
+export const O_WRONLY = 1;
+export const O_CREAT = 256;
+export const O_TRUNC = 512;
+export const O_APPEND = 8;
+export const O_BINARY = 32768;
+
+export function read_file(path: String) -> String { return clsh_read_file(path); }
+export function strlen(s: String) -> int { return int(clsh_str_len(s)); }
+export function slice(s: String, a: int, b: int) -> String { return clsh_slice(s, a, b); }
+export function getcwd() -> String { return clsh_getcwd(""); }
+# Workaround: un literal que TERMINA en "$" (p.ej. "$") cuelga el compilador
+# (bug del lexer/parser de CLS). Se obtiene el byte por slice de "$ " (el "$" no
+# queda al final). Ver findings/.
+export function dollar() -> String { return clsh_slice("$ ", 0, 1); }
+export function chdir(p: String) -> int { return int(clsh_chdir(p)); }
+export function read_line(fd: int) -> String { return clsh_read_line(fd, ""); }
+export function exists(path: String) -> int { return int(clsh_exists(path)); }
+export function isdir(path: String) -> int { return int(clsh_isdir(path)); }
+export function isfile(path: String) -> int { return int(clsh_isfile(path)); }
+
+# Escribe los bytes de `s` al fd (byte-exacto; el fd debe estar en modo binario).
+export function write_fd(fd: int, s: String) {
+    var n = int(clsh_str_len(s));
+    if (n > 0) { _write(fd, s, n); }
+}
+export function open(path: String, flags: int, mode: int) -> int {
+    return int(_open(path, flags, mode));
+}
+export function close(fd: int) -> int { return int(_close(fd)); }
+export function setmode(fd: int, mode: int) -> int { return int(_setmode(fd, mode)); }

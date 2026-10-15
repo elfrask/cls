@@ -1,0 +1,15 @@
+# REPRO (regresion del lenguaje): `==` / `!=` de String con cadena VACIA da
+# falso positivo. `""` y el literal siguiente comparten puntero del pool, y la
+# igualdad estricta comparaba el puntero ANTES de la longitud.
+#
+# Uso:  target\debug\clx.exe run examples\clsh\findings\08-empty-string-eq.clsx
+#   Esperado:  e==s: false   e!=s: true
+#   Obtenido:  e==s: true    e!=s: false  (bug)
+function main(args: String[]) -> int {
+    var e = "";
+    var s = "hola";
+    print("len(e)=" + str(e.length) + " len(s)=" + str(s.length));
+    print("e==s:", e == s);   # esperado false
+    print("e!=s:", e != s);   # esperado true
+    return 0;
+};

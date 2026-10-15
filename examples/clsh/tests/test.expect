@@ -1,0 +1,13 @@
+eq
+ne
+lt
+le
+gt
+ge
+z
+n
+seq
+sne
+notz
+notn
+and-test
