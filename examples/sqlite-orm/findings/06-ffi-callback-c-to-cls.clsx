@@ -1,0 +1,35 @@
+# findings/06 - FFI inverso: callback C->CLS (bloqueo).
+#
+# `sqlite3_exec` acepta un callback `int (*)(void*,int,char**,char**)` que C
+# invoca por cada fila. CLS no tiene tipo "puntero a funcion C": el tipo
+# `Callable` no es asignable a un parametro de la extension (el typeck/JIT
+# exige un tipo C concreto) y `CPtr` obligaria a exponer punteros.
+#
+# Este repro declara la firma esperada y muestra que:
+#   1. `Callable` como parametro nativo -> error del typeck/JIT.
+#   2. Pasar una funcion CLS como callback -> no compila.
+#
+# Para que funcione haria falta SOPORTE DEL LENGUAJE (function pointers en FFI
+# con un trampoline host, tipo `CFunc(...)`), que hoy no existe.
+
+extension "examples/sqlite-orm/oracle/sqlite_shim.dll" as C {
+    function o_init() -> CLong;
+    function o_open(path: CString) -> CLong;
+    # Firma deseada (NO compila con `Callable`):
+    function o_exec_cb(h: CLong, sql: CString, cb: Callable) -> CLong;
+};
+
+function on_row(n: int) -> int {
+    print("row " + str(n));
+    return 0;
+}
+
+function main(args: String[]) -> int {
+    o_init();
+    var h = int(o_open(":memory:"));
+    print("antes de registrar el callback");
+    # Deberia registrar on_row como callback C->CLS. Hoy: rechazado.
+    var rc = int(o_exec_cb(h, "CREATE TABLE t(x)", on_row));
+    print("rc=" + str(rc));
+    return 0;
+}

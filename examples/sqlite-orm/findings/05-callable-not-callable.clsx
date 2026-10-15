@@ -1,0 +1,20 @@
+# Regresion: un valor tipado como `Callable` no se puede invocar.
+#   - Record<String, Callable>["k"](...)  -> typeck: "No se puede llamar como funcion: Callable"
+#   - Callable[] [i](...)                 -> idem
+#   - campo `var f: Callable` -> me.f(...) -> idem
+# Un record LITERAL con funciones inferidas SI se puede llamar:
+#   var r = { add: add }; r["add"](2,3)  -> 5   (esto funciona)
+# Esto bloquea el patron "driver = Record de funciones" (se uso herencia de
+# clase base como workaround en orm.clsx/driver.clsx).
+function add(a: int, b: int) -> int { return a + b; }
+
+function callRecord(f: Record<String, Callable>, a: int, b: int) -> int {
+    return f["add"](a, b);
+}
+
+function main(args: String[]) -> int {
+    var d: Record<String, Callable> = { add: add };
+    print("add=" + str(d["add"](2, 3)));
+    print("via param=" + str(callRecord(d, 4, 5)));
+    return 0;
+}

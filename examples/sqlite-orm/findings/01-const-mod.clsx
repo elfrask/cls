@@ -1,0 +1,10 @@
+# Modulo importado por 01-const-imported-module.clsx (regresion: un export const
+# de un modulo NO-entry vale 0 cuando se lee DENTRO de ese mismo modulo).
+export const KIND = 2;
+export function getKind() -> int { return KIND; }
+export class Box {
+    var kind: int;
+    function main(k: int) { me.kind = k; }
+};
+export function mkBox() -> Box { return Box(KIND); }      # usa el const
+export function mkBoxLit() -> Box { return Box(2); }      # usa literal

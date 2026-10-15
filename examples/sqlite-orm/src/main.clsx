@@ -1,0 +1,173 @@
+# main.clsx - Runner de la prueba #5 (SQLite ORM).
+#
+# Construye `out/cls.db` a traves del ORM generico (capa `orm` + driver
+# `sqlite_driver`) y emite un protocolo de auto-chequeo (`CHECK k=v`) que el
+# oraculo externo (Python sqlite3) reproduce sobre la base que EL construye.
+# `run.ps1` compara:
+#   1. `dump(cls.db)` vs `dump(py.db)`  (byte a byte, ambos con Python)
+#   2. las lineas CHECK de CLS vs las de Python (verifica la LECTURA via ORM)
+#
+# IMPORTANTE (regresiones del lenguaje, ver findings/):
+#   - no usar cadenas `if/elif/.../else` con >=2 `elif` (findings/02: ejecuta el
+#     `else` de mas). Se usa `if/else` anidado o `if`s independientes.
+#   - las fabricas de valores usan literales (findings/01: un const de modulo
+#     importado vale 0 dentro de ese modulo).
+#
+# CWD = raiz del repo (el .dll del shim FFI se resuelve relativo al CWD).
+
+import "orm" as orm;
+import "driver" as drv;
+import "sqlite_driver" as sq;
+
+var g_fail = 0;
+
+function emit(k: String, v: int) { print("CHECK " + k + "=" + str(v)); }
+function emitS(k: String, v: String) { print("CHECK " + k + "=" + v); }
+
+function testCrud(o: orm::Orm) {
+    o.dropTable("users");
+    o.createTable("users", ["id INTEGER PRIMARY KEY", "name TEXT", "age INTEGER"]);
+    var cols: String[] = ["id", "name", "age"];
+    o.insert("users", cols, [drv::cInt(1), drv::cText("Ana"), drv::cInt(30)]);
+    o.insert("users", cols, [drv::cInt(2), drv::cText("Luis"), drv::cInt(25)]);
+    o.insert("users", cols, [drv::cInt(3), drv::cText("Mia"), drv::cInt(41)]);
+    emit("users.count", o.count("users"));
+    var rs = o.findById("users", 2);
+    emit("users.find2.rows", rs.nrows);
+    emit("users.find2.age", rs.getInt(0, 2));
+    var gt = o.selectWhere("users", "age > ?", [drv::cInt(30)], "id", -1, 0);
+    emit("users.gt30", gt.nrows);
+    var nup = o.update("users", ["age"], [drv::cInt(26)], "id = ?", [drv::cInt(2)]);
+    emit("users.updated", nup);
+    var r2 = o.findById("users", 2);
+    emit("users.age2", r2.getInt(0, 2));
+    var ndel = o.deleteWhere("users", "id = ?", [drv::cInt(3)]);
+    emit("users.deleted", ndel);
+    emit("users.count2", o.count("users"));
+}
+
+function testTypes(o: orm::Orm) {
+    o.dropTable("types");
+    o.createTable("types", ["id INTEGER", "i INTEGER", "r REAL", "t TEXT", "b BLOB", "n INTEGER"]);
+    var cols: String[] = ["id", "i", "r", "t", "b", "n"];
+    o.insert("types", cols, [drv::cInt(1), drv::cInt(42), drv::cFloat(3.5),
+                             drv::cText("acentos: áéíóú ñ emoji 😀"),
+                             drv::cBlob("00ff10"), drv::cInt(100)]);
+    o.insert("types", cols, [drv::cInt(2), drv::cInt(-7), drv::cFloat(-0.125),
+                             drv::cText(""), drv::cBlob(""), drv::cInt(0)]);
+    o.insert("types", cols, [drv::cInt(3), drv::cNull(), drv::cNull(),
+                             drv::cNull(), drv::cNull(), drv::cNull()]);
+    o.insert("types", cols, [drv::cInt(4), drv::cInt(0), drv::cFloat(0.0),
+                             drv::cText("x"), drv::cBlob("ff"), drv::cNull()]);
+    emit("types.count", o.count("types"));
+    var rs = o.selectAll("types", "id");
+    emit("types.ncols", rs.ncols);
+    emit("types.r0.ki", rs.at(0, 1).kind);
+    emit("types.r0.kt", rs.at(0, 3).kind);
+    emit("types.r0.kb", rs.at(0, 4).kind);
+    emit("types.r0.kn", rs.at(0, 5).kind);
+    emit("types.r1.tlen", rs.at(1, 3).s.length);
+    emit("types.r2.ki", rs.at(2, 1).kind);
+    emit("types.r3.kn", rs.at(3, 5).kind);
+    emit("types.r0.i", rs.at(0, 1).i);
+    emit("types.r0.bloblen", rs.at(0, 4).s.length);
+}
+
+function testBatch(o: orm::Orm, driver: sq::SqliteDriver) {
+    o.dropTable("batch");
+    o.createTable("batch", ["id INTEGER", "name TEXT", "score REAL"]);
+    var cols: String[] = ["id", "name", "score"];
+    # Bulk streaming: prepare una vez, bind+step+reset por fila. Se usa en vez
+    # de `insertBatch(Cell[][])` por la regresion findings/03 (corrupcion de
+    # strings retenidos en arrays anidados).
+    o.begin();
+    var stmt = o.prepareInsert("batch", cols);
+    var id = 1;
+    while (id <= 10000) {
+        var nm = "user-" + str(id);
+        if (id % 97 == 0) { nm = "u-" + str(id) + "-ñá😀"; }
+        o.bulkRow(stmt, [drv::cInt(id), drv::cText(nm), drv::cFloat(float(id) * 0.5)]);
+        id = id + 1;
+    }
+    o.commit();
+    o.finishInsert(stmt);
+    var agg = o.query("SELECT COUNT(*), SUM(id) FROM batch");
+    emit("batch.count", agg.getInt(0, 0));
+    emit("batch.idsum", agg.getInt(0, 1));
+    var first = o.selectWhere("batch", "id = ?", [drv::cInt(1)], "id", -1, 0);
+    emit("batch.first.namelen", first.getText(0, 1).length);
+    var all = o.selectAll("batch", "id");
+    emit("batch.all.nrows", all.nrows);
+    emit("batch.all.lastid", all.getInt(all.nrows - 1, 0));
+    # FFI CArray: la columna id de las 10k filas viaja como int[] del shim.
+    var ids = driver.columnInts("SELECT id FROM batch ORDER BY id", 0);
+    emit("batch.carraylen", ids.length);
+    var carSum = 0;
+    var q = 0;
+    while (q < ids.length) { carSum = carSum + ids[q]; q = q + 1; }
+    emit("batch.carraysum", carSum);
+}
+
+function testTx(o: orm::Orm) {
+    o.dropTable("tx");
+    o.createTable("tx", ["id INTEGER", "v TEXT"]);
+    var cols: String[] = ["id", "v"];
+    o.begin();
+    o.insert("tx", cols, [drv::cInt(1), drv::cText("a")]);
+    o.insert("tx", cols, [drv::cInt(2), drv::cText("b")]);
+    o.rollback();
+    emit("tx.after_rollback", o.count("tx"));
+    o.begin();
+    o.insert("tx", cols, [drv::cInt(3), drv::cText("c")]);
+    o.insert("tx", cols, [drv::cInt(4), drv::cText("d")]);
+    o.commit();
+    emit("tx.after_commit", o.count("tx"));
+    var rs = o.selectAll("tx", "id");
+    emit("tx.row0.id", rs.getInt(0, 0));
+    emit("tx.row1.id", rs.getInt(1, 0));
+}
+
+function testOrder(o: orm::Orm) {
+    o.dropTable("ord");
+    o.createTable("ord", ["id INTEGER", "v INTEGER"]);
+    var cols: String[] = ["id", "v"];
+    var rows: drv::Cell[][] = [];
+    var i = 0;
+    while (i < 10) {
+        rows.push([drv::cInt(i), drv::cInt((i * 7) % 10)]);
+        i = i + 1;
+    }
+    o.insertBatch("ord", cols, rows);
+    var rs = o.selectWhere("ord", "1 = 1", [], "v DESC, id ASC", 3, 2);
+    emit("ord.rows", rs.nrows);
+    var out = "";
+    var k = 0;
+    while (k < rs.nrows) {
+        if (k > 0) { out = out + ","; }
+        out = out + str(rs.getInt(k, 0));
+        k = k + 1;
+    }
+    emitS("ord.page1", out);
+}
+
+function main(args: String[]) -> int {
+    var dbPath = "examples/sqlite-orm/out/cls.db";
+    sq::removeFile(dbPath);
+    var driver = sq::SqliteDriver();
+    var h = driver.connect(dbPath);
+    if (h < 0) {
+        print("FATAL no se pudo abrir la base: " + dbPath);
+        return 1;
+    }
+    var o = orm::Orm(driver);
+    print("ENGINE " + o.engineVersion());
+    testCrud(o);
+    testTypes(o);
+    testBatch(o, driver);
+    testTx(o);
+    testOrder(o);
+    emitS("integrity", o.integrity());
+    driver.close();
+    if (g_fail == 0) { return 0; }
+    return 1;
+}

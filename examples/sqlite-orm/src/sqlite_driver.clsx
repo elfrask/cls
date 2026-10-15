@@ -1,0 +1,157 @@
+# sqlite_driver.clsx - Backend SQLite del ORM.
+#
+# Implementa el contrato de `driver.clsx` sobre el shim C
+# (`oracle/sqlite_shim.dll`), que envuelve la API C de SQLite SIN exponer
+# punteros a CLS (conexiones/sentencias/result sets = handles enteros).
+#
+# LIMITACION CONOCIDA DEL FFI: la ruta del `.dll` se resuelve relativa al CWD,
+# no al archivo .clsx. Por eso la prueba exige correr desde la raiz del repo
+# (ver README). El shim a su vez autolocaliza `sqlite3.dll` (junto a el, en
+# `%CLS_SQLITE_PATH%` o en PATH).
+
+import "driver" as drv;
+
+extension "examples/sqlite-orm/oracle/sqlite_shim.dll" as C {
+    function o_init() -> CLong;
+    function o_version(_d: CString) -> CString;
+    function o_error(_d: CString) -> CString;
+    function o_remove(path: CString) -> CLong;
+
+    function o_open(path: CString) -> CLong;
+    function o_close(h: CLong) -> CLong;
+    function o_exec(h: CLong, sql: CString) -> CLong;
+    function o_last_id(h: CLong) -> CLong;
+    function o_changes(h: CLong) -> CLong;
+    function o_integrity(h: CLong) -> CString;
+
+    function o_query(h: CLong, sql: CString) -> CLong;
+    function o_result_from_stmt(s: CLong) -> CLong;
+    function o_nrows(r: CLong) -> CLong;
+    function o_ncols(r: CLong) -> CLong;
+    function o_colname(r: CLong, c: CLong) -> CString;
+    function o_cell_type(r: CLong, i: CLong, c: CLong) -> CLong;
+    function o_cell_int(r: CLong, i: CLong, c: CLong) -> CLong;
+    function o_cell_double(r: CLong, i: CLong, c: CLong) -> CDouble;
+    function o_cell_text(r: CLong, i: CLong, c: CLong) -> CString;
+    function o_cell_blob_hex(r: CLong, i: CLong, c: CLong) -> CString;
+    function o_column_int(r: CLong, c: CLong) -> CArray;
+    function o_free_result(r: CLong) -> CLong;
+
+    function o_prepare(h: CLong, sql: CString) -> CLong;
+    function o_bind_int(s: CLong, idx: CLong, v: CLong) -> CLong;
+    function o_bind_double(s: CLong, idx: CLong, v: CDouble) -> CLong;
+    function o_bind_text(s: CLong, idx: CLong, v: CString) -> CLong;
+    function o_bind_null(s: CLong, idx: CLong) -> CLong;
+    function o_bind_blob_hex(s: CLong, idx: CLong, hex: CString) -> CLong;
+    function o_step(s: CLong) -> CLong;
+    function o_reset(s: CLong) -> CLong;
+    function o_finalize(s: CLong) -> CLong;
+};
+
+# Mapea un valor del result set (codigos de tipo de SQLite) a un Cell del ORM.
+# NOTA: se usa `if/else` anidado con `return` en vez de una cadena
+# `if/elif/elif/else` por la regresion del lenguaje findings/02 (una cadena con
+# >=2 `elif` + `else` ejecuta el `else` de mas). Con `return` el flujo sale en
+# cada rama.
+function cellOf(t: int, rr: int, i: int, c: int) -> drv::Cell {
+    if (t == 1) {
+        return drv::cInt(int(o_cell_int(rr, i, c)));
+    } else {
+        if (t == 2) {
+            return drv::cFloat(o_cell_double(rr, i, c));
+        } else {
+            if (t == 3) {
+                return drv::cText(o_cell_text(rr, i, c));
+            } else {
+                if (t == 4) {
+                    return drv::cBlob(o_cell_blob_hex(rr, i, c));
+                } else {
+                    return drv::cNull();
+                }
+            }
+        }
+    }
+}
+
+# Result set del shim -> ResultSet neutro del ORM.
+function materialize(rr: int) -> drv::ResultSet {
+    var rs = drv::ResultSet();
+    if (rr < 0) { rs.ncols = -1; return rs; }
+    rs.nrows = int(o_nrows(rr));
+    rs.ncols = int(o_ncols(rr));
+    var cols: String[] = [];
+    var c = 0;
+    while (c < rs.ncols) { cols.push(o_colname(rr, c)); c = c + 1; }
+    rs.cols = cols;
+    var cells: drv::Cell[] = [];
+    var i = 0;
+    while (i < rs.nrows) {
+        c = 0;
+        while (c < rs.ncols) {
+            cells.push(cellOf(int(o_cell_type(rr, i, c)), rr, i, c));
+            c = c + 1;
+        }
+        i = i + 1;
+    }
+    rs.cells = cells;
+    o_free_result(rr);
+    return rs;
+}
+
+export class SqliteDriver: Driver {
+    var h: int;
+    function main() {
+        me.h = -1;
+        o_init();
+    }
+
+    function connect(path: String) -> int {
+        me.h = int(o_open(path));
+        return me.h;
+    }
+    function close() -> int { return int(o_close(me.h)); }
+    function exec(sql: String) -> int { return int(o_exec(me.h, sql)); }
+    function query(sql: String) -> drv::ResultSet {
+        return materialize(int(o_query(me.h, sql)));
+    }
+    function queryBind(sql: String, params: drv::Cell[]) -> drv::ResultSet {
+        var s = int(o_prepare(me.h, sql));
+        var k = 0;
+        while (k < params.length) {
+            me.bind(s, k + 1, params[k]);
+            k = k + 1;
+        }
+        var rs = materialize(int(o_result_from_stmt(s)));
+        o_finalize(s);
+        return rs;
+    }
+    function prepare(sql: String) -> int { return int(o_prepare(me.h, sql)); }
+    function bind(stmt: int, idx: int, cell: drv::Cell) -> int {
+        if (cell.kind == 1) { return int(o_bind_null(stmt, idx)); }
+        if (cell.kind == 2) { return int(o_bind_int(stmt, idx, cell.i)); }
+        if (cell.kind == 3) { return int(o_bind_double(stmt, idx, cell.f)); }
+        if (cell.kind == 4) { return int(o_bind_text(stmt, idx, cell.s)); }
+        if (cell.kind == 5) { return int(o_bind_blob_hex(stmt, idx, cell.s)); }
+        return int(o_bind_null(stmt, idx));
+    }
+    function step(stmt: int) -> int { return int(o_step(stmt)); }
+    function resetStmt(stmt: int) -> int { return int(o_reset(stmt)); }
+    function finalizeStmt(stmt: int) -> int { return int(o_finalize(stmt)); }
+    function lastId() -> int { return int(o_last_id(me.h)); }
+    function changes() -> int { return int(o_changes(me.h)); }
+    function integrity() -> String { return o_integrity(me.h); }
+    function version() -> String { return o_version(""); }
+    function errmsg() -> String { return o_error(""); }
+
+    # Devuelve una columna entera como `CArray` (int[]) directo del shim:
+    # ejercita el marshalling CArray del FFI sin pasar por ResultSet.
+    function columnInts(sql: String, col: int) -> int[] {
+        var rr = int(o_query(me.h, sql));
+        var arr = o_column_int(rr, col);
+        o_free_result(rr);
+        return arr;
+    }
+};
+
+# Utilidades de archivo del shim (borrar la db para correr desde cero).
+export function removeFile(path: String) -> int { return int(o_remove(path)); }

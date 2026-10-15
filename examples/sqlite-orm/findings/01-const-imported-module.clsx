@@ -1,0 +1,10 @@
+# Bug: `export const` de un modulo importado = 0 cuando se usa dentro de ESE
+# modulo (el acceso cross-modulo `mod::KIND` si da 2).
+import "01-const-mod" as m;
+function main(args: String[]) -> int {
+    print("cross getKind()=" + str(m::getKind()) + "  (esperado 2)");
+    print("cross KIND=" + str(m::KIND) + "  (esperado 2)");
+    print("intra mkBox().kind=" + str(m::mkBox().kind) + "  (esperado 2, BUG si 0)");
+    print("intra mkBoxLit().kind=" + str(m::mkBoxLit().kind) + "  (esperado 2)");
+    return 0;
+}
