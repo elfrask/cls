@@ -6,8 +6,8 @@
 
 - **Prueba:** #3 Brainfuck (`examples/brainfuck/`) — intérprete CLS puro vs
   oráculo C (FFI), comparación byte a byte + bench.
-- **Roles:** dev-pruebas → dev-correcciones → abogado (gate).
-- **Veredicto del abogado:** **APROBADO** (verificación independiente).
+- **Roles:** dev-pruebas → dev-correcciones → Juez (gate).
+- **Veredicto del Juez:** **APROBADO** (verificación independiente).
 
 ---
 
@@ -53,7 +53,7 @@
 - `examples/test/jit-test/run-tests.ps1`: **55 PASS / 0 FAIL**.
 - `examples/test/jit-test/run-availible.ps1`: **24 PASS / 0 FAIL / 1 SKIP**.
 - Brainfuck (sin el workaround `when`): `RESULTADO: OK`, exit 0.
-- Abogado: verificó los 4 repros, forzó divergencias (el runner las detecta),
+- Juez: verificó los 4 repros, forzó divergencias (el runner las detecta),
   confirmó **cero `host_calls` nuevos**, **sin exponer punteros**, prueba
   autocontenida/reproducible → **APROBADO**.
 

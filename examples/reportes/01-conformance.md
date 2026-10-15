@@ -5,8 +5,8 @@
 
 - **Prueba:** #1 Conformidad (`examples/conformance/`) — CLS puro vs oráculo C
   (FFI) + fuzzer determinista.
-- **Roles:** dev-pruebas → dev-correcciones → abogado (gate).
-- **Veredicto del abogado:** **APROBADO** (verificación independiente, incluido
+- **Roles:** dev-pruebas → dev-correcciones → Juez (gate).
+- **Veredicto del Juez:** **APROBADO** (verificación independiente, incluido
   el contraste `finally` con Node/JS y un test anti-falso-verde).
 
 ---
@@ -52,7 +52,7 @@ bit a bit, promoción `int→float` implícita/exacta (<2^53), comparación IEEE
 - `examples/test/jit-test/run-tests.ps1`: **55 PASS / 0 FAIL**.
 - `run-availible.ps1`: **24 PASS / 0 FAIL / 1 SKIP**.
 - `examples/brainfuck`: **OK** (byte a byte).
-- Abogado: anti-falso-verde OK (inyectó divergencias → el runner las detecta),
+- Juez: anti-falso-verde OK (inyectó divergencias → el runner las detecta),
   `finally` 11/11 vs Node, FFI int/mixto 15/15, **cero `host_calls` nuevos**, sin
   punteros, oráculo externo/determinista → **APROBADO**.
 

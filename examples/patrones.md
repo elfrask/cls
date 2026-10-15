@@ -239,6 +239,24 @@ Todo proyecto destinado a poner a prueba CLS debe cumplir:
 
 > **Si un proyecto de prueba necesita un `host_call` nuevo, eso es un bug del lenguaje**, no una razón para añadirlo. La solución correcta es: FFI + código CLS.
 
+### 5.5 Roles de desarrollo (por prueba)
+
+Cada prueba se cierra con **tres roles** (agentes con contexto propio):
+
+1. **Desarrollador de pruebas** — construye la prueba (en CLS + oráculo externo),
+   la corre, y produce un **reporte de regresiones** (repros mínimos + evidencia).
+   NO arregla el lenguaje.
+2. **Desarrollador de correcciones** — toma el reporte y arregla la **causa raíz**
+   en el compilador/JIT/runtime, **sin** `host_calls` nuevos, **sin** exponer
+   punteros, **sin** trucos. Itera en ciclo hasta que la prueba pase con código
+   limpio y el resto de las suites sigan verdes.
+3. **Juez** — verificación **independiente** al cierre: reproduce todo (no confía
+   en las afirmaciones), audita el cumplimiento de estas reglas y del plan de la
+   prueba, y emite un veredicto **APROBADO / RECHAZADO**. Si rechaza, vuelve al
+   desarrollador de correcciones.
+
+> Cierre por prueba: `examples/reportes/<n>-<nombre>.md` (regresiones + soluciones).
+
 ---
 
 ## 6. Áreas conocidas como frágiles
