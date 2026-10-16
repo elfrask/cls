@@ -184,6 +184,8 @@ FEATURE structs OK
 CHECK fn.arrow.expr=ok
 CHECK fn.arrow.block=ok
 CHECK fn.arrow.noargs=ok
+CHECK fn.arrow.bool.true=ok
+CHECK fn.arrow.bool.false=ok
 CHECK fn.default=ok
 CHECK fn.default2=ok
 CHECK fn.fat.expr=ok

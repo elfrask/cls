@@ -10,18 +10,41 @@
 
 import "ffi" as ffi;
 import "lexer" as lex;
+import "tokens" as tk;
 
-const K_WORD = 0;
-const K_SEP = 1;
-const K_AND = 2;
-const K_OR = 3;
-const K_PIPE = 4;
-const K_LP = 5;
-const K_RP = 6;
-const K_REDIR = 7;
+# Tipos de token: vienen del enum compartido `tokens::Tok` (una sola definicion).
+# La identidad del enum en el JIT es su DEFINICION (no el alias de import), asi
+# que la comparacion `==` funciona entre modulos con cualquier alias. Se usa
+# `tk` por convencion (coincide con lexer.clsx).
+var K_WORD = tk::Tok.Word;
+var K_SEP = tk::Tok.Sep;
+var K_AND = tk::Tok.And;
+var K_OR = tk::Tok.Or;
+var K_PIPE = tk::Tok.Pipe;
+var K_LP = tk::Tok.LP;
+var K_RP = tk::Tok.RP;
+var K_REDIR = tk::Tok.Redir;
+
+# Una redireccion (operador + destino), en vez de dos arrays paralelos.
+structure Redir {
+    op: String,
+    tgt: String,
+};
+
+# Resultado de parsear una expansion `$...`: el valor expandido y el nuevo indice.
+structure Dollar {
+    val: String,
+    next: int,
+};
+
+# Resultado de desescapar un argumento de `echo`: texto + flag de corte (`\c`).
+structure Unesc {
+    text: String,
+    sw: int,
+};
 
 export class Sh {
-    var tk: int[];
+    var tk: tk::Tok[];
     var tx: String[];
     var n: int;
     var p: int;
@@ -37,8 +60,7 @@ export class Sh {
     var inputPos: int;
     var cwd: String;
     var curWords: String[];
-    var curRK: String[];
-    var curRT: String[];
+    var curRedirs: Redir[];
     var curAssign: String[];
 
     public function init() {
@@ -58,14 +80,13 @@ export class Sh {
         me.inputPos = 0;
         me.cwd = ffi::getcwd();
         me.curWords = [];
-        me.curRK = [];
-        me.curRT = [];
+        me.curRedirs = [];
         me.curAssign = [];
     };
 
     public function load(src: String) {
         var t = lex::tokenize(src);
-        var ks: int[] = t[0];
+        var ks: tk::Tok[] = t[0];
         var xs: String[] = t[1];
         me.tk = ks;
         me.tx = xs;
@@ -128,10 +149,8 @@ export class Sh {
     };
 
     function containsStr(arr: String[], s: String) -> bool {
-        var i = 0;
-        while (i < arr.length) {
-            if (arr[i] == s) { return true; }
-            i = i + 1;
+        for each v in (arr) {
+            if (v == s) { return true; }
         }
         return false;
     };
@@ -246,7 +265,7 @@ export class Sh {
     };
 
     function run_pipeline() {
-        while (true) {
+        loop {
             var hasNext = me.pipeAhead();
             if (hasNext) {
                 var saveBuf = me.capBuf;
@@ -330,7 +349,7 @@ export class Sh {
         var bodyStart = me.p;
         var doneIdx = me.scanKw(bodyStart, me.kwArr("done"));
         var guard = 0;
-        while (true) {
+        loop {
             guard = guard + 1;
             if (guard > 100000) { break; }
             me.p = condStart;
@@ -355,8 +374,7 @@ export class Sh {
             me.p = me.p + 1;
             while (me.p < me.n && me.tk[me.p] == K_WORD && !me.isCurWord("do")) {
                 var f = me.expand(me.tx[me.p]);
-                var k = 0;
-                while (k < f.length) { items.push(f[k]); k = k + 1; }
+                for each ff in (f) { items.push(ff); }
                 me.p = me.p + 1;
             }
         }
@@ -364,14 +382,12 @@ export class Sh {
         if (me.isCurWord("do")) { me.p = me.p + 1; }
         var bodyStart = me.p;
         var doneIdx = me.scanKw(bodyStart, me.kwArr("done"));
-        var idx = 0;
-        while (idx < items.length) {
-            me.setVar(name, items[idx]);
+        for each item in (items) {
+            me.setVar(name, item);
             me.p = bodyStart;
             me.run_list();
             if (me.exiting) { break; }
             me.p = doneIdx;
-            idx = idx + 1;
         }
         me.p = doneIdx;
         if (me.isCurWord("done")) { me.p = me.p + 1; }
@@ -425,8 +441,7 @@ export class Sh {
 
     function parse_simple() {
         me.curWords = [];
-        me.curRK = [];
-        me.curRT = [];
+        me.curRedirs = [];
         me.curAssign = [];
         var cmdSeen = false;
         while (me.p < me.n) {
@@ -449,17 +464,15 @@ export class Sh {
                 } else {
                     if (me.p < me.n && me.tk[me.p] == K_WORD) { tgt = me.tx[me.p]; me.p = me.p + 1; }
                 }
-                me.curRK.push(op);
-                me.curRT.push(tgt);
+                me.curRedirs.push(Redir(op, tgt));
             } else { break; }
         }
     };
 
     function applyRedirs() {
-        var i = 0;
-        while (i < me.curRK.length) {
-            var op = me.curRK[i];
-            var tgt = me.expandOne(me.curRT[i]);
+        for each r in (me.curRedirs) {
+            var op = r.op;
+            var tgt = me.expandOne(r.tgt);
             var fd = 0;
             if (op == "<") {
                 me.input = ffi::read_file(tgt);
@@ -481,7 +494,6 @@ export class Sh {
                 if (tgt == "2") { me.outFd = 2; }
                 if (tgt == "1") { me.outFd = 1; }
             }
-            i = i + 1;
         }
     };
 
@@ -492,23 +504,17 @@ export class Sh {
         var sHas = me.hasInput;
         var sPos = me.inputPos;
 
-        var ai = 0;
-        while (ai < me.curAssign.length) {
-            var a = me.curAssign[ai];
+        for each a in (me.curAssign) {
             var eq = me.findChar(a, "=");
             var name = a.slice(0, eq);
             var rawv = a.slice(eq + 1, a.length);
             me.setVar(name, me.expandOne(rawv));
-            ai = ai + 1;
         }
 
         var argv: String[] = [];
-        var wi = 0;
-        while (wi < me.curWords.length) {
-            var fields = me.expand(me.curWords[wi]);
-            var fi = 0;
-            while (fi < fields.length) { argv.push(fields[fi]); fi = fi + 1; }
-            wi = wi + 1;
+        for each w in (me.curWords) {
+            var fields = me.expand(w);
+            for each f in (fields) { argv.push(f); }
         }
 
         me.applyRedirs();
@@ -538,8 +544,7 @@ export class Sh {
         var f = me.expand(raw);
         if (f.length == 0) { return ""; }
         var out = f[0];
-        var i = 1;
-        while (i < f.length) { out = out + " " + f[i]; i = i + 1; }
+        for (var i = 1; i < f.length; i++) { out = out + " " + f[i]; }
         return out;
     };
 
@@ -564,45 +569,36 @@ export class Sh {
         return out;
     };
 
-    # [valor, nuevoIndice]
-    function parseDollar(raw: String, i0: int) -> Any[] {
+    # Resultado de una expansion `$...`: valor + indice tras la expansion.
+    function parseDollar(raw: String, i0: int) -> Dollar {
         var n = raw.length;
         var i = i0;
-        var res: Any[] = [];
         var DOL = "$";
         var c1 = "";
         if (i + 1 < n) { c1 = raw[i + 1]; }
-        if (c1 == "?") { res.push(me.status.toString()); res.push(i + 2); return res; }
-        if (c1 == DOL) { res.push(""); res.push(i + 2); return res; }
+        if (c1 == "?") { return Dollar(me.status.toString(), i + 2); }
+        if (c1 == DOL) { return Dollar("", i + 2); }
         if (c1 == "(") {
             var close = lex::skip_cmdsubst(raw, i + 2);
             var inner = raw.slice(i + 2, close - 1);
             var outv = me.runSubshell(inner);
             var ln = outv.length;
             while (ln > 0 && outv[ln - 1] == "\n") { ln = ln - 1; }
-            res.push(outv.slice(0, ln));
-            res.push(close);
-            return res;
+            return Dollar(outv.slice(0, ln), close);
         }
         if (c1 == "{") {
             var j = i + 2;
             while (j < n && raw[j] != "}") { j = j + 1; }
             var nm = raw.slice(i + 2, j);
-            res.push(me.getVar(nm));
-            res.push(j + 1);
-            return res;
+            return Dollar(me.getVar(nm), j + 1);
         }
         if (me.isNameStart(c1)) {
             var j2 = i + 1;
             while (j2 < n && me.isNameChar(raw[j2])) { j2 = j2 + 1; }
             var nm2 = raw.slice(i + 1, j2);
-            res.push(me.getVar(nm2));
-            res.push(j2);
-            return res;
+            return Dollar(me.getVar(nm2), j2);
         }
-        res.push(DOL);
-        res.push(i + 1);
-        return res;
+        return Dollar(DOL, i + 1);
     };
 
     function expand(raw: String) -> String[] {
@@ -638,9 +634,8 @@ export class Sh {
                         }
                     } elif (raw[i] == DOL) {
                         var r = me.parseDollar(raw, i);
-                        var v: String = r[0];
-                        cur = cur + v;
-                        i = int(r[1]);
+                        cur = cur + r.val;
+                        i = r.next;
                     } else {
                         var s2 = i;
                         while (i < n && raw[i] != "\"" && raw[i] != "\\" && raw[i] != DOL) { i = i + 1; }
@@ -658,9 +653,8 @@ export class Sh {
                 }
             } elif (c == DOL) {
                 var r2 = me.parseDollar(raw, i);
-                var v2: String = r2[0];
-                i = int(r2[1]);
-                var parts = me.splitIfs(v2);
+                i = r2.next;
+                var parts = me.splitIfs(r2.val);
                 if (parts.length > 0) {
                     cur = cur + parts[0];
                     var k = 1;
@@ -729,13 +723,12 @@ export class Sh {
         elif (name == "false") { me.status = 1; }
         elif (name == ":") { me.status = 0; }
         elif (name == "unset") {
-            var i = 1;
-            while (i < argv.length) { me.setVar(argv[i], ""); i = i + 1; }
+            for (var i = 1; i < argv.length; i++) { me.setVar(argv[i], ""); }
             me.status = 0;
         }
     };
 
-    function unescapeArg(s: String) -> Any[] {
+    function unescapeArg(s: String) -> Unesc {
         var out = "";
         var i = 0;
         var n = s.length;
@@ -757,12 +750,9 @@ export class Sh {
                 out = out + s.slice(st, i);
             }
         }
-        var r: Any[] = [];
-        r.push(out);
         var sflag = 0;
         if (stop) { sflag = 1; }
-        r.push(sflag);
-        return r;
+        return Unesc(out, sflag);
     };
 
     function biEcho(argv: String[]) {
@@ -771,15 +761,11 @@ export class Sh {
         if (argv.length > 1 && argv[1] == "-n") { nl = false; start = 2; }
         var sb = "";
         var stop = false;
-        var i = start;
-        while (i < argv.length) {
+        for (var i = start; i < argv.length; i++) {
             if (i > start) { sb = sb + " "; }
             var r = me.unescapeArg(argv[i]);
-            var text: String = r[0];
-            var st: int = r[1];
-            sb = sb + text;
-            if (st == 1) { stop = true; break; }
-            i = i + 1;
+            sb = sb + r.text;
+            if (r.sw == 1) { stop = true; break; }
         }
         if (nl && !stop) { sb = sb + "\n"; }
         me.emitOut(sb);
@@ -823,8 +809,7 @@ export class Sh {
     };
 
     function biExport(argv: String[]) {
-        var i = 1;
-        while (i < argv.length) {
+        for (var i = 1; i < argv.length; i++) {
             var a = argv[i];
             var eq = me.findChar(a, "=");
             if (eq > 0) {
@@ -834,7 +819,6 @@ export class Sh {
             } else {
                 if (!me.vars.has(a)) { me.setVar(a, ""); }
             }
-            i = i + 1;
         }
         me.status = 0;
     };
@@ -868,12 +852,10 @@ export class Sh {
             me.setVar(name, line);
         } else {
             var f = me.splitIfs(line);
-            var k = 1;
-            while (k < argv.length) {
+            for (var k = 1; k < argv.length; k++) {
                 var val = "";
                 if (k - 1 < f.length) { val = f[k - 1]; }
                 me.setVar(argv[k], val);
-                k = k + 1;
             }
         }
         me.status = 0;
@@ -895,8 +877,7 @@ export class Sh {
 
     function biTest(argv: String[], bracket: bool) {
         var args: String[] = [];
-        var i = 1;
-        while (i < argv.length) { args.push(argv[i]); i = i + 1; }
+        for (var i = 1; i < argv.length; i++) { args.push(argv[i]); }
         if (bracket) {
             if (args.length > 0 && args[args.length - 1] == "]") { args.pop(); }
         }
@@ -915,8 +896,7 @@ export class Sh {
         if (n == 0) { return 1; }
         if (args[0] == "!") {
             var rest: String[] = [];
-            var i = 1;
-            while (i < n) { rest.push(args[i]); i = i + 1; }
+            for (var i = 1; i < n; i++) { rest.push(args[i]); }
             var r = me.evalTest(rest);
             if (r == 0) { return 1; }
             return 0;
@@ -962,12 +942,15 @@ export class Sh {
         if (!me.isNumber(a) || !me.isNumber(b)) { return 2; }
         var x = int(a);
         var y = int(b);
-        if (mode == 0) { if (x == y) { return 0; } return 1; }
-        if (mode == 1) { if (x != y) { return 0; } return 1; }
-        if (mode == 2) { if (x < y) { return 0; } return 1; }
-        if (mode == 3) { if (x <= y) { return 0; } return 1; }
-        if (mode == 4) { if (x > y) { return 0; } return 1; }
-        if (mode == 5) { if (x >= y) { return 0; } return 1; }
+        switch (mode) {
+            case (0) { if (x == y) { return 0; } return 1; }
+            case (1) { if (x != y) { return 0; } return 1; }
+            case (2) { if (x < y) { return 0; } return 1; }
+            case (3) { if (x <= y) { return 0; } return 1; }
+            case (4) { if (x > y) { return 0; } return 1; }
+            case (5) { if (x >= y) { return 0; } return 1; }
+            case default { return 1; }
+        }
         return 1;
     };
 };

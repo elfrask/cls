@@ -1,0 +1,29 @@
+# Repro minimo: una closure que captura la VARIABLE de un `for each` lee un
+# valor rancio (no el de la iteracion). Con `for` clasico + `var` de cuerpo la
+# captura es correcta.
+#
+# Esperado: seen = "0,1,10,"
+# Obtenido: seen = "0,0,0,"  (la closure ve siempre el valor inicial)
+#
+#   target\debug\clx.exe run examples\conformance\findings\04-for-each-closure-capture.clsx
+#
+# Hallado refactorizando `axis_closures` (ver src/main.clsx). Por eso ese eje usa
+# `for` clasico para el bucle exterior.
+
+function main(args: String[]) -> int {
+    var ks: int[] = [0, 1, 10];
+    var seen = "";
+    for each base in (ks) {
+        var f = (x: int) -> x + base;
+        seen = seen + str(f(0)) + ",";
+    }
+    var expected = "0,1,10,";
+    print("seen     = " + seen);
+    print("expected = " + expected);
+    if (seen == expected) {
+        print("OK (resuelto)");
+        return 0;
+    }
+    print("BUG PRESENTE: la closure captura la variable de `for each` (valor rancio)");
+    return 1;
+}

@@ -5,9 +5,9 @@ construir `examples/conformance/`. **Todos los comandos se ejecutan desde la ra�
 del repo.** Los findings #2 y #3 necesitan `oracle.dll` (lo compila `run.ps1` o
 `gcc -shared -O2 -o examples\conformance\oracle\oracle.dll examples\conformance\oracle\oracle.c`).
 
-> **Estado: los 3 findings fueron RESUELTOS** por el desarrollador de
+> **Estado: los 6 findings fueron RESUELTOS** por el desarrollador de
 > correcciones (ver `examples/reportes/01-conformance.md`). Se conservan los
-> repros como historia; hoy los tres dan el comportamiento **esperado** (exit 0).
+> repros como historia; hoy dan el comportamiento **esperado** (exit 0).
 
 ---
 
@@ -105,6 +105,76 @@ del repo.** Los findings #2 y #3 necesitan `oracle.dll` (lo compila `run.ps1` o
 - **Estado:** ✅ **RESUELTO** — el retorno `CString` ahora es **byte-transparente**
   (canal interno de bytes: `NativeRet::Bytes`; los wrappers JIT escriben los
   bytes crudos). `CArray` sigue disponible para buffers binarios.
+
+## 4. Closure que captura la variable de `for each` → valor rancio
+
+- **Archivo:** `04-for-each-closure-capture.clsx` (puro CLS).
+- **Feature:** closures + `for each`.
+- **Repro:**
+  ```
+  target\debug\clx.exe run examples\conformance\findings\04-for-each-closure-capture.clsx
+  ```
+- **Esperado:** `seen = "0,1,10,"` (exit 0).
+- **Obtenido:** `seen = "0,0,0,"` (exit **1**) — la closure lee siempre el valor
+  inicial de la variable del `for each`. Con `for` clasico + `var base = ks[i]`
+  de cuerpo la captura es correcta.
+- **Tipo:** bug del **JIT** (binding de la variable de iteración única, no por
+  iteración; la closure captura por referencia al slot compartido).
+- **Estado:** ✅ **RESUELTO** — el emisor de `for each`
+  (`cls-core/src/backend/wasm/emitter/foreach.rs`) asigna la variable de
+  iteración promovida al heap con un slot NUEVO por iteración (binding por
+  iteración). `axis_closures` volvió a usar `for each base in (ks)`.
+
+## 5. `const` de literal ENTERO no es usable en aritmética (tipo literal)
+
+- **Archivo:** `05-const-int-literal-arith.clsx` (puro CLS).
+- **Feature:** `const` (inferencia de tipo literal) + operadores aritméticos.
+- **Repro:**
+  ```
+  target\debug\clx.exe run examples\conformance\findings\05-const-int-literal-arith.clsx
+  ```
+- **Esperado:** `12` (exit 0).
+- **Obtenido:** error de compilación (exit **1**):
+  `Operador + no soportado entre Int y 5 (en x + N)`.
+- **Causa:** `const N = 5` infiere `Type::Literal(5)`; el chequeo de operadores
+  binarios solo aceptaba `Int`/`Float` base, no un tipo literal. (`const` de String
+  sí funciona porque los literales de String unifican con `String`.)
+- **Alcance:** hallado al extraer las constantes del LCG a `const` en
+  `modules/prng`; se dejaron como `var LCG_A: int = ...`. No bloquea la suite.
+- **Estado:** ✅ **RESUELTO** — `check_binary`
+  (`cls-core/src/middleware/typeck/binary.rs`) opera los literal types como su
+  tipo base (`Type::literal_base`). `modules/prng` volvió a `const LCG_A/LCG_C`.
+
+## 6. Closure que devuelve `Bool` (o `Float`) emite WASM inválido
+
+- **Archivo:** `06-closure-return-bool.clsx` (puro CLS).
+- **Feature:** arrow/closure + retorno tipado (`Bool`, `Float`).
+- **Repro:**
+  ```
+  target\debug\clx.exe run examples\conformance\findings\06-closure-return-bool.clsx
+  ```
+- **Esperado:** imprime `yes` / `yes2` (exit 0).
+- **Obtenido:** error de compilación (exit **1**):
+  ```
+  [JIT] Módulo WASM inválido ...: type mismatch: expected i64, found i32
+  ```
+  Igual con `() -> (s == "ab")` (String) y con una closure que devuelve `Float`
+  (`expected i64, found f64`).
+- **Causa raíz:** la declaración de toda arrow normalizaba la firma a
+  `[capturas:i64, params:i64...] -> i64` (`engine/emit.rs`), y el `engine/functions.rs`
+  declaraba todos los params como `i64` con un prologue de
+  `f64.reinterpret_i64`. Pero el cuerpo emite el valor en su tipo natural
+  (`==` → `i32`, `Float` → `f64`) y el llamador vía handle (`Type::Fun`,
+  `emitter/calls.rs`) construye el `call_indirect` con los tipos **reales** del
+  callee. Además, una función CLS top-level usa la firma natural, así que el
+  handle de arrows y el de funciones divergían.
+- **Fix:** la arrow usa la firma **natural** como una función top-level
+  (`[capturas:i64, types...] -> was_type(ret)`), sin normalizar params ni retorno;
+  se eliminó el prologue de reinterpretación y el helper `override_local`.
+  `Int`/`String`/`Any` (i64) no cambian; `Bool` (i32) y `Float` (f64) ahora
+  coinciden con el `call_indirect` del llamador.
+- **Estado:** ✅ **RESUELTO** — `06` imprime `yes`/`yes2` (exit 0); closures que
+  devuelven Int/Float/String/Bool y pasadas como `f: () -> Bool` funcionan.
 
 ---
 

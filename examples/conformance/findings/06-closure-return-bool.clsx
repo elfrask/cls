@@ -1,0 +1,23 @@
+# Repro minimo (HISTORICO, ya RESUELTO): una closure (arrow) que devuelve Bool
+# emite WASM invalido. La firma de la arrow se normalizaba a
+# `[capturas:i64, params:i64...] -> i64`, pero `==` produce i32; el cuerpo
+# devolvia i32 y el `end`/call_indirect esperaba i64.
+#
+# Fix: la arrow usa la firma NATURAL (como una funcion top-level), sin
+# normalizar params/retorno. Hoy este repro imprime yes/yes2 y sale con exit 0.
+#
+# Esperado: imprime "yes" y sale con exit 0.
+# Obtenido: error de compilacion (exit != 0):
+#   [JIT] Modulo WASM invalido ...: type mismatch: expected i64, found i32
+#
+#   target\debug\clx.exe run examples\conformance\findings\06-closure-return-bool.clsx
+
+function main(args: String[]) -> int {
+    var k = 2;
+    var f = () -> (k == 2);
+    if (f()) { print("yes"); } else { print("no"); }
+    var s = "ab";
+    var g = () -> (s == "ab");
+    if (g()) { print("yes2"); } else { print("no2"); }
+    return 0;
+}

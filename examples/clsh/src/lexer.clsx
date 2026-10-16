@@ -1,27 +1,12 @@
 # lexer.clsx - Tokenizador de clsh (CLS puro, sin estado).
 #
-# Devuelve dos arrays paralelos (envueltos en Any[]): kinds y texts.
-#   K_WORD  = 0  palabra (texto crudo, con comillas/expansiones sin interpretar)
-#   K_SEP   = 1  separador de comandos (`;` o salto de linea)
-#   K_AND   = 2  `&&`
-#   K_OR    = 3  `||`
-#   K_PIPE  = 4  `|`
-#   K_LP    = 5  `(`
-#   K_RP    = 6  `)`
-#   K_REDIR = 7  redireccion (`<`, `>`, `>>`, `2>`, `2>>`, `>&`)
+# Devuelve una tupla heterogenea `(kinds, texts)`: kinds = tokens::Tok, texts = String.
 #
 # El tokenizador reconoce operadores sin espacios (`a>b`), comillas simples y
 # dobles, escapes `\` y sustitucion de comandos `$(...)`. NO interpreta nada:
 # la expansion vive en shell.clsx. Usa los metodos de `String` (`.slice`).
 
-const K_WORD = 0;
-const K_SEP = 1;
-const K_AND = 2;
-const K_OR = 3;
-const K_PIPE = 4;
-const K_LP = 5;
-const K_RP = 6;
-const K_REDIR = 7;
+import "tokens" as tk;
 
 # Salta un `$(...)`: `j` apunta justo despues de `$(`. Devuelve el indice tras `)`.
 export function skip_cmdsubst(src: String, j0: int) -> int {
@@ -54,20 +39,25 @@ export function skip_cmdsubst(src: String, j0: int) -> int {
     return j;
 }
 
-# True si el byte es un caracter de operador no-cita.
+# True si el caracter es un operador no-cita. `switch` sobre String compara
+# CONTENIDO (fix del finding 06), asi que despacha por el caracter natural.
 function isOpByte(c: String) -> bool {
-    if (c == ";") { return true; }
-    if (c == "&") { return true; }
-    if (c == "|") { return true; }
-    if (c == "(") { return true; }
-    if (c == ")") { return true; }
-    if (c == "<") { return true; }
-    if (c == ">") { return true; }
+    switch (c) {
+        case (";") { return true; }
+        case ("&") { return true; }
+        case ("|") { return true; }
+        case ("(") { return true; }
+        case (")") { return true; }
+        case ("<") { return true; }
+        case (">") { return true; }
+        case default { return false; }
+    }
     return false;
 }
 
-export function tokenize(src: String) -> Any[] {
-    var kinds: int[] = [];
+# Tupla heterogenea `(kinds, texts)`: `t[0]` tipa `tk::Tok[]` y `t[1]` `String[]`.
+export function tokenize(src: String) -> (tk::Tok[], String[]) {
+    var kinds: tk::Tok[] = [];
     var texts: String[] = [];
     var n = src.length;
     var i = 0;
@@ -84,32 +74,32 @@ export function tokenize(src: String) -> Any[] {
             continue;
         }
 
-        if (c == "\n") { kinds.push(K_SEP); texts.push("\n"); i = i + 1; continue; }
-        if (c == ";") { kinds.push(K_SEP); texts.push(";"); i = i + 1; continue; }
+        if (c == "\n") { kinds.push(tk::Tok.Sep); texts.push("\n"); i = i + 1; continue; }
+        if (c == ";") { kinds.push(tk::Tok.Sep); texts.push(";"); i = i + 1; continue; }
 
         if (c == "&") {
-            if (i + 1 < n && src[i + 1] == "&") { kinds.push(K_AND); texts.push("&&"); i = i + 2; }
-            else { kinds.push(K_SEP); texts.push("&"); i = i + 1; }
+            if (i + 1 < n && src[i + 1] == "&") { kinds.push(tk::Tok.And); texts.push("&&"); i = i + 2; }
+            else { kinds.push(tk::Tok.Sep); texts.push("&"); i = i + 1; }
             continue;
         }
         if (c == "|") {
-            if (i + 1 < n && src[i + 1] == "|") { kinds.push(K_OR); texts.push("||"); i = i + 2; }
-            else { kinds.push(K_PIPE); texts.push("|"); i = i + 1; }
+            if (i + 1 < n && src[i + 1] == "|") { kinds.push(tk::Tok.Or); texts.push("||"); i = i + 2; }
+            else { kinds.push(tk::Tok.Pipe); texts.push("|"); i = i + 1; }
             continue;
         }
-        if (c == "(") { kinds.push(K_LP); texts.push("("); i = i + 1; continue; }
-        if (c == ")") { kinds.push(K_RP); texts.push(")"); i = i + 1; continue; }
+        if (c == "(") { kinds.push(tk::Tok.LP); texts.push("("); i = i + 1; continue; }
+        if (c == ")") { kinds.push(tk::Tok.RP); texts.push(")"); i = i + 1; continue; }
 
-        if (c == "<") { kinds.push(K_REDIR); texts.push("<"); i = i + 1; continue; }
+        if (c == "<") { kinds.push(tk::Tok.Redir); texts.push("<"); i = i + 1; continue; }
         if (c == ">") {
-            if (i + 1 < n && src[i + 1] == ">") { kinds.push(K_REDIR); texts.push(">>"); i = i + 2; }
-            elif (i + 1 < n && src[i + 1] == "&") { kinds.push(K_REDIR); texts.push(">&"); i = i + 2; }
-            else { kinds.push(K_REDIR); texts.push(">"); i = i + 1; }
+            if (i + 1 < n && src[i + 1] == ">") { kinds.push(tk::Tok.Redir); texts.push(">>"); i = i + 2; }
+            elif (i + 1 < n && src[i + 1] == "&") { kinds.push(tk::Tok.Redir); texts.push(">&"); i = i + 2; }
+            else { kinds.push(tk::Tok.Redir); texts.push(">"); i = i + 1; }
             continue;
         }
         if (c == "2" && i + 1 < n && src[i + 1] == ">") {
-            if (i + 2 < n && src[i + 2] == ">") { kinds.push(K_REDIR); texts.push("2>>"); i = i + 3; }
-            else { kinds.push(K_REDIR); texts.push("2>"); i = i + 2; }
+            if (i + 2 < n && src[i + 2] == ">") { kinds.push(tk::Tok.Redir); texts.push("2>>"); i = i + 3; }
+            else { kinds.push(tk::Tok.Redir); texts.push("2>"); i = i + 2; }
             continue;
         }
 
@@ -146,10 +136,7 @@ export function tokenize(src: String) -> Any[] {
             i = i + 1;
         }
         texts.push(src.slice(start, i));
-        kinds.push(K_WORD);
+        kinds.push(tk::Tok.Word);
     }
-    var out: Any[] = [];
-    out.push(kinds);
-    out.push(texts);
-    return out;
+    return (kinds, texts);
 }

@@ -25,93 +25,126 @@ extension "examples/brainfuck/oracle/bf.dll" as C {
     function bf_run(program: CString, input: CString) -> CArray;
 };
 
-# Codigo de instruccion (0..7) o -1 si el caracter no es una instruccion.
-function cmd_of(ch: String) -> int {
-    if (ch == ">") { return 0; }
-    if (ch == "<") { return 1; }
-    if (ch == "+") { return 2; }
-    if (ch == "-") { return 3; }
-    if (ch == ".") { return 4; }
-    if (ch == ",") { return 5; }
-    if (ch == "[") { return 6; }
-    if (ch == "]") { return 7; }
-    return -1;
+# Opcode de Brainfuck (una variante por instruccion). `Invalid` marca un
+# caracter que no es instruccion (comentario/espacio) y se descarta al filtrar.
+enum Op {
+    Invalid,
+    Move,
+    Left,
+    Inc,
+    Dec,
+    Out,
+    In,
+    Loop,
+    End,
+};
+
+# Codigo de instruccion a partir del caracter (String de 1 byte); `Op.Invalid`
+# si el caracter no es una instruccion. `switch` sobre String compara CONTENIDO
+# (fix del finding 06), asi que despacha por el caracter de forma natural.
+function cmd_of(ch: String) -> Op {
+    switch (ch) {
+        case (">") { return Op.Move; }
+        case ("<") { return Op.Left; }
+        case ("+") { return Op.Inc; }
+        case ("-") { return Op.Dec; }
+        case (".") { return Op.Out; }
+        case (",") { return Op.In; }
+        case ("[") { return Op.Loop; }
+        case ("]") { return Op.End; }
+        case default { return Op.Invalid; }
+    }
+    return Op.Invalid;
 }
 
 # Interprete en CLS puro. Devuelve los bytes de salida como int[].
 export function bf_run_cls(prog: String, input: String) -> int[] {
-    # 1. Filtrar a un arreglo de codigos (descarta comentarios/espacios).
-    var cmds: int[] = [];
-    var i = 0;
-    var n = prog.length;
-    while (i < n) {
+    # Locales con las variantes del enum (el patron de `case` liga un identificador).
+    var OP_MOVE = Op.Move;
+    var OP_LEFT = Op.Left;
+    var OP_INC = Op.Inc;
+    var OP_DEC = Op.Dec;
+    var OP_OUT = Op.Out;
+    var OP_IN = Op.In;
+    var OP_LOOP = Op.Loop;
+    var OP_END = Op.End;
+
+    # 1. Filtrar a un arreglo de opcodes (descarta comentarios/espacios).
+    #    Se itera el programa por caracter (`prog[i]` -> String de 1 byte).
+    var cmds: Op[] = [];
+    for (var i = 0; i < prog.length; i++) {
         var c = cmd_of(prog[i]);
-        if (c >= 0) { cmds.push(c); }
-        i = i + 1;
+        if (c != Op.Invalid) { cmds.push(c); }
     }
     var m = cmds.length;
 
     # 2. Tabla de parejas de brackets.
     var jump: int[] = [];
-    var k = 0;
-    while (k < m) { jump.push(-1); k = k + 1; }
+    for (var k = 0; k < m; k++) { jump.push(-1); }
     var stack: int[] = [];
-    k = 0;
-    while (k < m) {
-        var cc = cmds[k];
-        if (cc == 6) {
-            stack.push(k);
-        } elif (cc == 7) {
-            if (stack.length > 0) {
-                var o = stack[stack.length - 1];
-                stack.pop();
-                jump[o] = k;
-                jump[k] = o;
+    for (var k = 0; k < m; k++) {
+        switch (cmds[k]) {
+            case (OP_LOOP) {
+                stack.push(k);
             }
+            case (OP_END) {
+                if (stack.length > 0) {
+                    var o = stack[stack.length - 1];
+                    stack.pop();
+                    jump[o] = k;
+                    jump[k] = o;
+                }
+            }
+            case default {}
         }
-        k = k + 1;
     }
 
     # 3. Tape de 30000 celdas.
     var tape: int[] = [];
-    var t = 0;
-    while (t < 30000) { tape.push(0); t = t + 1; }
+    for (var t = 0; t < 30000; t++) { tape.push(0); }
 
     # 4. Bucle principal.
     var out: int[] = [];
     var tp = 0;
-    var pc = 0;
     var ip = 0;
     # Bytes de entrada como Char[] (unidad de 1 byte); su codigo con bytes::ord.
     var inbytes = input.toChar();
     var inlen = inbytes.length;
-    while (pc < m) {
-        var op = cmds[pc];
-        if (op == 0) {
-            tp = tp + 1;
-            if (tp >= 30000) { tp = 0; }
-        } elif (op == 1) {
-            tp = tp - 1;
-            if (tp < 0) { tp = 29999; }
-        } elif (op == 2) {
-            tape[tp] = (tape[tp] + 1) % 256;
-        } elif (op == 3) {
-            tape[tp] = (tape[tp] + 255) % 256;
-        } elif (op == 4) {
-            out.push(tape[tp]);
-        } elif (op == 5) {
-            if (ip < inlen) {
-                tape[tp] = bytes::ord(inbytes[ip]);
-                ip = ip + 1;
-            } else {
-                tape[tp] = 0;
+    for (var pc = 0; pc < m; pc++) {
+        switch (cmds[pc]) {
+            case (OP_MOVE) {
+                tp = tp + 1;
+                if (tp >= 30000) { tp = 0; }
             }
-        } elif (op == 6) {
-            if (tape[tp] == 0) { pc = jump[pc]; }
-        } elif (op == 7) {
-            if (tape[tp] != 0) { pc = jump[pc]; }
+            case (OP_LEFT) {
+                tp = tp - 1;
+                if (tp < 0) { tp = 29999; }
+            }
+            case (OP_INC) {
+                tape[tp] = (tape[tp] + 1) % 256;
+            }
+            case (OP_DEC) {
+                tape[tp] = (tape[tp] + 255) % 256;
+            }
+            case (OP_OUT) {
+                out.push(tape[tp]);
+            }
+            case (OP_IN) {
+                if (ip < inlen) {
+                    tape[tp] = bytes::ord(inbytes[ip]);
+                    ip = ip + 1;
+                } else {
+                    tape[tp] = 0;
+                }
+            }
+            case (OP_LOOP) {
+                if (tape[tp] == 0) { pc = jump[pc]; }
+            }
+            case (OP_END) {
+                if (tape[tp] != 0) { pc = jump[pc]; }
+            }
+            case default {}
         }
-        pc = pc + 1;
     }
     return out;
 }

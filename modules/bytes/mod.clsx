@@ -30,12 +30,9 @@ function normalize(b: int) -> int {
 # Char[] (buffer de bytes) -> string hex en minusculas (2 chars por byte).
 export function hexEncode(bytes: Char[]) -> String {
     var out = "";
-    var i = 0;
-    var n = bytes.length;
-    while (i < n) {
-        var v = normalize(ord(bytes[i]));
+    for each b in (bytes) {
+        var v = normalize(ord(b));
         out = out + hexNib(v / 16) + hexNib(v % 16);
-        i = i + 1;
     }
     return out;
 }
@@ -54,13 +51,11 @@ export function hexDecode(hex: String) -> int[] {
     var out: int[] = [];
     var cs = hex.toChar();
     var n = cs.length;
-    var i = 0;
-    while (i + 1 < n) {
+    for (var i = 0; i + 1 < n; i = i + 2) {
         var hi = hexVal(ord(cs[i]));
         var lo = hexVal(ord(cs[i + 1]));
         if (hi < 0 || lo < 0) { out.push(-1); }
         else { out.push(hi * 16 + lo); }
-        i = i + 2;
     }
     return out;
 }
@@ -69,11 +64,11 @@ export function hexDecode(hex: String) -> int[] {
 export function firstDiff(a: int[], b: int[]) -> int {
     var la = a.length;
     var lb = b.length;
-    var i = 0;
-    while (i < la && i < lb) {
+    for (var i = 0; i < la && i < lb; i++) {
         if (a[i] != b[i]) { return i; }
-        i = i + 1;
     }
-    if (la != lb) { return i; }
+    var m = la;
+    if (lb < m) { m = lb; }
+    if (la != lb) { return m; }
     return -2;
 }

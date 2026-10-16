@@ -139,6 +139,45 @@ target\debug\clx.exe run   examples\clsh\findings\<archivo>.clsx
 - **Estado:** corregido (R5). `""==""`→`T`, `""!="x"`→`T`, `"x"==""`→`F`,
   `"ab"=="ab"`→`T`, `"ab"=="abc"`→`F`, UTF-8 iguales/distintas → OK.
 
+## 9. La identidad de un enum importado depende del ALIAS de import  ·  MEDIO
+
+- **Archivos:** `09-enum-import-alias-identity.clsx` (+ helpers `09-base.clsx`,
+  `09-prod.clsx`).
+- **Feature:** `export enum` + `import ... as` (tipo de token de clsh).
+- **Repro:**
+  ```
+  target\debug\clx.exe run examples\clsh\findings\09-enum-import-alias-identity.clsx
+  ```
+- **Esperado:** `id0=true  id1=true` (exit 0).
+- **Obtenido:** `id0=false  id1=false` (exit **1**) — un valor del enum producido
+  en un modulo que lo importo como `tk` NO compara igual (`==`) desde otro modulo
+  que lo importo con otro alias (`toks`), aunque sea la misma variante.
+- **Causa (analizada):** la identidad del enum es `def_name + index`; el
+  `def_name` se canonicaliza con el **alias de import**, no con el nombre real
+  del modulo, así que dos alias distintos producen dos identidades.
+- **Estado:** ✅ **RESUELTO** — la identidad del enum en el JIT es su
+  **definición** (span de la declaración fuente), no el nombre con que se importó:
+  el emisor (`cls-core/src/backend/wasm/engine/emit.rs`) asigna el MISMO `def_id`
+  a los clones `tk::E` / `toks::E` de un mismo `enum E`. `==`/`is` comparan por
+  definición sin importar el alias.
+- **Alcance:** hallado refactorizando clsh para usar el enum `tokens::Tok`
+  compartido entre `lexer` (produce) y `shell` (consume). Al usar alias distintos
+  las comparaciones fallaban y el shell cascaba (OOB). **Workaround aplicado:** el
+  mismo alias `tk` en ambos modulos (`lexer.clsx` y `shell.clsx`). Un enum
+  definido en un modulo y consumido desde otro (con cualquier alias) tampoco
+  mantiene identidad; por eso el tipo se movio a un modulo comun `tokens.clsx`.
+
+## 10. `switch` sobre `String`: compara el HANDLE, no el contenido  ·  RESUELTO
+
+- **Archivo:** `examples/brainfuck/findings/06-switch-string-compara-handle.clsx`.
+- **Feature:** `switch`/`case` con valor `String`.
+- **Estado:** ✅ **RESUELTO** — `emit_switch`
+  (`cls-core/src/backend/wasm/emitter/statements.rs`) compara por **contenido**
+  (`__intr_str_eq`, igual que `==`) cuando el valor es String. El tokenizador de
+  clsh despacha por el caracter natural (`switch (c) { case (";") … }` en
+  `isOpByte`), sin `ord`/codigo de byte. Ver el analisis en el README de
+  Brainfuck §6.
+
 ---
 
 ## Divergencias del SHELL (no del lenguaje)

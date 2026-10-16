@@ -49,23 +49,17 @@ extension "modules/sqlite/sqlite_shim.dll" as C {
     function o_finalize(s: CLong) -> CLong;
 };
 
-# Mapea un valor del result set (codigos de tipo de SQLite) a un Cell del ORM.
+# Mapea un valor del result set (codigos de tipo de SQLite, 1..4) a un Cell del
+# ORM. Se despacha por switch sobre el codigo de tipo.
 function cellOf(t: int, rr: int, i: int, c: int) -> orm::Cell {
-    if (t == 1) {
-        return orm::cInt(int(o_cell_int(rr, i, c)));
+    switch (t) {
+        case (1) { return orm::cInt(int(o_cell_int(rr, i, c))); }
+        case (2) { return orm::cFloat(o_cell_double(rr, i, c)); }
+        case (3) { return orm::cText(o_cell_text(rr, i, c)); }
+        case (4) { return orm::cBlob(o_cell_blob_hex(rr, i, c)); }
+        case default { return orm::cNull(); }
     }
-    elif (t == 2) {
-        return orm::cFloat(o_cell_double(rr, i, c));
-    }
-    elif (t == 3) {
-        return orm::cText(o_cell_text(rr, i, c));
-    }
-    elif (t == 4) {
-        return orm::cBlob(o_cell_blob_hex(rr, i, c));
-    }
-    else {
-        return orm::cNull();
-    }
+    return orm::cNull();
 }
 
 # Result set del shim -> ResultSet neutro del ORM.
@@ -75,18 +69,13 @@ function materialize(rr: int) -> orm::ResultSet {
     rs.nrows = int(o_nrows(rr));
     rs.ncols = int(o_ncols(rr));
     var cols: String[] = [];
-    var c = 0;
-    while (c < rs.ncols) { cols.push(o_colname(rr, c)); c = c + 1; }
+    for (var c = 0; c < rs.ncols; c++) { cols.push(o_colname(rr, c)); }
     rs.cols = cols;
     var cells: orm::Cell[] = [];
-    var i = 0;
-    while (i < rs.nrows) {
-        c = 0;
-        while (c < rs.ncols) {
-            cells.push(cellOf(int(o_cell_type(rr, i, c)), rr, i, c));
-            c = c + 1;
+    for (var i = 0; i < rs.nrows; i++) {
+        for (var cc = 0; cc < rs.ncols; cc++) {
+            cells.push(cellOf(int(o_cell_type(rr, i, cc)), rr, i, cc));
         }
-        i = i + 1;
     }
     rs.cells = cells;
     o_free_result(rr);
@@ -111,10 +100,8 @@ export class SqliteDriver: Driver {
     }
     function queryBind(sql: String, params: orm::Cell[]) -> orm::ResultSet {
         var s = int(o_prepare(me.h, sql));
-        var k = 0;
-        while (k < params.length) {
-            me.bind(s, k + 1, params[k]);
-            k = k + 1;
+        for each prm and k in (params) {
+            me.bind(s, k + 1, prm);
         }
         var rs = materialize(int(o_result_from_stmt(s)));
         o_finalize(s);
@@ -122,11 +109,14 @@ export class SqliteDriver: Driver {
     }
     function prepare(sql: String) -> int { return int(o_prepare(me.h, sql)); }
     function bind(stmt: int, idx: int, cell: orm::Cell) -> int {
-        if (cell.kind == 1) { return int(o_bind_null(stmt, idx)); }
-        if (cell.kind == 2) { return int(o_bind_int(stmt, idx, cell.i)); }
-        if (cell.kind == 3) { return int(o_bind_double(stmt, idx, cell.f)); }
-        if (cell.kind == 4) { return int(o_bind_text(stmt, idx, cell.s)); }
-        if (cell.kind == 5) { return int(o_bind_blob_hex(stmt, idx, cell.s)); }
+        switch (cell.kind) {
+            case (1) { return int(o_bind_null(stmt, idx)); }
+            case (2) { return int(o_bind_int(stmt, idx, cell.i)); }
+            case (3) { return int(o_bind_double(stmt, idx, cell.f)); }
+            case (4) { return int(o_bind_text(stmt, idx, cell.s)); }
+            case (5) { return int(o_bind_blob_hex(stmt, idx, cell.s)); }
+            case default { return int(o_bind_null(stmt, idx)); }
+        }
         return int(o_bind_null(stmt, idx));
     }
     function step(stmt: int) -> int { return int(o_step(stmt)); }

@@ -1,0 +1,31 @@
+# Repro minimo: la identidad de un enum exportado por un modulo depende del
+# ALIAS con el que cada modulo lo importa. Un valor del enum producido en un
+# modulo (que lo importo como `tk`) NO compara igual desde otro modulo que lo
+# importo con otro alias (`toks`), aunque sea la misma variante.
+#
+#   target\debug\clx.exe run examples\clsh\findings\09-enum-import-alias-identity.clsx
+#
+# Esperado: id0=true  id1=true
+# Obtenido: id0=false id1=false  (el alias no coincide con el de 09-prod.clsx)
+#
+# Hallado al usar el enum de tokens `tokens::Tok` compartido entre lexer (alias
+# `tk`) y shell (alias `toks`): las comparaciones `==` fallaban y el shell
+# cascaba. Con el MISMO alias en ambos modulos funciona. Fix provisional: usar
+# el mismo alias `tk` en lexer y shell.
+
+import "09-prod" as prod;
+import "09-base" as toks;
+
+function main(args: String[]) -> int {
+    var t = prod::make();
+    var ks: toks::E[] = t[0];
+    var id0 = (ks[0] == toks::E.A);
+    var id1 = (ks[1] == toks::E.B);
+    print("id0=" + str(id0) + "  id1=" + str(id1));
+    if (id0 && id1) {
+        print("OK (resuelto)");
+        return 0;
+    }
+    print("BUG PRESENTE: la identidad del enum depende del alias de import");
+    return 1;
+}

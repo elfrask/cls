@@ -84,6 +84,28 @@ Común: `target\debug\clx.exe run examples\brainfuck\findings\<archivo>.clsx`
   programa imprime `result 0` y sale con **exit 0** (falso éxito).
 - **Impacto:** un FFI mal configurado (ruta/abi) pasa desapercibido en CI.
 
+## 6. `switch` sobre `String` compara el handle, no el contenido
+
+- **Archivo:** `06-switch-string-compara-handle.clsx`
+- **Feature:** `switch`/`case` con valor `String`.
+- **Repro:**
+  ```
+  target\debug\clx.exe run examples\brainfuck\findings\06-switch-string-compara-handle.clsx
+  ```
+- **Esperado:** las tres clasificaciones iguales (`MOVE`, `MOVE`, `MOVE`).
+- **Obtenido:** `MOVE`, `?`, `?` — solo matchea el literal directo (mismo handle
+  internado que el `case`); un String construido en runtime (concatenacion,
+  substring `s[i]`) con el mismo contenido cae al `default`.
+- **Causa:** `emit_switch` (`cls-core/src/backend/wasm/emitter/statements.rs`)
+  comparaba con `push_eq(WasTy::I64)` (i64.eq sobre el handle) en vez de
+  `__intr_str_eq` (comparacion por contenido, la que usa `==`).
+- **Alcance:** hallado refactorizando el `cmd_of` de Brainfuck a `switch` (por eso
+  `cmd_of` despachaba por el byte con `ord`, no por el String). No bloquea el test.
+- **Estado:** ✅ **RESUELTO** — `emit_switch` elige la comparacion por el tipo del
+  valor: String por contenido (`__intr_str_eq`), Int/enum por `i64.eq`, Bool/Char/
+  Float por su propio operando (`i32.eq`/`f64.eq`). `cmd_of` volvio a despachar por
+  el caracter natural (`switch (ch) { case (">") ... }`).
+
 ---
 
 ## Gaps (rodeables, sin crash)

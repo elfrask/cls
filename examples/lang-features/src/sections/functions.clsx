@@ -45,6 +45,11 @@ function functions_values() -> int {
     # arrow sin args
     var noventaynueve = () -> 99;
     check::assertEq("fn.arrow.noargs", noventaynueve(), 99);
+    # closure que devuelve Bool (i32): la firma natural de arrows cierra el bug
+    # del finding 06 de conformance (antes emitia WASM invalido).
+    var esPar = (x: int) -> (x % 2 == 0);
+    check::assertTrue("fn.arrow.bool.true", esPar(4));
+    check::assertTrue("fn.arrow.bool.false", !esPar(5));
     # funcion por defecto
     check::assertEq("fn.default", fn_default(2), 7);
     check::assertEq("fn.default2", fn_default(2, 8), 10);

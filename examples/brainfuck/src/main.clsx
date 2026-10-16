@@ -31,12 +31,10 @@ function hex16(a: int[]) -> String {
     var out = "";
     var n = a.length;
     if (n > 16) { n = 16; }
-    var i = 0;
-    while (i < n) {
+    for (var i = 0; i < n; i++) {
         var one: Char[] = [char(a[i])];
         out = out + bytes::hexEncode(one);
         if (i + 1 < n) { out = out + " "; }
-        i = i + 1;
     }
     return out;
 }
@@ -49,8 +47,7 @@ function main(args: String[]) -> int {
 
     print("=== Brainfuck: CLS puro vs oraculo C (FFI) ===");
     var failures = 0;
-    var i = 0;
-    while (i < names.length) {
+    for (var i = 0; i < names.length; i++) {
         var name = names[i];
         var path = root + name + ".bf";
         var prog = io::readText(path);
@@ -60,7 +57,6 @@ function main(args: String[]) -> int {
             # puede validar: cuenta como fallo para que el test no de falso OK.
             print("  [FAIL] " + name + ": no se pudo leer " + path);
             failures = failures + 1;
-            i = i + 1;
             continue;
         }
 
@@ -97,28 +93,23 @@ function main(args: String[]) -> int {
             }
             failures = failures + 1;
         }
-        i = i + 1;
     }
 
     # --- [EXPERIMENTAL] `io::readChars` (buffer `Char[]`) vs `io::readBytes` (int[]) ---
     # Prueba del modelo Char-para-buffers: el mismo `.out` leido de las dos
     # formas debe coincidir byte a byte. NO reemplaza la ruta `int[]`.
     var exp_fail = 0;
-    var j = 0;
-    while (j < names.length) {
-        var gp = root + names[j] + ".out";
+    for each name and j in (names) {
+        var gp = root + name + ".out";
         var gbytes = io::readBytes(gp);
         var gchars = io::readChars(gp);
         var okc = (gchars.length == gbytes.length);
         if (okc) {
-            var q = 0;
-            while (q < gchars.length) {
+            for (var q = 0; q < gchars.length; q++) {
                 if (ord(gchars[q]) != gbytes[q]) { okc = false; break; }
-                q = q + 1;
             }
         }
         if (!okc) { exp_fail = exp_fail + 1; }
-        j = j + 1;
     }
     if (exp_fail == 0) {
         print("EXPERIMENTAL readChars: OK (Char[] == int[] byte a byte en los 6 goldens)");

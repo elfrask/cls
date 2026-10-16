@@ -27,7 +27,7 @@ function testCrud(o: orm::Orm) {
     o.insert("users", cols, [orm::cInt(3), orm::cText("Mia"), orm::cInt(41)]);
     emit("users.count", o.count("users"));
     var rs = o.findById("users", 2);
-    emit("users.find2.rows", rs.nrows);
+    emit("users.find2.rows", len(rs));
     emit("users.find2.age", rs.getInt(0, 2));
     var gt = o.selectWhere("users", "age > ?", [orm::cInt(30)], "id", -1, 0);
     emit("users.gt30", gt.nrows);
@@ -76,12 +76,10 @@ function testBatch(o: orm::Orm, driver: sq::SqliteDriver) {
     # preparada dentro de una transaccion.
     o.begin();
     var stmt = o.prepareInsert("batch", cols);
-    var id = 1;
-    while (id <= 10000) {
+    for (var id = 1; id <= 10000; id++) {
         var nm = "user-" + str(id);
         if (id % 97 == 0) { nm = "u-" + str(id) + "-ñá😀"; }
         o.bulkRow(stmt, [orm::cInt(id), orm::cText(nm), orm::cFloat(float(id) * 0.5)]);
-        id = id + 1;
     }
     o.commit();
     o.finishInsert(stmt);
@@ -91,14 +89,13 @@ function testBatch(o: orm::Orm, driver: sq::SqliteDriver) {
     var first = o.selectWhere("batch", "id = ?", [orm::cInt(1)], "id", -1, 0);
     emit("batch.first.namelen", first.getText(0, 1).length);
     var all = o.selectAll("batch", "id");
-    emit("batch.all.nrows", all.nrows);
+    emit("batch.all.nrows", len(all));
     emit("batch.all.lastid", all.getInt(all.nrows - 1, 0));
     # FFI CArray: la columna id de las 10k filas viaja como int[] del shim.
     var ids = driver.columnInts("SELECT id FROM batch ORDER BY id", 0);
     emit("batch.carraylen", ids.length);
     var carSum = 0;
-    var q = 0;
-    while (q < ids.length) { carSum = carSum + ids[q]; q = q + 1; }
+    for each v in (ids) { carSum = carSum + v; }
     emit("batch.carraysum", carSum);
 }
 
@@ -126,20 +123,16 @@ function testOrder(o: orm::Orm) {
     o.createTable("ord", ["id INTEGER", "v INTEGER"]);
     var cols: String[] = ["id", "v"];
     var rows: orm::Cell[][] = [];
-    var i = 0;
-    while (i < 10) {
+    for (var i = 0; i < 10; i++) {
         rows.push([orm::cInt(i), orm::cInt((i * 7) % 10)]);
-        i = i + 1;
     }
     o.insertBatch("ord", cols, rows);
     var rs = o.selectWhere("ord", "1 = 1", [], "v DESC, id ASC", 3, 2);
     emit("ord.rows", rs.nrows);
     var out = "";
-    var k = 0;
-    while (k < rs.nrows) {
+    for (var k = 0; k < rs.nrows; k++) {
         if (k > 0) { out = out + ","; }
         out = out + str(rs.getInt(k, 0));
-        k = k + 1;
     }
     emitS("ord.page1", out);
 }

@@ -76,14 +76,13 @@ export class ResultSet {
         me.cells = [];
     }
     public function at(r: int, c: int) -> Cell { return me.cells[r * me.ncols + c]; }
+    public function __len() -> int { return me.nrows; }
     public function getInt(r: int, c: int) -> int { return me.at(r, c).i; }
     public function getFloat(r: int, c: int) -> float { return me.at(r, c).f; }
     public function getText(r: int, c: int) -> String { return me.at(r, c).s; }
     public function colIndex(name: String) -> int {
-        var k = 0;
-        while (k < me.cols.length) {
-            if (me.cols[k] == name) { return k; }
-            k = k + 1;
+        for each c and k in (me.cols) {
+            if (c == name) { return k; }
         }
         return -1;
     }
@@ -119,11 +118,9 @@ export class Driver {
 # Une items con un separador (sin `strings` del host: CLS puro).
 function joinList(items: String[], sep: String) -> String {
     var out = "";
-    var k = 0;
-    while (k < items.length) {
+    for each item and k in (items) {
         if (k > 0) { out = out + sep; }
-        out = out + items[k];
-        k = k + 1;
+        out = out + item;
     }
     return out;
 }
@@ -131,11 +128,9 @@ function joinList(items: String[], sep: String) -> String {
 # "?, ?, ?" para n placeholders.
 function placeholders(n: int) -> String {
     var out = "";
-    var k = 0;
-    while (k < n) {
+    for (var k = 0; k < n; k++) {
         if (k > 0) { out = out + ", "; }
         out = out + "?";
-        k = k + 1;
     }
     return out;
 }
@@ -143,11 +138,9 @@ function placeholders(n: int) -> String {
 # "a = ?, b = ?" para una lista de columnas.
 function assignList(cols: String[]) -> String {
     var out = "";
-    var k = 0;
-    while (k < cols.length) {
+    for each col and k in (cols) {
         if (k > 0) { out = out + ", "; }
-        out = out + cols[k] + " = ?";
-        k = k + 1;
+        out = out + col + " = ?";
     }
     return out;
 }
@@ -190,8 +183,7 @@ export class Orm {
         var sql = "INSERT INTO " + table + " (" + joinList(cols, ", ") +
                   ") VALUES (" + placeholders(cols.length) + ")";
         var s = me.d.prepare(sql);
-        var k = 0;
-        while (k < vals.length) { me.d.bind(s, k + 1, vals[k]); k = k + 1; }
+        for each v and k in (vals) { me.d.bind(s, k + 1, v); }
         me.d.step(s);
         var id = me.d.lastId();
         me.d.finalizeStmt(s);
@@ -205,10 +197,8 @@ export class Orm {
         var s = me.d.prepare(sql);
         me.d.exec("BEGIN");
         var n = 0;
-        while (n < rows.length) {
-            var row = rows[n];
-            var k = 0;
-            while (k < row.length) { me.d.bind(s, k + 1, row[k]); k = k + 1; }
+        for each row in (rows) {
+            for each v and k in (row) { me.d.bind(s, k + 1, v); }
             me.d.step(s);
             me.d.resetStmt(s);
             n = n + 1;
@@ -225,8 +215,7 @@ export class Orm {
         return me.d.prepare(sql);
     }
     function bulkRow(stmt: int, vals: Cell[]) -> int {
-        var k = 0;
-        while (k < vals.length) { me.d.bind(stmt, k + 1, vals[k]); k = k + 1; }
+        for each v and k in (vals) { me.d.bind(stmt, k + 1, v); }
         var rc = me.d.step(stmt);
         me.d.resetStmt(stmt);
         return rc;
@@ -236,8 +225,7 @@ export class Orm {
     # DML con parametros (UPDATE/DELETE); devuelve filas afectadas.
     function runDml(sql: String, params: Cell[]) -> int {
         var s = me.d.prepare(sql);
-        var k = 0;
-        while (k < params.length) { me.d.bind(s, k + 1, params[k]); k = k + 1; }
+        for each p and k in (params) { me.d.bind(s, k + 1, p); }
         me.d.step(s);
         me.d.finalizeStmt(s);
         return me.d.changes();
@@ -263,11 +251,7 @@ export class Orm {
                     whereSql: String, whereParams: Cell[]) -> int {
         var sql = "UPDATE " + table + " SET " + assignList(setCols) +
                   " WHERE " + whereSql;
-        var p: Cell[] = [];
-        var k = 0;
-        while (k < setVals.length) { p.push(setVals[k]); k = k + 1; }
-        k = 0;
-        while (k < whereParams.length) { p.push(whereParams[k]); k = k + 1; }
+        var p: Cell[] = [...setVals, ...whereParams];
         return me.runDml(sql, p);
     }
 

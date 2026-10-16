@@ -1,0 +1,18 @@
+# tokens.clsx - Tipo de token de clsh (enum compartido).
+#
+# Vive en su propio modulo porque el enum lo consumen TANTO el tokenizador
+# (`lexer.clsx`, que lo produce) COMO el interprete (`shell.clsx`, que lo lee).
+# La identidad del enum en el JIT es su DEFINICION (span de la declaracion
+# fuente), no el alias de import: `lexer` y `shell` pueden comparar sus valores
+# con `==` con cualquier alias. Se centraliza aqui por claridad/organizacion.
+
+export enum Tok {
+    Word,   # palabra (texto crudo, con comillas/expansiones sin interpretar)
+    Sep,    # separador de comandos (`;` o salto de linea)
+    And,    # `&&`
+    Or,     # `||`
+    Pipe,   # `|`
+    LP,     # `(`
+    RP,     # `)`
+    Redir,  # redireccion (`<`, `>`, `>>`, `2>`, `2>>`, `>&`)
+};

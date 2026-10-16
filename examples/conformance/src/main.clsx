@@ -44,34 +44,25 @@ function chk_s(label: String, got: String, exp: String) {
 
 function check_pair(a: int, b: int) {
     var ops: int[] = [0, 1, 2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
-    var i = 0;
-    while (i < ops.length) {
-        var op = ops[i];
+    for each op in (ops) {
         chk_i("int op=" + str(op) + " a=" + str(a) + " b=" + str(b),
               e::dispatch_binop(op, a, b), e::orc_binop(op, a, b));
-        i = i + 1;
     }
 }
 
 function check_divmod(a: int, b: int) {
     var ops: int[] = [3, 4];
-    var i = 0;
-    while (i < ops.length) {
-        var op = ops[i];
+    for each op in (ops) {
         chk_i("divmod op=" + str(op) + " a=" + str(a) + " b=" + str(b),
               e::dispatch_binop(op, a, b), e::orc_binop(op, a, b));
-        i = i + 1;
     }
 }
 
 function check_unop(a: int) {
     var ops: int[] = [0, 1];
-    var i = 0;
-    while (i < ops.length) {
-        var op = ops[i];
+    for each op in (ops) {
         chk_i("unop op=" + str(op) + " a=" + str(a),
               e::dispatch_unop(op, a), e::orc_unop(op, a));
-        i = i + 1;
     }
 }
 
@@ -164,19 +155,15 @@ function chk_mc(op: int, a: int, b: float) {
 
 function check_fpair(a: float, b: float) {
     var ops: int[] = [0, 1, 2, 3, 10, 11, 12, 13, 14, 15];
-    var i = 0;
-    while (i < ops.length) {
-        chk_fc(ops[i], a, b);
-        i = i + 1;
+    for each op in (ops) {
+        chk_fc(op, a, b);
     }
 }
 
 function check_mix(a: int, b: float) {
     var ops: int[] = [0, 1, 2, 3];
-    var i = 0;
-    while (i < ops.length) {
-        chk_mc(ops[i], a, b);
-        i = i + 1;
+    for each op in (ops) {
+        chk_mc(op, a, b);
     }
 }
 
@@ -216,30 +203,21 @@ function axis_strings() {
         "café😀!", "  trim  ", "áéíóú", "naïve", "a,b,c", "aaaa"
     ];
 
-    var i = 0;
-    while (i < strs.length) {
-        var s = strs[i];
+    for each s and i in (strs) {
         chk_i("strlen[" + str(i) + "]", s.length, e::orc_strlen(s));
         chk_i("isEmpty[" + str(i) + "]", b2i(s.isEmpty()), 1 - b2i(e::orc_strlen(s) > 0));
-        i = i + 1;
     }
 
     var hays: String[] = ["Hello World", "café😀!", "汉字汉字", "abc", "aaaa", "😀x😀y", ""];
     var ndls: String[] = ["", "l", "World", "😀", "汉", "z", "a", "café", "😀x"];
-    var h = 0;
-    while (h < hays.length) {
-        var hay = hays[h];
-        var n = 0;
-        while (n < ndls.length) {
-            var ndl = ndls[n];
+    for each hay and h in (hays) {
+        for each ndl and n in (ndls) {
             var hlab = "h" + str(h) + " n" + str(n);
             chk_i("indexOf " + hlab, hay.indexOf(ndl), e::orc_indexof(hay, ndl));
             chk_i("contains " + hlab, b2i(hay.contains(ndl)), e::orc_contains(hay, ndl));
             chk_i("startsWith " + hlab, b2i(hay.startsWith(ndl)), e::orc_startswith(hay, ndl));
             chk_i("endsWith " + hlab, b2i(hay.endsWith(ndl)), e::orc_endswith(hay, ndl));
-            n = n + 1;
         }
-        h = h + 1;
     }
 
     # El retorno CString no es byte-transparente: un slice que parte un caracter
@@ -249,37 +227,23 @@ function axis_strings() {
     var ascii: String[] = ["", "a", "abc", "Hello World", "  trim  ", "a,b,c", "aaaa"];
     var starts: int[] = [0, 1, 2, 5, -1, -5, 10, 100];
     var ends: int[] = [0, 1, 3, 5, -1, -3, 10, 100];
-    var si = 0;
-    while (si < strs.length) {
-        var s2 = strs[si];
-        var a = 0;
-        while (a < starts.length) {
-            var b = 0;
-            while (b < ends.length) {
-                var lab = "s" + str(si) + " " + str(starts[a]) + ".." + str(ends[b]);
-                var got = s2.slice(starts[a], ends[b]);
-                chk_i("slice_len " + lab, got.length, e::orc_slice_len(s2, starts[a], ends[b]));
-                b = b + 1;
+    for each s2 and si in (strs) {
+        for each sa in (starts) {
+            for each eb in (ends) {
+                var lab = "s" + str(si) + " " + str(sa) + ".." + str(eb);
+                var got = s2.slice(sa, eb);
+                chk_i("slice_len " + lab, got.length, e::orc_slice_len(s2, sa, eb));
             }
-            a = a + 1;
         }
-        si = si + 1;
     }
 
-    si = 0;
-    while (si < ascii.length) {
-        var s3 = ascii[si];
-        var a2 = 0;
-        while (a2 < starts.length) {
-            var b2 = 0;
-            while (b2 < ends.length) {
-                var lab2 = "ascii" + str(si) + " " + str(starts[a2]) + ".." + str(ends[b2]);
-                chk_s("slice " + lab2, s3.slice(starts[a2], ends[b2]), e::orc_slice(s3, starts[a2], ends[b2]));
-                b2 = b2 + 1;
+    for each s3 and sj in (ascii) {
+        for each sa2 in (starts) {
+            for each eb2 in (ends) {
+                var lab2 = "ascii" + str(sj) + " " + str(sa2) + ".." + str(eb2);
+                chk_s("slice " + lab2, s3.slice(sa2, eb2), e::orc_slice(s3, sa2, eb2));
             }
-            a2 = a2 + 1;
         }
-        si = si + 1;
     }
 }
 
@@ -289,8 +253,7 @@ function axis_strings() {
 
 function cls_sum_to(n: int) -> int {
     var acc = 0;
-    var i = 1;
-    while (i <= n) { acc = acc + i; i = i + 1; }
+    for (var i = 1; i <= n; i++) { acc = acc + i; }
     return acc;
 }
 
@@ -301,14 +264,14 @@ function cls_fib(n: int) -> int {
 
 function cls_fact(n: int) -> int {
     var acc = 1;
-    var i = 2;
-    while (i <= n) { acc = acc * i; i = i + 1; }
+    for (var i = 2; i <= n; i++) { acc = acc * i; }
     return acc;
 }
 
 function cls_collatz(n: int) -> int {
     var steps = 0;
-    while (n != 1) {
+    loop {
+        if (n == 1) { break; }
         if (n % 2 == 0) { n = n / 2; } else { n = 3 * n + 1; }
         steps = steps + 1;
     }
@@ -316,7 +279,8 @@ function cls_collatz(n: int) -> int {
 }
 
 function cls_gcd(a: int, b: int) -> int {
-    while (b != 0) {
+    loop {
+        if (b == 0) { break; }
         var t = b;
         b = a % b;
         a = t;
@@ -327,37 +291,29 @@ function cls_gcd(a: int, b: int) -> int {
 
 function cls_flow_sum(n: int) -> int {
     var acc = 0;
-    var i = 0;
-    while (i < n) {
-        if (i % 3 == 0) { i = i + 1; continue; }
+    for (var i = 0; i < n; i++) {
+        if (i % 3 == 0) { continue; }
         if (i > 40) { break; }
         acc = acc + i;
-        i = i + 1;
     }
     return acc;
 }
 
 function axis_control() {
     var ns: int[] = [0, 1, 2, 5, 10, 100, 1000];
-    var i = 0;
-    while (i < ns.length) {
-        chk_i("sum_to " + str(ns[i]), cls_sum_to(ns[i]), e::orc_sum_to(ns[i]));
-        chk_i("fact " + str(ns[i]), cls_fact(ns[i]), e::orc_fact(ns[i]));
-        i = i + 1;
+    for each n in (ns) {
+        chk_i("sum_to " + str(n), cls_sum_to(n), e::orc_sum_to(n));
+        chk_i("fact " + str(n), cls_fact(n), e::orc_fact(n));
     }
 
     var fn: int[] = [0, 1, 2, 3, 5, 10, 15, 20];
-    i = 0;
-    while (i < fn.length) {
-        chk_i("fib " + str(fn[i]), cls_fib(fn[i]), e::orc_fib(fn[i]));
-        i = i + 1;
+    for each n in (fn) {
+        chk_i("fib " + str(n), cls_fib(n), e::orc_fib(n));
     }
 
     var cn: int[] = [1, 2, 3, 6, 7, 27, 97, 871];
-    i = 0;
-    while (i < cn.length) {
-        chk_i("collatz " + str(cn[i]), cls_collatz(cn[i]), e::orc_collatz(cn[i]));
-        i = i + 1;
+    for each n in (cn) {
+        chk_i("collatz " + str(n), cls_collatz(n), e::orc_collatz(n));
     }
 
     chk_i("gcd 12,18", cls_gcd(12, 18), e::orc_gcd(12, 18));
@@ -366,10 +322,8 @@ function axis_control() {
     chk_i("gcd 17,5", cls_gcd(17, 5), e::orc_gcd(17, 5));
 
     var fl: int[] = [0, 5, 10, 40, 41, 50, 100];
-    i = 0;
-    while (i < fl.length) {
-        chk_i("flow_sum " + str(fl[i]), cls_flow_sum(fl[i]), e::orc_flow_sum(fl[i]));
-        i = i + 1;
+    for each n in (fl) {
+        chk_i("flow_sum " + str(n), cls_flow_sum(n), e::orc_flow_sum(n));
     }
 }
 
@@ -380,19 +334,15 @@ function axis_control() {
 function axis_closures() {
     var ks: int[] = [0, 1, 10, -5, 100];
     var xs: int[] = [0, 1, 2, -3, 7];
-    var i = 0;
-    while (i < ks.length) {
-        var base = ks[i];
+    # `for each` liga el valor de CADA iteracion (binding por iteracion), asi que
+    # una closure que captura `base` ve el valor de su iteracion (fix finding 04).
+    for each base in (ks) {
         var f = (x: int) -> x + base;
-        var j = 0;
-        while (j < xs.length) {
-            chk_i("closure base=" + str(base) + " x=" + str(xs[j]),
-                  f(xs[j]), e::orc_closure_add(base, xs[j]));
-            j = j + 1;
+        for each x in (xs) {
+            chk_i("closure base=" + str(base) + " x=" + str(x),
+                  f(x), e::orc_closure_add(base, x));
         }
-        i = i + 1;
     }
-
     var b = 10;
     var g = (x: int) -> x + b;
     var r1 = g(5);
@@ -406,11 +356,9 @@ function axis_closures() {
     var h = (x: int) -> k * x + k;
     var mapped = arr.map(h);
     var s = 0;
-    var m = 0;
-    while (m < mapped.length) { s = s + mapped[m]; m = m + 1; }
+    for each v in (mapped) { s = s + v; }
     var csum = 0;
-    m = 0;
-    while (m < arr.length) { csum = csum + e::orc_apply(k, arr[m]); m = m + 1; }
+    for each x in (arr) { csum = csum + e::orc_apply(k, x); }
     chk_i("closure map sum", s, csum);
 }
 
@@ -420,17 +368,16 @@ function axis_closures() {
 
 function cls_arr_script(n: int) -> int {
     var a: int[] = [];
-    var i = 0;
-    while (i < n) {
-        if (i % 3 == 0) { a.push(i); }
-        elif (i % 3 == 1) { a.unshift(i); }
-        else { a.reverse(); }
-        i = i + 1;
+    for (var i = 0; i < n; i++) {
+        switch (i % 3) {
+            case (0) { a.push(i); }
+            case (1) { a.unshift(i); }
+            case default { a.reverse(); }
+        }
     }
     var len = a.length;
     var sum = 0;
-    var j = 0;
-    while (j < len) { sum = sum + a[j]; j = j + 1; }
+    for each v in (a) { sum = sum + v; }
     var first = 0;
     if (len > 0) { first = a[0]; }
     var idx = a.indexOf(0);
@@ -441,12 +388,10 @@ function cls_arr_script(n: int) -> int {
 
 function cls_arr_indexof_sum(n: int, needle: int) -> int {
     var a: int[] = [];
-    var i = 0;
-    while (i < n) { a.push((i * 7) % 13); i = i + 1; }
+    for (var i = 0; i < n; i++) { a.push((i * 7) % 13); }
     var idx = a.indexOf(needle);
     var sum = 0;
-    var j = 0;
-    while (j < n) { sum = sum + a[j]; j = j + 1; }
+    for each v in (a) { sum = sum + v; }
     var idxc = 0;
     if (idx < 0) { idxc = 999; } else { idxc = idx; }
     return sum + 1000 * idxc;
@@ -457,8 +402,7 @@ function cls_rec_checks() -> int {
     var sum = r["a"] + r["b"] + r["c"];
     var keys = r.keys();
     var sumkl = 0;
-    var i = 0;
-    while (i < keys.length) { sumkl = sumkl + keys[i].length; i = i + 1; }
+    for each k in (keys) { sumkl = sumkl + k.length; }
     return sum + 10 * r.length + 100 * b2i(r.has("b")) + 1000 * sumkl;
 }
 
@@ -470,10 +414,8 @@ function cls_tuple_checks() -> int {
 
 function axis_collections() {
     var ns: int[] = [0, 1, 2, 3, 5, 10, 20, 50];
-    var i = 0;
-    while (i < ns.length) {
-        chk_i("arr_script " + str(ns[i]), cls_arr_script(ns[i]), e::orc_arr_script(ns[i]));
-        i = i + 1;
+    for each n in (ns) {
+        chk_i("arr_script " + str(n), cls_arr_script(n), e::orc_arr_script(n));
     }
 
     chk_i("arr_indexof 20,5", cls_arr_indexof_sum(20, 5), e::orc_arr_indexof_sum(20, 5));
@@ -494,42 +436,47 @@ function cls_exc_trace(mode: int) -> int {
     var cth = 0;
     var fin = 0;
 
-    if (mode == 0) {
-        try {
-            body = 1;
-            value = 1;
-        } catch (err) {
-            cth = 1;
-            value = 99;
-        } finally {
-            fin = 1;
-            value = 2;
+    switch (mode) {
+        case (0) {
+            try {
+                body = 1;
+                value = 1;
+            } catch (err) {
+                cth = 1;
+                value = 99;
+            } finally {
+                fin = 1;
+                value = 2;
+            }
         }
-    } elif (mode == 1) {
-        try {
-            body = 1;
-            value = 1;
-            throw("boom");
-        } catch (err) {
-            cth = 1;
-            value = 2;
-        } finally {
-            fin = 1;
-            value = 3;
-        }
-    } elif (mode == 2) {
-        try {
+        case (1) {
             try {
                 body = 1;
                 value = 1;
                 throw("boom");
+            } catch (err) {
+                cth = 1;
+                value = 2;
             } finally {
                 fin = 1;
+                value = 3;
             }
-        } catch (err) {
-            cth = 1;
-            value = 2;
         }
+        case (2) {
+            try {
+                try {
+                    body = 1;
+                    value = 1;
+                    throw("boom");
+                } finally {
+                    fin = 1;
+                }
+            } catch (err) {
+                cth = 1;
+                value = 2;
+            }
+        }
+        case default {}
     }
 
     return value * 100 + body * 10 + cth + fin * 10000;
@@ -547,10 +494,8 @@ function cls_exc_return() -> int {
 
 function axis_exceptions() {
     var modes: int[] = [0, 1, 2];
-    var i = 0;
-    while (i < modes.length) {
-        chk_i("exc mode=" + str(modes[i]), cls_exc_trace(modes[i]), e::orc_exc_trace(modes[i]));
-        i = i + 1;
+    for each mode in (modes) {
+        chk_i("exc mode=" + str(mode), cls_exc_trace(mode), e::orc_exc_trace(mode));
     }
 
     g_body3 = 0;

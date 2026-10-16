@@ -8,6 +8,10 @@
 #
 # La multiplicacion/suma envuelven en i64 (aritmetica nativa del JIT).
 
+# Constantes del LCG de 64 bits (PCG).
+const LCG_A = 6364136223846793005;
+const LCG_C = 1442695040888963407;
+
 export class Prng {
     var s: int;
 
@@ -15,7 +19,7 @@ export class Prng {
 
     # Siguiente estado del LCG (semilla nueva + valor devuelto).
     public function next() -> int {
-        me.s = me.s * 6364136223846793005 + 1442695040888963407;
+        me.s = me.s * LCG_A + LCG_C;
         return me.s;
     }
 

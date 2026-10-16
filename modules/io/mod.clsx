@@ -54,10 +54,8 @@ export function readBytes(path: String) -> int[] { return o_read_bytes(path); }
 export function readChars(path: String) -> Char[] {
     var raw: int[] = o_read_bytes(path);
     var out: Char[] = [];
-    var i = 0;
-    while (i < raw.length) {
-        out.push(char(raw[i]));
-        i = i + 1;
+    for each b in (raw) {
+        out.push(char(b));
     }
     return out;
 }

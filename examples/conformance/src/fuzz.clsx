@@ -23,12 +23,11 @@ function main(args: String[]) -> int {
     var n = 20000;
     var ok = 0;
     var bad = 0;
-    var first = 1;
-    var i = 0;
+    var first = true;
 
     print("=== Fuzz determinista CLS vs C (N=" + str(n) + ", seed=88172645463325252) ===");
 
-    while (i < n) {
+    for (var i = 0; i < n; i++) {
         var a = p.next();
         var b = p.next();
         var op = (p.next() >> 59) & 15;      # 0..15
@@ -39,25 +38,23 @@ function main(args: String[]) -> int {
 
         # Evitar los casos que trapean el WASM (no son divergencias de valor):
         #   division/resto por cero, y INT64_MIN / -1 (overflow de div_s/rem_s).
-        var skip = 0;
-        if ((op == 3 || op == 4) && b == 0) { skip = 1; }
-        if ((op == 3 || op == 4) && a == e::i64_min() && b == -1) { skip = 1; }
+        var divmod = (op == 3 || op == 4);
+        var skip = (divmod && b == 0) || (divmod && a == e::i64_min() && b == -1);
 
-        if (skip == 0) {
+        if (!skip) {
             var got = e::dispatch_binop(op, a, b);
             var exp = e::orc_binop(op, a, b);
             if (got == exp) {
                 ok = ok + 1;
             } else {
                 bad = bad + 1;
-                if (first == 1) {
-                    first = 0;
+                if (first) {
+                    first = false;
                     print("  [MISMATCH] op=" + str(op) + " a=" + str(a) + " b=" + str(b));
                     print("             cls=" + str(got) + " c=" + str(exp));
                 }
             }
         }
-        i = i + 1;
     }
 
     print("  casos=" + str(ok + bad) + " coinciden=" + str(ok) + " divergen=" + str(bad));

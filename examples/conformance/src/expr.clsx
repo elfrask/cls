@@ -46,56 +46,68 @@ extension "examples/conformance/oracle/oracle.dll" as C {
 # 0 add 1 sub 2 mul 3 div 4 mod 5 and 6 or 7 xor 8 shl 9 shr
 # 10 eq 11 ne 12 lt 13 le 14 gt 15 ge
 
-# Evaluacion en CLS puro de una operacion binaria entera.
+# Evaluacion en CLS puro de una operacion binaria entera (dispatch por switch).
 export function dispatch_binop(op: int, a: int, b: int) -> int {
-    if (op == 0) { return a + b; }
-    elif (op == 1) { return a - b; }
-    elif (op == 2) { return a * b; }
-    elif (op == 3) { return a / b; }
-    elif (op == 4) { return a % b; }
-    elif (op == 5) { return a & b; }
-    elif (op == 6) { return a | b; }
-    elif (op == 7) { return a ^ b; }
-    elif (op == 8) { return a << b; }
-    elif (op == 9) { return a >> b; }
-    elif (op == 10) { if (a == b) { return 1; } return 0; }
-    elif (op == 11) { if (a != b) { return 1; } return 0; }
-    elif (op == 12) { if (a < b) { return 1; } return 0; }
-    elif (op == 13) { if (a <= b) { return 1; } return 0; }
-    elif (op == 14) { if (a > b) { return 1; } return 0; }
-    elif (op == 15) { if (a >= b) { return 1; } return 0; }
+    switch (op) {
+        case (0) { return a + b; }
+        case (1) { return a - b; }
+        case (2) { return a * b; }
+        case (3) { return a / b; }
+        case (4) { return a % b; }
+        case (5) { return a & b; }
+        case (6) { return a | b; }
+        case (7) { return a ^ b; }
+        case (8) { return a << b; }
+        case (9) { return a >> b; }
+        case (10) { if (a == b) { return 1; } return 0; }
+        case (11) { if (a != b) { return 1; } return 0; }
+        case (12) { if (a < b) { return 1; } return 0; }
+        case (13) { if (a <= b) { return 1; } return 0; }
+        case (14) { if (a > b) { return 1; } return 0; }
+        case (15) { if (a >= b) { return 1; } return 0; }
+        case default { return 0; }
+    }
     return 0;
 }
 
 # Idem para flotantes. Comparaciones devuelven 1.0/0.0.
 export function dispatch_binop_f(op: int, a: float, b: float) -> float {
-    if (op == 0) { return a + b; }
-    elif (op == 1) { return a - b; }
-    elif (op == 2) { return a * b; }
-    elif (op == 3) { return a / b; }
-    elif (op == 10) { if (a == b) { return 1.0; } return 0.0; }
-    elif (op == 11) { if (a != b) { return 1.0; } return 0.0; }
-    elif (op == 12) { if (a < b) { return 1.0; } return 0.0; }
-    elif (op == 13) { if (a <= b) { return 1.0; } return 0.0; }
-    elif (op == 14) { if (a > b) { return 1.0; } return 0.0; }
-    elif (op == 15) { if (a >= b) { return 1.0; } return 0.0; }
+    switch (op) {
+        case (0) { return a + b; }
+        case (1) { return a - b; }
+        case (2) { return a * b; }
+        case (3) { return a / b; }
+        case (10) { if (a == b) { return 1.0; } return 0.0; }
+        case (11) { if (a != b) { return 1.0; } return 0.0; }
+        case (12) { if (a < b) { return 1.0; } return 0.0; }
+        case (13) { if (a <= b) { return 1.0; } return 0.0; }
+        case (14) { if (a > b) { return 1.0; } return 0.0; }
+        case (15) { if (a >= b) { return 1.0; } return 0.0; }
+        case default { return 0.0; }
+    }
     return 0.0;
 }
 
 # Promocion int->float (misma op que o_mix).
 export function dispatch_mix(op: int, a: int, b: float) -> float {
     var da: float = float(a);
-    if (op == 0) { return da + b; }
-    elif (op == 1) { return da - b; }
-    elif (op == 2) { return da * b; }
-    elif (op == 3) { return da / b; }
+    switch (op) {
+        case (0) { return da + b; }
+        case (1) { return da - b; }
+        case (2) { return da * b; }
+        case (3) { return da / b; }
+        case default { return 0.0; }
+    }
     return 0.0;
 }
 
 # Unario: op 0 neg, 1 ~.
 export function dispatch_unop(op: int, a: int) -> int {
-    if (op == 0) { return -a; }
-    elif (op == 1) { return ~a; }
+    switch (op) {
+        case (0) { return -a; }
+        case (1) { return ~a; }
+        case default { return 0; }
+    }
     return 0;
 }
 

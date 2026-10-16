@@ -102,7 +102,10 @@ try {
     $findings = @(
         "01-finally-control-flow.clsx",
         "02-ffi-f64-args.clsx",
-        "03-cstring-return-utf8.clsx"
+        "03-cstring-return-utf8.clsx",
+        "04-for-each-closure-capture.clsx",
+        "05-const-int-literal-arith.clsx",
+        "06-closure-return-bool.clsx"
     )
     foreach ($f in $findings) {
         $path = "examples\conformance\findings\$f"
