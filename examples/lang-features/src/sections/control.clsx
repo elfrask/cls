@@ -1,0 +1,224 @@
+# control.clsx - eje de control de flujo completo.
+#
+# Ejercita: if/elif/else, switch/case/default, while, loop+break, for clasico
+# (++ / continue / break), for each, for each ... and idx, with, try/catch/finally
+# (normal, tras catch, propagado, con return/break/continue dentro del try) y
+# anidamiento de break/continue.
+
+import "check" as check;
+
+function ctrl_classify(n: int) -> String {
+    if (n > 10) {
+        return "grande";
+    } elif (n > 5) {
+        return "mediano";
+    } else {
+        return "pequeno";
+    }
+}
+
+function ctrl_switch(c: int) -> String {
+    var out = "";
+    switch (c) {
+        case (1) { out = "uno"; }
+        case (2) { out = "dos"; }
+        case (3) { out = "tres"; }
+        case default { out = "otro"; }
+    }
+    return out;
+}
+
+function ctrl_while_sum(limit: int) -> int {
+    var i = 0;
+    var acc = 0;
+    while (i < limit) {
+        acc = acc + i;
+        i++;
+    }
+    return acc;
+}
+
+function ctrl_loop_break() -> int {
+    var j = 0;
+    var acc = 0;
+    loop {
+        j++;
+        if (j == 4) { break; }
+        acc = acc + j;
+    }
+    return acc;
+}
+
+function ctrl_for_classic() -> String {
+    var out = "";
+    for (var k = 0; k < 6; k++) {
+        if (k == 1) { continue; }
+        if (k == 4) { break; }
+        out = out + str(k);
+    }
+    return out;
+}
+
+function ctrl_for_each() -> int {
+    var arr = [5, 6, 7];
+    var acc = 0;
+    for each v in (arr) {
+        acc = acc + v;
+    }
+    return acc;
+}
+
+function ctrl_for_each_idx() -> String {
+    var arr = [10, 20, 30];
+    var out = "";
+    for each v and idx in (arr) {
+        out = out + str(idx) + ":" + str(v) + ";";
+    }
+    return out;
+}
+
+function ctrl_with() -> int {
+    with n in (21) {
+        # nota: `with` liga `n` como Any (typeck) -> solo passthrough/print.
+        print("ctrl.with.value", n);
+    }
+    return 21;
+}
+
+function ctrl_nested_break() -> String {
+    var out = "";
+    for (var i = 0; i < 3; i++) {
+        for (var j = 0; j < 3; j++) {
+            if (j == 1) { continue; }
+            if (i == 2) { break; }
+            out = out + str(i) + str(j);
+        }
+    }
+    return out;
+}
+
+# try/finally en salida normal (sin excepcion ni return temprano).
+function ctrl_try_normal() -> String {
+    var log = "";
+    try {
+        log = log + "t";
+        log = log + "n";
+    } finally {
+        log = log + "F";
+    }
+    return log;
+}
+
+# try/catch/finally donde el catch corre y el finally tambien.
+function ctrl_try_caught() -> String {
+    var log = "";
+    try {
+        log = log + "t";
+        throw("x");
+        log = log + "no";
+    } catch (e) {
+        log = log + "C";
+    } finally {
+        log = log + "F";
+    }
+    return log;
+}
+
+# try/finally con break dentro del try (en un loop).
+function ctrl_try_break() -> String {
+    var log = "";
+    for (var i = 0; i < 5; i++) {
+        try {
+            log = log + str(i);
+            if (i == 2) { break; }
+        } finally {
+            log = log + "f";
+        }
+    }
+    return log;
+}
+
+# try/finally con continue dentro del try.
+function ctrl_try_continue() -> String {
+    var log = "";
+    for (var i = 0; i < 4; i++) {
+        try {
+            if (i == 1) { continue; }
+            log = log + str(i);
+        } finally {
+            log = log + "f";
+        }
+    }
+    return log;
+}
+
+function ctrl_propagate(level: int) -> int {
+    if (level == 0) {
+        throw("fondo");
+    }
+    return ctrl_propagate(level - 1);
+}
+
+function ctrl_try_propagated() -> String {
+    var log = "";
+    try {
+        try {
+            ctrl_propagate(3);
+        } finally {
+            log = log + "inner-finally";
+        }
+    } catch (e) {
+        log = log + "|catch:" + e;
+    }
+    return log;
+}
+
+# try/finally con `return` temprano dentro del try: el valor de retorno se
+# evalua ANTES del finally (semantica estandar) y el finally SI corre.
+var ctrl_fr_side: int = 0;
+
+function ctrl_try_finally_return() -> String {
+    var log = "";
+    try {
+        log = log + "t";
+        return log + "R";
+    } finally {
+        ctrl_fr_side = ctrl_fr_side + 1;
+        log = log + "F";
+    }
+}
+
+export function ctrl_run() -> int {
+    print("== control ==");
+    var before = check::fails();
+
+    check::assertEqStr("ctrl.if.elif", ctrl_classify(12), "grande");
+    check::assertEqStr("ctrl.if.elif2", ctrl_classify(7), "mediano");
+    check::assertEqStr("ctrl.if.else", ctrl_classify(1), "pequeno");
+
+    check::assertEqStr("ctrl.switch.1", ctrl_switch(1), "uno");
+    check::assertEqStr("ctrl.switch.2", ctrl_switch(2), "dos");
+    check::assertEqStr("ctrl.switch.default", ctrl_switch(9), "otro");
+
+    check::assertEq("ctrl.while", ctrl_while_sum(5), 10);
+    check::assertEq("ctrl.loop.break", ctrl_loop_break(), 6);
+    check::assertEqStr("ctrl.for.classic", ctrl_for_classic(), "023");
+    check::assertEq("ctrl.for.each", ctrl_for_each(), 18);
+    check::assertEqStr("ctrl.for.each.idx", ctrl_for_each_idx(), "0:10;1:20;2:30;");
+    check::assertEq("ctrl.with", ctrl_with(), 21);
+    check::assertEqStr("ctrl.nested.break", ctrl_nested_break(), "00021012");
+
+    check::assertEqStr("ctrl.try.normal", ctrl_try_normal(), "tnF");
+    check::assertEqStr("ctrl.try.caught", ctrl_try_caught(), "tCF");
+    check::assertEqStr("ctrl.try.break", ctrl_try_break(), "0f1f2f");
+    check::assertEqStr("ctrl.try.continue", ctrl_try_continue(), "0ff2f3f");
+    check::assertEqStr("ctrl.try.propagated", ctrl_try_propagated(), "inner-finally|catch:Error de runtime: fondo");
+
+    ctrl_fr_side = 0;
+    check::assertEqStr("ctrl.try.finally.return", ctrl_try_finally_return(), "tR");
+    check::assertEq("ctrl.try.finally.return.side", ctrl_fr_side, 1);
+
+    var gained = check::fails() - before;
+    if (gained == 0) { print("FEATURE control OK"); }
+    return gained;
+}

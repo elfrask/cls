@@ -1,0 +1,61 @@
+# when.clsx - eje de `when` (seleccion compile-time por entorno).
+#
+# Ejercita: prefijos os/arch/platform/abi, `target:` (tripla desnuda),
+# combinadores `or`/`not`, y la rama `default`. Solo se emite la rama que
+# matchea el Target del host.
+#
+# NOTA: el host de este runner es Windows (clx.exe, toolchain msvc). El `arch`
+# nativo de CLS es `cls-arch` (no x86_64/arm64); el platform de un SO real es
+# `pc`. Ver docs/lenguaje/multi-entorno.md y Target::host().
+
+import "check" as check;
+
+export function when_run() -> int {
+    print("== when ==");
+    var before = check::fails();
+
+    var rama = "ninguna";
+    when (os: windows) { rama = "windows"; }
+    when (os: linux) { rama = "linux"; }
+    when (os: macos) { rama = "macos"; }
+    check::assertEqStr("when.os.windows", rama, "windows");
+
+    var combo = "no";
+    when (os: windows) or (os: linux) { combo = "si"; }
+    check::assertEqStr("when.or", combo, "si");
+
+    var negado = "no";
+    when (not (os: linux)) { negado = "si"; }
+    check::assertEqStr("when.not", negado, "si");
+
+    var arch = "no";
+    when (arch: cls-arch) { arch = "si"; }
+    check::assertEqStr("when.arch", arch, "si");
+
+    var plat = "no";
+    when (platform: pc) { plat = "si"; }
+    check::assertEqStr("when.platform", plat, "si");
+
+    var abi = "no";
+    when (abi: msvc) or (abi: gnu) { abi = "si"; }
+    check::assertEqStr("when.abi", abi, "si");
+
+    # rama inactiva: no se emite (no deberia tocar el resultado)
+    var noemit = "base";
+    when (os: none) { noemit = "none"; }
+    check::assertEqStr("when.inactiva", noemit, "base");
+
+    # `target:` acepta una tripla desnuda (sin comillas). La arch nativa de CLS
+    # es `cls-arch`, asi que una tripla con arch de hardware no matchea; basta
+    # con que compile, y la rama `os: windows` del host si matchee.
+    var tgt = "no";
+    when (target: x86_64-windows-msvc) { tgt = "x86"; }
+    when (os: windows) { tgt = "windows"; }
+    check::assertEqStr("when.target.triple", tgt, "windows");
+
+    default { print("when.default.executed"); }
+
+    var gained = check::fails() - before;
+    if (gained == 0) { print("FEATURE when OK"); }
+    return gained;
+}

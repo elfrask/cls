@@ -258,6 +258,28 @@ Cada prueba se cierra con **tres roles** (agentes con contexto propio):
 
 > Cierre por prueba: `examples/reportes/<n>-<nombre>.md` (regresiones + soluciones).
 
+### 5.6 Uso obligatorio del lenguaje completo
+
+> **Las features no están de adorno.** Toda prueba (y todo módulo) debe **usar el
+> lenguaje completo**, no un subconjunto cómodo.
+
+- **Prohibido** escribir en un estilo mínimo (p. ej. solo `while` + `if/else`) si
+  existe la construcción adecuada. Usar: `if/elif/else`, `switch/case/default`,
+  `while`, `loop`, `for` clásico, `for each` y `for each … and idx`, `with`,
+  `break`/`continue`, `try/catch/finally`, `when`, `is` (narrowing), `match`…,
+  spreads `...`, interpolación/templates, `exit`/`return` según corresponda.
+- **OOP y tipos**: clases (herencia `:`, `extends`/`super`), visibilidad
+  (`private`/`protected`/`public`/`static`/`readonly`), `me`, `is`, magic
+  methods, enums (iterables), structs, genéricos `<T>`, interfaces, alias,
+  uniones, tuplas heterogéneas, records/shapes tipados, extracción `T["k"]`,
+  phantom `!T`.
+- **Prohibido el workaround que evita una feature que ya funciona.** Si una
+  feature está rota, se **reporta** (es un bug del lenguaje) y el dev de
+  correcciones la arregla; no se rodea.
+- Cada test debe dejar **cobertura de las features relevantes** (idealmente una
+  **matriz** en `examples/lang-features/`) y, en lo posible, un caso por feature
+  tocada.
+
 ---
 
 ## 6. Áreas conocidas como frágiles

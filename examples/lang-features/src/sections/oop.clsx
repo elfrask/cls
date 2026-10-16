@@ -1,0 +1,254 @@
+# oop.clsx - eje de clases y OOP.
+#
+# Ejercita: class + constructor (main) + me, herencia (':' y 'extends'),
+# super (metodo, campo, super.main), visibilidad (public/private/protected/
+# static/readonly) en accesos validos, `is` (clase/herencia/struct/enum) con
+# narrowing, upcast por anotacion (con dispatch dinamico) y magic methods.
+
+import "check" as check;
+
+# --- herencia con ':' + super.main/super.metodo/super.campo + me ---
+
+class OopAnimal {
+    var nombre: String;
+    var patas: int;
+    function main(nombre: String, patas: int) {
+        me.nombre = nombre;
+        me.patas = patas;
+    }
+    function hablar() -> String { return me.nombre + " hace ruido"; }
+};
+
+class OopPerro: OopAnimal {
+    function main(nombre: String) { super.main(nombre, 4); }
+    function hablar() -> String { return super.hablar() + " y ladra"; }
+    function patasPadre() -> int { return super.patas; }
+};
+
+class OopGato extends OopAnimal {
+    function main(nombre: String) { super.main(nombre, 4); }
+    function hablar() -> String { return "miau"; }
+};
+
+# --- visibilidad ---
+
+class OopCuenta {
+    private var saldo: float;
+    public var titular: String;
+    protected var numero: String;
+    readonly var creadoEn: int;
+    static var tasa: float = 0.05;
+
+    public function main(titular: String, numero: String) {
+        me.saldo = 0.0;
+        me.titular = titular;
+        me.numero = numero;
+        me.creadoEn = 2024;
+    }
+    public function depositar(monto: float) { me.saldo = me.saldo + monto; }
+    public function verSaldo() -> float { return me.saldo; }
+    private function auditar() -> bool { return me.saldo >= 0.0; }
+    protected function verNumero() -> String { return me.numero; }
+    public function chequear() -> bool { return me.auditar(); }
+    static function constante() -> int { return 42; }
+};
+
+class OopCuentaPremium: OopCuenta {
+    public function verNumeroHijo() -> String { return me.verNumero(); }
+};
+
+# --- is sobre struct y enum ---
+
+structure OopPunto {
+    x: int,
+    y: int,
+};
+
+structure OopPunto2 {
+    z: int,
+};
+
+enum OopColor {
+    Rojo,
+    Verde,
+    Azul,
+};
+
+# --- magic methods ---
+
+class OopVec {
+    var x: int;
+    function main(x: int) { me.x = x; }
+    function __add(o: OopVec) -> OopVec { return OopVec(me.x + o.x); }
+    function __sub(o: OopVec) -> OopVec { return OopVec(me.x - o.x); }
+    function __mul(o: OopVec) -> OopVec { return OopVec(me.x * o.x); }
+    function __div(o: OopVec) -> OopVec { return OopVec(me.x / o.x); }
+    function __mod(o: OopVec) -> OopVec { return OopVec(me.x % o.x); }
+    function __pow(o: OopVec) -> OopVec { return OopVec(me.x ** o.x); }
+    function __neg() -> OopVec { return OopVec(0 - me.x); }
+    function __equals(o: OopVec) -> bool { return me.x == o.x; }
+    function __compare(o: OopVec) -> int {
+        if (me.x < o.x) { return -1; }
+        if (me.x > o.x) { return 1; }
+        return 0;
+    }
+    function __repr() -> String { return "R" + str(me.x); }
+    function __toString() -> String { return "T" + str(me.x); }
+    function __len() -> int { return me.x; }
+    function __int() -> int { return me.x * 10; }
+    function __float() -> float { return float(me.x) + 0.5; }
+    function __bool() -> bool { return me.x != 0; }
+    function __type() -> String { return "Vec"; }
+    function __not() -> bool { return me.x == 0; }
+    function __contains(n: int) -> bool { return n == me.x; }
+};
+
+class OopLista {
+    var items: int[];
+    function main() { me.items = [1, 2, 3]; }
+    function __get(i: int) -> int { return me.items[i]; }
+    function __set(i: int, v: int) { me.items[i] = v; }
+    function __len() -> int { return len(me.items); }
+};
+
+class OopDoble {
+    function __call(x: int) -> int { return x * 2; }
+};
+
+class OopRango {
+    var max: int;
+    var i: int = 0;
+    function main(max: int) { me.max = max; }
+    function __iter() -> OopRango { return me; }
+    function __next() -> int {
+        if (me.i >= me.max) { return null; }
+        var v = me.i;
+        me.i = me.i + 1;
+        return v;
+    }
+};
+
+function oop_inheritance() -> int {
+    var perro = OopPerro("Rex");
+    check::assertEqStr("oop.super.method", perro.hablar(), "Rex hace ruido y ladra");
+    check::assertEq("oop.super.field", perro.patasPadre(), 4);
+    check::assertEq("oop.me.nombre", perro.patas, 4);
+    var gato = OopGato("Michi");
+    check::assertEqStr("oop.extends", gato.hablar(), "miau");
+    check::assertEqStr("oop.extend.hereda", gato.nombre, "Michi");
+    return 0;
+}
+
+function oop_visibility() -> int {
+    var c = OopCuenta("Ana", "ES1234");
+    c.depositar(100.5);
+    check::assertEqStr("oop.public.method", str(c.verSaldo()), "100.5");
+    check::assertEqStr("oop.public.field", c.titular, "Ana");
+    check::assertEq("oop.readonly.read", c.creadoEn, 2024);
+    check::assertEqStr("oop.static", str(OopCuenta.tasa), "0.05");
+    check::assertEq("oop.static.method", OopCuenta.constante(), 42);
+    check::assertTrue("oop.private.via.public", c.chequear());
+    var p = OopCuentaPremium("Bob", "ES99");
+    check::assertEqStr("oop.protected.via.subclass", p.verNumeroHijo(), "ES99");
+    return 0;
+}
+
+function oop_is() -> int {
+    var a = OopAnimal("X", 2);
+    var perro = OopPerro("Rex");
+    check::assertTrue("oop.is.direct", perro is OopPerro);
+    check::assertTrue("oop.is.base", perro is OopAnimal);
+    check::assertTrue("oop.is.not", !(a is OopPerro));
+    var pt = OopPunto(1, 2);
+    check::assertTrue("oop.is.struct", pt is OopPunto);
+    check::assertTrue("oop.is.struct.not", !(pt is OopPunto2));
+    var col = OopColor.Verde;
+    check::assertTrue("oop.is.enum", col is OopColor);
+    return 0;
+}
+
+# narrowing: dentro de `if (b is OopPerro)` el typeck estrecha `b` a OopPerro y
+# permite llamar metodos que solo existen en la subclase.
+function oop_narrow_hablar(b: OopAnimal) -> String {
+    if (b is OopPerro) {
+        return str(b.patasPadre());
+    }
+    return "no-perro";
+}
+
+function oop_narrowing() -> int {
+    check::assertEqStr("oop.narrow.derived", oop_narrow_hablar(OopPerro("Rex")), "4");
+    check::assertEqStr("oop.narrow.base", oop_narrow_hablar(OopAnimal("X", 2)), "no-perro");
+    return 0;
+}
+
+# upcast: asignar una instancia derivada a una variable del tipo base, y que el
+# dispatch dinamico llame al override (no al metodo base).
+function oop_upcast() -> int {
+    var d = OopPerro("Rex");
+    var b: OopAnimal = d;
+    check::assertEqStr("oop.upcast.dispatch", b.hablar(), "Rex hace ruido y ladra");
+    check::assertEqStr("oop.upcast.field", b.nombre, "Rex");
+    var arr: OopAnimal[] = [OopPerro("A"), OopPerro("B")];
+    check::assertEqStr("oop.upcast.array.dispatch", arr[0].hablar(), "A hace ruido y ladra");
+    return 0;
+}
+
+function oop_magics() -> int {
+    var a = OopVec(6);
+    var b = OopVec(2);
+    # `str(obj)`/`toString(obj)` usan `__toString` (T...); `print(obj)` usa __repr (R...).
+    check::assertEqStr("oop.magic.add", str(a + b), "T8");
+    check::assertEqStr("oop.magic.sub", str(a - b), "T4");
+    check::assertEqStr("oop.magic.mul", str(a * b), "T12");
+    check::assertEqStr("oop.magic.div", str(a / b), "T3");
+    check::assertEqStr("oop.magic.mod", str(a % b), "T0");
+    check::assertEqStr("oop.magic.pow", str(OopVec(2) ** OopVec(3)), "T8");
+    check::assertEqStr("oop.magic.neg", str(-a), "T-6");
+    check::assertTrue("oop.magic.equals", a == OopVec(6));
+    check::assertTrue("oop.magic.notequals", a != b);
+    check::assertTrue("oop.magic.compare.lt", b < a);
+    check::assertTrue("oop.magic.compare.gt", a > b);
+    check::assertTrue("oop.magic.compare.le", b <= a);
+    print("oop.magic.repr", a);
+    check::assertEqStr("oop.magic.tostring", toString(a), "T6");
+    check::assertEq("oop.magic.len", len(a), 6);
+    check::assertEq("oop.magic.int", int(a), 60);
+    check::assertEqStr("oop.magic.float", str(float(a)), "6.5");
+    check::assertTrue("oop.magic.bool", bool(a));
+    check::assertTrue("oop.magic.bool.false", !bool(OopVec(0)));
+    check::assertEqStr("oop.magic.type", type(a), "Vec");
+    check::assertTrue("oop.magic.not", !OopVec(0));
+    check::assertTrue("oop.magic.contains", 6 in a);
+    check::assertTrue("oop.magic.contains.not", !(9 in a));
+
+    var l = OopLista();
+    check::assertEq("oop.magic.get", l[1], 2);
+    l[1] = 99;
+    check::assertEq("oop.magic.set", l[1], 99);
+    check::assertEq("oop.magic.len.class", len(l), 3);
+
+    var d = OopDoble();
+    check::assertEq("oop.magic.call", d(21), 42);
+
+    var acc = 0;
+    for each x in (OopRango(3)) {
+        acc = acc + x;
+    }
+    check::assertEq("oop.magic.iter", acc, 3);
+    return 0;
+}
+
+export function oop_run() -> int {
+    print("== oop ==");
+    var before = check::fails();
+    oop_inheritance();
+    oop_visibility();
+    oop_is();
+    oop_narrowing();
+    oop_upcast();
+    oop_magics();
+    var gained = check::fails() - before;
+    if (gained == 0) { print("FEATURE oop OK"); }
+    return gained;
+}

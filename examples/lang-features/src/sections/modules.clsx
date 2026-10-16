@@ -1,0 +1,82 @@
+# modules.clsx - eje del sistema de modulos.
+#
+# Ejercita: `import "x" as ns` (namespacing `ns::sym`), `from "x" import a, b as c`,
+# re-export (barrel `export { ns::sym as alias }` + `export { ... } from "mod"`),
+# simbolos transversales (const/var/funcion/clase/enum) y modulos compartidos de
+# /modules (bytes, prng).
+
+import "check" as check;
+
+import "lib/util" as util;
+from "lib/util" import saludar as saludarFn, suma as sumaUtil, VERSION as versionUtil, contador as contadorUtil;
+from "lib/index" import saludar as saludarBarrel, suma as sumaBarrel, VERSION as versionBarrel, Caja as CajaBarrel, Color as ColorBarrel;
+
+import "bytes" as bytes;
+import "prng" as prng;
+
+function modules_namespace() -> int {
+    check::assertEqStr("mod.ns.fn", util::saludar("NS"), "Hola NS");
+    check::assertEq("mod.ns.fn2", util::suma(2, 3), 5);
+    check::assertEqStr("mod.ns.const", util::VERSION, "1.0");
+    var c = util::Caja(7);
+    check::assertEq("mod.ns.class", c.get(), 7);
+    check::assertTrue("mod.ns.enum", util::Color.Verde is util::Color);
+    return 0;
+}
+
+function modules_from_import() -> int {
+    check::assertEqStr("mod.from.rename", saludarFn("F"), "Hola F");
+    check::assertEq("mod.from.normal", sumaUtil(10, 20), 30);
+    check::assertEqStr("mod.from.const", versionUtil, "1.0");
+    return 0;
+}
+
+function modules_reexport_barrel() -> int {
+    check::assertEqStr("mod.barrel.fn", saludarBarrel("B"), "Hola B");
+    check::assertEq("mod.barrel.fn2", sumaBarrel(1, 1), 2);
+    check::assertEqStr("mod.barrel.const", versionBarrel, "1.0");
+    var c = CajaBarrel(5);
+    check::assertEq("mod.barrel.class", c.get(), 5);
+    check::assertTrue("mod.barrel.enum", ColorBarrel.Verde is ColorBarrel);
+    return 0;
+}
+
+function modules_transversal_var() -> int {
+    # `var` exportada mutable compartida (estado de modulo).
+    var a = util::incrementar();
+    var b = util::incrementar();
+    check::assertEq("mod.var.transversal.1", a, 1);
+    check::assertEq("mod.var.transversal.2", b, 2);
+    # el export var es LIVE via namespace (`util::contador` == 2).
+    check::assertEq("mod.var.namespace.live", util::contador, 2);
+    # ... pero el binding `from ... import contador` es una COPIA del valor en el
+    # momento de la carga (0), no un binding vivo (limitacion, ver README).
+    check::assertEq("mod.var.from.snapshot", contadorUtil, 0);
+    return 0;
+}
+
+function modules_shared() -> int {
+    # /modules/bytes: hex de los bytes de "ab".
+    check::assertEqStr("mod.bytes.hex", bytes::hexEncode("ab".toChar()), "6162");
+    check::assertEq("mod.bytes.roundtrip", bytes::ord(char(65)), 65);
+    # /modules/prng: LCG determinista (misma semilla -> misma secuencia).
+    var p1 = prng::Prng(12345);
+    var p2 = prng::Prng(12345);
+    check::assertEq("mod.prng.deterministic", p1.nextInt(1000), p2.nextInt(1000));
+    var p3 = prng::Prng(1);
+    check::assertTrue("mod.prng.range", p3.nextInt(10) >= 0);
+    return 0;
+}
+
+export function modules_run() -> int {
+    print("== modules ==");
+    var before = check::fails();
+    modules_namespace();
+    modules_from_import();
+    modules_reexport_barrel();
+    modules_transversal_var();
+    modules_shared();
+    var gained = check::fails() - before;
+    if (gained == 0) { print("FEATURE modules OK"); }
+    return gained;
+}

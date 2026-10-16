@@ -1,0 +1,11 @@
+# NEGATIVO: leer un campo `protected` desde fuera (sin ser subclase) debe fallar.
+class C {
+    protected var n: String;
+    function main() { me.n = "x"; }
+};
+
+function main(args: String[]) -> int {
+    var c = C();
+    print(c.n);
+    return 0;
+}

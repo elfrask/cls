@@ -1,0 +1,57 @@
+# enums.clsx - eje de enums.
+#
+# Ejercita: declaracion de variantes, acceso namespaced Enum.Var, `==` por
+# identidad, `is`, e iteracion (`for each` y `for each ... and idx`).
+
+import "check" as check;
+
+enum EnNivel {
+    Bajo,
+    Medio,
+    Alto,
+};
+
+enum EnDireccion {
+    Norte,
+    Sur,
+    Este,
+    Oeste,
+};
+
+function enums_values() -> int {
+    var n = EnNivel.Alto;
+    check::assertEqStr("enum.print", str(n), "Alto");
+    check::assertTrue("enum.eq", n == EnNivel.Alto);
+    check::assertTrue("enum.ne", n != EnNivel.Bajo);
+    check::assertTrue("enum.is", n is EnNivel);
+    check::assertTrue("enum.is.variante", EnNivel.Medio is EnNivel);
+    var d = EnDireccion.Oeste;
+    check::assertEqStr("enum.otro", str(d), "Oeste");
+    check::assertTrue("enum.identidad.distinta", EnNivel.Alto != EnDireccion.Norte);
+    return 0;
+}
+
+function enums_iterate() -> int {
+    var names = "";
+    for each v in (EnNivel) {
+        names = names + str(v) + ",";
+    }
+    check::assertEqStr("enum.iter", names, "Bajo,Medio,Alto,");
+
+    var idxs = "";
+    for each v and i in (EnDireccion) {
+        idxs = idxs + str(i) + ":" + str(v) + ";";
+    }
+    check::assertEqStr("enum.iter.idx", idxs, "0:Norte;1:Sur;2:Este;3:Oeste;");
+    return 0;
+}
+
+export function enums_run() -> int {
+    print("== enums ==");
+    var before = check::fails();
+    enums_values();
+    enums_iterate();
+    var gained = check::fails() - before;
+    if (gained == 0) { print("FEATURE enums OK"); }
+    return gained;
+}

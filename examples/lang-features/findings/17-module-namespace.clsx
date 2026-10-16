@@ -1,0 +1,28 @@
+# finding 17 - las declaraciones `module`/`namespace` no exponen sus simbolos
+# en el JIT.
+#
+# docs/lenguaje/modulos.md: "ambas ejecutan el body en un scope aislado y
+# registran los simbolos definidos como un Record con el nombre dado ...
+# accesibles luego via Nombre.miembro / Nombre::miembro".
+#
+# El JIT rechaza el acceso a los miembros:
+#   NS::hi()  -> "'hi' no existe o no se exporta en 'NS'"
+#   Geo.area(...) -> "El JIT (subconjunto WASM) aun no soporta esta expresion"
+#
+# Esperado: los simbolos `export` dentro de module/namespace deberian ser
+# accesibles via Nombre::miembro / Nombre.miembro.
+
+namespace NS {
+    export function hi() -> String { return "hi"; }
+    export const K = 3;
+}
+
+module Geo {
+    export function area(w: int, h: int) -> int { return w * h; }
+}
+
+function main(args: String[]) -> int {
+    print("ns", NS::hi(), NS::K);
+    print("mod", Geo.area(3, 4));
+    return 0;
+}

@@ -1,0 +1,10 @@
+# index.clsx - barrel: reexporta simbolos de util.
+# Ejercita `export { ns::sym as alias }` y `export { ... } from "mod"`.
+
+import "lib/util" as util;
+
+# `ns::sym as alias` (miembro de namespace reexportado con rename)
+export { util::saludar as saludar, util::suma as suma, util::VERSION as VERSION };
+
+# reexport `from` (importa y reexporta en una sola declaracion)
+export { Caja, Color } from "lib/util";

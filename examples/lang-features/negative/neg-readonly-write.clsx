@@ -1,0 +1,11 @@
+# NEGATIVO: escribir un campo `readonly` desde fuera debe fallar.
+class C {
+    readonly var v: int;
+    function main() { me.v = 1; }
+};
+
+function main(args: String[]) -> int {
+    var c = C();
+    c.v = 9;
+    return 0;
+}
