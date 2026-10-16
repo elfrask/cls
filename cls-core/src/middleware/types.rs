@@ -67,6 +67,18 @@ impl LitVal {
 }
 
 impl Type {
+    /// El tipo base de un literal type (`5` -> `Int`, `"x"` -> `String`); el
+    /// resto de tipos se devuelven igual. Se usa para que un `const` de literal
+    /// (p. ej. `const N = 5`) participe en operadores como su tipo base
+    /// (`N + x` es aritmética de Int), sin perder el literal para assignability
+    /// (uniones de literales, narrowing). Ver `check_binary`.
+    pub fn literal_base(&self) -> Type {
+        match self {
+            Type::Literal(v) => v.base_type(),
+            _ => self.clone(),
+        }
+    }
+
     pub fn is_assignable_to(&self, other: &Type) -> bool {
         match (self, other) {
             // Any puede ser cualquier cosa

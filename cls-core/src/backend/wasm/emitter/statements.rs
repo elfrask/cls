@@ -247,9 +247,20 @@ impl<'a> FuncEmitter<'a> {
 
 
     /// `switch (v) { case (p) { ... } case default { ... } }` (sin fallthrough).
+    /// La comparación es por VALOR del tipo del switch: String por contenido
+    /// (`__intr_str_eq`, como `==`), Int/enum por `i64.eq`, Bool/Char por
+    /// `i32.eq`. Sin esto, `switch` sobre String comparaba el handle empaquetado
+    /// (solo matcheaba el literal internado) y sobre Bool/Char emitía WASM
+    /// inválido (`i64.eq` con un operando i32).
     pub(crate) fn emit_switch(&mut self, s: &SwitchStatement) -> ClsResult<()> {
+        let is_str = self.is_string_expr(&s.value);
+        let was_ty = if is_str {
+            WasTy::I64
+        } else {
+            self.value_type(&s.value)?
+        };
         self.emit_expression(&s.value)?;
-        let v = self.fresh_local();
+        let v = self.fresh_local_ty(was_ty);
         self.body.push(Instruction::LocalSet(v));
         let d = self.block_depth;
         self.block_depth += 1;
@@ -268,7 +279,11 @@ impl<'a> FuncEmitter<'a> {
                 }
                 CasePattern::Default => {}
             }
-            self.push_eq(WasTy::I64)?;
+            if is_str {
+                self.emit_str_host("__intr_str_eq");
+            } else {
+                self.push_eq(was_ty)?;
+            }
             self.block_depth += 1;
             self.body.push(Instruction::If(BlockType::Empty));
             // Cada case es una rama independiente (alcanzable por el else del

@@ -6,6 +6,67 @@ impl<'a> FuncEmitter<'a> {
 
 
 
+    /// Asigna el valor de la variable de iteración del `for each` respetando la
+    /// promoción a heap: si la variable es capturada por una closure del cuerpo,
+    /// cada iteración aloja un slot NUEVO `[valor]` y deja el ptr en el local —
+    /// así la closure captura el valor de ESA iteración (binding por iteración,
+    /// igual que un `var` de cuerpo del `for` clásico). Sin captura, es un
+    /// `local.set` directo. Consume el valor de la variable del stack.
+    fn emit_foreach_bind(&mut self, local: u32, name: &str, ty: WasTy) {
+        if self.promoted.contains(name) {
+            let val_tmp = self.fresh_local_ty(ty);
+            self.body.push(match ty {
+                WasTy::F64 => Instruction::LocalSet(val_tmp),
+                WasTy::I32 => Instruction::LocalSet(val_tmp),
+                WasTy::I64 => Instruction::LocalSet(val_tmp),
+            });
+            self.body.push(Instruction::I64Const(8));
+            let alloc = self.func_indexes["__alloc"];
+            self.body.push(Instruction::Call(alloc));
+            self.body.push(Instruction::LocalSet(local));
+            self.body.push(Instruction::LocalGet(local));
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(match ty {
+                WasTy::F64 => Instruction::LocalGet(val_tmp),
+                WasTy::I32 => Instruction::LocalGet(val_tmp),
+                WasTy::I64 => Instruction::LocalGet(val_tmp),
+            });
+            match ty {
+                WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
+                WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
+                    offset: 0,
+                    align: 2,
+                    memory_index: 0,
+                })),
+                WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                })),
+            }
+        } else {
+            self.body.push(match ty {
+                WasTy::F64 => Instruction::LocalSet(local),
+                WasTy::I32 => Instruction::LocalSet(local),
+                WasTy::I64 => Instruction::LocalSet(local),
+            });
+        }
+    }
+
+    /// Declara el local de la variable de iteración: I64 (ptr al slot) si está
+    /// promovida por captura, si no el tipo del elemento.
+    fn declare_foreach_item(&mut self, name: &str, elem_ty: WasTy) -> u32 {
+        if self.promoted.contains(name) {
+            self.declare_var_ty(name, WasTy::I64)
+        } else {
+            self.declare_var_ty(name, elem_ty)
+        }
+    }
+
     /// `arr.map(f)` - aplica la función (handle) a cada elemento y devuelve un
     /// array nuevo con los resultados. El array original YA está en el stack
     /// (lo emitió el dispatch del método).
@@ -245,7 +306,7 @@ impl<'a> FuncEmitter<'a> {
                 let i = self.fresh_local();
                 self.body.push(Instruction::I64Const(0));
                 self.body.push(Instruction::LocalSet(i));
-                let item_local = self.declare_var_ty(&fe.item_name, WasTy::I64);
+                let item_local = self.declare_foreach_item(&fe.item_name, WasTy::I64);
                 if let Some(iname) = &fe.index_name {
                     self.declare_var_ty(iname, WasTy::I64);
                 }
@@ -270,11 +331,11 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Const((def_id as i64) << 32));
                 self.body.push(Instruction::LocalGet(i));
                 self.body.push(Instruction::I64Or);
-                self.body.push(Instruction::LocalSet(item_local));
+                self.emit_foreach_bind(item_local, &fe.item_name, WasTy::I64);
                 if let Some(iname) = &fe.index_name {
                     let idx_local = self.local_for(iname);
                     self.body.push(Instruction::LocalGet(i));
-                    self.body.push(Instruction::LocalSet(idx_local));
+                    self.emit_foreach_bind(idx_local, iname, WasTy::I64);
                 }
                 self.dead_flow = false;
                 self.emit_scoped_block(&fe.block)?;
@@ -384,7 +445,7 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::I64Const(0));
         self.body.push(Instruction::LocalSet(i));
         let saved = self.enter_var_scope();
-        let item_local = self.declare_var_ty(&fe.item_name, elem_ty);
+        let item_local = self.declare_foreach_item(&fe.item_name, elem_ty);
         if let Some(iname) = &fe.index_name {
             self.declare_var_ty(iname, WasTy::I64);
         }
@@ -440,15 +501,11 @@ impl<'a> FuncEmitter<'a> {
                 memory_index: 0,
             })),
         }
-        self.body.push(match elem_ty {
-            WasTy::F64 => Instruction::LocalSet(item_local),
-            WasTy::I32 => Instruction::LocalSet(item_local),
-            WasTy::I64 => Instruction::LocalSet(item_local),
-        });
+        self.emit_foreach_bind(item_local, &fe.item_name, elem_ty);
         if let Some(iname) = &fe.index_name {
             let idx_local = self.local_for(iname);
             self.body.push(Instruction::LocalGet(i));
-            self.body.push(Instruction::LocalSet(idx_local));
+            self.emit_foreach_bind(idx_local, iname, WasTy::I64);
         }
         self.dead_flow = false;
         self.emit_scoped_block(&fe.block)?;
@@ -489,7 +546,7 @@ impl<'a> FuncEmitter<'a> {
             }
         };
         let saved = self.enter_var_scope();
-        let item_local = self.declare_var_ty(&fe.item_name, item_was);
+        let item_local = self.declare_foreach_item(&fe.item_name, item_was);
         if let Some(iname) = &fe.index_name {
             self.declare_var_ty(iname, WasTy::I64);
         }
@@ -530,15 +587,11 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::BrIf(depth));
         // item = v; index = i
         self.body.push(Instruction::LocalGet(v));
-        self.body.push(match item_was {
-            WasTy::F64 => Instruction::LocalSet(item_local),
-            WasTy::I32 => Instruction::LocalSet(item_local),
-            WasTy::I64 => Instruction::LocalSet(item_local),
-        });
+        self.emit_foreach_bind(item_local, &fe.item_name, item_was);
         if let Some(iname) = &fe.index_name {
             let idx_local = self.local_for(iname);
             self.body.push(Instruction::LocalGet(i));
-            self.body.push(Instruction::LocalSet(idx_local));
+            self.emit_foreach_bind(idx_local, iname, WasTy::I64);
         }
         self.dead_flow = false;
         self.emit_scoped_block(&fe.block)?;

@@ -74,12 +74,27 @@ impl<'a> Engine<'a> {
 
         // Recolectar enums -> (def_id, variantes) para constantes `Nivel.Alto`.
         // `when`-aware: respeta las ramas activas del target actual (dev-2 fix).
+        //
+        // La IDENTIDAD del enum es su DEFINICIÓN, no el nombre con que se importó:
+        // al aplanar, el mismo `enum E` de un módulo reaparece renombrado una vez
+        // por alias (`tk::E`, `toks::E`, ...). Todos esos clones comparten el span
+        // de la declaración fuente, así que se les asigna el MISMO def_id -> un
+        // valor producido bajo un alias compara igual (`==`/`is`) desde otro.
         let mut def_id = 0u32;
+        let mut def_id_by_span: HashMap<crate::error::diagnostic::Span, u32> = HashMap::new();
         for stmt in self.effective_statements(&module.statements) {
             if let Statement::EnumDecl(e) = stmt {
+                let id = match def_id_by_span.get(&e.span) {
+                    Some(&id) => id,
+                    None => {
+                        let id = def_id;
+                        def_id += 1;
+                        def_id_by_span.insert(e.span.clone(), id);
+                        id
+                    }
+                };
                 self.enum_defs
-                    .insert(e.name.clone(), (def_id, e.variants.clone()));
-                def_id += 1;
+                    .insert(e.name.clone(), (id, e.variants.clone()));
             }
         }
         // Recolectar structures -> layout C ABI de campos: header CLS
@@ -777,20 +792,21 @@ impl<'a> Engine<'a> {
             };
             self.func_types
                 .insert(f.name.clone(), (params.clone(), Some(ret.clone())));
-            let mut pv: Vec<ValType> = Vec::new();
-            // Firma uniforme (B5 + normalización dev-2): TODA arrow recibe
-            // [capturas:i64, params:i64...] -> i64. Los params float viajan como
-            // bits (f64.reinterpret/i64.reinterpret en la frontera). Esto hace
-            // que el call_indirect del call dinámico universal SIEMPRE valide.
-            pv.push(ValType::I64);
-            for _ in &params {
-                pv.push(ValType::I64);
+            // Firma de la arrow: como una funcion CLS top-level, con `__capturas`
+            // (i64) de prefijo: [capturas, params...] -> ret. Se usan los tipos
+            // NATURALES (no todo i64): el llamador (via handle, `Type::Fun`)
+            // construye el `call_indirect` con los tipos reales del callee, asi
+            // que la firma declarada debe coincidir. Normalizar todo a i64 emitia
+            // el `end` con i32 (`==` -> Bool) o f64 (Float) y el modulo WASM era
+            // invalido ("expected i64, found i32/f64").
+            let mut pv: Vec<ValType> = vec![ValType::I64];
+            for t in &params {
+                pv.push(was_type(t)?.val_type());
             }
-            // Retorno: Void -> sin result; todo lo demás -> i64 (los f64 van como bits)
             let rv: Vec<ValType> = if matches!(ret, Type::Void) {
                 vec![]
             } else {
-                vec![ValType::I64]
+                vec![was_type(&ret)?.val_type()]
             };
             let tidx = self.register_func_type(pv.clone(), rv.clone());
             let fidx = self.func_count;
