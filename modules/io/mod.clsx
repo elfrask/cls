@@ -47,6 +47,21 @@ export function readText(path: String) -> String { return o_read_text(path); }
 # Lee el archivo como bytes crudos (seguro con bytes NUL). [] si no se pudo leer.
 export function readBytes(path: String) -> int[] { return o_read_bytes(path); }
 
+# [EXPERIMENTAL] Igual que `readBytes` pero expone el buffer como `Char[]`
+# (modelo str/bytes: `Char` = unidad de 1 byte, 0..255). Se implementa en CLS
+# convirtiendo el `int[]` del shim, porque el marshalling de `CArray` del FFI
+# hoy usa stride de 8 bytes (ver README). NO reemplaza a `readBytes`.
+export function readChars(path: String) -> Char[] {
+    var raw: int[] = o_read_bytes(path);
+    var out: Char[] = [];
+    var i = 0;
+    while (i < raw.length) {
+        out.push(char(raw[i]));
+        i = i + 1;
+    }
+    return out;
+}
+
 # Escribe (trunca) el archivo, byte-exacto. Devuelve los bytes escritos, -1 error.
 export function writeText(path: String, data: String) -> int {
     return int(o_write_text(path, data));

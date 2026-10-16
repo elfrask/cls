@@ -17,6 +17,7 @@ libc, y **nunca expone punteros** a CLS: todo via `CString`/`CArray`/`CLong`/
 |---|---|
 | `readText(path) -> String` | archivo completo como texto (null-terminated) |
 | `readBytes(path) -> int[]` | archivo completo como bytes crudos (seguro con NUL) |
+| `readChars(path) -> Char[]` | **[experimental]** igual que `readBytes` pero como buffer `Char[]` (0..255); ver *Buffers con `Char`* |
 | `writeText(path, data) -> int` | escribe (trunca) byte-exacto; bytes escritos o -1 |
 | `appendText(path, data) -> int` | agrega al final byte-exacto; bytes escritos o -1 |
 | `exists(path) -> int` | 1/0 |
@@ -42,6 +43,24 @@ var src = io::readText("src/main.clsx");
 io::writeText("out.txt", "hola\n");
 var raw = io::readBytes("data.bin");   # int[] seguro con bytes NUL
 ```
+
+## Buffers con `Char` (`readChars`, experimental)
+
+`Char` es la **unidad de 1 byte** para trabajo con buffers (modelo `bytes`/`str`
+de Python), junto a `String.toChar()`/`char()`/`ord()`. `readChars` expone el
+archivo como `Char[]`:
+
+```clx
+var buf = io::readChars("data.bin");   # Char[] (0..255)
+var hex = bytes::hexEncode(buf);       # buffer -> hex
+var s   = buf.join("");                # Char[] -> String (byte-exacto)
+```
+
+> **Por qué convive con `readBytes`:** el marshalling de `CArray` del FFI hoy usa
+> **stride de 8 bytes** (solo `int[]`), y un `Char[]` es i32 (stride 4). Por eso
+> `readChars` se implementa **convirtiendo en CLS** el `int[]` del shim
+> (transitorio), sin tocar el FFI ni eliminar `readBytes`. Cuando el FFI soporte
+> `Char[]` (stride 4) nativamente, `readChars` podrá cruzar directo (sin copia).
 
 ## Compilar / consumir
 
