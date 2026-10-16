@@ -12,13 +12,10 @@ independiente del lenguaje.
 examples/clsh/
 ├── cls.json                 # { name, version, entry, pathModules }
 ├── src/
-│   ├── main.clsx            # CLI: fija fd 0/1/2 en binario, lee el .sh (FFI) y lo corre
-│   ├── ffi.clsx             # puente FFI (único acceso al SO): I/O de archivos, cwd, fd
+│   ├── main.clsx            # CLI: fija fd 0/1/2 en binario, lee el .sh y lo corre
+│   ├── ffi.clsx             # adaptador sobre modules/io (único acceso al SO)
 │   ├── lexer.clsx           # tokenizador (operadores, comillas, escapes, $())
 │   └── shell.clsx           # intérprete: expansión, builtins, control, pipes, redirs
-├── oracle/
-│   ├── clsh_io.c            # puente C (open/read/write/chdir/stat) — tipos sancionados FFI
-│   └── clsh_io.dll          # compilado (gcc -shared)
 ├── tests/*.sh               # corpus canónico
 ├── tests/*.expect           # stdout esperado (generado por dash)
 ├── tests/*.expect.err       # stderr esperado
@@ -26,6 +23,12 @@ examples/clsh/
 ├── findings/                # repros mínimos de regresiones (ver findings/README.md)
 └── run.ps1                  # runner diferencial (genera .expect y compara)
 ```
+
+El acceso al SO ya **no vive en la prueba**: se consume el módulo compartido
+**`modules/io`** (`examples/patrones.md` §11.5). `src/ffi.clsx` es un adaptador
+que importa `io` y expone a clsh sus nombres (`read_file`, `write_fd`, `open`,
+`getcwd`, ...). El shell usa los métodos de `String` (`.length`, `.slice`) y el
+literal `"$"` (sin el workaround `dollar()`).
 
 ## Cómo correr
 
@@ -36,7 +39,7 @@ CWD):
 # un script suelto (ojo: los args de la app van tras `--`)
 target\debug\clx.exe run examples\clsh\src\main.clsx -- examples\clsh\tests\echo.sh
 
-# toda la suite (compila el oráculo si falta, regenera .expect, compara, exit!=0 si diverge)
+# toda la suite (compila modules/io, regenera .expect, compara, exit!=0 si diverge)
 powershell -File examples\clsh\run.ps1
 ```
 
@@ -92,22 +95,22 @@ La construcción del shell destapó **4 regresiones del lenguaje/JIT**
 
 | # | Feature | Síntoma | Estado en el scaffold |
 |---|---------|---------|-----------------------|
-| 1 | literal `"…$"` (termina en `$`) | **cuelga el compilador** (parseo/typeck) | rodeado (`ffi::dollar()`) |
+| 1 | literal `"…$"` (termina en `$`) | **cuelga el compilador** (parseo/typeck) | **corregido** — se usa el literal `"$"` |
 | 2 | `>` `<` `>=` `<=` de `String` | resultado **invertido** | rodeado (`contains`) |
 | 3 | `var` en bloques: scope plano por función | error "ya declarado" | renombrado |
-| 4 | FFI retorno `CString` sin param `CString` | error de tipo espurio | param dummy |
+| 4 | FFI retorno `CString` sin param `CString` | error de tipo espurio | **corregido** — `io::cwd()` sin dummy |
 
 ## Reglas de autocontención
 
-- Todo el I/O pasa por `oracle/clsh_io.c` vía `extension` (FFI). **No** se usan
-  `fs`/`http`/`json`/`strings`.
-- **No** se exponen punteros crudos: solo `CString`/`CInt`/`CLong`.
+- Todo el I/O pasa por el módulo compartido **`modules/io`** (FFI + CLS). **No**
+  se usan `fs`/`http`/`json`/`strings` ni `host_calls`.
+- **No** se exponen punteros crudos: solo `CString`/`CArray`/`CInt`/`CLong`.
 - El runtime del shell es CLS puro (`lexer.clsx`, `shell.clsx`).
 
-## Compilar el oráculo C
+## Compilar el puente de I/O (módulo compartido)
 
 ```powershell
-gcc -shared -O2 -o examples\clsh\oracle\clsh_io.dll examples\clsh\oracle\clsh_io.c
+powershell -File modules\io\build.ps1
 ```
 
-`run.ps1` lo recompila automáticamente si el `.c` es más nuevo que el `.dll`.
+`run.ps1` lo invoca automáticamente.

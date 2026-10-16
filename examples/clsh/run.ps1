@@ -32,21 +32,12 @@ if (-not (Test-Path $clx)) {
     exit 2
 }
 
-# --- oraculo C (puente FFI) ---
-$oracleSrc = Join-Path $here "oracle\clsh_io.c"
-$oracleDll = Join-Path $here "oracle\clsh_io.dll"
-$gcc = Get-Command gcc -ErrorAction SilentlyContinue
-$needBuild = (-not (Test-Path $oracleDll)) -or ((Get-Item $oracleSrc).LastWriteTime -gt (Get-Item $oracleDll).LastWriteTime)
-if ($needBuild) {
-    if (-not $gcc) {
-        Write-Host "ERROR: falta clsh_io.dll y no hay gcc para compilarlo."
-        Write-Host "  gcc -shared -O2 -o oracle\clsh_io.dll oracle\clsh_io.c"
-        exit 2
-    }
-    Write-Host "== compilando oraculo C (clsh_io.dll) =="
-    & gcc -shared -O2 -o $oracleDll $oracleSrc
-    if ($LASTEXITCODE -ne 0) { exit 1 }
-}
+# --- modulo compartido de I/O (modules/io): unico acceso al SO via FFI ---
+# (extraido de la prueba a /modules; ver examples/patrones.md §11.5)
+$buildPs1 = Join-Path $repo "modules\io\build.ps1"
+if (-not (Test-Path $buildPs1)) { Write-Host "ERROR: no existe $buildPs1"; exit 2 }
+& $buildPs1
+if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: modules/io/build.ps1 fallo."; exit 1 }
 
 # Limite de tiempo para que un bucle infinito no cuelgue la suite.
 $env:CLS_TIME_LIMIT = "20000"

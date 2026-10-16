@@ -31,6 +31,16 @@ if (-not (Test-Path $clx)) {
     exit 2
 }
 
+# --- 0. modulos compartidos de /modules que consume la prueba ---
+#   io    : lectura de archivos (readText/readBytes) via FFI
+#   bytes : codigo de byte (ord) + diff (firstDiff) via FFI+CLS
+foreach ($mod in @("io", "bytes")) {
+    $b = Join-Path $repo "modules\$mod\build.ps1"
+    if (-not (Test-Path $b)) { Write-Host "ERROR: no existe $b"; exit 2 }
+    & $b
+    if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: modules/$mod/build.ps1 fallo."; exit 1 }
+}
+
 # --- 1. compilar oraculo si falta o esta viejo ---
 $dll = Join-Path $oracleDir "bf.dll"
 $cli = Join-Path $oracleDir "bf_oracle.exe"

@@ -1,65 +1,39 @@
-# ffi.clsx - Puente FFI de clsh (unico acceso al SO).
+# ffi.clsx - Puente de I/O de clsh sobre el modulo compartido `io` (/modules).
 #
 # Regla de autocontencion (examples/patrones.md §2): CLS puro + FFI a C; nada de
-# fs/http/json/strings ni host_calls. No se exponen punteros crudos al codigo
-# CLS: todo via CString/CArray/CLong/CInt.
+# fs/http/json/strings ni host_calls. Tras la extraccion a /modules (§11.5),
+# este archivo YA NO declara FFI propio: todo el acceso al SO vive en
+# `modules/io` (shim `io_shim.dll`, sin punteros: CString/CArray/CLong/CInt), y
+# aqui solo se le dan a clsh los nombres que usa.
 #
-# La ruta del .dll es relativa al CWD (limitacion conocida del FFI): por eso la
-# prueba exige correr desde la raiz del repo (ver README).
+# El shell usa metodos de `String` (`.length`, `.slice`) en vez de FFI para el
+# manejo de texto, y el literal `"$"` (el workaround `dollar()` se elimino: el
+# bug del lexer/parser con un literal terminado en "$" esta corregido).
+#
+# La ruta del `.dll` de `io` es relativa al CWD (limitacion conocida del FFI):
+# por eso la prueba exige correr desde la raiz del repo (ver README).
 
-extension "examples/clsh/oracle/clsh_io.dll" as C {
-    # NOTA (workaround de regresion del typeck): una funcion nativa SIN param
-    # resuelve su retorno al tipo C crudo (CString), no asignable a String ->
-    # el typeck aborta. Con un param `CString` el retorno infiere String. Por
-    # eso `clsh_getcwd` lleva un `CString` dummy que el C homonimo ignora (arg
-    # extra de la ABI x64). Bug caracterizado en findings/.
-    function clsh_read_file(path: CString) -> CString;
-    function clsh_str_len(s: CString) -> CLong;
-    function clsh_slice(s: CString, start: CLong, end: CLong) -> CString;
-    function clsh_getcwd(_dummy: CString) -> CString;
-    function clsh_chdir(path: CString) -> CInt;
-    function clsh_read_line(fd: CInt, _dummy: CString) -> CString;
-    function clsh_exists(path: CString) -> CInt;
-    function clsh_isdir(path: CString) -> CInt;
-    function clsh_isfile(path: CString) -> CInt;
-};
+import "io" as io;
 
-extension "msvcrt.dll" as C {
-    function _write(fd: CInt, buf: CString, n: CLong) -> CLong;
-    function _open(path: CString, flags: CInt, mode: CInt) -> CInt;
-    function _close(fd: CInt) -> CInt;
-    function _setmode(fd: CInt, mode: CInt) -> CInt;
-};
+# --- I/O de archivos --------------------------------------------------------
 
-# _O_* de msvcrt
-export const O_RDONLY = 0;
-export const O_WRONLY = 1;
-export const O_CREAT = 256;
-export const O_TRUNC = 512;
-export const O_APPEND = 8;
-export const O_BINARY = 32768;
-
-export function read_file(path: String) -> String { return clsh_read_file(path); }
-export function strlen(s: String) -> int { return int(clsh_str_len(s)); }
-export function slice(s: String, a: int, b: int) -> String { return clsh_slice(s, a, b); }
-export function getcwd() -> String { return clsh_getcwd(""); }
-# Workaround: un literal que TERMINA en "$" (p.ej. "$") cuelga el compilador
-# (bug del lexer/parser de CLS). Se obtiene el byte por slice de "$ " (el "$" no
-# queda al final). Ver findings/.
-export function dollar() -> String { return clsh_slice("$ ", 0, 1); }
-export function chdir(p: String) -> int { return int(clsh_chdir(p)); }
-export function read_line(fd: int) -> String { return clsh_read_line(fd, ""); }
-export function exists(path: String) -> int { return int(clsh_exists(path)); }
-export function isdir(path: String) -> int { return int(clsh_isdir(path)); }
-export function isfile(path: String) -> int { return int(clsh_isfile(path)); }
+export function read_file(path: String) -> String { return io::readText(path); }
+export function getcwd() -> String { return io::cwd(); }
+export function chdir(p: String) -> int { return io::chdir(p); }
+export function read_line(fd: int) -> String { return io::readLine(fd); }
+export function exists(path: String) -> int { return io::exists(path); }
+export function isdir(path: String) -> int { return io::isDir(path); }
+export function isfile(path: String) -> int { return io::isFile(path); }
 
 # Escribe los bytes de `s` al fd (byte-exacto; el fd debe estar en modo binario).
 export function write_fd(fd: int, s: String) {
-    var n = int(clsh_str_len(s));
-    if (n > 0) { _write(fd, s, n); }
+    io::writeFd(fd, s);
 }
+
+# --- Descriptores -----------------------------------------------------------
+
 export function open(path: String, flags: int, mode: int) -> int {
-    return int(_open(path, flags, mode));
+    return io::open(path, flags, mode);
 }
-export function close(fd: int) -> int { return int(_close(fd)); }
-export function setmode(fd: int, mode: int) -> int { return int(_setmode(fd, mode)); }
+export function close(fd: int) -> int { return io::close(fd); }
+export function setmode(fd: int, mode: int) -> int { return io::setmode(fd, mode); }

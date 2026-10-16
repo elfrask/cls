@@ -14,14 +14,19 @@ Todo es **CLS puro + FFI a C**: no se usa `fs`/`http`/`json`/`strings` ni
 `host_calls` nuevos, y **no se exponen punteros** al código CLS (el oráculo
 devuelve `int[]`, no `CPtr`).
 
+La I/O de archivos y las utilidades de bytes se consumen de **`/modules`**
+(`examples/patrones.md` §11.5): `modules/io` (`readText`/`readBytes`, FFI) y
+`modules/bytes` (`ord`, `firstDiff`, `hexEncode`). La prueba **no copia** ese
+código; el único FFI propio es el del oráculo BF.
+
 ## Estructura
 
 ```
 examples/brainfuck/
 ├── cls.json                 # { name, version, entry, pathModules }
 ├── src/main.clsx            # runner: lee .bf, corre CLS, corre C, compara, mide
-├── src/bf.clsx              # intérprete BF en CLS puro + puente FFI al oráculo
-├── oracle/bf.c              # intérprete BF de referencia en C (+ I/O de archivos)
+├── src/bf.clsx              # intérprete BF en CLS puro + FFI al oráculo (bf_run)
+├── oracle/bf.c              # intérprete BF de referencia en C (+ CLI de .out)
 ├── oracle/bf.dll            # compilado (gcc -shared)
 ├── oracle/bf_oracle.exe     # CLI del oráculo (regenera los .out, mide en C)
 ├── programs/*.bf            # programas de prueba
@@ -30,6 +35,9 @@ examples/brainfuck/
 ├── findings/                # repros mínimos de las regresiones halladas
 └── run.ps1                  # orquestador
 ```
+
+Consume de `/modules`: `io` (I/O de archivos), `bytes` (`ord`, `firstDiff`,
+`hexEncode`). Los `build.ps1` de `io` y `bytes` los llama `run.ps1`.
 
 ## Cómo correr
 
@@ -105,12 +113,13 @@ Ver `findings/README.md`. Resumen:
 
 ## Gaps de lenguaje (rodeados, no bloqueantes)
 
-- **Sin `ord`/`chr`**: no hay forma de obtener el código de byte de un `String`
-  de 1 byte (necesario para implementar `,` sin FFI). Se usó `bf_ord` (FFI).
-  Tampoco hay `s[i]` como código: `s[i]` devuelve un `String` de 1 byte.
+- **Sin `ord`/`chr`** (al construir la prueba): no había forma de obtener el
+  código de byte de un `String` de 1 byte (necesario para implementar `,`). Se
+  resolvió con **FFI extraído a `modules/bytes`** (`bytes::ord`).
+  `s[i]` devuelve un `String` de 1 byte, no un código.
 - **Sin bytes crudos C→CLS**: un retorno `CString` se trunca en el primer NUL
-  (usa `strlen`). Para leer bytes crudos (p. ej. el `.out` con NUL) se añadió
-  `bf_read_bytes(path) -> CArray` al oráculo.
+  (usa `strlen`). Para leer bytes crudos (p. ej. el `.out` con NUL) se usa
+  **`modules/io`** (`io::readBytes(path) -> int[]`, `CArray`).
 - **Sin allocador/memoria en CLS**: no hay intrínseco para reservar un buffer ni
   para convertir un `CPtr`/byte a `String`, así que la I/O de bytes necesita un
   helper C (FFI). `fopen`/`fgetc`/`fclose` con `CPtr` sí funcionan.
@@ -121,8 +130,9 @@ Ver `findings/README.md`. Resumen:
   `int("12")` → 12. En wasmi sigue degradado a 0 (sin excepciones WASM).
 - **Resolución de la ruta del `.dll` FFI**: el path de `extension` es relativo al
   **CWD**, no al archivo fuente (ni a la carpeta del módulo). Por eso la prueba
-  exige correr desde la raíz del repo. Esto dificulta módulos FFI reutilizables
-  en `/modules`.
+  (y los módulos de `/modules`) exigen correr desde la raíz del repo; los
+  módulos FFI resuelven la ruta con la convención `modules/<mod>/<shim>.dll`
+  + su `build.ps1`.
 
 ## Limitaciones / notas
 

@@ -4,9 +4,9 @@
 # arrays de tokens (interpreta al vuelo). Los cuerpos de if/while/for se
 # recuerdan como rangos de tokens y se re-ejecutan por iteracion.
 #
-# Todo el texto se maneja con slicing por FFI (ffi::slice) para preservar bytes
-# UTF-8 exactos; NUNCA se concatenan bytes sueltos de un String (evita el bug de
-# corrupcion de pool de strings hallado, ver findings/).
+# Todo el texto se maneja con los metodos de `String` (`.slice`) para preservar
+# bytes UTF-8 exactos; las subcadenas se obtienen por slicing (nunca se
+# recomponen bytes sueltos de otro String).
 
 import "ffi" as ffi;
 import "lexer" as lex;
@@ -411,7 +411,7 @@ export class Sh {
     function isAssignment(raw: String) -> bool {
         var eq = me.findChar(raw, "=");
         if (eq <= 0) { return false; }
-        var name = ffi::slice(raw, 0, eq);
+        var name = raw.slice(0, eq);
         var i = 0;
         var n = name.length;
         if (n == 0) { return false; }
@@ -496,8 +496,8 @@ export class Sh {
         while (ai < me.curAssign.length) {
             var a = me.curAssign[ai];
             var eq = me.findChar(a, "=");
-            var name = ffi::slice(a, 0, eq);
-            var rawv = ffi::slice(a, eq + 1, a.length);
+            var name = a.slice(0, eq);
+            var rawv = a.slice(eq + 1, a.length);
             me.setVar(name, me.expandOne(rawv));
             ai = ai + 1;
         }
@@ -559,7 +559,7 @@ export class Sh {
             if (i >= n) { break; }
             var s = i;
             while (i < n && !me.isIfs(v[i])) { i = i + 1; }
-            out.push(ffi::slice(v, s, i));
+            out.push(v.slice(s, i));
         }
         return out;
     };
@@ -569,25 +569,25 @@ export class Sh {
         var n = raw.length;
         var i = i0;
         var res: Any[] = [];
-        var DOL = ffi::dollar();
+        var DOL = "$";
         var c1 = "";
         if (i + 1 < n) { c1 = raw[i + 1]; }
         if (c1 == "?") { res.push(me.status.toString()); res.push(i + 2); return res; }
         if (c1 == DOL) { res.push(""); res.push(i + 2); return res; }
         if (c1 == "(") {
             var close = lex::skip_cmdsubst(raw, i + 2);
-            var inner = ffi::slice(raw, i + 2, close - 1);
+            var inner = raw.slice(i + 2, close - 1);
             var outv = me.runSubshell(inner);
             var ln = outv.length;
             while (ln > 0 && outv[ln - 1] == "\n") { ln = ln - 1; }
-            res.push(ffi::slice(outv, 0, ln));
+            res.push(outv.slice(0, ln));
             res.push(close);
             return res;
         }
         if (c1 == "{") {
             var j = i + 2;
             while (j < n && raw[j] != "}") { j = j + 1; }
-            var nm = ffi::slice(raw, i + 2, j);
+            var nm = raw.slice(i + 2, j);
             res.push(me.getVar(nm));
             res.push(j + 1);
             return res;
@@ -595,7 +595,7 @@ export class Sh {
         if (me.isNameStart(c1)) {
             var j2 = i + 1;
             while (j2 < n && me.isNameChar(raw[j2])) { j2 = j2 + 1; }
-            var nm2 = ffi::slice(raw, i + 1, j2);
+            var nm2 = raw.slice(i + 1, j2);
             res.push(me.getVar(nm2));
             res.push(j2);
             return res;
@@ -611,7 +611,7 @@ export class Sh {
         var quotedAny = false;
         var n = raw.length;
         var i = 0;
-        var DOL = ffi::dollar();
+        var DOL = "$";
         while (i < n) {
             var c = raw[i];
             if (c == "'") {
@@ -619,7 +619,7 @@ export class Sh {
                 i = i + 1;
                 var s = i;
                 while (i < n && raw[i] != "'") { i = i + 1; }
-                cur = cur + ffi::slice(raw, s, i);
+                cur = cur + raw.slice(s, i);
                 if (i < n) { i = i + 1; }
             } elif (c == "\"") {
                 quotedAny = true;
@@ -628,12 +628,12 @@ export class Sh {
                     if (raw[i] == "\\" && i + 1 < n) {
                         var nx = raw[i + 1];
                         if (nx == "\"" || nx == "\\" || nx == DOL || nx == "`") {
-                            cur = cur + ffi::slice(raw, i + 1, i + 2);
+                            cur = cur + raw.slice(i + 1, i + 2);
                             i = i + 2;
                         } elif (nx == "\n") {
                             i = i + 2;
                         } else {
-                            cur = cur + ffi::slice(raw, i, i + 2);
+                            cur = cur + raw.slice(i, i + 2);
                             i = i + 2;
                         }
                     } elif (raw[i] == DOL) {
@@ -644,13 +644,13 @@ export class Sh {
                     } else {
                         var s2 = i;
                         while (i < n && raw[i] != "\"" && raw[i] != "\\" && raw[i] != DOL) { i = i + 1; }
-                        cur = cur + ffi::slice(raw, s2, i);
+                        cur = cur + raw.slice(s2, i);
                     }
                 }
                 if (i < n) { i = i + 1; }
             } elif (c == "\\") {
                 if (i + 1 < n) {
-                    cur = cur + ffi::slice(raw, i + 1, i + 2);
+                    cur = cur + raw.slice(i + 1, i + 2);
                     i = i + 2;
                 } else {
                     cur = cur + "\\";
@@ -677,7 +677,7 @@ export class Sh {
                     if (d == "'" || d == "\"" || d == "\\" || d == DOL) { break; }
                     i = i + 1;
                 }
-                cur = cur + ffi::slice(raw, s3, i);
+                cur = cur + raw.slice(s3, i);
             }
         }
         if (cur != "" || quotedAny || fields.length > 0) { fields.push(cur); }
@@ -750,11 +750,11 @@ export class Sh {
                 elif (d == "b") { out = out + "\b"; i = i + 2; }
                 elif (d == "\\") { out = out + "\\"; i = i + 2; }
                 elif (d == "c") { stop = true; i = i + 2; }
-                else { out = out + ffi::slice(s, i, i + 2); i = i + 2; }
+                else { out = out + s.slice(i, i + 2); i = i + 2; }
             } else {
                 var st = i;
                 while (i < n && s[i] != "\\") { i = i + 1; }
-                out = out + ffi::slice(s, st, i);
+                out = out + s.slice(st, i);
             }
         }
         var r: Any[] = [];
@@ -828,8 +828,8 @@ export class Sh {
             var a = argv[i];
             var eq = me.findChar(a, "=");
             if (eq > 0) {
-                var name = ffi::slice(a, 0, eq);
-                var val = ffi::slice(a, eq + 1, a.length);
+                var name = a.slice(0, eq);
+                var val = a.slice(eq + 1, a.length);
                 me.setVar(name, val);
             } else {
                 if (!me.vars.has(a)) { me.setVar(a, ""); }
@@ -845,7 +845,7 @@ export class Sh {
         var start = me.inputPos;
         var i = start;
         while (i < n && s[i] != "\n") { i = i + 1; }
-        var line = ffi::slice(s, start, i);
+        var line = s.slice(start, i);
         if (i < n) { i = i + 1; }
         me.inputPos = i;
         return line;

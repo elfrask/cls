@@ -9,8 +9,11 @@
  * Se compila a DLL (gcc -shared) para exponerla por FFI a CLS:
  *
  *   int64_t bf_run(const char* program, const char* input);  -> CArray (bytes)
- *   char*   bf_read_file(const char* path);                  -> CString
- *   int64_t bf_ord(const char* s, int64_t i);                -> byte value
+ *
+ * La I/O de archivos NO vive aqui: el runner CLS lee los `.bf`/`.out` con el
+ * modulo compartido `modules/io` (FFI) y obtiene codigos de byte con
+ * `modules/bytes`. `bf_read_file` se mantiene solo para el CLI de regeneracion
+ * de `.out` dorados (compilado con -DBF_CLI), no se exporta al lenguaje.
  *
  * `bf_run` devuelve un buffer PROPIO con el layout canonico de array de CLS
  * `[cap:i64][len:i64][elems*8]` (cada byte como elemento i64), de modo que el
@@ -112,8 +115,10 @@ __declspec(dllexport) int64_t bf_run(const char *program, const char *input) {
     return (int64_t)(uintptr_t)arr;
 }
 
-/* Lee un archivo completo y devuelve un buffer malloc'd null-terminado. */
-__declspec(dllexport) char *bf_read_file(const char *path) {
+/* Lee un archivo completo y devuelve un buffer malloc'd null-terminado.
+ * Solo lo usa el CLI (BF_CLI) para cargar el programa y regenerar los .out;
+ * CLS lee los archivos con `modules/io`. */
+char *bf_read_file(const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
     if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return NULL; }
@@ -126,39 +131,6 @@ __declspec(dllexport) char *bf_read_file(const char *path) {
     buf[got] = '\0';
     fclose(f);
     return buf;
-}
-
-/* Valor del byte i de un string (0..255). */
-__declspec(dllexport) int64_t bf_ord(const char *s, int64_t i) {
-    return (int64_t)(unsigned char)s[i];
-}
-
-/* Lee un archivo y devuelve un CArray CLS propio [cap][len][elems*8] con cada
- * byte como elemento i64. Seguro para archivos con bytes NUL (a diferencia de
- * bf_read_file, que es null-terminated). */
-__declspec(dllexport) int64_t bf_read_bytes(const char *path) {
-    FILE *f = fopen(path, "rb");
-    if (!f) return 0;
-    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return 0; }
-    long n = ftell(f);
-    if (n < 0) { fclose(f); return 0; }
-    if (fseek(f, 0, SEEK_SET) != 0) { fclose(f); return 0; }
-    unsigned char *raw = (unsigned char *)malloc((size_t)n > 0 ? (size_t)n : 1);
-    if (!raw) { fclose(f); return 0; }
-    size_t got = fread(raw, 1, (size_t)n, f);
-    fclose(f);
-
-    unsigned char *arr = (unsigned char *)malloc(16 + got * 8);
-    if (!arr) { free(raw); return 0; }
-    int64_t cap = (int64_t)got, len = (int64_t)got;
-    memcpy(arr, &cap, 8);
-    memcpy(arr + 8, &len, 8);
-    for (size_t i = 0; i < got; i++) {
-        int64_t v = raw[i];
-        memcpy(arr + 16 + i * 8, &v, 8);
-    }
-    free(raw);
-    return (int64_t)(uintptr_t)arr;
 }
 
 #ifdef BF_CLI

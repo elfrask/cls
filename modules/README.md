@@ -59,7 +59,11 @@ import "sha256" as sha;              # usa modules/sha256/  -> sha::hash(...)
 
 | Módulo | Estado | Reemplaza a | Notas |
 |--------|--------|-------------|-------|
-| `diag` | Activo | — | CLS puro. Diagnóstico para runners de prueba: `hexByte`, `bytesToHex`. Usado por `examples/brainfuck`. |
+| `io` | Activo | `host_call fs` (§2.7) | **FFI a C**. I/O de archivos y descriptores sobre el shim `io_shim.dll` (sin punteros). Pagan la deuda de autocontención. Requiere `powershell -File modules/io/build.ps1`. Usado por `examples/brainfuck` y `examples/clsh`. |
+| `bytes` | Activo | `bf_ord`/`bf_read_bytes` de brainfuck; helpers hex de `diag` | **FFI + CLS puro**. `ord`/`chr` (FFI, `bytes_shim.dll`) + `hexEncode`/`hexDecode`/`firstDiff` (puros). Requiere `powershell -File modules/bytes/build.ps1`. Usado por `examples/brainfuck`. |
+| `prng` | Activo | `host_call math.random`; LCG local de `conformance` | CLS puro. `Prng` (LCG de 64 bits): `next`, `nextInt`, `nextFloat`. Usado por `examples/conformance`. |
+| `check` | Activo | — | CLS puro. Aserciones + protocolo `CHECK k=v` (`assertEq`, `assertEqStr`, `assertTrue`, `fail`, `fails`, `reset`) para runners de prueba. |
+| `diag` | **Superseded** | — | CLS puro. Diagnóstico: `hexByte`, `bytesToHex`. **Superseded por `bytes`** (`hexEncode`/`hexDecode`); se conserva por compatibilidad. |
 | `config` | Activo | — | CLS puro. Introspección de la configuración del host **solo lectura**: `all`, `get`, `getBool`, `getInt`, `sandboxEnabled`. Envuelve el intrinsic `config()` con caché perezosa (una sola llamada al host). |
 | `orm` | Activo | — | CLS puro. Capa ORM **agnóstica al motor** + contrato de driver (`Cell`, `ResultSet`, `Driver` base) y `Orm` (CRUD, query builder, transacciones, bulk). Backends enchufables. Extraído de `examples/sqlite-orm`. |
 | `sqlite` | Activo | — | **FFI a C**. Backend SQLite (`SqliteDriver: Driver`) sobre el shim `sqlite_shim.dll` (sin punteros; handles enteros). Consume `orm`. Requiere `powershell -File modules/sqlite/build.ps1`. |

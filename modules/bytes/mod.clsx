@@ -1,0 +1,81 @@
+# bytes - Utilidades de bytes: ord/chr (FFI) + hex/diff (CLS puro).
+#
+# Ladrillo de la stdlib autocontenida (examples/patrones.md §11). `ord`/`chr`
+# son FFI (codigo de byte y string de 1 byte); `hexEncode`/`hexDecode`/`firstDiff`
+# son CLS puro. NO usa host_calls.
+#
+# LIMITACION CONOCIDA DEL FFI: la ruta del `.dll` se resuelve relativa al CWD,
+# no al archivo .clsx. Correr desde la raiz del repo (ver README).
+
+extension "modules/bytes/bytes_shim.dll" as C {
+    function o_ord(s: CString, i: CLong) -> CLong;
+    function o_chr(n: CLong) -> CString;
+};
+
+# Codigo del byte i (0..255); -1 si el indice esta fuera de rango.
+export function ord(s: String, i: int) -> int { return int(o_ord(s, i)); }
+
+# String de 1 byte con el codigo n (0..255).
+export function chr(n: int) -> String { return o_chr(n); }
+
+# Digito hex de un nibble (0..15).
+function hexNib(b: int) -> String {
+    var digits = "0123456789abcdef";
+    return digits[b % 16];
+}
+
+# Byte (posiblemente negativo) normalizado a 0..255.
+function normalize(b: int) -> int {
+    var v = b % 256;
+    if (v < 0) { v = v + 256; }
+    return v;
+}
+
+# int[] (bytes) -> string hex en minusculas (2 chars por byte).
+export function hexEncode(bytes: int[]) -> String {
+    var out = "";
+    var i = 0;
+    var n = bytes.length;
+    while (i < n) {
+        var v = normalize(bytes[i]);
+        out = out + hexNib(v / 16) + hexNib(v % 16);
+        i = i + 1;
+    }
+    return out;
+}
+
+# Valor de un digito hex (0..15); -1 si no es hex.
+function hexVal(c: int) -> int {
+    if (c >= 48 && c <= 57) { return c - 48; }     # '0'..'9'
+    if (c >= 97 && c <= 102) { return c - 87; }    # 'a'..'f'
+    if (c >= 65 && c <= 70) { return c - 55; }     # 'A'..'F'
+    return -1;
+}
+
+# string hex -> int[] (bytes). Ignora un nibble impar final; nibble invalido -> -1.
+export function hexDecode(hex: String) -> int[] {
+    var out: int[] = [];
+    var n = hex.length;
+    var i = 0;
+    while (i + 1 < n) {
+        var hi = hexVal(ord(hex, i));
+        var lo = hexVal(ord(hex, i + 1));
+        if (hi < 0 || lo < 0) { out.push(-1); }
+        else { out.push(hi * 16 + lo); }
+        i = i + 2;
+    }
+    return out;
+}
+
+# -2 si a == b; si no, el indice de la primera diferencia.
+export function firstDiff(a: int[], b: int[]) -> int {
+    var la = a.length;
+    var lb = b.length;
+    var i = 0;
+    while (i < la && i < lb) {
+        if (a[i] != b[i]) { return i; }
+        i = i + 1;
+    }
+    if (la != lb) { return i; }
+    return -2;
+}

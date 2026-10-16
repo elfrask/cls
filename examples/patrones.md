@@ -116,7 +116,7 @@ como `host_calls`/intrínsecos que deberían vivir en CLS + FFI. Se reconocen co
 
 | Feature actual | Tipo actual | Debería ser | Estado |
 |---|---|---|---|
-| `fs.*` (`readFile`, `writeFile`, `exists`, `rm`, `mkdir`, `listDir`, `cwd`) | `host_call` del nodo | FFI `open`/`read`/`write`/`close`/`opendir` + wrapper CLS en `/modules` | Deuda |
+| `fs.*` (`readFile`, `writeFile`, `exists`, `rm`, `mkdir`, `listDir`, `cwd`) | `host_call` del nodo | FFI `open`/`read`/`write`/`close`/`opendir` + wrapper CLS en `/modules` | **Reemplazado por `modules/io`** (FFI + CLS) |
 | `http.get` / `http.post` | `host_call` del nodo | FFI `socket`/`connect`/`send`/`recv` + HTTP en CLS puro en `/modules` | Deuda |
 | `json.parse` / `json.stringify` | intrínseco | CLS puro en `/modules` | Deuda |
 | `strings.{indexOf,slice,split}` | intrínseco fusionado | métodos de `String` en CLS / `/modules` | Deuda |

@@ -8,18 +8,18 @@
 # Determinista y reproducible: la secuencia de (op,a,b) solo depende de la
 # semilla y del LCG (ambos fijos). Nada de red/tiempo/azar del sistema.
 #
+# El LCG NO se redefine aqui: se consume el modulo compartido `prng`
+# (examples/patrones.md §11.5). Misma secuencia/semilla que antes.
+#
 # Uso (desde la raiz del repo):
 #   target\debug\clx.exe run examples\conformance\src\fuzz.clsx --add-path-module=modules
 
 import "expr" as e;
-
-# LCG de 64 bits (constantes de PCG). La multiplicacion envuelve (i64.mul).
-function next_seed(s: int) -> int {
-    return s * 6364136223846793005 + 1442695040888963407;
-}
+import "prng" as prng;
 
 function main(args: String[]) -> int {
     var seed = 88172645463325252;   # semilla fija
+    var p = prng::Prng(seed);
     var n = 20000;
     var ok = 0;
     var bad = 0;
@@ -29,12 +29,9 @@ function main(args: String[]) -> int {
     print("=== Fuzz determinista CLS vs C (N=" + str(n) + ", seed=88172645463325252) ===");
 
     while (i < n) {
-        seed = next_seed(seed);
-        var a = seed;
-        seed = next_seed(seed);
-        var b = seed;
-        seed = next_seed(seed);
-        var op = (seed >> 59) & 15;      # 0..15
+        var a = p.next();
+        var b = p.next();
+        var op = (p.next() >> 59) & 15;      # 0..15
 
         # Mezcla escalas: a veces valores chicos, a veces modulo acotado.
         if ((op & 3) == 0) { a = a & 1023; b = b & 1023; }

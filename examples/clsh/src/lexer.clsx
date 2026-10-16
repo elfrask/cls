@@ -12,9 +12,7 @@
 #
 # El tokenizador reconoce operadores sin espacios (`a>b`), comillas simples y
 # dobles, escapes `\` y sustitucion de comandos `$(...)`. NO interpreta nada:
-# la expansion vive en shell.clsx.
-
-import "ffi" as ffi;
+# la expansion vive en shell.clsx. Usa los metodos de `String` (`.slice`).
 
 const K_WORD = 0;
 const K_SEP = 1;
@@ -73,7 +71,7 @@ export function tokenize(src: String) -> Any[] {
     var texts: String[] = [];
     var n = src.length;
     var i = 0;
-    var DOL = ffi::dollar();    while (i < n) {
+    var DOL = "$";    while (i < n) {
         var c = src[i];
 
         # espacios / continuacion de linea
@@ -147,7 +145,7 @@ export function tokenize(src: String) -> Any[] {
             }
             i = i + 1;
         }
-        texts.push(ffi::slice(src, start, i));
+        texts.push(src.slice(start, i));
         kinds.push(K_WORD);
     }
     var out: Any[] = [];

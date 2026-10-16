@@ -1,0 +1,85 @@
+# io - I/O de archivos y descriptores via FFI (semilla del futuro `fs` de CLS).
+#
+# Ladrillo de la stdlib autocontenida (examples/patrones.md §11): envuelve el
+# shim C `io_shim.dll` con una API CLS idiomatica. NO usa host_calls; el acceso
+# al SO es FFI puro. Paga la deuda §2.7 (reemplaza al host_call `fs`).
+#
+# LIMITACION CONOCIDA DEL FFI: la ruta del `.dll` se resuelve relativa al CWD,
+# no al archivo .clsx. Por eso hay que correr desde la raiz del repo (ver
+# README).
+#
+# El shim no expone punteros: todo via CString/CArray/CLong/CInt.
+
+extension "modules/io/io_shim.dll" as C {
+    function o_read_text(path: CString) -> CString;
+    function o_read_bytes(path: CString) -> CArray;
+    function o_write_text(path: CString, data: CString) -> CLong;
+    function o_append_text(path: CString, data: CString) -> CLong;
+
+    function o_exists(path: CString) -> CInt;
+    function o_isdir(path: CString) -> CInt;
+    function o_isfile(path: CString) -> CInt;
+    function o_remove(path: CString) -> CLong;
+
+    function o_cwd() -> CString;
+    function o_chdir(path: CString) -> CInt;
+
+    function o_open(path: CString, flags: CInt, mode: CInt) -> CInt;
+    function o_close(fd: CInt) -> CInt;
+    function o_write_fd(fd: CInt, data: CString) -> CLong;
+    function o_read_line(fd: CInt) -> CString;
+    function o_setmode(fd: CInt, mode: CInt) -> CInt;
+};
+
+# Flags de `_open` de msvcrt (los mismos valores que usa la libc de Windows).
+export const O_RDONLY = 0;
+export const O_WRONLY = 1;
+export const O_CREAT = 256;
+export const O_TRUNC = 512;
+export const O_APPEND = 8;
+export const O_BINARY = 32768;
+
+# --- Archivos completos -----------------------------------------------------
+
+# Lee el archivo como texto (null-terminated; seguro para UTF-8 sin NUL).
+export function readText(path: String) -> String { return o_read_text(path); }
+
+# Lee el archivo como bytes crudos (seguro con bytes NUL). [] si no se pudo leer.
+export function readBytes(path: String) -> int[] { return o_read_bytes(path); }
+
+# Escribe (trunca) el archivo, byte-exacto. Devuelve los bytes escritos, -1 error.
+export function writeText(path: String, data: String) -> int {
+    return int(o_write_text(path, data));
+}
+
+# Agrega al final del archivo, byte-exacto. Devuelve los bytes escritos, -1 error.
+export function appendText(path: String, data: String) -> int {
+    return int(o_append_text(path, data));
+}
+
+# --- Metadatos / navegacion -------------------------------------------------
+
+export function exists(path: String) -> int { return int(o_exists(path)); }
+export function isDir(path: String) -> int { return int(o_isdir(path)); }
+export function isFile(path: String) -> int { return int(o_isfile(path)); }
+export function remove(path: String) -> int { return int(o_remove(path)); }
+export function cwd() -> String { return o_cwd(); }
+export function chdir(path: String) -> int { return int(o_chdir(path)); }
+
+# --- Descriptores -----------------------------------------------------------
+
+export function open(path: String, flags: int, mode: int) -> int {
+    return int(o_open(path, flags, mode));
+}
+export function close(fd: int) -> int { return int(o_close(fd)); }
+
+# Escribe los bytes de `data` al fd (el fd debe estar en modo binario).
+export function writeFd(fd: int, data: String) -> int {
+    return int(o_write_fd(fd, data));
+}
+
+# Lee una linea del fd (sin el '\n'); "" en EOF.
+export function readLine(fd: int) -> String { return o_read_line(fd); }
+export function setmode(fd: int, mode: int) -> int {
+    return int(o_setmode(fd, mode));
+}

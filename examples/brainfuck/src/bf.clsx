@@ -3,9 +3,12 @@
 # Exporta:
 #   bf_run_cls(prog, input) -> int[]   interprete BF escrito en CLS puro
 #   bf_oracle(prog, input)  -> int[]   interprete de referencia (C, via FFI)
-#   read_text(path)         -> String  lectura de archivo (FFI, texto)
-#   read_bytes(path)        -> int[]   lectura de archivo (FFI, bytes crudos)
-#   first_diff(a, b)        -> int     -2 si iguales; indice de la 1a diferencia
+#
+# La I/O de archivos y el codigo de byte NO viven aqui: se consumen de los
+# modulos compartidos de /modules (regla examples/patrones.md §11.5):
+#   - `io`    : readText / readBytes (FFI)
+#   - `bytes` : ord (codigo de byte), firstDiff
+# El unico FFI propio de esta prueba es el ORACULO BF (bf_run en oracle/bf.dll).
 #
 # La semantica de ambos interpretes es identica:
 #   - tape de 30000 celdas u8, puntero con wrap circular
@@ -13,17 +16,13 @@
 #   - `,` = byte de entrada, 0 en EOF
 #   - saltos `[` `]` por tabla de parejas precalculada
 #
-# FFI: el unico acceso externo es a bf.dll (oraculo C + puente de I/O del SO).
-# El oraculo devuelve un int[] (CArray), por lo que CLS nunca toca punteros.
-#
 # `extension` a nivel superior (sin `when`): el emisor WASM ya soporta
 # declaraciones nativas a nivel de modulo (fix del panic del emisor).
 
+import "bytes" as bytes;
+
 extension "examples/brainfuck/oracle/bf.dll" as C {
     function bf_run(program: CString, input: CString) -> CArray;
-    function bf_read_file(path: CString) -> CString;
-    function bf_read_bytes(path: CString) -> CArray;
-    function bf_ord(s: CString, i: CLong) -> CLong;
 };
 
 # Codigo de instruccion (0..7) o -1 si el caracter no es una instruccion.
@@ -100,7 +99,7 @@ export function bf_run_cls(prog: String, input: String) -> int[] {
             out.push(tape[tp]);
         } elif (op == 5) {
             if (ip < inlen) {
-                tape[tp] = bf_ord(input, ip);
+                tape[tp] = bytes::ord(input, ip);
                 ip = ip + 1;
             } else {
                 tape[tp] = 0;
@@ -118,27 +117,4 @@ export function bf_run_cls(prog: String, input: String) -> int[] {
 # Interprete de referencia (C, via FFI). Mismo contrato que bf_run_cls.
 export function bf_oracle(prog: String, input: String) -> int[] {
     return bf_run(prog, input);
-}
-
-# Lectura de archivo (FFI). Texto null-terminated.
-export function read_text(path: String) -> String {
-    return bf_read_file(path);
-}
-
-# Lectura de archivo (FFI). Bytes crudos (seguro con NUL).
-export function read_bytes(path: String) -> int[] {
-    return bf_read_bytes(path);
-}
-
-# -2 si a == b; si no, el indice de la primera diferencia.
-export function first_diff(a: int[], b: int[]) -> int {
-    var la = a.length;
-    var lb = b.length;
-    var i = 0;
-    while (i < la && i < lb) {
-        if (a[i] != b[i]) { return i; }
-        i = i + 1;
-    }
-    if (la != lb) { return i; }
-    return -2;
 }

@@ -1,0 +1,54 @@
+# check - Aserciones + protocolo `CHECK k=v` para runners de prueba.
+#
+# Ladrillo de la stdlib autocontenida (examples/patrones.md §11): CLS puro, sin
+# FFI ni host_calls. Emite una linea `CHECK <name>=...` por asercion (el mismo
+# protocolo que consumen los oraculos externos, p. ej. examples/sqlite-orm) y
+# lleva la cuenta de fallos en estado de modulo.
+#
+# Uso:
+#   check::reset();
+#   check::assertEq("sum.2+2", 2 + 2, 4);
+#   check::assertEqStr("greet", greet(), "hola");
+#   check::assertTrue("is.even", n % 2 == 0);
+#   if (check::fails() > 0) { return 1; }
+
+var _fails: int = 0;
+
+# Emite una linea de fallo explicita y cuenta el fallo.
+export function fail(name: String) {
+    _fails = _fails + 1;
+    print("CHECK " + name + "=FAIL");
+}
+
+export function assertEq(name: String, got: int, exp: int) {
+    if (got == exp) {
+        print("CHECK " + name + "=ok");
+    } else {
+        _fails = _fails + 1;
+        print("CHECK " + name + "=FAIL got=" + str(got) + " exp=" + str(exp));
+    }
+}
+
+export function assertEqStr(name: String, got: String, exp: String) {
+    if (got == exp) {
+        print("CHECK " + name + "=ok");
+    } else {
+        _fails = _fails + 1;
+        print("CHECK " + name + "=FAIL got='" + got + "' exp='" + exp + "'");
+    }
+}
+
+export function assertTrue(name: String, cond: bool) {
+    if (cond) {
+        print("CHECK " + name + "=ok");
+    } else {
+        _fails = _fails + 1;
+        print("CHECK " + name + "=FAIL");
+    }
+}
+
+# Total de fallos registrados desde el ultimo reset().
+export function fails() -> int { return _fails; }
+
+# Reinicia el contador de fallos.
+export function reset() { _fails = 0; }
