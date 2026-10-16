@@ -1758,6 +1758,28 @@ pub fn host_any_member<C: HostCtx>(ctx: &mut C, val: i64, tag: i64, key: i64) ->
                 (0, 0)
             }
         }
+        5 => {
+            // CmxValue: [tag][props_ptr][children_ptr][kind] (offsets 0/8/16/24).
+            // Sin este brazo, `str(app.props.x)`/`bool(app.props.x)` sobre una
+            // prop dinámica caían en `(0,0)` -> "0"/false.
+            let p = val as usize;
+            match ctx.read_str(key).as_str() {
+                "props" => (ctx.read_i64(p + 8), 7),
+                "children" => (ctx.read_i64(p + 16), 6),
+                "kind" => (ctx.read_i64(p + 24), 0),
+                "tag" => {
+                    let tg = ctx.read_i64(p);
+                    if tg == 0 {
+                        (0, 0)
+                    } else if (tg >> 32) == 0 {
+                        (tg, 11) // handle de función (tag mayúscula)
+                    } else {
+                        (tg, 1) // string (tag minúscula)
+                    }
+                }
+                _ => (0, 0),
+            }
+        }
         1 => {
             let k = ctx.read_str(key);
             if k == "length" || k == "size" {

@@ -1495,7 +1495,14 @@ impl Parser {
                     return Err(self.syntax_err(format!("Esperaba ':' tras '{}' en la condición de 'when'", field)));
                 }
                 if field == "target" {
-                    return Ok(TargetCond::Target(self.expect_string()?));
+                    // String literal ("x86_64-windows-msvc") O tripla desnuda
+                    // (docs/lenguaje/multi-entorno.md): `target: x86_64-windows-msvc`.
+                    if let Token::StringLiteral(s) = &self.current_token {
+                        let s = s.clone();
+                        self.advance();
+                        return Ok(TargetCond::Target(s));
+                    }
+                    return Ok(TargetCond::Target(self.expect_target_name()?));
                 }
                 let v = self.expect_target_name()?;
                 return Ok(match field.as_str() {
@@ -1657,6 +1664,7 @@ impl Parser {
         loop {
             let is_attr_str = matches!(&self.current_token, Token::Cmx(CmxToken::AttrString { .. }));
             let is_attr_expr = matches!(&self.current_token, Token::Cmx(CmxToken::AttrExpr { .. }));
+            let is_attr_shorthand = matches!(&self.current_token, Token::Cmx(CmxToken::AttrShorthand { .. }));
             let is_attr_spread = matches!(&self.current_token, Token::Cmx(CmxToken::AttrSpread));
             if is_attr_str {
                 if let Token::Cmx(CmxToken::AttrString { name, value }) = &self.current_token {
@@ -1676,6 +1684,12 @@ impl Parser {
                     let expr = self.parse_expression()?;
                     attributes.push(CmxAttribute { name: expr_name, value: Some(CmxAttributeValue::Expression(Box::new(expr))), span: self.span() });
                 }
+            } else if is_attr_shorthand {
+                // `{nombre}` -> lee la variable `nombre` (valor Shorthand).
+                if let Token::Cmx(CmxToken::AttrShorthand { name }) = &self.current_token {
+                    attributes.push(CmxAttribute { name: name.clone(), value: Some(CmxAttributeValue::Shorthand(name.clone())), span: self.span() });
+                }
+                self.advance();
             } else { break; }
         }
 
@@ -2039,6 +2053,8 @@ impl Parser {
                 Operator::Minus => UnaryOp::Negate,
                 Operator::Not => UnaryOp::Not,
                 Operator::Tilde => UnaryOp::BitwiseNot,
+                Operator::PlusPlus => UnaryOp::PreInc,
+                Operator::MinusMinus => UnaryOp::PreDec,
                 _ => return self.parse_call(),
             };
             // Span del operador: el unario usa el span del operador (no el del
@@ -2197,6 +2213,7 @@ impl Parser {
             }
             Token::Identifier(name) => {
                 let name = name.clone();
+                let id_span = self.span();
                 self.advance();
 
                 // `null` como literal (antes era un Identifier no resuelto).
@@ -2205,6 +2222,17 @@ impl Parser {
                         kind: LiteralKind::Null,
                         span: self.span(),
                     }));
+                }
+
+                // Flecha sin paréntesis: `x => expr` (param único sin tipo).
+                if matches!(&self.current_token, Token::Operator(Operator::FatArrow)) {
+                    let param = Parameter {
+                        name,
+                        type_ann: None,
+                        default_value: None,
+                        span: id_span,
+                    };
+                    return self.parse_arrow_tail(vec![param]);
                 }
 
                 // Verificar si es una función flecha
@@ -2243,7 +2271,10 @@ impl Parser {
                 let is_arrow = self.is_arrow_function()
                     || matches!(&self.current_token, Token::Symbol(Symbol::RParen))
                         && self.tokens.clone().next()
-                            .map_or(false, |t| matches!(&t.token, Token::Operator(Operator::Arrow)));
+                            .map_or(false, |t| matches!(
+                                &t.token,
+                                Token::Operator(Operator::Arrow) | Token::Operator(Operator::FatArrow)
+                            ));
                 if is_arrow { return self.parse_arrow_function(); }
                 
                 // Tupla vacía: ()
@@ -2392,7 +2423,10 @@ impl Parser {
                         // Despues del ) cerrado, ver si viene ->
                         cursor.next();
                         if let Some(after) = cursor.peek() {
-                            return matches!(&after.token, Token::Operator(Operator::Arrow));
+                            return matches!(
+                                &after.token,
+                                Token::Operator(Operator::Arrow) | Token::Operator(Operator::FatArrow)
+                            );
                         }
                         break;
                     }
@@ -2494,7 +2528,24 @@ impl Parser {
         // Ya se consumio el ( inicial
         let params = self.parse_parameters()?;
         self.expect_symbol(Symbol::RParen)?;
-        self.expect_operator(Operator::Arrow)?;
+        self.parse_arrow_tail(params)
+    }
+
+    /// Consume la flecha (`->` o su alias `=>`), el tipo de retorno opcional y
+    /// el cuerpo, y arma la `ArrowFunctionExpr`.
+    fn parse_arrow_tail(&mut self, params: Vec<Parameter>) -> ClsResult<Expression> {
+        // Span propio de la arrow = el del token de flecha (`->`/`=>`), que es
+        // único. NO usar `self.span()` (lookahead) al final: daba a la arrow el
+        // span del token siguiente y colisionaba en el type map con el type de
+        // la sentencia siguiente (bug: `var f = suma;` cambiaba la aridad de la
+        // arrow, trap de call_indirect).
+        let arrow_span = self.current_span.clone();
+        match &self.current_token {
+            Token::Operator(Operator::Arrow) | Token::Operator(Operator::FatArrow) => {
+                self.advance();
+            }
+            _ => return Err(self.syntax_err("Esperaba '->' o '=>'")),
+        }
         // Determinar si hay tipo de retorno: si despues de -> viene un tipo
         // (identificador, posiblemente calificado con :: o con genericos <T>)
         // seguido de { , es return_type { body }.
@@ -2553,7 +2604,7 @@ impl Parser {
             params,
             return_type,
             body: Box::new(body),
-            span: self.span(),
+            span: arrow_span,
         }))
     }
 

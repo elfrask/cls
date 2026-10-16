@@ -88,6 +88,43 @@ impl TypeChecker {
 
 
 
+    /// Asignabilidad que además conoce la jerarquía de clases (upcast por
+    /// herencia) y la covarianza de arrays/tuplas. `Type::is_assignable_to` es
+    /// puramente estructural y no puede consultar `class_parents`, por eso una
+    /// instancia derivada no era asignable a su clase base.
+    pub(crate) fn is_assignable(&self, from: &Type, to: &Type) -> bool {
+        if from.is_assignable_to(to) {
+            return true;
+        }
+        match (from, to) {
+            // Uniones: algún miembro del objetivo la acepta / todos los del origen
+            // deben ser aceptados.
+            (_, Type::Union(members)) => members.iter().any(|m| self.is_assignable(from, m)),
+            (Type::Union(members), _) => members.iter().all(|m| self.is_assignable(m, to)),
+            (Type::Named(a, ap), Type::Named(b, bp)) => {
+                if ap.len() != bp.len()
+                    || !ap.iter().zip(bp.iter()).all(|(x, y)| self.is_assignable(x, y))
+                {
+                    return false;
+                }
+                // Upcast: ¿`b` es ancestro de `a`?
+                let mut cur = self.class_parents.get(a).cloned();
+                while let Some(p) = cur {
+                    if &p == b {
+                        return true;
+                    }
+                    cur = self.class_parents.get(&p).cloned();
+                }
+                false
+            }
+            (Type::Array(a), Type::Array(b)) => self.is_assignable(a, b),
+            (Type::Tuple(a), Type::Tuple(b)) => {
+                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| self.is_assignable(x, y))
+            }
+            _ => false,
+        }
+    }
+
     /// Verifica que la clase provea los campos y métodos que exige la interface.
     pub(crate) fn check_implements(&mut self, class_name: &str, iface_name: &str, span: Span) {
         let info = match self.interfaces.get(iface_name) {

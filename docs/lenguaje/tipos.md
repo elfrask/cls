@@ -42,6 +42,11 @@ a[0];   # Int (índice literal -> slot exacto)
 a[i];   # Int | String (índice dinámico -> unión de slots)
 ```
 
+> **GAP runtime (JIT):** el typeck infiere `Int | String`, pero el JIT guarda los
+> slots sin *tag*; leer con índice dinámico **heterogéneo** no recupera el tipo en
+> runtime (requeriría boxing, prohibido). El índice literal y el dinámico
+> homogéneo sí funcionan. Ver `examples/lang-features/findings/gaps.txt` (GAP 06).
+
 ## Records tipados
 
 ```clx

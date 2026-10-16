@@ -380,8 +380,13 @@ impl Lexer {
                     self.in_cmx_expr = false;
                     continue;
                 }
+                // Shorthand `{nombre}`: lee la variable homónima. Consumir el `}`
+                // de cierre (antes quedaba sin consumir y rompía el lexing).
+                self.skip_cmx_whitespace();
                 let name = self.read_cmx_identifier().unwrap_or_default();
-                tokens.push(SpannedToken::new(Token::Cmx(CmxToken::AttrExpr { name }), self.current_span()));
+                self.skip_cmx_whitespace();
+                if self.current_char() == '}' { self.advance(); }
+                tokens.push(SpannedToken::new(Token::Cmx(CmxToken::AttrShorthand { name }), self.current_span()));
                 continue;
             }
             let name = self.read_cmx_identifier()?;

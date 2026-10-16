@@ -55,6 +55,12 @@ impl<'a> Engine<'a> {
 
 
     fn resolve_annotation_type(&self, ann: &TypeAnnotation) -> ClsResult<Type> {
+        // Phantom `!T`: el type param NO participa del tipo runtime (compile-time
+        // only). Se mapea a `Any` (i64 en la firma WASM), como los campos
+        // dinámicos; así `function f<T>(x: !T)` compila.
+        if matches!(ann.kind, crate::frontend::ast::TypeKind::Phantom(_)) {
+            return Ok(Type::Any);
+        }
         let t = annotation_to_type(ann);
         match t {
             Type::Any | Type::Unknown => Err(crate::error::ClsError::CompileError(

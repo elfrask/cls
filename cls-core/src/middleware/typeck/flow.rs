@@ -58,6 +58,11 @@ impl TypeChecker {
                         if right == "Callable" {
                             return Some((name.clone(), Type::Callable));
                         }
+                        // Clase de usuario: `x is Derived` estrecha `x` a `Derived`
+                        // (acceso a campos/métodos de la subclase dentro del bloque).
+                        if self.class_members.contains_key(right.as_str()) {
+                            return Some((name.clone(), Type::Named(right.clone(), vec![])));
+                        }
                     }
                 }
             }

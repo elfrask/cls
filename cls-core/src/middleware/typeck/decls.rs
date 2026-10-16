@@ -38,7 +38,7 @@ impl TypeChecker {
 
         let declared = annotated.unwrap_or_else(|| inferred.clone());
 
-        if self.config.strict && var.value.is_some() && !check_type.is_assignable_to(&declared) {
+        if self.config.strict && var.value.is_some() && !self.is_assignable(&check_type, &declared) {
             return self.error(
                 &format!("No se puede asignar {} a {}", inferred, declared),
                 var.span.clone(),

@@ -576,11 +576,20 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::I64Const(5 << 8));
                 }
                 CmxChild::Expression(expr) => {
-                    self.emit_expression(expr)?;
                     let t = cmx_literal_type(expr)
                         .or_else(|| self.types.get(&expr_span(expr)).cloned())
                         .unwrap_or(Type::Any);
-                    self.body.push(Instruction::I64Const(cmx_tag_for_type(&t)));
+                    self.emit_expression(expr)?;
+                    if matches!(t, Type::String) {
+                        // Child de expresión String -> CmxValue de texto (kind=1):
+                        // así `children[i]` se comporta como su contenido (== y
+                        // print), consistente con `CmxChild::Text`.
+                        self.body.push(Instruction::I64Const(1));
+                        self.host.call(HostFn::CmxNew, &mut self.body);
+                        self.body.push(Instruction::I64Const(5 << 8));
+                    } else {
+                        self.body.push(Instruction::I64Const(cmx_tag_for_type(&t)));
+                    }
                 }
                 CmxChild::Element(el) => {
                     self.emit_cmx(el)?;
@@ -677,6 +686,9 @@ impl<'a> FuncEmitter<'a> {
         // igual que length/slice/indexOf). El resultado es un string packed
         // (i64), sin conversión de bits.
         if matches!(obj_ty, Some(Type::String)) {
+            // `s[i]`: byte i como String de 1 byte. FUERA DE RANGO devuelve `""`
+            // (clamping) — documentado en docs/lenguaje/datos.md. NO se alinea con
+            // Array (que sí lanza): es la semántica definida de String.
             self.emit_expression(&i.object)?;
             self.emit_expression(&i.index)?;
             if let Some(&idx) = self.func_indexes.get("__intr_str_char_at") {

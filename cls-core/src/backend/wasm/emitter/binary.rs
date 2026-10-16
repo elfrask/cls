@@ -232,6 +232,11 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64ShrS);
             }
             StrictEqual => {
+                // Cmx (child de texto) comparado con String: formatear el Cmx a
+                // string -> un child de texto se comporta como su contenido.
+                if self.emit_cmx_string_eq(&b.left, &b.right, false)? {
+                    return Ok(());
+                }
                 // Strings: comparar por CONTENIDO (`==` de punteros empaquetados
                 // daba false para buffers distintos con el mismo texto).
                 if self.is_string_expr(&b.left) || self.is_string_expr(&b.right) {
@@ -240,21 +245,34 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_str_host("__intr_str_eq");
                     return Ok(());
                 }
+                // Tipo común de comparación: si un lado es i64 (Int/Any dinámico)
+                // y el otro i32 (Bool/Char), extender el i32 a i64 (antes emitía
+                // `i64.eq` con un i32 en el stack -> WASM inválido).
+                let cmp_ty = if lt == WasTy::F64 || rt == WasTy::F64 {
+                    WasTy::F64
+                } else if lt == WasTy::I64 || rt == WasTy::I64 {
+                    WasTy::I64
+                } else {
+                    WasTy::I32
+                };
                 self.emit_expression(&b.left)?;
-                if lt == WasTy::F64 || rt == WasTy::F64 {
+                if cmp_ty == WasTy::F64 {
                     self.f64_promote(&b.left)?;
+                } else if cmp_ty == WasTy::I64 && lt == WasTy::I32 {
+                    self.body.push(Instruction::I64ExtendI32S);
                 }
                 self.emit_expression(&b.right)?;
-                if lt == WasTy::F64 || rt == WasTy::F64 {
+                if cmp_ty == WasTy::F64 {
                     self.f64_promote(&b.right)?;
+                } else if cmp_ty == WasTy::I64 && rt == WasTy::I32 {
+                    self.body.push(Instruction::I64ExtendI32S);
                 }
-                self.push_eq(if lt == WasTy::F64 || rt == WasTy::F64 {
-                    WasTy::F64
-                } else {
-                    lt
-                })?;
+                self.push_eq(cmp_ty)?;
             }
             NotEqual => {
+                if self.emit_cmx_string_eq(&b.left, &b.right, true)? {
+                    return Ok(());
+                }
                 if self.is_string_expr(&b.left) || self.is_string_expr(&b.right) {
                     self.emit_expression(&b.left)?;
                     self.emit_expression(&b.right)?;
@@ -262,19 +280,26 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::I32Eqz);
                     return Ok(());
                 }
+                let cmp_ty = if lt == WasTy::F64 || rt == WasTy::F64 {
+                    WasTy::F64
+                } else if lt == WasTy::I64 || rt == WasTy::I64 {
+                    WasTy::I64
+                } else {
+                    WasTy::I32
+                };
                 self.emit_expression(&b.left)?;
-                if lt == WasTy::F64 || rt == WasTy::F64 {
+                if cmp_ty == WasTy::F64 {
                     self.f64_promote(&b.left)?;
+                } else if cmp_ty == WasTy::I64 && lt == WasTy::I32 {
+                    self.body.push(Instruction::I64ExtendI32S);
                 }
                 self.emit_expression(&b.right)?;
-                if lt == WasTy::F64 || rt == WasTy::F64 {
+                if cmp_ty == WasTy::F64 {
                     self.f64_promote(&b.right)?;
+                } else if cmp_ty == WasTy::I64 && rt == WasTy::I32 {
+                    self.body.push(Instruction::I64ExtendI32S);
                 }
-                self.push_eq(if lt == WasTy::F64 || rt == WasTy::F64 {
-                    WasTy::F64
-                } else {
-                    lt
-                })?;
+                self.push_eq(cmp_ty)?;
                 self.body.push(Instruction::I32Eqz);
             }
             LessThan => {
@@ -413,6 +438,41 @@ impl<'a> FuncEmitter<'a> {
                 if let Some(cn) = self.class_magic_method(&rty, "__contains") {
                     let _ = self.magic_ret_was(&cn, "__contains")?;
                     self.emit_class_method_args("__contains", &b.right, &[(*b.left).clone()])?;
+                    return Ok(());
+                }
+                // Array: `x in arr` -> includes(arr, x) (misma semántica que .includes).
+                if let Some(Type::Array(elem)) = &rty {
+                    let elem_ty = was_type(elem)?;
+                    let elem_size = elem_size_bytes(elem_ty);
+                    self.emit_expression(&b.right)?;
+                    self.emit_expression(&b.left)?;
+                    self.elem_to_bits(&b.left, elem_ty)?;
+                    self.body.push(Instruction::I64Const(elem_size));
+                    if let Some(&idx) = self.func_indexes.get("__intr_arr_includes") {
+                        self.body.push(Instruction::Call(idx));
+                    }
+                    return Ok(());
+                }
+                // Record/Shape: `key in rec` -> record_has(rec, key).
+                if matches!(rty, Some(Type::Record(_, _)) | Some(Type::Shape(_))) {
+                    self.emit_expression(&b.right)?;
+                    self.emit_expression(&b.left)?;
+                    if matches!(
+                        self.types.get(&expr_span(&b.left)),
+                        Some(
+                            Type::Int
+                                | Type::I8
+                                | Type::I16
+                                | Type::I32
+                                | Type::I64
+                                | Type::Literal(LitVal::Int(_))
+                        )
+                    ) {
+                        self.emit_str_host("__intr_str_int");
+                    }
+                    if let Some(&idx) = self.func_indexes.get("__intr_record_has") {
+                        self.body.push(Instruction::Call(idx));
+                    }
                     return Ok(());
                 }
                 // `x in "texto"` -> substring (arrays en A4). StrContains(container, needle)
@@ -793,6 +853,37 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
+
+    /// `Cmx == String` / `Cmx != String`: formatea el lado Cmx a string (un
+    /// child de texto se comporta como su contenido) y compara por contenido.
+    /// Devuelve `true` si la comparación se manejó. `negate` = true para `!=`.
+    fn emit_cmx_string_eq(
+        &mut self,
+        left: &Expression,
+        right: &Expression,
+        negate: bool,
+    ) -> ClsResult<bool> {
+        let l_cmx = matches!(self.types.get(&expr_span(left)), Some(Type::Cmx));
+        let r_cmx = matches!(self.types.get(&expr_span(right)), Some(Type::Cmx));
+        let l_str = self.is_string_expr(left);
+        let r_str = self.is_string_expr(right);
+        if !((l_cmx && r_str) || (r_cmx && l_str)) {
+            return Ok(false);
+        }
+        self.emit_expression(left)?;
+        if l_cmx {
+            self.host.call(HostFn::CmxToString, &mut self.body);
+        }
+        self.emit_expression(right)?;
+        if r_cmx {
+            self.host.call(HostFn::CmxToString, &mut self.body);
+        }
+        self.emit_str_host("__intr_str_eq");
+        if negate {
+            self.body.push(Instruction::I32Eqz);
+        }
+        Ok(true)
+    }
 
     pub(crate) fn push_eq(&mut self, ty: WasTy) -> ClsResult<()> {
         match ty {

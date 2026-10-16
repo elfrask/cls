@@ -316,8 +316,6 @@ impl<'a> FuncEmitter<'a> {
     pub(crate) fn emit_ident_load(&mut self, name: &str) {
         if name == "super" && self.current_class.is_some() {
             self.body.push(Instruction::LocalGet(0));
-        } else if let Some(g) = self.globals.get(name) {
-            self.body.push(Instruction::GlobalGet(*g));
         } else if let Some(&ci) = self.captures.get(name) {
             // Variable capturada (closure): el bloque guarda el valor (si no es
             // promovida) o el PTR al slot (si es promovida). Acceder al slot.
@@ -355,6 +353,11 @@ impl<'a> FuncEmitter<'a> {
             // funciones top-level con el mismo nombre.
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalGet(idx));
+        } else if let Some(g) = self.globals.get(name) {
+            // Global de módulo: pierde ante capturas/locales del scope actual
+            // (una local sombrea al global homónimo; antes la closure capturada
+            // mutaba el global).
+            self.body.push(Instruction::GlobalGet(*g));
         } else if let Some(&ti) = self.fn_table_idx.get(name) {
             // Función CLS como valor -> handle [tabla_idx][capturas=0][nombre]
             // con tag-bit (ptr<<1)|1. El nombre se guarda para fn_to_string.
@@ -414,10 +417,7 @@ impl<'a> FuncEmitter<'a> {
     /// Carga el PTR al slot de una variable promovida (para capturarla por ref).
     /// Si no es promovida, carga el valor directo (comportamiento por valor).
     fn emit_ident_ptr(&mut self, name: &str) {
-        if let Some(g) = self.globals.get(name) {
-            // Globals ya son compartidas: cargar el valor directamente.
-            self.body.push(Instruction::GlobalGet(*g));
-        } else if let Some(&ci) = self.captures.get(name) {
+        if let Some(&ci) = self.captures.get(name) {
             // Captura: el bloque guarda el PTR al slot (promovida) o el valor.
             // Las capturas van ANTES que promoted (una captura no es un local).
             self.body.push(Instruction::LocalGet(0));
@@ -433,6 +433,9 @@ impl<'a> FuncEmitter<'a> {
         } else if self.promoted.contains(name) {
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalGet(idx));
+        } else if let Some(g) = self.globals.get(name) {
+            // Globals ya son compartidas: cargar el valor directamente.
+            self.body.push(Instruction::GlobalGet(*g));
         } else {
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalGet(idx));
@@ -442,9 +445,7 @@ impl<'a> FuncEmitter<'a> {
 
     /// Escribe un identificador: global (si es un `export var` top-level) o local.
     pub(crate) fn emit_ident_store(&mut self, name: &str) {
-        if let Some(g) = self.globals.get(name) {
-            self.body.push(Instruction::GlobalSet(*g));
-        } else if let Some(&ci) = self.captures.get(name) {
+        if let Some(&ci) = self.captures.get(name) {
             // Variable capturada (closure): el bloque guarda el valor o el PTR.
             let v = self.fresh_local();
             self.body.push(Instruction::LocalSet(v));
@@ -482,6 +483,12 @@ impl<'a> FuncEmitter<'a> {
                 align: 3,
                 memory_index: 0,
             }));
+        } else if self.locals.contains_key(name) {
+            // Local declarado: sombrea al global homónimo.
+            let idx = self.local_for(name);
+            self.body.push(Instruction::LocalSet(idx));
+        } else if let Some(g) = self.globals.get(name) {
+            self.body.push(Instruction::GlobalSet(*g));
         } else {
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalSet(idx));

@@ -12,6 +12,11 @@ fn main() {
     let mut h = DefaultHasher::new();
     let mut n = 0u32;
     hash_dir(&Path::new("src/backend/wasm"), &mut h, &mut n);
+    // El parser/lexer (frontend) y el typeck (middleware) también determinan el
+    // WASM emitido: cambiarlos DEBE invalidar el caché CLS->WASM de cls-jit (sin
+    // esto, editar el parser servía módulos stale y confundía el debug).
+    hash_dir(&Path::new("src/frontend"), &mut h, &mut n);
+    hash_dir(&Path::new("src/middleware"), &mut h, &mut n);
     // cls-internals (Fase 2): si el crate interno cambia, el módulo embebido en
     // el core no cambia por sí solo, pero el hash anticipa su integración.
     // IMPORTANTE: se hashea TAMBIÉN el sub-crate `wasm/src` (el fuente del que
@@ -29,6 +34,8 @@ fn main() {
     h.finish().hash(&mut h);
     println!("cargo:rustc-env=CLS_BACKEND_HASH={:016x}", h.finish());
     println!("cargo:rerun-if-changed=src/backend/wasm");
+    println!("cargo:rerun-if-changed=src/frontend");
+    println!("cargo:rerun-if-changed=src/middleware");
     if internals.exists() {
         println!("cargo:rerun-if-changed=../cls-internals/src");
     }

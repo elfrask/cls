@@ -163,7 +163,7 @@ impl TypeChecker {
                         Expression::Literal(l) => self.literal_type(&l.kind),
                         _ => arg_ty.clone(),
                     };
-                    if !arg_check.is_assignable_to(&param_subst) {
+                    if !self.is_assignable(&arg_check, &param_subst) {
                         let msg = format!(
                             "Se esperaba {}, recibió {} en el argumento {}",
                             param_subst,
