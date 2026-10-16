@@ -39,6 +39,7 @@ Los métodos de transformación devuelven un string **nuevo** (asignar:
 | `endsWith` | método | `endsWith(suffix: String) -> bool` | ¿Termina con el sufijo? |
 | `isEmpty` | método | `isEmpty() -> bool` | ¿Está vacío? |
 | `toString` | método | `toString() -> String` | El string mismo. |
+| `toChar` | método | `toChar() -> Char[]` | Los **bytes** del string como `Char[]` (cada uno 0..255). Modelo `bytes`/`str`. |
 | `length` | **getter** | `length() -> int` | Longitud: **bytes en el JIT**. |
 
 ## `Int` y `Float` (inmutables)
@@ -52,10 +53,23 @@ Los métodos de transformación devuelven un string **nuevo** (asignar:
 
 ## `Bool` y `Char` (inmutables)
 
+`Char` es la **unidad de 1 byte** (0..255) para buffers de bytes (modelo
+`bytes`/`str`); `String` sigue siendo texto byte-based. Se construye con los
+intrínsecos `char(n: int) -> Char` y se inspecciona con `ord(c: Char) -> int`.
+Sus bytes se obtienen con `String.toChar() -> Char[]`.
+
 | Tipo | Miembro | Descripción |
 |---|---|---|
 | `Bool` | `toString() -> String` | `"true"` / `"false"`. |
-| `Char` | `toString() -> String` | El carácter como string. |
+| `Char` | `toString() -> String` | String de **1 byte** con el valor crudo (byte-transparente). |
+
+```clx
+var c: Char = char(65);      # byte 65 ('A')
+c.toString();                # "A"
+ord(c);                      # 65
+"abc".toChar();              # Char[] = [97, 98, 99]
+"abc".toChar().join("");     # "abc" (reconstrucción byte a byte)
+```
 
 ## `Array` (mutable)
 

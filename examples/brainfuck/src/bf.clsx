@@ -4,10 +4,10 @@
 #   bf_run_cls(prog, input) -> int[]   interprete BF escrito en CLS puro
 #   bf_oracle(prog, input)  -> int[]   interprete de referencia (C, via FFI)
 #
-# La I/O de archivos y el codigo de byte NO viven aqui: se consumen de los
-# modulos compartidos de /modules (regla examples/patrones.md §11.5):
+# La I/O de archivos y el codigo de byte se consumen de los modulos compartidos
+# de /modules (regla examples/patrones.md §11.5):
 #   - `io`    : readText / readBytes (FFI)
-#   - `bytes` : ord (codigo de byte), firstDiff
+#   - `bytes` : ord (codigo de byte, ahora sin FFI: intrinseco) + firstDiff
 # El unico FFI propio de esta prueba es el ORACULO BF (bf_run en oracle/bf.dll).
 #
 # La semantica de ambos interpretes es identica:
@@ -82,7 +82,9 @@ export function bf_run_cls(prog: String, input: String) -> int[] {
     var tp = 0;
     var pc = 0;
     var ip = 0;
-    var inlen = input.length;
+    # Bytes de entrada como Char[] (unidad de 1 byte); su codigo con bytes::ord.
+    var inbytes = input.toChar();
+    var inlen = inbytes.length;
     while (pc < m) {
         var op = cmds[pc];
         if (op == 0) {
@@ -99,7 +101,7 @@ export function bf_run_cls(prog: String, input: String) -> int[] {
             out.push(tape[tp]);
         } elif (op == 5) {
             if (ip < inlen) {
-                tape[tp] = bytes::ord(input, ip);
+                tape[tp] = bytes::ord(inbytes[ip]);
                 ip = ip + 1;
             } else {
                 tape[tp] = 0;

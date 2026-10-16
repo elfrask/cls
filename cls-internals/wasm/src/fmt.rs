@@ -8,6 +8,13 @@ use alloc::vec::Vec;
 use crate::arrays::{arr_elem, arr_len};
 use crate::mem;
 
+/// Formatea un `Char` (unidad de 1 byte 0..255) como texto. Para bytes ASCII
+/// es exacto; para bytes >= 128 produce el reemplazo UTF-8 (`from_utf8_lossy`),
+/// coherente con la decodificación de strings del runtime.
+pub fn char_byte_to_string(v: i64) -> String {
+    String::from_utf8_lossy(&[(v & 0xff) as u8]).into_owned()
+}
+
 /// Formatea un f64 como el host (`format!("{}", v)`).
 pub fn format_float(v: f64) -> String {
     format!("{}", v)
@@ -44,7 +51,7 @@ pub fn fmt_val_to_string(val: i64, tag: i64) -> String {
                     "false".to_string()
                 }
             }
-            4 => char::from_u32(val as u32).unwrap_or('?').to_string(),
+            4 => char_byte_to_string(val),
             5 => cmx_format(val as usize),
             6 => {
                 // kind 5 = array de Cmx (entradas `[val, tag]` stride 16);
@@ -87,7 +94,7 @@ pub fn arr_to_string(ptr: i64, es: i64, kind: i64) -> String {
                 }
                 2 => out.push_str(&format_float(f64::from_bits(e as u64))),
                 3 => out.push_str(if e != 0 { "true" } else { "false" }),
-                4 => out.push(char::from_u32(e as u32).unwrap_or('?')),
+                4 => out.push_str(&char_byte_to_string(e)),
                 5 => {
                     let tg = mem::read_i64(p + 16 + i * 16 + 8);
                     let tv = tag_type(tg);

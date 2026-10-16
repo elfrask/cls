@@ -133,6 +133,7 @@ impl TypeChecker {
                 "contains" | "startsWith" | "endsWith" | "isEmpty" => Type::Bool,
                 "indexOf" => Type::Int,
                 "split" => Type::Array(Box::new(Type::String)),
+                "toChar" => Type::Array(Box::new(Type::Char)),
                 _ => Type::Any,
             },
             Type::Array(elem) => match member.member.as_str() {

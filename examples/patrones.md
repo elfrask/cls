@@ -104,6 +104,7 @@ La regla operativa:
 | `json.parse` como intrínseco | Viola la regla | ❌ |
 | `print` / `input` | Host (IO básico) | ✅ |
 | `len`, `type`, `int`, `float`, `str` | Intrínsecos primitivos | ✅ |
+| `char`, `ord` (buffer de bytes: `Char` = 1 byte) | Intrínsecos primitivos | ✅ |
 | `now`, `sleep`, `exit` | Intrínsecos primitivos (o FFI) | ✅ |
 
 La stdlib actual (`math`, `json`, `fs`, `http`) debe ser **reevaluada** bajo esta regla. Todo lo que sea implementable en CLS + FFI **debería migrarse fuera del host**.

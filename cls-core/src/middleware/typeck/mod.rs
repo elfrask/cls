@@ -114,7 +114,7 @@ impl TypeChecker {
         // len, type, now, exit, sleep, throw.
         let core_names = [
             "print", "input", "args", "toString", "int", "float", "str", "bool",
-            "len", "type", "now", "exit", "sleep", "throw", "config",
+            "len", "type", "now", "exit", "sleep", "throw", "config", "char", "ord",
         ];
         tc.define("print", Type::Fun(vec![Type::Any], Box::new(Type::Void)));
         tc.define("input", Type::Fun(vec![Type::String], Box::new(Type::String)));
@@ -130,6 +130,10 @@ impl TypeChecker {
         tc.define("exit", Type::Fun(vec![Type::Int], Box::new(Type::Void)));
         tc.define("sleep", Type::Fun(vec![Type::Int], Box::new(Type::Void)));
         tc.define("throw", Type::Fun(vec![Type::Any], Box::new(Type::Unknown)));
+        // `char(n: int) -> Char` / `ord(c: Char) -> int`: unidad de 1 byte para
+        // buffers (modelo bytes/str). Intrínsecos primitivos (i32 trivial).
+        tc.define("char", Type::Fun(vec![Type::Int], Box::new(Type::Char)));
+        tc.define("ord", Type::Fun(vec![Type::Char], Box::new(Type::Int)));
         // Intrinsic de introspección: `config() -> Record<String, String>`.
         tc.define(
             "config",

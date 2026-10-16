@@ -33,8 +33,8 @@ if (-not (Test-Path $clx)) {
 
 # --- 0. modulos compartidos de /modules que consume la prueba ---
 #   io    : lectura de archivos (readText/readBytes) via FFI
-#   bytes : codigo de byte (ord) + diff (firstDiff) via FFI+CLS
-foreach ($mod in @("io", "bytes")) {
+#   (bytes quedo CLS puro y sin build: usa los intrinsecos char/ord)
+foreach ($mod in @("io")) {
     $b = Join-Path $repo "modules\$mod\build.ps1"
     if (-not (Test-Path $b)) { Write-Host "ERROR: no existe $b"; exit 2 }
     & $b

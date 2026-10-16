@@ -41,7 +41,7 @@ pub fn ffi_read_value<C: HostCtx>(ctx: &mut C, bits: i64, tag: i64) -> ClsValue 
         1 => ClsValue::String(ctx.read_str(bits)),
         2 => ClsValue::Float(f64::from_bits(bits as u64)),
         3 => ClsValue::Bool(bits != 0),
-        4 => ClsValue::Char(char::from_u32(bits as u32).unwrap_or('?')),
+        4 => ClsValue::Char((bits & 0xff) as u8 as char),
         6 => ffi_read_array(ctx, bits),
         7 => ffi_read_record(ctx, bits),
         _ => ClsValue::Int(bits),
@@ -293,6 +293,13 @@ fn format_float(v: f64) -> String {
     format!("{}", v)
 }
 
+/// Formatea un `Char` (unidad de 1 byte 0..255) como texto. Para bytes ASCII es
+/// exacto; para bytes >= 128 produce el reemplazo UTF-8 (`from_utf8_lossy`),
+/// coherente con `read_str` (la decodificación de strings del runtime).
+fn char_byte_to_string(v: i64) -> String {
+    String::from_utf8_lossy(&[(v & 0xff) as u8]).into_owned()
+}
+
 /// Aloca + escribe bytes crudos en la memoria del módulo y los empaqueta
 /// `(ptr<<32)|len`. Paridad con `cls-internals::mem::write_bytes`.
 pub(crate) fn write_packed_bytes<C: HostCtx>(ctx: &mut C, bytes: &[u8]) -> i64 {
@@ -339,8 +346,8 @@ pub fn host_print_bool<C: HostCtx>(ctx: &mut C, v: i32) {
 }
 
 pub fn host_print_char<C: HostCtx>(ctx: &mut C, v: i32) {
-    let c = char::from_u32(v as u32).unwrap_or('?');
-    print_arg(ctx, &c.to_string());
+    let s = char_byte_to_string(v as i64);
+    print_arg(ctx, &s);
 }
 
 pub fn host_print_str<C: HostCtx>(ctx: &mut C, v: i64) {
@@ -562,8 +569,7 @@ pub fn host_str_bool<C: HostCtx>(ctx: &mut C, v: i32) -> i64 {
 }
 
 pub fn host_str_char<C: HostCtx>(ctx: &mut C, v: i32) -> i64 {
-    let c = char::from_u32(v as u32).unwrap_or('?');
-    ctx.write_str(&c.to_string())
+    ctx.write_str(&char_byte_to_string(v as i64))
 }
 
 pub fn host_str_upper<C: HostCtx>(ctx: &mut C, v: i64) -> i64 {
@@ -842,7 +848,7 @@ pub fn host_arr_join<C: HostCtx>(ctx: &mut C, ptr: i64, sep: i64, es: i64, kind:
             1 => out.push_str(&ctx.read_str(e)),
             2 => out.push_str(&format_float(f64::from_bits(e as u64))),
             3 => out.push_str(if e != 0 { "true" } else { "false" }),
-            4 => out.push(char::from_u32(e as u32).unwrap_or('?')),
+            4 => out.push_str(&char_byte_to_string(e)),
             _ => out.push_str(&e.to_string()),
         }
     }
@@ -1024,7 +1030,7 @@ fn json_serialize_val<C: HostCtx>(ctx: &mut C, val: i64, tag: i64, out: &mut Str
         }
         2 => out.push_str(&format_float(f64::from_bits(val as u64))),
         3 => out.push_str(if val != 0 { "true" } else { "false" }),
-        4 => out.push(char::from_u32(val as u32).unwrap_or('?')),
+        4 => out.push_str(&char_byte_to_string(val)),
         // Esquema del RUNTIME (json_build): 6=array, 7=record.
         6 => json_serialize_array(ctx, val, out),
         7 => json_serialize_record(ctx, val, out),
@@ -1095,7 +1101,7 @@ pub fn host_json_stringify<C: HostCtx>(ctx: &mut C, v: i64, tag: i64) -> i64 {
         }
         2 => out.push_str(&format_float(f64::from_bits(v as u64))),
         3 => out.push_str(if v != 0 { "true" } else { "false" }),
-        4 => out.push(char::from_u32(v as u32).unwrap_or('?')),
+        4 => out.push_str(&char_byte_to_string(v)),
         12 => out.push_str("null"),
         _ => out.push_str(&v.to_string()), // 0=int, u otros
     }
@@ -2003,7 +2009,7 @@ fn fmt_val_to_string<C: HostCtx>(ctx: &mut C, val: i64, tag: i64) -> String {
                 "false".to_string()
             }
         }
-        4 => char::from_u32(val as u32).unwrap_or('?').to_string(),
+        4 => char_byte_to_string(val),
         5 => cmx_format(ctx, val as usize),
         6 => {
             let es = if kind == 5 || kind == 6 { 16 } else { 8 };
@@ -2040,7 +2046,7 @@ fn arr_to_string<C: HostCtx>(ctx: &mut C, ptr: i64, es: i64, kind: i64) -> Strin
             }
             2 => out.push_str(&format_float(f64::from_bits(e as u64))),
             3 => out.push_str(if e != 0 { "true" } else { "false" }),
-            4 => out.push(char::from_u32(e as u32).unwrap_or('?')),
+            4 => out.push_str(&char_byte_to_string(e)),
             5 => {
                 let tg = ctx.read_i64(p + 16 + i * 16 + 8);
                 let tv = tag_type(tg);

@@ -41,11 +41,32 @@ pub extern "C" fn __intr_str_bool(v: i32) -> i64 {
     unsafe { mem::write_str(if v != 0 { "true" } else { "false" }) }
 }
 
+/// `Char.toString()` — String de **1 byte** con el valor crudo del `Char`
+/// (`v & 0xFF`), byte-transparente (modelo `bytes`/`str`: `Char` es una unidad
+/// de 1 byte para buffers, NO un codepoint Unicode).
 #[no_mangle]
 pub extern "C" fn __intr_str_char(v: i32) -> i64 {
+    unsafe { mem::write_bytes(&[(v & 0xff) as u8]) }
+}
+
+/// `String.toChar() -> Char[]` — los **bytes** del string como array de `Char`
+/// (cada uno 0..255). Layout de array `[cap:i64][len:i64][i32 elems]`
+/// (elementos de 4 bytes; `arr_kind_code(Char) = 4`).
+#[no_mangle]
+pub extern "C" fn __intr_str_to_chars(s: i64) -> i64 {
     unsafe {
-        let c = char::from_u32(v as u32).unwrap_or('?');
-        mem::write_str(&c.to_string())
+        let bytes = mem::read_bytes(s);
+        let n = bytes.len();
+        let ptr = mem::alloc(n as i64 * 4 + 16);
+        if ptr == 0 {
+            return 0;
+        }
+        mem::write_i64(ptr, n as i64);
+        mem::write_i64(ptr + 8, n as i64);
+        for (i, &b) in bytes.iter().enumerate() {
+            mem::write_i32(ptr + 16 + i * 4, b as i32);
+        }
+        ptr as i64
     }
 }
 
@@ -307,6 +328,8 @@ pub extern "C" fn __intr_str_append(old: i64, v_val: i64, v_tag: i64) -> i64 {
     unsafe {
         let piece: Vec<u8> = match v_tag {
             1 => mem::read_bytes(v_val).to_vec(),
+            // 4 = char: unidad de 1 byte (byte-transparente, no codepoint).
+            4 => vec![(v_val & 0xff) as u8],
             _ => crate::fmt::fmt_val_to_string(v_val, v_tag).into_bytes(),
         };
         let old_ptr = (old >> 32) as usize;

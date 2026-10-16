@@ -2,7 +2,8 @@
 //! `cls-jit/src/host.rs` — `host_arr_*`).
 //! Layout: `[cap:i64][len:i64][elems*es]` con `es` = 4 (i32) u 8 (i64/f64).
 
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
+use alloc::vec::Vec;
 use crate::mem;
 
 pub(crate) unsafe fn arr_len(ptr: usize) -> i64 {
@@ -174,22 +175,24 @@ pub extern "C" fn __intr_arr_join(ptr: i64, sep: i64, es: i64, kind: i64) -> i64
         let p = ptr as usize;
         let es = es as usize;
         let len = arr_len(p);
-        let separator = mem::read_str(sep);
-        let mut out = String::new();
+        let separator = mem::read_bytes(sep);
+        let mut out: Vec<u8> = Vec::new();
         for i in 0..len as usize {
             if i > 0 {
-                out.push_str(&separator);
+                out.extend_from_slice(separator);
             }
             let e = arr_elem(p, i, es);
             match kind {
-                1 => out.push_str(&mem::read_str(e)),
-                2 => out.push_str(&crate::fmt::format_float(f64::from_bits(e as u64))),
-                3 => out.push_str(if e != 0 { "true" } else { "false" }),
-                4 => out.push(char::from_u32(e as u32).unwrap_or('?')),
-                _ => out.push_str(&e.to_string()),
+                1 => out.extend_from_slice(&mem::read_bytes(e)),
+                2 => out.extend_from_slice(crate::fmt::format_float(f64::from_bits(e as u64)).as_bytes()),
+                3 => out.extend_from_slice(if e != 0 { b"true" } else { b"false" }),
+                // 4 = char: unidad de 1 byte (byte-transparente; permite
+                // reconstruir un String byte a byte con join("")).
+                4 => out.push((e & 0xff) as u8),
+                _ => out.extend_from_slice(e.to_string().as_bytes()),
             }
         }
-        mem::write_str(&out)
+        mem::write_bytes(&out)
     }
 }
 

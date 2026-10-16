@@ -81,7 +81,7 @@ Memoria mínima 32 páginas (2MB); `memory.grow` según demanda.
 | `Int` | `i64` |
 | `Float` | `f64` |
 | `Bool` | `i32` (0/1) |
-| `Char` | `i32` (codepoint) |
+| `Char` | `i32` (byte 0..255 — unidad de buffer) |
 | `String` | `i64` = `(ptr << 32) | len` en la memoria lineal |
 | `Array<T>` | `i64` = puntero a `[cap][len][elems...]` |
 | `Record`/`Shape`/`Tuple`/`Cmx`/clases/structs/enums | `i64` = puntero |

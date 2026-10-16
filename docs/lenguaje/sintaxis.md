@@ -81,8 +81,30 @@ print(`Template $nombre ${edad + 1}`);
 
 ### Char
 
-No existe literal `char` real: `'a'` produce un `String` de un carácter. El
-token `CharLiteral` existe en el lexer, pero nunca se produce.
+No existe literal `char`: `'a'` produce un `String` de un carácter. El token
+`CharLiteral` existe en el lexer, pero nunca se produce. El tipo `Char` se
+construye con los intrínsecos primitivos:
+
+```clx
+char(65);          # Char con el byte 65 ('A')
+ord(char(65));     # 65 (código del byte, 0..255)
+
+"A".toChar();      # Char[] = [65] (los BYTES del String)
+char(200).toString();  # String de 1 byte con el valor crudo 200
+```
+
+**Modelo `bytes`/`str`:** `Char` es la **unidad de 1 byte** (0..255) para
+buffers de bytes; `String` sigue siendo texto **byte-based** (`length`/`s[i]`
+operan sobre bytes). Conviven como `bytes` y `str` en Python:
+
+- `String.toChar() -> Char[]` — los bytes del string, uno por `Char`.
+- `Char.toString() -> String` — String de 1 byte, **byte-transparente** (el byte
+  crudo, NO el UTF-8 de un codepoint).
+- `chars.join("")` — reconstruye el String byte a byte.
+- `char(n: int) -> Char` (`n & 0xFF`) y `ord(c: Char) -> int` (0..255).
+
+`'a'` sigue siendo un `String` (no un `Char`); para un byte suelto usar
+`char(ord("a".toChar()[0]))` o directamente `"a".toChar()[0]`.
 
 ## Bools
 

@@ -219,6 +219,11 @@ impl<'a> FuncEmitter<'a> {
                         return Ok(true);
                     }
                     "toString" => { return Ok(true); },
+                    "toChar" => {
+                        // Bytes del string como Char[] (unidad de 1 byte).
+                        self.emit_str_host("__intr_str_to_chars");
+                        return Ok(true);
+                    }
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
                 }
             }
@@ -625,6 +630,22 @@ impl<'a> FuncEmitter<'a> {
                 }
                 self.emit_expression(arg)?;
                 self.emit_to_bool(arg)?;
+                return Ok(true);
+            }
+            "char" => {
+                // `char(n) -> Char`: unidad de 1 byte (`n & 0xFF`). Trivial i32.
+                self.emit_expression(&c.args[0])?;
+                self.body.push(Instruction::I32WrapI64);
+                self.body.push(Instruction::I32Const(0xff));
+                self.body.push(Instruction::I32And);
+                return Ok(true);
+            }
+            "ord" => {
+                // `ord(c) -> int`: codigo del byte 0..255 de un Char.
+                self.emit_expression(&c.args[0])?;
+                self.body.push(Instruction::I32Const(0xff));
+                self.body.push(Instruction::I32And);
+                self.body.push(Instruction::I64ExtendI32U);
                 return Ok(true);
             }
             "type" => {

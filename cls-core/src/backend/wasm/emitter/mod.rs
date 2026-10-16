@@ -395,7 +395,7 @@ impl<'a> FuncEmitter<'a> {
     fn intrinsic_handle_idx(&self, name: &str) -> Option<i64> {
         const BUILTINS: &[&str] = &[
             "print", "len", "toString", "str", "input", "int", "float", "bool",
-            "type", "now", "exit", "sleep", "throw",
+            "type", "now", "exit", "sleep", "throw", "char", "ord",
         ];
         if let Some(i) = BUILTINS.iter().position(|b| *b == name) {
             return Some(-(i as i64 + 1));

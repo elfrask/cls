@@ -33,7 +33,7 @@ function hex16(a: int[]) -> String {
     if (n > 16) { n = 16; }
     var i = 0;
     while (i < n) {
-        var one: int[] = [a[i]];
+        var one: Char[] = [char(a[i])];
         out = out + bytes::hexEncode(one);
         if (i + 1 < n) { out = out + " "; }
         i = i + 1;

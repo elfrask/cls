@@ -1,22 +1,18 @@
-# bytes - Utilidades de bytes: ord/chr (FFI) + hex/diff (CLS puro).
+# bytes - Utilidades de bytes: ord/chr (intrinsecos) + hex/diff (CLS puro).
 #
-# Ladrillo de la stdlib autocontenida (examples/patrones.md §11). `ord`/`chr`
-# son FFI (codigo de byte y string de 1 byte); `hexEncode`/`hexDecode`/`firstDiff`
-# son CLS puro. NO usa host_calls.
+# CLS puro, SIN FFI. `ord`/`chr` se apoyan en los INTRINSECOS primitivos del
+# lenguaje sobre `Char` = unidad de 1 byte (`char(n)`, `ord(c)`); los bytes de un
+# String se obtienen con `s.toChar()` (modelo bytes/str: String = texto
+# byte-based, Char = unidad de 1 byte para buffers).
 #
-# LIMITACION CONOCIDA DEL FFI: la ruta del `.dll` se resuelve relativa al CWD,
-# no al archivo .clsx. Correr desde la raiz del repo (ver README).
+# Ladrillo de la stdlib autocontenida (examples/patrones.md §11). NO usa
+# host_calls.
 
-extension "modules/bytes/bytes_shim.dll" as C {
-    function o_ord(s: CString, i: CLong) -> CLong;
-    function o_chr(n: CLong) -> CString;
-};
+# Codigo de byte (0..255) de un Char.
+export function ord(c: Char) -> int { return ord(c); }
 
-# Codigo del byte i (0..255); -1 si el indice esta fuera de rango.
-export function ord(s: String, i: int) -> int { return int(o_ord(s, i)); }
-
-# String de 1 byte con el codigo n (0..255).
-export function chr(n: int) -> String { return o_chr(n); }
+# String de 1 byte con el codigo n (0..255), byte-transparente.
+export function chr(n: int) -> String { return char(n).toString(); }
 
 # Digito hex de un nibble (0..15).
 function hexNib(b: int) -> String {
@@ -31,13 +27,13 @@ function normalize(b: int) -> int {
     return v;
 }
 
-# int[] (bytes) -> string hex en minusculas (2 chars por byte).
-export function hexEncode(bytes: int[]) -> String {
+# Char[] (buffer de bytes) -> string hex en minusculas (2 chars por byte).
+export function hexEncode(bytes: Char[]) -> String {
     var out = "";
     var i = 0;
     var n = bytes.length;
     while (i < n) {
-        var v = normalize(bytes[i]);
+        var v = normalize(ord(bytes[i]));
         out = out + hexNib(v / 16) + hexNib(v % 16);
         i = i + 1;
     }
@@ -53,13 +49,15 @@ function hexVal(c: int) -> int {
 }
 
 # string hex -> int[] (bytes). Ignora un nibble impar final; nibble invalido -> -1.
+# Los bytes del hex se obtienen con `hex.toChar()` (Char[]) y su codigo con `ord`.
 export function hexDecode(hex: String) -> int[] {
     var out: int[] = [];
-    var n = hex.length;
+    var cs = hex.toChar();
+    var n = cs.length;
     var i = 0;
     while (i + 1 < n) {
-        var hi = hexVal(ord(hex, i));
-        var lo = hexVal(ord(hex, i + 1));
+        var hi = hexVal(ord(cs[i]));
+        var lo = hexVal(ord(cs[i + 1]));
         if (hi < 0 || lo < 0) { out.push(-1); }
         else { out.push(hi * 16 + lo); }
         i = i + 2;

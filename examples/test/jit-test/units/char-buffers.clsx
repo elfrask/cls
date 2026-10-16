@@ -1,0 +1,41 @@
+# char-buffers: `Char` como unidad de 1 byte para buffers (modelo bytes/str).
+#
+# Ejercita la API de buffers de bytes SIN tocar `String` (que sigue byte-based):
+#   - `String.toChar() -> Char[]`  (los bytes del string)
+#   - `Char.toString() -> String`  (String de 1 byte, byte-transparente)
+#   - `char(n: int) -> Char`       (intrinseco; n & 0xFF)
+#   - `ord(c: Char) -> int`        (intrinseco; codigo 0..255)
+#   - `Char[].join("")`            (reconstruye el string byte a byte)
+#
+# bytes::hexEncode usa el modulo compartido /modules (CLS puro, sin FFI).
+
+import "bytes" as bytes;
+
+function main(args: String[]) -> int {
+    # 1. String.toChar(): un Char (byte) por byte del string.
+    var cs = "abc".toChar();
+    print("len", cs.length);                # 3
+    print("b0", ord(cs[0]));                # 97  ('a')
+    print("b2", ord(cs[2]));                # 99  ('c')
+
+    # 2. char() / ord() y Char.toString() (byte-transparente).
+    print("A", char(65).toString());        # A
+    print("ordA", ord(char(65)));           # 65
+    print("ord200", ord(char(200)));        # 200
+
+    # 3. Bytes >= 128: "á" es 0xC3 0xA1 en UTF-8.
+    var ab = "á".toChar();
+    print("ablen", ab.length);              # 2
+    print("hex", bytes::hexEncode(ab));     # c3a1
+
+    # 4. Round-trip String -> Char[] -> String (join).
+    var back = ab.join("");
+    print("back-eq", back == "á");          # true
+    print("back-len", back.length);         # 2
+
+    # 5. Round-trip Char[] -> String -> Char[].
+    var rt = char(65).toString() + char(66).toString();
+    print("rt", rt);                        # AB
+    print("rt-len", rt.toChar().length);    # 2
+    return 0;
+}

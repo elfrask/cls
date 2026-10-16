@@ -36,8 +36,9 @@ examples/brainfuck/
 └── run.ps1                  # orquestador
 ```
 
-Consume de `/modules`: `io` (I/O de archivos), `bytes` (`ord`, `firstDiff`,
-`hexEncode`). Los `build.ps1` de `io` y `bytes` los llama `run.ps1`.
+Consume de `/modules`: `io` (I/O de archivos) y `bytes` (`ord`, `firstDiff`,
+`hexEncode`; CLS puro, sin build). `run.ps1` solo construye el shim de `io` y el
+oráculo BF (el propio `bytes` ya no requiere FFI).
 
 ## Cómo correr
 
@@ -114,9 +115,10 @@ Ver `findings/README.md`. Resumen:
 ## Gaps de lenguaje (rodeados, no bloqueantes)
 
 - **Sin `ord`/`chr`** (al construir la prueba): no había forma de obtener el
-  código de byte de un `String` de 1 byte (necesario para implementar `,`). Se
-  resolvió con **FFI extraído a `modules/bytes`** (`bytes::ord`).
-  `s[i]` devuelve un `String` de 1 byte, no un código.
+  código de byte de un `String` de 1 byte. **RESUELTO**: ahora hay intrínsecos
+  primitivos `char(n: int) -> Char` / `ord(c: Char) -> int` y
+  `String.toChar() -> Char[]` (`Char` = unidad de 1 byte); `modules/bytes` los
+  envuelve (`bytes::ord`) sin FFI.
 - **Sin bytes crudos C→CLS**: un retorno `CString` se trunca en el primer NUL
   (usa `strlen`). Para leer bytes crudos (p. ej. el `.out` con NUL) se usa
   **`modules/io`** (`io::readBytes(path) -> int[]`, `CArray`).

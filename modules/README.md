@@ -60,7 +60,7 @@ import "sha256" as sha;              # usa modules/sha256/  -> sha::hash(...)
 | Módulo | Estado | Reemplaza a | Notas |
 |--------|--------|-------------|-------|
 | `io` | Activo | `host_call fs` (§2.7) | **FFI a C**. I/O de archivos y descriptores sobre el shim `io_shim.dll` (sin punteros). Pagan la deuda de autocontención. Requiere `powershell -File modules/io/build.ps1`. Usado por `examples/brainfuck` y `examples/clsh`. |
-| `bytes` | Activo | `bf_ord`/`bf_read_bytes` de brainfuck; helpers hex de `diag` | **FFI + CLS puro**. `ord`/`chr` (FFI, `bytes_shim.dll`) + `hexEncode`/`hexDecode`/`firstDiff` (puros). Requiere `powershell -File modules/bytes/build.ps1`. Usado por `examples/brainfuck`. |
+| `bytes` | Activo | `bf_ord`/`bf_read_bytes` de brainfuck; helpers hex de `diag` | **CLS puro (sin FFI)**. `ord`/`chr` (sobre los intrínsecos `char`/`ord`; `Char` = unidad de 1 byte) + `hexEncode`/`hexDecode`/`firstDiff`. Sin build. Usado por `examples/brainfuck`. |
 | `prng` | Activo | `host_call math.random`; LCG local de `conformance` | CLS puro. `Prng` (LCG de 64 bits): `next`, `nextInt`, `nextFloat`. Usado por `examples/conformance`. |
 | `check` | Activo | — | CLS puro. Aserciones + protocolo `CHECK k=v` (`assertEq`, `assertEqStr`, `assertTrue`, `fail`, `fails`, `reset`) para runners de prueba. |
 | `diag` | **Superseded** | — | CLS puro. Diagnóstico: `hexByte`, `bytesToHex`. **Superseded por `bytes`** (`hexEncode`/`hexDecode`); se conserva por compatibilidad. |
