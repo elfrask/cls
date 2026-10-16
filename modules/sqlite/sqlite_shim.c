@@ -19,7 +19,8 @@
  * frente al orden de busqueda de DLLs de Windows).
  *
  * Compilacion (Windows, MinGW-w64 x64):
- *   gcc -shared -O2 -o oracle/sqlite_shim.dll oracle/sqlite_shim.c
+ *   gcc -shared -O2 -o modules/sqlite/sqlite_shim.dll modules/sqlite/sqlite_shim.c
+ * (o `powershell -File modules/sqlite/build.ps1`, que ademas copia sqlite3.dll).
  */
 
 #include <stdint.h>

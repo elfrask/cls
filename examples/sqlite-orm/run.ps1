@@ -1,10 +1,10 @@
 # run.ps1 - Runner diferencial de la prueba #5 (SQLite ORM).
 #
-#   1. compila el shim C `oracle/sqlite_shim.dll` (si falta o esta viejo)
-#   2. localiza `sqlite3.dll` (runtime de Python) y lo expone al shim
-#   3. corre el runner CLS (ORM)  -> out/cls.db + CHECK de lectura
-#   4. corre el oraculo Python    -> out/py.db + CHECK de referencia
-#   5. compara BYTE A BYTE:
+#   1. construye el backend FFI llamando a modules/sqlite/build.ps1
+#      (compila sqlite_shim.dll + copia sqlite3.dll junto al shim)
+#   2. corre el runner CLS (ORM)  -> out/cls.db + CHECK de lectura
+#   3. corre el oraculo Python    -> out/py.db + CHECK de referencia
+#   4. compara BYTE A BYTE:
 #        - las lineas CHECK de CLS vs Python (lectura via ORM)
 #        - dump(cls.db) vs dump(py.db)     (contenido/tipos/UTF-8/orden)
 #        - integrity_check(cls.db) == ok
@@ -23,8 +23,7 @@ $here = $PSScriptRoot
 $repo = (Resolve-Path (Join-Path $here "..\..")).Path
 $clx = Join-Path $repo "target\debug\clx.exe"
 $oraclePy = Join-Path $here "oracle\oracle.py"
-$shimSrc = Join-Path $here "oracle\sqlite_shim.c"
-$shimDll = Join-Path $here "oracle\sqlite_shim.dll"
+$buildPs1 = Join-Path $repo "modules\sqlite\build.ps1"
 $outDir = Join-Path $here "out"
 $clsDb = Join-Path $outDir "cls.db"
 $pyDb = Join-Path $outDir "py.db"
@@ -38,28 +37,10 @@ if (-not $python) { Write-Host "ERROR: no se encontro 'python' en PATH (oraculo)
 
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
-# --- sqlite3.dll del runtime de Python ---
-$sqliteDll = (& python -c "import sys,os; p=os.path.join(sys.prefix,'DLLs','sqlite3.dll'); print(p if os.path.exists(p) else '')").Trim()
-if ($sqliteDll -ne "") {
-    $env:CLS_SQLITE_PATH = $sqliteDll
-    $localCopy = Join-Path $here "oracle\sqlite3.dll"
-    if (-not (Test-Path $localCopy)) { Copy-Item $sqliteDll $localCopy -Force -ErrorAction SilentlyContinue }
-    Write-Host "sqlite3.dll: $sqliteDll"
-} else {
-    Write-Host "AVISO: no se encontro sqlite3.dll via Python; el shim intentara PATH."
-}
-
-# --- shim C ---
-$gcc = Get-Command gcc -ErrorAction SilentlyContinue
-$needBuild = (-not (Test-Path $shimDll)) -or ((Get-Item $shimSrc).LastWriteTime -gt (Get-Item $shimDll).LastWriteTime)
-if ($needBuild) {
-    if (-not $gcc) { Write-Host "ERROR: falta $shimDll y no hay gcc."; exit 2 }
-    Write-Host "== compilando shim C (sqlite_shim.dll) =="
-    & gcc -shared -O2 -o $shimDll $shimSrc
-    if ($LASTEXITCODE -ne 0) { exit 1 }
-} else {
-    Write-Host "== shim C ya compilado =="
-}
+# --- backend FFI (modules/sqlite): compila el shim y prepara sqlite3.dll ---
+if (-not (Test-Path $buildPs1)) { Write-Host "ERROR: no existe $buildPs1"; exit 2 }
+& $buildPs1
+if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: modules/sqlite/build.ps1 fallo."; exit 1 }
 
 function Compare-Bytes([string]$a, [string]$b, [string]$label) {
     $ba = [System.IO.File]::ReadAllBytes($a)

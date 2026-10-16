@@ -1,6 +1,5 @@
 import "orm" as orm;
-import "driver" as drv;
-import "sqlite_driver" as sq;
+import "sqlite" as sq;
 function main(args: String[]) -> int {
     var dbPath = "examples/sqlite-orm/out/repro.db";
     sq::removeFile(dbPath);
@@ -13,7 +12,7 @@ function main(args: String[]) -> int {
     var s = o.prepareInsert("t", cols);
     var k = 0;
     while (k < 1000) {
-        o.bulkRow(s, [drv::cInt(k + 1), drv::cText("u" + str(k + 1))]);
+        o.bulkRow(s, [orm::cInt(k + 1), orm::cText("u" + str(k + 1))]);
         k = k + 1;
     }
     o.commit();

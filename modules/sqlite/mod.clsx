@@ -1,17 +1,18 @@
-# sqlite_driver.clsx - Backend SQLite del ORM.
+# sqlite - Backend SQLite del ORM (FFI a C).
 #
-# Implementa el contrato de `driver.clsx` sobre el shim C
-# (`oracle/sqlite_shim.dll`), que envuelve la API C de SQLite SIN exponer
-# punteros a CLS (conexiones/sentencias/result sets = handles enteros).
+# Ladrillo de la stdlib autocontenida (examples/patrones.md §11): implementa el
+# contrato de driver de `modules/orm` sobre el shim C `sqlite_shim.dll`, que
+# envuelve la API C de SQLite SIN exponer punteros a CLS (conexiones,
+# sentencias y result sets = handles enteros).
 #
 # LIMITACION CONOCIDA DEL FFI: la ruta del `.dll` se resuelve relativa al CWD,
-# no al archivo .clsx. Por eso la prueba exige correr desde la raiz del repo
-# (ver README). El shim a su vez autolocaliza `sqlite3.dll` (junto a el, en
+# no al archivo .clsx. Por eso hay que correr desde la raiz del repo (ver
+# README). El shim a su vez autolocaliza `sqlite3.dll` (junto a el, en
 # `%CLS_SQLITE_PATH%` o en PATH).
 
-import "driver" as drv;
+import "orm" as orm;
 
-extension "examples/sqlite-orm/oracle/sqlite_shim.dll" as C {
+extension "modules/sqlite/sqlite_shim.dll" as C {
     function o_init() -> CLong;
     function o_version(_d: CString) -> CString;
     function o_error(_d: CString) -> CString;
@@ -49,33 +50,27 @@ extension "examples/sqlite-orm/oracle/sqlite_shim.dll" as C {
 };
 
 # Mapea un valor del result set (codigos de tipo de SQLite) a un Cell del ORM.
-# NOTA: se usa `if/else` anidado con `return` en vez de una cadena
-# `if/elif/elif/else` por la regresion del lenguaje findings/02 (una cadena con
-# >=2 `elif` + `else` ejecuta el `else` de mas). Con `return` el flujo sale en
-# cada rama.
-function cellOf(t: int, rr: int, i: int, c: int) -> drv::Cell {
+function cellOf(t: int, rr: int, i: int, c: int) -> orm::Cell {
     if (t == 1) {
-        return drv::cInt(int(o_cell_int(rr, i, c)));
-    } else {
-        if (t == 2) {
-            return drv::cFloat(o_cell_double(rr, i, c));
-        } else {
-            if (t == 3) {
-                return drv::cText(o_cell_text(rr, i, c));
-            } else {
-                if (t == 4) {
-                    return drv::cBlob(o_cell_blob_hex(rr, i, c));
-                } else {
-                    return drv::cNull();
-                }
-            }
-        }
+        return orm::cInt(int(o_cell_int(rr, i, c)));
+    }
+    elif (t == 2) {
+        return orm::cFloat(o_cell_double(rr, i, c));
+    }
+    elif (t == 3) {
+        return orm::cText(o_cell_text(rr, i, c));
+    }
+    elif (t == 4) {
+        return orm::cBlob(o_cell_blob_hex(rr, i, c));
+    }
+    else {
+        return orm::cNull();
     }
 }
 
 # Result set del shim -> ResultSet neutro del ORM.
-function materialize(rr: int) -> drv::ResultSet {
-    var rs = drv::ResultSet();
+function materialize(rr: int) -> orm::ResultSet {
+    var rs = orm::ResultSet();
     if (rr < 0) { rs.ncols = -1; return rs; }
     rs.nrows = int(o_nrows(rr));
     rs.ncols = int(o_ncols(rr));
@@ -83,7 +78,7 @@ function materialize(rr: int) -> drv::ResultSet {
     var c = 0;
     while (c < rs.ncols) { cols.push(o_colname(rr, c)); c = c + 1; }
     rs.cols = cols;
-    var cells: drv::Cell[] = [];
+    var cells: orm::Cell[] = [];
     var i = 0;
     while (i < rs.nrows) {
         c = 0;
@@ -111,10 +106,10 @@ export class SqliteDriver: Driver {
     }
     function close() -> int { return int(o_close(me.h)); }
     function exec(sql: String) -> int { return int(o_exec(me.h, sql)); }
-    function query(sql: String) -> drv::ResultSet {
+    function query(sql: String) -> orm::ResultSet {
         return materialize(int(o_query(me.h, sql)));
     }
-    function queryBind(sql: String, params: drv::Cell[]) -> drv::ResultSet {
+    function queryBind(sql: String, params: orm::Cell[]) -> orm::ResultSet {
         var s = int(o_prepare(me.h, sql));
         var k = 0;
         while (k < params.length) {
@@ -126,7 +121,7 @@ export class SqliteDriver: Driver {
         return rs;
     }
     function prepare(sql: String) -> int { return int(o_prepare(me.h, sql)); }
-    function bind(stmt: int, idx: int, cell: drv::Cell) -> int {
+    function bind(stmt: int, idx: int, cell: orm::Cell) -> int {
         if (cell.kind == 1) { return int(o_bind_null(stmt, idx)); }
         if (cell.kind == 2) { return int(o_bind_int(stmt, idx, cell.i)); }
         if (cell.kind == 3) { return int(o_bind_double(stmt, idx, cell.f)); }

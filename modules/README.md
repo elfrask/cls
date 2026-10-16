@@ -61,6 +61,8 @@ import "sha256" as sha;              # usa modules/sha256/  -> sha::hash(...)
 |--------|--------|-------------|-------|
 | `diag` | Activo | — | CLS puro. Diagnóstico para runners de prueba: `hexByte`, `bytesToHex`. Usado por `examples/brainfuck`. |
 | `config` | Activo | — | CLS puro. Introspección de la configuración del host **solo lectura**: `all`, `get`, `getBool`, `getInt`, `sandboxEnabled`. Envuelve el intrinsic `config()` con caché perezosa (una sola llamada al host). |
+| `orm` | Activo | — | CLS puro. Capa ORM **agnóstica al motor** + contrato de driver (`Cell`, `ResultSet`, `Driver` base) y `Orm` (CRUD, query builder, transacciones, bulk). Backends enchufables. Extraído de `examples/sqlite-orm`. |
+| `sqlite` | Activo | — | **FFI a C**. Backend SQLite (`SqliteDriver: Driver`) sobre el shim `sqlite_shim.dll` (sin punteros; handles enteros). Consume `orm`. Requiere `powershell -File modules/sqlite/build.ps1`. |
 
 ## Excepción sancionada: `config()`
 

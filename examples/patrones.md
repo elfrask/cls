@@ -413,6 +413,21 @@ tiene `export.entry`, se usa ese entry.
     resuelve con FFI (es un bug del lenguaje si no puede).
 18. El uso de estas rutas **no exime** la regla 5.1.6 (no tocar el host).
 
+### 11.5 Extraer a `/modules` lo reutilizable de cada prueba
+
+Al cerrar cada prueba, **revisar qué artefactos son reutilizables** (drivers,
+ORM, parsers, protocolos, hashing, utilidades...) y **promoverlos a `/modules`**
+como módulos CLS + FFI; la prueba debe quedar como **consumidor** del módulo (no
+como copia). Ejemplos ya extraídos: `modules/config`, `modules/diag`,
+`modules/orm`, `modules/sqlite`.
+
+19. **Nada útil se queda hardcodeado en una prueba**: si otro proyecto podría
+    reusarlo, se mueve a `/modules` (con su README y, si aplica, build script).
+20. Los módulos extraídos deben ser **agnósticos al motor/caso** cuando se pueda
+    (p. ej. `orm` es genérico y `sqlite` es un backend enchufable).
+21. Al extraer, la prueba **debe seguir pasando** consumiendo el módulo
+    (verificar con su runner y las suites).
+
 ---
 
 *Documento vivo. Actualizar cuando cambie el estado del JIT, del FFI o de la stdlib.*

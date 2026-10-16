@@ -5,64 +5,79 @@ núcleo es **agnóstico al motor**, con un **driver SQLite** enchufable, y valid
 todo el resultado contra un **oráculo externo independiente**: el módulo
 `sqlite3` de Python (la misma `libsqlite3` del sistema).
 
+La prueba es un **consumidor** de los módulos compartidos de `/modules`
+(ver `examples/patrones.md` §11.5):
+
+- **`modules/orm`** — capa genérica + contrato de driver (`Cell`, `ResultSet`,
+  `Driver` base, `Orm`). Ver `modules/orm/README.md`.
+- **`modules/sqlite`** — backend FFI (`SqliteDriver: Driver` + shim C). Ver
+  `modules/sqlite/README.md`.
+
 Reglas que respeta (ver `examples/patrones.md` §2, §5, §11):
 
 - **Autocontención**: código CLS puro + **FFI a C**. **No** usa
   `fs`/`http`/`json`/`strings` ni ningún `host_call` nuevo.
-- **Sin punteros expuestos al lenguaje**: la API C de SQLite es *pointer-heavy*
-  (`sqlite3*`, `sqlite3_stmt*`, `char**`); un **shim C** la envuelve en
-  funciones que sólo reciben/devuelven escalares (enteros/doubles) y strings.
+- **Sin punteros expuestos al lenguaje**: el shim C envuelve la API de SQLite;
   CLS referencia conexiones, sentencias y result sets por **handles enteros**.
 - **Oráculo externo obligatorio**: Python `sqlite3`.
-- **Sin trucos**: no se toca el compilador ni nada fuera de `examples/sqlite-orm/`.
+- **Sin trucos**: no se toca el compilador; el runner vive en `src/main.clsx` y
+  los módulos en `/modules`.
 
 ---
 
 ## Arquitectura
 
 ```
-examples/sqlite-orm/
-├── cls.json                 # entry + pathModules
-├── run.ps1                  # compila shim, corre CLS + Python, compara byte a byte
+examples/sqlite-orm/            # consumidor
+├── cls.json                    # entry + pathModules: ["../../modules"]
+├── run.ps1                     # llama a modules/sqlite/build.ps1, corre CLS + Python, compara
 ├── src/
-│   ├── main.clsx            # runner: carga de trabajo + protocolo CHECK
-│   ├── orm.clsx             # ORM genérico (CRUD, query builder, transacciones)
-│   ├── driver.clsx          # contrato de driver (Cell, ResultSet, Driver base)
-│   └── sqlite_driver.clsx   # backend SQLite (usa el shim por FFI)
+│   ├── main.clsx               # runner: carga de trabajo + protocolo CHECK
+│   ├── repro-string-inline.clsx# repros de la prueba (usan orm + sqlite)
+│   └── repro-string-var.clsx
 ├── oracle/
-│   ├── sqlite_shim.c        # shim C "sin punteros" sobre la API de SQLite
-│   ├── sqlite_shim.dll      # (build)
-│   ├── oracle.py            # oráculo Python (construye py.db, dump canónico)
-│   └── sqlite3.dll          # (build) copia del runtime de Python
-├── tests/README.md          # los casos viven en src/main.clsx (ver abajo)
-├── out/                     # cls.db, py.db, dumps y CHECKs (artefactos)
-└── findings/                # repros mínimos de regresiones del lenguaje
+│   ├── oracle.py               # oráculo Python (construye py.db, dump canónico)
+│   └── sqlite3.dll             # (build) copia del runtime de Python
+├── tests/README.md
+├── out/                        # cls.db, py.db, dumps y CHECKs (artefactos)
+└── findings/                   # repros mínimos / reporte de regresiones
+
+modules/orm/                    # módulo compartido (capa genérica)
+├── cls.json
+├── mod.clsx                    # consts KIND_*, Cell, ResultSet, Driver, Orm
+└── README.md
+
+modules/sqlite/                 # módulo compartido (backend FFI)
+├── cls.json
+├── mod.clsx                    # SqliteDriver: Driver  (import "orm")
+├── sqlite_shim.c               # shim C "sin punteros" (movido desde oracle/)
+├── build.ps1                   # compila el shim + copia sqlite3.dll
+└── README.md
 ```
 
 ### Capas
 
-1. **`driver.clsx`** — el contrato. Define:
+1. **`modules/orm`** — el contrato y la capa genérica. Define:
    - `Cell`: valor neutro al motor `{kind, i, f, s}` donde `kind` es
      `1 NULL, 2 INT, 3 FLOAT, 4 TEXT, 5 BLOB` (el BLOB viaja como **hex**).
    - `ResultSet`: filas × columnas materializadas como `Cell[]`.
    - `Driver` (**clase base**): los métodos que todo backend debe implementar
      (ver *Contrato* abajo).
+   - `Orm`: emite SQL estándar y delega en un `Driver`.
 
-2. **`orm.clsx`** — la capa genérica. **No contiene SQL específico de SQLite**:
-   emite SQL estándar (`CREATE TABLE`, `INSERT ... VALUES (?, ...)`,
-   `SELECT ... WHERE ... ORDER BY ... LIMIT ... OFFSET ...`, `BEGIN/COMMIT/
-   ROLLBACK`) y delega la ejecución en un `Driver`. Usa *binding* de parámetros
-   (`?`), nunca interpola valores en el texto.
+2. **`modules/sqlite`** — `SqliteDriver: Driver`. Traduce cada `Cell` a
+   `o_bind_*` del shim y materializa los `ResultSet` desde el shim. Importa la
+   capa genérica (`import "orm" as orm;`).
 
-3. **`sqlite_driver.clsx`** — `SqliteDriver: Driver`. Traduce cada `Cell` a
-   `o_bind_*` del shim y materializa los `ResultSet` desde el shim.
+3. **`modules/sqlite/sqlite_shim.c`** — shim C sobre `sqlite3.dll`. Se
+   **autolocaliza** (`GetModuleFileNameW`) y carga `sqlite3.dll` desde
+   `%CLS_SQLITE_PATH%`, su propio directorio o el PATH, resolviendo símbolos con
+   `GetProcAddress` (sin dependencia de import estática). Nota: el build de
+   SQLite de Python se compila con `SQLITE_OMIT_AUTOINIT`, por lo que el shim
+   llama `sqlite3_initialize()` antes de la primera operación.
 
-4. **`oracle/sqlite_shim.c`** — shim C sobre `sqlite3.dll`. Se **autolocaliza**
-   (`GetModuleFileNameW`) y carga `sqlite3.dll` desde `%CLS_SQLITE_PATH%`, su
-   propio directorio o el PATH, resolviendo símbolos con `GetProcAddress`
-   (sin dependencia de import estática). Nota: el build de SQLite de Python se
-   compila con `SQLITE_OMIT_AUTOINIT`, por lo que el shim llama
-   `sqlite3_initialize()` antes de la primera operación.
+4. **`src/main.clsx`** — el consumidor: importa `orm` y `sqlite`, construye
+   `out/cls.db` y emite el protocolo `CHECK k=v`.
 
 5. **`oracle/oracle.py`** — oráculo externo. Reproduce la misma carga de trabajo
    con la stdlib `sqlite3` y produce:
@@ -73,55 +88,37 @@ examples/sqlite-orm/
 
 ### Cómo valida (`run.ps1`)
 
-1. CLS construye `out/cls.db` a través del ORM y emite `CHECK k=v`.
-2. Python construye `out/py.db` con las mismas operaciones y emite los mismos
+1. `modules/sqlite/build.ps1` compila `sqlite_shim.dll` y copia `sqlite3.dll`.
+2. CLS construye `out/cls.db` a través del ORM y emite `CHECK k=v`.
+3. Python construye `out/py.db` con las mismas operaciones y emite los mismos
    `CHECK k=v`.
-3. Se comparan **byte a byte**: (a) los CHECK de CLS vs Python, (b) `dump(cls.db)`
+4. Se comparan **byte a byte**: (a) los CHECK de CLS vs Python, (b) `dump(cls.db)`
    vs `dump(py.db)`, y (c) `PRAGMA integrity_check(cls.db) == ok`.
 
 Si algo diverge, `run.ps1` sale con código != 0.
 
 ---
 
-## Contrato de driver (para agregar MySQL/Postgres)
+## Contrato de driver
 
-Un backend nuevo se implementa **heredando de `Driver`** y sobrescribiendo:
+Vive en `modules/orm`; ver `modules/orm/README.md` para la tabla completa y cómo
+agregar un backend MySQL/Postgres (subclase de `Driver`, heredada con el nombre
+**no cualificado** `Driver`; en anotaciones se usa `orm::Cell`/`orm::ResultSet`).
 
-| Método | Firma | Debe hacer |
-|---|---|---|
-| `connect` | `(path: String) -> int` | abrir conexión; devolver handle (>=0 ok) |
-| `close` | `() -> int` | cerrar |
-| `exec` | `(sql: String) -> int` | SQL sin resultados (DDL/DML/TX); 0 = ok |
-| `query` | `(sql: String) -> ResultSet` | `SELECT` sin parámetros |
-| `queryBind` | `(sql: String, params: Cell[]) -> ResultSet` | `SELECT` con `?` |
-| `prepare` | `(sql: String) -> int` | sentencia preparada (handle) |
-| `bind` | `(stmt: int, idx: int, cell: Cell) -> int` | enlazar parámetro `idx` (1-based) |
-| `step` | `(stmt: int) -> int` | 1 fila / 0 fin / <0 error |
-| `resetStmt` | `(stmt: int) -> int` | reutilizar tras `step` |
-| `finalizeStmt` | `(stmt: int) -> int` | liberar |
-| `lastId` | `() -> int` | last insert id |
-| `changes` | `() -> int` | filas afectadas del último DML |
-| `integrity` | `() -> String` | chequeo de integridad del motor |
-| `version` | `() -> String` | versión del motor |
-
-El ORM sólo usa estos métodos; para un backend MySQL/Postgres basta con crear
-`mysql_driver.clsx` (`class MysqlDriver: Driver { ... }`) y pasarlo a
-`Orm(driver)` en `main.clsx`. El SQL que emite `orm.clsx` es estándar.
-
-> **Nota (regresión)**: el patrón alternativo "driver = `Record<String, Callable>`"
-> **no es viable hoy** porque CLS no permite invocar un valor tipado como
-> `Callable` (ver `findings/05`). Por eso el driver es una **clase base**.
+El ORM sólo usa esos métodos; un backend nuevo basta con pasarlo a
+`Orm(driver)` en `src/main.clsx`. El SQL que emite `Orm` es estándar.
 
 ---
 
 ## Limitaciones conocidas (documentadas, no bugs de la prueba)
 
-- **Ruta del `.dll` FFI = relativa al CWD**, no al archivo `.clsx`. Por eso hay
-  que correr desde la **raíz del repo**. `run.ps1` lo hace; para ejecuciones
-  manuales, `cd` a la raíz primero.
-- `sqlite3.dll` no se versiona: `run.ps1` lo copia desde el runtime de Python a
-  `oracle/` (y exporta `CLS_SQLITE_PATH`). Para ejecución manual, tener
-  `oracle/sqlite3.dll` o `CLS_SQLITE_PATH` apuntando a la DLL.
+- **Ruta del `.dll` FFI = relativa al CWD**, no al archivo `.clsx`. La extensión
+  del módulo `sqlite` apunta a `modules/sqlite/sqlite_shim.dll`, así que hay que
+  correr desde la **raíz del repo**. `run.ps1` lo hace; para ejecuciones
+  manuales, `cd` a la raíz primero. Ver `modules/sqlite/README.md`.
+- `sqlite3.dll` no se versiona: `modules/sqlite/build.ps1` lo copia desde el
+  runtime de Python a `modules/sqlite/` (y exporta `CLS_SQLITE_PATH` en la
+  sesión). El shim también lo localiza junto a él.
 - **C→CLS callback** (`sqlite3_exec` con callback): **no es expresable** hoy
   (no hay *function pointers* en el FFI). Ver `findings/06`.
 
@@ -131,12 +128,14 @@ El ORM sólo usa estos métodos; para un backend MySQL/Postgres basta con crear
 
 ```powershell
 # Desde la raíz del repo
-target\debug\clx.exe run examples\sqlite-orm\src\main.clsx --add-path-module=modules
 powershell -File examples\sqlite-orm\run.ps1
+
+# Equivalente manual (el runner requiere pathModules -> modules):
+target\debug\clx.exe run examples\sqlite-orm\src\main.clsx
 ```
 
-> `main.clsx` corre con el **shadow stack por defecto** (trace on). El bug que
-> lo rompía (trap + panic del reporter) quedó **resuelto** — ver `findings/04`.
+> `main.clsx` corre con el **shadow stack por defecto** (trace on). El bug que lo
+> rompía (trap + panic del reporter) quedó **resuelto** — ver `findings/04`.
 
 ---
 
