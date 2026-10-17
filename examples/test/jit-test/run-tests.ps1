@@ -37,6 +37,8 @@ $expectedErrors = @{
     "match-badvariant.clsx" = "patron con variante inexistente -> error estatico (F2)"
     "match-badarity.clsx" = "patron con aridad incorrecta -> error estatico (F2)"
     "match-destr-unprovable.clsx" = "destructuring-let no demostrable -> error estatico (F2)"
+    "arrow-return-bad.clsx" = "`<-` sin target (F4) -> error de compilacion"
+    "ifexpr-no-else.clsx" = "`if`-expresion sin `else` (F3) -> error de sintaxis"
 }
 
 # Args de app por test (se pasan tras `--`). Migracion dev-2 (Fase 8):

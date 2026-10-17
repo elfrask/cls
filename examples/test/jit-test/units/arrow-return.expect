@@ -1,0 +1,4 @@
+﻿arm target: 8
+match jump: 999
+double star: 2
+match star: 77

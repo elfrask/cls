@@ -96,6 +96,8 @@ impl<'a> FuncEmitter<'a> {
             }
             Expression::MemberAccess(m) => self.emit_member_access(m),
             Expression::Conditional(c) => self.emit_conditional(c),
+            Expression::Ternary(c) => self.emit_ternary(c),
+            Expression::IfExpr(c) => self.emit_if_expr(c),
             Expression::Match(m) => self.emit_match(m),
             Expression::Assignment(a) => self.emit_assignment(a),
             Expression::Parenthesized(inner, _) => self.emit_expression(inner),
@@ -439,6 +441,123 @@ impl<'a> FuncEmitter<'a> {
         self.emit_expression(&c.else_expr)?;
         self.body.push(Instruction::End);
         self.block_depth -= 1;
+        Ok(())
+    }
+
+    /// `?:` estilo JS (F3). Expresión pura: no es target de `<-` (emite un
+    /// `If(Result)` como el ternario legacy). El tipo del resultado lo fija la
+    /// rama `then` (paridad con `emit_conditional`).
+    pub(crate) fn emit_ternary(&mut self, c: &TernaryExpr) -> ClsResult<()> {
+        let w = self.value_type(&c.then_expr)?;
+        self.emit_expression(&c.condition)?;
+        self.coerce_to_bool(&c.condition)?;
+        self.block_depth += 1;
+        self.body
+            .push(Instruction::If(BlockType::Result(w.val_type())));
+        self.emit_expression(&c.then_expr)?;
+        self.body.push(Instruction::Else);
+        self.emit_expression(&c.else_expr)?;
+        self.body.push(Instruction::End);
+        self.block_depth -= 1;
+        Ok(())
+    }
+
+    /// `if (c) { ... } else { ... }` como expresión (F3). Abre `block (result)`
+    /// como **ternary-target**; las ramas entregan su valor con `* <-`
+    /// (arrowReturn, F4), que emite `br` a ese bloque. Requiere `else`.
+    pub(crate) fn emit_if_expr(&mut self, e: &IfExpr) -> ClsResult<()> {
+        let res_cls = self.types.get(&e.span).cloned().unwrap_or(Type::Void);
+        let is_void = matches!(res_cls, Type::Void | Type::Empty);
+        if is_void {
+            return Err(crate::error::ClsError::compile_at(
+                "la expresión `if` debe devolver un valor: cada rama debe terminarlo con `<-`",
+                &e.span,
+            ));
+        }
+        let res_w = was_type(&res_cls).unwrap_or(WasTy::I64);
+
+        self.emit_expression(&e.condition)?;
+        self.coerce_to_bool(&e.condition)?;
+
+        self.block_depth += 1;
+        self.body
+            .push(Instruction::If(BlockType::Result(res_w.val_type())));
+        let done_at = self.block_depth;
+        self.ternary_targets.push((done_at, res_w));
+
+        self.dead_flow = false;
+        self.emit_scoped_block(&e.then_block)?;
+        if !self.dead_flow {
+            return Err(crate::error::ClsError::compile_at(
+                "la rama `then` de la expresión `if` debe entregar su valor con `<-`",
+                &e.then_block.span,
+            ));
+        }
+        self.body.push(Instruction::Else);
+        self.dead_flow = false;
+        self.emit_scoped_block(&e.else_block)?;
+        if !self.dead_flow {
+            return Err(crate::error::ClsError::compile_at(
+                "la rama `else` de la expresión `if` debe entregar su valor con `<-`",
+                &e.else_block.span,
+            ));
+        }
+        self.body.push(Instruction::End); // if (result) == $done
+        self.block_depth -= 1;
+
+        self.ternary_targets.pop();
+        self.dead_flow = false;
+        Ok(())
+    }
+
+    /// `* <- expr` / `** <- expr` / `match <- expr` / `match* <- expr` / ... (F4).
+    /// Resuelve el target léxico en las pilas y emite el valor + `br` al bloque
+    /// `(result)` del target (desenrollando `if`/`while`/`for` intermedios: un
+    /// `br` a un bloque ancestro los sale naturalmente). Sin target -> error.
+    pub(crate) fn emit_arrow_return(&mut self, a: &ArrowReturn) -> ClsResult<()> {
+        let (depth, target_w): (u32, WasTy) = if a.is_match {
+            let entry = self.match_targets.iter().rev().nth(a.stars).ok_or_else(|| {
+                crate::error::ClsError::compile_at(
+                    &format!(
+                        "`{}<-` sin `match` envolvente en la función",
+                        "match".to_string() + &"*".repeat(a.stars)
+                    ),
+                    &a.span,
+                )
+            })?;
+            match entry.1 {
+                Some(w) => (entry.0, w),
+                None => {
+                    return Err(crate::error::ClsError::compile_at(
+                        "no se puede devolver un valor (`<-`) a un `match` que no devuelve valor",
+                        &a.span,
+                    ))
+                }
+            }
+        } else {
+            if a.stars == 0 {
+                return Err(crate::error::ClsError::compile_at(
+                    "`<-` requiere al menos un `*` (ternary-target) o `match` (match-target)",
+                    &a.span,
+                ));
+            }
+            *self.ternary_targets.iter().rev().nth(a.stars - 1).ok_or_else(|| {
+                crate::error::ClsError::compile_at(
+                    &format!(
+                        "`{}<-` sin target: no hay `if`-expresión ni arma de `match` (bloque) envolvente",
+                        "*".repeat(a.stars)
+                    ),
+                    &a.span,
+                )
+            })?
+        };
+        let val_w = self.value_type(&a.value)?;
+        self.emit_expression(&a.value)?;
+        if target_w == WasTy::F64 && val_w != WasTy::F64 {
+            self.f64_promote(&a.value)?;
+        }
+        self.body.push(Instruction::Br(self.block_depth - depth));
+        self.dead_flow = true;
         Ok(())
     }
 

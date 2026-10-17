@@ -186,6 +186,7 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             Statement::If(i) => self.emit_if(i),
+            Statement::ArrowReturn(a) => self.emit_arrow_return(a),
             Statement::Try(t) => self.emit_try(t),
             Statement::While(w) => self.emit_while(w),
             Statement::Loop(b) => self.emit_loop(b),

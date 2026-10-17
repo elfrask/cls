@@ -113,6 +113,16 @@ pub(crate) fn collect_arrows_in_expr(expr: &Expression, out: &mut Vec<ArrowFunct
             collect_arrows_in_expr(&c.then_expr, out);
             collect_arrows_in_expr(&c.else_expr, out);
         }
+        Expression::Ternary(c) => {
+            collect_arrows_in_expr(&c.condition, out);
+            collect_arrows_in_expr(&c.then_expr, out);
+            collect_arrows_in_expr(&c.else_expr, out);
+        }
+        Expression::IfExpr(ie) => {
+            collect_arrows_in_expr(&ie.condition, out);
+            collect_arrows_in_block(&ie.then_block, out);
+            collect_arrows_in_block(&ie.else_block, out);
+        }
         Expression::Match(m) => {
             if let Some(s) = &m.scrutinee {
                 collect_arrows_in_expr(s, out);
@@ -186,6 +196,7 @@ pub(crate) fn collect_free_vars_in_stmt(stmt: &Statement, locals: &mut Vec<Strin
         }
         Statement::Expression(e) => collect_free_vars_in_expr(e, locals, free),
         Statement::Return(Some(e)) => collect_free_vars_in_expr(e, locals, free),
+        Statement::ArrowReturn(a) => collect_free_vars_in_expr(&a.value, locals, free),
         Statement::DestructureLet(d) => {
             collect_free_vars_in_expr(&d.value, locals, free);
             for b in &d.binds {
@@ -290,6 +301,16 @@ pub(crate) fn collect_free_vars_in_expr(expr: &Expression, locals: &mut Vec<Stri
             collect_free_vars_in_expr(&c.condition, locals, free);
             collect_free_vars_in_expr(&c.then_expr, locals, free);
             collect_free_vars_in_expr(&c.else_expr, locals, free);
+        }
+        Expression::Ternary(c) => {
+            collect_free_vars_in_expr(&c.condition, locals, free);
+            collect_free_vars_in_expr(&c.then_expr, locals, free);
+            collect_free_vars_in_expr(&c.else_expr, locals, free);
+        }
+        Expression::IfExpr(ie) => {
+            collect_free_vars_in_expr(&ie.condition, locals, free);
+            collect_free_vars_in_block(&ie.then_block, locals, free);
+            collect_free_vars_in_block(&ie.else_block, locals, free);
         }
         Expression::Match(m) => {
             if let Some(s) = &m.scrutinee {

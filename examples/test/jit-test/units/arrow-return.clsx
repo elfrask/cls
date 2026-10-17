@@ -1,0 +1,61 @@
+enum R { a(int), b };
+
+# * <- desde el cuerpo de un arma-bloque (ternary-target del arma).
+function arm_target() -> int {
+    return match (R::a(7)) {
+        a(n) -> { * <- n + 1 },
+        b    -> { * <- 100 }
+    };
+};
+
+# match <- desde una rama de if-expresion (salta el if y va directo al match).
+function match_jump() -> int {
+    return match (R::a(2)) {
+        a(n) -> {
+            var t = if (n > 3) {
+                * <- 1
+            } else {
+                match <- 999
+            }
+            * <- t
+        },
+        b -> { * <- 0 }
+    };
+};
+
+# ** salta el if interno y entrega al arma-bloque (ternary-target externo).
+function double_star() -> int {
+    return match (R::a(0)) {
+        a(n) -> {
+            var t = if (n > 5) {
+                * <- 1
+            } else {
+                ** <- 2
+            }
+            * <- t + 10
+        },
+        b -> { * <- 0 }
+    };
+};
+
+# match* salta el match interno y entrega al match externo.
+function match_star() -> int {
+    return match (R::a(0)) {
+        a(n) -> {
+            var inner = match (R::b) {
+                b     -> { match* <- 77 },
+                a(x)  -> { * <- 0 }
+            };
+            * <- inner
+        },
+        b -> { * <- 0 }
+    };
+};
+
+function main(args: String[]) -> int {
+    print("arm target:", arm_target());
+    print("match jump:", match_jump());
+    print("double star:", double_star());
+    print("match star:", match_star());
+    return 0;
+};

@@ -250,6 +250,20 @@ impl TypeChecker {
         }
     }
 
+    /// `?:` estilo JS (F3). Misma semántica de tipo que el ternario legacy.
+    pub(crate) fn check_ternary(&mut self, t: &TernaryExpr) -> Type {
+        self.check_expression(&t.condition);
+        let then_type = self.check_expression(&t.then_expr);
+        let else_type = self.check_expression(&t.else_expr);
+        if then_type.is_assignable_to(&else_type) {
+            then_type
+        } else if else_type.is_assignable_to(&then_type) {
+            else_type
+        } else {
+            Type::Any
+        }
+    }
+
     pub(crate) fn check_assignment(&mut self, assign: &AssignmentExpr) -> Type {
         let left = self.check_expression(&assign.target);
         let right = self.check_expression(&assign.value);

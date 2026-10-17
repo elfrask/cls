@@ -112,6 +112,13 @@ pub fn expr_display(expr: &Expression) -> String {
             expr_display(&c.then_expr),
             expr_display(&c.else_expr)
         ),
+        Expression::Ternary(c) => format!(
+            "({} ? {} : {})",
+            expr_display(&c.condition),
+            expr_display(&c.then_expr),
+            expr_display(&c.else_expr)
+        ),
+        Expression::IfExpr(c) => format!("(if {} {{ ... }} else {{ ... }})", expr_display(&c.condition)),
         Expression::Match(m) => {
             let kw = match m.mode {
                 MatchMode::Type => " is",
@@ -170,6 +177,11 @@ impl fmt::Display for Statement {
             Statement::Return(_) => f.write_str("return"),
             Statement::Break(_) => f.write_str("break"),
             Statement::Continue(_) => f.write_str("continue"),
+            Statement::ArrowReturn(a) => f.write_fmt(format_args!(
+                "{}{} <- ...",
+                if a.is_match { "match" } else { "" },
+                "*".repeat(a.stars)
+            )),
             Statement::ClassDecl(c) => f.write_fmt(format_args!("class {}", c.name)),
             Statement::StructureDecl(s) => f.write_fmt(format_args!("structure {}", s.name)),
             Statement::InterfaceDecl(i) => f.write_fmt(format_args!("interface {}", i.name)),

@@ -91,7 +91,8 @@ Nota: el caso lleva paréntesis `case (patrón)`, y el caso por defecto es
 
 `match` es una **expresión** (y también usable como sentencia) con **4 modos**
 elegidos por la keyword tras el paréntesis. El cuerpo de arma es `-> expr`
-(el valor implícito). `default` es opcional; si ninguna arma matchea y no hay
+(el valor implícito) o `-> { ... }` (bloque con `<-`). `default` es opcional; si
+ninguna arma matchea y no hay
 `default`, es un **error de runtime** ("ningún caso de `match` coincidió"). Un
 `match` **vacío** (sin armas) es un **error de compilación**.
 
@@ -131,7 +132,9 @@ Reglas:
   deben ser asignables a ese tipo (si hay anotación, se valida contra ella).
 - **Statement vs expresión**: por posición. Como sentencia no devuelve valor
   (el cuerpo se dropea); como expresión lo devuelve.
-- El bloque `-> { ... }` con **arrowReturn `<-`** es F4; aún no soportado.
+- **Cuerpo de arma-bloque (F4)**: `PATRONES -> { ... }` con **arrowReturn `<-`**.
+  El bloque es un *ternary-target*: entrega el valor del arma con `* <- expr`
+  (y `match <- expr` salta directo al `match`). Ver [arrowReturn](#arrowreturn--).
 - **Modo PATRÓN con payload (F2)**: el scrutinee debe ser un **enum**; los
   patrones van **desnudos** (`ok(texto)`, `err(cod, msg)`, `s1`). La variante se
   valida contra el esquema del enum (**variante inexistente / aridad incorrecta →
@@ -140,8 +143,81 @@ Reglas:
 - **Destructuring-let (F2)**: `var resp::ok(result) = c;` (estático; ver
   `enums.md`).
 
-Pendiente (F3–F6): ternario `?:` / `if`-expresión, `<-`, acceso a miembro sobre
-unión (`valor.x` con `A | B`) y el protocolo `__match`/`__unpack` de clases.
+Pendiente (F5–F6): acceso a miembro sobre unión (`valor.x` con `A | B`) y el
+protocolo `__match`/`__unpack` de clases.
+
+## Familia ternario
+
+Tres formas de elegir un valor según una condición. Solo la `?:` no usa `<-`.
+
+### `?:` estilo JS (solo expresión)
+
+```clx
+var mayor = 10 > 5 ? true : false;
+```
+
+- Precedencia **la más baja** (por encima de la asignación) y **asociativa a
+  derecha**: `a ? b : c ? d : e` == `a ? b : (c ? d : e)`.
+- Es una **expresión pura**: **no** es target de `<-`. El ternario legacy
+  `if (c) then (a) else (b)` sigue funcionando (ver abajo).
+
+### `if` como expresión (bloques + `<-`)
+
+```clx
+var mayor = if (10 > 5) { * <- true } else { * <- false }
+```
+
+- Es una **expresión**: se parsea cuando en posición de expresión aparece
+  `if (...) { ... } else { ... }`. **Requiere `else`** (si falta → error de
+  compilación claro).
+- Cada rama entrega su valor con **`* <- expr`** (arrowReturn, ver abajo); las
+  ramas son *ternary-targets*. El tipo del `if`-expresión es el del `<-` de sus
+  ramas.
+- Distinción con el legacy: tras `if (cond)` viene `then` → ternario legacy;
+  `{` → expresión `if`.
+
+### Ternario legacy
+
+```clx
+var x = if (c) then (1) else (2);
+```
+
+Se conserva por compatibilidad; la forma recomendada hoy es `?:` o la
+expresión `if`.
+
+## arrowReturn (`<-`)
+
+Devuelve un valor desde un bloque al **target** léxico indicado por las
+estrellas (misma función; **no** hay cross-function):
+
+```clx
+enum R { a(int), b };
+
+function calcular(iva: bool, monto: float) -> float {
+    return match (R::a(0)) {
+        a(n) -> {
+            var base = if (iva) {
+                * <- monto * 0.16        # -> el if-expresión (más cercano)
+            } else {
+                match <- monto           # -> el match (salta el if)
+            }
+            * <- base + monto            # -> el arma-bloque
+        },
+        b -> { * <- 0.0 }
+    };
+};
+```
+
+- **ternary-targets** (estrellas): la rama de un `if`-expresión o el cuerpo de
+  un arma de `match` bloque. `*` = el más cercano; `**` = salta 1; `***` = salta
+  2; ...
+- **match-targets** (`match`): cada `match` envolvente. `match` = el más
+  cercano; `match*` = salta 1; `match**` = salta 2; ...
+- Atraviesa `if`/`while`/`for` intermedios (el `br` sale del loop/nivel al
+  bloque-result del target). **Sin target** (no hay `if`-expresión ni arma de
+  `match` bloque envolvente) → **error de compilación**.
+- Un arma-bloque **debe** terminar con `<-` (si no, el valor del arma no
+  existe): el error es de compilación.
 
 ## with
 

@@ -100,6 +100,9 @@ impl Optimizer {
                     self.optimize_expression(expr);
                 }
             }
+            Statement::ArrowReturn(a) => {
+                self.optimize_expression(&mut a.value);
+            }
             _ => {}
         }
     }
@@ -156,6 +159,16 @@ impl Optimizer {
                 self.optimize_expression(&mut cond.then_expr);
                 self.optimize_expression(&mut cond.else_expr);
             }
+            Expression::Ternary(cond) => {
+                self.optimize_expression(&mut cond.condition);
+                self.optimize_expression(&mut cond.then_expr);
+                self.optimize_expression(&mut cond.else_expr);
+            }
+            Expression::IfExpr(ie) => {
+                self.optimize_expression(&mut ie.condition);
+                self.optimize_block(&mut ie.then_block);
+                self.optimize_block(&mut ie.else_block);
+            }
             Expression::Match(m) => {
                 if let Some(s) = &mut m.scrutinee {
                     self.optimize_expression(s);
@@ -166,12 +179,16 @@ impl Optimizer {
                             self.optimize_expression(e);
                         }
                     }
-                    if let MatchBody::Expr(e) = &mut arm.body {
-                        self.optimize_expression(e);
+                    match &mut arm.body {
+                        MatchBody::Expr(e) => self.optimize_expression(e),
+                        MatchBody::Block(b) => self.optimize_block(b),
                     }
                 }
-                if let Some(MatchBody::Expr(e)) = &mut m.default {
-                    self.optimize_expression(e);
+                if let Some(d) = &mut m.default {
+                    match d {
+                        MatchBody::Expr(e) => self.optimize_expression(e),
+                        MatchBody::Block(b) => self.optimize_block(b),
+                    }
                 }
             }
             Expression::Assignment(assign) => {

@@ -6,6 +6,7 @@ mod assignment_expr;
 mod binary_expr;
 mod call_expr;
 mod conditional_expr;
+mod if_expr;
 mod index_expr;
 mod interpolation_part;
 mod literal;
@@ -14,6 +15,7 @@ mod match_expr;
 mod member_access_expr;
 mod record_expr;
 mod string_interpolation;
+mod ternary_expr;
 mod tuple_expr;
 mod unary_expr;
 mod unary_op;
@@ -24,6 +26,7 @@ pub use assignment_expr::*;
 pub use binary_expr::*;
 pub use call_expr::*;
 pub use conditional_expr::*;
+pub use if_expr::*;
 pub use index_expr::*;
 pub use interpolation_part::*;
 pub use literal::*;
@@ -32,6 +35,7 @@ pub use match_expr::*;
 pub use member_access_expr::*;
 pub use record_expr::*;
 pub use string_interpolation::*;
+pub use ternary_expr::*;
 pub use tuple_expr::*;
 pub use unary_expr::*;
 pub use unary_op::*;
@@ -80,6 +84,12 @@ pub enum Expression {
 
     // If como expresión
     Conditional(ConditionalExpr),
+
+    // Ternario `?:` estilo JS (F3, solo expresión)
+    Ternary(TernaryExpr),
+
+    // `if (c) { ... } else { ... }` como expresión (F3, bloques + `<-`)
+    IfExpr(IfExpr),
 
     // Match (expresión de matching, 4 modos) - feature `match` F1
     Match(MatchExpr),

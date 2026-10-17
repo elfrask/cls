@@ -49,6 +49,8 @@ impl TypeChecker {
             Expression::Record(r) => self.check_record(r),
             Expression::ArrowFunction(a) => self.check_arrow_function(a),
             Expression::Conditional(c) => self.check_conditional(c),
+            Expression::Ternary(c) => self.check_ternary(c),
+            Expression::IfExpr(c) => self.check_if_expr(c),
             Expression::Match(m) => self.check_match(m),
             Expression::Assignment(a) => self.check_assignment(a),
             Expression::Parenthesized(inner, _) => self.check_expression(inner),

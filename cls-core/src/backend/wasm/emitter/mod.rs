@@ -127,6 +127,15 @@ pub(crate) struct FuncEmitter<'a> {
     /// tras un `end` de if/switch/try con todas las ramas terminadas, que
     /// cranelift rechaza con "expected i64 but nothing on stack").
     pub(crate) dead_flow: bool,
+    /// Pila de **ternary-targets** (F4): bloques `(result T)` abiertos por una
+    /// rama de `if`-expresión o el cuerpo de un arma de `match` bloque.
+    /// `(block_depth, tipo_wasm_del_resultado)`. `* <-` elige el más cercano.
+    pub(crate) ternary_targets: Vec<(u32, WasTy)>,
+    /// Pila de **match-targets** (F4): bloque `$done` de cada `match`
+    /// envolvente. `(block_depth, Some(tipo))` si el match devuelve valor;
+    /// `None` si es un match-sentencia (no admite `<-`). `match <-` elige el
+    /// más cercano; `match*` salta 1; etc.
+    pub(crate) match_targets: Vec<(u32, Option<WasTy>)>,
 }
 
 impl<'a> FuncEmitter<'a> {
@@ -208,6 +217,8 @@ impl<'a> FuncEmitter<'a> {
             promoted: HashSet::new(),
             shadow_ptr_global: 0,
             dead_flow: false,
+            ternary_targets: Vec::new(),
+            match_targets: Vec::new(),
         }
     }
 

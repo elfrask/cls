@@ -146,6 +146,18 @@ pub fn shift_expr_xy(e: &mut Expression, dl: u32, dc: i64) {
             shift_expr_xy(&mut c.then_expr, dl, dc);
             shift_expr_xy(&mut c.else_expr, dl, dc);
         }
+        Expression::Ternary(c) => {
+            c.span = shift_span_xy(c.span.clone(), dl, dc);
+            shift_expr_xy(&mut c.condition, dl, dc);
+            shift_expr_xy(&mut c.then_expr, dl, dc);
+            shift_expr_xy(&mut c.else_expr, dl, dc);
+        }
+        Expression::IfExpr(ie) => {
+            ie.span = shift_span_xy(ie.span.clone(), dl, dc);
+            shift_expr_xy(&mut ie.condition, dl, dc);
+            shift_block(&mut ie.then_block, dl);
+            shift_block(&mut ie.else_block, dl);
+        }
         Expression::Match(m) => {
             m.span = shift_span_xy(m.span.clone(), dl, dc);
             if let Some(s) = &mut m.scrutinee {
@@ -336,6 +348,10 @@ pub fn shift_stmt(s: &mut Statement, offset: u32) {
         Statement::Return(Some(e)) => shift_expr(e, offset),
         Statement::Return(None) => {}
         Statement::Break(_) | Statement::Continue(_) => {}
+        Statement::ArrowReturn(a) => {
+            a.span = shift_span(a.span.clone(), offset);
+            shift_expr(&mut a.value, offset);
+        }
         Statement::ClassDecl(c) => {
             c.span = shift_span(c.span.clone(), offset);
             for m in &mut c.body {

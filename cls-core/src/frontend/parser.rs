@@ -123,6 +123,13 @@ impl Parser {
             Token::Keyword(Keyword::Break) => self.parse_break(),
             Token::Keyword(Keyword::Continue) => self.parse_continue(),
 
+            // F4: arrowReturn (`* <- expr`, `** <- expr`, `match <- expr`, ...).
+            Token::Operator(Operator::Star)
+            | Token::Operator(Operator::StarStar) => self.parse_arrow_return(),
+            Token::Keyword(Keyword::Match) if self.looks_like_arrow_return() => {
+                self.parse_arrow_return()
+            }
+
             // Clases y estructuras
             Token::Keyword(Keyword::Class) => self.parse_class_decl(),
             Token::Keyword(Keyword::Structure) => self.parse_structure_decl(),
@@ -1075,16 +1082,73 @@ impl Parser {
         Ok(Literal { kind, span })
     }
 
-    /// Cuerpo de arma. F1: solo `-> expr`. El bloque `-> { }` (con arrowReturn
-    /// `<-`) es F4 y se rechaza con un error claro.
+    /// Cuerpo de arma. `-> expr` (valor implícito) o `-> { ... }` (bloque con
+    /// arrowReturn `<-`, F4).
     fn parse_match_body(&mut self) -> ClsResult<MatchBody> {
         if self.check_symbol(Symbol::LBrace) {
-            return Err(self.syntax_err(
-                "el cuerpo de arma `-> { ... }` (arrowReturn `<-`) no está soportado en F1; \
-                 usá `-> expr`",
-            ));
+            return Ok(MatchBody::Block(self.parse_block()?));
         }
         Ok(MatchBody::Expr(Box::new(self.parse_expression()?)))
+    }
+
+    /// Devuelve los próximos `n` tokens (incluido el actual) sin consumirlos.
+    fn peek_tokens(&self, n: usize) -> Vec<Token> {
+        let mut v = Vec::with_capacity(n);
+        v.push(self.current_token.clone());
+        let mut cur = self.tokens.clone();
+        while v.len() < n {
+            match cur.next() {
+                Some(t) => v.push(t.token),
+                None => break,
+            }
+        }
+        v
+    }
+
+    /// `true` si los tokens actuales forman un arrowReturn con `match`
+    /// (`match <- ...`, `match* <- ...`, `match** <- ...`). Hoy el token actual
+    /// es `match`.
+    fn looks_like_arrow_return(&self) -> bool {
+        let peek = self.peek_tokens(6);
+        if matches!(peek.get(1), Some(Token::Operator(Operator::LessMinus))) {
+            return true;
+        }
+        let mut j = 1;
+        while let Some(t) = peek.get(j) {
+            match t {
+                Token::Operator(Operator::Star) | Token::Operator(Operator::StarStar) => j += 1,
+                Token::Operator(Operator::LessMinus) => return j > 1,
+                _ => return false,
+            }
+        }
+        false
+    }
+
+    /// `* <- expr` / `** <- expr` / `match <- expr` / `match* <- expr` / ... (F4).
+    /// `stars` = cantidad de `*` (cada `**` cuenta 2); `is_match` = target de
+    /// `match`.
+    fn parse_arrow_return(&mut self) -> ClsResult<Statement> {
+        let span = self.span();
+        let is_match = self.consume_keyword(Keyword::Match);
+        let mut stars = 0usize;
+        loop {
+            if self.consume_operator(Operator::Star) {
+                stars += 1;
+            } else if self.consume_operator(Operator::StarStar) {
+                stars += 2;
+            } else {
+                break;
+            }
+        }
+        self.expect_operator(Operator::LessMinus)?;
+        let value = self.parse_expression()?;
+        self.consume_symbol(Symbol::Semicolon);
+        Ok(Statement::ArrowReturn(ArrowReturn {
+            stars,
+            is_match,
+            value: Box::new(value),
+            span,
+        }))
     }
 
     fn parse_try_statement(&mut self) -> ClsResult<Statement> {
@@ -2024,7 +2088,25 @@ impl Parser {
     }
 
     fn parse_conditional(&mut self) -> ClsResult<Expression> {
-        self.parse_logical_or()
+        // `?:` estilo JS (F3): precedencia la más baja (por encima de la
+        // asignación) y asociativa a DERECHA: `a ? b : c ? d : e` se parsea como
+        // `a ? b : (c ? d : e)`.
+        let cond = self.parse_logical_or()?;
+        if self.check_operator(Operator::Question) {
+            let start = expr_span(&cond);
+            self.advance();
+            let then_expr = self.parse_expression()?;
+            self.expect_operator(Operator::Colon)?;
+            let else_expr = self.parse_conditional()?;
+            let span = start.merge(&expr_span(&else_expr));
+            return Ok(Expression::Ternary(TernaryExpr {
+                condition: Box::new(cond),
+                then_expr: Box::new(then_expr),
+                else_expr: Box::new(else_expr),
+                span,
+            }));
+        }
+        Ok(cond)
     }
 
     fn parse_logical_or(&mut self) -> ClsResult<Expression> {
@@ -2254,6 +2336,18 @@ impl Parser {
         let mut expr = self.parse_unary()?;
         
         while let Token::Operator(op) = &self.current_token {
+            // `* <- expr` / `** <- expr` (arrowReturn, F4) NO es multiplicación:
+            // el lexer no emite newlines, así que sin este lookahead un statement
+            // que arranca con `*` se absorbería como producto del anterior.
+            if matches!(op, Operator::Star | Operator::StarStar)
+                && self
+                    .tokens
+                    .clone()
+                    .next()
+                    .map_or(false, |t| matches!(t.token, Token::Operator(Operator::LessMinus)))
+            {
+                break;
+            }
             let op = match op {
                 Operator::Star
                 | Operator::Slash
@@ -2606,26 +2700,50 @@ impl Parser {
             }
             // `match` (expresión de matching, 4 modos) - F1
             Token::Keyword(Keyword::Match) => self.parse_match_expr(),
-            // Ternario: if (cond) then (a) else (b)
+            // Ternario legacy: `if (cond) then (a) else (b)`.
+            // `if`-expresión (F3): `if (cond) { ... } else { ... }`.
             Token::Keyword(Keyword::If) => {
+                let start_span = self.span();
                 self.advance();
                 self.expect_symbol(Symbol::LParen)?;
                 let cond = self.parse_expression()?;
                 self.expect_symbol(Symbol::RParen)?;
-                self.expect_keyword(Keyword::Then)?;
-                self.expect_symbol(Symbol::LParen)?;
-                let then_expr = self.parse_expression()?;
-                self.expect_symbol(Symbol::RParen)?;
-                self.expect_keyword(Keyword::Else)?;
-                self.expect_symbol(Symbol::LParen)?;
-                let else_expr = self.parse_expression()?;
-                self.expect_symbol(Symbol::RParen)?;
-                Ok(Expression::Conditional(ConditionalExpr {
-                    condition: Box::new(cond),
-                    then_expr: Box::new(then_expr),
-                    else_expr: Box::new(else_expr),
-                    span: self.span(),
-                }))
+                if self.check_keyword(Keyword::Then) {
+                    // Legacy `if (c) then (a) else (b)`.
+                    self.advance();
+                    self.expect_symbol(Symbol::LParen)?;
+                    let then_expr = self.parse_expression()?;
+                    self.expect_symbol(Symbol::RParen)?;
+                    self.expect_keyword(Keyword::Else)?;
+                    self.expect_symbol(Symbol::LParen)?;
+                    let else_expr = self.parse_expression()?;
+                    self.expect_symbol(Symbol::RParen)?;
+                    return Ok(Expression::Conditional(ConditionalExpr {
+                        condition: Box::new(cond),
+                        then_expr: Box::new(then_expr),
+                        else_expr: Box::new(else_expr),
+                        span: start_span,
+                    }));
+                }
+                // `if`-expresión: requiere bloques y `else` obligatorio.
+                if self.check_symbol(Symbol::LBrace) {
+                    let then_block = self.parse_block()?;
+                    if !self.consume_keyword(Keyword::Else) {
+                        return Err(self.syntax_err(
+                            "la expresión `if` requiere `else` (usá `?:` para el ternario de expresiones)",
+                        ));
+                    }
+                    let else_block = self.parse_block()?;
+                    return Ok(Expression::IfExpr(IfExpr {
+                        condition: Box::new(cond),
+                        then_block,
+                        else_block,
+                        span: start_span,
+                    }));
+                }
+                Err(self.syntax_err(
+                    "se esperaba `then (...) else (...)` (ternario legacy) o `{ ... } else { ... }` (expresión `if`)",
+                ))
             }
             // CMX (JSX nativo)
             Token::Cmx(CmxToken::OpenTag { .. }) => {

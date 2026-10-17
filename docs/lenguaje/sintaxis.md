@@ -126,6 +126,28 @@ var resp::ok(result) = r;        # destructuring-let (estático)
   `err(cod, msg)`, `s1`) — **no** `resp::ok(...)`. Ver `enums.md` y
   `control-de-flujo.md`.
 
+## Ternario y arrowReturn
+
+```clx
+var mayor = 10 > 5 ? true : false;                          # ?: estilo JS
+
+var iva = if (true) { * <- 1.6 } else { * <- 0.0 };         # if-expresión + <-
+
+return match (resp::ok("x")) {
+    ok(v) -> { * <- v },                                    # * <- al arma
+    default -> { match <- "?" }                             # match <- al match
+};
+```
+
+- `? :` es una **expresión** (no usa `<-`); el legacy `if (c) then (a) else (b)`
+  se conserva.
+- `if (...) { ... } else { ... }` como expresión: las ramas entregan su valor
+  con `* <- expr`.
+- `<-` (arrowReturn): `*`/`**`/... apuntan a *ternary-targets* (rama de
+  `if`-expresión / cuerpo de arma-bloque); `match`/`match*`/... a
+  *match-targets*. Sin target → error de compilación. Ver
+  `control-de-flujo.md`.
+
 ## Operadores
 
 | Categoría | Operadores |
@@ -135,6 +157,8 @@ var resp::ok(result) = r;        # destructuring-let (estático)
 | Lógicos | `&`, `\|`, `!` (se aceptan también `&&` y `\|\|`) |
 | Asignación | `=`, `+=`, `-=`, `*=`, `/=`, `%=` |
 | Incremento | `++`, `--` (pre y postfix) |
+| Ternario | `? :` (estilo JS, asociativo a derecha) |
+| arrowReturn | `<-` (yield de bloque: `* <-`, `match <-`, ver `control-de-flujo.md`) |
 | Otros | `->` (retorno/flecha), `::`, `..`, `:` , `@`, `~`, `^`, `<<`, `>>`, `\` |
 
 ## Símbolos

@@ -11,6 +11,7 @@ import "sections/types" as types;
 import "sections/oop" as oop;
 import "sections/enums" as enums;
 import "sections/match" as matchs;
+import "sections/ternary" as ternary;
 import "sections/structs" as structs;
 import "sections/functions" as functions;
 import "sections/strings" as strings;
@@ -30,6 +31,7 @@ function main(args: String[]) -> int {
     fails = fails + oop::oop_run();
     fails = fails + enums::enums_run();
     fails = fails + matchs::match_run();
+    fails = fails + ternary::ternary_run();
     fails = fails + structs::structs_run();
     fails = fails + functions::functions_run();
     fails = fails + strings::strings_run();

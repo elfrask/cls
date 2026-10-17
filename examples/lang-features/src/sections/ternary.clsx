@@ -1,0 +1,104 @@
+# ternary.clsx - eje de la familia ternario (F3) + arrowReturn (F4).
+#
+# Ejercita: `?:` (asociatividad a derecha), `if`-expresion con `* <-`,
+# arma-bloque de `match` como ternary-target, `match <-` (salta al match),
+# `**` (salta el if interno) y `match*` (salta el match interno).
+
+import "check" as check;
+
+enum TResp {
+    val(int),
+    none,
+};
+
+function ternary_value() -> int {
+    var a = 10 > 5 ? 1 : 2;
+    check::assertEq("tern.basic", a, 1);
+
+    # Asociatividad a derecha: `x == 0 ? 1 : x == 1 ? 2 : 3`.
+    var x = 1;
+    var r = x == 0 ? 1 : x == 1 ? 2 : 3;
+    check::assertEq("tern.assoc", r, 2);
+
+    var y = 9;
+    var r2 = y == 0 ? 1 : y == 1 ? 2 : 3;
+    check::assertEq("tern.assoc2", r2, 3);
+    return 0;
+}
+
+function ternary_if_expr() -> int {
+    var iva = if (true) { * <- 16 } else { * <- 0 }
+    check::assertEq("tern.ifexpr.then", iva, 16);
+
+    var cero = if (false) { * <- 16 } else { * <- 0 }
+    check::assertEq("tern.ifexpr.else", cero, 0);
+    return 0;
+}
+
+# Arma-bloque + `* <-` (entrega al arma) y `match <-` (salta directo al match).
+function scorer(con_iva: bool, monto: int) -> int {
+    return match (TResp::val(0)) {
+        val(n) -> {
+            var iva = if (con_iva) {
+                * <- monto * 2
+            } else {
+                match <- monto
+            }
+            * <- iva + monto
+        },
+        none -> { * <- 0 }
+    };
+}
+
+function arrow_targets() -> int {
+    check::assertEq("tern.arm.target.with", scorer(true, 100), 300);
+    check::assertEq("tern.arm.target.match", scorer(false, 100), 100);
+    return 0;
+}
+
+# `**` salta el if interno y entrega al arma-bloque externo.
+function double_star() -> int {
+    return match (TResp::val(0)) {
+        val(n) -> {
+            var t = if (n > 5) {
+                * <- 1
+            } else {
+                ** <- 200
+            }
+            * <- t + 1
+        },
+        none -> { * <- 0 }
+    };
+}
+
+# `match*` salta el match interno y entrega al match externo.
+function match_star() -> int {
+    return match (TResp::val(0)) {
+        val(n) -> {
+            var inner = match (TResp::none) {
+                none   -> { match* <- 777 },
+                val(x) -> { * <- 0 }
+            };
+            * <- inner
+        },
+        none -> { * <- 0 }
+    };
+}
+
+function arrow_count() -> int {
+    check::assertEq("tern.double.star", double_star(), 200);
+    check::assertEq("tern.match.star", match_star(), 777);
+    return 0;
+}
+
+export function ternary_run() -> int {
+    print("== ternary ==");
+    var before = check::fails();
+    ternary_value();
+    ternary_if_expr();
+    arrow_targets();
+    arrow_count();
+    var gained = check::fails() - before;
+    if (gained == 0) { print("FEATURE ternary OK"); }
+    return gained;
+}

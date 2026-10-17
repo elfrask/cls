@@ -87,6 +87,13 @@ pub struct TypeChecker {
     /// Nombres exportados del módulo en proceso (detecta duplicados entre
     /// `export { ... }`, exports directos y colisiones). Se reinicia por módulo.
     exported_names: std::collections::HashSet<String>,
+    /// Pila de tipos de resultado de los **ternary-targets** activos (F4):
+    /// la rama de un `if`-expresión o el cuerpo de un arma de `match` bloque.
+    /// El tipo lo fija el valor del `* <-` que los targets reciben.
+    ternary_yield_stack: Vec<Option<Type>>,
+    /// Pila de tipos de resultado de los **match-targets** activos (F4): cada
+    /// `match` envolvente. Lo fija el valor de `match <-`/`match* <-`/...
+    match_yield_stack: Vec<Option<Type>>,
 }
 
 impl TypeChecker {
@@ -118,6 +125,8 @@ impl TypeChecker {
             pre_registered: std::collections::HashSet::new(),
             target,
             exported_names: std::collections::HashSet::new(),
+            ternary_yield_stack: Vec::new(),
+            match_yield_stack: Vec::new(),
         };
         // Registrar funciones built-in (core intrinsics) como CONSTANTES (no
         // redefinibles): print, input, args, toString, int, float, str, bool,

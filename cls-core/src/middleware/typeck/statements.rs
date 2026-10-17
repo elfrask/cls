@@ -69,6 +69,7 @@ impl TypeChecker {
             }
             Statement::Break(_) => Type::Void,
             Statement::Continue(_) => Type::Void,
+            Statement::ArrowReturn(a) => self.check_arrow_return(a),
             Statement::Expression(e) => self.check_expression(e),
             Statement::ClassDecl(c) => self.check_class(c),
             Statement::StructureDecl(s) => {

@@ -1,5 +1,6 @@
 ﻿//! AST - statements (Fase 1: extraido de frontend/ast.rs).
 
+mod arrow_return;
 mod block;
 mod case_clause;
 mod case_pattern;
@@ -41,6 +42,7 @@ mod when_branch;
 mod while_statement;
 mod with_statement;
 
+pub use arrow_return::*;
 pub use block::*;
 pub use case_clause::*;
 pub use case_pattern::*;
@@ -113,6 +115,9 @@ pub enum Statement {
     Break(Span),
     /// `Continue(Span)` - el span permite ubicar el `continue;` en errores.
     Continue(Span),
+
+    /// `* <- expr` / `match <- expr` (F4, arrowReturn).
+    ArrowReturn(ArrowReturn),
 
     // Clases y estructuras
     ClassDecl(ClassDecl),

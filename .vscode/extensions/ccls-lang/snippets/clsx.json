@@ -315,6 +315,38 @@
     ],
     "description": "Match por patrón sobre enum con payload (bindings posicionales)"
   },
+  "Ternario ?:": {
+    "prefix": "tern",
+    "body": [
+      "var ${1:resultado} = ${2:condicion} ? ${3:valorSi} : ${4:valorNo};"
+    ],
+    "description": "Ternario estilo JS (? :)"
+  },
+  "if como expresion": {
+    "prefix": "ifexpr",
+    "body": [
+      "var ${1:resultado} = if (${2:condicion}) {",
+      "    * <- ${3:valorSi}",
+      "} else {",
+      "    * <- ${4:valorNo}",
+      "}"
+    ],
+    "description": "Expresión if (bloques + arrowReturn `* <-`)"
+  },
+  "arrowReturn (* <-)": {
+    "prefix": "arrret",
+    "body": [
+      "* <- ${1:valor}"
+    ],
+    "description": "arrowReturn al ternary-target más cercano"
+  },
+  "arrowReturn (match <-)": {
+    "prefix": "matchret",
+    "body": [
+      "match <- ${1:valor}"
+    ],
+    "description": "arrowReturn al match más cercano"
+  },
   "Try / catch": {
     "prefix": "try",
     "body": [

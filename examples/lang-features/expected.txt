@@ -184,6 +184,17 @@ CHECK match.eq=ok
 CHECK match.is=ok
 CHECK match.destr=ok
 FEATURE match OK
+== ternary ==
+CHECK tern.basic=ok
+CHECK tern.assoc=ok
+CHECK tern.assoc2=ok
+CHECK tern.ifexpr.then=ok
+CHECK tern.ifexpr.else=ok
+CHECK tern.arm.target.with=ok
+CHECK tern.arm.target.match=ok
+CHECK tern.double.star=ok
+CHECK tern.match.star=ok
+FEATURE ternary OK
 == structs ==
 CHECK struct.x=ok
 CHECK struct.y=ok

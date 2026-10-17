@@ -190,6 +190,9 @@ impl NameResolver {
                 }
             }
             Statement::Break(_) | Statement::Continue(_) => {}
+            Statement::ArrowReturn(a) => {
+                self.resolve_expression(&a.value)?;
+            }
             Statement::Import(import) => {
                 // TODO: cargar módulo y registrar símbolos importados
                 if let Some(alias) = &import.alias {
@@ -303,6 +306,16 @@ impl NameResolver {
                 self.resolve_expression(&cond.condition)?;
                 self.resolve_expression(&cond.then_expr)?;
                 self.resolve_expression(&cond.else_expr)?;
+            }
+            Expression::Ternary(cond) => {
+                self.resolve_expression(&cond.condition)?;
+                self.resolve_expression(&cond.then_expr)?;
+                self.resolve_expression(&cond.else_expr)?;
+            }
+            Expression::IfExpr(ie) => {
+                self.resolve_expression(&ie.condition)?;
+                self.resolve_block(&ie.then_block)?;
+                self.resolve_block(&ie.else_block)?;
             }
             Expression::Match(m) => {
                 if let Some(s) = &m.scrutinee {

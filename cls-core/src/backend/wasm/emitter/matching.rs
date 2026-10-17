@@ -18,19 +18,17 @@ use super::*;
 
 impl<'a> FuncEmitter<'a> {
     pub(crate) fn emit_match(&mut self, m: &MatchExpr) -> ClsResult<()> {
-        let res_ty = self.types.get(&m.span).cloned().unwrap_or(Type::Void);
-        let is_void = matches!(res_ty, Type::Void | Type::Empty);
-
+        if m.arms.is_empty() {
+            return Err(crate::error::ClsError::compile_at("`match` vacío", &m.span));
+        }
+        // Tipo de resultado del `match`: lo fija el typeck en el span del match
+        // (a partir de la primera arma, incluido el yield de un arma-bloque).
+        let res_cls = self.types.get(&m.span).cloned().unwrap_or(Type::Void);
+        let is_void = matches!(res_cls, Type::Void | Type::Empty);
         let res_w = if is_void {
             WasTy::I64
         } else {
-            let first = m.arms.first().ok_or_else(|| {
-                crate::error::ClsError::compile_at("`match` vacío", &m.span)
-            })?;
-            match &first.body {
-                MatchBody::Expr(e) => self.value_type(e)?,
-                MatchBody::Block(_) => return Err(self.match_block_unsupported(&m.span)),
-            }
+            was_type(&res_cls).unwrap_or(WasTy::I64)
         };
 
         // Scrutinee (evaluado UNA vez) salvo en modo condición.
@@ -62,6 +60,10 @@ impl<'a> FuncEmitter<'a> {
             BlockType::Result(res_w.val_type())
         }));
         let done_at = self.block_depth;
+        // F4: este `match` es match-target para `match <-`/`match* <-`/...
+        // (`None` = match-sentencia: no admite `<-`).
+        self.match_targets
+            .push((done_at, if is_void { None } else { Some(res_w) }));
 
         for arm in &m.arms {
             self.emit_match_condition(
@@ -82,19 +84,22 @@ impl<'a> FuncEmitter<'a> {
             {
                 self.emit_match_payload_binds(sl, &key, vidx, &binds)?;
             }
-            let body = match &arm.body {
-                MatchBody::Expr(e) => e,
-                MatchBody::Block(_) => return Err(self.match_block_unsupported(&arm.span)),
-            };
-            self.emit_expression(body)?;
-            if is_void {
-                self.emit_drop(body)?;
-            } else {
-                // El `block $done` tiene el tipo de la PRIMERA arma; si una arma
-                // devuelve Int y el resultado es Float (widening permitido),
-                // promover para no emitir WASM inválido.
-                if res_w == WasTy::F64 && self.value_type(body)? != WasTy::F64 {
-                    self.f64_promote(body)?;
+            match &arm.body {
+                MatchBody::Expr(e) => {
+                    self.emit_expression(e)?;
+                    if is_void {
+                        self.emit_drop(e)?;
+                    } else {
+                        // El `block $done` tiene el tipo del match; si un arma
+                        // devuelve Int y el resultado es Float (widening
+                        // permitido), promover para no emitir WASM inválido.
+                        if res_w == WasTy::F64 && self.value_type(e)? != WasTy::F64 {
+                            self.f64_promote(e)?;
+                        }
+                    }
+                }
+                MatchBody::Block(b) => {
+                    self.emit_match_arm_block(b, res_w, is_void, &arm.span)?;
                 }
             }
             self.exit_var_scope(saved);
@@ -106,15 +111,18 @@ impl<'a> FuncEmitter<'a> {
         }
 
         if let Some(def) = &m.default {
-            let body = match def {
-                MatchBody::Expr(e) => e,
-                MatchBody::Block(_) => return Err(self.match_block_unsupported(&m.span)),
-            };
-            self.emit_expression(body)?;
-            if is_void {
-                self.emit_drop(body)?;
-            } else if res_w == WasTy::F64 && self.value_type(body)? != WasTy::F64 {
-                self.f64_promote(body)?;
+            match def {
+                MatchBody::Expr(e) => {
+                    self.emit_expression(e)?;
+                    if is_void {
+                        self.emit_drop(e)?;
+                    } else if res_w == WasTy::F64 && self.value_type(e)? != WasTy::F64 {
+                        self.f64_promote(e)?;
+                    }
+                }
+                MatchBody::Block(b) => {
+                    self.emit_match_arm_block(b, res_w, is_void, &m.span)?;
+                }
             }
             let depth = self.block_depth - done_at;
             self.body.push(Instruction::Br(depth));
@@ -124,17 +132,47 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::Unreachable);
         }
 
+        self.match_targets.pop();
         self.body.push(Instruction::End); // $done
         self.block_depth -= 1;
         self.dead_flow = false;
         Ok(())
     }
 
-    fn match_block_unsupported(&self, span: &Span) -> crate::error::ClsError {
-        crate::error::ClsError::compile_at(
-            "el cuerpo de arma `-> { ... }` (arrowReturn) es F4 y aún no está soportado",
-            span,
-        )
+    /// Cuerpo de arma `-> { ... }` (F4). Es un **ternary-target**: `* <- valor`
+    /// entrega el resultado del arma (y `match <-` salta al match). El bloque
+    /// debe terminar con `<-` (si no, el valor del arma no existe).
+    fn emit_match_arm_block(
+        &mut self,
+        b: &Block,
+        res_w: WasTy,
+        is_void: bool,
+        span: &Span,
+    ) -> ClsResult<()> {
+        if is_void {
+            // Match-sentencia: el arma-bloque es un bloque normal (no target).
+            self.emit_scoped_block(b)?;
+            return Ok(());
+        }
+        self.block_depth += 1;
+        self.body
+            .push(Instruction::Block(BlockType::Result(res_w.val_type())));
+        let arm_at = self.block_depth;
+        self.ternary_targets.push((arm_at, res_w));
+        self.dead_flow = false;
+        self.emit_scoped_block(b)?;
+        if !self.dead_flow {
+            self.ternary_targets.pop();
+            return Err(crate::error::ClsError::compile_at(
+                "el cuerpo de arma `-> { }` debe devolver su valor con `<-`",
+                span,
+            ));
+        }
+        self.ternary_targets.pop();
+        self.body.push(Instruction::End); // $arm
+        self.block_depth -= 1;
+        self.dead_flow = false;
+        Ok(())
     }
 
     /// OR de las condiciones de los patrones de un arma. Deja un i32.

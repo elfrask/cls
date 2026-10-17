@@ -101,6 +101,9 @@ impl TypeChecker {
             return Type::Unknown;
         }
 
+        // F4: este `match` es un match-target para `match <-`/`match* <-`/...
+        self.match_yield_stack.push(None);
+
         let scrut_ty = m.scrutinee.as_ref().map(|s| self.check_expression(s));
 
         // Nombre a estrechar dentro de las armas: el binding (`nombre <- expr`) o
@@ -152,26 +155,28 @@ impl TypeChecker {
                 }
             }
             self.check_match_patterns(m.mode, &arm.patterns, scrut_ty.as_ref(), enum_schema.as_ref(), &arm.span);
-            let bt = match &arm.body {
-                MatchBody::Expr(e) => self.check_expression(e),
-                MatchBody::Block(b) => {
-                    self.check_block(b);
-                    Type::Void
-                }
+            // `Some(t)` = el arma entrega un valor (expr o bloque con `* <-`).
+            // `None` = arma-bloque que NO entrega a este `match` (p.ej. salta
+            // afuera con `match* <-` o cae sin `<-`): no constriñe el tipo.
+            let bt_opt = match &arm.body {
+                MatchBody::Expr(e) => Some(self.check_expression(e)),
+                MatchBody::Block(b) => self.check_match_arm_block(b),
             };
             self.pop_scope();
-            match &result {
-                None => result = Some(bt),
-                Some(rt) => {
-                    if !bt.is_assignable_to(rt) {
-                        let msg = format!(
-                            "Tipo de arma `match` ({}) no asignable al tipo de la primera arma ({})",
-                            bt, rt
-                        );
-                        if self.config.strict {
-                            self.error(&msg, arm.span.clone());
-                        } else {
-                            self.warn(&msg, arm.span.clone());
+            if let Some(bt) = bt_opt {
+                match &result {
+                    None => result = Some(bt),
+                    Some(rt) => {
+                        if !bt.is_assignable_to(rt) {
+                            let msg = format!(
+                                "Tipo de arma `match` ({}) no asignable al tipo de la primera arma ({})",
+                                bt, rt
+                            );
+                            if self.config.strict {
+                                self.error(&msg, arm.span.clone());
+                            } else {
+                                self.warn(&msg, arm.span.clone());
+                            }
                         }
                     }
                 }
@@ -179,14 +184,11 @@ impl TypeChecker {
         }
 
         if let Some(def) = &m.default {
-            let dt = match def {
-                MatchBody::Expr(e) => self.check_expression(e),
-                MatchBody::Block(b) => {
-                    self.check_block(b);
-                    Type::Void
-                }
+            let dt_opt = match def {
+                MatchBody::Expr(e) => Some(self.check_expression(e)),
+                MatchBody::Block(b) => self.check_match_arm_block(b),
             };
-            if let Some(rt) = &result {
+            if let (Some(dt), Some(rt)) = (dt_opt, &result) {
                 if !dt.is_assignable_to(rt) {
                     let msg = format!(
                         "Tipo de `default` de `match` ({}) no asignable al tipo de la primera arma ({})",
@@ -201,7 +203,66 @@ impl TypeChecker {
             }
         }
 
-        result.unwrap_or(Type::Void)
+        let my = self.match_yield_stack.pop().flatten();
+        match result {
+            Some(t) if !matches!(t, Type::Void) => t,
+            _ => my.unwrap_or(Type::Void),
+        }
+    }
+
+    /// Chequea el bloque de un arma de `match` como ternary-target (F4).
+    /// Devuelve `Some(tipo)` si el bloque entrega un valor con `* <-` a su
+    /// propio arma; `None` si no (salta afuera o cae sin `<-`).
+    fn check_match_arm_block(&mut self, b: &Block) -> Option<Type> {
+        self.ternary_yield_stack.push(None);
+        self.check_block(b);
+        self.ternary_yield_stack.pop().flatten()
+    }
+
+
+    /// `if (c) { ... } else { ... }` como expresión (F3). El tipo es el del
+    /// `* <-` que reciban sus ramas (ternary-targets). Requiere `else` (lo
+    /// valida el parser).
+    pub(crate) fn check_if_expr(&mut self, e: &IfExpr) -> Type {
+        let cond = self.check_expression(&e.condition);
+        if !cond.is_assignable_to(&Type::Bool) {
+            self.warn(
+                &format!("Condición de expresión `if` debe ser Bool, encontró {}", cond),
+                e.span.clone(),
+            );
+        }
+        self.ternary_yield_stack.push(None);
+        self.check_block(&e.then_block);
+        let then_y = self.ternary_yield_stack.pop().flatten();
+        self.ternary_yield_stack.push(None);
+        self.check_block(&e.else_block);
+        let else_y = self.ternary_yield_stack.pop().flatten();
+        match (then_y, else_y) {
+            (Some(t), _) => t,
+            (None, Some(t)) => t,
+            (None, None) => Type::Void,
+        }
+    }
+
+    /// `* <- expr` / `match <- expr` (F4): chequea el valor y registra su tipo
+    /// en el target léxico correspondiente (para tipar `if`-expresiones y
+    /// `match`). No valida existencia del target (lo hace el emisor).
+    pub(crate) fn check_arrow_return(&mut self, a: &ArrowReturn) -> Type {
+        let vt = self.check_expression(&a.value);
+        if a.is_match {
+            if let Some(slot) = self.match_yield_stack.iter_mut().rev().nth(a.stars) {
+                if slot.is_none() {
+                    *slot = Some(vt.clone());
+                }
+            }
+        } else if a.stars >= 1 {
+            if let Some(slot) = self.ternary_yield_stack.iter_mut().rev().nth(a.stars - 1) {
+                if slot.is_none() {
+                    *slot = Some(vt.clone());
+                }
+            }
+        }
+        vt
     }
 
     /// Tipo estrechado del scrutinee dentro de un arma.
