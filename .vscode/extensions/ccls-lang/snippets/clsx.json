@@ -304,6 +304,17 @@
     ],
     "description": "Match por patrón (enum)"
   },
+  "Match (enum con payload)": {
+    "prefix": "matchep",
+    "body": [
+      "var ${1:resultado} = match (${2:v} <- ${3:valor}) {",
+      "    ${4:ok}(${5:texto})     -> ${6:expr1},",
+      "    ${7:err}(${8:cod}, ${9:msg}) -> ${10:expr2},",
+      "    default              -> ${11:expr3},",
+      "};"
+    ],
+    "description": "Match por patrón sobre enum con payload (bindings posicionales)"
+  },
   "Try / catch": {
     "prefix": "try",
     "body": [
@@ -432,6 +443,31 @@
       "};"
     ],
     "description": "Enum con variantes constantes (índice 1-2 bytes)"
+  },
+  "Enum con payload": {
+    "prefix": "enump",
+    "body": [
+      "enum ${1:Resp} {",
+      "    ${2:ok}(${3:String}),",
+      "    ${4:err}(${5:int}, ${6:String}),",
+      "    ${7:unit},",
+      "};"
+    ],
+    "description": "Enum con payload (variantes unit y con parámetros)"
+  },
+  "Construir variante con payload": {
+    "prefix": "enumpv",
+    "body": [
+      "var ${1:r} = ${2:Resp}::${3:ok}(\"${4:Hola}\");"
+    ],
+    "description": "Construir una variante de enum cualificada (X::v(...))"
+  },
+  "Destructuring-let (enum)": {
+    "prefix": "enumdestr",
+    "body": [
+      "var ${1:Resp}::${2:ok}(${3:result}) = ${4:r};"
+    ],
+    "description": "Desempaquetar el payload de una variante (estático)"
   },
   "Enum uso": {
     "prefix": "enumus",

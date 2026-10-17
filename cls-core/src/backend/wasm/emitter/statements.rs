@@ -217,6 +217,8 @@ impl<'a> FuncEmitter<'a> {
                 self.dead_flow = false;
                 Ok(())
             }
+            // `var Enum::variant(a, b) = valor;` (F2, feature `match`).
+            Statement::DestructureLet(d) => self.emit_destructure_let(d),
             other => Err(self.unsupported_stmt(other)),
         }
     }

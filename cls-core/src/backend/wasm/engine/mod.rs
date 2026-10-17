@@ -65,6 +65,11 @@ pub(super) struct Engine<'a> {
     pub(crate) string_pool: Vec<String>,
     string_index: HashMap<String, u32>,
     enum_defs: HashMap<String, (u32, Vec<String>)>,
+    /// Esquema de payload por enum (F2): nombre del enum -> por variante, los
+    /// tipos de sus params. Vacío = variante unit. Si algún vec no está vacío,
+    /// el enum se representa como objeto de heap; si todos están vacíos, sigue
+    /// empacado i64 `(def_id<<32)|idx`.
+    enum_params: HashMap<String, Vec<Vec<Type>>>,
     struct_defs: HashMap<String, StructInfo>,
     native_indexes: HashMap<String, u32>,
     native_ret: HashMap<String, char>,
@@ -138,6 +143,7 @@ impl<'a> Engine<'a> {
             string_pool: Vec::new(),
             string_index: HashMap::new(),
             enum_defs: HashMap::new(),
+            enum_params: HashMap::new(),
             struct_defs: HashMap::new(),
             native_indexes: HashMap::new(),
             native_ret: HashMap::new(),

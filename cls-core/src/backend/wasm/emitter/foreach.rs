@@ -301,6 +301,18 @@ impl<'a> FuncEmitter<'a> {
         };
         if let Some(key) = enum_key {
             if let Some((def_id, variants)) = self.enum_defs.get(&key).cloned() {
+                // F2: iterar un enum con payload no tiene semántica clara (no hay
+                // payload con qué construir cada variante). Se restringe a los
+                // enums unit-only (documentado).
+                if self.enum_key_has_payload(&key) {
+                    return Err(crate::error::ClsError::compile_at(
+                        &format!(
+                            "`for each` sobre el enum '{}' no está soportado: tiene variantes con payload",
+                            key
+                        ),
+                        &fe.span,
+                    ));
+                }
                 let saved = self.enter_var_scope();
                 let n = variants.len() as i64;
                 let i = self.fresh_local();

@@ -63,6 +63,21 @@ impl TypeChecker {
             }
         }
         self.define(&var.name, declared.clone());
+        // Provabilidad del destructuring-let (F2): recordar si la variable
+        // guarda una construcción de variante (o una variable que la guardaba).
+        match &var.value {
+            Some(v) => match self.construction_variant(v) {
+                Some(kv) => {
+                    self.var_variant.insert(var.name.clone(), kv);
+                }
+                None => {
+                    self.var_variant.remove(&var.name);
+                }
+            },
+            None => {
+                self.var_variant.remove(&var.name);
+            }
+        }
         // Registrar el tipo declarado en el span de la declaración (REPL con
         // estado persistente: los hoists quedan sin init y el backend necesita
         // el tipo vía type map en el span del VarDecl).

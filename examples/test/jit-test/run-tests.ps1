@@ -34,6 +34,9 @@ $expectedErrors = @{
     "syn2.clsx"   = "error de sintaxis intencional"
     "mod-synerr.clsx" = "modulo con error de sintaxis (mensaje debe apuntar al modulo)"
     "match-empty.clsx" = "match vacio (sin armas) -> error de compilacion"
+    "match-badvariant.clsx" = "patron con variante inexistente -> error estatico (F2)"
+    "match-badarity.clsx" = "patron con aridad incorrecta -> error estatico (F2)"
+    "match-destr-unprovable.clsx" = "destructuring-let no demostrable -> error estatico (F2)"
 }
 
 # Args de app por test (se pasan tras `--`). Migracion dev-2 (Fase 8):

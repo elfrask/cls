@@ -75,6 +75,13 @@ impl<'a> FuncEmitter<'a> {
             self.block_depth += 1;
             self.body.push(Instruction::If(BlockType::Empty));
             self.dead_flow = false;
+            // F2: ligar el payload de la variante (modo PATRÓN con `v(binds)`).
+            let saved = self.enter_var_scope();
+            if let (Some(sl), Some((key, vidx, binds))) =
+                (scrut_local, self.arm_payload_binding(&scrut_cls, &arm.patterns))
+            {
+                self.emit_match_payload_binds(sl, &key, vidx, &binds)?;
+            }
             let body = match &arm.body {
                 MatchBody::Expr(e) => e,
                 MatchBody::Block(_) => return Err(self.match_block_unsupported(&arm.span)),
@@ -90,6 +97,7 @@ impl<'a> FuncEmitter<'a> {
                     self.f64_promote(body)?;
                 }
             }
+            self.exit_var_scope(saved);
             let depth = self.block_depth - done_at;
             self.body.push(Instruction::Br(depth));
             self.body.push(Instruction::End);
@@ -192,8 +200,8 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-    /// `scrut == variante` sobre el enum del scrutinee (i64 empaquetado
-    /// `(def_id<<32)|idx`).
+    /// `scrut == variante` sobre el enum del scrutinee. Uniforme para ambas
+    /// representaciones (empacado i64 o heap): compara el **índice de variante**.
     fn emit_enum_variant_eq(&mut self, local: u32, cls: &Type, name: &str) -> ClsResult<()> {
         let enum_key = match cls {
             Type::Named(n, _) => self.resolve_enum_key(n),
@@ -205,21 +213,238 @@ impl<'a> FuncEmitter<'a> {
                 name, cls
             ))
         })?;
-        let (def_id, variants) = self.enum_defs[&enum_key].clone();
+        let (_, variants) = self.enum_defs[&enum_key].clone();
         let idx = variants.iter().position(|v| v == name).ok_or_else(|| {
             crate::error::ClsError::CompileError(format!(
                 "la variante `{}` no existe en el enum `{}`",
                 name, enum_key
             ))
         })?;
-        self.body.push(Instruction::LocalGet(local));
-        self.body
-            .push(Instruction::I64Const(((def_id as i64) << 32) | idx as i64));
+        let payload = self.enum_key_has_payload(&enum_key);
+        self.emit_enum_variant_index(local, payload);
+        self.body.push(Instruction::I64Const(idx as i64));
         self.body.push(Instruction::I64Eq);
         Ok(())
     }
 
-    fn resolve_enum_key(&self, name: &str) -> Option<String> {
+    /// ¿El enum `key` es un enum con payload (objeto de heap)?
+    pub(crate) fn enum_key_has_payload(&self, key: &str) -> bool {
+        self.enum_params
+            .get(key)
+            .map(|vs| vs.iter().any(|p| !p.is_empty()))
+            .unwrap_or(false)
+    }
+
+    /// Deja el **índice de variante** del valor enum (local `i64`) como i64.
+    /// `payload` = el valor es un objeto de heap `[def_id][idx][arity][...]`.
+    pub(crate) fn emit_enum_variant_index(&mut self, local: u32, payload: bool) {
+        self.body.push(Instruction::LocalGet(local));
+        if payload {
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::I64Load(MemArg {
+                offset: 8,
+                align: 3,
+                memory_index: 0,
+            }));
+        } else {
+            self.body.push(Instruction::I64Const(0xffff_ffff));
+            self.body.push(Instruction::I64And);
+        }
+    }
+
+    /// Deja el **def_id** del valor enum (local `i64`) como i64.
+    pub(crate) fn emit_enum_def_id(&mut self, local: u32, payload: bool) {
+        self.body.push(Instruction::LocalGet(local));
+        if payload {
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::I64Load(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
+        } else {
+            self.body.push(Instruction::I64Const(32));
+            self.body.push(Instruction::I64ShrU);
+        }
+    }
+
+    /// Deja el `payload[i]` (i64 raw) del enum con payload (ptr en `local`).
+    pub(crate) fn emit_enum_payload_slot(&mut self, local: u32, i: usize) {
+        self.body.push(Instruction::LocalGet(local));
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::I64Load(MemArg {
+            offset: (24 + 8 * i) as u64,
+            align: 3,
+            memory_index: 0,
+        }));
+    }
+
+    /// Si el arma tiene UNA variante con binds (`ok(a, b)`), devuelve
+    /// `(enum_key, índice_variante, binds)`. `None` si no hay binds.
+    fn arm_payload_binding(
+        &self,
+        cls: &Type,
+        patterns: &[MatchPattern],
+    ) -> Option<(String, usize, Vec<String>)> {
+        let mut found: Option<(String, usize, Vec<String>)> = None;
+        for p in patterns {
+            if let MatchPattern::Variant { name, binds } = p {
+                if binds.is_empty() {
+                    continue;
+                }
+                let key = match cls {
+                    Type::Named(n, _) => self.resolve_enum_key(n)?,
+                    _ => return None,
+                };
+                let idx = self.enum_defs.get(&key)?.1.iter().position(|v| v == name)?;
+                found = Some((key, idx, binds.clone()));
+            }
+        }
+        found
+    }
+
+    /// Liga los binds del arma a `payload[i]` (por posición), declarando un
+    /// local por bind con el ancho de su tipo de param. `_` ignora el slot.
+    fn emit_match_payload_binds(
+        &mut self,
+        local: u32,
+        key: &str,
+        vidx: usize,
+        binds: &[String],
+    ) -> ClsResult<()> {
+        let params = self
+            .enum_params
+            .get(key)
+            .and_then(|vs| vs.get(vidx))
+            .cloned()
+            .unwrap_or_default();
+        for (i, b) in binds.iter().enumerate() {
+            if b == "_" {
+                continue;
+            }
+            let pty = params.get(i).cloned().unwrap_or(Type::Any);
+            let w = was_type(&pty).unwrap_or(WasTy::I64);
+            self.emit_enum_payload_slot(local, i);
+            match w {
+                WasTy::F64 => self.body.push(Instruction::F64ReinterpretI64),
+                WasTy::I32 => self.body.push(Instruction::I32WrapI64),
+                WasTy::I64 => {}
+            }
+            let idx = self.declare_var_ty(b, w);
+            self.body.push(Instruction::LocalSet(idx));
+            self.local_cls_types.insert(b.clone(), pty);
+        }
+        Ok(())
+    }
+
+    /// Construcción de una variante de enum (F2): unit-only -> i64 empacado;
+    /// con payload -> objeto de heap `[def_id][idx][arity][payload...]`.
+    pub(crate) fn emit_enum_construct(
+        &mut self,
+        key: &str,
+        variant: &str,
+        args: &[Expression],
+    ) -> ClsResult<()> {
+        let (def_id, variants) = self.enum_defs[key].clone();
+        let vidx = variants.iter().position(|v| v == variant).ok_or_else(|| {
+            crate::error::ClsError::CompileError(format!(
+                "La variante '{}' no existe en el enum '{}'",
+                variant, key
+            ))
+        })?;
+        if !self.enum_key_has_payload(key) {
+            // Unit-only: i64 empacado `(def_id<<32)|idx`.
+            self.body.push(Instruction::I64Const(
+                ((def_id as i64) << 32) | vidx as i64,
+            ));
+            return Ok(());
+        }
+        // Objeto de heap: [def_id][idx][arity][slot0..].
+        let arity = args.len() as i64;
+        self.body.push(Instruction::I64Const(24 + 8 * arity));
+        let alloc = self.func_indexes["__alloc"];
+        self.body.push(Instruction::Call(alloc));
+        let ptr = self.fresh_local();
+        self.body.push(Instruction::LocalSet(ptr));
+        self.body.push(Instruction::LocalGet(ptr));
+        self.body.push(Instruction::I64Const(def_id as i64));
+        self.emit_i64_store(0);
+        self.body.push(Instruction::LocalGet(ptr));
+        self.body.push(Instruction::I64Const(vidx as i64));
+        self.emit_i64_store(8);
+        self.body.push(Instruction::LocalGet(ptr));
+        self.body.push(Instruction::I64Const(arity));
+        self.emit_i64_store(16);
+        for (i, a) in args.iter().enumerate() {
+            let w = self.value_type(a)?;
+            self.emit_expression(a)?;
+            // Slot i64 raw: f64 -> bits, i32 -> extender, i64 -> as-is.
+            match w {
+                WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+                WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+                WasTy::I64 => {}
+            }
+            let val = self.fresh_local();
+            self.body.push(Instruction::LocalSet(val));
+            self.body.push(Instruction::LocalGet(ptr));
+            self.body.push(Instruction::I64Const(24 + 8 * i as i64));
+            self.body.push(Instruction::I64Add);
+            self.body.push(Instruction::LocalGet(val));
+            self.emit_i64_store(0);
+        }
+        self.body.push(Instruction::LocalGet(ptr));
+        Ok(())
+    }
+
+    /// `var Enum::variant(a, b) = valor;` (F2, estático): extrae los slots del
+    /// payload del valor a locals. El typeck ya validó forma/aridad/tipos.
+    pub(crate) fn emit_destructure_let(&mut self, d: &DestructureLet) -> ClsResult<()> {
+        let key = self
+            .resolve_enum_key(&d.enum_name)
+            .ok_or_else(|| {
+                crate::error::ClsError::compile_at(
+                    &format!("'{}' no es un enum conocido", d.enum_name),
+                    &d.span,
+                )
+            })?;
+        let (_, variants) = self.enum_defs[&key].clone();
+        let vidx = variants.iter().position(|v| v == &d.variant).ok_or_else(|| {
+            crate::error::ClsError::compile_at(
+                &format!("La variante '{}' no existe en el enum '{}'", d.variant, d.enum_name),
+                &d.span,
+            )
+        })?;
+        // Valor -> local (ptr si el enum tiene payload).
+        self.emit_expression(&d.value)?;
+        let val = self.fresh_local();
+        self.body.push(Instruction::LocalSet(val));
+        let params = self
+            .enum_params
+            .get(&key)
+            .and_then(|vs| vs.get(vidx))
+            .cloned()
+            .unwrap_or_default();
+        for (i, b) in d.binds.iter().enumerate() {
+            if b == "_" {
+                continue;
+            }
+            let pty = params.get(i).cloned().unwrap_or(Type::Any);
+            let w = was_type(&pty).unwrap_or(WasTy::I64);
+            self.emit_enum_payload_slot(val, i);
+            match w {
+                WasTy::F64 => self.body.push(Instruction::F64ReinterpretI64),
+                WasTy::I32 => self.body.push(Instruction::I32WrapI64),
+                WasTy::I64 => {}
+            }
+            let idx = self.declare_var_ty(b, w);
+            self.body.push(Instruction::LocalSet(idx));
+            self.local_cls_types.insert(b.clone(), pty);
+        }
+        self.dead_flow = false;
+        Ok(())
+    }
+
+    pub(crate) fn resolve_enum_key(&self, name: &str) -> Option<String> {
         if self.enum_defs.contains_key(name) {
             return Some(name.to_string());
         }
@@ -253,9 +478,8 @@ impl<'a> FuncEmitter<'a> {
             Type::Named(name, _) => {
                 if let Some(key) = self.resolve_enum_key(name) {
                     let (def_id, _) = self.enum_defs[&key].clone();
-                    self.body.push(Instruction::LocalGet(local));
-                    self.body.push(Instruction::I64Const(32));
-                    self.body.push(Instruction::I64ShrU);
+                    let payload = self.enum_key_has_payload(&key);
+                    self.emit_enum_def_id(local, payload);
                     self.body.push(Instruction::I64Const(def_id as i64));
                     self.body.push(Instruction::I64Eq);
                 } else if let Some(key) = self.resolve_class_key(name) {

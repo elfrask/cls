@@ -181,7 +181,15 @@ fn extract_enum_member(e: &EnumDecl, source: &str) -> TypeMember {
     TypeMember {
         name: e.name.clone(),
         kind: MemberKind::Enum,
-        signature: format!("enum {} (variants: {})", e.name, e.variants.join(", ")),
+        signature: format!(
+            "enum {} (variants: {})",
+            e.name,
+            e.variants
+                .iter()
+                .map(|v| v.name.clone())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         return_type: None,
         params: vec![],
         doc: extract_doc_before(source, e.span.start_line, e.span.start_col),
@@ -253,6 +261,7 @@ fn statement_span(stmt: &Statement) -> Span {
         Statement::InterfaceDecl(s) => s.span,
         Statement::TypeAlias(s) => s.span,
         Statement::EnumDecl(s) => s.span,
+        Statement::DestructureLet(s) => s.span,
         Statement::ModuleDecl(s) => s.span,
         Statement::NamespaceDecl(s) => s.span,
         Statement::When(s) => s.span,

@@ -102,6 +102,12 @@ impl<'a> FuncEmitter<'a> {
             Expression::StringInterpolation(s) => self.emit_interpolation(s),
             // `x::miembro` (módulo/namespace importado): global `x::miembro`.
             Expression::NamespaceAccess(ns, member, span) => {
+                // Variante de enum como valor (`resp::s1`): construye el valor
+                // (unit -> empacado; payload-enum unit -> objeto de aridad 0).
+                if let Some(ekey) = self.resolve_enum_key(ns) {
+                    self.emit_enum_construct(&ekey, member, &[])?;
+                    return Ok(());
+                }
                 let key = format!("{}::{}", ns, member);
                 if let Some(g) = self.globals.get(&key).copied() {
                     self.body.push(Instruction::GlobalGet(g));

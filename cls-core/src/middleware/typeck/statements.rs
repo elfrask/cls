@@ -108,6 +108,34 @@ impl TypeChecker {
             Statement::EnumDecl(e) => {
                 self.define_decl(&e.name, Type::Named(e.name.clone(), vec![]), &e.span);
                 self.enums.insert(e.name.clone());
+                // Esquema (F2): variante -> tipos de params. Habilita la
+                // validación de construcción/patrón/destructuring-let.
+                let schema: Vec<(String, Vec<Type>)> = e
+                    .variants
+                    .iter()
+                    .map(|v| {
+                        let ps = v
+                            .params
+                            .iter()
+                            .map(|ta| self.resolve_type_annotation(ta))
+                            .collect();
+                        (v.name.clone(), ps)
+                    })
+                    .collect();
+                self.enum_defs.insert(e.name.clone(), schema);
+                // Detectar variantes duplicadas.
+                for (i, v) in e.variants.iter().enumerate() {
+                    if e.variants[..i].iter().any(|w| w.name == v.name) {
+                        self.error(
+                            &format!("La variante '{}' está duplicada en el enum '{}'", v.name, e.name),
+                            v.span.clone(),
+                        );
+                    }
+                }
+                Type::Void
+            }
+            Statement::DestructureLet(d) => {
+                self.check_destructure_let(d);
                 Type::Void
             }
             Statement::ModuleDecl(m) => {

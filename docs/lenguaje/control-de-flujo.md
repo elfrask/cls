@@ -106,11 +106,19 @@ var r = match (perro) is { Perro -> perro.ladra(), Gato -> perro.maulla(), defau
 # Modo CONDICIÓN (sin scrutinee, `if`): armas = condiciones Bool
 var cmp = match() if { a > b -> ">", a < b -> "<", default -> "=" };
 
-# Modo PATRÓN (sin keyword): variantes de enum sin payload / literales
+# Modo PATRÓN (sin keyword): variantes de enum (unit o con payload) / literales
 var nombre = match (c <- Color.Verde) { Rojo -> "rojo", Verde, Azul -> "frio", default -> "?" };
+
+# Modo PATRÓN con payload (F2): binding posicional
+var out = match (v <- resp::ok("listo")) {
+    ok(texto)     -> "OK ${texto}",
+    err(cod, msg) -> "ERR ${cod} ${msg}",
+    s1, s2        -> "unit",
+    default       -> "?",
+};
 ```
 
-Reglas (F1):
+Reglas:
 
 - **Armas**: `PATRONES -> expr`, separadas por `,`. Cada arma puede tener
   **varios patrones** con o sin paréntesis: `(0, 2, 4)`, `s1, s2`.
@@ -123,10 +131,16 @@ Reglas (F1):
   deben ser asignables a ese tipo (si hay anotación, se valida contra ella).
 - **Statement vs expresión**: por posición. Como sentencia no devuelve valor
   (el cuerpo se dropea); como expresión lo devuelve.
-- El bloque `-> { ... }` con **arrowReturn `<-`** es F4; en F1 solo `-> expr`.
+- El bloque `-> { ... }` con **arrowReturn `<-`** es F4; aún no soportado.
+- **Modo PATRÓN con payload (F2)**: el scrutinee debe ser un **enum**; los
+  patrones van **desnudos** (`ok(texto)`, `err(cod, msg)`, `s1`). La variante se
+  valida contra el esquema del enum (**variante inexistente / aridad incorrecta →
+  error de compilación**); los bindings se ligan **por posición** al payload y
+  `_` ignora un slot. A lo sumo **un patrón con bindings por arma**.
+- **Destructuring-let (F2)**: `var resp::ok(result) = c;` (estático; ver
+  `enums.md`).
 
-Pendiente (F2–F6): enums con **payload** y variantes con bindings (`ok(texto)`),
-destructuring-let, ternario `?:` / `if`-expresión, `<-`, acceso a miembro sobre
+Pendiente (F3–F6): ternario `?:` / `if`-expresión, `<-`, acceso a miembro sobre
 unión (`valor.x` con `A | B`) y el protocolo `__match`/`__unpack` de clases.
 
 ## with

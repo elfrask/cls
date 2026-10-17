@@ -96,6 +96,13 @@ impl<'a> FuncEmitter<'a> {
         // `x::f(...)` - módulo/namespace importado: call directo a `x::f`.
         if let Expression::NamespaceAccess(ns, member, _) = &*c.callee {
             let key = format!("{}::{}", ns, member);
+            // Constructor de variante de enum (F2): `resp::ok(args)`.
+            // `ns` es el enum; `member` la variante. Se resuelve por sufijo
+            // (`lib::resp`: el flatten registra el enum prefijado).
+            if let Some(ekey) = self.resolve_enum_key(ns) {
+                self.emit_enum_construct(&ekey, member, &c.args)?;
+                return Ok(());
+            }
             // Constructor de clase namespaced: `lib::App(args)` -> la clase fue
             // flatteneada como `lib::App`.
             if self.class_defs.contains_key(&key) {

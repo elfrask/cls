@@ -190,6 +190,33 @@ impl Parser {
         }
         let name = self.expect_identifier()?;
 
+        // F2: destructuring-let `var Enum::variant(a, b) = valor;`.
+        if self.check_operator(Operator::ColonColon) {
+            self.advance(); // consume `::`
+            let variant = self.expect_identifier()?;
+            self.expect_symbol(Symbol::LParen)?;
+            let mut binds = Vec::new();
+            if !self.check_symbol(Symbol::RParen) {
+                loop {
+                    binds.push(self.expect_identifier()?);
+                    if !self.consume_symbol(Symbol::Comma) {
+                        break;
+                    }
+                }
+            }
+            self.expect_symbol(Symbol::RParen)?;
+            self.expect_operator(Operator::Equal)?;
+            let value = self.parse_expression()?;
+            self.consume_symbol(Symbol::Semicolon);
+            return Ok(Statement::DestructureLet(DestructureLet {
+                enum_name: name,
+                variant,
+                binds,
+                value,
+                span: decl_span,
+            }));
+        }
+
         let type_ann = if self.consume_operator(Operator::Colon) {
             Some(self.parse_type_annotation()?)
         } else {
@@ -1417,7 +1444,8 @@ impl Parser {
         }))
     }
 
-    /// `enum Nombre { Var1, Var2, Var3, };` - variantes constantes con identidad.
+    /// `enum Nombre { Var1, Var2(args), };` - variantes con identidad; las que
+    /// declaran `(T1, T2)` llevan payload (F2).
     fn parse_enum_decl(&mut self) -> ClsResult<Statement> {
         self.expect_keyword(Keyword::Enum)?;
         let name = self.expect_identifier()?;
@@ -1426,7 +1454,21 @@ impl Parser {
         let mut variants = Vec::new();
         while !self.check_symbol(Symbol::RBrace) && !self.is_eof() {
             self.skip_newlines();
-            variants.push(self.expect_identifier()?);
+            let vspan = self.span();
+            let vname = self.expect_identifier()?;
+            let mut params = Vec::new();
+            if self.consume_symbol(Symbol::LParen) {
+                if !self.check_symbol(Symbol::RParen) {
+                    loop {
+                        params.push(self.parse_type_annotation()?);
+                        if !self.consume_symbol(Symbol::Comma) {
+                            break;
+                        }
+                    }
+                }
+                self.expect_symbol(Symbol::RParen)?;
+            }
+            variants.push(EnumVariant { name: vname, params, span: vspan });
             self.consume_symbol(Symbol::Comma);
         }
         self.expect_symbol(Symbol::RBrace)?;

@@ -114,6 +114,36 @@ impl TypeChecker {
         });
 
         let mut result: Option<Type> = None;
+        // Esquema del enum del scrutinee (modo PATRÓN, F2): variante -> params.
+        // Se resuelve una vez; `None` = el scrutinee no es un enum conocido (o es
+        // un enum importado sin esquema registrado).
+        let enum_schema: Option<(String, Vec<(String, Vec<Type>)>)> =
+            if m.mode == MatchMode::Pattern {
+                match scrut_ty.as_ref() {
+                    Some(Type::Named(n, _)) => match self.enum_schema(n) {
+                        Some(s) => Some((n.clone(), s)),
+                        // Enum importado sin esquema registrado: el emisor lo
+                        // resuelve por sufijo; no forzamos error (paridad F1).
+                        None => None,
+                    },
+                    // Tipos claramente no-enum -> error claro. `Any`/`Unknown`/
+                    // `Union`/`Named` (clase/struct/import) no se fuerzan (el
+                    // emisor decide).
+                    Some(other) if is_obviously_non_enum(other) => {
+                        self.error(
+                            &format!(
+                                "`match` en modo patrón requiere un enum como scrutinee, encontró `{}`",
+                                other
+                            ),
+                            m.span.clone(),
+                        );
+                        None
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
         for arm in &m.arms {
             self.push_scope();
             if let (Some(name), Some(base)) = (&narrow_name, &scrut_ty) {
@@ -121,7 +151,7 @@ impl TypeChecker {
                     self.define(name, narrowed);
                 }
             }
-            self.check_match_patterns(m.mode, &arm.patterns, scrut_ty.as_ref());
+            self.check_match_patterns(m.mode, &arm.patterns, scrut_ty.as_ref(), enum_schema.as_ref(), &arm.span);
             let bt = match &arm.body {
                 MatchBody::Expr(e) => self.check_expression(e),
                 MatchBody::Block(b) => {
@@ -204,12 +234,28 @@ impl TypeChecker {
     }
 
     /// Valida los patrones de un arma y registra sus tipos/expresiones.
+    /// `enum_schema`: (nombre, variante -> params) del enum del scrutinee, si se
+    /// conoce. En modo PATRÓN valida variante/aridad/tipos y liga los binds.
     fn check_match_patterns(
         &mut self,
         mode: MatchMode,
         patterns: &[MatchPattern],
         scrut_ty: Option<&Type>,
+        enum_schema: Option<&(String, Vec<(String, Vec<Type>)>)>,
+        arm_span: &Span,
     ) {
+        // F2: a lo sumo un patrón con binds por arma (el payload ligado tiene un
+        // único origen; varias alternativas con binds serían ambiguas).
+        let with_binds = patterns
+            .iter()
+            .filter(|p| matches!(p, MatchPattern::Variant { binds, .. } if !binds.is_empty()))
+            .count();
+        if with_binds > 1 {
+            self.error(
+                "Un arma de `match` solo puede tener un patrón con bindings de payload",
+                arm_span.clone(),
+            );
+        }
         for p in patterns {
             match p {
                 MatchPattern::Literal(l) => {
@@ -227,19 +273,86 @@ impl TypeChecker {
                         );
                     }
                 }
-                MatchPattern::Variant { binds, .. } => {
-                    // F1: variantes unit; los bindings de payload llegan en F2.
-                    for b in binds {
-                        self.define(b, Type::Any);
+                MatchPattern::Variant { name, binds } => {
+                    // Validación estática contra el esquema del enum (F2).
+                    if let Some((enum_name, variants)) = enum_schema {
+                        match variants.iter().find(|(v, _)| v == name) {
+                            Some((_, params)) => {
+                                if params.len() != binds.len() {
+                                    self.error(
+                                        &format!(
+                                            "La variante `{}` del enum `{}` espera {} binding(s), recibió {}",
+                                            name,
+                                            enum_name,
+                                            params.len(),
+                                            binds.len()
+                                        ),
+                                        arm_span.clone(),
+                                    );
+                                }
+                                for (i, b) in binds.iter().enumerate() {
+                                    if b == "_" {
+                                        continue;
+                                    }
+                                    let bt = params.get(i).cloned().unwrap_or(Type::Any);
+                                    self.define(b, bt);
+                                }
+                            }
+                            None => {
+                                self.error(
+                                    &format!("La variante `{}` no existe en el enum `{}`", name, enum_name),
+                                    arm_span.clone(),
+                                );
+                            }
+                        }
+                    } else {
+                        // Esquema desconocido: ligar Any (paridad F1).
+                        for b in binds {
+                            if b != "_" {
+                                self.define(b, Type::Any);
+                            }
+                        }
                     }
                 }
-                MatchPattern::Ident(_) => {
-                    // Variante de enum desnuda. La validación de variantes con el
-                    // enum del scrutinee es F2; en F1 el emisor comprueba el índice.
+                MatchPattern::Ident(name) => {
+                    // Variante unit desnuda: validar contra el esquema (F2).
+                    if let Some((enum_name, variants)) = enum_schema {
+                        match variants.iter().find(|(v, _)| v == name) {
+                            Some((_, params)) => {
+                                if !params.is_empty() {
+                                    self.error(
+                                        &format!(
+                                            "La variante `{}` del enum `{}` tiene payload; usá `{}(...)` en el patrón",
+                                            name, enum_name, name
+                                        ),
+                                        arm_span.clone(),
+                                    );
+                                }
+                            }
+                            None => {
+                                self.error(
+                                    &format!("La variante `{}` no existe en el enum `{}`", name, enum_name),
+                                    arm_span.clone(),
+                                );
+                            }
+                        }
+                    }
                     let _ = (mode, scrut_ty);
                 }
             }
         }
+    }
+
+    /// Esquema del enum `name` (exacto o por sufijo `mod::name`).
+    pub(crate) fn enum_schema(&self, name: &str) -> Option<Vec<(String, Vec<Type>)>> {
+        if let Some(s) = self.enum_defs.get(name) {
+            return Some(s.clone());
+        }
+        let suffix = format!("::{}", name);
+        self.enum_defs
+            .iter()
+            .find(|(k, _)| k.ends_with(&suffix))
+            .map(|(_, v)| v.clone())
     }
 
 
@@ -350,4 +463,122 @@ impl TypeChecker {
         Type::Void
     }
 
+    /// Devuelve (enum, variante) si `e` demuestra una construcción de variante:
+    /// una llamada directa `E::v(...)`, un `E::v` sin payload, o un identificador
+    /// cuyo último valor registrado fue una construcción. Base de la
+    /// provabilidad del destructuring-let (F2).
+    pub(crate) fn construction_variant(&self, e: &Expression) -> Option<(String, String)> {
+        match e {
+            Expression::Call(c) => match &*c.callee {
+                Expression::NamespaceAccess(ns, m, _) if self.enum_schema(ns).is_some() => {
+                    Some((ns.clone(), m.clone()))
+                }
+                _ => None,
+            },
+            Expression::NamespaceAccess(ns, m, _) if self.enum_schema(ns).is_some() => {
+                Some((ns.clone(), m.clone()))
+            }
+            Expression::Identifier(n, _) => self.var_variant.get(n).cloned(),
+            _ => None,
+        }
+    }
+
+    /// `var Enum::variant(a, b) = valor;` (F2, estático). Valida forma, variante,
+    /// aridad y tipos; exige que la variante sea **demostrable** (construcción
+    /// directa de la MISMA variante o variable que la guarda). `_` ignora slots.
+    pub(crate) fn check_destructure_let(&mut self, d: &DestructureLet) {
+        let vt = self.check_expression(&d.value);
+        let Some(schema) = self.enum_schema(&d.enum_name) else {
+            self.error(
+                &format!(
+                    "destructuring-let: `{}` no es un enum conocido",
+                    d.enum_name
+                ),
+                d.span.clone(),
+            );
+            return;
+        };
+        let Some((_, params)) = schema.iter().find(|(v, _)| v == &d.variant) else {
+            self.error(
+                &format!(
+                    "La variante `{}` no existe en el enum `{}`",
+                    d.variant, d.enum_name
+                ),
+                d.span.clone(),
+            );
+            for b in &d.binds {
+                if b != "_" {
+                    self.define(b, Type::Any);
+                }
+            }
+            return;
+        };
+        if params.len() != d.binds.len() {
+            self.error(
+                &format!(
+                    "La variante `{}` del enum `{}` espera {} binding(s), recibió {}",
+                    d.variant,
+                    d.enum_name,
+                    params.len(),
+                    d.binds.len()
+                ),
+                d.span.clone(),
+            );
+        }
+        // Provabilidad: la variante debe ser demostrable estáticamente.
+        let same_enum = |a: &str, b: &str| {
+            a == b
+                || a.ends_with(&format!("::{}", b))
+                || b.ends_with(&format!("::{}", a))
+        };
+        match self.construction_variant(&d.value) {
+            Some((e, v)) if same_enum(&e, &d.enum_name) && v == d.variant => {}
+            _ => {
+                self.error(
+                    &format!(
+                        "No se puede probar que el valor sea `{}::{}` (destructuring-let estático): \
+                         inicializalo con una construcción de la misma variante \
+                         (`var x = {}::{}(...); var {}::{}(...) = x;`)",
+                        d.enum_name, d.variant, d.enum_name, d.variant, d.enum_name, d.variant
+                    ),
+                    d.span.clone(),
+                );
+            }
+        }
+        // Definir los binds con los tipos de los params.
+        let _ = vt;
+        for (i, b) in d.binds.iter().enumerate() {
+            if b == "_" {
+                continue;
+            }
+            let bt = params.get(i).cloned().unwrap_or(Type::Any);
+            self.define(b, bt);
+        }
+    }
+}
+
+/// Es el tipo claramente no-enum? (para el error de scrutinee del modo PATRON).
+fn is_obviously_non_enum(t: &Type) -> bool {
+    matches!(
+        t,
+        Type::Int
+            | Type::I8
+            | Type::I16
+            | Type::I32
+            | Type::I64
+            | Type::Float
+            | Type::F32
+            | Type::F64
+            | Type::String
+            | Type::Bool
+            | Type::Char
+            | Type::Array(_)
+            | Type::Tuple(_)
+            | Type::Record(_, _)
+            | Type::Fun(_, _)
+            | Type::Literal(_)
+            | Type::Null
+            | Type::Void
+            | Type::Empty
+    )
 }

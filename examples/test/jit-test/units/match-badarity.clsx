@@ -1,0 +1,11 @@
+enum resp { ok(String), s1 };
+
+function main(args: String[]) -> int {
+    var r = resp::ok("x");
+    var out = match (v <- r) {
+        ok(a, b) -> "no",
+        default  -> "?"
+    };
+    print(out);
+    return 0;
+};

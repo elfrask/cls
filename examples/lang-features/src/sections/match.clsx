@@ -1,0 +1,85 @@
+# match.clsx - eje de `match` (feature `match`, F1 + F2).
+#
+# Ejercita: los 4 modos (valor, tipo, condicion, patron), enums con payload
+# (construccion cualificada `X::v(...)`, binding posicional en el patron, unit),
+# `==` por identidad de variante, `is`, `str`/repr y destructuring-let estatico.
+
+import "check" as check;
+
+enum MResp {
+    ok(String),
+    err(int, String),
+    vacio,
+};
+
+function match_modes() -> int {
+    var n = 4;
+    var par = match (n) in { (0, 2, 4, 6, 8) -> true, default -> false };
+    check::assertTrue("match.valor", par);
+
+    var s = "hola";
+    var saludo = match (s) in { "hola" -> "hey", default -> "?" };
+    check::assertEqStr("match.valor.str", saludo, "hey");
+
+    var k: int = 7;
+    var kind = match (k) is { int -> "int", default -> "otro" };
+    check::assertEqStr("match.tipo", kind, "int");
+
+    var a = 3;
+    var b = 9;
+    var cmp = match() if { a > b -> ">", a < b -> "<", default -> "=" };
+    check::assertEqStr("match.cond", cmp, "<");
+    return 0;
+}
+
+function match_payload() -> int {
+    var r = MResp::ok("listo");
+    var o1 = match (v <- r) {
+        ok(msg)       -> "OK " + msg,
+        err(cod, txt) -> "ERR " + str(cod) + " " + txt,
+        vacio         -> "vacio",
+        default       -> "?",
+    };
+    check::assertEqStr("match.payload.ok", o1, "OK listo");
+
+    var e = MResp::err(404, "no");
+    var o2 = match (v <- e) {
+        ok(msg)       -> "OK " + msg,
+        err(cod, txt) -> "ERR " + str(cod) + " " + txt,
+        vacio         -> "vacio",
+        default       -> "?",
+    };
+    check::assertEqStr("match.payload.err", o2, "ERR 404 no");
+
+    var u = MResp::vacio;
+    var o3 = match (v <- u) {
+        ok(msg)       -> "OK",
+        err(cod, txt) -> "ERR",
+        vacio         -> "vacio",
+        default       -> "?",
+    };
+    check::assertEqStr("match.payload.unit", o3, "vacio");
+
+    check::assertEqStr("match.repr", str(r), "ok(listo)");
+    check::assertTrue("match.eq", r == MResp::ok("x"));
+    check::assertTrue("match.is", r is MResp);
+    return 0;
+}
+
+function match_destructuring() -> int {
+    var c = MResp::ok("dato");
+    var MResp::ok(result) = c;
+    check::assertEqStr("match.destr", result, "dato");
+    return 0;
+}
+
+export function match_run() -> int {
+    print("== match ==");
+    var before = check::fails();
+    match_modes();
+    match_payload();
+    match_destructuring();
+    var gained = check::fails() - before;
+    if (gained == 0) { print("FEATURE match OK"); }
+    return gained;
+}

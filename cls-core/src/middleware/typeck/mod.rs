@@ -46,6 +46,14 @@ pub struct TypeChecker {
     current_fn_span: Span,
     interfaces: HashMap<String, InterfaceInfo>,
     enums: std::collections::HashSet<String>,
+    /// Esquema de enums (F2): nombre -> por variante, `(nombre, tipos de params)`.
+    /// `params` vacío = variante unit. Habilita la validación estática de la
+    /// construcción (`X::v(args)`), del patrón (`v(binds)`) y del destructuring-let.
+    enum_defs: HashMap<String, Vec<(String, Vec<Type>)>>,
+    /// Provabilidad del destructuring-let (F2): variable local -> (enum, variante)
+    /// cuando su último valor fue una construcción directa. Simplificación F2:
+    /// sin dataflow estricto; se limpia al reasignar a otra cosa.
+    var_variant: HashMap<String, (String, String)>,
     /// Mapa Span -> Type de TODAS las expresiones visitadas (para backends).
     /// Se llena solo cuando `config.check` es true.
     types_by_span: HashMap<Span, Type>,
@@ -97,6 +105,8 @@ impl TypeChecker {
     current_fn_span: Span::new(1, 1, 1, 1),
             interfaces: HashMap::new(),
             enums: std::collections::HashSet::new(),
+            enum_defs: HashMap::new(),
+            var_variant: HashMap::new(),
             types_by_span: HashMap::new(),
             class_members: HashMap::new(),
             magic_params: HashMap::new(),

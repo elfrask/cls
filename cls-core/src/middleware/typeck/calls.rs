@@ -6,7 +6,101 @@ impl TypeChecker {
 
 
 
+    /// Construcción de una variante de enum (F2): valida variante, aridad y
+    /// tipos de los args contra el esquema. Devuelve `Named(enum)`.
+    fn check_enum_construct(
+        &mut self,
+        enum_name: &str,
+        member: &str,
+        schema: &[(String, Vec<Type>)],
+        args: &[Expression],
+        span: &Span,
+    ) -> Type {
+        let named = Type::Named(enum_name.to_string(), vec![]);
+        let Some((_, params)) = schema.iter().find(|(v, _)| v == member) else {
+            self.error(
+                &format!("La variante `{}` no existe en el enum `{}`", member, enum_name),
+                span.clone(),
+            );
+            for a in args {
+                self.check_expression(a);
+            }
+            return named;
+        };
+        if params.len() != args.len() {
+            self.error(
+                &format!(
+                    "La variante `{}` del enum `{}` espera {} argumento(s), recibió {}",
+                    member,
+                    enum_name,
+                    params.len(),
+                    args.len()
+                ),
+                span.clone(),
+            );
+        }
+        for (i, a) in args.iter().enumerate() {
+            let at = self.check_expression(a);
+            if let Some(pt) = params.get(i) {
+                if self.config.strict && !at.is_assignable_to(pt) {
+                    self.error(
+                        &format!(
+                            "Argumento {} de `{}::{}` no asignable a `{}` (encontró `{}`)",
+                            i + 1,
+                            enum_name,
+                            member,
+                            pt,
+                            at
+                        ),
+                        expr_span(a),
+                    );
+                }
+            }
+        }
+        named
+    }
+
+    /// Tipo de un `X::v` (variante de enum como valor). Valida que la variante
+    /// exista; si tiene payload, no puede usarse desnuda (falta la llamada).
+    pub(crate) fn check_enum_variant_value(
+        &mut self,
+        enum_name: &str,
+        member: &str,
+        span: &Span,
+    ) -> Type {
+        let named = Type::Named(enum_name.to_string(), vec![]);
+        if let Some(schema) = self.enum_schema(enum_name) {
+            match schema.iter().find(|(v, _)| v == member) {
+                Some((_, params)) => {
+                    if !params.is_empty() {
+                        self.error(
+                            &format!(
+                                "La variante `{}` del enum `{}` tiene payload; construila con `{}::{}(...)`",
+                                member, enum_name, enum_name, member
+                            ),
+                            span.clone(),
+                        );
+                    }
+                }
+                None => {
+                    self.error(
+                        &format!("La variante `{}` no existe en el enum `{}`", member, enum_name),
+                        span.clone(),
+                    );
+                }
+            }
+        }
+        named
+    }
+
     pub(crate) fn check_call(&mut self, call: &CallExpr) -> Type {
+        // Construcción de variante de enum con payload (F2): `X::v(args)`.
+        // Validación estática de variante/aridad/tipos; el tipo es `Named(X)`.
+        if let Expression::NamespaceAccess(ns, member, span) = &*call.callee {
+            if let Some(schema) = self.enum_schema(ns) {
+                return self.check_enum_construct(ns, member, &schema, &call.args, span);
+            }
+        }
         let callee_type = self.check_expression(&call.callee);
 
         // Métodos de primitivos (callee MemberAccess): el tipo del miembro ES el

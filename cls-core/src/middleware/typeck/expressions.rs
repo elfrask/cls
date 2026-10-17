@@ -86,23 +86,28 @@ impl TypeChecker {
                 Type::Cmx
             }
             Expression::NamespaceAccess(ns, name, span) => {
-                // `x::miembro` de un módulo importado -> tipo del export.
-                match self.module_member_type(ns, name) {
-                    Some(t) => t,
-                    None => {
-                        let available = self.module_export_names(ns);
-                        let hint = if available.is_empty() {
-                            "el módulo no exporta ningún símbolo (usa `export` en cada declaración)".to_string()
-                        } else {
-                            format!("el módulo exporta: {}", available.join(", "))
-                        };
-                        self.error(
-                            &format!(
-                                "'{}' no existe o no se exporta en '{}' ({})",
-                                name, ns, hint
-                            ),
-                            span.clone(),
-                        )
+                // `X::v` de una variante de enum (F2, unit o handler de payload).
+                if self.enum_schema(ns).is_some() {
+                    self.check_enum_variant_value(ns, name, span)
+                } else {
+                    // `x::miembro` de un módulo importado -> tipo del export.
+                    match self.module_member_type(ns, name) {
+                        Some(t) => t,
+                        None => {
+                            let available = self.module_export_names(ns);
+                            let hint = if available.is_empty() {
+                                "el módulo no exporta ningún símbolo (usa `export` en cada declaración)".to_string()
+                            } else {
+                                format!("el módulo exporta: {}", available.join(", "))
+                            };
+                            self.error(
+                                &format!(
+                                    "'{}' no existe o no se exporta en '{}' ({})",
+                                    name, ns, hint
+                                ),
+                                span.clone(),
+                            )
+                        }
                     }
                 }
             }

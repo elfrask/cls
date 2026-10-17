@@ -177,6 +177,10 @@ impl fmt::Display for Statement {
             Statement::NamespaceDecl(n) => f.write_fmt(format_args!("namespace {}", n.name)),
             Statement::TypeAlias(t) => f.write_fmt(format_args!("alias {} = ...", t.name)),
             Statement::EnumDecl(e) => f.write_fmt(format_args!("enum {}", e.name)),
+            Statement::DestructureLet(d) => f.write_fmt(format_args!(
+                "var {}::{}(...) = ...",
+                d.enum_name, d.variant
+            )),
             Statement::Import(i) => f.write_fmt(format_args!("import \"{}\"", i.path)),
             Statement::FromImport(fi) => f.write_fmt(format_args!("from \"{}\" import ...", fi.path)),
             Statement::ExportList(_) => f.write_str("export { ... }"),

@@ -110,6 +110,22 @@ operan sobre bytes). Conviven como `bytes` y `str` en Python:
 
 `true` / `false` son keywords y valores del tipo `Bool`.
 
+## Enums con payload
+
+```clx
+enum resp { ok(String), err(int, String), s1, s2 };
+
+var r = resp::ok("Hola");        # construcción cualificada (con payload)
+var u = resp::s1;                # variante unit (unit-only: Color.Rojo)
+var resp::ok(result) = r;        # destructuring-let (estático)
+```
+
+- El separador de namespaces/variantes es `::` (`X::v`). `Color.Rojo` (dot)
+  también construye variantes unit de enums unit-only.
+- Los patrones de `match` modo patrón van **desnudos** (`ok(texto)`,
+  `err(cod, msg)`, `s1`) — **no** `resp::ok(...)`. Ver `enums.md` y
+  `control-de-flujo.md`.
+
 ## Operadores
 
 | Categoría | Operadores |

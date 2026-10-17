@@ -66,6 +66,7 @@ pub(crate) fn collect_arrows_in_stmt(stmt: &Statement, out: &mut Vec<ArrowFuncti
             collect_arrows_in_block(&w.block, out);
         }
         Statement::Loop(b) => collect_arrows_in_block(b, out),
+        Statement::DestructureLet(d) => collect_arrows_in_expr(&d.value, out),
         _ => {}
     }
 }
@@ -185,6 +186,14 @@ pub(crate) fn collect_free_vars_in_stmt(stmt: &Statement, locals: &mut Vec<Strin
         }
         Statement::Expression(e) => collect_free_vars_in_expr(e, locals, free),
         Statement::Return(Some(e)) => collect_free_vars_in_expr(e, locals, free),
+        Statement::DestructureLet(d) => {
+            collect_free_vars_in_expr(&d.value, locals, free);
+            for b in &d.binds {
+                if b != "_" {
+                    locals.push(b.clone());
+                }
+            }
+        }
         Statement::If(i) => {
             collect_free_vars_in_expr(&i.condition, locals, free);
             collect_free_vars_in_block(&i.then_block, locals, free);

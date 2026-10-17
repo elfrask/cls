@@ -7,6 +7,7 @@ mod catch_clause;
 mod class_decl;
 mod class_member;
 mod config_directive;
+mod destructure_let;
 mod elif_branch;
 mod enum_decl;
 mod export_list_decl;
@@ -47,6 +48,7 @@ pub use catch_clause::*;
 pub use class_decl::*;
 pub use class_member::*;
 pub use config_directive::*;
+pub use destructure_let::*;
 pub use elif_branch::*;
 pub use enum_decl::*;
 pub use export_list_decl::*;
@@ -124,6 +126,9 @@ pub enum Statement {
 
     // Enums (variantes constantes con identidad)
     EnumDecl(EnumDecl),
+
+    /// `var resp::ok(result) = c;` (F2, feature `match`).
+    DestructureLet(DestructureLet),
 
     // Imports
     Import(ImportStatement),

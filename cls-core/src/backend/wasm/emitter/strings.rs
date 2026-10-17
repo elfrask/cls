@@ -156,10 +156,15 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-    /// Formatea un valor enum (en el stack, `(def_id<<32)|idx`) a su nombre de
-    /// variante (`Activo`) y deja el string en el stack. Extraído del inline
-    /// de print.rs (sin el PrintStr final).
+    /// Formatea un valor enum y deja el string en el stack.
+    /// Unit-only: el valor es `(def_id<<32)|idx` -> nombre de variante.
+    /// Con payload (F2): el valor es un objeto de heap -> `variante(payload...)`.
     pub(crate) fn emit_enum_to_string(&mut self, name: &str) -> ClsResult<()> {
+        if let Some(key) = self.resolve_enum_key(name) {
+            if self.enum_key_has_payload(&key) {
+                return self.emit_payload_enum_to_string(&key, name);
+            }
+        }
         let variants = self.enum_variants(name).unwrap().clone();
         // index = v & 0xffffffff
         self.body.push(Instruction::I64Const(0xffff_ffff));
@@ -220,6 +225,92 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
+    /// Formatea un enum con payload (valor = objeto de heap): `variante` o
+    /// `variante(p0, p1)`. Deja el string en el stack. Si el valor es el
+    /// marcador de "def" (`(def_id<<32)|0xffffffff`) -> `<enum X>`.
+    fn emit_payload_enum_to_string(&mut self, key: &str, name: &str) -> ClsResult<()> {
+        let (def_id, variants) = self.enum_defs[key].clone();
+        let params = self.enum_params.get(key).cloned().unwrap_or_default();
+        // Valor -> local.
+        let val = self.fresh_local();
+        self.body.push(Instruction::LocalSet(val));
+        // ¿Es el marcador `<enum X>`? (def_id<<32)|0xffffffff.
+        self.body.push(Instruction::LocalGet(val));
+        self.body
+            .push(Instruction::I64Const(((def_id as i64) << 32) | 0xffff_ffff));
+        self.body.push(Instruction::I64Eq);
+        self.block_depth += 1;
+        self.body.push(Instruction::If(BlockType::Result(ValType::I64)));
+        let eds = self.intern_string(&format!("<enum {}>", name));
+        self.emit_load_str(eds);
+        self.body.push(Instruction::Else);
+        // idx del valor (objeto heap).
+        self.emit_enum_variant_index(val, true);
+        let idx = self.fresh_local();
+        self.body.push(Instruction::LocalSet(idx));
+        // res = "" ; block $done ; if idx==i { res = ... ; br }
+        let empty = self.intern_string("");
+        self.emit_load_str(empty);
+        let res = self.fresh_local();
+        self.body.push(Instruction::LocalSet(res));
+        self.block_depth += 1;
+        self.body.push(Instruction::Block(BlockType::Empty));
+        let done_at = self.block_depth;
+        for (i, vname) in variants.iter().enumerate() {
+            self.body.push(Instruction::LocalGet(idx));
+            self.body.push(Instruction::I64Const(i as i64));
+            self.body.push(Instruction::I64Eq);
+            self.block_depth += 1;
+            self.body.push(Instruction::If(BlockType::Empty));
+            self.append_const_to_local(res, vname);
+            let ps = params.get(i).cloned().unwrap_or_default();
+            if !ps.is_empty() {
+                self.append_const_to_local(res, "(");
+                for (j, pty) in ps.iter().enumerate() {
+                    if j > 0 {
+                        self.append_const_to_local(res, ", ");
+                    }
+                    let w = was_type(pty).unwrap_or(WasTy::I64);
+                    self.emit_enum_payload_slot(val, j);
+                    match w {
+                        WasTy::F64 => self.body.push(Instruction::F64ReinterpretI64),
+                        WasTy::I32 => self.body.push(Instruction::I32WrapI64),
+                        WasTy::I64 => {}
+                    }
+                    self.emit_typed_value_to_string(w, pty)?;
+                    self.append_to_local(res);
+                }
+                self.append_const_to_local(res, ")");
+            }
+            let depth = self.block_depth - done_at;
+            self.body.push(Instruction::Br(depth));
+            self.body.push(Instruction::End);
+            self.block_depth -= 1;
+        }
+        self.body.push(Instruction::End); // $done
+        self.block_depth -= 1;
+        self.body.push(Instruction::LocalGet(res));
+        self.body.push(Instruction::End); // If(result) externo
+        self.block_depth -= 1;
+        Ok(())
+    }
+
+    /// res = res + literal `text` (res es un local i64 con el string).
+    fn append_const_to_local(&mut self, res: u32, text: &str) {
+        let k = self.intern_string(text);
+        self.emit_load_str(k);
+        self.append_to_local(res);
+    }
+
+    /// res = res + (string en el stack).
+    fn append_to_local(&mut self, res: u32) {
+        let s = self.fresh_local();
+        self.body.push(Instruction::LocalSet(s));
+        self.body.push(Instruction::LocalGet(res));
+        self.body.push(Instruction::LocalGet(s));
+        self.emit_str_host("__intr_str_concat");
+        self.body.push(Instruction::LocalSet(res));
+    }
 
     /// Serializa un array de valores Named (ptr del array en el stack) a
     /// `[e1, e2, ...]` donde cada elemento se serializa con su tipo (struct/
@@ -480,6 +571,17 @@ impl<'a> FuncEmitter<'a> {
     /// dinámicos usan el camino por tag runtime (emit_any_chain).
     pub(crate) fn emit_append_piece(&mut self, expr: &Expression) -> ClsResult<()> {
         let t = self.types.get(&expr_span(expr)).cloned().unwrap_or(Type::Any);
+        // Enums (unit o con payload): serializar por su representación
+        // (`variante` / `variante(payload...)`) y anexar como string. Sin esto,
+        // la interpolación `${enum}` caía al camino dinámico y perdía el valor.
+        if let Type::Named(name, _) = &t {
+            if self.enum_variants(name).is_some() {
+                self.emit_expression(expr)?;
+                self.emit_enum_to_string(name)?;
+                self.body.push(Instruction::I64Const(1)); // tag string
+                return Ok(());
+            }
+        }
         if Self::is_dynamic_dest(&t) || matches!(t, Type::Fun(..) | Type::Named(..)) {
             return self.emit_any_chain(expr);
         }

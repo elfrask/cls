@@ -84,6 +84,59 @@ Ejemplo completo: `examples/test/jit-examples/modules/src/` y
 
 - Declarar `enum Color` registra el tipo `Named("Color")`.
 - `Color.Rojo` tipa como `Named("Color")` (el checker trackea los nombres de
-  enums en `enums: HashSet<String>`).
-- El pattern matching de payload (extraer datos de variantes) queda abierto
-  como mejora futura.
+  enums en `enums: HashSet<String>` y el **esquema** de variantes/params en
+  `enum_defs`).
+- `X::v(args)` se valida estáticamente (variante, aridad y tipos) y tipa
+  `Named(X)`.
+
+## Variantes con payload (F2)
+
+Las variantes pueden llevar **payload** (una tupla de tipos). Se mezclan
+libremente con las variantes unit:
+
+```clx
+enum resp { ok(String), err(int, String), s1, s2 };
+```
+
+- **Construcción cualificada**: `resp::ok("Hola")`, `resp::err(404, "no")`.
+  `ok(...)` desnudo **no** construye (solo vale como patrón). Las variantes unit
+  se acceden con `resp::s1` o `resp.s1`.
+- **Patrón declarativo** en `match` modo patrón: bindings **posicionales**
+  (`err(cod, msg)` liga `payload[0]→cod`, `payload[1]→msg`); `_` ignora un slot;
+  las variantes unit van desnudas (`s1`) o `s1()`:
+
+  ```clx
+  var r = resp::ok("listo");
+  var out = match (v <- r) {
+      ok(texto)     -> "OK ${texto}",
+      err(cod, msg) -> "ERR ${cod} ${msg}",
+      s1, s2        -> "unit",
+      default       -> "?",
+  };
+  ```
+
+- **Destructuring-let** (estático): `var resp::ok(result) = c;`. El compilador
+  valida forma/variante/aridad/tipos y **exige que la variante sea demostrable**:
+  el inicializador debe ser una construcción de la misma variante
+  (`var c = resp::ok(x); var resp::ok(result) = c;`). Si no se puede probar →
+  **error de compilación**. `_` ignora un slot.
+- **`==` / `is`**: `==` compara por **identidad de variante** (`def_id` + `idx`);
+  `is` compara el `def_id`. Misma semántica que los enums unit-only.
+- **`print` / `str`**: `variante` o `variante(payload...)`
+  (p. ej. `ok(listo)`, `err(404, no)`).
+- **`for each`**: solo en enums **unit-only**. Iterar un enum con payload es
+  **error de compilación** (no hay payload con qué construir cada variante).
+
+### Representación (JIT/WASM)
+
+- **Enum unit-only** (todas las variantes sin params): sigue **empacado** en i64
+  `(def_id << 32) | idx` — sin heap (compatibilidad y rendimiento embebido).
+- **Enum con payload** (alguna variante con params, aunque haya unit): **todos**
+  sus valores son un objeto de heap
+  `[def_id:i64][idx:i64][arity:i64][payload0:i64][payload1:i64]...` (cabecera de
+  24 B + 8 B por slot). La distinción es **estática** (según la definición del
+  enum), así que no hace falta un tag en runtime. El `def_id` es la **identidad
+  de la definición** (mismo criterio que clases/structs, robusto ante imports).
+
+El emisor abstrae `get-variant-index(valor)` y `get-payload[i](valor)` para que
+`match`/`is`/`==`/`print` funcionen uniformemente con ambas representaciones.

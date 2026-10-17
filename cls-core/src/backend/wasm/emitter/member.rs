@@ -197,6 +197,26 @@ impl<'a> FuncEmitter<'a> {
                             m.member, obj_name
                         ))
                     })?;
+                // Enum con payload: `obj.miembro` (dot) solo es válido para
+                // variantes unit; las de payload se construyen con `obj::v(...)`.
+                if self.enum_key_has_payload(obj_name) {
+                    let has_params = self
+                        .enum_params
+                        .get(obj_name)
+                        .and_then(|vs| vs.get(idx))
+                        .map(|p| !p.is_empty())
+                        .unwrap_or(false);
+                    if has_params {
+                        return Err(crate::error::ClsError::compile_at(
+                            &format!(
+                                "La variante '{}' tiene payload; construila con `{}::{}(...)`",
+                                m.member, obj_name, m.member
+                            ),
+                            &m.span,
+                        ));
+                    }
+                    return self.emit_enum_construct(obj_name, &m.member, &[]);
+                }
                 let val = ((def_id as i64) << 32) | idx as i64;
                 self.body.push(Instruction::I64Const(val));
                 return Ok(());
@@ -240,6 +260,24 @@ impl<'a> FuncEmitter<'a> {
                             m.member, key
                         ))
                     })?;
+                if self.enum_key_has_payload(&key) {
+                    let has_params = self
+                        .enum_params
+                        .get(&key)
+                        .and_then(|vs| vs.get(idx))
+                        .map(|p| !p.is_empty())
+                        .unwrap_or(false);
+                    if has_params {
+                        return Err(crate::error::ClsError::compile_at(
+                            &format!(
+                                "La variante '{}' tiene payload; construila con `{}::{}(...)`",
+                                m.member, key, m.member
+                            ),
+                            &m.span,
+                        ));
+                    }
+                    return self.emit_enum_construct(&key, &m.member, &[]);
+                }
                 let val = ((def_id as i64) << 32) | idx as i64;
                 self.body.push(Instruction::I64Const(val));
                 return Ok(());

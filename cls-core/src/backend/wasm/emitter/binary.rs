@@ -237,6 +237,12 @@ impl<'a> FuncEmitter<'a> {
                 if self.emit_cmx_string_eq(&b.left, &b.right, false)? {
                     return Ok(());
                 }
+                // Enum con payload (F2): `==` por **identidad def_id+idx**
+                // (documentado en MATCH_PLAN §4-F2). Un enum unit-only conserva
+                // la comparación empaquetada (equivalente a la identidad).
+                if self.emit_payload_enum_eq(&b.left, &b.right, false)? {
+                    return Ok(());
+                }
                 // Strings: comparar por CONTENIDO (`==` de punteros empaquetados
                 // daba false para buffers distintos con el mismo texto).
                 if self.is_string_expr(&b.left) || self.is_string_expr(&b.right) {
@@ -271,6 +277,9 @@ impl<'a> FuncEmitter<'a> {
             }
             NotEqual => {
                 if self.emit_cmx_string_eq(&b.left, &b.right, true)? {
+                    return Ok(());
+                }
+                if self.emit_payload_enum_eq(&b.left, &b.right, true)? {
                     return Ok(());
                 }
                 if self.is_string_expr(&b.left) || self.is_string_expr(&b.right) {
@@ -596,8 +605,26 @@ impl<'a> FuncEmitter<'a> {
                     }
                 };
                 if is_enum {
-                    self.body.push(Instruction::I64Const(32));
-                    self.body.push(Instruction::I64ShrU);
+                    // F2: un enum con payload guarda el def_id en `[0]` del
+                    // objeto de heap; un enum unit-only lo lleva en `>>32`.
+                    let payload = match self.types.get(&expr_span(&b.left)) {
+                        Some(Type::Named(n, _)) => self
+                            .resolve_enum_key(n)
+                            .map(|k| self.enum_key_has_payload(&k))
+                            .unwrap_or(false),
+                        _ => false,
+                    };
+                    if payload {
+                        self.body.push(Instruction::I32WrapI64);
+                        self.body.push(Instruction::I64Load(MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        }));
+                    } else {
+                        self.body.push(Instruction::I64Const(32));
+                        self.body.push(Instruction::I64ShrU);
+                    }
                 } else {
                     self.body.push(Instruction::I32WrapI64);
                     self.body.push(Instruction::I64Load(MemArg {
@@ -889,6 +916,50 @@ impl<'a> FuncEmitter<'a> {
             self.host.call(HostFn::CmxToString, &mut self.body);
         }
         self.emit_str_host("__intr_str_eq");
+        if negate {
+            self.body.push(Instruction::I32Eqz);
+        }
+        Ok(true)
+    }
+
+    /// `==`/`!=` para enums con payload (F2): compara la identidad de variante
+    /// (`def_id` + `idx`), como recomienda `MATCH_PLAN.md` §4-F2. Los enums
+    /// unit-only no pasan por aquí (el i64 empacado ya es identidad). Devuelve
+    /// `true` si la comparación se manejó.
+    fn emit_payload_enum_eq(
+        &mut self,
+        left: &Expression,
+        right: &Expression,
+        negate: bool,
+    ) -> ClsResult<bool> {
+        let lk = match self.types.get(&expr_span(left)) {
+            Some(Type::Named(n, _)) => self.resolve_enum_key(n),
+            _ => None,
+        };
+        let rk = match self.types.get(&expr_span(right)) {
+            Some(Type::Named(n, _)) => self.resolve_enum_key(n),
+            _ => None,
+        };
+        let (Some(lk), Some(rk)) = (lk, rk) else {
+            return Ok(false);
+        };
+        if lk != rk || !self.enum_key_has_payload(&lk) {
+            return Ok(false);
+        }
+        // def_id (mismo enum) + idx de cada lado.
+        self.emit_expression(left)?;
+        let l = self.fresh_local();
+        self.body.push(Instruction::LocalSet(l));
+        self.emit_expression(right)?;
+        let r = self.fresh_local();
+        self.body.push(Instruction::LocalSet(r));
+        self.emit_enum_def_id(l, true);
+        self.emit_enum_def_id(r, true);
+        self.body.push(Instruction::I64Eq);
+        self.emit_enum_variant_index(l, true);
+        self.emit_enum_variant_index(r, true);
+        self.body.push(Instruction::I64Eq);
+        self.body.push(Instruction::I32And);
         if negate {
             self.body.push(Instruction::I32Eqz);
         }

@@ -171,6 +171,19 @@ CHECK enum.identidad.distinta=ok
 CHECK enum.iter=ok
 CHECK enum.iter.idx=ok
 FEATURE enums OK
+== match ==
+CHECK match.valor=ok
+CHECK match.valor.str=ok
+CHECK match.tipo=ok
+CHECK match.cond=ok
+CHECK match.payload.ok=ok
+CHECK match.payload.err=ok
+CHECK match.payload.unit=ok
+CHECK match.repr=ok
+CHECK match.eq=ok
+CHECK match.is=ok
+CHECK match.destr=ok
+FEATURE match OK
 == structs ==
 CHECK struct.x=ok
 CHECK struct.y=ok

@@ -118,7 +118,20 @@ impl<'a> Engine<'a> {
                     }
                 };
                 self.enum_defs
-                    .insert(e.name.clone(), (id, e.variants.clone()));
+                    .insert(e.name.clone(), (id, e.variant_names()));
+                // Esquema de params por variante (F2): tipos del payload para
+                // la emisión (ancho de slot) y la construcción/match con payload.
+                let params: Vec<Vec<Type>> = e
+                    .variants
+                    .iter()
+                    .map(|v| {
+                        v.params
+                            .iter()
+                            .map(|ta| self.resolve_field_type(ta).unwrap_or(Type::Any))
+                            .collect()
+                    })
+                    .collect();
+                self.enum_params.insert(e.name.clone(), params);
             }
         }
         // Recolectar structures -> layout C ABI de campos: header CLS
@@ -662,6 +675,7 @@ impl<'a> Engine<'a> {
                 &mut self.type_count,
                 &mut self.types_sec,
                 &self.enum_defs,
+                &self.enum_params,
                 &self.struct_defs,
                 &self.native_indexes,
                 &self.native_ret,
