@@ -52,6 +52,7 @@ en la matriz tras la promoción.
 | 16 | String fuera de rango | **PROMOVIDO** (no era bug) | `docs/lenguaje/datos.md` define el **clamping** (`s[99]` → `""`) y el oráculo `str-index.clsx` lo codifica. No se alinea con Array: es decisión de diseño. | `strings`: `str.index.oob`, `str.index.inrange` |
 | 17 | `module` / `namespace` | **GAP** | El parser acepta la sintaxis pero el typeck/emisor no cablean `NS::sym` / `NS.member`. Ver `gaps.txt`. | — (GAP, no se cubre) |
 | 18 | `match` con armas que devuelven `const` | **RESUELTO** | El typeck ensancha cada arma con `literal_base()` (antes la 1ª fijaba `Literal(v)`); `Literal(1)`/`Literal(2)` comparan como `Int`. Fix en `check_match`/`check_ternary`/`check_conditional`/`check_if_expr`. Workaround de `modules/dns` quitado. | `match` (matriz) + `findings/18` |
+| 19 | local anotado `Value` | **GAP** | `print(v)`/`str(v)` sobre un `Value` **local** dan basura o WASM inválido: el emisor trata `Type::Any/Value/Json` igual y no taggea el local. Preexistente; el camino soportado es leer de un `Record`/`JSON`. Ver `gaps.txt`. | — (GAP, no se cubre) |
 
 ---
 
@@ -78,6 +79,15 @@ prohibido por las reglas de rendimiento del JIT.
 sintaxis, pero el typeck no registra los símbolos del namespace y el emisor no
 resuelve `NS::miembro`. Es una feature de scoping no implementada (no una
 regresión de un plan).
+
+### 19 — local anotado `Value`
+`var v: Value = "hola"; print(v);` imprime basura (`5066566760660996`) y
+`str(v)` de un `Value` numérico da `[]`; combinaciones producen WASM inválido
+(`expected i64, found i32`). El emisor trata `Type::Any/Value/Json` igual y **no
+taggea el local** (solo el camino soportado — leer un valor de un `Record`/`JSON`
+— despacha por tag). **Preexistente** (no lo introduce el lote de `Any`/`match`).
+Camino recomendado: tipo concreto o leer de `Record`/`JSON`. Repro:
+`findings/19-value-local.clsx`.
 
 ### 18 — `match` cuyas armas devuelven constantes `const` (RESUELTO)
 El tipo del `match`-expresión se infiere de la primera arma. Antes, una referencia
