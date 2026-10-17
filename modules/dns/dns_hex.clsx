@@ -1,16 +1,9 @@
 # dns/dns_hex.clsx - Utilidades de presentación (volcado hex / nombre decodificado).
+import "bytes" as bytes;
 from "name" import decodeName;
 
 # Concatena los bytes de un mensaje a un string hex minúsculas (para volcar).
-export function toHex(b: int[]) -> String {
-    var digits = "0123456789abcdef";
-    var out = "";
-    for each v in (b) {
-        var x = v & 255;
-        out = out + digits[x / 16] + digits[x % 16];
-    }
-    return out;
-}
+export function toHex(b: int[]) -> String { return bytes::hexBytes(b); }
 
 # Nombre en forma de texto según los bytes en `b` (helper para chequeos).
 export function decodedName(b: int[], off: int) -> String {

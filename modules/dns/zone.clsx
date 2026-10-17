@@ -1,5 +1,5 @@
 # dns/zone.clsx - Servidor autoritativo puro (armado de respuestas).
-from "be" import pushU16, pushU32, pushAll;
+import "bytes" as bytes;
 from "name" import encodeName;
 from "types" import CLASS_IN, TYPE_CNAME, TYPE_SOA, TYPE_ANY;
 from "message" import parseMessage;
@@ -53,10 +53,10 @@ export class Zone {
 
 function emitRr(out: int[], rec: ZoneRecord, qname: String) {
     if (rec.owner == qname) { out.push(192); out.push(12); }
-    else { pushAll(out, encodeName(rec.owner)); }
-    pushU16(out, rec.rtype);
-    pushU16(out, CLASS_IN);
-    pushU32(out, rec.ttl);
+    else { bytes::pushAll(out, encodeName(rec.owner)); }
+    bytes::pushU16(out, rec.rtype);
+    bytes::pushU16(out, CLASS_IN);
+    bytes::pushU32(out, rec.ttl);
     var rd = rec.rdata;
     if (rec.nameAt >= 0 && rec.nameStr == qname) {
         var nr: int[] = [];
@@ -67,8 +67,8 @@ function emitRr(out: int[], rec: ZoneRecord, qname: String) {
         for (var j = rec.nameAt + encLen; j < rd.length; j++) { nr.push(rd[j]); }
         rd = nr;
     }
-    pushU16(out, rd.length);
-    pushAll(out, rd);
+    bytes::pushU16(out, rd.length);
+    bytes::pushAll(out, rd);
 }
 
 # Respuesta autoritativa byte-construida. Sigue la CNAME cuando la query no es
@@ -103,17 +103,17 @@ export function answer(query: int[], zone: Zone) -> int[] {
     }
 
     var out: int[] = [];
-    pushU16(out, q.id);
+    bytes::pushU16(out, q.id);
     var flags = 32768 | 1024 | rcode;
     if (q.rd == 1) { flags = flags | 256; }
-    pushU16(out, flags);
-    pushU16(out, 1);
-    pushU16(out, picks.length);
-    pushU16(out, nsPicks.length);
-    pushU16(out, 0);
-    pushAll(out, encodeName(qname));
-    pushU16(out, qtype);
-    pushU16(out, CLASS_IN);
+    bytes::pushU16(out, flags);
+    bytes::pushU16(out, 1);
+    bytes::pushU16(out, picks.length);
+    bytes::pushU16(out, nsPicks.length);
+    bytes::pushU16(out, 0);
+    bytes::pushAll(out, encodeName(qname));
+    bytes::pushU16(out, qtype);
+    bytes::pushU16(out, CLASS_IN);
     for each idx in (picks) { emitRr(out, zone.records[idx], qname); }
     for each idx in (nsPicks) { emitRr(out, zone.records[idx], qname); }
     return out;

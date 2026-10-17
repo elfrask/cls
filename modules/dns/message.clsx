@@ -1,5 +1,5 @@
 # dns/message.clsx - Mensaje DNS: parseo del wire format y constructor de consultas.
-from "be" import getU16, pushU16, pushAll;
+import "bytes" as bytes;
 from "name" import encodeName, decodeName;
 from "types" import CLASS_IN, typeName;
 from "rr" import Rr, parseRr;
@@ -35,8 +35,8 @@ export function parseMessage(b: int[]) -> DnsMessage {
     m.qtype = 0;
     m.qclass = 0;
     if (b.length < 12) { return m; }
-    m.id = getU16(b, 0);
-    m.flags = getU16(b, 2);
+    m.id = bytes::getU16(b, 0);
+    m.flags = bytes::getU16(b, 2);
     m.qr = (m.flags >> 15) & 1;
     m.opcode = (m.flags >> 11) & 15;
     m.aa = (m.flags >> 10) & 1;
@@ -44,17 +44,17 @@ export function parseMessage(b: int[]) -> DnsMessage {
     m.rd = (m.flags >> 8) & 1;
     m.ra = (m.flags >> 7) & 1;
     m.rcode = m.flags & 15;
-    m.qdCount = getU16(b, 4);
-    m.anCount = getU16(b, 6);
-    m.nsCount = getU16(b, 8);
-    m.arCount = getU16(b, 10);
+    m.qdCount = bytes::getU16(b, 4);
+    m.anCount = bytes::getU16(b, 6);
+    m.nsCount = bytes::getU16(b, 8);
+    m.arCount = bytes::getU16(b, 10);
     var off = 12;
     if (m.qdCount > 0 && off < b.length) {
         var qn = decodeName(b, off);
         m.qname = qn.name;
         off = qn.next;
-        m.qtype = getU16(b, off);
-        m.qclass = getU16(b, off + 2);
+        m.qtype = bytes::getU16(b, off);
+        m.qclass = bytes::getU16(b, off + 2);
         off = off + 4;
     }
     for (var i = 0; i < m.anCount; i++) {
@@ -84,16 +84,16 @@ export function rrLine(rr: Rr) -> String {
 
 export function buildQuery(id: int, name: String, qtype: int, rd: bool) -> int[] {
     var out: int[] = [];
-    pushU16(out, id);
+    bytes::pushU16(out, id);
     var flags = 0;
     if (rd) { flags = 256; }
-    pushU16(out, flags);
-    pushU16(out, 1);
-    pushU16(out, 0);
-    pushU16(out, 0);
-    pushU16(out, 0);
-    pushAll(out, encodeName(name));
-    pushU16(out, qtype);
-    pushU16(out, CLASS_IN);
+    bytes::pushU16(out, flags);
+    bytes::pushU16(out, 1);
+    bytes::pushU16(out, 0);
+    bytes::pushU16(out, 0);
+    bytes::pushU16(out, 0);
+    bytes::pushAll(out, encodeName(name));
+    bytes::pushU16(out, qtype);
+    bytes::pushU16(out, CLASS_IN);
     return out;
 }

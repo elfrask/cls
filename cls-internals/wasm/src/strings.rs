@@ -70,6 +70,26 @@ pub extern "C" fn __intr_str_to_chars(s: i64) -> i64 {
     }
 }
 
+/// Bytes del string como `int[]` (un byte por elemento **i64**, stride 8).
+/// Complemento de `toChar()` (que usa stride 4) para buffers/FFI.
+#[no_mangle]
+pub extern "C" fn __intr_str_to_bytes(s: i64) -> i64 {
+    unsafe {
+        let bytes = mem::read_bytes(s);
+        let n = bytes.len();
+        let ptr = mem::alloc(n as i64 * 8 + 16);
+        if ptr == 0 {
+            return 0;
+        }
+        mem::write_i64(ptr, n as i64);
+        mem::write_i64(ptr + 8, n as i64);
+        for (i, &b) in bytes.iter().enumerate() {
+            mem::write_i64(ptr + 16 + i * 8, b as i64);
+        }
+        ptr as i64
+    }
+}
+
 /// `s[i]` — byte `i` del string como String de 1 byte (semántica de bytes,
 /// igual que `length`/`slice`/`indexOf`). Fuera de rango devuelve string vacío.
 #[no_mangle]

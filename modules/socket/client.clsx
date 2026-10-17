@@ -3,25 +3,10 @@
 # El stream queda ABIERTO y es BIDIRECCIONAL: el llamador puede enviar y recibir
 # cuantas veces quiera. Es la base de HTTP keep-alive, WebSocket, o cualquier
 # protocolo propio.
+import "bytes" as bytes;
 from "socket_ffi" import sk_connect, sk_connect_timeout, sk_send,
     sk_shutdown_write, sk_recv, sk_recv_exact, sk_readable, sk_set_timeout,
     sk_close, sk_last_error;
-
-# --- Conversiones String <-> bytes (byte-transparente) ----------------------
-
-# String -> int[] (bytes 0..255).
-export function toBytes(s: String) -> int[] {
-    var out: int[] = [];
-    for each ch in (s.toChar()) { out.push(ord(ch) & 255); }
-    return out;
-}
-
-# int[] (bytes 0..255) -> String (por bytes).
-export function fromBytes(b: int[]) -> String {
-    var out = "";
-    for each v in (b) { out = out + char(v & 255).toString(); }
-    return out;
-}
 
 # --- API funcional -----------------------------------------------------------
 
@@ -39,7 +24,7 @@ export function connectTimeout(host: String, port: int, timeoutMs: int) -> int {
 export function sendAll(h: int, buf: int[]) -> int { return int(sk_send(h, buf)); }
 
 # Envía el texto como bytes. Devuelve los bytes escritos o -1.
-export function sendText(h: int, s: String) -> int { return int(sk_send(h, toBytes(s))); }
+export function sendText(h: int, s: String) -> int { return int(sk_send(h, s.toBytes())); }
 
 # Recibe hasta maxLen bytes. [] en timeout/EOF/error.
 export function recv(h: int, maxLen: int, timeoutMs: int) -> int[] {
@@ -54,7 +39,7 @@ export function recvExact(h: int, n: int, timeoutMs: int) -> int[] {
 # Recibe hasta maxLen bytes como texto.
 export function recvText(h: int, maxLen: int, timeoutMs: int) -> String {
     var b: int[] = sk_recv(h, maxLen, timeoutMs);
-    return fromBytes(b);
+    return bytes::toStr(b);
 }
 
 # Lee una línea (sin '\n'; descarta '\r'). "" en EOF/timeout.
@@ -112,7 +97,7 @@ export class Client {
     function handle() -> int { return me.h; }
 
     function write(buf: int[]) -> int { return int(sk_send(me.h, buf)); }
-    function writeText(s: String) -> int { return int(sk_send(me.h, toBytes(s))); }
+    function writeText(s: String) -> int { return int(sk_send(me.h, s.toBytes())); }
 
     function read(maxLen: int) -> int[] {
         var b: int[] = sk_recv(me.h, maxLen, me.timeoutMs);
@@ -124,7 +109,7 @@ export class Client {
     }
     function readText(maxLen: int) -> String {
         var b: int[] = sk_recv(me.h, maxLen, me.timeoutMs);
-        return fromBytes(b);
+        return bytes::toStr(b);
     }
     function readLine() -> String { return line(me.h, me.timeoutMs, 65536); }
 

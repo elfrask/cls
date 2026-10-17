@@ -224,6 +224,11 @@ impl<'a> FuncEmitter<'a> {
                         self.emit_str_host("__intr_str_to_chars");
                         return Ok(true);
                     }
+                    "toBytes" => {
+                        // Bytes del string como int[] (stride 8; para buffers/FFI).
+                        self.emit_str_host("__intr_str_to_bytes");
+                        return Ok(true);
+                    }
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
                 }
             }

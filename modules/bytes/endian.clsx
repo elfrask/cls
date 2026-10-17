@@ -1,8 +1,7 @@
-# dns/be.clsx - Enteros big-endian sobre buffers de bytes (`int[]`, 0..255).
+# bytes/endian.clsx - Enteros big-endian sobre buffers de bytes (`int[]`, 0..255).
 #
 # Mutadores in-place: los arrays tienen semántica de referencia (mutar un
-# parámetro array afecta al llamador; el JIT conserva la identidad del buffer
-# aunque `push` reasigne).
+# parámetro array afecta al llamador).
 
 export function getU16(b: int[], off: int) -> int {
     return ((b[off] & 255) << 8) | (b[off + 1] & 255);

@@ -1,4 +1,5 @@
 # io/files.clsx - Lectura/escritura de archivos completos (byte-exacta).
+import "bytes" as bytes;
 from "io_ffi" import o_read_text, o_read_bytes, o_write_text, o_append_text;
 
 # Lee el archivo como texto (null-terminated; seguro para UTF-8 sin NUL).
@@ -13,11 +14,7 @@ export function readBytes(path: String) -> int[] { return o_read_bytes(path); }
 # hoy usa stride de 8 bytes (ver README). NO reemplaza a `readBytes`.
 export function readChars(path: String) -> Char[] {
     var raw: int[] = o_read_bytes(path);
-    var out: Char[] = [];
-    for each b in (raw) {
-        out.push(char(b));
-    }
-    return out;
+    return bytes::toChars(raw);
 }
 
 # Escribe (trunca) el archivo, byte-exacto. Devuelve los bytes escritos, -1 error.

@@ -97,7 +97,8 @@ char(200).toString();  # String de 1 byte con el valor crudo 200
 buffers de bytes; `String` sigue siendo texto **byte-based** (`length`/`s[i]`
 operan sobre bytes). Conviven como `bytes` y `str` en Python:
 
-- `String.toChar() -> Char[]` — los bytes del string, uno por `Char`.
+- `String.toChar() -> Char[]` — los bytes del string, uno por `Char` (stride 4).
+- `String.toBytes() -> int[]` — los bytes como `int[]` (stride 8, para buffers/FFI).
 - `Char.toString() -> String` — String de 1 byte, **byte-transparente** (el byte
   crudo, NO el UTF-8 de un codepoint).
 - `chars.join("")` — reconstruye el String byte a byte.

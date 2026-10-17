@@ -3,6 +3,7 @@
 # Soporta "esquema://host[:puerto]/ruta?consulta#fragmento" y URLs relativas
 # (sin esquema: se asume http). No soporta userinfo (`user:pass@`) — se documenta
 # como limitación.
+import "bytes" as bytes;
 
 export class Url {
     var scheme: String;
@@ -106,11 +107,6 @@ function isUnreserved(c: int) -> bool {
     return c == 45 || c == 46 || c == 95 || c == 126;  # - . _ ~
 }
 
-function hex2(c: int) -> String {
-    var d = "0123456789ABCDEF";
-    return d[(c / 16) % 16] + d[c % 16];
-}
-
 export function percentEncode(s: String) -> String {
     var out = "";
     for each ch in (s.toChar()) {
@@ -119,17 +115,10 @@ export function percentEncode(s: String) -> String {
             if (c == 32) { out = out + "+"; }
             else { out = out + ch.toString(); }
         } else {
-            out = out + "%" + hex2(c);
+            out = out + "%" + bytes::hexByte(c).upper();
         }
     }
     return out;
-}
-
-function hexVal(c: int) -> int {
-    if (c >= 48 && c <= 57) { return c - 48; }
-    if (c >= 97 && c <= 102) { return c - 87; }
-    if (c >= 65 && c <= 70) { return c - 55; }
-    return -1;
 }
 
 export function percentDecode(s: String) -> String {
@@ -141,8 +130,8 @@ export function percentDecode(s: String) -> String {
         var c = ord(cs[i]) & 255;
         if (c == 43) { out = out + " "; i = i + 1; continue; }  # '+'
         if (c == 37 && i + 2 < n) {                              # '%'
-            var hi = hexVal(ord(cs[i + 1]));
-            var lo = hexVal(ord(cs[i + 2]));
+            var hi = bytes::hexValue(ord(cs[i + 1]));
+            var lo = bytes::hexValue(ord(cs[i + 2]));
             if (hi >= 0 && lo >= 0) {
                 out = out + char(hi * 16 + lo).toString();
                 i = i + 3;

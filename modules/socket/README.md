@@ -49,8 +49,10 @@ Funcional:
 | `setTimeout(h, ms) -> int` | timeout de E/S a nivel socket |
 | `shutdownWrite(h) -> int` | half-close (EOF al peer) |
 | `close(h) -> int` | cierra |
-| `toBytes(s) -> int[]` / `fromBytes(b) -> String` | conversiones byte-transparentes |
 | `lastError() -> String` | último error del sistema |
+
+> Conversión de buffers: usar los intrínsecos `String.toChar()` / `String.toBytes()`
+> y `modules/bytes` (`toChars`/`toInts`/`toStr`).
 
 OO:
 

@@ -10,16 +10,16 @@
 #
 #   net_ffi.clsx - bindings crudos al shim (no público)
 #   consts.clsx  - timeouts y límites
-#   convert.clsx - conversión int[] <-> Char[]
 #   udp.clsx     - UDP (funcional + UdpClient)
 #   tcp.clsx     - TCP (funcional + TcpClient)
 #   lookup.clsx  - resolución de nombres
+#
+# Para conversión de buffers (`int[]`/`Char[]`) usar `modules/bytes`.
 #
 # Barrel: se expone la API pública.
 
 import "udp" as udp;
 import "tcp" as tcp;
-import "convert" as convert;
 import "lookup" as lookup;
 import "consts" as consts;
 
@@ -30,6 +30,5 @@ export { tcp::tcpOpen as tcpOpen, tcp::tcpSend as tcpSend,
          tcp::tcpRecv as tcpRecv, tcp::tcpClose as tcpClose,
          tcp::TcpClient as TcpClient };
 export { lookup::resolve as resolve };
-export { convert::toChars as toChars, convert::toBytes as toBytes };
 export { consts::DEFAULT_TIMEOUT_MS as DEFAULT_TIMEOUT_MS,
          consts::MAX_DNS_MSG as MAX_DNS_MSG };

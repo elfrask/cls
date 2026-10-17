@@ -134,6 +134,7 @@ impl TypeChecker {
                 "indexOf" => Type::Int,
                 "split" => Type::Array(Box::new(Type::String)),
                 "toChar" => Type::Array(Box::new(Type::Char)),
+                "toBytes" => Type::Array(Box::new(Type::Int)),
                 _ => Type::Value,
             },
             Type::Array(elem) => match member.member.as_str() {
@@ -291,6 +292,7 @@ impl TypeChecker {
                 "indexOf" => Some(Type::Int),
                 "split" => Some(Type::Array(Box::new(Type::String))),
                 "toChar" => Some(Type::Array(Box::new(Type::Char))),
+                "toBytes" => Some(Type::Array(Box::new(Type::Int))),
                 _ => None,
             },
             Type::Array(elem) => match member {

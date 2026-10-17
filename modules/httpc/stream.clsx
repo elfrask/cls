@@ -3,22 +3,8 @@
 # Nota de codegen: las llamadas a `socket::line` pasan `maxLen` EXPLÍCITO (no
 # omiten el default) — omitir el default de una función de OTRO módulo hoy emite
 # WASM inválido.
+import "bytes" as bytes;
 import "socket" as socket;
-
-function hexToInt(hex: String) -> int {
-    var cs = hex.toChar();
-    var v = 0;
-    for each ch in (cs) {
-        var c = ord(ch) & 255;
-        var d = -1;
-        if (c >= 48 && c <= 57) { d = c - 48; }
-        elif (c >= 97 && c <= 102) { d = c - 87; }
-        elif (c >= 65 && c <= 70) { d = c - 55; }
-        if (d < 0) { break; }
-        v = v * 16 + d;
-    }
-    return v;
-}
 
 # Decodifica Transfer-Encoding: chunked (con trailers opcionales).
 export function readChunked(h: int, timeoutMs: int) -> String {
@@ -28,7 +14,7 @@ export function readChunked(h: int, timeoutMs: int) -> String {
         var semi = sizeLine.indexOf(";");
         var hex = sizeLine;
         if (semi >= 0) { hex = sizeLine.slice(0, semi); }
-        var n = hexToInt(hex.trim());
+        var n = bytes::hexToInt(hex.trim());
         if (n <= 0) {
             loop {
                 var t = socket::line(h, timeoutMs, 65536);
@@ -37,7 +23,7 @@ export function readChunked(h: int, timeoutMs: int) -> String {
             break;
         }
         var chunk: int[] = socket::recvExact(h, n, timeoutMs);
-        out = out + socket::fromBytes(chunk);
+        out = out + bytes::toStr(chunk);
         var crlf: int[] = socket::recvExact(h, 2, timeoutMs);
     }
     return out;
@@ -46,7 +32,7 @@ export function readChunked(h: int, timeoutMs: int) -> String {
 # Lee exactamente n bytes (Content-Length) como texto.
 export function readBodyLength(h: int, n: int, timeoutMs: int) -> String {
     var b: int[] = socket::recvExact(h, n, timeoutMs);
-    return socket::fromBytes(b);
+    return bytes::toStr(b);
 }
 
 # Lee hasta EOF (Connection: close, sin Content-Length).
@@ -55,7 +41,7 @@ export function readToEof(h: int, timeoutMs: int) -> String {
     loop {
         var b: int[] = socket::recv(h, 65536, timeoutMs);
         if (b.length == 0) { break; }
-        out = out + socket::fromBytes(b);
+        out = out + bytes::toStr(b);
     }
     return out;
 }

@@ -39,8 +39,9 @@ selección de librería la hace `when` en `net_ffi.clsx`).
 | `tcpSend(h, buf) -> int` | escribe `[len:u16 BE][payload]` (framing DNS-over-TCP). |
 | `tcpRecv(h, maxLen, timeoutMs) -> int[]` | lee el prefijo y devuelve el payload. |
 | `tcpClose(h) -> int` | cierra. |
-| `toChars(int[]) -> Char[]`, `toBytes(Char[]) -> int[]` | conversión de buffers. |
 
 Clases de estado: `UdpClient` y `TcpClient` (handle encapsulado).
+
+Para conversión de buffers (`int[]`/`Char[]`) usar `modules/bytes`.
 
 Consumidor: `examples/dns/`.

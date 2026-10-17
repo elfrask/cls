@@ -1,20 +1,29 @@
-# bytes - Utilidades de byte: ord/chr (intrínsecos) + hex/diff (CLS puro).
+# bytes - Utilidades de byte: ord/chr, conversión de buffers, hex y endian.
 #
-# CLS puro, SIN FFI. `Char` es la unidad de 1 byte (modelo bytes/str: un String
-# es texto byte-based y `s.toChar()` da su buffer `Char[]`).
+# CLS puro, SIN FFI. `Char` es la unidad de 1 byte (modelo bytes/str). Es el
+# hogar de las primitivas de byte/buffer del stdlib (examples/patrones.md §11):
+# los módulos que manipulan bytes (`net`, `io`, `dns`, `httpc`) consumen `bytes`
+# en vez de reimplementar conversiones/hex.
 #
-# Ladrillo de la stdlib autocontenida (examples/patrones.md §11). NO usa
-# host_calls. Este archivo es un **barrel**: reexporta la API pública desde los
-# archivos enfocados.
+#   byte.clsx   - ord / chr / normalize + conversión int[] <-> Char[] <-> String
+#   hex.clsx    - hexEncode/hexDecode/hexBytes/hexDigit/hexValue/hexToInt/intToHex
+#   endian.clsx - get/push U16/U32 (big-endian) + pushAll
+#   diff.clsx   - firstDiff
 #
-#   byte.clsx - ord / chr / normalize (sobre los intrínsecos)
-#   hex.clsx  - hexEncode / hexDecode
-#   diff.clsx - firstDiff
+# Barrel: se expone la API pública.
 
 import "byte" as byte;
 import "hex" as hex;
+import "endian" as endian;
 import "diff" as diff;
 
-export { byte::ord as ord, byte::chr as chr };
-export { hex::hexEncode as hexEncode, hex::hexDecode as hexDecode };
+export { byte::ord as ord, byte::chr as chr, byte::normalize as normalize,
+         byte::toChars as toChars, byte::toInts as toInts, byte::toStr as toStr };
+export { hex::hexEncode as hexEncode, hex::hexDecode as hexDecode,
+         hex::hexBytes as hexBytes, hex::hexByte as hexByte, hex::hexToInt as hexToInt,
+         hex::hexDigit as hexDigit, hex::hexValue as hexValue,
+         hex::intToHex as intToHex };
+export { endian::getU16 as getU16, endian::getU32 as getU32,
+         endian::pushU16 as pushU16, endian::pushU32 as pushU32,
+         endian::pushAll as pushAll };
 export { diff::firstDiff as firstDiff };

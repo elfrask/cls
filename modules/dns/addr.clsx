@@ -1,20 +1,9 @@
 # dns/addr.clsx - Renders de dirección: A (IPv4) y AAAA (IPv6, RFC 5952).
+import "bytes" as bytes;
 
 function ipv4ToString(b: int[], off: int) -> String {
     return str(b[off] & 255) + "." + str(b[off + 1] & 255) + "."
          + str(b[off + 2] & 255) + "." + str(b[off + 3] & 255);
-}
-
-function hexGroup(v: int) -> String {
-    if (v == 0) { return "0"; }
-    var digits = "0123456789abcdef";
-    var out = "";
-    var x = v;
-    while (x > 0) {
-        out = digits[x % 16] + out;
-        x = x / 16;
-    }
-    return out;
 }
 
 # IPv6 -> forma canónica RFC 5952 (comprime la corrida más larga de ceros).
@@ -47,7 +36,7 @@ export function ipv6ToString(b: int[], off: int) -> String {
             continue;
         }
         if (k > 0 && k != bestStart + bestLen) { out = out + ":"; }
-        out = out + hexGroup(groups[k]);
+        out = out + bytes::intToHex(groups[k]);
         k++;
     }
     return out;

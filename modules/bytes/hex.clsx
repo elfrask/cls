@@ -1,41 +1,72 @@
-# bytes/hex.clsx - Codec hexadecimal (minúsculas) para buffers de bytes.
-from "byte" import ord, normalize;
+# bytes/hex.clsx - Codec hexadecimal (minúsculas) y utilidades de dígitos.
+from "byte" import ord, toInts, normalize;
 
-# Dígito hex de un nibble (0..15).
+# Nibble (0..15) -> dígito hex.
 function hexNib(b: int) -> String {
     var digits = "0123456789abcdef";
-    return digits[b % 16];
+    return digits[b & 15];
 }
 
-# Char[] (buffer de bytes) -> string hex en minúsculas (2 chars por byte).
-export function hexEncode(bytes: Char[]) -> String {
-    var out = "";
-    for each b in (bytes) {
-        var v = normalize(ord(b));
-        out = out + hexNib(v / 16) + hexNib(v % 16);
-    }
-    return out;
-}
+# Nibble (0..15) -> dígito hex (público; usado por percent-encoding).
+export function hexDigit(nibble: int) -> String { return hexNib(nibble & 15); }
 
-# Valor de un dígito hex (0..15); -1 si no es hex.
-function hexVal(c: int) -> int {
+# Dígito hex ('0'..'9'/'a'..'f'/'A'..'F') -> valor 0..15; -1 si no es hex.
+export function hexValue(c: int) -> int {
     if (c >= 48 && c <= 57) { return c - 48; }     # '0'..'9'
     if (c >= 97 && c <= 102) { return c - 87; }    # 'a'..'f'
     if (c >= 65 && c <= 70) { return c - 55; }     # 'A'..'F'
     return -1;
 }
 
+# Byte -> 2 dígitos hex en minúsculas.
+export function hexByte(b: int) -> String {
+    var x = normalize(b);
+    return hexNib(x / 16) + hexNib(x & 15);
+}
+
+# `int[]` (bytes) -> hex en minúsculas (2 chars por byte).
+export function hexBytes(b: int[]) -> String {
+    var out = "";
+    for each v in (b) { out = out + hexByte(v); }
+    return out;
+}
+
+# `Char[]` (buffer de bytes) -> hex en minúsculas.
+export function hexEncode(bytes: Char[]) -> String { return hexBytes(toInts(bytes)); }
+
 # string hex -> int[] (bytes). Ignora un nibble impar final; nibble inválido -> -1.
-# Los bytes del hex se obtienen con `hex.toChar()` (Char[]) y su código con `ord`.
 export function hexDecode(hex: String) -> int[] {
     var out: int[] = [];
     var cs = hex.toChar();
     var n = cs.length;
     for (var i = 0; i + 1 < n; i = i + 2) {
-        var hi = hexVal(ord(cs[i]));
-        var lo = hexVal(ord(cs[i + 1]));
+        var hi = hexValue(ord(cs[i]));
+        var lo = hexValue(ord(cs[i + 1]));
         if (hi < 0 || lo < 0) { out.push(-1); }
         else { out.push(hi * 16 + lo); }
+    }
+    return out;
+}
+
+# string hex -> int (parsea; 0 si vacío o sin dígitos válidos).
+export function hexToInt(hex: String) -> int {
+    var v = 0;
+    for each ch in (hex.toChar()) {
+        var d = hexValue(ord(ch));
+        if (d < 0) { continue; }
+        v = v * 16 + d;
+    }
+    return v;
+}
+
+# int -> hex sin ceros a la izquierda ("0" para <= 0) — p. ej. grupos IPv6.
+export function intToHex(v: int) -> String {
+    if (v <= 0) { return "0"; }
+    var out = "";
+    var x = v;
+    while (x > 0) {
+        out = hexNib(x & 15) + out;
+        x = x / 16;
     }
     return out;
 }

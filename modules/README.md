@@ -74,7 +74,7 @@ import "sha256" as sha;              # usa modules/sha256/  -> sha::hash(...)
 | Módulo | Estado | Reemplaza a | Notas |
 |--------|--------|-------------|-------|
 | `io` | Activo | `host_call fs` (§2.7) | **FFI a C**. I/O de archivos y descriptores sobre el shim `io_shim.dll` (sin punteros). Pagan la deuda de autocontención. Requiere `powershell -File modules/io/build.ps1`. Usado por `examples/brainfuck` y `examples/clsh`. |
-| `bytes` | Activo | `bf_ord`/`bf_read_bytes` de brainfuck | **CLS puro (sin FFI)**. `ord`/`chr` (sobre los intrínsecos `char`/`ord`; `Char` = unidad de 1 byte) + `hexEncode`/`hexDecode`/`firstDiff`. Sin build. Usado por `examples/brainfuck`. |
+| `bytes` | Activo | `bf_ord`/`bf_read_bytes` de brainfuck | **CLS puro (sin FFI)**. **Primitivas de byte/buffer**: `ord`/`chr`/`normalize`, conversión `int[]`↔`Char[]`↔`String` (`toChars`/`toInts`/`toStr`), hex (`hexEncode`/`hexDecode`/`hexBytes`/`hexToInt`/`intToHex`…), big-endian (`getU16`/`pushU16`…) y `firstDiff`. Sin build. Consumido por `net`/`io`/`dns`/`httpc`/brainfuck. (String↔bytes ya es intrínseco: `String.toChar()`/`toBytes()`.) |
 | `prng` | Activo | `host_call math.random`; LCG local de `conformance` | CLS puro. `Prng` (LCG de 64 bits): `next`, `nextInt`, `nextFloat`. Usado por `examples/conformance`. |
 | `check` | Activo | — | CLS puro. Aserciones + protocolo `CHECK k=v` (`assertEq`, `assertEqStr`, `assertTrue`, `fail`, `fails`, `reset`) para runners de prueba. |
 | `config` | Activo | — | CLS puro. Introspección de la configuración del host **solo lectura**: `all`, `get`, `getBool`, `getInt`, `sandboxEnabled`. Envuelve el intrinsic `config()` con caché perezosa (una sola llamada al host). |

@@ -112,6 +112,11 @@ pub static INTERNALS_FUNCTIONS: &[InternalsFn] = &[
         results: &[I64],
     },
     InternalsFn {
+        name: "__intr_str_to_bytes",
+        params: &[I64],
+        results: &[I64],
+    },
+    InternalsFn {
         name: "__intr_str_upper",
         params: &[I64],
         results: &[I64],

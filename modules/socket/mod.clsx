@@ -20,5 +20,4 @@ export { client::sendAll as sendAll, client::sendText as sendText };
 export { client::recv as recv, client::recvExact as recvExact, client::recvText as recvText };
 export { client::line as line, client::readable as readable, client::setTimeout as setTimeout };
 export { client::shutdownWrite as shutdownWrite, client::close as close };
-export { client::toBytes as toBytes, client::fromBytes as fromBytes };
 export { client::lastError as lastError, client::Client as Client };

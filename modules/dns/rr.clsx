@@ -1,6 +1,6 @@
 # dns/rr.clsx - Resource records (clases con herencia + `render()` polimórfico)
 # y su parser desde el wire format.
-from "be" import getU16, getU32;
+import "bytes" as bytes;
 from "name" import decodeName;
 from "addr" import ipv4ToString, ipv6ToString;
 from "types" import TYPE_A, TYPE_AAAA, TYPE_CNAME, TYPE_NS, TYPE_MX, TYPE_TXT, TYPE_SOA;
@@ -126,7 +126,7 @@ function makeRr(rtype: int, name: String, ttl: int, b: int[], off: int, rdlen: i
         5 -> { var rc: Rr = RrName(name, ttl, TYPE_CNAME, decodeName(b, off).name); * <- rc; },
         2 -> { var rn2: Rr = RrName(name, ttl, TYPE_NS, decodeName(b, off).name); * <- rn2; },
         15 -> {
-            var pref = getU16(b, off);
+            var pref = bytes::getU16(b, off);
             var rm: Rr = RrMX(name, ttl, pref, decodeName(b, off + 2).name);
             * <- rm;
         },
@@ -135,8 +135,8 @@ function makeRr(rtype: int, name: String, ttl: int, b: int[], off: int, rdlen: i
             var mn = decodeName(b, off);
             var rn = decodeName(b, mn.next);
             var so = rn.next;
-            var rs: Rr = RrSOA(name, ttl, mn.name, rn.name, getU32(b, so), getU32(b, so + 4),
-                               getU32(b, so + 8), getU32(b, so + 12), getU32(b, so + 16));
+            var rs: Rr = RrSOA(name, ttl, mn.name, rn.name, bytes::getU32(b, so), bytes::getU32(b, so + 4),
+                               bytes::getU32(b, so + 8), bytes::getU32(b, so + 12), bytes::getU32(b, so + 16));
             * <- rs;
         },
         default -> { var rd: Rr = Rr(name, ttl, rtype); * <- rd; },
@@ -152,9 +152,9 @@ export class RrResult {
 export function parseRr(b: int[], start: int) -> RrResult {
     var nm = decodeName(b, start);
     var off = nm.next;
-    var rtype = getU16(b, off);
-    var ttl = getU32(b, off + 4);
-    var rdlen = getU16(b, off + 8);
+    var rtype = bytes::getU16(b, off);
+    var ttl = bytes::getU32(b, off + 4);
+    var rdlen = bytes::getU16(b, off + 8);
     var rdataOff = off + 10;
     var res = RrResult();
     res.rr = makeRr(rtype, nm.name, ttl, b, rdataOff, rdlen);

@@ -40,6 +40,7 @@ Los métodos de transformación devuelven un string **nuevo** (asignar:
 | `isEmpty` | método | `isEmpty() -> bool` | ¿Está vacío? |
 | `toString` | método | `toString() -> String` | El string mismo. |
 | `toChar` | método | `toChar() -> Char[]` | Los **bytes** del string como `Char[]` (cada uno 0..255). Modelo `bytes`/`str`. |
+| `toBytes` | método | `toBytes() -> int[]` | Los **bytes** del string como `int[]` (buffer para FFI, stride 8). |
 | `length` | **getter** | `length() -> int` | Longitud: **bytes en el JIT**. |
 
 ## `Int` y `Float` (inmutables)
@@ -56,7 +57,8 @@ Los métodos de transformación devuelven un string **nuevo** (asignar:
 `Char` es la **unidad de 1 byte** (0..255) para buffers de bytes (modelo
 `bytes`/`str`); `String` sigue siendo texto byte-based. Se construye con los
 intrínsecos `char(n: int) -> Char` y se inspecciona con `ord(c: Char) -> int`.
-Sus bytes se obtienen con `String.toChar() -> Char[]`.
+Sus bytes se obtienen con `String.toChar() -> Char[]` (stride 4) o
+`String.toBytes() -> int[]` (stride 8, para buffers/FFI).
 
 | Tipo | Miembro | Descripción |
 |---|---|---|
