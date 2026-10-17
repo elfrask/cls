@@ -134,8 +134,43 @@ nombres `__xxx` dentro de la clase. **Catálogo completo soportado por el JIT
 | `__equals` / `__compare` | `==` `!=` / `<` `>` `<=` `>=` sobre objetos |
 | `__add` `__sub` `__mul` `__div` `__mod` `__pow` | operadores aritméticos |
 | `__neg` / `__not` | unario `-` / `!` |
+| `__match` / `__unpack` | modo PATRÓN de `match` sobre la clase (protocolo) |
 
-> Catálogo detallado con contratos por intérprete: `agent-context/magics.md`.
+> Catálogo detallado con contratos por intérprete: `docs/lenguaje/magics.md`.
+
+### Protocolo de match (F6)
+
+Una clase entra al **modo PATRÓN** de `match` definiendo `__match() -> E` (el
+**discriminante**, un enum `E` cuyo namespace son las variantes) y
+`__unpack(tag: String) -> T | (T1, T2, …)` (el **payload** computado). Con
+bindings, `obj.__unpack("<variante>")` devuelve un valor único (1 binding) o una
+tupla (N); el emisor liga por posición. Sin `__match`, usar la clase como
+scrutinee en modo PATRÓN es **error de compilación**.
+
+```clx
+enum RespKind { ok, err };
+
+class Resp {
+    var kind: RespKind;
+    var code: int;
+    var body: String;
+    function main(k: RespKind, c: int, b: String) { me.kind = k; me.code = c; me.body = b; }
+    function __match() -> RespKind { return me.kind; }
+    function __unpack(tag: String) -> (String) | (int, String) {
+        if (tag == "ok") { return (me.body); }
+        return (me.code, me.body);
+    }
+};
+
+var out = match (v <- Resp(RespKind.err, 404, "no")) {
+    ok(texto)     -> "ok ${texto}",
+    err(cod, msg) -> "err ${cod} ${msg}",
+    default       -> "?",
+};
+```
+
+El resto de los modos ya funcionan sobre clases: `is` (identidad + herencia),
+`in` (`__equals`) e `if` (`__bool`).
 
 ### Ejemplo integral (JIT)
 

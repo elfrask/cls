@@ -117,36 +117,15 @@ impl TypeChecker {
         });
 
         let mut result: Option<Type> = None;
-        // Esquema del enum del scrutinee (modo PATRÓN, F2): variante -> params.
-        // Se resuelve una vez; `None` = el scrutinee no es un enum conocido (o es
-        // un enum importado sin esquema registrado).
-        let enum_schema: Option<(String, Vec<(String, Vec<Type>)>)> =
-            if m.mode == MatchMode::Pattern {
-                match scrut_ty.as_ref() {
-                    Some(Type::Named(n, _)) => match self.enum_schema(n) {
-                        Some(s) => Some((n.clone(), s)),
-                        // Enum importado sin esquema registrado: el emisor lo
-                        // resuelve por sufijo; no forzamos error (paridad F1).
-                        None => None,
-                    },
-                    // Tipos claramente no-enum -> error claro. `Any`/`Unknown`/
-                    // `Union`/`Named` (clase/struct/import) no se fuerzan (el
-                    // emisor decide).
-                    Some(other) if is_obviously_non_enum(other) => {
-                        self.error(
-                            &format!(
-                                "`match` en modo patrón requiere un enum como scrutinee, encontró `{}`",
-                                other
-                            ),
-                            m.span.clone(),
-                        );
-                        None
-                    }
-                    _ => None,
-                }
-            } else {
-                None
-            };
+        // Contexto de patrones (modo PATRÓN, F2/F6): namespace de variantes del
+        // scrutinee. Enum nativo -> su esquema; clase con protocolo de match ->
+        // el enum `E` de `__match()` (F6). `None` = no forzamos error (enum
+        // importado sin esquema / tipo dinámico): el emisor decide.
+        let pattern_ctx: Option<PatternCtx> = if m.mode == MatchMode::Pattern {
+            self.resolve_pattern_ctx(scrut_ty.as_ref(), &m.span)
+        } else {
+            None
+        };
         for arm in &m.arms {
             self.push_scope();
             if let (Some(name), Some(base)) = (&narrow_name, &scrut_ty) {
@@ -154,7 +133,7 @@ impl TypeChecker {
                     self.define(name, narrowed);
                 }
             }
-            self.check_match_patterns(m.mode, &arm.patterns, scrut_ty.as_ref(), enum_schema.as_ref(), &arm.span);
+            self.check_match_patterns(m.mode, &arm.patterns, scrut_ty.as_ref(), pattern_ctx.as_ref(), &arm.span);
             // `Some(t)` = el arma entrega un valor (expr o bloque con `* <-`).
             // `None` = arma-bloque que NO entrega a este `match` (p.ej. salta
             // afuera con `match* <-` o cae sin `<-`): no constriñe el tipo.
@@ -309,7 +288,7 @@ impl TypeChecker {
         mode: MatchMode,
         patterns: &[MatchPattern],
         scrut_ty: Option<&Type>,
-        enum_schema: Option<&(String, Vec<(String, Vec<Type>)>)>,
+        pattern_ctx: Option<&PatternCtx>,
         arm_span: &Span,
     ) {
         // F2: a lo sumo un patrón con binds por arma (el payload ligado tiene un
@@ -342,35 +321,124 @@ impl TypeChecker {
                     }
                 }
                 MatchPattern::Variant { name, binds } => {
-                    // Validación estática contra el esquema del enum (F2).
-                    if let Some((enum_name, variants)) = enum_schema {
-                        match variants.iter().find(|(v, _)| v == name) {
-                            Some((_, params)) => {
-                                if params.len() != binds.len() {
+                    if let Some(ctx) = pattern_ctx {
+                        if !ctx.variants.iter().any(|(v, _)| v == name) {
+                            self.error(
+                                &format!(
+                                    "La variante `{}` no existe en el enum `{}`",
+                                    name, ctx.enum_name
+                                ),
+                                arm_span.clone(),
+                            );
+                            for b in binds {
+                                if b != "_" {
+                                    self.define(b, Type::Any);
+                                }
+                            }
+                            continue;
+                        }
+                        if let Some(class_name) = &ctx.class_name {
+                            // F6: clase con protocolo. La aridad/tipos del payload
+                            // son best-effort contra el retorno anotado de `__unpack`.
+                            let arity = binds.len();
+                            let wants_payload = binds.iter().any(|b| b != "_");
+                            // Patrón sin extracción (`ok()`, `ok(_)`): no se usa el
+                            // payload -> no se exige ni valida `__unpack`.
+                            if !wants_payload {
+                                continue;
+                            }
+                            // Con bindings, `__unpack` es obligatorio y debe anotar
+                            // un retorno distinto de void (regla de los magics).
+                            match ctx.unpack_ret.as_ref() {
+                                None => {
                                     self.error(
                                         &format!(
-                                            "La variante `{}` del enum `{}` espera {} binding(s), recibió {}",
-                                            name,
-                                            enum_name,
-                                            params.len(),
-                                            binds.len()
+                                            "La clase `{}` define `__match` pero no `__unpack` \
+                                             (requerido por patrones con bindings)",
+                                            class_name
                                         ),
                                         arm_span.clone(),
                                     );
-                                }
-                                for (i, b) in binds.iter().enumerate() {
-                                    if b == "_" {
-                                        continue;
+                                    for b in binds {
+                                        if b != "_" {
+                                            self.define(b, Type::Any);
+                                        }
                                     }
-                                    let bt = params.get(i).cloned().unwrap_or(Type::Any);
-                                    self.define(b, bt);
+                                    continue;
+                                }
+                                Some(t) if matches!(t, Type::Void | Type::Empty) => {
+                                    self.error(
+                                        &format!(
+                                            "La clase `{}` debe anotar el retorno de `__unpack` \
+                                             (distinto de void) para el dispatch del magic",
+                                            class_name
+                                        ),
+                                        arm_span.clone(),
+                                    );
+                                    for b in binds {
+                                        if b != "_" {
+                                            self.define(b, Type::Any);
+                                        }
+                                    }
+                                    continue;
+                                }
+                                _ => {}
+                            }
+                            match class_bind_types(ctx.unpack_ret.as_ref(), arity) {
+                                Some(types) => {
+                                    for (i, b) in binds.iter().enumerate() {
+                                        if b == "_" {
+                                            continue;
+                                        }
+                                        self.define(
+                                            b,
+                                            types.get(i).cloned().unwrap_or(Type::Any),
+                                        );
+                                    }
+                                }
+                                None => {
+                                    self.error(
+                                        &format!(
+                                            "El patrón `{}(...)` pide {} binding(s), que no \
+                                             coinciden con la aridad del retorno anotado de \
+                                             `{}::__unpack`",
+                                            name, arity, class_name
+                                        ),
+                                        arm_span.clone(),
+                                    );
+                                    for b in binds {
+                                        if b != "_" {
+                                            self.define(b, Type::Any);
+                                        }
+                                    }
                                 }
                             }
-                            None => {
+                        } else {
+                            // Enum nativo (F2): la variante define aridad/tipos.
+                            let params = ctx
+                                .variants
+                                .iter()
+                                .find(|(v, _)| v == name)
+                                .map(|(_, p)| p.clone())
+                                .unwrap_or_default();
+                            if params.len() != binds.len() {
                                 self.error(
-                                    &format!("La variante `{}` no existe en el enum `{}`", name, enum_name),
+                                    &format!(
+                                        "La variante `{}` del enum `{}` espera {} binding(s), recibió {}",
+                                        name,
+                                        ctx.enum_name,
+                                        params.len(),
+                                        binds.len()
+                                    ),
                                     arm_span.clone(),
                                 );
+                            }
+                            for (i, b) in binds.iter().enumerate() {
+                                if b == "_" {
+                                    continue;
+                                }
+                                let bt = params.get(i).cloned().unwrap_or(Type::Any);
+                                self.define(b, bt);
                             }
                         }
                     } else {
@@ -383,15 +451,18 @@ impl TypeChecker {
                     }
                 }
                 MatchPattern::Ident(name) => {
-                    // Variante unit desnuda: validar contra el esquema (F2).
-                    if let Some((enum_name, variants)) = enum_schema {
-                        match variants.iter().find(|(v, _)| v == name) {
+                    // Variante unit desnuda: validar contra el esquema.
+                    if let Some(ctx) = pattern_ctx {
+                        match ctx.variants.iter().find(|(v, _)| v == name) {
                             Some((_, params)) => {
-                                if !params.is_empty() {
+                                // El payload del enum discriminante solo restringe
+                                // a enums nativos; en una clase el payload lo
+                                // computa `__unpack`.
+                                if ctx.class_name.is_none() && !params.is_empty() {
                                     self.error(
                                         &format!(
                                             "La variante `{}` del enum `{}` tiene payload; usá `{}(...)` en el patrón",
-                                            name, enum_name, name
+                                            name, ctx.enum_name, name
                                         ),
                                         arm_span.clone(),
                                     );
@@ -399,7 +470,10 @@ impl TypeChecker {
                             }
                             None => {
                                 self.error(
-                                    &format!("La variante `{}` no existe en el enum `{}`", name, enum_name),
+                                    &format!(
+                                        "La variante `{}` no existe en el enum `{}`",
+                                        name, ctx.enum_name
+                                    ),
                                     arm_span.clone(),
                                 );
                             }
@@ -408,6 +482,88 @@ impl TypeChecker {
                     let _ = (mode, scrut_ty);
                 }
             }
+        }
+    }
+
+    /// Contexto de patrones del `match` en modo PATRÓN (F6).
+    ///
+    /// - Enum: el scrutinee ES el enum; el namespace son sus variantes.
+    /// - Clase con protocolo: si define `__match() -> E`, el namespace son las
+    ///   variantes de `E`; si no lo define -> error de compilación claro.
+    /// - Otra Named (struct/import) o dinámico: `None` (lax, el emisor decide).
+    fn resolve_pattern_ctx(&mut self, scrut_ty: Option<&Type>, span: &Span) -> Option<PatternCtx> {
+        match scrut_ty {
+            Some(Type::Named(n, _)) => {
+                if let Some(variants) = self.enum_schema(n) {
+                    return Some(PatternCtx {
+                        enum_name: n.clone(),
+                        variants,
+                        class_name: None,
+                        unpack_ret: None,
+                    });
+                }
+                // ¿Es una clase de usuario?
+                if self.class_members.contains_key(n.as_str()) {
+                    let ty = scrut_ty.unwrap();
+                    match self.named_magic_ret(ty, "__match") {
+                        Some(Type::Named(en, _)) => match self.enum_schema(&en) {
+                            Some(variants) => {
+                                let unpack_ret = self.named_magic_ret(ty, "__unpack");
+                                return Some(PatternCtx {
+                                    enum_name: en.clone(),
+                                    variants,
+                                    class_name: Some(n.clone()),
+                                    unpack_ret,
+                                });
+                            }
+                            None => {
+                                self.error(
+                                    &format!(
+                                        "El `__match()` de la clase `{}` devuelve `{}`, que no es un enum conocido",
+                                        n, en
+                                    ),
+                                    span.clone(),
+                                );
+                                return None;
+                            }
+                        },
+                        Some(other) => {
+                            self.error(
+                                &format!(
+                                    "`__match()` de la clase `{}` debe anotar un enum como retorno (encontró `{}`)",
+                                    n, other
+                                ),
+                                span.clone(),
+                            );
+                            return None;
+                        }
+                        None => {
+                            self.error(
+                                &format!(
+                                    "La clase `{}` no define el protocolo de match (`__match`) en modo patrón",
+                                    n
+                                ),
+                                span.clone(),
+                            );
+                            return None;
+                        }
+                    }
+                }
+                None
+            }
+            // Tipos claramente no-enum -> error claro. `Any`/`Unknown`/`Union`
+            // no se fuerzan (el emisor decide).
+            Some(other) if is_obviously_non_enum(other) => {
+                self.error(
+                    &format!(
+                        "`match` en modo patrón requiere un enum como scrutinee, encontró `{}`",
+                        other
+                    ),
+                    span.clone(),
+                );
+                None
+            }
+            _ => None,
         }
     }
 
@@ -623,6 +779,41 @@ impl TypeChecker {
             self.define(b, bt);
         }
     }
+}
+
+/// Contexto de patrones del `match` (modo PATRÓN, F6): namespace de variantes
+/// (enum nativo o el enum `E` de `__match` de una clase) + datos del protocolo.
+struct PatternCtx {
+    /// Nombre del enum cuyas variantes validan los patrones.
+    enum_name: String,
+    /// Esquema del enum: por variante `(nombre, tipos de params)`.
+    variants: Vec<(String, Vec<Type>)>,
+    /// `Some(clase)` si el scrutinee es una clase con protocolo de match.
+    class_name: Option<String>,
+    /// Tipo anotado de retorno de `__unpack` (clase), si se conoce.
+    unpack_ret: Option<Type>,
+}
+
+/// Tipos de los bindings del payload de una clase (F6): best-effort contra el
+/// retorno anotado de `__unpack` (`T | (T1, T2, …)`).
+/// - `Some(tipos)` si la aridad es demostrable (o dinámica `Any`).
+/// - `None` si el retorno contradice esa aridad (error estático) o no se conoce.
+fn class_bind_types(unpack_ret: Option<&Type>, arity: usize) -> Option<Vec<Type>> {
+    fn from_type(t: &Type, arity: usize) -> Option<Vec<Type>> {
+        match t {
+            // Unión de tuplas: la aridad debe coincidir con algún miembro.
+            Type::Union(ms) => ms.iter().find_map(|m| from_type(m, arity)),
+            // Tupla: la aridad debe coincidir con la longitud.
+            Type::Tuple(ts) if ts.len() == arity => Some(ts.clone()),
+            Type::Tuple(_) => None,
+            // Dinámico: laxo (se valida en runtime).
+            Type::Any | Type::Unknown | Type::Value | Type::Json => Some(vec![Type::Any; arity]),
+            // Valor único (no-tupla): solo vale para aridad 1.
+            _ if arity == 1 => Some(vec![t.clone()]),
+            _ => None,
+        }
+    }
+    unpack_ret.and_then(|t| from_type(t, arity))
 }
 
 /// Es el tipo claramente no-enum? (para el error de scrutinee del modo PATRON).

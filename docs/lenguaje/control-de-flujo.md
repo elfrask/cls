@@ -159,7 +159,58 @@ Reglas:
   aplica a `valor[i]` sobre una unión de arrays con el mismo ancho de elemento.
   Ver `tipos.md` §Uniones.
 
-Pendiente (F6): el protocolo `__match`/`__unpack` de clases.
+### Modo PATRÓN sobre una clase (F6)
+
+Además de enums, el modo PATRÓN acepta una **clase que implemente el protocolo
+de match**: `__match()` y `__unpack()` (ver `magics.md` §10).
+
+- **`__match() -> E`** devuelve el **discriminante** (un valor de un enum `E`).
+  El typeck usa `E` como **namespace de variantes**: los patrones desnudos se
+  validan contra `E` (variante inexistente → error de compilación). En runtime el
+  emisor llama `obj.__match()` **una vez** y compara contra el índice de la
+  variante de cada arma.
+- **`__unpack(tag: String) -> T | (T1, T2, …)`** devuelve el **payload
+  computado**. Con bindings, el emisor llama `obj.__unpack("<variante>")` y liga
+  **por posición**: si el arma tiene 1 binding, el resultado es un **valor
+  único**; si tiene N, el resultado es una **tupla** y se leen sus slots.
+- **Una clase sin `__match`** en modo PATRÓN es **error de compilación**. La
+  **aridad** del patrón se valida best-effort contra el retorno anotado de
+  `__unpack` (unión de tuplas → la aridad debe coincidir con algún miembro); si
+  no es determinable, se valida en runtime (guard de aridad).
+
+```clx
+enum RespKind { ok, err };
+
+class Resp {
+    var kind: RespKind;
+    var code: int;
+    var body: String;
+    function main(k: RespKind, c: int, b: String) { me.kind = k; me.code = c; me.body = b; }
+    function __match() -> RespKind { return me.kind; }
+    function __unpack(tag: String) -> (String) | (int, String) {
+        if (tag == "ok") { return (me.body); }
+        return (me.code, me.body);
+    }
+};
+
+var out = match (v <- Resp(RespKind.ok, 0, "listo")) {
+    ok(texto)     -> "ok ${texto}",
+    err(cod, msg) -> "err ${cod} ${msg}",
+    default       -> "?",
+};
+```
+
+Los **otros modos** funcionan sobre clases sin cambios: TIPO (`is` → identidad de
+clase + herencia), VALOR (`in` → `__equals` si está definido) y CONDICIÓN
+(`if` → `__bool` si está definido).
+
+> **Destructuring-let de clase (no implementado en F6).** El destructuring-let
+> estático de enums (`var resp::ok(x) = c;`) no tiene hoy una forma análoga para
+> clases: el payload **computado** de `__unpack` no se puede probar en
+> compile-time, así que una variante de la sintaxis (`var Clase::variante(...) =
+> obj;`) tendría que ser **runtime** y usar el enum `E` de `__match` como
+> namespace. Se deja **fuera de F6** (el patrón `match` ya cubre la extracción);
+> si se agrega, será con esa sintaxis (namespace = `E`) y validación en runtime.
 
 ## Familia ternario
 

@@ -201,6 +201,52 @@ tipo estático).
 
 ---
 
+## 10. Protocolo de match (clases)
+
+Una **clase** se conecta al modo PATRÓN de `match` (ver `control-de-flujo.md`
+§match) definiendo **dos** magics:
+
+| Magic | Walker* | JIT | Contrato |
+|-------|:------:|:---:|----------|
+| `__match` | ❌ | ✅ | `__match() -> E` — devuelve el **discriminante** (un **enum** `E`). El typeck usa `E` como namespace de patrones; el emisor llama `obj.__match()` y compara contra el índice de variante de cada arma. |
+| `__unpack` | ❌ | ✅ | `__unpack(tag: String) -> T \| (T1, T2, …)` — payload **computado**. Con bindings, el emisor llama `obj.__unpack("<variante>")`: valor único (1 binding) o tupla (N bindings). |
+
+**Dispatch** (JIT, `emitter/matching.rs`): estático por vtable (`call_indirect`,
+slot fijo como los demás magics, heredado por `ancestors`). El discriminante es
+el **enum** que devuelve `__match`; se compara por índice de variante (misma
+maquinaria que los enums nativos). El payload se liga **posicionalmente**: 1
+binding → el valor del retorno; N → los slots de la tupla.
+
+```clx
+enum RespKind { ok, err };
+
+class Resp {
+    var kind: RespKind;
+    var code: int;
+    var body: String;
+    function main(k: RespKind, c: int, b: String) { me.kind = k; me.code = c; me.body = b; }
+    function __match() -> RespKind { return me.kind; }
+    function __unpack(tag: String) -> (String) | (int, String) {
+        if (tag == "ok") { return (me.body); }
+        return (me.code, me.body);
+    }
+};
+
+var out = match (v <- Resp(RespKind.ok, 0, "listo")) {
+    ok(texto)     -> "ok ${texto}",
+    err(cod, msg) -> "err ${cod} ${msg}",
+    default       -> "?",
+};
+```
+
+- **Error de compilación** si la clase no define `__match` en modo PATRÓN; la
+  **variante** se valida contra `E`; la **aridad** best-effort contra el retorno
+  anotado de `__unpack` (si no es determinable, guard en runtime).
+- Los **otros modos** sobre una clase ya funcionan: `is` (identidad + herencia),
+  `in` (`__equals`), `if` (`__bool`).
+
+---
+
 ## Estado de soporte por intérprete
 
 | Categoría | Walker | JIT |
@@ -213,6 +259,7 @@ tipo estático).
 | Contenedores (`__get`, `__set`, `__len`) | ✅ | ✅ |
 | Iteración (`__iter`, `__next`) | ✅ | ✅ |
 | Callable (`__call`) | ✅ | ✅ |
+| Protocolo de match (`__match`, `__unpack`) | ❌ | ✅ |
 
 **M-13 cerrado** (dev-2): todos los magic methods del catálogo
 funcionan en el JIT, validados con `jit-magic-all.clsx` y
@@ -242,6 +289,9 @@ funcionan en el JIT, validados con `jit-magic-all.clsx` y
 3. El emisor necesita el dispatch al método de clase por nombre. Para
    binarios usar `try_binary_magic`; para unarios/llamadas/indexado
    usar `emit_class_method_args` o `emit_class_method_call_on`
-   directamente.
+   directamente. Un **protocolo** (como `__match`/`__unpack`) que aporte
+   semántica al typeck además resuelve su contexto ahí
+   (`check_match` en `middleware/typeck/flow.rs`); el emisor lo emite con
+   `emit_class_method_call_on`.
 4. Test E2E: agregar caso en
    `examples/test/jit-test/units/jit-magic-all.clsx`.

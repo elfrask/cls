@@ -1,0 +1,18 @@
+# neg-match-class-nomatch - una clase SIN el protocolo de match (`__match`)
+# usada como scrutinee en modo patron -> DEBE ser rechazado (error estatico,
+# feature match F6).
+
+class MNoMatch {
+    var x: int;
+    function main(x: int) { me.x = x; }
+};
+
+function main(args: String[]) -> int {
+    var m = MNoMatch(1);
+    var out = match (v <- m) {
+        algo    -> "x",
+        default -> "?",
+    };
+    print(out);
+    return 0;
+};

@@ -108,6 +108,43 @@ function match_union() -> int {
     return 0;
 }
 
+# F6: protocolo de match para clases (`__match` / `__unpack`).
+enum MKind { ok, err };
+
+class MResp2 {
+    var kind: MKind;
+    var code: int;
+    var body: String;
+    function main(k: MKind, c: int, b: String) {
+        me.kind = k;
+        me.code = c;
+        me.body = b;
+    }
+    function __match() -> MKind { return me.kind; }
+    function __unpack(tag: String) -> (String) | (int, String) {
+        if (tag == "ok") { return (me.body); }
+        return (me.code, me.body);
+    }
+};
+
+function c_describe(r: MResp2) -> String {
+    return match (v <- r) {
+        ok(texto)     -> "ok " + texto,
+        err(cod, msg) -> "err " + str(cod) + " " + msg,
+        default       -> "?",
+    };
+}
+
+function match_class() -> int {
+    check::assertEqStr("match.class.ok", c_describe(MResp2(MKind.ok, 0, "listo")), "ok listo");
+    check::assertEqStr("match.class.err", c_describe(MResp2(MKind.err, 42, "mal")), "err 42 mal");
+
+    var r = MResp2(MKind.ok, 1, "x");
+    var t = match (r) is { MResp2 -> "si", default -> "no" };
+    check::assertEqStr("match.class.tipo", t, "si");
+    return 0;
+}
+
 export function match_run() -> int {
     print("== match ==");
     var before = check::fails();
@@ -115,6 +152,7 @@ export function match_run() -> int {
     match_payload();
     match_destructuring();
     match_union();
+    match_class();
     var gained = check::fails() - before;
     if (gained == 0) { print("FEATURE match OK"); }
     return gained;

@@ -16,6 +16,33 @@
 
 use super::*;
 
+/// Discriminante resuelto del modo PATRÓN (F6): enum nativo o clase que define
+/// el protocolo `__match() -> E`.
+struct PatternDisc {
+    /// Clave del enum cuyas variantes se comparan.
+    enum_key: String,
+    /// Local i64 con el valor del discriminante (el enum, o el resultado de
+    /// `obj.__match()` para una clase).
+    local: u32,
+    /// Clave de la clase si el protocolo es de clase (para `__unpack`).
+    class_key: Option<String>,
+    /// Retorno anotado de `__unpack` (clase), para el layout del payload.
+    unpack_ret: Option<Type>,
+}
+
+/// Plan de ligado del payload de un arma (modo PATRÓN).
+enum PayloadPlan {
+    /// Enum nativo: slots leídos del objeto `[def_id][idx][arity][...]`.
+    Enum { key: String, vidx: usize, binds: Vec<String> },
+    /// Clase: payload computado por `obj.__unpack(tag)`.
+    Class {
+        class_key: String,
+        tag: String,
+        binds: Vec<String>,
+        slot_types: Vec<Type>,
+    },
+}
+
 impl<'a> FuncEmitter<'a> {
     pub(crate) fn emit_match(&mut self, m: &MatchExpr) -> ClsResult<()> {
         if m.arms.is_empty() {
@@ -53,6 +80,14 @@ impl<'a> FuncEmitter<'a> {
             scrut_local = Some(l);
         }
 
+        // F6: discriminante del modo PATRÓN (enum nativo o clase con protocolo).
+        // Para una clase, emite `obj.__match()` una vez y guarda el enum.
+        let pattern_disc: Option<PatternDisc> = if m.mode == MatchMode::Pattern {
+            self.resolve_pattern_disc(&scrut_cls, scrut_local)?
+        } else {
+            None
+        };
+
         self.block_depth += 1;
         self.body.push(Instruction::Block(if is_void {
             BlockType::Empty
@@ -73,16 +108,20 @@ impl<'a> FuncEmitter<'a> {
                 scrut_was,
                 scrut_is_str,
                 &scrut_cls,
+                pattern_disc.as_ref(),
             )?;
             self.block_depth += 1;
             self.body.push(Instruction::If(BlockType::Empty));
             self.dead_flow = false;
-            // F2: ligar el payload de la variante (modo PATRÓN con `v(binds)`).
+            // F2/F6: ligar el payload de la variante (modo PATRÓN con `v(binds)`).
             let saved = self.enter_var_scope();
-            if let (Some(sl), Some((key, vidx, binds))) =
-                (scrut_local, self.arm_payload_binding(&scrut_cls, &arm.patterns))
-            {
-                self.emit_match_payload_binds(sl, &key, vidx, &binds)?;
+            if let (Some(sl), Some(plan)) = (
+                scrut_local,
+                pattern_disc
+                    .as_ref()
+                    .and_then(|d| self.arm_payload_plan(d, &arm.patterns)),
+            ) {
+                self.emit_match_payload_binds(sl, &plan, &arm.span)?;
             }
             match &arm.body {
                 MatchBody::Expr(e) => {
@@ -184,10 +223,11 @@ impl<'a> FuncEmitter<'a> {
         was: WasTy,
         is_str: bool,
         cls: &Type,
+        disc: Option<&PatternDisc>,
     ) -> ClsResult<()> {
         let mut emitted = false;
         for p in patterns {
-            self.emit_single_match_condition(mode, p, local, was, is_str, cls)?;
+            self.emit_single_match_condition(mode, p, local, was, is_str, cls, disc)?;
             if emitted {
                 self.body.push(Instruction::I32Or);
             }
@@ -201,15 +241,43 @@ impl<'a> FuncEmitter<'a> {
 
     fn emit_single_match_condition(
         &mut self,
-        _mode: MatchMode,
+        mode: MatchMode,
         p: &MatchPattern,
         local: Option<u32>,
         was: WasTy,
         is_str: bool,
         cls: &Type,
+        disc: Option<&PatternDisc>,
     ) -> ClsResult<()> {
         match p {
             MatchPattern::Literal(lit) => {
+                // F6: modo VALOR sobre una clase con `__equals` -> obj.__equals(lit).
+                if mode == MatchMode::Value {
+                    if let Some(cn) = self.class_magic_method(&Some(cls.clone()), "__equals") {
+                        let ret = self.magic_ret_was(&cn, "__equals")?;
+                        let obj = local.unwrap_or(0);
+                        let lit_expr = Expression::Literal(lit.clone());
+                        if !self.emit_class_method_call_on("__equals", &cn, obj, &[lit_expr])? {
+                            return Err(crate::error::ClsError::CompileError(format!(
+                                "`{}::__equals` no está disponible al emitir el modo VALOR de `match`",
+                                cn
+                            )));
+                        }
+                        match ret {
+                            WasTy::I64 => {
+                                self.body.push(Instruction::I64Const(0));
+                                self.body.push(Instruction::I64Ne);
+                            }
+                            WasTy::F64 => {
+                                self.body
+                                    .push(Instruction::F64Const(Ieee64::new(0.0f64.to_bits())));
+                                self.body.push(Instruction::F64Ne);
+                            }
+                            WasTy::I32 => {}
+                        }
+                        return Ok(());
+                    }
+                }
                 let l = local.unwrap_or(0);
                 self.body.push(Instruction::LocalGet(l));
                 self.emit_literal(lit)?;
@@ -225,7 +293,22 @@ impl<'a> FuncEmitter<'a> {
                 Ok(())
             }
             MatchPattern::Ident(name) | MatchPattern::Variant { name, .. } => {
-                self.emit_enum_variant_eq(local.unwrap_or(0), cls, name)
+                match disc {
+                    Some(d) => self.emit_variant_eq_key(d.local, &d.enum_key, name),
+                    None => {
+                        let enum_key = match cls {
+                            Type::Named(n, _) => self.resolve_enum_key(n),
+                            _ => None,
+                        }
+                        .ok_or_else(|| {
+                            crate::error::ClsError::CompileError(format!(
+                                "patrón `{}` de `match`: el scrutinee no es un enum conocido (tipo {})",
+                                name, cls
+                            ))
+                        })?;
+                        self.emit_variant_eq_key(local.unwrap_or(0), &enum_key, name)
+                    }
+                }
             }
             MatchPattern::Cond(e) => {
                 self.emit_expression(e)?;
@@ -238,27 +321,22 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-    /// `scrut == variante` sobre el enum del scrutinee. Uniforme para ambas
+    /// `discriminante == variante` sobre el enum `enum_key`. Uniforme para ambas
     /// representaciones (empacado i64 o heap): compara el **índice de variante**.
-    fn emit_enum_variant_eq(&mut self, local: u32, cls: &Type, name: &str) -> ClsResult<()> {
-        let enum_key = match cls {
-            Type::Named(n, _) => self.resolve_enum_key(n),
-            _ => None,
-        }
-        .ok_or_else(|| {
+    fn emit_variant_eq_key(&mut self, local: u32, enum_key: &str, name: &str) -> ClsResult<()> {
+        let (_, variants) = self.enum_defs.get(enum_key).cloned().ok_or_else(|| {
             crate::error::ClsError::CompileError(format!(
-                "patrón `{}` de `match`: el scrutinee no es un enum conocido (tipo {})",
-                name, cls
+                "patrón `{}` de `match`: el enum `{}` no está registrado",
+                name, enum_key
             ))
         })?;
-        let (_, variants) = self.enum_defs[&enum_key].clone();
         let idx = variants.iter().position(|v| v == name).ok_or_else(|| {
             crate::error::ClsError::CompileError(format!(
                 "la variante `{}` no existe en el enum `{}`",
                 name, enum_key
             ))
         })?;
-        let payload = self.enum_key_has_payload(&enum_key);
+        let payload = self.enum_key_has_payload(enum_key);
         self.emit_enum_variant_index(local, payload);
         self.body.push(Instruction::I64Const(idx as i64));
         self.body.push(Instruction::I64Eq);
@@ -317,62 +395,200 @@ impl<'a> FuncEmitter<'a> {
         }));
     }
 
-    /// Si el arma tiene UNA variante con binds (`ok(a, b)`), devuelve
-    /// `(enum_key, índice_variante, binds)`. `None` si no hay binds.
-    fn arm_payload_binding(
-        &self,
+    /// Resuelve el discriminante del modo PATRÓN (F6).
+    /// - Enum nativo: el local del scrutinee ya contiene el enum.
+    /// - Clase que define `__match() -> E`: emite `obj.__match()` y guarda `E`.
+    /// `None` si el scrutinee no es un enum ni una clase con protocolo.
+    fn resolve_pattern_disc(
+        &mut self,
         cls: &Type,
-        patterns: &[MatchPattern],
-    ) -> Option<(String, usize, Vec<String>)> {
-        let mut found: Option<(String, usize, Vec<String>)> = None;
-        for p in patterns {
-            if let MatchPattern::Variant { name, binds } = p {
-                if binds.is_empty() {
-                    continue;
+        local: Option<u32>,
+    ) -> ClsResult<Option<PatternDisc>> {
+        let Type::Named(n, _) = cls else {
+            return Ok(None);
+        };
+        if let Some(key) = self.resolve_enum_key(n) {
+            return Ok(Some(PatternDisc {
+                enum_key: key,
+                local: local.unwrap_or(0),
+                class_key: None,
+                unpack_ret: None,
+            }));
+        }
+        if let Some(ck) = self.resolve_class_key(n) {
+            if let Some(Type::Named(en, _)) = self.magic_ret_type(&ck, "__match") {
+                if let Some(ek) = self.resolve_enum_key(&en) {
+                    let obj = local.unwrap_or(0);
+                    let emitted = self.emit_class_method_call_on("__match", &ck, obj, &[])?;
+                    if !emitted {
+                        return Err(crate::error::ClsError::CompileError(format!(
+                            "la clase `{}` define `__match` en el typeck pero no en el emisor",
+                            ck
+                        )));
+                    }
+                    let dl = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(dl));
+                    let unpack_ret = self.magic_ret_type(&ck, "__unpack");
+                    return Ok(Some(PatternDisc {
+                        enum_key: ek,
+                        local: dl,
+                        class_key: Some(ck),
+                        unpack_ret,
+                    }));
                 }
-                let key = match cls {
-                    Type::Named(n, _) => self.resolve_enum_key(n)?,
-                    _ => return None,
-                };
-                let idx = self.enum_defs.get(&key)?.1.iter().position(|v| v == name)?;
-                found = Some((key, idx, binds.clone()));
             }
         }
-        found
+        Ok(None)
     }
 
-    /// Liga los binds del arma a `payload[i]` (por posición), declarando un
-    /// local por bind con el ancho de su tipo de param. `_` ignora el slot.
+    /// Plan de ligado del payload de un arma: la ÚNICA variante con binds
+    /// (enum nativo) o el payload computado de una clase (`__unpack(tag)`).
+    fn arm_payload_plan(
+        &self,
+        disc: &PatternDisc,
+        patterns: &[MatchPattern],
+    ) -> Option<PayloadPlan> {
+        let (name, binds) = patterns.iter().find_map(|p| match p {
+            MatchPattern::Variant { name, binds } if binds.iter().any(|b| b != "_") => {
+                Some((name.clone(), binds.clone()))
+            }
+            _ => None,
+        })?;
+        if let Some(class_key) = &disc.class_key {
+            let arity = binds.len();
+            // Aridad 1 -> valor único; >1 -> tupla `[cap][len][slots*8]`.
+            let slot_types = match class_bind_types(disc.unpack_ret.as_ref(), arity) {
+                Some(ts) => ts,
+                None => vec![Type::Any; arity],
+            };
+            return Some(PayloadPlan::Class {
+                class_key: class_key.clone(),
+                tag: name,
+                binds,
+                slot_types,
+            });
+        }
+        let vidx = self
+            .enum_defs
+            .get(&disc.enum_key)?
+            .1
+            .iter()
+            .position(|v| v == &name)?;
+        Some(PayloadPlan::Enum {
+            key: disc.enum_key.clone(),
+            vidx,
+            binds,
+        })
+    }
+
+    /// Liga los binds del arma (por posición). `_` ignora el slot.
+    /// - Enum nativo: `payload[i]` del objeto `[def_id][idx][arity][...]`.
+    /// - Clase: `obj.__unpack(tag)` -> valor único (1 binding) o tupla (N).
     fn emit_match_payload_binds(
         &mut self,
-        local: u32,
-        key: &str,
-        vidx: usize,
-        binds: &[String],
+        obj_local: u32,
+        plan: &PayloadPlan,
+        span: &Span,
     ) -> ClsResult<()> {
-        let params = self
-            .enum_params
-            .get(key)
-            .and_then(|vs| vs.get(vidx))
-            .cloned()
-            .unwrap_or_default();
-        for (i, b) in binds.iter().enumerate() {
-            if b == "_" {
-                continue;
+        match plan {
+            PayloadPlan::Enum { key, vidx, binds } => {
+                let params = self
+                    .enum_params
+                    .get(key)
+                    .and_then(|vs| vs.get(*vidx))
+                    .cloned()
+                    .unwrap_or_default();
+                for (i, b) in binds.iter().enumerate() {
+                    if b == "_" {
+                        continue;
+                    }
+                    let pty = params.get(i).cloned().unwrap_or(Type::Any);
+                    let w = was_type(&pty).unwrap_or(WasTy::I64);
+                    self.emit_enum_payload_slot(obj_local, i);
+                    match w {
+                        WasTy::F64 => self.body.push(Instruction::F64ReinterpretI64),
+                        WasTy::I32 => self.body.push(Instruction::I32WrapI64),
+                        WasTy::I64 => {}
+                    }
+                    let idx = self.declare_var_ty(b, w);
+                    self.body.push(Instruction::LocalSet(idx));
+                    self.local_cls_types.insert(b.clone(), pty);
+                }
+                Ok(())
             }
-            let pty = params.get(i).cloned().unwrap_or(Type::Any);
-            let w = was_type(&pty).unwrap_or(WasTy::I64);
-            self.emit_enum_payload_slot(local, i);
-            match w {
-                WasTy::F64 => self.body.push(Instruction::F64ReinterpretI64),
-                WasTy::I32 => self.body.push(Instruction::I32WrapI64),
-                WasTy::I64 => {}
+            PayloadPlan::Class {
+                class_key,
+                tag,
+                binds,
+                slot_types,
+            } => {
+                // `obj.__unpack(tag)`: el tag viaja como String interned.
+                let tag_expr = Expression::Literal(Literal {
+                    kind: LiteralKind::String(tag.clone()),
+                    span: span.clone(),
+                });
+                let emitted =
+                    self.emit_class_method_call_on("__unpack", class_key, obj_local, &[tag_expr])?;
+                if !emitted {
+                    return Err(crate::error::ClsError::compile_at(
+                        &format!("la clase `{}` define `__unpack` en el typeck pero no en el emisor", class_key),
+                        span,
+                    ));
+                }
+                let up = self.fresh_local();
+                self.body.push(Instruction::LocalSet(up));
+                let single = binds.len() == 1;
+                if !single {
+                    // Guard de runtime: el payload debe ser una tupla de aridad
+                    // `binds.len()` (header `[cap][len]`).
+                    self.body.push(Instruction::LocalGet(up));
+                    self.body.push(Instruction::I32WrapI64);
+                    self.body.push(Instruction::I64Load(MemArg {
+                        offset: 8,
+                        align: 3,
+                        memory_index: 0,
+                    }));
+                    self.body.push(Instruction::I64Const(binds.len() as i64));
+                    self.body.push(Instruction::I64Eq);
+                    self.body.push(Instruction::I32Eqz);
+                    self.block_depth += 1;
+                    self.body.push(Instruction::If(BlockType::Empty));
+                    self.emit_throw(
+                        "el payload de `__unpack` no es una tupla de la aridad esperada por el patrón",
+                        span,
+                    );
+                    self.body.push(Instruction::Unreachable);
+                    self.body.push(Instruction::End);
+                    self.block_depth -= 1;
+                }
+                for (i, b) in binds.iter().enumerate() {
+                    if b == "_" {
+                        continue;
+                    }
+                    let pty = slot_types.get(i).cloned().unwrap_or(Type::Any);
+                    let w = was_type(&pty).unwrap_or(WasTy::I64);
+                    self.body.push(Instruction::LocalGet(up));
+                    if !single {
+                        // slot i de la tupla: base 16, stride 8.
+                        self.body.push(Instruction::I32WrapI64);
+                        self.body.push(Instruction::I64Load(MemArg {
+                            offset: (16 + 8 * i as i64) as u64,
+                            align: 3,
+                            memory_index: 0,
+                        }));
+                    }
+                    match w {
+                        WasTy::F64 => self.body.push(Instruction::F64ReinterpretI64),
+                        WasTy::I32 => self.body.push(Instruction::I32WrapI64),
+                        WasTy::I64 => {}
+                    }
+                    let idx = self.declare_var_ty(b, w);
+                    self.body.push(Instruction::LocalSet(idx));
+                    self.local_cls_types.insert(b.clone(), pty);
+                }
+                Ok(())
             }
-            let idx = self.declare_var_ty(b, w);
-            self.body.push(Instruction::LocalSet(idx));
-            self.local_cls_types.insert(b.clone(), pty);
         }
-        Ok(())
     }
 
     /// Construcción de una variante de enum (F2): unit-only -> i64 empacado;
@@ -610,4 +826,21 @@ fn match_type_static(actual: &Type, target: &Type) -> bool {
             _ => actual == target,
         },
     }
+}
+
+/// Tipos de los slots del payload de una clase (F6), best-effort contra el
+/// retorno anotado de `__unpack` (`T | (T1, T2, …)`). Espejo del helper del
+/// typeck: la aridad 1 es valor único; >1, tupla. `None` = no determinable.
+fn class_bind_types(unpack_ret: Option<&Type>, arity: usize) -> Option<Vec<Type>> {
+    fn from_type(t: &Type, arity: usize) -> Option<Vec<Type>> {
+        match t {
+            Type::Union(ms) => ms.iter().find_map(|m| from_type(m, arity)),
+            Type::Tuple(ts) if ts.len() == arity => Some(ts.clone()),
+            Type::Tuple(_) => None,
+            Type::Any | Type::Unknown | Type::Value | Type::Json => Some(vec![Type::Any; arity]),
+            _ if arity == 1 => Some(vec![t.clone()]),
+            _ => None,
+        }
+    }
+    unpack_ret.and_then(|t| from_type(t, arity))
 }

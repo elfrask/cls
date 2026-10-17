@@ -38,6 +38,9 @@ $expectedErrors = @{
     "match-badarity.clsx" = "patron con aridad incorrecta -> error estatico (F2)"
     "match-destr-unprovable.clsx" = "destructuring-let no demostrable -> error estatico (F2)"
     "match-union-bad.clsx" = "acceso a miembro ausente en parte de la union (F5) -> error estatico"
+    "match-class-nomatch.clsx" = "clase sin `__match` en modo patron (F6) -> error estatico"
+    "match-class-badvariant.clsx" = "variante inexistente en el enum E de `__match` (F6) -> error estatico"
+    "match-class-badarity.clsx" = "aridad del patron no coincide con el retorno de `__unpack` (F6) -> error estatico"
     "arrow-return-bad.clsx" = "`<-` sin target (F4) -> error de compilacion"
     "ifexpr-no-else.clsx" = "`if`-expresion sin `else` (F3) -> error de sintaxis"
 }

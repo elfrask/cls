@@ -865,10 +865,36 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Ne);
                 Ok(())
             }
-            Type::Cmx | Type::Named(_, _) | Type::Null => {
+            Type::Cmx | Type::Null => {
                 // Objetos/valores con identidad: siempre truthy (paridad walker).
                 self.body.push(Instruction::I32Const(1));
                 Ok(())
+            }
+            Type::Named(_, _) => {
+                // F6: una clase con `__bool` se usa como condición (verdadero)
+                // en `match() if`, `if`, `while`... El valor ya está en el stack.
+                if let Some(cn) = self.class_magic_method(&Some(ty.clone()), "__bool") {
+                    let _ = self.magic_ret_was(&cn, "__bool")?;
+                    self.body.push(Instruction::Drop);
+                    self.emit_class_method_args("__bool", expr, &[])?;
+                    // Normalizar el retorno a i32 (Bool).
+                    match self.magic_ret_type(&cn, "__bool") {
+                        Some(t) if matches!(was_type(&t), Ok(WasTy::I64)) => {
+                            self.body.push(Instruction::I64Const(0));
+                            self.body.push(Instruction::I64Ne);
+                        }
+                        Some(t) if matches!(was_type(&t), Ok(WasTy::F64)) => {
+                            self.body.push(Instruction::F64Const(Ieee64::new(0.0f64.to_bits())));
+                            self.body.push(Instruction::F64Ne);
+                        }
+                        _ => {}
+                    }
+                    Ok(())
+                } else {
+                    // Objetos sin `__bool`: siempre truthy (paridad walker).
+                    self.body.push(Instruction::I32Const(1));
+                    Ok(())
+                }
             }
             // Valor dinámico (Any/Value/JSON, leído de record/JSON): despachar
             // por tag en runtime (host_any_to_bool). `if (m.found)` donde `m`

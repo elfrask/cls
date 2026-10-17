@@ -1,0 +1,19 @@
+# F6 negativo: variante inexistente en el enum E de `__match` -> error estático.
+enum RespKind { ok, err };
+
+class Resp {
+    var kind: RespKind;
+    function main(k: RespKind) { me.kind = k; }
+    function __match() -> RespKind { return me.kind; }
+    function __unpack(tag: String) -> String { return tag; }
+};
+
+function main(args: String[]) -> int {
+    var r = Resp(RespKind.ok);
+    var out = match (v <- r) {
+        nope    -> "x",
+        default -> "?",
+    };
+    print(out);
+    return 0;
+};

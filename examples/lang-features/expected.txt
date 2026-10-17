@@ -185,6 +185,9 @@ CHECK match.is=ok
 CHECK match.destr=ok
 CHECK match.union.v2=ok
 CHECK match.union.v3=ok
+CHECK match.class.ok=ok
+CHECK match.class.err=ok
+CHECK match.class.tipo=ok
 FEATURE match OK
 == ternary ==
 CHECK tern.basic=ok

@@ -315,6 +315,28 @@
     ],
     "description": "Match por patrón sobre enum con payload (bindings posicionales)"
   },
+  "Match (clase con protocolo)": {
+    "prefix": "matchc",
+    "body": [
+      "var ${1:resultado} = match (${2:v} <- ${3:objeto}) {",
+      "    ${4:ok}(${5:texto})     -> ${6:expr1},",
+      "    ${7:err}(${8:cod}, ${9:msg}) -> ${10:expr2},",
+      "    default              -> ${11:expr3},",
+      "};"
+    ],
+    "description": "Match por patrón sobre una clase con `__match`/`__unpack` (F6)"
+  },
+  "Protocolo de match (__match / __unpack)": {
+    "prefix": "matchproto",
+    "body": [
+      "function __match() -> ${1:Kind} { return me.${2:kind}; }",
+      "function __unpack(tag: String) -> ${3:(String) | (int, String)} {",
+      "    if (tag == \"${4:ok}\") { return ${5:(me.body)}; }",
+      "    return ${6:(me.code, me.body)};",
+      "}"
+    ],
+    "description": "Protocolo de match de una clase: `__match` + `__unpack` (F6)"
+  },
   "Ternario ?:": {
     "prefix": "tern",
     "body": [
