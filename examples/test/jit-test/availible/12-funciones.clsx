@@ -2,7 +2,7 @@ function suma(a: int, b: int) -> int {
     return a + b;
 };
 
-function App(props: Record<String, any>) -> String {
+function App(props: Record<String, Value>) -> String {
     var t: String = props.titulo;
     return "app " + t;
 };

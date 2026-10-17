@@ -10,7 +10,7 @@
 # a futuro) hereda de `Driver` y sobrescribe sus metodos.
 #
 # Valores: los valores viajan como `Cell` (tag + campos tipados) porque el
-# typeck del JIT no permite arrays heterogeneos ni `Any`. El ORM construye SQL
+# typeck del JIT no permite arrays heterogeneos ni tipos dinamicos implicitos. El ORM construye SQL
 # estandar + placeholders `?` y enlaza Cells; el driver traduce cada Cell al
 # tipo nativo del motor.
 #

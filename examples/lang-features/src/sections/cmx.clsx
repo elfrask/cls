@@ -2,13 +2,13 @@
 #
 # Ejercita: tags minuscula/mayuscula, props (string, expr, bool, sin valor),
 # children (texto, expresion, elemento, self-closing), shorthand `{nombre}`,
-# spread de props, conversiones de un `Any` (str/toString/bool), comparacion de
+# spread de props, conversiones de un `Value` (str/toString/bool), comparacion de
 # props bool y de child de texto, e invocacion de un componente (tag mayuscula)
 # con `is Callable`.
 
 import "check" as check;
 
-function CmxApp(props: Record<String, any>) -> String {
+function CmxApp(props: Record<String, Value>) -> String {
     var t: String = props.titulo;
     return "App " + t;
 }
@@ -27,7 +27,7 @@ function cmx_props_children() -> int {
     # prop bool comparada con `true`/`false`.
     check::assertTrue("cmx.prop.bool", app.props.activo == true);
     check::assertTrue("cmx.prop.bool.nefalse", app.props.activo != false);
-    # conversiones explicitas de un `Any` dinamico.
+    # conversiones explicitas de un `Value` dinamico.
     check::assertEqStr("cmx.any.str", str(app.props.titulo), "Demo");
     check::assertEqStr("cmx.any.tostring", toString(app.props.titulo), "Demo");
     check::assertTrue("cmx.any.bool", bool(app.props.activo));
@@ -51,7 +51,7 @@ function cmx_text_selfclose() -> int {
 }
 
 function cmx_upper_callable() -> int {
-    var base: Record<String, any> = {titulo: "demo", activo: true};
+    var base: Record<String, Value> = {titulo: "demo", activo: true};
     var app = (<CmxApp {...base} extra="x" />);
     check::assertTrue("cmx.upper.isCallable", app.tag is Callable);
     check::assertTrue("cmx.upper.spread.own", app.props.extra == "x");

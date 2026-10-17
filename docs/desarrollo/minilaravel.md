@@ -43,7 +43,7 @@
 2. **Strings inmutables**: `s = s.upper()`, no `s.upper()` a secas.
 3. **Concatenación**: `"texto" + int` NO compila — usar `.toString()`.
 4. **Ctor de clase**: `function main(...)`, no `__init`.
-5. **Handlers con tipos explícitos**: `(req: Request) -> Response`, nunca params bare (el typeck infiere `Any` y falla el dispatch — ver `docs/lenguaje/magics.md`).
+5. **Handlers con tipos explícitos**: `(req: Request) -> Response`, nunca params bare (el typeck **requiere anotación**: no hay `Any` implícito y el dispatch falla — ver `docs/lenguaje/magics.md`).
 6. **`when` envuelve `extension`, nunca al revés**.
 7. **Sin async/await**: el servidor es bloqueante por request.
 8. **Las vistas usan CMX** (la sintaxis nativa de maquetación). NO se inventa un
@@ -136,7 +136,7 @@ class Response {
     var headers: Record<String, String>;
     var body: String;
     function main(status: int, body: String, headers: Record<String, String>) { ... }
-    static function json(obj: any) -> Response { ... }   # body = json.stringify(obj), header Content-Type: application/json
+    static function json(obj: Value) -> Response { ... }   # body = json.stringify(obj), header Content-Type: application/json
     static function text(s: String) -> Response { ... }
     static function html(s: String) -> Response { ... }  # Content-Type: text/html
     static function status(n: int) -> Response { ... }   # sin body
@@ -232,7 +232,7 @@ function e(s: String) -> String {
     # escape HTML: & -> &amp;, < -> &lt;, > -> &gt;, " -> &quot;, ' -> &#39;
 }
 
-function render(cmx: any) -> String {
+function render(cmx: Cmx) -> String {
     # kind=1 (texto): devuelve e(texto)
     # tag + props: "<tag nombre=\"valor\" ...>"
     # children: concat render() de cada hijo (si un hijo es Array, expandir cada elemento)
@@ -244,7 +244,7 @@ function render(cmx: any) -> String {
 
 ```clx
 # views.clsx — las vistas son funciones CLS (no archivos .blade)
-function home_view(titulo: String, items: Array) -> any {
+function home_view(titulo: String, items: Array) -> Cmx {
     return (
         <div class="container">
             <h1>{titulo}</h1>
@@ -313,7 +313,7 @@ template):
 
 ```clx
 # layout_base: composicion de layout (no hay @extends en CMX; se compone)
-function layout_base(titulo: String, body: any) -> any {
+function layout_base(titulo: String, body: Cmx) -> Cmx {
     return (
         <html>
             <head><title>{titulo}</title></head>
@@ -325,7 +325,7 @@ function layout_base(titulo: String, body: any) -> any {
 }
 
 # home_view: la vista (CMX puro)
-function home_view(titulo: String, items: Array) -> any {
+function home_view(titulo: String, items: Array) -> Cmx {
     return (
         <div class="container">
             <h1>{titulo}</h1>

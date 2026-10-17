@@ -9,8 +9,8 @@ function main(args: String[]) -> int {
     print("c tras set:", d["c"], "len:", d.length);
     print("has c:", d.has("c"));
 
-    print("=== Record<String, any> (json.parse) ===");
-    var obj: Record<String, any> = json.parse('{"n": "CLS", "v": 2026, "ok": true}');
+    print("=== JSON (json.parse) ===");
+    var obj: JSON = json.parse('{"n": "CLS", "v": 2026, "ok": true}');
     print("n:", obj["n"], "v:", obj["v"], "ok:", obj["ok"]);
     print("json len:", obj.length);
 

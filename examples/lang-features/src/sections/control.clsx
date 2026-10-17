@@ -79,7 +79,7 @@ function ctrl_for_each_idx() -> String {
 
 function ctrl_with() -> int {
     with n in (21) {
-        # nota: `with` liga `n` como Any (typeck) -> solo passthrough/print.
+        # nota: `with` liga `n` con tipo dinamico (typeck) -> solo passthrough/print.
         print("ctrl.with.value", n);
     }
     return 21;

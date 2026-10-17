@@ -17,17 +17,17 @@ Registrados en el JIT (host functions `env.*`) y en el typeck vía `core.clsi`.
 |---|---|---|
 | `print` | `print(val...)` | Imprime en consola. Une múltiples args con un espacio. |
 | `input` | `input(prompt) -> String` | Lee una línea desde la entrada estándar. |
-| `toString` | `toString(val: Any) -> String` | Convierte cualquier valor a string. |
-| `int` | `int(val: Any) -> int` | Convierte a entero (float -> truncado, string -> parseo). |
-| `float` | `float(val: Any) -> float` | Convierte a flotante. |
-| `str` | `str(val: Any) -> String` | Alias de `toString`. |
-| `bool` | `bool(val: Any) -> bool` | Verdad del valor (`is_truthy`). |
-| `len` | `len(val: Any) -> int` | Longitud de arrays, strings o records. |
-| `type` | `type(val: Any) -> String` | Nombre del tipo del valor. |
+| `toString` | `toString(val: Value) -> String` | Convierte cualquier valor a string. |
+| `int` | `int(val: Value) -> int` | Convierte a entero (float -> truncado, string -> parseo). |
+| `float` | `float(val: Value) -> float` | Convierte a flotante. |
+| `str` | `str(val: Value) -> String` | Alias de `toString`. |
+| `bool` | `bool(val: Value) -> bool` | Verdad del valor (`is_truthy`). |
+| `len` | `len(val: Value) -> int` | Longitud de arrays, strings o records. |
+| `type` | `type(val: Value) -> String` | Nombre del tipo del valor. |
 | `now` | `now() -> int` | Timestamp actual en milisegundos. |
 | `exit` | `exit(code: int)` | Finaliza la ejecución con un código. |
 | `sleep` | `sleep(ms: int)` | Duerme la ejecución. |
-| `throw` | `throw(msg: Any)` | Lanza un error de runtime intencional. |
+| `throw` | `throw(msg: Value)` | Lanza un error de runtime intencional. |
 
 Los args de CLI no se exponen como variable global: llegan a
 `main(args: String[])` (ver `herramientas/clxr.md` y `lenguaje/funciones.md`).
@@ -82,8 +82,8 @@ json.stringify(d);                  # "{\"a\":1}"
 
 | Función | Firma | Descripción |
 |---|---|---|
-| `parse` | `parse(text: String) -> Any` | Parsea un string JSON: objetos -> `Record`, arrays -> `Array`, además de los escalares. |
-| `stringify` | `stringify(value: Any) -> String` | Convierte un valor a JSON string. |
+| `parse` | `parse(text: String) -> JSON` | Parsea un string JSON: objetos -> `Record`, arrays -> `Array`, además de los escalares. |
+| `stringify` | `stringify(value: Value) -> String` | Convierte un valor a JSON string. |
 
 `stringify` respeta el magic method `__toJson`: si el objeto lo define, lo usa
 para la serialización; si no, la representación nativa.

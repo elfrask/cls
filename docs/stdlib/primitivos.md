@@ -87,13 +87,13 @@ arr.length;        # 3
 | Miembro | Tipo | Firma | Descripción |
 |---|---|---|---|
 | `length` | **getter** | `length() -> int` | Número de elementos. |
-| `push` | método (mutador) | `push(value: Any) -> Array` | Agrega al final. |
+| `push` | método (mutador) | `push(value: Value) -> Array` | Agrega al final. |
 | `pop` | método (mutador) | `pop() -> Array` | Elimina el último. |
 | `shift` | método (mutador) | `shift() -> Array` | Elimina el primero. |
-| `unshift` | método (mutador) | `unshift(value: Any) -> Array` | Agrega al inicio. |
+| `unshift` | método (mutador) | `unshift(value: Value) -> Array` | Agrega al inicio. |
 | `reverse` | método (mutador) | `reverse() -> Array` | Invierte el orden. |
-| `indexOf` | método | `indexOf(value: Any) -> int` | Índice de la primera ocurrencia; `-1` si no está. |
-| `includes` | método | `includes(value: Any) -> bool` | ¿Contiene el valor? |
+| `indexOf` | método | `indexOf(value: Value) -> int` | Índice de la primera ocurrencia; `-1` si no está. |
+| `includes` | método | `includes(value: Value) -> bool` | ¿Contiene el valor? |
 | `join` | método | `join(separator: String) -> String` | Une los elementos; separador default `","`. |
 | `toString` | método | `toString() -> Array` | Concatenación con separador `,`. |
 

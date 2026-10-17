@@ -1,11 +1,11 @@
 # Spread de props en CMX: <App {...props} /> + invocacion con is Callable.
-function App(props: Record<String, any>) -> String {
+function App(props: Record<String, Value>) -> String {
     var t: String = props.titulo;
     return "App:" + t;
 };
 
 function main(args: String[]) -> int {
-    var base: Record<String, any> = {titulo: "demo", activo: true};
+    var base: Record<String, Value> = {titulo: "demo", activo: true};
     var app = (<App {...base} extra="x" />);
     print("props:", app.props);
     print("titulo:", app.props.titulo);

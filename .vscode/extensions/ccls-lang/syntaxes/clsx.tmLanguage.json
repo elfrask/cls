@@ -126,11 +126,11 @@
       "patterns": [
         {
           "name": "storage.type.primitive.ccls",
-          "match": "\\b(Int|Integer|Float|String|Bool|Boolean|Char|Character|Any|Unknown|Null|Void|Empty|Cmx|cmx)\\b"
+          "match": "\\b(Int|Integer|Float|String|Bool|Boolean|Char|Character|Unknown|Null|Void|Empty|Cmx|cmx)\\b"
         },
         {
           "name": "storage.type.numeric.ccls",
-          "match": "\\b(i8|i16|i32|i64|f32|f64|int|float|str|bool|char|any|array)\\b"
+          "match": "\\b(i8|i16|i32|i64|f32|f64|int|float|str|bool|char|array)\\b"
         },
         {
           "name": "storage.type.container.ccls",

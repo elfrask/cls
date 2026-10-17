@@ -1737,8 +1737,14 @@ pub fn host_any_member<C: HostCtx>(ctx: &mut C, val: i64, tag: i64, key: i64) ->
     match t {
         7 => {
             let p = val as usize;
-            let len = arr_len(ctx, p) as usize;
             let k = ctx.read_str(key);
+            // `length`/`size` son estructurales (nº de claves), no una clave
+            // del record; sin esto `obj.length` sobre un `JSON`/`Record<String,
+            // Value>` daba 0 (el access se rutea por `any_member`).
+            if k == "length" || k == "size" {
+                return (arr_len(ctx, p), 0);
+            }
+            let len = arr_len(ctx, p) as usize;
             for i in 0..len {
                 let ki = ctx.read_i64(p + 16 + i * 24);
                 if ctx.read_str(ki) == k {

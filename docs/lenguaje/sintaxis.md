@@ -173,5 +173,6 @@ genéricos `<T>` y comparaciones `<` dentro de expresiones.
 ## Interacción con el JIT
 
 `clx run` compila el archivo a WASM (ver `runtime/jit.md`). El JIT requiere
-typecheck estricto: parámetros sin anotación de tipo, tipos `Any`/`Unknown` sin
-anotar y arrays vacíos sin anotación generan error del emisor.
+typecheck estricto: parámetros sin anotación de tipo, tipos `Unknown` sin
+anotar y arrays vacíos sin anotación generan error del emisor. `Any` ya no es
+una anotación válida (ver `tipos.md`): usá un tipo concreto o `Value`/`JSON`/`Cmx`.

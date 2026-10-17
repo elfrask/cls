@@ -15,13 +15,21 @@ y `tests/test-types.clsx`.
 | String | `String` / `str` | |
 | Bool | `Bool` | |
 | Char | `Char` | sin literal propio (ver `sintaxis.md`) |
-| Any | `Any` | universal; el JIT exige anotación explícita |
 | Unknown | `Unknown` | |
+| Value | `Value` | valor CLS dinámico pero **tipado** (primitivo, array o JSON) |
+| JSON | `JSON` | documento JSON dinámico (objeto/array) |
+| Cmx | `Cmx` | nodo CMX (tag/props/children) |
 | Null | `Null` | |
 | Void | `Void` | sin valor (`void function`) |
 | Empty | `Empty` | |
 
 Acrónimos numéricos: `i32`, `i64`, `i16`, `i8`, `f32`, `f64`.
+
+> **`Any` fue eliminado** como anotación de usuario (CLS es totalmente
+> estático): usarlo es error. Para valores dinámicos tipados se usan `Value`
+> (cualquier valor CLS), `JSON` (documentos/objetos) y `Cmx` (nodos CMX). Estos
+> siguen siendo válidos: el tag runtime viaja con el valor y el emisor los
+> trata como contenedores polimórficos concretos.
 
 Conversión implícita: `Int -> Float` (ver [decisión 001](../decisiones/001-no-implicit-coercion.md)). Es la única coerción permitida en CLS 2.0; todo otro mismatch de tipos es error en `clx check`.
 

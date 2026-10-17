@@ -124,7 +124,7 @@ en `FAIL`.
 | cmx | tags minúscula/mayúscula, props (string/expr/bool/int), children, self-closing | OK | |
 | cmx | spread de props + `app.tag is Callable` + invocación | OK | |
 | cmx | shorthand `{nombre}` | OK | `cmx.shorthand` |
-| cmx | `str()`/`toString()`/`bool()` sobre `Any` | OK | `cmx.any.str/tostring/bool` |
+| cmx | `str()`/`toString()`/`bool()` sobre `Value` | OK | `cmx.any.str/tostring/bool` |
 | cmx | comparar prop bool con `true` | OK | `cmx.prop.bool` / `.nefalse` |
 | cmx | child de texto `==` su string | OK | `cmx.text.value` |
 | when | `os:`, `arch:`, `platform:`, `abi:`, `or`/`not`, `default` | OK | host Windows / `arch: cls-arch` |

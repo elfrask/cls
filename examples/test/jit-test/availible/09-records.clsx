@@ -11,7 +11,7 @@ function main(args: String[]) -> int {
     var vs = u.values();
     print("keys len:", len(ks), "values len:", len(vs));
     print("keys:", ks);
-    var obj: Record<String, any> = json.parse('{"n": "CLS", "v": 2026}');
+    var obj: JSON = json.parse('{"n": "CLS", "v": 2026}');
     print("json n:", obj["n"], "v:", obj["v"]);
     var salida = json.stringify({ x: 1 });
     print("stringify:", salida);

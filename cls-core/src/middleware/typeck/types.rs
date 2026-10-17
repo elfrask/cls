@@ -159,7 +159,14 @@ impl TypeChecker {
             TypeKind::String => Type::String,
             TypeKind::Bool => Type::Bool,
             TypeKind::Char => Type::Char,
-            TypeKind::Any => Type::Any,
+            TypeKind::Any => {
+                return self.error(
+                    "`Any` ya no es un tipo válido: CLS es estático. Usá un tipo concreto \
+                     (Int, Float, String, Bool, Char, un enum/clase/structure, una tupla/unión…) \
+                     o `Value`/`JSON`/`Cmx` para valores dinámicos tipados.",
+                    ann.span.clone(),
+                );
+            }
             TypeKind::Unknown => Type::Unknown,
             TypeKind::Null => Type::Null,
             TypeKind::Void => Type::Void,

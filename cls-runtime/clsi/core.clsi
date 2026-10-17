@@ -2,31 +2,31 @@
 # @description Funciones intrinsecas globales de CLS.
 
 # @description Imprime valores en consola
-function print(val: Any) {};
+function print(val: Value) {};
 
 # @description Lee una linea desde la entrada estandar
 function input(prompt: String) -> String {};
 
 # @description Convierte cualquier valor a string
-function toString(val: Any) -> String {};
+function toString(val: Value) -> String {};
 
 # @description Convierte un valor a entero
-function int(val: Any) -> int {};
+function int(val: Value) -> int {};
 
 # @description Convierte un valor a flotante
-function float(val: Any) -> float {};
+function float(val: Value) -> float {};
 
 # @description Convierte cualquier valor a string
-function str(val: Any) -> String {};
+function str(val: Value) -> String {};
 
 # @description Convierte un valor a booleano
-function bool(val: Any) -> bool {};
+function bool(val: Value) -> bool {};
 
 # @description Devuelve la longitud de arrays, strings o records
-function len(val: Any) -> int {};
+function len(val: Value) -> int {};
 
 # @description Devuelve el nombre del tipo de un valor
-function type(val: Any) -> String {};
+function type(val: Value) -> String {};
 
 # @description Timestamp actual en ms
 function now() -> int {};
@@ -38,4 +38,4 @@ function exit(code: int) {};
 function sleep(ms: int) {};
 
 # @description Lanza un error intencional
-function throw(msg: Any) {};
+function throw(msg: Value) {};

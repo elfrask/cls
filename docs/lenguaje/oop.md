@@ -235,8 +235,8 @@ magics: aritmética, unarios, conversiones, contenedores, callable, iteración).
 
 - **Anotación obligatoria**: los magic methods deben anotar su tipo de retorno
   (y el de los parámetros de clase). El JIT despacha estáticamente por la firma
-  declarada del método - un parámetro sin anotar tipa `Any` y no se puede
-  despachar.
+  declarada del método - un parámetro sin anotar no se puede despachar
+  (no hay `Any` implícito).
 - **Sentinel de iteración**: `return null` dentro de `__next` termina el `for
   each` con un sentinel interno distinto de `0` - un iterador puede devolver
   `0` como valor legítimo (p. ej. `Rango(3)` -> `0 1 2`).

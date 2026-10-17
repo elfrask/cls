@@ -1,8 +1,8 @@
-# .toString() sobre Any (valores de Record<String, any>): debe tipar y
+# .toString() sobre Value (valores de Record<String, Value>): debe tipar y
 # devolver String por tag en runtime (bug dev-2: tipaba Any y rompía
 # la concatenacion `String + Any`).
 
-function ejemplo(options: Record<String, any>) -> String {
+function ejemplo(options: Record<String, Value>) -> String {
     var result = "";
     if (options["path"] != null) {
         result = result + options["path"].toString();
@@ -20,7 +20,7 @@ function ejemplo(options: Record<String, any>) -> String {
 }
 
 function main(args: String[]) -> int {
-    var opts: Record<String, any> = {"path": "/x", "n": 42, "f": 3.5, "b": true};
+    var opts: Record<String, Value> = {"path": "/x", "n": 42, "f": 3.5, "b": true};
     print(ejemplo(opts));
     print("str():", str(opts["n"]));
     return 0;

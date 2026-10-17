@@ -268,9 +268,9 @@ funcionan en el JIT, validados con `jit-magic-all.clsx` y
 ### Notas para el usuario
 
 - El magic recibe el `other`/`index`/`value` con tipo **anotado** en
-  la firma. Si no se anota, el typeck infiere `Any` y la coerción
-  posterior puede dar resultados inesperados en primitivos. Anota
-  siempre: `function __add(other: MiClase) -> MiClase { ... }`.
+  la firma. Si no se anota, el typeck rechaza la firma (ya no existe `Any`
+  como tipo de usuario). Anota siempre:
+  `function __add(other: MiClase) -> MiClase { ... }`.
 - Para `__set` con semántica de write-back, el JIT lee el campo vía
   `__get`, llama al método, y reasigna el resultado en el slot del
   objeto en memoria. Si tu clase tiene campos por valor, considera

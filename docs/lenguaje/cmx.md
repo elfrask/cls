@@ -80,7 +80,7 @@ function e(s: String) -> String {
     # escape HTML: & -> &amp;, < -> &lt;, > -> &gt;, " -> &quot;, ' -> &#39;
 }
 
-function render(cmx: any) -> String {
+function render(cmx: Cmx) -> String {
     # texto (kind=1): devuelve e(texto)
     # elemento: "<tag prop=\"valor\" ...>" + render de cada child + "</tag>"
     # child Array: expandir cada elemento (permite {arr.map(...)})
@@ -109,12 +109,12 @@ Para invocarlo como componente, se usa el tipo `Callable` con `is` + narrowing
 y spread de props:
 
 ```clx
-function App(props: Record<String, any>) -> String {
+function App(props: Record<String, Value>) -> String {
     var t: String = props.titulo;
     return "App " + t;
 };
 
-var base: Record<String, any> = {titulo: "demo"};
+var base: Record<String, Value> = {titulo: "demo"};
 var app = (<App {...base}><p>hijo</p></App>);   # spread de props en el tag
 
 if (app.tag is Callable) {
@@ -128,7 +128,7 @@ if (app.tag is Callable) {
 - Dentro del `if`, `app.tag` es invocable (el typeck estrecha por `is`).
 - `<App {...base} />` — spread de props en el tag: fusiona el record en las
   props del CmxValue; los atributos nombrados tienen prioridad. El source debe
-  estar anotado `Record<String, any>` (un Shape sin anotar no garantiza el
+  estar anotado `Record<String, Value>` (un Shape sin anotar no garantiza el
   layout hashmap).
 - `{...app.props, children: app.children}` — spread de props + children al
   invocar (REST_SPREAD_PLAN: spread en records y arrays).

@@ -34,7 +34,7 @@ const K = "constante";
 
 function id<T>(x: T) -> T { return x; }
 
-# `!T` en firma: el emisor lo mapea a i64/Any (no hay value parametrizado).
+# `!T` en firma: el emisor lo mapea a i64 (no hay value parametrizado).
 function tomar_fantasma<T>(x: !T) -> int { return 1; }
 
 class CajaGen<T> {

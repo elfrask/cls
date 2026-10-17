@@ -40,9 +40,10 @@ verificables:
   son **overload de operadores para clases de usuario**, no coerción
   primitivo↔objeto. Un `String + Int` no busca `String.__add(Int)`;
   el typeck rechaza el mismatching antes.
-- **Asignación a `Any`/`Value`/`JSON`**: estos tipos son universales por
-  diseño (cualquier valor CLS cabe en `Value`); no es coerción, es
-  widening estructural del sistema de tipos.
+- **Asignación a `Value`/`JSON`/`Cmx`**: estos tipos son dinámicos pero
+  concretos por diseño (cualquier valor CLS cabe en `Value`); no es coerción,
+  es widening estructural del sistema de tipos. (`Any` fue eliminado como
+  anotación.)
 - **Literal → tipo base**: `var s = "hola";` infiere `String` (no literal
   type `"hola"`); esto es inferencia de tipo, no coerción de valor.
 

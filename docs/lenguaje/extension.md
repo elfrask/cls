@@ -47,7 +47,7 @@ Ejemplos: `examples/test/jit-test/extension-demo.clsx`,
 | `Struct(nombre)` | igual que `CStruct` para la `structure` declarada |
 | `Bool` | `i32` (0/1) |
 | `Void` | sin retorno |
-| `Any` | sin anotación: el backend decide |
+| sin anotación | el backend infiere el tipo del retorno C (`char*` -> `String`, etc.); `Any` **no** es una anotación válida |
 
 Nota: **`CFloat` no está soportado** por el dispatcher (`f32`); usar
 `CDouble`.

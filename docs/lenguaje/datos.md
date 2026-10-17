@@ -101,8 +101,8 @@ s.length;              # getter
   (UTF-8) un índice puede caer en medio de un carácter — usar `slice` si se
   necesita recorrer por caracteres.
 - Concatenación con `+`: `"a" + "b"`. **Solo `String + String`**: mezclar con
-  otro tipo (`"x" + int`, `"x" + any`) NO compila — convertir antes con
-  `.toString()` / `str()` / interpolación (ver [decisión 001](../decisiones/001-no-implicit-coercion.md)). Acceder a un `Record<String, any>` por clave devuelve `Any`; para concatenarlo hay que convertir: `r["k"].toString()`.
+  otro tipo (`"x" + int`, `"x" + Value`) NO compila — convertir antes con
+  `.toString()` / `str()` / interpolación (ver [decisión 001](../decisiones/001-no-implicit-coercion.md)). Acceder a un `Record<String, Value>` por clave devuelve `Value`; para concatenarlo hay que convertir: `r["k"].toString()`.
 - Interpolación con `$var` y `${expr}` (ver `sintaxis.md`). Backticks también
   interpolan: `` `Template $nombre ${edad + 1}` ``.
 

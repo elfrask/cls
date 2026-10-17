@@ -1,8 +1,8 @@
 import "09-base" as tk;
 
-export function make() -> Any[] {
+export function make() -> Value[] {
     var ks: tk::E[] = [tk::E.A, tk::E.B];
-    var out: Any[] = [];
+    var out: Value[] = [];
     out.push(ks);
     return out;
 }

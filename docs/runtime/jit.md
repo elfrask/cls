@@ -171,19 +171,20 @@ silencia). Ver `docs/lenguaje/extension.md`, `docs/lenguaje/estructuras.md` y
 Los magic methods se despachan por la **vtable de la clase** con la firma
 declarada del método (`call_indirect`): el emisor busca el magic en el tipo
 estático del objeto y emite `me` + args + dispatch. Los magics deben **anotar
-su retorno** (el JIT no puede tipar `Any`); la iteración usa el protocolo
+su retorno** (el JIT requiere anotación; no hay `Any`); la iteración usa el protocolo
 `__iter` -> Array u objeto iterador con `__next` hasta `null`. Verificado en
 `examples/test/jit-test/units/jit-magic-all.clsx`.
 
 **Truthiness de condiciones**: `if`/`while`/`for`/`elif`
 coaccionan la condición a bool - numéricos `!= 0`, strings no vacíos
 (`len != 0`), arrays/records/tuplas con elementos (`len` del header), shapes y
-objetos siempre verdaderos; tipos sin definir (`Any`) dan error de compilación
+objetos siempre verdaderos; tipos sin definir dan error de compilación
 claro ("la condición debe ser Bool"). El intrínseco `bool(x)` usa la misma
 semántica (`bool(cmx)`, `bool(record)`, ... válidos).
 
 Errores explícitos del emisor ("El JIT (subconjunto WASM) aún no soporta...")
-para lo que no entra en el subset: tipos `Any`/`Unknown` sin anotar,
+para lo que no entra en el subset: tipos `Unknown` sin anotar (y `Any`, ya
+eliminado como anotación),
 parámetros sin anotación de tipo, arrays vacíos sin anotación, `%=` sobre
 floats, índices dinámicos en records con shape, `await` (el `async` no está
 implementado en ningún intérprete desde la eliminación del walker). El subset
