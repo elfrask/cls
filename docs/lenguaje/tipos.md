@@ -119,12 +119,22 @@ propio de cada miembro** (los layouts pueden diferir), sin boxing. El índice
 soportado.
 
 **Gap documentado (builtins/boxing)**: `str(valor)` sobre una unión de builtins
-que mezclan representaciones (p. ej. `int | float`) funciona (el formateo
-despacha por el tipo base runtime). En cambio, el **acceso a miembro/método**
-sobre tal unión (`.toString()`, `.abs()`) no es viable sin boxing: el typeck
-resuelve el tipo del miembro, pero el emisor lo rechaza con un error claro
-("no se puede sin boxing"). Para clases/structs/enums el acceso sí está
-soportado por el dispatch del id de runtime.
+**no** funciona (la afirmación anterior de que despachaba por el tipo runtime era
+falsa): el emisor elige la conversión por el tipo estático (`__intr_str_int` /
+`__intr_str_float` / …) y una unión mezcla representaciones (p. ej. `int | float`
+tiene ancho `i64` vs `f64`), generando WASM inválido o una conversión silenciosa
+incorrecta. Por eso el typeck lo **rechaza en compile-time** ("`str(…)` sobre una
+unión de builtins … no es discriminable en runtime"). Lo mismo aplica a
+`toString(valor)` y a las conversiones numéricas `int(valor)` / `float(valor)`.
+
+Tampoco se puede discriminar el tipo de una **unión de builtins** en
+`match (valor) is { … }`: los builtins no tienen identidad de runtime
+(`class_id`/`def_id`/tag), así que toda arma daría verdadero (ganaría la primera)
+o el WASM sería inválido. El typeck lo rechaza en compile-time. Para
+clases/structs/enums el dispatch por id de runtime sí está soportado (y el
+acceso a miembro sobre esas uniones también). El **acceso a miembro/método**
+sobre una unión de builtins (`.toString()`, `.abs()`) sigue sin ser viable sin
+boxing.
 
 ## Alias
 

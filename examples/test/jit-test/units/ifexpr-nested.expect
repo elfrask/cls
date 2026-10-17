@@ -1,0 +1,8 @@
+else nested: 2
+else nested high: 1
+then nested: 10
+then nested low: 20
+match arm: 200
+paren: 4
+var: 2
+post print: 3

@@ -242,6 +242,10 @@ var mayor = if (10 > 5) { * <- true } else { * <- false }
 - Distinción con el legacy: tras `if (cond)` viene `then` → ternario legacy;
   `{` → expresión `if`.
 
+> **Gap conocido (F3)**: la `if`-expresión no admite `elif` (`if (a) { … } elif
+> (b) { … } else { … }` → error de sintaxis). Para más de dos ramas, anidar
+> `if`-expresiones o usar `match () if { … }`.
+
 ### Ternario legacy
 
 ```clx

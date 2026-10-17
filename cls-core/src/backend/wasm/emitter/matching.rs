@@ -208,6 +208,11 @@ impl<'a> FuncEmitter<'a> {
             ));
         }
         self.ternary_targets.pop();
+        // Igual que en `emit_if_expr`: si la divergencia vino de un `if`/`match`
+        // interno cuyas ramas hicieron `br`, el `end` de ese constructo deja la
+        // caída alcanzable ante el validador; `unreachable` restaura la
+        // divergencia para que el bloque `(result)` del arma sea válido.
+        self.body.push(Instruction::Unreachable);
         self.body.push(Instruction::End); // $arm
         self.block_depth -= 1;
         self.dead_flow = false;

@@ -216,6 +216,29 @@ impl TypeChecker {
             .map(|a| self.check_expression(a))
             .collect();
 
+        // B2: conversiones/formatos intrínsecos (`str`/`toString`/`int`/`float`)
+        // sobre una unión de builtins. El emisor elige el despacho por el tipo
+        // estático (`__intr_str_int`, `__intr_str_float`, `emit_to_int`, …);
+        // una unión mezcla representaciones (int vs float) y no es discriminable
+        // sin tag/boxing. Antes: WASM inválido (`expected i64, found f64`) o
+        // conversión silenciosa incorrecta. Rechazo estático claro.
+        if let Expression::Identifier(name, _) = &*call.callee {
+            if matches!(name.as_str(), "str" | "toString" | "int" | "float") {
+                if let Some(arg0) = arg_types.first() {
+                    if self.union_has_undiscriminable_builtin(arg0) {
+                        self.error(
+                            &format!(
+                                "`{}(…)` sobre una unión de builtins ({}) no es discriminable en \
+                                 runtime: usá un valor con tipo concreto",
+                                name, arg0
+                            ),
+                            call.span.clone(),
+                        );
+                    }
+                }
+            }
+        }
+
         match callee_type {
             Type::Fun(params, ret) => {
                 // print es variádico; no validar arity

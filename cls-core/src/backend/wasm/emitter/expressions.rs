@@ -493,6 +493,14 @@ impl<'a> FuncEmitter<'a> {
                 &e.then_block.span,
             ));
         }
+        // La rama divergió (`br` al target de este `if`-expr, a un target más
+        // externo, `return` o `unreachable`). El validador WASM NO propaga la
+        // divergencia a través del `end` de un `if`/`match`/`switch` interno
+        // cuyas ramas se fueron por `br`: tras ese `end` la caída se considera
+        // alcanzable y el bloque `(result)` quedaría sin valor en la pila
+        // ("expected i64 but nothing on stack"). Emitir `unreachable` marca el
+        // tramo final como divergente (pila polimórfica) y valida el bloque.
+        self.body.push(Instruction::Unreachable);
         self.body.push(Instruction::Else);
         self.dead_flow = false;
         self.emit_scoped_block(&e.else_block)?;
@@ -502,6 +510,7 @@ impl<'a> FuncEmitter<'a> {
                 &e.else_block.span,
             ));
         }
+        self.body.push(Instruction::Unreachable);
         self.body.push(Instruction::End); // if (result) == $done
         self.block_depth -= 1;
 

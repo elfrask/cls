@@ -1,0 +1,12 @@
+# Negativo B2: `match … is` sobre una unión de builtins (`int | String`).
+# Los builtins no tienen identidad de runtime (class_id/def_id/tag): antes toda
+# arma daba verdadero silenciosamente (ganaba la primera). Ahora: error
+# estático claro.
+alias M = int | String;
+
+function main(args: String[]) -> int {
+    var v: M = 5;
+    var s: String = match (v) is { String -> "str", int -> "int" };
+    print(s);
+    return 0;
+};

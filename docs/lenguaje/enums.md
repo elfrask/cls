@@ -127,6 +127,16 @@ enum resp { ok(String), err(int, String), s1, s2 };
 - **`for each`**: solo en enums **unit-only**. Iterar un enum con payload es
   **error de compilación** (no hay payload con qué construir cada variante).
 
+> **Gaps conocidos (F1/F2)**:
+> - En modo VALOR (`match (c) in { … }`) los patrones deben ser **literales**:
+>   una constante de enum (`Rojo` o `Color.Rojo`) no se acepta hoy como patrón
+>   ("se esperaba un literal como patrón"). Para variantes de enum usar el modo
+>   PATRÓN (`match (c) { Rojo -> … }`).
+> - La construcción de una variante de un enum **importado** con nombre
+>   cualificado (`mod::Enum::v(...)`, p. ej. `r::ModResp::ok("x")`) no está
+>   cableada en el parser/emisor: hoy es error de sintaxis. Construir dentro del
+>   propio módulo (`Enum::v(...)`) sí funciona.
+
 ### Representación (JIT/WASM)
 
 - **Enum unit-only** (todas las variantes sin params): sigue **empacado** en i64

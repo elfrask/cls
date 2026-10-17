@@ -1,0 +1,51 @@
+# B1: `if`-expresión con un `if`-statement anidado en una rama (block-target).
+# El `if` interno no abre ternary-target propio: sus `* <-` entregan al
+# `if`-expresión externo. Antes: WASM inválido ("expected i64 but nothing on
+# stack") porque el `end` del `if` interno dejaba la caída alcanzable para el
+# validador. También cubre el caso anidado en un arma-bloque de `match` y las
+# formas correctas (`* <- (if …)` y `var y = if …; * <- y`).
+
+enum R { a(int), b };
+
+function mk(x: int) -> R { return R::a(x); }
+
+# `if` anidado en la rama `else`.
+function nested_else(x: int) -> int {
+    return if (x > 5) { * <- 1 } else { if (x > 1) { * <- 2 } else { * <- 3 } };
+};
+
+# `if` anidado en la rama `then`.
+function nested_then(x: int) -> int {
+    return if (x > 5) { if (x > 3) { * <- 10 } else { * <- 11 } } else { * <- 20 };
+};
+
+# `if` anidado dentro de un arma-bloque de `match`.
+function nested_match_arm(x: int) -> int {
+    return match (mk(x)) {
+        a(n) -> { if (n > 5) { * <- 100 } else { * <- 200 } },
+        b    -> { * <- 0 }
+    };
+};
+
+# Forma correcta: `* <- (if …)` (el paréntesis explicita la `if`-expresión).
+function paren_form(x: int) -> int {
+    return if (x > 5) { * <- (if (x > 1) { * <- 2 } else { * <- 3 }) } else { * <- 4 };
+};
+
+# Forma correcta: `var y = if …; * <- y`.
+function var_form(x: int) -> int {
+    var y = if (x > 1) { * <- 2 } else { * <- 3 };
+    return if (x > 5) { * <- 1 } else { * <- y };
+};
+
+function main(args: String[]) -> int {
+    print("else nested:", nested_else(2));
+    print("else nested high:", nested_else(9));
+    print("then nested:", nested_then(9));
+    print("then nested low:", nested_then(4));
+    print("match arm:", nested_match_arm(2));
+    print("paren:", paren_form(2));
+    print("var:", var_form(2));
+    print("post print:", nested_else(0));
+    return 0;
+};

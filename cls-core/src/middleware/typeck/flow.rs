@@ -84,6 +84,38 @@ impl TypeChecker {
 
 
 
+    /// `true` si `t` es una unión de builtins (al menos un miembro primitivo:
+    /// int/float/string/bool/char, arrays de primitivos o literales). Esos
+    /// miembros NO tienen identidad de runtime (`class_id`/`def_id`/tag), así
+    /// que ni `match … is` ni `str()`/`toString()` pueden discriminarlos: la
+    /// representación (ancho i64 vs f64) y el despacho de conversión se deciden
+    /// en compile-time por el tipo estático. Rechazo estático (B2).
+    pub(crate) fn union_has_undiscriminable_builtin(&self, t: &Type) -> bool {
+        fn is_builtin(m: &Type) -> bool {
+            match m {
+                Type::Int
+                | Type::Float
+                | Type::String
+                | Type::Bool
+                | Type::Char
+                | Type::I8
+                | Type::I16
+                | Type::I32
+                | Type::I64
+                | Type::F32
+                | Type::F64
+                | Type::Literal(_) => true,
+                Type::Array(e) => is_builtin(e),
+                Type::Union(ms) => ms.iter().any(is_builtin),
+                _ => false,
+            }
+        }
+        match t {
+            Type::Union(ms) => ms.iter().any(is_builtin),
+            _ => false,
+        }
+    }
+
     /// Chequeo del `match` (feature F1). Reglas:
     /// - `match` vacío (sin armas) -> error de compilación.
     /// - Modo TIPO: los patrones son tipos; si el scrutinee es un nombre, se
@@ -105,6 +137,24 @@ impl TypeChecker {
         self.match_yield_stack.push(None);
 
         let scrut_ty = m.scrutinee.as_ref().map(|s| self.check_expression(s));
+
+        // B2: el modo TIPO sobre una unión estática solo puede despachar por
+        // identidad de runtime (`class_id` de clases / `def_id` de enums y
+        // structs). Si la unión contiene builtins, no hay forma de discriminarla
+        // sin tag/boxing (prohibido): antes toda arma daba verdadero (ganaba la
+        // primera) o el WASM era inválido. Rechazo estático claro.
+        if m.mode == MatchMode::Type {
+            if let Some(st) = &scrut_ty {
+                if self.union_has_undiscriminable_builtin(st) {
+                    self.error(
+                        "no se puede discriminar el tipo de una unión de builtins en `match is`: \
+                         usá un valor con tipo concreto o una unión de tipos con identidad de \
+                         runtime (clases/enums/structures)",
+                        m.span.clone(),
+                    );
+                }
+            }
+        }
 
         // Nombre a estrechar dentro de las armas: el binding (`nombre <- expr`) o
         // el propio scrutinee si es un identificador.
