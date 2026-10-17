@@ -209,7 +209,7 @@
         {
           "name": "meta.var-decl.ccls",
           "begin": "\\b(var|const|let)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
-          "end": "(?=\\s*;)",
+          "end": "(?=;)|$",
           "beginCaptures": {
             "1": { "name": "keyword.declaration.ccls" },
             "2": { "name": "variable.other.ccls" }
@@ -227,7 +227,7 @@
       "patterns": [
         {
           "name": "meta.type.annotation.ccls",
-          "begin": "(?<=:)(?=[^\\S\\n]*[A-Za-z_(])",
+          "begin": "(?<!::)(?<=:)(?=[^\\S\\n]*[A-Za-z_(])",
           "end": "(?=\\s*(=|,|\\)|;|\\{|->))",
           "patterns": [
             { "include": "#keywords" },
@@ -263,11 +263,15 @@
               "match": "\\[|\\]"
             }
           ]
-        },
+        }
+      ]
+    },
+    "return-type": {
+      "patterns": [
         {
           "name": "meta.return-type.ccls",
           "begin": "(->)\\s*",
-          "end": "(?=\\s*\\{|;)",
+          "end": "(?=\\{|;)",
           "beginCaptures": {
             "1": { "name": "keyword.operator.arrow.ccls" }
           },
@@ -286,7 +290,7 @@
               "name": "meta.type.tuple.ccls",
               "begin": "\\(",
               "end": "\\)",
-              "patterns": [{ "include": "#type-annotations" }]
+              "patterns": [{ "include": "#return-type" }]
             }
           ]
         }
@@ -313,7 +317,7 @@
         {
           "name": "meta.function.ccls",
           "begin": "\\b(function|void)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
-          "end": "(?<=\\))",
+          "end": "(?=\\{|;)",
           "beginCaptures": {
             "1": { "name": "keyword.declaration.ccls" },
             "2": { "name": "entity.name.function.ccls" }
@@ -321,15 +325,17 @@
           "patterns": [
             { "include": "#generic" },
             { "name": "punctuation.section.parens.begin.ccls", "match": "\\(" },
+            { "name": "punctuation.section.parens.end.ccls", "match": "\\)" },
             { "name": "variable.parameter.ccls", "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=[:),])" },
             { "include": "#types" },
             { "include": "#type-annotations" },
+            { "include": "#return-type" },
             { "include": "$self" }
           ]
         },
         {
           "name": "entity.name.function.call.ccls",
-          "match": "\\b(?!(fun|void|method|if|throw|case|while|for|return|switch|catch|import|from|as|include|new|with|in|when|default|extension|or|not)\\b)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
+          "match": "\\b(?!(fun|void|method|if|throw|case|while|for|return|switch|catch|import|from|as|include|new|with|in|when|default|extension|or|not|match)\\b)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
         }
       ]
     },
@@ -338,7 +344,7 @@
         {
           "name": "meta.method.ccls",
           "begin": "\\b(public|private|protected|static|readonly)\\s+(function|void|method)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
-          "end": "(?<=\\))",
+          "end": "(?=\\{|;)",
           "beginCaptures": {
             "1": { "name": "keyword.modifier.ccls" },
             "2": { "name": "keyword.declaration.ccls" },
@@ -347,9 +353,11 @@
           "patterns": [
             { "include": "#generic" },
             { "name": "punctuation.section.parens.begin.ccls", "match": "\\(" },
+            { "name": "punctuation.section.parens.end.ccls", "match": "\\)" },
             { "name": "variable.parameter.ccls", "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=[:),])" },
             { "include": "#types" },
             { "include": "#type-annotations" },
+            { "include": "#return-type" },
             { "include": "$self" }
           ]
         }
@@ -359,6 +367,7 @@
       "patterns": [
         { "name": "keyword.operator.spread.ccls", "match": "\\.\\.\\." },
         { "name": "keyword.operator.assignment.compound.ccls", "match": "\\+=|-=|\\*=|/=|\\+\\+|--" },
+        { "name": "keyword.operator.arrow.ccls", "match": "=>" },
         { "name": "keyword.operator.arrow.ccls", "match": "->" },
         { "name": "keyword.operator.arrow.ccls", "match": "<-" },
         { "name": "keyword.operator.namespace.ccls", "match": "::" },
