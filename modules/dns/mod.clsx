@@ -1,0 +1,615 @@
+# dns - Codec DNS (mensajes) en CLS puro, RFC 1035.
+#
+# Ladrillo de la stdlib autocontenida (examples/patrones.md §11). SIN FFI: es
+# manipulacion de bits / big-endian / parseo binario sobre `int[]` (bytes). El
+# transporte vive en `modules/net`.
+#
+# Cubre:
+#   - Big-endian: getU16/getU32 + builders pushU16/pushU32.
+#   - Nombres: encodeName / decodeName con COMPRESION (punteros 0xC0) + guard
+#     anti-loop.
+#   - Header con flags (qr/opcode/aa/tc/rd/ra/rcode).
+#   - RRs A/AAAA/CNAME/NS/MX/TXT/SOA con longitudes variables y offsets tras
+#     compresion (el `next` avanza solo los bytes reales del nombre en RDATA).
+#   - buildQuery (constructor de consultas).
+#   - answer(query, zone): servidor AUTORITATIVO puro (arma la respuesta con
+#     compresion al nombre de la question).
+#
+# Modelo de datos: clases + herencia (Rr y subclases por tipo, con `render()`
+# polimorfico). Los bytes viven en `int[]` (0..255).
+
+# --- Codigos de tipo / clase (RFC 1035 / 3596) ------------------------------
+
+export const TYPE_A = 1;
+export const TYPE_NS = 2;
+export const TYPE_CNAME = 5;
+export const TYPE_SOA = 6;
+export const TYPE_MX = 15;
+export const TYPE_TXT = 16;
+export const TYPE_AAAA = 28;
+export const TYPE_ANY = 255;
+export const CLASS_IN = 1;
+
+# --- Bits / big-endian ------------------------------------------------------
+
+export function getU16(b: int[], off: int) -> int {
+    return ((b[off] & 255) << 8) | (b[off + 1] & 255);
+}
+
+export function getU32(b: int[], off: int) -> int {
+    return ((b[off] & 255) << 24) | ((b[off + 1] & 255) << 16)
+         | ((b[off + 2] & 255) << 8) | (b[off + 3] & 255);
+}
+
+# Mutadores in-place: los arrays tienen semantica de referencia (mutar un
+# parametro array afecta al llamador; el JIT conserva la identidad del buffer
+# aunque `push` reasigne).
+export function pushU16(out: int[], v: int) {
+    out.push((v >> 8) & 255);
+    out.push(v & 255);
+}
+
+export function pushU32(out: int[], v: int) {
+    out.push((v >> 24) & 255);
+    out.push((v >> 16) & 255);
+    out.push((v >> 8) & 255);
+    out.push(v & 255);
+}
+
+export function pushAll(dst: int[], src: int[]) {
+    for each v in (src) { dst.push(v); }
+}
+
+# Nombre de tipo legible (para CHECK / render).
+export function typeName(rtype: int) -> String {
+    switch (rtype) {
+        case (1) { return "A"; }
+        case (2) { return "NS"; }
+        case (5) { return "CNAME"; }
+        case (6) { return "SOA"; }
+        case (15) { return "MX"; }
+        case (16) { return "TXT"; }
+        case (28) { return "AAAA"; }
+        case default { return "TYPE" + str(rtype); }
+    }
+}
+
+# Codigo numerico a partir del nombre ("A", "AAAA", ...).
+export function typeCode(name: String) -> int {
+    var n = name.upper();
+    if (n == "A") { return TYPE_A; }
+    if (n == "NS") { return TYPE_NS; }
+    if (n == "CNAME") { return TYPE_CNAME; }
+    if (n == "SOA") { return TYPE_SOA; }
+    if (n == "MX") { return TYPE_MX; }
+    if (n == "TXT") { return TYPE_TXT; }
+    if (n == "AAAA") { return TYPE_AAAA; }
+    return TYPE_ANY;
+}
+
+# --- Nombres ----------------------------------------------------------------
+
+# Divide "a.b.c" en ["a","b","c"] (CLS puro; sin strings.split del host).
+function splitDots(s: String) -> String[] {
+    var out: String[] = [];
+    var cs = s.toChar();
+    var cur = "";
+    for each ch in (cs) {
+        if (ord(ch) == 46) { out.push(cur); cur = ""; }
+        else { cur = cur + ch.toString(); }
+    }
+    out.push(cur);
+    return out;
+}
+
+# Nombre -> labels + byte 0. "" / "." -> [0].
+export function encodeName(name: String) -> int[] {
+    var out: int[] = [];
+    if (name == "" || name == ".") { out.push(0); return out; }
+    var labels = splitDots(name);
+    for each lab in (labels) {
+        if (lab == "") { continue; }
+        var cs = lab.toChar();
+        out.push(cs.length & 255);
+        for each ch in (cs) { out.push(ord(ch) & 255); }
+    }
+    out.push(0);
+    return out;
+}
+
+export class NameResult {
+    var name: String;
+    var next: int;
+};
+
+# Decodifica un nombre desde `start`, siguiendo punteros 0xC0 con guard
+# anti-loop. `next` = offset tras los bytes REALES del nombre (no tras el
+# puntero, para poder seguir parseando RDATA con offsets).
+export function decodeName(b: int[], start: int) -> NameResult {
+    var labels: String[] = [];
+    var off = start;
+    var next = -1;
+    var jumps = 0;
+    var guard = 0;
+    var n = b.length;
+    loop {
+        if (off < 0 || off >= n) { break; }
+        guard++;
+        if (guard > 512) { break; }
+        var len = b[off] & 255;
+        if (len == 0) {
+            off = off + 1;
+            if (next < 0) { next = off; }
+            break;
+        }
+        if ((len & 192) == 192) {
+            if (off + 1 >= n) { break; }
+            var ptr = ((len & 63) << 8) | (b[off + 1] & 255);
+            if (next < 0) { next = off + 2; }
+            off = ptr;
+            jumps++;
+            if (jumps > 64) { break; }
+            continue;
+        }
+        var s = off + 1;
+        if (s + len > n) { break; }
+        var sb = "";
+        for (var i = 0; i < len; i++) { sb = sb + char(b[s + i] & 255).toString(); }
+        labels.push(sb);
+        off = s + len;
+    }
+    var name = "";
+    for each lab and k in (labels) {
+        if (k > 0) { name = name + "."; }
+        name = name + lab;
+    }
+    if (name == "") { name = "."; }
+    var r = NameResult();
+    r.name = name;
+    r.next = next;
+    return r;
+}
+
+# --- Render de direcciones --------------------------------------------------
+
+function ipv4ToString(b: int[], off: int) -> String {
+    return str(b[off] & 255) + "." + str(b[off + 1] & 255) + "."
+         + str(b[off + 2] & 255) + "." + str(b[off + 3] & 255);
+}
+
+function hexGroup(v: int) -> String {
+    if (v == 0) { return "0"; }
+    var digits = "0123456789abcdef";
+    var out = "";
+    var x = v;
+    while (x > 0) {
+        out = digits[x % 16] + out;
+        x = x / 16;
+    }
+    return out;
+}
+
+# IPv6 -> forma canonica RFC 5952 (comprime la corrida mas larga de ceros).
+export function ipv6ToString(b: int[], off: int) -> String {
+    var groups: int[] = [];
+    for (var i = 0; i < 8; i++) {
+        groups.push(((b[off + i * 2] & 255) << 8) | (b[off + i * 2 + 1] & 255));
+    }
+    var bestStart = -1;
+    var bestLen = 0;
+    var i = 0;
+    while (i < 8) {
+        if (groups[i] == 0) {
+            var j = i;
+            while (j < 8 && groups[j] == 0) { j++; }
+            var l = j - i;
+            if (l > bestLen) { bestLen = l; bestStart = i; }
+            i = j;
+        } else {
+            i++;
+        }
+    }
+    if (bestLen < 2) { bestStart = -1; bestLen = 0; }
+    var out = "";
+    var k = 0;
+    while (k < 8) {
+        if (k == bestStart) {
+            out = out + "::";
+            k = k + bestLen;
+            continue;
+        }
+        if (k > 0 && k != bestStart + bestLen) { out = out + ":"; }
+        out = out + hexGroup(groups[k]);
+        k++;
+    }
+    return out;
+}
+
+# --- RRs (clases con herencia + render polimorfico) -------------------------
+
+export class Rr {
+    var name: String;
+    var ttl: int;
+    var rtype: int;
+    function main(name: String, ttl: int, rtype: int) {
+        me.name = name;
+        me.ttl = ttl;
+        me.rtype = rtype;
+    }
+    function render() -> String { return ""; }
+};
+
+export class RrA: Rr {
+    var ip: String;
+    function main(name: String, ttl: int, ip: String) {
+        super.main(name, ttl, TYPE_A);
+        me.ip = ip;
+    }
+    function render() -> String { return me.ip; }
+};
+
+export class RrAAAA: Rr {
+    var ip: String;
+    function main(name: String, ttl: int, ip: String) {
+        super.main(name, ttl, TYPE_AAAA);
+        me.ip = ip;
+    }
+    function render() -> String { return me.ip; }
+};
+
+# CNAME (5) y NS (2) comparten forma.
+export class RrName: Rr {
+    var target: String;
+    function main(name: String, ttl: int, rtype: int, target: String) {
+        super.main(name, ttl, rtype);
+        me.target = target;
+    }
+    function render() -> String { return me.target; }
+};
+
+export class RrMX: Rr {
+    var pref: int;
+    var target: String;
+    function main(name: String, ttl: int, pref: int, target: String) {
+        super.main(name, ttl, TYPE_MX);
+        me.pref = pref;
+        me.target = target;
+    }
+    function render() -> String { return str(me.pref) + " " + me.target; }
+};
+
+export class RrTXT: Rr {
+    var texts: String[];
+    function main(name: String, ttl: int, texts: String[]) {
+        super.main(name, ttl, TYPE_TXT);
+        me.texts = texts;
+    }
+    function render() -> String {
+        var out = "";
+        for each t and k in (me.texts) {
+            if (k > 0) { out = out + "|"; }
+            out = out + t;
+        }
+        return out;
+    }
+};
+
+export class RrSOA: Rr {
+    var mname: String;
+    var rname: String;
+    var serial: int;
+    var refresh: int;
+    var retry: int;
+    var expire: int;
+    var minimum: int;
+    function main(name: String, ttl: int, mname: String, rname: String,
+                  serial: int, refresh: int, retry: int, expire: int, minimum: int) {
+        super.main(name, ttl, TYPE_SOA);
+        me.mname = mname;
+        me.rname = rname;
+        me.serial = serial;
+        me.refresh = refresh;
+        me.retry = retry;
+        me.expire = expire;
+        me.minimum = minimum;
+    }
+    function render() -> String {
+        return me.mname + " " + me.rname + " " + str(me.serial) + " " + str(me.refresh)
+             + " " + str(me.retry) + " " + str(me.expire) + " " + str(me.minimum);
+    }
+};
+
+function parseTxt(b: int[], off: int, rdlen: int) -> String[] {
+    var out: String[] = [];
+    var i = 0;
+    while (i < rdlen) {
+        var l = b[off + i] & 255;
+        i++;
+        var s = "";
+        for (var j = 0; j < l; j++) {
+            if (i + j >= rdlen) { break; }
+            s = s + char(b[off + i + j] & 255).toString();
+        }
+        i = i + l;
+        out.push(s);
+    }
+    if (out.length == 0) { out.push(""); }
+    return out;
+}
+
+function makeRr(rtype: int, name: String, ttl: int, b: int[], off: int, rdlen: int) -> Rr {
+    # upcast por anotacion: la subclase se asigna a una variable tipada como la
+    # base `Rr` (el dispatch polimorfico de render() se conserva).
+    switch (rtype) {
+        case (1) { var ra: Rr = RrA(name, ttl, ipv4ToString(b, off)); return ra; }
+        case (28) { var raa: Rr = RrAAAA(name, ttl, ipv6ToString(b, off)); return raa; }
+        case (5) { var rc: Rr = RrName(name, ttl, TYPE_CNAME, decodeName(b, off).name); return rc; }
+        case (2) { var rn2: Rr = RrName(name, ttl, TYPE_NS, decodeName(b, off).name); return rn2; }
+        case (15) {
+            var pref = getU16(b, off);
+            var rm: Rr = RrMX(name, ttl, pref, decodeName(b, off + 2).name);
+            return rm;
+        }
+        case (16) { var rt: Rr = RrTXT(name, ttl, parseTxt(b, off, rdlen)); return rt; }
+        case (6) {
+            var mn = decodeName(b, off);
+            var rn = decodeName(b, mn.next);
+            var so = rn.next;
+            var rs: Rr = RrSOA(name, ttl, mn.name, rn.name, getU32(b, so), getU32(b, so + 4),
+                               getU32(b, so + 8), getU32(b, so + 12), getU32(b, so + 16));
+            return rs;
+        }
+        case default { var rd: Rr = Rr(name, ttl, rtype); return rd; }
+    }
+    var d: Rr = Rr(name, ttl, rtype);
+    return d;
+}
+
+class RrResult {
+    var rr: Rr;
+    var next: int;
+};
+
+function parseRr(b: int[], start: int) -> RrResult {
+    var nm = decodeName(b, start);
+    var off = nm.next;
+    var rtype = getU16(b, off);
+    var ttl = getU32(b, off + 4);
+    var rdlen = getU16(b, off + 8);
+    var rdataOff = off + 10;
+    var res = RrResult();
+    res.rr = makeRr(rtype, nm.name, ttl, b, rdataOff, rdlen);
+    res.next = rdataOff + rdlen;
+    return res;
+}
+
+# --- Mensaje -----------------------------------------------------------------
+
+export class DnsMessage {
+    var id: int;
+    var flags: int;
+    var qr: int;
+    var opcode: int;
+    var aa: int;
+    var tc: int;
+    var rd: int;
+    var ra: int;
+    var rcode: int;
+    var qdCount: int;
+    var anCount: int;
+    var nsCount: int;
+    var arCount: int;
+    var qname: String;
+    var qtype: int;
+    var qclass: int;
+    var answers: Rr[];
+    var authority: Rr[];
+    var additional: Rr[];
+};
+
+export function parseMessage(b: int[]) -> DnsMessage {
+    var m = DnsMessage();
+    m.answers = [];
+    m.authority = [];
+    m.additional = [];
+    m.qname = "";
+    m.qtype = 0;
+    m.qclass = 0;
+    if (b.length < 12) { return m; }
+    m.id = getU16(b, 0);
+    m.flags = getU16(b, 2);
+    m.qr = (m.flags >> 15) & 1;
+    m.opcode = (m.flags >> 11) & 15;
+    m.aa = (m.flags >> 10) & 1;
+    m.tc = (m.flags >> 9) & 1;
+    m.rd = (m.flags >> 8) & 1;
+    m.ra = (m.flags >> 7) & 1;
+    m.rcode = m.flags & 15;
+    m.qdCount = getU16(b, 4);
+    m.anCount = getU16(b, 6);
+    m.nsCount = getU16(b, 8);
+    m.arCount = getU16(b, 10);
+    var off = 12;
+    if (m.qdCount > 0 && off < b.length) {
+        var qn = decodeName(b, off);
+        m.qname = qn.name;
+        off = qn.next;
+        m.qtype = getU16(b, off);
+        m.qclass = getU16(b, off + 2);
+        off = off + 4;
+    }
+    for (var i = 0; i < m.anCount; i++) {
+        var r = parseRr(b, off);
+        m.answers.push(r.rr);
+        off = r.next;
+    }
+    for (var i = 0; i < m.nsCount; i++) {
+        var r = parseRr(b, off);
+        m.authority.push(r.rr);
+        off = r.next;
+    }
+    for (var i = 0; i < m.arCount; i++) {
+        var r = parseRr(b, off);
+        m.additional.push(r.rr);
+        off = r.next;
+    }
+    return m;
+}
+
+# Linea canonica de un RR: "TYPE name ttl render".
+export function rrLine(rr: Rr) -> String {
+    return typeName(rr.rtype) + " " + rr.name + " " + str(rr.ttl) + " " + rr.render();
+}
+
+# --- Constructor de consultas ------------------------------------------------
+
+export function buildQuery(id: int, name: String, qtype: int, rd: bool) -> int[] {
+    var out: int[] = [];
+    pushU16(out, id);
+    var flags = 0;
+    if (rd) { flags = 256; }
+    pushU16(out, flags);
+    pushU16(out, 1);
+    pushU16(out, 0);
+    pushU16(out, 0);
+    pushU16(out, 0);
+    pushAll(out, encodeName(name));
+    pushU16(out, qtype);
+    pushU16(out, CLASS_IN);
+    return out;
+}
+
+# --- Servidor autoritativo puro ---------------------------------------------
+
+export class ZoneRecord {
+    var owner: String;
+    var rtype: int;
+    var ttl: int;
+    var rdata: int[];
+    var nameAt: int;
+    var nameStr: String;
+};
+
+export class Zone {
+    var apex: String;
+    var records: ZoneRecord[];
+    function main(apex: String) {
+        me.apex = apex;
+        me.records = [];
+    }
+    # rdataName: nombre comprimible dentro de rdata ("" si no hay).
+    function addRec(owner: String, rtype: int, ttl: int, rdata: int[],
+                    nameAt: int, nameStr: String) {
+        var z = ZoneRecord();
+        z.owner = owner;
+        z.rtype = rtype;
+        z.ttl = ttl;
+        z.rdata = rdata;
+        z.nameAt = nameAt;
+        z.nameStr = nameStr;
+        me.records.push(z);
+    }
+    function hasName(nm: String) -> bool {
+        for each r in (me.records) { if (r.owner == nm) { return true; } }
+        return false;
+    }
+    function indicesOf(nm: String, rtype: int) -> int[] {
+        var out: int[] = [];
+        for each r and i in (me.records) {
+            if (r.owner == nm && (rtype < 0 || r.rtype == rtype)) { out.push(i); }
+        }
+        return out;
+    }
+    function firstIdx(nm: String, rtype: int) -> int {
+        for each r and i in (me.records) {
+            if (r.owner == nm && r.rtype == rtype) { return i; }
+        }
+        return -1;
+    }
+};
+
+function emitRr(out: int[], rec: ZoneRecord, qname: String) {
+    if (rec.owner == qname) { out.push(192); out.push(12); }
+    else { pushAll(out, encodeName(rec.owner)); }
+    pushU16(out, rec.rtype);
+    pushU16(out, CLASS_IN);
+    pushU32(out, rec.ttl);
+    var rd = rec.rdata;
+    if (rec.nameAt >= 0 && rec.nameStr == qname) {
+        var nr: int[] = [];
+        for (var i = 0; i < rec.nameAt; i++) { nr.push(rd[i]); }
+        nr.push(192);
+        nr.push(12);
+        var encLen = encodeName(rec.nameStr).length;
+        for (var j = rec.nameAt + encLen; j < rd.length; j++) { nr.push(rd[j]); }
+        rd = nr;
+    }
+    pushU16(out, rd.length);
+    pushAll(out, rd);
+}
+
+# Respuesta autoritativa byte-construida. Sigue la CNAME cuando la query no es
+# CNAME; NXDOMAIN con el SOA en authority si el nombre no existe.
+export function answer(query: int[], zone: Zone) -> int[] {
+    var q = parseMessage(query);
+    var qname = q.qname;
+    var qtype = q.qtype;
+    var picks: int[] = [];
+    var exists = zone.hasName(qname);
+    if (exists) {
+        var ci = zone.firstIdx(qname, TYPE_CNAME);
+        if (ci >= 0 && qtype != TYPE_CNAME) {
+            picks.push(ci);
+            var tgt = zone.records[ci].nameStr;
+            var recs = zone.indicesOf(tgt, qtype);
+            for each r in (recs) { picks.push(r); }
+        } elif (qtype == TYPE_ANY) {
+            var all = zone.indicesOf(qname, -1);
+            for each r in (all) { picks.push(r); }
+        } else {
+            var m = zone.indicesOf(qname, qtype);
+            for each r in (m) { picks.push(r); }
+        }
+    }
+    var rcode = 0;
+    var nsPicks: int[] = [];
+    if (!exists) {
+        rcode = 3;
+        var si = zone.firstIdx(zone.apex, TYPE_SOA);
+        if (si >= 0) { nsPicks.push(si); }
+    }
+
+    var out: int[] = [];
+    pushU16(out, q.id);
+    var flags = 32768 | 1024 | rcode;
+    if (q.rd == 1) { flags = flags | 256; }
+    pushU16(out, flags);
+    pushU16(out, 1);
+    pushU16(out, picks.length);
+    pushU16(out, nsPicks.length);
+    pushU16(out, 0);
+    pushAll(out, encodeName(qname));
+    pushU16(out, qtype);
+    pushU16(out, CLASS_IN);
+    for each idx in (picks) { emitRr(out, zone.records[idx], qname); }
+    for each idx in (nsPicks) { emitRr(out, zone.records[idx], qname); }
+    return out;
+}
+
+# --- Utilidades de presentacion ---------------------------------------------
+
+# Concatena los bytes de un mensaje a un string hex minusculas (para volcar).
+export function toHex(b: int[]) -> String {
+    var digits = "0123456789abcdef";
+    var out = "";
+    for each v in (b) {
+        var x = v & 255;
+        out = out + digits[x / 16] + digits[x % 16];
+    }
+    return out;
+}
+
+# Nombre en forma de texto segun los bytes en `b` (helper para chequeos).
+export function decodedName(b: int[], off: int) -> String {
+    return decodeName(b, off).name;
+}

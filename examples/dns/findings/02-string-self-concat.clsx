@@ -1,0 +1,44 @@
+# Finding #2 — corrupcion de strings en auto-concatenacion `x = x + <string>`
+#
+# Comando:  target\debug\clx.exe run examples\dns\findings\02-string-self-concat.clsx
+#
+# ESPERADO: out.wrongA == 0   (out = "" + a = 100 'A').
+# OBTENIDO: out.wrongA != 0   (bytes corruptos; p. ej. se inyecta '|' = 124 o
+#           un '\n' = 10 dentro del string).
+#
+# Detalles:
+#   - `repeat` (que hace `s = s + <char 1 byte>`) SI es correcto.
+#   - `x = a + b` (dos variables no vacias) SI es correcto.
+#   - `out = ""; out = out + a;` con `a` de 100 bytes CORROMPE.
+#   - Tambien corrompe acumular strings largos en un bucle (`for`, `for each`).
+#
+# Impacto: cualquier builder de strings (render de TXT, join de lineas, volcado
+# hex de buffers grandes) produce bytes incorrectos. Workaround en modules/dns:
+# concatenar 1 byte a la vez (`appendStr`).
+
+function repeat(ch: String, n: int) -> String {
+    var s = "";
+    for (var i = 0; i < n; i++) { s = s + ch; }
+    return s;
+}
+function wrongCount(s: String, want: int) -> int {
+    var cs = s.toChar();
+    var w = 0;
+    for each ch in (cs) { if (ord(ch) != want) { w++; } }
+    return w;
+}
+function main(args: String[]) -> int {
+    var a = repeat("A", 100);
+    var b = repeat("B", 100);
+
+    var inline_ = a + b;
+    print("inline  len=" + str(inline_.length)
+          + " wrongA=" + str(wrongCount(inline_, 65))
+          + " wrongB=" + str(wrongCount(inline_, 66)));   # 100 / 100 (correcto)
+
+    var out = "";
+    out = out + a;
+    print("selfcat len=" + str(out.length)
+          + " wrongA=" + str(wrongCount(out, 65)));        # 100 / 0 esperado
+    return 0;
+}

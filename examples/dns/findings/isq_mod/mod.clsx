@@ -1,0 +1,10 @@
+export class MA {
+    var n: int;
+    function main(n: int) { me.n = n; }
+    function who() -> String { return "A"; }
+};
+export class MB: MA {
+    var extra: int;
+    function main(n: int, e: int) { super.main(n); me.extra = e; }
+    function who() -> String { return "B"; }
+};

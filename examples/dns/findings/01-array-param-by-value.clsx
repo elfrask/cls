@@ -1,0 +1,19 @@
+# Finding #1 — parametros array se pasan POR VALOR (mutacion no llega al llamador)
+#
+# Comando:  target\debug\clx.exe run examples\dns\findings\01-array-param-by-value.clsx
+#
+# ESPERADO: x.length == 3   (el array es un valor mutable; `a.push` deberia
+#           afectar al array del llamador, como hace `x.push` sobre la variable).
+# OBTENIDO: x.length == 2   (la mutacion se aplica a una COPIA; se pierde).
+#
+# Impacto: obliga al patron `a = fn(a, ...)` (devolver el array) en lugar de
+# mutar in-place. Afecta a helpers tipo `pushU16(out, v)`.
+
+function push_(v: int, a: int[]) { a.push(v); }
+
+function main(args: String[]) -> int {
+    var x: int[] = [1, 2];
+    push_(9, x);
+    print("x.length=" + str(x.length));   # 2 (esperado 3)
+    return 0;
+}

@@ -1,0 +1,40 @@
+# probe_udp.clsx - Probe minimo de de-riesgo del FFI de red (modules/net).
+#
+# Hace UN round-trip UDP contra un servidor echo local y confirma que el
+# marshalling CArray (int[] de bytes) del FFI funciona en ambos sentidos.
+#
+# Uso (desde la raiz del repo):
+#   clx run examples/dns/src/probe_udp.clsx -- 127.0.0.1 15353
+
+import "net" as net;
+
+function main(args: String[]) -> int {
+    var ip = "127.0.0.1";
+    var port = 15353;
+    if (args.length >= 1) { ip = args[0]; }
+    if (args.length >= 2) { port = int(args[1]); }
+
+    var h = net::udpOpen(ip, port);
+    print("handle=" + str(h));
+    if (h < 0) { return 1; }
+
+    var msg: int[] = [1, 2, 3, 255, 0, 65, 200, 0];
+    var sent = net::udpSend(h, msg);
+    print("sent=" + str(sent));
+
+    var resp = net::udpRecv(h, 512, 2000);
+    print("recvlen=" + str(resp.length));
+
+    var s = "";
+    for each b in (resp) { s = s + str(b) + ","; }
+    print("recv=" + s);
+    net::udpClose(h);
+
+    if (sent != msg.length) { print("PROBE FAIL sent"); return 1; }
+    if (resp.length != msg.length) { print("PROBE FAIL len"); return 1; }
+    for each b and i in (resp) {
+        if (b != msg[i]) { print("PROBE FAIL byte " + str(i)); return 1; }
+    }
+    print("PROBE OK");
+    return 0;
+}

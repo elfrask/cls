@@ -1,0 +1,29 @@
+# Finding #3 — `is` con una clase CUALIFICADA de otro modulo no esta soportado
+#
+# Comando:
+#   target\debug\clx.exe run examples\dns\findings\03-is-qualified-class.clsx --add-path-module=examples\dns\findings
+#
+# ESPERADO: compila; imprime "is MB, extra=2".
+# OBTENIDO: error de compilacion:
+#   'is' con 'isq_mod::MB': se esperaba un enum o structure en el JIT
+#
+# Notas:
+#   - `is` con una clase del MISMO archivo SI funciona (ver lang-features/oop).
+#   - `is` con un enum o `structure` SI funciona.
+#   - El problema es la clase importada (nombre cualificado `mod::Clase`).
+#
+# Workaround en modules/dns: accesores virtuales (`Rr.ipText()`,
+# `Rr.nameTarget()`, ...) en vez de `is` + narrowing cross-module.
+
+import "isq_mod" as m;
+
+function main(args: String[]) -> int {
+    var x: m::MA = m::MB(1, 2);
+    print("who=" + x.who());
+    if (x is m::MB) {
+        print("is MB, extra=" + str(x.extra));
+    } else {
+        print("not MB");
+    }
+    return 0;
+}

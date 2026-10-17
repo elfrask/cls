@@ -1,0 +1,314 @@
+# main.clsx - Runner de la prueba #6 (DNS resolver/authoritative).
+#
+# Consume los modulos compartidos `dns` (codec, CLS puro) y `net` (transporte
+# UDP/TCP via FFI) de /modules (examples/patrones.md §11). Oráculo externo:
+# `oracle/server.py` (Python puro, sin dnslib) + vectores de `oracle/vector.py`.
+#
+# Modos (primer argumento):
+#   offline <vec1.hex> <vec2.hex> ...   parsea vectores y vuelca CHECK; ademas
+#                                       construye las queries canonicas en
+#                                       out/cls_queries.hex y prueba answer()
+#                                       (round-trip) contra su propia zona.
+#   live [host] [port]                  consulta el server Python (UDP) y
+#                                       reintenta por TCP si TC=1.
+#
+# CWD = raiz del repo (los .dll del FFI se resuelven relativos al CWD).
+
+import "dns" as dns;
+import "net" as net;
+import "io" as io;
+import "bytes" as bytes;
+import "check" as check;
+
+# --- utilidades -------------------------------------------------------------
+
+function baseName(fpath: String) -> String {
+    var cs = fpath.toChar();
+    var last = -1;
+    for each ch and i in (cs) {
+        var o = ord(ch);
+        if (o == 47 || o == 92) { last = i; }
+    }
+    var name = "";
+    for (var i = last + 1; i < cs.length; i++) { name = name + cs[i].toString(); }
+    var n = name.length;
+    if (n >= 4) {
+        var tail = "";
+        for (var i = n - 4; i < n; i++) { tail = tail + name[i]; }
+        if (tail == ".hex") {
+            var s = "";
+            for (var i = 0; i < n - 4; i++) { s = s + name[i]; }
+            return s;
+        }
+    }
+    return name;
+}
+
+function joinLines(lines: String[]) -> String {
+    var out = "";
+    for each l and i in (lines) {
+        if (i > 0) { out = out + "\n"; }
+        out = out + l;
+    }
+    return out;
+}
+
+function emitS(k: String, v: String) { print("CHECK " + k + "=" + v); }
+function emitI(k: String, v: int) { print("CHECK " + k + "=" + str(v)); }
+
+# Vuelca un mensaje con el MISMO formato que oracle/dns_indep.check_lines.
+function dumpMessage(name: String, m: dns::DnsMessage) {
+    emitI(name + ".id", m.id);
+    emitI(name + ".qr", m.qr);
+    emitI(name + ".aa", m.aa);
+    emitI(name + ".tc", m.tc);
+    emitI(name + ".rd", m.rd);
+    emitI(name + ".ra", m.ra);
+    emitI(name + ".rcode", m.rcode);
+    emitI(name + ".qd", m.qdCount);
+    emitI(name + ".an", m.anCount);
+    emitI(name + ".ns", m.nsCount);
+    emitS(name + ".qname", m.qname);
+    emitS(name + ".qtype", dns::typeName(m.qtype));
+    for each r and i in (m.answers) {
+        emitS(name + ".an" + str(i) + ".name", r.name);
+        emitS(name + ".an" + str(i) + ".type", dns::typeName(r.rtype));
+        emitI(name + ".an" + str(i) + ".ttl", r.ttl);
+        emitS(name + ".an" + str(i) + ".val", r.render());
+    }
+    for each r and i in (m.authority) {
+        emitS(name + ".ns" + str(i) + ".name", r.name);
+        emitS(name + ".ns" + str(i) + ".type", dns::typeName(r.rtype));
+        emitI(name + ".ns" + str(i) + ".ttl", r.ttl);
+        emitS(name + ".ns" + str(i) + ".val", r.render());
+    }
+}
+
+# --- zona CLS (espejo de oracle/zone.json) ----------------------------------
+
+function pushStrRdata(out: int[], s: String) {
+    dns::pushAll(out, dns::encodeName(s));
+}
+
+function breakName(s: String) -> int[] { return dns::encodeName(s); }
+
+function asciiOf(s: String) -> int[] {
+    var out: int[] = [];
+    var cs = s.toChar();
+    for each ch in (cs) { out.push(ord(ch) & 255); }
+    return out;
+}
+
+function buildZone() -> dns::Zone {
+    var z = dns::Zone("example.test");
+
+    var a: int[] = [192, 0, 2, 1];
+    z.addRec("example.test", dns::TYPE_A, 300, a, -1, "");
+
+    var aaaa: int[] = [32, 1, 13, 184, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+    z.addRec("example.test", dns::TYPE_AAAA, 300, aaaa, -1, "");
+
+    var mx: int[] = [];
+    dns::pushU16(mx, 10);
+    pushStrRdata(mx, "mail.example.test");
+    z.addRec("example.test", dns::TYPE_MX, 300, mx, 2, "mail.example.test");
+
+    var txt: int[] = [];
+    dns::pushAll(txt, [11]);
+    dns::pushAll(txt, asciiOf("v=spf1 -all"));
+    z.addRec("example.test", dns::TYPE_TXT, 300, txt, -1, "");
+
+    var nsr: int[] = breakName("ns1.example.test");
+    z.addRec("example.test", dns::TYPE_NS, 300, nsr, 0, "ns1.example.test");
+
+    var soa: int[] = [];
+    pushStrRdata(soa, "ns1.example.test");
+    pushStrRdata(soa, "hostmaster.example.test");
+    dns::pushU32(soa, 2024010101);
+    dns::pushU32(soa, 3600);
+    dns::pushU32(soa, 600);
+    dns::pushU32(soa, 604800);
+    dns::pushU32(soa, 300);
+    z.addRec("example.test", dns::TYPE_SOA, 300, soa, 0, "ns1.example.test");
+
+    var cn: int[] = breakName("example.test");
+    z.addRec("www.example.test", dns::TYPE_CNAME, 300, cn, 0, "example.test");
+
+    # big TXT: 3 strings de 200 (A/B/C) -> 602 bytes renderizados.
+    var big: int[] = [200];
+    for (var i = 0; i < 200; i++) { big.push(65); }
+    big.push(200);
+    for (var i = 0; i < 200; i++) { big.push(66); }
+    big.push(200);
+    for (var i = 0; i < 200; i++) { big.push(67); }
+    z.addRec("big.example.test", dns::TYPE_TXT, 300, big, -1, "");
+
+    return z;
+}
+
+# --- etapa OFFLINE ----------------------------------------------------------
+
+function runOffline(files: String[]) -> int {
+    # 1. Parser diferencial: cada vector -> dump CHECK.
+    for each vecFile in (files) {
+        var name = baseName(vecFile);
+        var hex = io::readText(vecFile);
+        var b: int[] = bytes::hexDecode(hex);
+        var m = dns::parseMessage(b);
+        dumpMessage(name, m);
+    }
+
+    # 2. Builder: queries canonicas -> out/cls_queries.hex
+    var qnames: String[] = ["q-a", "q-aaaa", "q-cname", "q-mx", "q-txt", "q-ns", "q-soa", "q-bigtxt"];
+    var qids: int[] = [12289, 12290, 12291, 12292, 12293, 12294, 12295, 12296];
+    var qhosts: String[] = ["example.test", "example.test", "www.example.test", "example.test",
+                            "example.test", "example.test", "example.test", "big.example.test"];
+    var qtypes: int[] = [dns::TYPE_A, dns::TYPE_AAAA, dns::TYPE_CNAME, dns::TYPE_MX,
+                         dns::TYPE_TXT, dns::TYPE_NS, dns::TYPE_SOA, dns::TYPE_TXT];
+    var z = buildZone();
+    var qlines: String[] = [];
+    var idx = 0;
+    while (idx < qnames.length) {
+        var q = dns::buildQuery(qids[idx], qhosts[idx], qtypes[idx], true);
+        qlines.push(qnames[idx] + " " + dns::toHex(q));
+        idx++;
+    }
+    io::writeText("examples/dns/out/cls_queries.hex", joinLines(qlines) + "\n");
+
+    # 3. answer() autoritativo: round-trip contra la propia zona (nombres rtNN).
+    idx = 0;
+    while (idx < qnames.length) {
+        var q = dns::buildQuery(qids[idx], qhosts[idx], qtypes[idx], true);
+        var resp = dns::answer(q, z);
+        var m = dns::parseMessage(resp);
+        var nm = "rt" + str(idx + 1);
+        dumpMessage(nm, m);
+        idx++;
+    }
+    return 0;
+}
+
+# --- etapa LIVE -------------------------------------------------------------
+
+function queryUdp(host: String, port: int, id: int, qname: String, qtype: int) -> dns::DnsMessage {
+    var h = net::udpOpen(host, port);
+    var q = dns::buildQuery(id, qname, qtype, true);
+    net::udpSend(h, q);
+    var resp = net::udpRecv(h, 65535, 3000);
+    net::udpClose(h);
+    return dns::parseMessage(resp);
+}
+
+function queryTcp(host: String, port: int, id: int, qname: String, qtype: int) -> dns::DnsMessage {
+    var h = net::tcpOpen(host, port);
+    var q = dns::buildQuery(id, qname, qtype, true);
+    net::tcpSend(h, q);
+    var resp = net::tcpRecv(h, 65535, 3000);
+    net::tcpClose(h);
+    return dns::parseMessage(resp);
+}
+
+function firstRr(m: dns::DnsMessage) -> dns::Rr {
+    if (m.answers.length > 0) { return m.answers[0]; }
+    var empty = dns::Rr("", 0, 0);
+    return empty;
+}
+
+function runLive(host: String, port: int) -> int {
+    check::reset();
+
+    var m1 = queryUdp(host, port, 8193, "example.test", dns::TYPE_A);
+    dumpMessage("live01", m1);
+    var m2 = queryUdp(host, port, 8194, "example.test", dns::TYPE_AAAA);
+    dumpMessage("live02", m2);
+    var m3 = queryUdp(host, port, 8195, "www.example.test", dns::TYPE_CNAME);
+    dumpMessage("live03", m3);
+    var m4 = queryUdp(host, port, 8196, "www.example.test", dns::TYPE_A);
+    dumpMessage("live04", m4);
+    var m5 = queryUdp(host, port, 8197, "example.test", dns::TYPE_MX);
+    dumpMessage("live05", m5);
+    var m6 = queryUdp(host, port, 8198, "example.test", dns::TYPE_TXT);
+    dumpMessage("live06", m6);
+    var m7 = queryUdp(host, port, 8199, "example.test", dns::TYPE_NS);
+    dumpMessage("live07", m7);
+    var m8 = queryUdp(host, port, 8200, "example.test", dns::TYPE_SOA);
+    dumpMessage("live08", m8);
+
+    # big por UDP -> TC=1; retry por TCP -> respuesta completa.
+    var m9 = queryUdp(host, port, 8201, "big.example.test", dns::TYPE_TXT);
+    dumpMessage("live09", m9);
+    var m10 = queryTcp(host, port, 8201, "big.example.test", dns::TYPE_TXT);
+    dumpMessage("live10", m10);
+
+    # Aserciones explicitas (check::) usando `is` + narrowing sobre la clase
+    # cualificada del modulo (`dns::RrA`, etc.).
+    var r1: dns::Rr = firstRr(m1);
+    if (r1 is dns::RrA) { check::assertEqStr("attr.a.ip", r1.ip, "192.0.2.1"); }
+    else { check::fail("attr.a.ip"); }
+
+    var r2: dns::Rr = firstRr(m2);
+    if (r2 is dns::RrAAAA) { check::assertEqStr("attr.aaaa.ip", r2.ip, "2001:db8::1"); }
+    else { check::fail("attr.aaaa.ip"); }
+
+    var r3: dns::Rr = firstRr(m3);
+    if (r3 is dns::RrName) { check::assertEqStr("attr.cname.target", r3.target, "example.test"); }
+    else { check::fail("attr.cname.target"); }
+
+    check::assertEq("attr.chase.an", m4.anCount, 2);
+
+    var r5: dns::Rr = firstRr(m5);
+    check::assertEqStr("attr.mx", r5.render(), "10 mail.example.test");
+
+    var r6: dns::Rr = firstRr(m6);
+    check::assertEqStr("attr.txt", r6.render(), "v=spf1 -all");
+
+    var r7: dns::Rr = firstRr(m7);
+    if (r7 is dns::RrName) { check::assertEqStr("attr.ns", r7.target, "ns1.example.test"); }
+    else { check::fail("attr.ns"); }
+
+    var r8: dns::Rr = firstRr(m8);
+    if (r8 is dns::RrSOA) {
+        check::assertEqStr("attr.soa.mname", r8.mname, "ns1.example.test");
+        check::assertEq("attr.soa.serial", r8.serial, 2024010101);
+    } else {
+        check::fail("attr.soa.mname");
+        check::fail("attr.soa.serial");
+    }
+
+    check::assertTrue("attr.big.tc", m9.tc == 1);
+    check::assertTrue("attr.big.tcp.tc", m10.tc == 0);
+    check::assertEq("attr.big.tcp.an", m10.anCount, 1);
+    var r10: dns::Rr = firstRr(m10);
+    if (r10 is dns::RrTXT) { check::assertEq("attr.big.tcp.txt3", r10.texts.length, 3); }
+    else { check::fail("attr.big.tcp.txt3"); }
+
+    return check::fails();
+}
+
+# --- main -------------------------------------------------------------------
+
+function main(args: String[]) -> int {
+    if (args.length == 0) {
+        print("uso: main.clsx offline <vec.hex>... | live [host] [port]");
+        return 2;
+    }
+    var mode = args[0];
+    if (mode == "offline") {
+        var files: String[] = [];
+        var i = 1;
+        while (i < args.length) {
+            files.push(args[i]);
+            i++;
+        }
+        return runOffline(files);
+    }
+    if (mode == "live") {
+        var host = "127.0.0.1";
+        var port = 15353;
+        if (args.length >= 2) { host = args[1]; }
+        if (args.length >= 3) { port = int(args[2]); }
+        return runLive(host, port);
+    }
+    print("modo desconocido: " + mode);
+    return 2;
+}

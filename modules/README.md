@@ -67,6 +67,8 @@ import "sha256" as sha;              # usa modules/sha256/  -> sha::hash(...)
 | `config` | Activo | — | CLS puro. Introspección de la configuración del host **solo lectura**: `all`, `get`, `getBool`, `getInt`, `sandboxEnabled`. Envuelve el intrinsic `config()` con caché perezosa (una sola llamada al host). |
 | `orm` | Activo | — | CLS puro. Capa ORM **agnóstica al motor** + contrato de driver (`Cell`, `ResultSet`, `Driver` base) y `Orm` (CRUD, query builder, transacciones, bulk). Backends enchufables. Extraído de `examples/sqlite-orm`. |
 | `sqlite` | Activo | — | **FFI a C**. Backend SQLite (`SqliteDriver: Driver`) sobre el shim `sqlite_shim.dll` (sin punteros; handles enteros). Consume `orm`. Requiere `powershell -File modules/sqlite/build.ps1`. |
+| `net` | Activo | `host_call http` (capa de transporte, §2.7) | **FFI a C**. Sockets UDP/TCP sobre el shim `net_shim.dll` (sin punteros; handles enteros; payloads como `int[]`). `udpOpen/Send/Recv/Close`, `tcpOpen/Send/Recv/Close` (framing DNS-over-TCP), `resolve`, clases `UdpClient`/`TcpClient`. Requiere `powershell -File modules/net/build.ps1`. Usado por `examples/dns`. |
+| `dns` | Activo | — | **CLS puro (sin FFI)**. Codec DNS RFC 1035: big-endian, nombres con compresión `0xC0` + guard anti-loop, RRs A/AAAA/CNAME/NS/MX/TXT/SOA, `buildQuery` y `answer(query, zone)` (autoritativo). Consume `net` para transporte. Usado por `examples/dns`. |
 
 ## Excepción sancionada: `config()`
 
