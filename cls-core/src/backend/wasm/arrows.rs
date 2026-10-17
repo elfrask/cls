@@ -112,6 +112,28 @@ pub(crate) fn collect_arrows_in_expr(expr: &Expression, out: &mut Vec<ArrowFunct
             collect_arrows_in_expr(&c.then_expr, out);
             collect_arrows_in_expr(&c.else_expr, out);
         }
+        Expression::Match(m) => {
+            if let Some(s) = &m.scrutinee {
+                collect_arrows_in_expr(s, out);
+            }
+            for arm in &m.arms {
+                for p in &arm.patterns {
+                    if let MatchPattern::Cond(e) = p {
+                        collect_arrows_in_expr(e, out);
+                    }
+                }
+                match &arm.body {
+                    MatchBody::Expr(e) => collect_arrows_in_expr(e, out),
+                    MatchBody::Block(b) => collect_arrows_in_block(b, out),
+                }
+            }
+            if let Some(d) = &m.default {
+                match d {
+                    MatchBody::Expr(e) => collect_arrows_in_expr(e, out),
+                    MatchBody::Block(b) => collect_arrows_in_block(b, out),
+                }
+            }
+        }
         Expression::Assignment(a) => {
             collect_arrows_in_expr(&a.target, out);
             collect_arrows_in_expr(&a.value, out);
@@ -259,6 +281,42 @@ pub(crate) fn collect_free_vars_in_expr(expr: &Expression, locals: &mut Vec<Stri
             collect_free_vars_in_expr(&c.condition, locals, free);
             collect_free_vars_in_expr(&c.then_expr, locals, free);
             collect_free_vars_in_expr(&c.else_expr, locals, free);
+        }
+        Expression::Match(m) => {
+            if let Some(s) = &m.scrutinee {
+                collect_free_vars_in_expr(s, locals, free);
+            }
+            // Los bindings (`nombre <- expr`) y los binds de variante son
+            // locales dentro de cada arma.
+            let mut arm_locals: Vec<String> = locals.clone();
+            if let Some(b) = &m.binding {
+                arm_locals.push(b.clone());
+            }
+            for arm in &m.arms {
+                for p in &arm.patterns {
+                    match p {
+                        MatchPattern::Cond(e) => collect_free_vars_in_expr(e, &mut arm_locals, free),
+                        MatchPattern::Variant { binds, .. } => {
+                            for b in binds {
+                                if !arm_locals.contains(b) {
+                                    arm_locals.push(b.clone());
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                match &arm.body {
+                    MatchBody::Expr(e) => collect_free_vars_in_expr(e, &mut arm_locals, free),
+                    MatchBody::Block(b) => collect_free_vars_in_block(b, &mut arm_locals, free),
+                }
+            }
+            if let Some(d) = &m.default {
+                match d {
+                    MatchBody::Expr(e) => collect_free_vars_in_expr(e, &mut arm_locals, free),
+                    MatchBody::Block(b) => collect_free_vars_in_block(b, &mut arm_locals, free),
+                }
+            }
         }
         Expression::Assignment(a) => {
             collect_free_vars_in_expr(&a.target, locals, free);

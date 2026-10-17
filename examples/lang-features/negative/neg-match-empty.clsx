@@ -1,0 +1,5 @@
+# NEGATIVO: `match` sin armas debe ser rechazado en compilación (feature `match` F1).
+function main(args: String[]) -> int {
+    match (1) is { }
+    return 0;
+}

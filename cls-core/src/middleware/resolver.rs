@@ -296,6 +296,39 @@ impl NameResolver {
                 self.resolve_expression(&cond.then_expr)?;
                 self.resolve_expression(&cond.else_expr)?;
             }
+            Expression::Match(m) => {
+                if let Some(s) = &m.scrutinee {
+                    self.resolve_expression(s)?;
+                }
+                self.push_scope();
+                if let Some(b) = &m.binding {
+                    self.define(b.clone(), SymbolKind::Variable);
+                }
+                for arm in &m.arms {
+                    for p in &arm.patterns {
+                        match p {
+                            MatchPattern::Variant { binds, .. } => {
+                                for b in binds {
+                                    self.define(b.clone(), SymbolKind::Variable);
+                                }
+                            }
+                            MatchPattern::Cond(e) => self.resolve_expression(e)?,
+                            _ => {}
+                        }
+                    }
+                    match &arm.body {
+                        MatchBody::Expr(e) => self.resolve_expression(e)?,
+                        MatchBody::Block(b) => self.resolve_block(b)?,
+                    }
+                }
+                if let Some(d) = &m.default {
+                    match d {
+                        MatchBody::Expr(e) => self.resolve_expression(e)?,
+                        MatchBody::Block(b) => self.resolve_block(b)?,
+                    }
+                }
+                self.pop_scope();
+            }
             Expression::Assignment(assign) => {
                 self.resolve_expression(&assign.target)?;
                 self.resolve_expression(&assign.value)?;

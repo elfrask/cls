@@ -112,6 +112,20 @@ pub fn expr_display(expr: &Expression) -> String {
             expr_display(&c.then_expr),
             expr_display(&c.else_expr)
         ),
+        Expression::Match(m) => {
+            let kw = match m.mode {
+                MatchMode::Type => " is",
+                MatchMode::Value => " in",
+                MatchMode::Cond => " if",
+                MatchMode::Pattern => "",
+            };
+            let scrut = m
+                .scrutinee
+                .as_ref()
+                .map(|s| expr_display(s))
+                .unwrap_or_default();
+            format!("match ({}){} {{ ... }}", scrut, kw)
+        }
         Expression::Assignment(a) => {
             format!("{} = {}", expr_display(&a.target), expr_display(&a.value))
         }

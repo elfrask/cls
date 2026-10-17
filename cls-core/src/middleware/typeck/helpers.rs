@@ -16,6 +16,7 @@ pub fn expr_span(expr: &Expression) -> Span {
         Expression::Record(r) => r.span,
         Expression::ArrowFunction(a) => a.span,
         Expression::Conditional(c) => c.span,
+        Expression::Match(m) => m.span,
         Expression::Assignment(a) => a.span,
         Expression::Cmx(c) => c.span,
         Expression::Parenthesized(_, s) => *s,

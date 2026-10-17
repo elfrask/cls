@@ -13,6 +13,10 @@ pub struct Parser {
     current_token: Token,
     current_span: Span,
     diagnostics: Vec<Diagnostic>,
+    /// En modo TIPO del `match`, el patrón es una anotación de tipo seguida de
+    /// `->`. Sin este flag, `(A, B) -> expr` se parsearía como tipo función
+    /// (`(A,B) -> T`) y consumiría la flecha del arma.
+    suppress_fun_type: bool,
 }
 
 impl Parser {
@@ -25,6 +29,7 @@ impl Parser {
             current_token: first.token,
             current_span: span,
             diagnostics: Vec::new(),
+            suppress_fun_type: false,
         }
     }
 
@@ -368,9 +373,11 @@ impl Parser {
 
     fn parse_type_annotation(&mut self) -> ClsResult<TypeAnnotation> {
         // Fun types: fun(params...) -> ReturnType
-        if let Token::Identifier(ref s) = &self.current_token {
-            if s == "fun" && self.lookahead_is(0, Symbol::LParen) {
-                return self.parse_fun_type();
+        if !self.suppress_fun_type {
+            if let Token::Identifier(ref s) = &self.current_token {
+                if s == "fun" && self.lookahead_is(0, Symbol::LParen) {
+                    return self.parse_fun_type();
+                }
             }
         }
 
@@ -510,7 +517,7 @@ impl Parser {
             // `()` vacío: función sin parámetros `() -> T`, o tupla vacía.
             if self.check_symbol(Symbol::RParen) {
                 self.advance(); // consume ')'
-                if self.consume_operator(Operator::Arrow) {
+                if !self.suppress_fun_type && self.consume_operator(Operator::Arrow) {
                     let ret = self.parse_type_annotation()?;
                     return Ok(TypeKind::Fun(vec![], Box::new(ret)));
                 }
@@ -530,7 +537,7 @@ impl Parser {
             }
             self.expect_symbol(Symbol::RParen)?;
             // (Int) -> Int | (Int, String) -> Bool -> tipo funcion
-            if self.consume_operator(Operator::Arrow) {
+            if !self.suppress_fun_type && self.consume_operator(Operator::Arrow) {
                 let ret = self.parse_type_annotation()?;
                 return Ok(TypeKind::Fun(elems, Box::new(ret)));
             }
@@ -872,6 +879,185 @@ impl Parser {
             Expression::Identifier(name, _) => Ok(CasePattern::Identifier(name)),
             _ => Err(self.syntax_err("Pattern de case inválido".to_string())),
         }
+    }
+
+    /// `match` (feature F1). 4 modos según la keyword tras `)`:
+    /// `is` (tipo), `in` (valor), `if` (condición), sin keyword (patrón).
+    /// Ver `agent-context/MATCH_PLAN.md` §2.
+    fn parse_match_expr(&mut self) -> ClsResult<Expression> {
+        let start_span = self.span();
+        self.advance(); // consume `match`
+        self.expect_symbol(Symbol::LParen)?;
+
+        let mut scrutinee: Option<Box<Expression>> = None;
+        let mut binding: Option<String> = None;
+        if !self.check_symbol(Symbol::RParen) {
+            let first = self.parse_expression()?;
+            if self.consume_operator(Operator::LessMinus) {
+                // Binding: `match (nombre <- expr)`.
+                let name = match &first {
+                    Expression::Identifier(n, _) => n.clone(),
+                    _ => {
+                        return Err(self.syntax_err(
+                            "el binding de `match` requiere un nombre a la izquierda de '<-'",
+                        ))
+                    }
+                };
+                binding = Some(name);
+                scrutinee = Some(Box::new(self.parse_expression()?));
+            } else {
+                scrutinee = Some(Box::new(first));
+            }
+        }
+        self.expect_symbol(Symbol::RParen)?;
+
+        let mode = if self.consume_keyword(Keyword::Is) {
+            MatchMode::Type
+        } else if self.consume_keyword(Keyword::In) {
+            MatchMode::Value
+        } else if self.consume_keyword(Keyword::If) {
+            MatchMode::Cond
+        } else {
+            MatchMode::Pattern
+        };
+
+        self.expect_symbol(Symbol::LBrace)?;
+        let mut arms: Vec<MatchArm> = Vec::new();
+        let mut default: Option<MatchBody> = None;
+
+        loop {
+            self.skip_newlines();
+            if self.check_symbol(Symbol::RBrace) || self.is_eof() {
+                break;
+            }
+            if self.check_keyword(Keyword::Default) {
+                self.advance();
+                self.expect_operator(Operator::Arrow)?;
+                default = Some(self.parse_match_body()?);
+            } else {
+                let arm_span = self.span();
+                let patterns = self.parse_match_patterns(mode)?;
+                self.expect_operator(Operator::Arrow)?;
+                let body = self.parse_match_body()?;
+                arms.push(MatchArm {
+                    patterns,
+                    body,
+                    span: arm_span,
+                });
+            }
+            // Separadores: newlines y/o `,` entre armas.
+            self.skip_newlines();
+            if self.consume_symbol(Symbol::Comma) {
+                self.skip_newlines();
+            }
+        }
+        self.expect_symbol(Symbol::RBrace)?;
+
+        Ok(Expression::Match(MatchExpr {
+            scrutinee,
+            binding,
+            mode,
+            arms,
+            default,
+            span: start_span,
+        }))
+    }
+
+    /// Lista de patrones de un arma. Soporta lista agrupada `(p1, p2)` y patrones
+    /// separados por `,` al nivel del arma (`p1, p2`). En modo TIPO cada patrón
+    /// es una anotación (y `(A, B)` es un solo patrón = unión).
+    fn parse_match_patterns(&mut self, mode: MatchMode) -> ClsResult<Vec<MatchPattern>> {
+        let mut patterns = Vec::new();
+        if mode == MatchMode::Type {
+            patterns.push(self.parse_single_match_pattern(mode)?);
+            while self.consume_symbol(Symbol::Comma) {
+                patterns.push(self.parse_single_match_pattern(mode)?);
+            }
+            return Ok(patterns);
+        }
+        if self.check_symbol(Symbol::LParen) {
+            self.advance();
+            loop {
+                patterns.push(self.parse_single_match_pattern(mode)?);
+                if !self.consume_symbol(Symbol::Comma) {
+                    break;
+                }
+            }
+            self.expect_symbol(Symbol::RParen)?;
+        } else {
+            patterns.push(self.parse_single_match_pattern(mode)?);
+        }
+        while self.consume_symbol(Symbol::Comma) {
+            patterns.push(self.parse_single_match_pattern(mode)?);
+        }
+        Ok(patterns)
+    }
+
+    fn parse_single_match_pattern(&mut self, mode: MatchMode) -> ClsResult<MatchPattern> {
+        match mode {
+            MatchMode::Type => {
+                self.suppress_fun_type = true;
+                let ta = self.parse_type_annotation();
+                self.suppress_fun_type = false;
+                Ok(MatchPattern::Type(ta?))
+            }
+            MatchMode::Value => Ok(MatchPattern::Literal(self.parse_match_literal()?)),
+            MatchMode::Cond => {
+                let e = self.parse_expression()?;
+                Ok(MatchPattern::Cond(Box::new(e)))
+            }
+            MatchMode::Pattern => match &self.current_token {
+                Token::Identifier(name) => {
+                    let name = name.clone();
+                    self.advance();
+                    if self.check_symbol(Symbol::LParen) {
+                        self.advance();
+                        let mut binds = Vec::new();
+                        if !self.check_symbol(Symbol::RParen) {
+                            loop {
+                                binds.push(self.expect_identifier()?);
+                                if !self.consume_symbol(Symbol::Comma) {
+                                    break;
+                                }
+                            }
+                        }
+                        self.expect_symbol(Symbol::RParen)?;
+                        Ok(MatchPattern::Variant { name, binds })
+                    } else {
+                        Ok(MatchPattern::Ident(name))
+                    }
+                }
+                _ => Ok(MatchPattern::Literal(self.parse_match_literal()?)),
+            },
+        }
+    }
+
+    /// Literal de patrón (`0`, `-3`, `1.5`, `"x"`, `'c'`, `true`).
+    fn parse_match_literal(&mut self) -> ClsResult<Literal> {
+        let neg = self.consume_operator(Operator::Minus);
+        let span = self.span();
+        let kind = match &self.current_token {
+            Token::IntLiteral(v) => LiteralKind::Int(if neg { -*v } else { *v }),
+            Token::FloatLiteral(v) => LiteralKind::Float(if neg { -*v } else { *v }),
+            Token::StringLiteral(v) => LiteralKind::String(v.clone()),
+            Token::BoolLiteral(v) => LiteralKind::Bool(*v),
+            Token::CharLiteral(v) => LiteralKind::Char(*v),
+            _ => return Err(self.syntax_err("se esperaba un literal como patrón de `match`")),
+        };
+        self.advance();
+        Ok(Literal { kind, span })
+    }
+
+    /// Cuerpo de arma. F1: solo `-> expr`. El bloque `-> { }` (con arrowReturn
+    /// `<-`) es F4 y se rechaza con un error claro.
+    fn parse_match_body(&mut self) -> ClsResult<MatchBody> {
+        if self.check_symbol(Symbol::LBrace) {
+            return Err(self.syntax_err(
+                "el cuerpo de arma `-> { ... }` (arrowReturn `<-`) no está soportado en F1; \
+                 usá `-> expr`",
+            ));
+        }
+        Ok(MatchBody::Expr(Box::new(self.parse_expression()?)))
     }
 
     fn parse_try_statement(&mut self) -> ClsResult<Statement> {
@@ -2376,6 +2562,8 @@ impl Parser {
                     span: self.span(),
                 }))
             }
+            // `match` (expresión de matching, 4 modos) - F1
+            Token::Keyword(Keyword::Match) => self.parse_match_expr(),
             // Ternario: if (cond) then (a) else (b)
             Token::Keyword(Keyword::If) => {
                 self.advance();

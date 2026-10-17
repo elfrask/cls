@@ -274,6 +274,36 @@
     ],
     "description": "Switch con casos"
   },
+  "Match (valor)": {
+    "prefix": "match",
+    "body": [
+      "var ${1:resultado} = match (${2:valor}) in {",
+      "    (${3:patron}) -> ${4:valor1},",
+      "    default      -> ${5:valor2}",
+      "};"
+    ],
+    "description": "Match por valor"
+  },
+  "Match (tipo)": {
+    "prefix": "matcht",
+    "body": [
+      "var ${1:resultado} = match (${2:valor}) is {",
+      "    ${3:Clase}  -> ${4:valor1},",
+      "    default     -> ${5:valor2}",
+      "};"
+    ],
+    "description": "Match por tipo"
+  },
+  "Match (enum)": {
+    "prefix": "matche",
+    "body": [
+      "var ${1:resultado} = match (${2:nombre} <- ${3:valor}) {",
+      "    ${4:Variante} -> ${5:valor1},",
+      "    default       -> ${6:valor2}",
+      "};"
+    ],
+    "description": "Match por patrón (enum)"
+  },
   "Try / catch": {
     "prefix": "try",
     "body": [

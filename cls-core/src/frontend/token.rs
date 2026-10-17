@@ -78,6 +78,7 @@ pub enum Keyword {
     When,
     Switch,
     Case,
+    Match,
     Default,
     Try,
     Catch,
@@ -177,6 +178,7 @@ pub enum Operator {
     ColonColon,     // ::
     DotDot,         // ..
     Colon,          // :
+    LessMinus,      // <- (binding de `match`; yield `<-` llega en F4)
 
     // Otros
     At,             // @
@@ -197,7 +199,7 @@ impl Operator {
     /// Operadores multi-carácter para el lexer
     pub const MULTI: &[&str] = &[
         "==", "!=", ">=", "<=", "&&", "||", "++", "--", "**", "+=", "-=", "*=", "/=", "%=", "=>",
-        "->", "::", "..", "<<", ">>", "//",
+        "->", "::", "..", "<<", ">>", "//", "<-",
     ];
 
     /// Obtiene el operador desde un string
@@ -234,6 +236,7 @@ impl Operator {
             "::" => Some(Self::ColonColon),
             ".." => Some(Self::DotDot),
             ":" => Some(Self::Colon),
+            "<-" => Some(Self::LessMinus),
             "@" => Some(Self::At),
             "~" => Some(Self::Tilde),
             "^" => Some(Self::Caret),
@@ -378,6 +381,7 @@ impl fmt::Display for Keyword {
             Keyword::When => "when",
             Keyword::Switch => "switch",
             Keyword::Case => "case",
+            Keyword::Match => "match",
             Keyword::Default => "default",
             Keyword::Try => "try",
             Keyword::Catch => "catch",
@@ -457,6 +461,7 @@ impl fmt::Display for Operator {
             Operator::ColonColon => "::",
             Operator::DotDot => "..",
             Operator::Colon => ":",
+            Operator::LessMinus => "<-",
             Operator::At => "@",
             Operator::Pipe => "|",
             Operator::Tilde => "~",

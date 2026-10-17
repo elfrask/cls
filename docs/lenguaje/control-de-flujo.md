@@ -87,6 +87,48 @@ switch (c) {
 Nota: el caso lleva paréntesis `case (patrón)`, y el caso por defecto es
 `case default` (sin paréntesis). Los bloques se terminan con `}` (sin `break`).
 
+## match
+
+`match` es una **expresión** (y también usable como sentencia) con **4 modos**
+elegidos por la keyword tras el paréntesis. El cuerpo de arma es `-> expr`
+(el valor implícito). `default` es opcional; si ninguna arma matchea y no hay
+`default`, es un **error de runtime** ("ningún caso de `match` coincidió"). Un
+`match` **vacío** (sin armas) es un **error de compilación**.
+
+```clx
+# Modo VALOR (`in`): igualdad de valor
+var esPar: bool = match (n) in { (0, 2, 4, 6, 8) -> true, default -> false };
+
+# Modo TIPO (`is`): por el tipo del valor (clases/enums por identidad runtime;
+# builtins por el tipo estático)
+var r = match (perro) is { Perro -> perro.ladra(), Gato -> perro.maulla(), default -> "?" };
+
+# Modo CONDICIÓN (sin scrutinee, `if`): armas = condiciones Bool
+var cmp = match() if { a > b -> ">", a < b -> "<", default -> "=" };
+
+# Modo PATRÓN (sin keyword): variantes de enum sin payload / literales
+var nombre = match (c <- Color.Verde) { Rojo -> "rojo", Verde, Azul -> "frio", default -> "?" };
+```
+
+Reglas (F1):
+
+- **Armas**: `PATRONES -> expr`, separadas por `,`. Cada arma puede tener
+  **varios patrones** con o sin paréntesis: `(0, 2, 4)`, `s1, s2`.
+- **Binding**: `match (nombre <- expr) { … }` liga `nombre` al valor. Si el
+  scrutinee es una variable (`match (x) { … }`) también sirve para el narrowing.
+- **Narrowing**: en modo TIPO, si el scrutinee es un nombre, dentro de cada arma
+  se estrecha al tipo del patrón (o a la unión si hay varios). En modo PATRÓN se
+  estrecha al enum. Es lo que habilita `perro.ladra()` en el ejemplo.
+- **Tipo del `match`**: lo fija la **primera arma**; las demás (y `default`)
+  deben ser asignables a ese tipo (si hay anotación, se valida contra ella).
+- **Statement vs expresión**: por posición. Como sentencia no devuelve valor
+  (el cuerpo se dropea); como expresión lo devuelve.
+- El bloque `-> { ... }` con **arrowReturn `<-`** es F4; en F1 solo `-> expr`.
+
+Pendiente (F2–F6): enums con **payload** y variantes con bindings (`ok(texto)`),
+destructuring-let, ternario `?:` / `if`-expresión, `<-`, acceso a miembro sobre
+unión (`valor.x` con `A | B`) y el protocolo `__match`/`__unpack` de clases.
+
 ## with
 
 ```clx

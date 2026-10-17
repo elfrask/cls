@@ -234,6 +234,7 @@ fn statement_span(stmt: &Statement) -> Span {
             Expression::Record(r) => r.span,
             Expression::ArrowFunction(a) => a.span,
             Expression::Conditional(c) => c.span,
+            Expression::Match(m) => m.span,
             Expression::Assignment(a) => a.span,
             Expression::Identifier(_, span) | Expression::NamespaceAccess(_, _, span) => *span,
             Expression::Parenthesized(_, span) => *span,

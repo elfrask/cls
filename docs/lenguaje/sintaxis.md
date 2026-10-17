@@ -28,12 +28,12 @@ exit code del proceso.
 
 Estándar: letras, dígitos y `_`, no pueden comenzar con un dígito.
 
-## Palabras clave (74)
+## Palabras clave (75)
 
 | Categoría | Keywords |
 |---|---|
 | Declaración | `var`, `const`, `let`, `function`, `void`, `method`, `export` |
-| Control de flujo | `if`, `elif`, `else`, `while`, `loop`, `for`, `each`, `in`, `when`, `switch`, `case`, `default` |
+| Control de flujo | `if`, `elif`, `else`, `while`, `loop`, `for`, `each`, `in`, `when`, `switch`, `case`, `match`, `default` |
 | Excepciones | `try`, `catch`, `finally` (el lanzamiento se hace con la intrinsic `throw(msg)`) |
 | Funciones | `return`, `break`, `continue` |
 | Tipos/OOP | `class`, `structure`, `interface`, `module`, `namespace`, `alias`, `enum` |

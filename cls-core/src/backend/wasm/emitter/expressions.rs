@@ -96,6 +96,7 @@ impl<'a> FuncEmitter<'a> {
             }
             Expression::MemberAccess(m) => self.emit_member_access(m),
             Expression::Conditional(c) => self.emit_conditional(c),
+            Expression::Match(m) => self.emit_match(m),
             Expression::Assignment(a) => self.emit_assignment(a),
             Expression::Parenthesized(inner, _) => self.emit_expression(inner),
             Expression::StringInterpolation(s) => self.emit_interpolation(s),

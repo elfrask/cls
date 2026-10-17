@@ -90,7 +90,7 @@
       "patterns": [
         {
           "name": "keyword.control.ccls",
-          "match": "\\b(if|elif|then|else|while|loop|for|switch|case|default|try|extension|when|catch|finally|throw|return|break|continue|with|each|in|and|or|not|is)\\b"
+          "match": "\\b(if|elif|then|else|while|loop|for|switch|case|match|default|try|extension|when|catch|finally|throw|return|break|continue|with|each|in|and|or|not|is)\\b"
         },
         {
           "name": "keyword.declaration.ccls",

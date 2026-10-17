@@ -255,6 +255,7 @@ impl Lexer {
             "when" => Token::Keyword(Keyword::When),
             "switch" => Token::Keyword(Keyword::Switch),
             "case" => Token::Keyword(Keyword::Case),
+            "match" => Token::Keyword(Keyword::Match),
             "default" => Token::Keyword(Keyword::Default),
             "try" => Token::Keyword(Keyword::Try),
             "catch" => Token::Keyword(Keyword::Catch),

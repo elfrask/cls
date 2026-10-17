@@ -1,0 +1,64 @@
+class Perro {
+    function ladra() -> String { return "guau"; }
+};
+class Gato {
+    function maulla() -> String { return "miau"; }
+};
+
+alias Animal = Perro | Gato;
+
+enum Color { Rojo, Verde, Azul };
+
+function main(args: String[]) -> int {
+    # Modo VALOR (Int): igualdad por valor.
+    var n = 4;
+    var esPar: bool = match (n) in { (0, 2, 4, 6, 8) -> true, default -> false };
+    print("valor int:", esPar);
+
+    # Modo VALOR (String): igualdad por contenido.
+    var s = "hola";
+    var saludo = match (s) in { "hola" -> "hey", "adios" -> "bye", default -> "?" };
+    print("valor str:", saludo);
+
+    # Modo TIPO (builtin, estático).
+    var k: int = 7;
+    var kind = match (k) is { int -> "int", default -> "otro" };
+    print("tipo builtin:", kind);
+
+    # Modo TIPO (enum, identidad runtime).
+    var col = Color.Azul;
+    var colKind = match (col) is { Color -> "color", default -> "otro" };
+    print("tipo enum:", colKind);
+
+    # Modo TIPO (T[]): array de strings + narrowing -> a[0].
+    var arr: String[] = ["uno", "dos"];
+    var first = match (arr) is { String[] -> arr[0], default -> "?" };
+    print("tipo array:", first);
+
+    # Modo TIPO (clase, runtime) + narrowing -> p.ladra() typechequea.
+    var p: Animal = Perro();
+    var sonido = match (p) is { Perro -> p.ladra(), Gato -> p.maulla(), default -> "?" };
+    print("tipo clase:", sonido);
+
+    # Modo CONDICIÓN (sin scrutinee).
+    var a = 3;
+    var b = 9;
+    var cmp = match() if { a > b -> ">", a < b -> "<", default -> "=" };
+    print("cond:", cmp);
+
+    # Modo PATRÓN (enum, con binding) + múltiples patrones.
+    var c = Color.Verde;
+    var nombre = match (k2 <- c) {
+        Rojo          -> "rojo",
+        Verde, Azul   -> "frio",
+        default       -> "?"
+    };
+    print("patron enum:", nombre);
+
+    # Match como SENTENCIA (no devuelve valor).
+    match (n) in {
+        4 -> print("sentencia: cuatro"),
+        default -> print("sentencia: otro")
+    };
+    return 0;
+};

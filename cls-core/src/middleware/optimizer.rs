@@ -156,6 +156,24 @@ impl Optimizer {
                 self.optimize_expression(&mut cond.then_expr);
                 self.optimize_expression(&mut cond.else_expr);
             }
+            Expression::Match(m) => {
+                if let Some(s) = &mut m.scrutinee {
+                    self.optimize_expression(s);
+                }
+                for arm in &mut m.arms {
+                    for p in &mut arm.patterns {
+                        if let MatchPattern::Cond(e) = p {
+                            self.optimize_expression(e);
+                        }
+                    }
+                    if let MatchBody::Expr(e) = &mut arm.body {
+                        self.optimize_expression(e);
+                    }
+                }
+                if let Some(MatchBody::Expr(e)) = &mut m.default {
+                    self.optimize_expression(e);
+                }
+            }
             Expression::Assignment(assign) => {
                 self.optimize_expression(&mut assign.target);
                 self.optimize_expression(&mut assign.value);

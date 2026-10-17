@@ -10,6 +10,7 @@ mod index_expr;
 mod interpolation_part;
 mod literal;
 mod literal_kind;
+mod match_expr;
 mod member_access_expr;
 mod record_expr;
 mod string_interpolation;
@@ -27,6 +28,7 @@ pub use index_expr::*;
 pub use interpolation_part::*;
 pub use literal::*;
 pub use literal_kind::*;
+pub use match_expr::*;
 pub use member_access_expr::*;
 pub use record_expr::*;
 pub use string_interpolation::*;
@@ -78,6 +80,9 @@ pub enum Expression {
 
     // If como expresión
     Conditional(ConditionalExpr),
+
+    // Match (expresión de matching, 4 modos) - feature `match` F1
+    Match(MatchExpr),
 
     // Asignación
     Assignment(AssignmentExpr),

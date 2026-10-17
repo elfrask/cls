@@ -146,6 +146,26 @@ pub fn shift_expr_xy(e: &mut Expression, dl: u32, dc: i64) {
             shift_expr_xy(&mut c.then_expr, dl, dc);
             shift_expr_xy(&mut c.else_expr, dl, dc);
         }
+        Expression::Match(m) => {
+            m.span = shift_span_xy(m.span.clone(), dl, dc);
+            if let Some(s) = &mut m.scrutinee {
+                shift_expr_xy(s, dl, dc);
+            }
+            for arm in &mut m.arms {
+                for pat in &mut arm.patterns {
+                    match pat {
+                        MatchPattern::Literal(l) => shift_literal(l, dl, dc),
+                        MatchPattern::Type(t) => shift_type(t, dl),
+                        MatchPattern::Cond(e) => shift_expr_xy(e, dl, dc),
+                        MatchPattern::Ident(_) | MatchPattern::Variant { .. } => {}
+                    }
+                }
+                shift_match_body(&mut arm.body, dl, dc);
+            }
+            if let Some(d) = &mut m.default {
+                shift_match_body(d, dl, dc);
+            }
+        }
         Expression::Assignment(a) => {
             a.span = shift_span_xy(a.span.clone(), dl, dc);
             shift_expr_xy(&mut a.target, dl, dc);
@@ -203,6 +223,13 @@ fn shift_block(b: &mut Block, offset: u32) {
     b.span = shift_span(b.span.clone(), offset);
     for st in &mut b.statements {
         shift_stmt(st, offset);
+    }
+}
+
+fn shift_match_body(b: &mut MatchBody, dl: u32, dc: i64) {
+    match b {
+        MatchBody::Expr(e) => shift_expr_xy(e, dl, dc),
+        MatchBody::Block(blk) => shift_block(blk, dl),
     }
 }
 
