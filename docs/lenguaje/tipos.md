@@ -81,6 +81,51 @@ var d: Color = "purple"; # ERROR en estricto
 Inferencia de literales: `const k = "constante";` infiere el literal
 `"constante"`; `var v = "x";` infiere `String` (tipo base).
 
+### Acceso a miembro sobre una unión (F5)
+
+Una unión de tipos (por `alias` o por el estrechamiento / narrowing del `match`
+multi-tipo, ver `control-de-flujo.md`) permite acceder a un miembro **siempre que
+todos sus tipos lo expongan**. El resultado es el tipo común; si los tipos de ese
+miembro difieren, el resultado es la unión de esos tipos.
+
+```clx
+class Vector2 { var x: float; var y: float; };
+class Vector3 { var x: float; var y: float; var z: float; };
+alias Vec = Vector2 | Vector3;
+
+function describe(v: Vec) -> String {
+    # narrowing a `Vector2 | Vector3` + `v.x` sobre la unión
+    return match (v) is {
+        (Vector2, Vector3) -> "(${v.x}, ${v.y})",
+        default            -> "?",
+    };
+}
+```
+
+Si **algún** tipo de la unión no tiene el miembro, el compilador lo rechaza:
+
+```clx
+class A { var x: int; };
+class B { var y: int; };
+alias AB = A | B;
+var v: AB = A();
+v.x;   # ERROR: la unión no tiene el miembro `x` en todos sus tipos (falta en `B`)
+```
+
+En runtime el emisor despacha por el **id de tipo** del valor (clases: `class_id`
+en `[obj+8]`; structs: `def_id` en `[obj+0]`) y carga el campo en el **offset
+propio de cada miembro** (los layouts pueden diferir), sin boxing. El índice
+`valor[i]` sobre una unión de arrays con el mismo ancho de elemento también está
+soportado.
+
+**Gap documentado (builtins/boxing)**: `str(valor)` sobre una unión de builtins
+que mezclan representaciones (p. ej. `int | float`) funciona (el formateo
+despacha por el tipo base runtime). En cambio, el **acceso a miembro/método**
+sobre tal unión (`.toString()`, `.abs()`) no es viable sin boxing: el typeck
+resuelve el tipo del miembro, pero el emisor lo rechaza con un error claro
+("no se puede sin boxing"). Para clases/structs/enums el acceso sí está
+soportado por el dispatch del id de runtime.
+
 ## Alias
 
 ```clx

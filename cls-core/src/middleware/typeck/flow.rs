@@ -280,7 +280,14 @@ impl TypeChecker {
                 let mut types = Vec::new();
                 for p in patterns {
                     if let MatchPattern::Type(ta) = p {
-                        types.push(self.resolve_type_annotation(ta));
+                        // `(A, B, ...)` se parsea como un único patrón cuyo
+                        // tipo es una tupla sintáctica: en el modo TIPO eso
+                        // significa la UNIÓN `A | B | ...` (mismo criterio que
+                        // `emit_match_type_check`). Los demás tipos van tal cual.
+                        match self.resolve_type_annotation(ta) {
+                            Type::Tuple(ts) => types.extend(ts),
+                            other => types.push(other),
+                        }
                     }
                 }
                 match types.len() {

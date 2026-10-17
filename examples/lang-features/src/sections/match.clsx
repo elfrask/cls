@@ -1,8 +1,10 @@
-# match.clsx - eje de `match` (feature `match`, F1 + F2).
+# match.clsx - eje de `match` (feature `match`, F1 + F2 + F5).
 #
 # Ejercita: los 4 modos (valor, tipo, condicion, patron), enums con payload
 # (construccion cualificada `X::v(...)`, binding posicional en el patron, unit),
-# `==` por identidad de variante, `is`, `str`/repr y destructuring-let estatico.
+# `==` por identidad de variante, `is`, `str`/repr, destructuring-let estatico,
+# y unión temporal (F5): arma multi-tipo `(A, B)` + acceso a miembro sobre la
+# unión (dispatch por id de runtime y offset propio de cada clase).
 
 import "check" as check;
 
@@ -11,6 +13,21 @@ enum MResp {
     err(int, String),
     vacio,
 };
+
+class MVec2 {
+    var x: float;
+    var y: float;
+    function main(x: float, y: float) { me.x = x; me.y = y; }
+};
+
+class MVec3 {
+    var z: float;
+    var x: float;
+    var y: float;
+    function main(z: float, x: float, y: float) { me.z = z; me.x = x; me.y = y; }
+};
+
+alias MVec = MVec2 | MVec3;
 
 function match_modes() -> int {
     var n = 4;
@@ -73,12 +90,31 @@ function match_destructuring() -> int {
     return 0;
 }
 
+# F5: un arma con varios tipos `(MVec2, MVec3)` estrecha a `MVec2 | MVec3` y
+# `v.x` carga el campo en el offset propio de cada clase (x vive en 16 en MVec2
+# y en 24 en MVec3 -> discrimina por class_id en runtime).
+function u_describe(v: MVec) -> String {
+    return match (v) is {
+        (MVec2, MVec3) -> "(" + str(v.x) + ", " + str(v.y) + ")",
+        default        -> "?",
+    };
+}
+
+function match_union() -> int {
+    var a: MVec = MVec2(1.5, 2.5);
+    check::assertEqStr("match.union.v2", u_describe(a), "(1.5, 2.5)");
+    var b: MVec = MVec3(9.0, 3.5, 4.5);
+    check::assertEqStr("match.union.v3", u_describe(b), "(3.5, 4.5)");
+    return 0;
+}
+
 export function match_run() -> int {
     print("== match ==");
     var before = check::fails();
     match_modes();
     match_payload();
     match_destructuring();
+    match_union();
     var gained = check::fails() - before;
     if (gained == 0) { print("FEATURE match OK"); }
     return gained;

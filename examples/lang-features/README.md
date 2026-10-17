@@ -107,6 +107,9 @@ en `FAIL`.
 | oop | `is` (clase/herencia/struct/enum) | OK | |
 | oop | magic methods (aritmética, unarios, conversión, igualdad, order, `__len`, `__get`/`__set`, `__contains`, `__iter`/`__next`, `__call`, `__repr`/`__toString`, `__type`) | OK | `__toJson` excluido (requiere `json`, host_call prohibido) |
 | enums | variantes, `Enum.Var`, `==`, `is`, iteración (con y sin índice) | OK | |
+| match | 4 modos (valor/tipo/condición/patrón) + enums con payload | OK | `match.*` (F1/F2) |
+| match | unión temporal `(A, B)` + acceso a miembro sobre unión | OK | `match.union.*` (F5) |
+| match | familia ternario `?:` / `if`-expresión + arrowReturn `<-` | OK | `tern.*` (F3/F4) |
 | structs | declaración, instanciación posicional, campos, escritura, `is` | OK | |
 | functions | genéricas, arrow `->` (expr/bloque/sin args), defaults | OK | |
 | functions | closures (captura/re-captura/mutación) | OK | |
@@ -142,7 +145,8 @@ en `FAIL`.
 |---|---|---|
 | `async` / `await` | no ejecutable | el parser lo acepta; el JIT no compila `await` (docs/lenguaje/funciones.md) |
 | `macro`, `global`, `sync` | keywords reservados | sin implementación documentada |
-| `match` | no soportado | mencionado en patrones §5.6 pero sin sintaxis/implementación |
+| `match` F6 (`__match`/`__unpack` de clases) | pendiente | ver `agent-context/MATCH_PLAN.md` §4-F6 |
+| acceso a miembro sobre unión de builtins (`int \| float`) | GAP | requiere boxing; `str(v)` sí funciona (ver docs/lenguaje/tipos.md) |
 | rest params `function f(...xs)` / spread en llamadas `f(...args)` | no soportado | `call_indirect` exige aridad estática |
 | `with` | **semántica pobre** | liga el valor como `Any`; `o.x`/aritmética fallan o devuelven basura; solo passthrough/print |
 | inferencia de retorno de genéricos en clases | parcial | `caja.obtener()` tipa `T`; requiere `int(...)`/asignación tipada |

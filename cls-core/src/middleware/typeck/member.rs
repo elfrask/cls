@@ -234,6 +234,37 @@ impl TypeChecker {
                 }
                 Type::Any
             }
+            // Unión temporal (F5): en un arma multi-tipo del `match` el scrutinee
+            // se estrecha a `A | B`. El miembro debe existir en TODOS los tipos
+            // de la unión; el resultado es el tipo común (o la unión de los tipos
+            // de ese miembro si difieren). Si falta en alguno -> error claro.
+            Type::Union(members) => {
+                if members.is_empty() {
+                    return Type::Any;
+                }
+                let mut tys: Vec<Type> = Vec::with_capacity(members.len());
+                for m in &members {
+                    match self.union_member_of(m, &member.member) {
+                        Some(t) => tys.push(t),
+                        None => {
+                            return self.error(
+                                &format!(
+                                    "la unión no tiene el miembro `{}` en todos sus tipos \
+                                     (falta en `{}`)",
+                                    member.member, m
+                                ),
+                                member.span.clone(),
+                            );
+                        }
+                    }
+                }
+                let first = tys[0].clone();
+                if tys.iter().all(|t| *t == first) {
+                    first
+                } else {
+                    Type::Union(tys)
+                }
+            }
             // Any/Unknown (valor dinámico leído de un Record/JSON): `toString`
             // siempre produce String (despacho por tag en runtime:
             // __intr_any_to_string). Sin esto, `record[k].toString()` tipaba
@@ -243,6 +274,118 @@ impl TypeChecker {
                 _ => Type::Any,
             },
             _ => Type::Any,
+        }
+    }
+
+    /// Tipo del miembro `member` sobre UN tipo miembro de una unión (F5).
+    /// Devuelve `None` si ese tipo **no expone** el miembro: la unión exige que
+    /// TODOS los tipos lo tengan. Es la versión de "presencia explícita" del
+    /// dispatch de `check_member_access` (que en sus ramas devuelve `Any` como
+    /// fallback tolerante); acá el fallback es `None`.
+    fn union_member_of(&mut self, obj: &Type, member: &str) -> Option<Type> {
+        match obj {
+            Type::String => match member {
+                "length" => Some(Type::Int),
+                "upper" | "lower" | "trim" | "toString" | "slice" => Some(Type::String),
+                "contains" | "startsWith" | "endsWith" | "isEmpty" => Some(Type::Bool),
+                "indexOf" => Some(Type::Int),
+                "split" => Some(Type::Array(Box::new(Type::String))),
+                "toChar" => Some(Type::Array(Box::new(Type::Char))),
+                _ => None,
+            },
+            Type::Array(elem) => match member {
+                "length" => Some(Type::Int),
+                "join" | "toString" => Some(Type::String),
+                "includes" | "isEmpty" => Some(Type::Bool),
+                "indexOf" => Some(Type::Int),
+                "push" | "pop" | "shift" | "unshift" | "reverse" => {
+                    Some(Type::Array(elem.clone()))
+                }
+                _ => None,
+            },
+            Type::Tuple(_) => match member {
+                "length" => Some(Type::Int),
+                "join" | "toString" => Some(Type::String),
+                _ => None,
+            },
+            Type::Record(k, _) => match member {
+                "length" | "size" => Some(Type::Int),
+                "has" => Some(Type::Bool),
+                "keys" => Some(Type::Array(k.clone())),
+                "values" => Some(Type::Array(Box::new(Type::Value))),
+                "toString" => Some(Type::String),
+                _ => None,
+            },
+            Type::Shape(fields) => {
+                let known = match member {
+                    "length" | "size" => Some(Type::Int),
+                    "keys" => Some(Type::Array(Box::new(Type::String))),
+                    "values" => Some(Type::Array(Box::new(Type::Any))),
+                    "has" => Some(Type::Bool),
+                    "toString" => Some(Type::String),
+                    _ => None,
+                };
+                known.or_else(|| {
+                    fields
+                        .iter()
+                        .find(|(n, _)| n == member)
+                        .map(|(_, t)| t.clone())
+                })
+            }
+            Type::Int | Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Float
+            | Type::F32 | Type::F64 => match member {
+                "toString" => Some(Type::String),
+                "abs" => Some(obj.clone()),
+                _ => None,
+            },
+            Type::Bool | Type::Char => match member {
+                "toString" => Some(Type::String),
+                _ => None,
+            },
+            // Clase/struct: campo o método (retorno). Nombre exacto o por sufijo
+            // (`mod::Clase` cuando el tipo viene cualificado).
+            Type::Named(name, _) => {
+                if let Some(t) = self
+                    .class_members
+                    .get(name.as_str())
+                    .and_then(|m| m.get(member))
+                {
+                    return Some(t.clone());
+                }
+                if let Some(t) = self
+                    .struct_members
+                    .get(name.as_str())
+                    .and_then(|m| m.get(member))
+                {
+                    return Some(t.clone());
+                }
+                let suffix = format!("::{}", name);
+                if let Some(t) = self
+                    .class_members
+                    .iter()
+                    .find(|(k, _)| k.ends_with(&suffix))
+                    .and_then(|(_, m)| m.get(member))
+                {
+                    return Some(t.clone());
+                }
+                if let Some(t) = self
+                    .struct_members
+                    .iter()
+                    .find(|(k, _)| k.ends_with(&suffix))
+                    .and_then(|(_, m)| m.get(member))
+                {
+                    return Some(t.clone());
+                }
+                None
+            }
+            Type::Literal(v) => self.union_member_of(&v.base_type(), member),
+            // Valor dinámico: el miembro existe siempre (despacho por tag).
+            Type::Any | Type::Unknown | Type::Value | Type::Json => match member {
+                "toString" => Some(Type::String),
+                "length" | "size" => Some(Type::Int),
+                _ => Some(Type::Any),
+            },
+            _ => None,
         }
     }
 }

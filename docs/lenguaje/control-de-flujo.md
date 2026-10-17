@@ -104,6 +104,14 @@ var esPar: bool = match (n) in { (0, 2, 4, 6, 8) -> true, default -> false };
 # builtins por el tipo estático)
 var r = match (perro) is { Perro -> perro.ladra(), Gato -> perro.maulla(), default -> "?" };
 
+# Modo TIPO multi-tipo (F5): `(A, B)` estrecha a la unión `A | B`; sobre la
+# unión, `v.x` despacha por id de runtime y carga el campo en el offset propio
+# de cada clase (ver tipos.md §Uniones).
+var punto = match (v) is {
+    (Vector2, Vector3) -> "(${v.x}, ${v.y})",
+    default            -> "?",
+};
+
 # Modo CONDICIÓN (sin scrutinee, `if`): armas = condiciones Bool
 var cmp = match() if { a > b -> ">", a < b -> "<", default -> "=" };
 
@@ -142,9 +150,16 @@ Reglas:
   `_` ignora un slot. A lo sumo **un patrón con bindings por arma**.
 - **Destructuring-let (F2)**: `var resp::ok(result) = c;` (estático; ver
   `enums.md`).
+- **Acceso a miembro sobre unión (F5)**: un arma con varios tipos `(A, B, …)`
+  estrecha el scrutinee a la unión `A | B | …`. Sobre esa unión, `valor.<campo>`
+  se resuelve en el typeck sólo si **todos** los tipos de la unión exponen el
+  miembro (si no → error de compilación) y el emisor lo despacha por el **id de
+  tipo en runtime** (`class_id` de clase en `[obj+8]`, `def_id` de struct en
+  `[obj+0]`), cargando el campo en el **offset propio de cada miembro**. También
+  aplica a `valor[i]` sobre una unión de arrays con el mismo ancho de elemento.
+  Ver `tipos.md` §Uniones.
 
-Pendiente (F5–F6): acceso a miembro sobre unión (`valor.x` con `A | B`) y el
-protocolo `__match`/`__unpack` de clases.
+Pendiente (F6): el protocolo `__match`/`__unpack` de clases.
 
 ## Familia ternario
 

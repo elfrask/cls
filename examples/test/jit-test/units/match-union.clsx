@@ -1,0 +1,82 @@
+# F5: unión temporal + acceso a miembro sobre unión.
+#
+# En el modo TIPO, un arma multi-tipo `(A, B)` estrecha el scrutinee al tipo
+# `A | B`. Sobre esa unión, `v.<campo>` se resuelve por id de runtime (class_id
+# en `[obj+8]`) cargando el campo en el offset PROPIO de cada clase (acá x vive
+# en el offset 16 en Vector2 y 24 en Vector3 -> prueba el dispatch por miembro).
+
+class Vector2 {
+    var x: float;
+    var y: float;
+    function main(x: float, y: float) { me.x = x; me.y = y; }
+};
+
+class Vector3 {
+    var z: float;
+    var x: float;
+    var y: float;
+    function main(z: float, x: float, y: float) { me.z = z; me.x = x; me.y = y; }
+};
+
+alias Vec = Vector2 | Vector3;
+
+class Alumno {
+    var nombre: String;
+    var nota: float;
+    function main(nombre: String, nota: float) { me.nombre = nombre; me.nota = nota; }
+};
+
+class Profesor {
+    var id: int;
+    var nombre: String;
+    function main(id: int, nombre: String) { me.id = id; me.nombre = nombre; }
+};
+
+# Unión de arrays: `ps[0]` (index sobre unión) devuelve `Alumno | Profesor` y
+# `.nombre` despacha por id.
+alias Personas = Alumno[] | Profesor[];
+
+enum Color { Rojo, Verde };
+enum Luz { Alto, Bajo };
+
+alias Senal = Color | Luz;
+
+function describe(v: Vec) -> String {
+    return match (v) is {
+        (Vector2, Vector3) -> "(${v.x}, ${v.y})",
+        default            -> "?",
+    };
+}
+
+function primerNombre(ps: Personas) -> String {
+    return match (ps) is {
+        (Alumno[], Profesor[]) -> ps[0].nombre,
+        default                -> "?",
+    };
+}
+
+function clasifica(s: Senal) -> String {
+    return match (s) is {
+        (Color, Luz) -> match (s) is {
+            Color   -> "color",
+            Luz     -> "luz",
+            default -> "?",
+        },
+        default -> "?",
+    };
+}
+
+function main(args: String[]) -> int {
+    var a: Vec = Vector2(1.5, 2.5);
+    print("v2:", describe(a));
+
+    var b: Vec = Vector3(9.0, 3.5, 4.5);
+    print("v3:", describe(b));
+
+    var personas: Personas = [Alumno("Ana", 8.5)];
+    print("arr:", primerNombre(personas));
+
+    print("color:", clasifica(Color.Rojo));
+    print("luz:", clasifica(Luz.Bajo));
+    return 0;
+};

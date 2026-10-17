@@ -781,6 +781,44 @@ impl<'a> FuncEmitter<'a> {
         })?;
         match t {
             Type::Array(elem) => was_type(elem),
+            // Unión de arrays (F5): `valor[i]` con `valor: A[] | B[]`. Si TODOS
+            // los arrays comparten el ancho del elemento, el índice es estándar
+            // (mismo layout `[cap][len][elems]`); si difieren -> sin boxing.
+            Type::Union(members) => {
+                let mut w: Option<WasTy> = None;
+                for m in members {
+                    match m {
+                        Type::Array(elem) => {
+                            let ew = was_type(elem)?;
+                            if let Some(prev) = w {
+                                if prev != ew {
+                                    return Err(crate::error::ClsError::compile_at(
+                                        "índice sobre una unión de arrays con elementos \
+                                         heterogéneos: no se puede sin boxing",
+                                        &i.span,
+                                    ));
+                                }
+                            }
+                            w = Some(ew);
+                        }
+                        _ => {
+                            return Err(crate::error::ClsError::compile_at(
+                                &format!(
+                                    "índice sobre una unión: el tipo `{}` no es un array",
+                                    m
+                                ),
+                                &i.span,
+                            ));
+                        }
+                    }
+                }
+                w.ok_or_else(|| {
+                    crate::error::ClsError::compile_at(
+                        "índice sobre una unión de arrays vacía",
+                        &i.span,
+                    )
+                })
+            }
             Type::Record(_, v) => was_type(v),
             Type::Tuple(slots) => {
                 // índice literal → slot exacto; dinámico → primer slot (o i64)

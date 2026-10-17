@@ -183,6 +183,8 @@ CHECK match.repr=ok
 CHECK match.eq=ok
 CHECK match.is=ok
 CHECK match.destr=ok
+CHECK match.union.v2=ok
+CHECK match.union.v3=ok
 FEATURE match OK
 == ternary ==
 CHECK tern.basic=ok

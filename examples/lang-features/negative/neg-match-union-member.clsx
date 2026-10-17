@@ -1,0 +1,25 @@
+# NEGATIVO (F5): en una union temporal `A | B`, un miembro debe existir en TODOS
+# los tipos. `B` no tiene `x` -> acceso a miembro sobre la union debe ser
+# rechazado en compilacion.
+
+class NegA {
+    var x: int;
+    function main() { me.x = 1; }
+};
+
+class NegB {
+    var y: int;
+    function main() { me.y = 2; }
+};
+
+alias NegAB = NegA | NegB;
+
+function main(args: String[]) -> int {
+    var v: NegAB = NegA();
+    var s = match (v) is {
+        (NegA, NegB) -> str(v.x),
+        default      -> "?",
+    };
+    print(s);
+    return 0;
+}

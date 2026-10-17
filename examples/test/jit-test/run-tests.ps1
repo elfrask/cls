@@ -37,6 +37,7 @@ $expectedErrors = @{
     "match-badvariant.clsx" = "patron con variante inexistente -> error estatico (F2)"
     "match-badarity.clsx" = "patron con aridad incorrecta -> error estatico (F2)"
     "match-destr-unprovable.clsx" = "destructuring-let no demostrable -> error estatico (F2)"
+    "match-union-bad.clsx" = "acceso a miembro ausente en parte de la union (F5) -> error estatico"
     "arrow-return-bad.clsx" = "`<-` sin target (F4) -> error de compilacion"
     "ifexpr-no-else.clsx" = "`if`-expresion sin `else` (F3) -> error de sintaxis"
 }

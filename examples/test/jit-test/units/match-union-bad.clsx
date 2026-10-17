@@ -1,0 +1,24 @@
+# F5 negativo: en una unión temporal `A | B`, el miembro debe existir en TODOS
+# los tipos. `B` no tiene `x` -> error de compilación.
+
+class A {
+    var x: int;
+    function main() { me.x = 1; }
+};
+
+class B {
+    var y: int;
+    function main() { me.y = 2; }
+};
+
+alias AB = A | B;
+
+function main(args: String[]) -> int {
+    var v: AB = A();
+    var s = match (v) is {
+        (A, B) -> str(v.x),
+        default -> "?",
+    };
+    print(s);
+    return 0;
+};

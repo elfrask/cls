@@ -459,6 +459,11 @@ impl<'a> FuncEmitter<'a> {
                     Err(self.unsupported_expr(&Expression::MemberAccess(m.clone())))
                 }
             }
+            // Unión temporal (F5): el valor es un i64 con identidad de tipo en
+            // runtime (class_id en `[obj+8]`, def_id de struct en `[obj+0]`).
+            // Se discrimina por ese id y se carga el campo en el offset de CADA
+            // miembro (los offsets pueden diferir). El objeto ya está en el stack.
+            Type::Union(members) => self.emit_union_member_access(m, &members),
             Type::Any | Type::Json | Type::Value => {
                 // `o.a.c` donde `o.a` es Any/Value/JSON (json.parse anidado): despachar por tag.
                 let expr = Expression::MemberAccess(m.clone());
@@ -472,4 +477,216 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
+    /// Acceso a miembro `valor.campo` sobre una **unión de clases/structs** (F5).
+    /// El objeto (i64) ya está en el stack. Se lee su identificador de tipo en
+    /// runtime (clase: `class_id` en `[obj+8]`, como `is` de clase; struct:
+    /// `def_id` en `[obj+0]`) y se emite una cadena de `if/else` que carga el
+    /// campo en el offset propio de cada miembro; todas las ramas convergen al
+    /// mismo tipo WASM (sin boxing). Clases y structs NO se mezclan (el id vive
+    /// en offsets distintos) y los anchos del campo deben coincidir.
+    fn emit_union_member_access(
+        &mut self,
+        m: &MemberAccessExpr,
+        members: &[Type],
+    ) -> ClsResult<()> {
+        // Tipo del resultado (común o unión) fijado por el typeck.
+        let res_ty = self
+            .types
+            .get(&expr_span(&Expression::MemberAccess(m.clone())))
+            .cloned()
+            .unwrap_or(Type::Any);
+        let res_w = was_type(&res_ty).unwrap_or(WasTy::I64);
+
+        struct Arm {
+            ids: Vec<u32>,
+            offset: i64,
+            field_w: WasTy,
+            kind: Option<FieldWidth>,
+        }
+        let mut arms: Vec<Arm> = Vec::new();
+        let mut all_class = true;
+        let mut all_struct = true;
+        for mt in members {
+            let name = match mt {
+                Type::Named(n, _) => n,
+                _ => {
+                    return Err(crate::error::ClsError::compile_at(
+                        &format!(
+                            "acceso al miembro `{}` sobre una unión: el tipo `{}` no es una \
+                             clase ni un struct (no hay dispatch por id sin boxing)",
+                            m.member, mt
+                        ),
+                        &m.span,
+                    ));
+                }
+            };
+            if let Some(key) = self.resolve_class_key(name) {
+                let info = self.class_defs.get(&key).unwrap();
+                let fidx = info
+                    .fields
+                    .iter()
+                    .position(|(n, _, _, _, _)| *n == m.member)
+                    .ok_or_else(|| {
+                        crate::error::ClsError::compile_at(
+                            &format!("El campo `{}` no existe en la clase `{}`", m.member, key),
+                            &m.span,
+                        )
+                    })?;
+                let (_, _t, w, off, vis) = &info.fields[fidx];
+                self.check_field_access(key.as_str(), m.member.as_str(), *vis, &m.span)?;
+                let (w, off) = (*w, *off);
+                // ids que matchean: la clase + todas sus subclases (paridad `is`).
+                let target_id = info.class_id;
+                let mut ids: Vec<u32> = Vec::new();
+                for cinfo in self.class_defs.values() {
+                    let desc = cinfo
+                        .ancestors
+                        .iter()
+                        .any(|a| self.ancestor_class_id(a) == Some(target_id));
+                    if cinfo.class_id == target_id || desc {
+                        if !ids.contains(&cinfo.class_id) {
+                            ids.push(cinfo.class_id);
+                        }
+                    }
+                }
+                all_struct = false;
+                arms.push(Arm {
+                    ids,
+                    offset: off,
+                    field_w: w,
+                    kind: None,
+                });
+            } else if let Some(info) = self.struct_defs.get(name.as_str()) {
+                let fidx = info
+                    .fields
+                    .iter()
+                    .position(|(n, _, _)| *n == m.member)
+                    .ok_or_else(|| {
+                        crate::error::ClsError::compile_at(
+                            &format!("El campo `{}` no existe en el struct `{}`", m.member, name),
+                            &m.span,
+                        )
+                    })?;
+                let w = info.fields[fidx].2;
+                let fw = info.kinds[fidx].scalar().ok_or_else(|| {
+                    crate::error::ClsError::compile_at(
+                        &format!(
+                            "El campo `{}` del struct `{}` es un array inline: no se accede \
+                             como escalar",
+                            m.member, name
+                        ),
+                        &m.span,
+                    )
+                })?;
+                all_class = false;
+                arms.push(Arm {
+                    ids: vec![info.def_id],
+                    offset: info.offsets[fidx],
+                    field_w: w,
+                    kind: Some(fw),
+                });
+            } else {
+                return Err(crate::error::ClsError::compile_at(
+                    &format!(
+                        "acceso al miembro `{}` sobre una unión: el tipo `{}` no es una clase \
+                         ni un struct",
+                        m.member, mt
+                    ),
+                    &m.span,
+                ));
+            }
+        }
+        if arms.is_empty() {
+            return Err(crate::error::ClsError::compile_at(
+                "acceso a miembro sobre una unión vacía",
+                &m.span,
+            ));
+        }
+        if !all_class && !all_struct {
+            return Err(crate::error::ClsError::compile_at(
+                "acceso a miembro sobre una unión mixta de clases y structs: no soportado \
+                 (el id de tipo vive en offsets distintos)",
+                &m.span,
+            ));
+        }
+        // Discriminante y cargas deben compartir el ancho WASM (sin boxing).
+        if arms.iter().any(|a| a.field_w != res_w) {
+            return Err(crate::error::ClsError::compile_at(
+                &format!(
+                    "acceso al miembro `{}` sobre una unión con tipos heterogéneos: no se \
+                     puede sin boxing",
+                    m.member
+                ),
+                &m.span,
+            ));
+        }
+
+        // Objeto -> local; id de tipo -> local.
+        let obj = self.fresh_local();
+        self.body.push(Instruction::LocalSet(obj));
+        let cid = self.fresh_local();
+        self.body.push(Instruction::LocalGet(obj));
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::I64Load(MemArg {
+            offset: if all_class { 8 } else { 0 },
+            align: 3,
+            memory_index: 0,
+        }));
+        self.body.push(Instruction::LocalSet(cid));
+
+        // Cadena `if (cid == id_k) { load_k } else { ... }` (n-1 elses + default).
+        let n = arms.len();
+        for arm in &arms {
+            let mut first = true;
+            for id in &arm.ids {
+                self.body.push(Instruction::LocalGet(cid));
+                self.body.push(Instruction::I64Const(*id as i64));
+                self.body.push(Instruction::I64Eq);
+                if !first {
+                    self.body.push(Instruction::I32Or);
+                }
+                first = false;
+            }
+            self.block_depth += 1;
+            self.body
+                .push(Instruction::If(BlockType::Result(res_w.val_type())));
+            self.body.push(Instruction::LocalGet(obj));
+            self.body.push(Instruction::I64Const(arm.offset));
+            self.body.push(Instruction::I64Add);
+            self.body.push(Instruction::I32WrapI64);
+            if let Some(kind) = arm.kind {
+                kind.push_load(&mut self.body, arm.field_w);
+            } else {
+                match arm.field_w {
+                    WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
+                        offset: 0,
+                        align: 3,
+                        memory_index: 0,
+                    })),
+                    WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
+                        offset: 0,
+                        align: 2,
+                        memory_index: 0,
+                    })),
+                    WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
+                        offset: 0,
+                        align: 3,
+                        memory_index: 0,
+                    })),
+                }
+            }
+            self.body.push(Instruction::Else);
+        }
+        // Sin coincidencia: no debería ocurrir (la unión es cerrada) -> trap claro.
+        self.emit_throw(
+            "acceso a miembro sobre unión: subtipo de runtime no reconocido",
+            &m.span,
+        );
+        self.body.push(Instruction::Unreachable);
+        for _ in 0..n {
+            self.body.push(Instruction::End);
+            self.block_depth -= 1;
+        }
+        Ok(())
+    }
 }
