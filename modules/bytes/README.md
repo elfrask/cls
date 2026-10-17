@@ -6,10 +6,6 @@ se apoyan en los **intrínsecos primitivos** del lenguaje sobre `Char` = unidad 
 
 No usa `host_calls` y no expone punteros.
 
-> **Supersede** a los helpers hex de `modules/diag` (`hexByte`, `bytesToHex`).
-> `diag` se mantiene por compatibilidad pero queda marcado como superseded
-> (ver `modules/README.md`).
-
 ## API
 
 | Símbolo | Descripción |

@@ -1,0 +1,9 @@
+# io/flags.clsx - Flags de `_open` de msvcrt (los mismos que usa la libc de
+# Windows). Se exponen con nombre para no sembrar números mágicos en el código.
+
+export const O_RDONLY = 0;
+export const O_WRONLY = 1;
+export const O_CREAT = 256;
+export const O_TRUNC = 512;
+export const O_APPEND = 8;
+export const O_BINARY = 32768;

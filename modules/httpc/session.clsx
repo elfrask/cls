@@ -1,0 +1,197 @@
+# http/session.clsx - Sesión HTTP con keep-alive, relés de redirección y cookies.
+import "socket" as socket;
+from "url" import Url, parse as parseUrl, resolve;
+from "headers" import Headers;
+from "request" import Request;
+from "response" import Response;
+from "transport" import exchange;
+from "cookies" import Cookies;
+
+export function emptyHeaders() -> Headers {
+    var h = Headers();
+    return h;
+}
+
+function connectionKey(url: Url) -> String { return url.host + ":" + str(url.port); }
+
+function isRedirect(status: int) -> bool {
+    return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
+}
+
+function canReuse(resp: Response) -> bool {
+    return resp.headers.get("Connection").lower().indexOf("close") < 0;
+}
+
+# Sesión HTTP: reutiliza conexiones TCP por host:puerto (keep-alive), sigue
+# redirecciones y mantiene un cookie jar simple.
+export class Session {
+    var timeoutMs: int;
+    var maxRedirects: int;
+    var keepAlive: bool;
+    var cookies: Cookies;
+    var poolKeys: String[];
+    var poolConns: socket::Client[];
+
+    function main() {
+        me.timeoutMs = 30000;
+        me.maxRedirects = 5;
+        me.keepAlive = true;
+        me.cookies = Cookies();
+        me.poolKeys = [];
+        me.poolConns = [];
+    }
+
+    function request(verb: String, rawUrl: String, body: String, extra: Headers) -> Response {
+        var url = parseUrl(rawUrl);
+        var curMethod = verb;
+        var curBody = body;
+        var redirects = 0;
+        var resp = me.once(curMethod, url, curBody, extra);
+        while (redirects < me.maxRedirects) {
+            me.storeCookies(url, resp);
+            if (!isRedirect(resp.status)) { return resp; }
+            var loc = resp.headers.get("Location");
+            if (loc == "") { return resp; }
+            url = parseUrl(resolve(url, loc));
+            if (resp.status == 303) { curMethod = "GET"; curBody = ""; }
+            redirects = redirects + 1;
+            resp = me.once(curMethod, url, curBody, extra);
+        }
+        me.storeCookies(url, resp);
+        return resp;
+    }
+
+    function once(verb: String, url: Url, body: String, extra: Headers) -> Response {
+        var conn = me.connectionFor(url);
+        if (!conn.ok()) {
+            var e = Response();
+            e.status = 0;
+            return e;
+        }
+        var req = Request();
+        req.verb = verb;
+        req.url = url;
+        req.body = body;
+        for each nm and i in (extra.names) { req.headers.add(nm, extra.values[i]); }
+        var ck = me.cookies.headerFor(url);
+        if (ck != "") { req.headers.set("Cookie", ck); }
+        var resp = exchange(conn, req, me.keepAlive, me.timeoutMs);
+        if (!me.keepAlive || !canReuse(resp)) {
+            conn.close();
+            me.removeConn(url);
+        }
+        return resp;
+    }
+
+    function connectionFor(url: Url) -> socket::Client {
+        var key = connectionKey(url);
+        for each k and i in (me.poolKeys) {
+            if (k == key) {
+                var cached = me.poolConns[i];
+                if (cached.ok()) { return cached; }
+            }
+        }
+        var fresh = socket::Client(url.host, url.port);
+        me.poolKeys.push(key);
+        me.poolConns.push(fresh);
+        return fresh;
+    }
+
+    function removeConn(url: Url) {
+        var key = connectionKey(url);
+        var nk: String[] = [];
+        var nc: socket::Client[] = [];
+        for each k and i in (me.poolKeys) {
+            if (k != key) { nk.push(k); nc.push(me.poolConns[i]); }
+        }
+        me.poolKeys = nk;
+        me.poolConns = nc;
+    }
+
+    function storeCookies(url: Url, resp: Response) {
+        var set = resp.headers.getAll("Set-Cookie");
+        for each sc in (set) { me.cookies.store(url.host, sc); }
+    }
+
+    # --- atajos ---
+    function get(rawUrl: String) -> Response {
+        return me.request("GET", rawUrl, "", emptyHeaders());
+    }
+    function head(rawUrl: String) -> Response {
+        return me.request("HEAD", rawUrl, "", emptyHeaders());
+    }
+    function del(rawUrl: String) -> Response {
+        return me.request("DELETE", rawUrl, "", emptyHeaders());
+    }
+    function post(rawUrl: String, body: String, contentType: String) -> Response {
+        var h = emptyHeaders();
+        if (contentType != "") { h.set("Content-Type", contentType); }
+        return me.request("POST", rawUrl, body, h);
+    }
+    function put(rawUrl: String, body: String, contentType: String) -> Response {
+        var h = emptyHeaders();
+        if (contentType != "") { h.set("Content-Type", contentType); }
+        return me.request("PUT", rawUrl, body, h);
+    }
+    function patch(rawUrl: String, body: String, contentType: String) -> Response {
+        var h = emptyHeaders();
+        if (contentType != "") { h.set("Content-Type", contentType); }
+        return me.request("PATCH", rawUrl, body, h);
+    }
+
+    # Conjunto de cabeceras por defecto para las siguientes peticiones.
+    function headers() -> Headers { return emptyHeaders(); }
+
+    function close() {
+        for each c in (me.poolConns) { c.close(); }
+        me.poolKeys = [];
+        me.poolConns = [];
+    }
+};
+
+# --- Conveniencia de un solo uso (sin keep-alive persistente) ----------------
+#
+# Abre, pide y cierra. Para varias peticiones al mismo host usá una `Session`
+# (reutiliza la conexión).
+
+export function get(rawUrl: String) -> Response {
+    var s = Session();
+    var r = s.get(rawUrl);
+    s.close();
+    return r;
+}
+
+export function head(rawUrl: String) -> Response {
+    var s = Session();
+    var r = s.head(rawUrl);
+    s.close();
+    return r;
+}
+
+export function del(rawUrl: String) -> Response {
+    var s = Session();
+    var r = s.del(rawUrl);
+    s.close();
+    return r;
+}
+
+export function post(rawUrl: String, body: String, contentType: String) -> Response {
+    var s = Session();
+    var r = s.post(rawUrl, body, contentType);
+    s.close();
+    return r;
+}
+
+export function put(rawUrl: String, body: String, contentType: String) -> Response {
+    var s = Session();
+    var r = s.put(rawUrl, body, contentType);
+    s.close();
+    return r;
+}
+
+export function patch(rawUrl: String, body: String, contentType: String) -> Response {
+    var s = Session();
+    var r = s.patch(rawUrl, body, contentType);
+    s.close();
+    return r;
+}

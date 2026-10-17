@@ -1,39 +1,13 @@
 # prng - PRNG determinista LCG en CLS puro (sin FFI, sin host_calls).
 #
 # Ladrillo de la stdlib autocontenida (examples/patrones.md §11): reemplaza al
-# host_call `math.random` con una secuencia reproducible definida por la semilla.
-# Es el mismo LCG de 64 bits (constantes de PCG) que usaba
-# examples/conformance/src/fuzz.clsx, ahora extraido a `/modules` (la prueba lo
-# consume en vez de redefinirlo).
+# host_call `math.random` con una secuencia reproducible definida por la semilla
+# (el mismo LCG de 64 bits que usa examples/conformance/src/fuzz.clsx).
 #
-# La multiplicacion/suma envuelven en i64 (aritmetica nativa del JIT).
+#   lcg.clsx - constantes + clase `Prng`
+#
+# Barrel: se expone la API pública.
 
-# Constantes del LCG de 64 bits (PCG).
-const LCG_A = 6364136223846793005;
-const LCG_C = 1442695040888963407;
+import "lcg" as lcg;
 
-export class Prng {
-    var s: int;
-
-    public function main(seed: int) { me.s = seed; }
-
-    # Siguiente estado del LCG (semilla nueva + valor devuelto).
-    public function next() -> int {
-        me.s = me.s * LCG_A + LCG_C;
-        return me.s;
-    }
-
-    # Entero en [0, bound); 0 si bound <= 0.
-    public function nextInt(bound: int) -> int {
-        if (bound <= 0) { return 0; }
-        var v = me.next() % bound;
-        if (v < 0) { v = v + bound; }
-        return v;
-    }
-
-    # Flotante en [0, 1) (53 bits del estado / 2^53).
-    public function nextFloat() -> float {
-        var v = me.next() & 9007199254740991;
-        return float(v) / 9007199254740992.0;
-    }
-};
+export { lcg::Prng as Prng };

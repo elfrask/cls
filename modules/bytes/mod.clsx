@@ -1,74 +1,20 @@
-# bytes - Utilidades de bytes: ord/chr (intrinsecos) + hex/diff (CLS puro).
+# bytes - Utilidades de byte: ord/chr (intrínsecos) + hex/diff (CLS puro).
 #
-# CLS puro, SIN FFI. `ord`/`chr` se apoyan en los INTRINSECOS primitivos del
-# lenguaje sobre `Char` = unidad de 1 byte (`char(n)`, `ord(c)`); los bytes de un
-# String se obtienen con `s.toChar()` (modelo bytes/str: String = texto
-# byte-based, Char = unidad de 1 byte para buffers).
+# CLS puro, SIN FFI. `Char` es la unidad de 1 byte (modelo bytes/str: un String
+# es texto byte-based y `s.toChar()` da su buffer `Char[]`).
 #
 # Ladrillo de la stdlib autocontenida (examples/patrones.md §11). NO usa
-# host_calls.
+# host_calls. Este archivo es un **barrel**: reexporta la API pública desde los
+# archivos enfocados.
+#
+#   byte.clsx - ord / chr / normalize (sobre los intrínsecos)
+#   hex.clsx  - hexEncode / hexDecode
+#   diff.clsx - firstDiff
 
-# Codigo de byte (0..255) de un Char.
-export function ord(c: Char) -> int { return ord(c); }
+import "byte" as byte;
+import "hex" as hex;
+import "diff" as diff;
 
-# String de 1 byte con el codigo n (0..255), byte-transparente.
-export function chr(n: int) -> String { return char(n).toString(); }
-
-# Digito hex de un nibble (0..15).
-function hexNib(b: int) -> String {
-    var digits = "0123456789abcdef";
-    return digits[b % 16];
-}
-
-# Byte (posiblemente negativo) normalizado a 0..255.
-function normalize(b: int) -> int {
-    var v = b % 256;
-    if (v < 0) { v = v + 256; }
-    return v;
-}
-
-# Char[] (buffer de bytes) -> string hex en minusculas (2 chars por byte).
-export function hexEncode(bytes: Char[]) -> String {
-    var out = "";
-    for each b in (bytes) {
-        var v = normalize(ord(b));
-        out = out + hexNib(v / 16) + hexNib(v % 16);
-    }
-    return out;
-}
-
-# Valor de un digito hex (0..15); -1 si no es hex.
-function hexVal(c: int) -> int {
-    if (c >= 48 && c <= 57) { return c - 48; }     # '0'..'9'
-    if (c >= 97 && c <= 102) { return c - 87; }    # 'a'..'f'
-    if (c >= 65 && c <= 70) { return c - 55; }     # 'A'..'F'
-    return -1;
-}
-
-# string hex -> int[] (bytes). Ignora un nibble impar final; nibble invalido -> -1.
-# Los bytes del hex se obtienen con `hex.toChar()` (Char[]) y su codigo con `ord`.
-export function hexDecode(hex: String) -> int[] {
-    var out: int[] = [];
-    var cs = hex.toChar();
-    var n = cs.length;
-    for (var i = 0; i + 1 < n; i = i + 2) {
-        var hi = hexVal(ord(cs[i]));
-        var lo = hexVal(ord(cs[i + 1]));
-        if (hi < 0 || lo < 0) { out.push(-1); }
-        else { out.push(hi * 16 + lo); }
-    }
-    return out;
-}
-
-# -2 si a == b; si no, el indice de la primera diferencia.
-export function firstDiff(a: int[], b: int[]) -> int {
-    var la = a.length;
-    var lb = b.length;
-    for (var i = 0; i < la && i < lb; i++) {
-        if (a[i] != b[i]) { return i; }
-    }
-    var m = la;
-    if (lb < m) { m = lb; }
-    if (la != lb) { return m; }
-    return -2;
-}
+export { byte::ord as ord, byte::chr as chr };
+export { hex::hexEncode as hexEncode, hex::hexDecode as hexDecode };
+export { diff::firstDiff as firstDiff };

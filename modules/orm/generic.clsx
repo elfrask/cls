@@ -1,0 +1,126 @@
+# orm/generic.clsx - Capa genérica del ORM (agnóstica al motor).
+#
+# No contiene SQL específico de SQLite: emite SQL estándar y delega la ejecución
+# en un `Driver`. Agregar MySQL/Postgres = escribir un driver nuevo (subclase de
+# `Driver`) sin tocar este archivo.
+#
+# Las condiciones WHERE se pasan como SQL estándar + parámetros `?` (binding),
+# nunca interpolando valores en el texto.
+from "driver" import Driver;
+from "cell" import Cell, cInt;
+from "result_set" import ResultSet;
+from "sql" import joinList, placeholders, assignList, tailClause;
+
+export class Orm {
+    var d: Driver;
+    function main(driver: Driver) { me.d = driver; }
+
+    function exec(sql: String) -> int { return me.d.exec(sql); }
+    function query(sql: String) -> ResultSet { return me.d.query(sql); }
+    function begin() -> int { return me.d.exec("BEGIN"); }
+    function commit() -> int { return me.d.exec("COMMIT"); }
+    function rollback() -> int { return me.d.exec("ROLLBACK"); }
+    function integrity() -> String { return me.d.integrity(); }
+    function engineVersion() -> String { return me.d.version(); }
+    function lastId() -> int { return me.d.lastId(); }
+    function changes() -> int { return me.d.changes(); }
+
+    function createTable(table: String, colDefs: String[]) -> int {
+        return me.d.exec("CREATE TABLE " + table + " (" + joinList(colDefs, ", ") + ")");
+    }
+
+    function dropTable(table: String) -> int {
+        return me.d.exec("DROP TABLE IF EXISTS " + table);
+    }
+
+    # INSERT de una fila; devuelve el last_insert_rowid.
+    function insert(table: String, cols: String[], vals: Cell[]) -> int {
+        var sql = "INSERT INTO " + table + " (" + joinList(cols, ", ") +
+                  ") VALUES (" + placeholders(cols.length) + ")";
+        var s = me.d.prepare(sql);
+        for each v and k in (vals) { me.d.bind(s, k + 1, v); }
+        me.d.step(s);
+        var id = me.d.lastId();
+        me.d.finalizeStmt(s);
+        return id;
+    }
+
+    # INSERT de muchas filas en UNA transacción con el mismo stmt preparado.
+    function insertBatch(table: String, cols: String[], rows: Cell[][]) -> int {
+        var sql = "INSERT INTO " + table + " (" + joinList(cols, ", ") +
+                  ") VALUES (" + placeholders(cols.length) + ")";
+        var s = me.d.prepare(sql);
+        me.d.exec("BEGIN");
+        var n = 0;
+        for each row in (rows) {
+            for each v and k in (row) { me.d.bind(s, k + 1, v); }
+            me.d.step(s);
+            me.d.resetStmt(s);
+            n = n + 1;
+        }
+        me.d.exec("COMMIT");
+        me.d.finalizeStmt(s);
+        return n;
+    }
+
+    # --- Bulk streaming (una fila por vez; evita mantener Cell[][] en memoria) ---
+    function prepareInsert(table: String, cols: String[]) -> int {
+        var sql = "INSERT INTO " + table + " (" + joinList(cols, ", ") +
+                  ") VALUES (" + placeholders(cols.length) + ")";
+        return me.d.prepare(sql);
+    }
+    function bulkRow(stmt: int, vals: Cell[]) -> int {
+        for each v and k in (vals) { me.d.bind(stmt, k + 1, v); }
+        var rc = me.d.step(stmt);
+        me.d.resetStmt(stmt);
+        return rc;
+    }
+    function finishInsert(stmt: int) -> int { return me.d.finalizeStmt(stmt); }
+
+    # DML con parámetros (UPDATE/DELETE); devuelve filas afectadas.
+    function runDml(sql: String, params: Cell[]) -> int {
+        var s = me.d.prepare(sql);
+        for each p and k in (params) { me.d.bind(s, k + 1, p); }
+        me.d.step(s);
+        me.d.finalizeStmt(s);
+        return me.d.changes();
+    }
+
+    function selectAll(table: String, orderBy: String) -> ResultSet {
+        return me.d.query("SELECT * FROM " + table + tailClause(orderBy, -1, 0));
+    }
+
+    function selectWhere(table: String, whereSql: String, params: Cell[],
+                         orderBy: String, limit: int, offset: int) -> ResultSet {
+        var sql = "SELECT * FROM " + table + " WHERE " + whereSql +
+                  tailClause(orderBy, limit, offset);
+        return me.d.queryBind(sql, params);
+    }
+
+    function findById(table: String, id: int) -> ResultSet {
+        var p: Cell[] = [cInt(id)];
+        return me.d.queryBind("SELECT * FROM " + table + " WHERE id = ?", p);
+    }
+
+    function update(table: String, setCols: String[], setVals: Cell[],
+                    whereSql: String, whereParams: Cell[]) -> int {
+        var sql = "UPDATE " + table + " SET " + assignList(setCols) +
+                  " WHERE " + whereSql;
+        var p: Cell[] = [...setVals, ...whereParams];
+        return me.runDml(sql, p);
+    }
+
+    function deleteWhere(table: String, whereSql: String, params: Cell[]) -> int {
+        return me.runDml("DELETE FROM " + table + " WHERE " + whereSql, params);
+    }
+
+    function count(table: String) -> int {
+        var rs = me.d.query("SELECT COUNT(*) FROM " + table);
+        return rs.getInt(0, 0);
+    }
+
+    function countWhere(table: String, whereSql: String, params: Cell[]) -> int {
+        var rs = me.d.queryBind("SELECT COUNT(*) FROM " + table + " WHERE " + whereSql, params);
+        return rs.getInt(0, 0);
+    }
+};

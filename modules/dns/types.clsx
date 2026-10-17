@@ -1,0 +1,40 @@
+# dns/types.clsx - Códigos de tipo/clase (RFC 1035 / 3596) y su nombre legible.
+
+export const TYPE_A = 1;
+export const TYPE_NS = 2;
+export const TYPE_CNAME = 5;
+export const TYPE_SOA = 6;
+export const TYPE_MX = 15;
+export const TYPE_TXT = 16;
+export const TYPE_AAAA = 28;
+export const TYPE_ANY = 255;
+export const CLASS_IN = 1;
+
+# Nombre de tipo legible (para CHECK / render).
+export function typeName(rtype: int) -> String {
+    return match (rtype) in {
+        1 -> "A",
+        2 -> "NS",
+        5 -> "CNAME",
+        6 -> "SOA",
+        15 -> "MX",
+        16 -> "TXT",
+        28 -> "AAAA",
+        default -> "TYPE" + str(rtype),
+    };
+}
+
+# Código de tipo a partir del nombre ("A", "AAAA", ...). Los `const` de tipo
+# literal se ensanchan a su base (`int`) en el `match`.
+export function typeCode(name: String) -> int {
+    return match (name.upper()) in {
+        "A" -> TYPE_A,
+        "NS" -> TYPE_NS,
+        "CNAME" -> TYPE_CNAME,
+        "SOA" -> TYPE_SOA,
+        "MX" -> TYPE_MX,
+        "TXT" -> TYPE_TXT,
+        "AAAA" -> TYPE_AAAA,
+        default -> TYPE_ANY,
+    };
+}

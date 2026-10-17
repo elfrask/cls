@@ -1,0 +1,57 @@
+# dns/addr.clsx - Renders de dirección: A (IPv4) y AAAA (IPv6, RFC 5952).
+
+function ipv4ToString(b: int[], off: int) -> String {
+    return str(b[off] & 255) + "." + str(b[off + 1] & 255) + "."
+         + str(b[off + 2] & 255) + "." + str(b[off + 3] & 255);
+}
+
+function hexGroup(v: int) -> String {
+    if (v == 0) { return "0"; }
+    var digits = "0123456789abcdef";
+    var out = "";
+    var x = v;
+    while (x > 0) {
+        out = digits[x % 16] + out;
+        x = x / 16;
+    }
+    return out;
+}
+
+# IPv6 -> forma canónica RFC 5952 (comprime la corrida más larga de ceros).
+export function ipv6ToString(b: int[], off: int) -> String {
+    var groups: int[] = [];
+    for (var i = 0; i < 8; i++) {
+        groups.push(((b[off + i * 2] & 255) << 8) | (b[off + i * 2 + 1] & 255));
+    }
+    var bestStart = -1;
+    var bestLen = 0;
+    var i = 0;
+    while (i < 8) {
+        if (groups[i] == 0) {
+            var j = i;
+            while (j < 8 && groups[j] == 0) { j++; }
+            var l = j - i;
+            if (l > bestLen) { bestLen = l; bestStart = i; }
+            i = j;
+        } else {
+            i++;
+        }
+    }
+    if (bestLen < 2) { bestStart = -1; bestLen = 0; }
+    var out = "";
+    var k = 0;
+    while (k < 8) {
+        if (k == bestStart) {
+            out = out + "::";
+            k = k + bestLen;
+            continue;
+        }
+        if (k > 0 && k != bestStart + bestLen) { out = out + ":"; }
+        out = out + hexGroup(groups[k]);
+        k++;
+    }
+    return out;
+}
+
+# Exposición interna para el parser de RRs (no forma parte de la API pública).
+export { ipv4ToString };

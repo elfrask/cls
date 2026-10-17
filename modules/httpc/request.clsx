@@ -1,0 +1,43 @@
+# http/request.clsx - Request HTTP/1.1 y su serialización a bytes.
+from "url" import Url, isDefaultPort;
+from "headers" import Headers;
+
+export class Request {
+    var verb: String;
+    var url: Url;
+    var headers: Headers;
+    var body: String;
+    function main() {
+        me.verb = "GET";
+        me.url = Url();
+        me.headers = Headers();
+        me.body = "";
+    }
+};
+
+function byteLen(s: String) -> int { return s.toChar().length; }
+
+# Serializa la request (request-line + cabeceras + CRLF + cuerpo).
+export function serialize(req: Request, keepAlive: bool) -> String {
+    var u = req.url;
+    var target = u.path;
+    if (u.query != "") { target = target + "?" + u.query; }
+    var host = u.host;
+    if (!isDefaultPort(u.scheme, u.port)) { host = host + ":" + str(u.port); }
+
+    var out = req.verb + " " + target + " HTTP/1.1\r\n";
+    out = out + "Host: " + host + "\r\n";
+    if (!req.headers.has("User-Agent")) { out = out + "User-Agent: CLS-http/0.1\r\n"; }
+    if (!req.headers.has("Accept")) { out = out + "Accept: */*\r\n"; }
+    if (!req.headers.has("Connection")) {
+        if (keepAlive) { out = out + "Connection: keep-alive\r\n"; }
+        else { out = out + "Connection: close\r\n"; }
+    }
+    if (req.body != "" && !req.headers.has("Content-Length")) {
+        out = out + "Content-Length: " + str(byteLen(req.body)) + "\r\n";
+    }
+    out = out + req.headers.block();
+    out = out + "\r\n";
+    out = out + req.body;
+    return out;
+}

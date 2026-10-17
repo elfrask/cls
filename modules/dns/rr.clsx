@@ -1,0 +1,163 @@
+# dns/rr.clsx - Resource records (clases con herencia + `render()` polimórfico)
+# y su parser desde el wire format.
+from "be" import getU16, getU32;
+from "name" import decodeName;
+from "addr" import ipv4ToString, ipv6ToString;
+from "types" import TYPE_A, TYPE_AAAA, TYPE_CNAME, TYPE_NS, TYPE_MX, TYPE_TXT, TYPE_SOA;
+
+export class Rr {
+    var name: String;
+    var ttl: int;
+    var rtype: int;
+    function main(name: String, ttl: int, rtype: int) {
+        me.name = name;
+        me.ttl = ttl;
+        me.rtype = rtype;
+    }
+    function render() -> String { return ""; }
+};
+
+export class RrA: Rr {
+    var ip: String;
+    function main(name: String, ttl: int, ip: String) {
+        super.main(name, ttl, TYPE_A);
+        me.ip = ip;
+    }
+    function render() -> String { return me.ip; }
+};
+
+export class RrAAAA: Rr {
+    var ip: String;
+    function main(name: String, ttl: int, ip: String) {
+        super.main(name, ttl, TYPE_AAAA);
+        me.ip = ip;
+    }
+    function render() -> String { return me.ip; }
+};
+
+# CNAME (5) y NS (2) comparten forma.
+export class RrName: Rr {
+    var target: String;
+    function main(name: String, ttl: int, rtype: int, target: String) {
+        super.main(name, ttl, rtype);
+        me.target = target;
+    }
+    function render() -> String { return me.target; }
+};
+
+export class RrMX: Rr {
+    var pref: int;
+    var target: String;
+    function main(name: String, ttl: int, pref: int, target: String) {
+        super.main(name, ttl, TYPE_MX);
+        me.pref = pref;
+        me.target = target;
+    }
+    function render() -> String { return str(me.pref) + " " + me.target; }
+};
+
+export class RrTXT: Rr {
+    var texts: String[];
+    function main(name: String, ttl: int, texts: String[]) {
+        super.main(name, ttl, TYPE_TXT);
+        me.texts = texts;
+    }
+    function render() -> String {
+        var out = "";
+        for each t and k in (me.texts) {
+            if (k > 0) { out = out + "|"; }
+            out = out + t;
+        }
+        return out;
+    }
+};
+
+export class RrSOA: Rr {
+    var mname: String;
+    var rname: String;
+    var serial: int;
+    var refresh: int;
+    var retry: int;
+    var expire: int;
+    var minimum: int;
+    function main(name: String, ttl: int, mname: String, rname: String,
+                  serial: int, refresh: int, retry: int, expire: int, minimum: int) {
+        super.main(name, ttl, TYPE_SOA);
+        me.mname = mname;
+        me.rname = rname;
+        me.serial = serial;
+        me.refresh = refresh;
+        me.retry = retry;
+        me.expire = expire;
+        me.minimum = minimum;
+    }
+    function render() -> String {
+        return me.mname + " " + me.rname + " " + str(me.serial) + " " + str(me.refresh)
+             + " " + str(me.retry) + " " + str(me.expire) + " " + str(me.minimum);
+    }
+};
+
+function parseTxt(b: int[], off: int, rdlen: int) -> String[] {
+    var out: String[] = [];
+    var i = 0;
+    while (i < rdlen) {
+        var l = b[off + i] & 255;
+        i++;
+        var s = "";
+        for (var j = 0; j < l; j++) {
+            if (i + j >= rdlen) { break; }
+            s = s + char(b[off + i + j] & 255).toString();
+        }
+        i = i + l;
+        out.push(s);
+    }
+    if (out.length == 0) { out.push(""); }
+    return out;
+}
+
+function makeRr(rtype: int, name: String, ttl: int, b: int[], off: int, rdlen: int) -> Rr {
+    # Dispatch por `match` modo valor con armas-bloque que devuelven con `<-`
+    # (arrowReturn). upcast por anotación: la subclase se asigna a una variable
+    # tipada como la base `Rr` (el dispatch polimórfico de render() se conserva),
+    # y `* <-` fija el tipo común del match en `Rr`.
+    return match (rtype) in {
+        1 -> { var ra: Rr = RrA(name, ttl, ipv4ToString(b, off)); * <- ra; },
+        28 -> { var raa: Rr = RrAAAA(name, ttl, ipv6ToString(b, off)); * <- raa; },
+        5 -> { var rc: Rr = RrName(name, ttl, TYPE_CNAME, decodeName(b, off).name); * <- rc; },
+        2 -> { var rn2: Rr = RrName(name, ttl, TYPE_NS, decodeName(b, off).name); * <- rn2; },
+        15 -> {
+            var pref = getU16(b, off);
+            var rm: Rr = RrMX(name, ttl, pref, decodeName(b, off + 2).name);
+            * <- rm;
+        },
+        16 -> { var rt: Rr = RrTXT(name, ttl, parseTxt(b, off, rdlen)); * <- rt; },
+        6 -> {
+            var mn = decodeName(b, off);
+            var rn = decodeName(b, mn.next);
+            var so = rn.next;
+            var rs: Rr = RrSOA(name, ttl, mn.name, rn.name, getU32(b, so), getU32(b, so + 4),
+                               getU32(b, so + 8), getU32(b, so + 12), getU32(b, so + 16));
+            * <- rs;
+        },
+        default -> { var rd: Rr = Rr(name, ttl, rtype); * <- rd; },
+    };
+}
+
+export class RrResult {
+    var rr: Rr;
+    var next: int;
+};
+
+# Parser de un RR desde `start` (expuesto para el parser de mensajes).
+export function parseRr(b: int[], start: int) -> RrResult {
+    var nm = decodeName(b, start);
+    var off = nm.next;
+    var rtype = getU16(b, off);
+    var ttl = getU32(b, off + 4);
+    var rdlen = getU16(b, off + 8);
+    var rdataOff = off + 10;
+    var res = RrResult();
+    res.rr = makeRr(rtype, nm.name, ttl, b, rdataOff, rdlen);
+    res.next = rdataOff + rdlen;
+    return res;
+}

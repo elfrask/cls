@@ -1,0 +1,19 @@
+# bytes/byte.clsx - Primitivas de byte sobre los intrínsecos de CLS.
+#
+# `ord`/`chr` son envoltorios con nombre sobre los intrínsecos del lenguaje
+# (`ord`, `char`) para que el llamador lea operaciones de byte. `normalize`
+# mapea cualquier entero a su valor de byte sin signo (0..255) y se comparte
+# con el codec hex.
+
+# Código de byte (0..255) de un Char.
+export function ord(c: Char) -> int { return ord(c); }
+
+# String de 1 byte con el código n (0..255), byte-transparente.
+export function chr(n: int) -> String { return char(n).toString(); }
+
+# Normaliza un entero a su byte sin signo (0..255).
+export function normalize(b: int) -> int {
+    var v = b % 256;
+    if (v < 0) { v = v + 256; }
+    return v;
+}

@@ -1,0 +1,99 @@
+# dns/message.clsx - Mensaje DNS: parseo del wire format y constructor de consultas.
+from "be" import getU16, pushU16, pushAll;
+from "name" import encodeName, decodeName;
+from "types" import CLASS_IN, typeName;
+from "rr" import Rr, parseRr;
+
+export class DnsMessage {
+    var id: int;
+    var flags: int;
+    var qr: int;
+    var opcode: int;
+    var aa: int;
+    var tc: int;
+    var rd: int;
+    var ra: int;
+    var rcode: int;
+    var qdCount: int;
+    var anCount: int;
+    var nsCount: int;
+    var arCount: int;
+    var qname: String;
+    var qtype: int;
+    var qclass: int;
+    var answers: Rr[];
+    var authority: Rr[];
+    var additional: Rr[];
+};
+
+export function parseMessage(b: int[]) -> DnsMessage {
+    var m = DnsMessage();
+    m.answers = [];
+    m.authority = [];
+    m.additional = [];
+    m.qname = "";
+    m.qtype = 0;
+    m.qclass = 0;
+    if (b.length < 12) { return m; }
+    m.id = getU16(b, 0);
+    m.flags = getU16(b, 2);
+    m.qr = (m.flags >> 15) & 1;
+    m.opcode = (m.flags >> 11) & 15;
+    m.aa = (m.flags >> 10) & 1;
+    m.tc = (m.flags >> 9) & 1;
+    m.rd = (m.flags >> 8) & 1;
+    m.ra = (m.flags >> 7) & 1;
+    m.rcode = m.flags & 15;
+    m.qdCount = getU16(b, 4);
+    m.anCount = getU16(b, 6);
+    m.nsCount = getU16(b, 8);
+    m.arCount = getU16(b, 10);
+    var off = 12;
+    if (m.qdCount > 0 && off < b.length) {
+        var qn = decodeName(b, off);
+        m.qname = qn.name;
+        off = qn.next;
+        m.qtype = getU16(b, off);
+        m.qclass = getU16(b, off + 2);
+        off = off + 4;
+    }
+    for (var i = 0; i < m.anCount; i++) {
+        var r = parseRr(b, off);
+        m.answers.push(r.rr);
+        off = r.next;
+    }
+    for (var i = 0; i < m.nsCount; i++) {
+        var r = parseRr(b, off);
+        m.authority.push(r.rr);
+        off = r.next;
+    }
+    for (var i = 0; i < m.arCount; i++) {
+        var r = parseRr(b, off);
+        m.additional.push(r.rr);
+        off = r.next;
+    }
+    return m;
+}
+
+# Línea canónica de un RR: "TYPE name ttl render".
+export function rrLine(rr: Rr) -> String {
+    return typeName(rr.rtype) + " " + rr.name + " " + str(rr.ttl) + " " + rr.render();
+}
+
+# --- Constructor de consultas ------------------------------------------------
+
+export function buildQuery(id: int, name: String, qtype: int, rd: bool) -> int[] {
+    var out: int[] = [];
+    pushU16(out, id);
+    var flags = 0;
+    if (rd) { flags = 256; }
+    pushU16(out, flags);
+    pushU16(out, 1);
+    pushU16(out, 0);
+    pushU16(out, 0);
+    pushU16(out, 0);
+    pushAll(out, encodeName(name));
+    pushU16(out, qtype);
+    pushU16(out, CLASS_IN);
+    return out;
+}

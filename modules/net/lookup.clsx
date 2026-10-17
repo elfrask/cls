@@ -1,0 +1,5 @@
+# net/resolve.clsx - Resolución de nombres a IPv4.
+from "net_ffi" import net_resolve;
+
+# Resuelve un hostname a su IPv4 ("" si no se pudo).
+export function resolve(host: String) -> String { return net_resolve(host); }

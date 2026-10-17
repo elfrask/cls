@@ -21,7 +21,7 @@ powershell -File modules\net\build.ps1
 
 Requiere `gcc` (MinGW-w64 x64) en PATH. En Windows enlaza `ws2_32`. En POSIX
 (Linux/macOS) la misma fuente compila a `net_shim.so`/`net_shim.dylib` (la
-selección de librería la hace `when` en `mod.clsx`).
+selección de librería la hace `when` en `net_ffi.clsx`).
 
 > **CWD**: como el resto de módulos FFI, la ruta del `.dll` se resuelve relativa
 > al **CWD**. Correr desde la raíz del repo.

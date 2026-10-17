@@ -1,0 +1,14 @@
+# check/counter.clsx - Estado del contador de fallos, aislado del reporte.
+#
+# Mantener el contador separado de las aserciones deja a `assert.clsx` como
+# única responsable del formato del protocolo `CHECK k=v`.
+var _fails: int = 0;
+
+# Registra un fallo (lo usan las aserciones y `fail`).
+export function recordFail() { _fails = _fails + 1; }
+
+# Total de fallos registrados desde el último reset().
+export function fails() -> int { return _fails; }
+
+# Reinicia el contador de fallos.
+export function reset() { _fails = 0; }

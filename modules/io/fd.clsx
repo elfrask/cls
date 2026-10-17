@@ -1,0 +1,23 @@
+# io/fd.clsx - Archivos abiertos por descriptor (streaming / modo binario).
+from "io_ffi" import o_open, o_close, o_write_fd, o_read_line, o_setmode;
+
+# Abre una ruta con los flags/mode dados (ver `flags.clsx`); devuelve el fd.
+export function open(path: String, flags: int, mode: int) -> int {
+    return int(o_open(path, flags, mode));
+}
+
+# Cierra un descriptor.
+export function close(fd: int) -> int { return int(o_close(fd)); }
+
+# Escribe los bytes de `data` al fd (el fd debe estar en modo binario).
+export function writeFd(fd: int, data: String) -> int {
+    return int(o_write_fd(fd, data));
+}
+
+# Lee una línea del fd (sin el '\n'); "" en EOF.
+export function readLine(fd: int) -> String { return o_read_line(fd); }
+
+# Ajusta el modo del fd (texto/binario).
+export function setmode(fd: int, mode: int) -> int {
+    return int(o_setmode(fd, mode));
+}

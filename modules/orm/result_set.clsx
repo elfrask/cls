@@ -1,0 +1,26 @@
+# orm/result_set.clsx - Conjunto de resultados materializado (filas x columnas).
+from "cell" import Cell;
+
+export class ResultSet {
+    public var nrows: int;
+    public var ncols: int;
+    public var cols: String[];
+    public var cells: Cell[];       # nrows * ncols en orden row-major
+    public function main() {
+        me.nrows = 0;
+        me.ncols = 0;
+        me.cols = [];
+        me.cells = [];
+    }
+    public function at(r: int, c: int) -> Cell { return me.cells[r * me.ncols + c]; }
+    public function __len() -> int { return me.nrows; }
+    public function getInt(r: int, c: int) -> int { return me.at(r, c).i; }
+    public function getFloat(r: int, c: int) -> float { return me.at(r, c).f; }
+    public function getText(r: int, c: int) -> String { return me.at(r, c).s; }
+    public function colIndex(name: String) -> int {
+        for each c and k in (me.cols) {
+            if (c == name) { return k; }
+        }
+        return -1;
+    }
+};

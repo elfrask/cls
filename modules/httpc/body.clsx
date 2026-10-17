@@ -1,0 +1,44 @@
+# http/body.clsx - Codificadores de cuerpo (JSON, form-urlencoded, multipart).
+import "json" as json;
+import "url" as url;
+
+# JSON desde un valor (JSON nativo del lenguaje).
+export function jsonBody(v: JSON) -> String { return json.stringify(v); }
+
+# application/x-www-form-urlencoded desde pares.
+export function formBody(params: Record<String, String>) -> String {
+    return url::encodeQuery(params);
+}
+
+# Constructor de cuerpos multipart/form-data (campos + archivos como datos).
+export class Multipart {
+    var boundary: String;
+    var parts: String;
+    function main(boundary: String) {
+        me.boundary = boundary;
+        me.parts = "";
+    }
+
+    function addField(name: String, value: String) {
+        me.parts = me.parts + "--" + me.boundary + "\r\n"
+                 + "Content-Disposition: form-data; name=\"" + name + "\"\r\n\r\n"
+                 + value + "\r\n";
+    }
+
+    function addFile(name: String, filename: String, contentType: String, data: String) {
+        me.parts = me.parts + "--" + me.boundary + "\r\n"
+                 + "Content-Disposition: form-data; name=\"" + name
+                 + "\"; filename=\"" + filename + "\"\r\n"
+                 + "Content-Type: " + contentType + "\r\n\r\n"
+                 + data + "\r\n";
+    }
+
+    # Cuerpo completo (incluye el delimitador de cierre).
+    function finish() -> String {
+        return me.parts + "--" + me.boundary + "--\r\n";
+    }
+
+    function contentType() -> String {
+        return "multipart/form-data; boundary=" + me.boundary;
+    }
+};

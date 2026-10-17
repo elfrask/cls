@@ -1,156 +1,35 @@
 # net - Transporte UDP/TCP via FFI a sockets (semilla del futuro `net` de CLS).
 #
 # Ladrillo de la stdlib autocontenida (examples/patrones.md §2.2 y §11): envuelve
-# el shim C `net_shim.dll` con una API CLS idiomatica. NO usa host_calls; el
-# acceso al SO es FFI puro. Paga la deuda §2.7 (reemplaza al `host_call http` en
-# su capa de transporte).
+# el shim C `net_shim` con una API CLS idiomática. NO usa host_calls; el acceso
+# al SO es FFI puro. Paga la deuda §2.7 (reemplaza al `host_call http` en su capa
+# de transporte).
 #
-# LIMITACION CONOCIDA DEL FFI: la ruta del `.dll` se resuelve relativa al CWD,
-# no al archivo .clsx. Por eso hay que correr desde la raiz del repo (ver
-# README).
+# LIMITACIÓN CONOCIDA DEL FFI: la ruta del shim se resuelve relativa al CWD, no
+# al archivo .clsx. Por eso hay que correr desde la raíz del repo (ver README).
 #
-# El shim NO expone punteros: handles = enteros; los paquetes cruzan como
-# `int[]` (CArray, un byte por elemento i64) — NO como CString (el DNS usa bytes
-# NUL).
+#   net_ffi.clsx - bindings crudos al shim (no público)
+#   consts.clsx  - timeouts y límites
+#   convert.clsx - conversión int[] <-> Char[]
+#   udp.clsx     - UDP (funcional + UdpClient)
+#   tcp.clsx     - TCP (funcional + TcpClient)
+#   lookup.clsx  - resolución de nombres
+#
+# Barrel: se expone la API pública.
 
-when (os: windows) {
-    extension "modules/net/net_shim.dll" as C {
-        function u_open(ip: CString, port: CInt) -> CLong;
-        function u_send(h: CLong, buf: CArray) -> CLong;
-        function u_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;
-        function u_close(h: CLong) -> CLong;
+import "udp" as udp;
+import "tcp" as tcp;
+import "convert" as convert;
+import "lookup" as lookup;
+import "consts" as consts;
 
-        function t_open(ip: CString, port: CInt) -> CLong;
-        function t_send(h: CLong, buf: CArray) -> CLong;
-        function t_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;
-        function t_close(h: CLong) -> CLong;
-
-        function net_resolve(host: CString) -> CString;
-    };
-};
-
-when (os: linux) {
-    extension "modules/net/net_shim.so" as C {
-        function u_open(ip: CString, port: CInt) -> CLong;
-        function u_send(h: CLong, buf: CArray) -> CLong;
-        function u_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;
-        function u_close(h: CLong) -> CLong;
-
-        function t_open(ip: CString, port: CInt) -> CLong;
-        function t_send(h: CLong, buf: CArray) -> CLong;
-        function t_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;
-        function t_close(h: CLong) -> CLong;
-
-        function net_resolve(host: CString) -> CString;
-    };
-};
-
-when (os: macos) {
-    extension "modules/net/net_shim.dylib" as C {
-        function u_open(ip: CString, port: CInt) -> CLong;
-        function u_send(h: CLong, buf: CArray) -> CLong;
-        function u_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;
-        function u_close(h: CLong) -> CLong;
-
-        function t_open(ip: CString, port: CInt) -> CLong;
-        function t_send(h: CLong, buf: CArray) -> CLong;
-        function t_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;
-        function t_close(h: CLong) -> CLong;
-
-        function net_resolve(host: CString) -> CString;
-    };
-};
-
-# Timeout por defecto de recv (ms) cuando el llamador no indica uno.
-export const DEFAULT_TIMEOUT_MS = 2000;
-
-# Tamano maximo de datagrama DNS (65535 por el prefijo u16 de TCP).
-export const MAX_DNS_MSG = 65535;
-
-# --- Conversion de buffers (int[] <-> Char[]) -------------------------------
-
-# `int[]` (bytes 0..255) -> `Char[]` (unidad de 1 byte).
-export function toChars(b: int[]) -> Char[] {
-    var out: Char[] = [];
-    for each v in (b) {
-        out.push(char(v & 255));
-    }
-    return out;
-}
-
-# `Char[]` -> `int[]` (bytes 0..255).
-export function toBytes(c: Char[]) -> int[] {
-    var out: int[] = [];
-    for each ch in (c) {
-        out.push(ord(ch) & 255);
-    }
-    return out;
-}
-
-# --- API funcional ----------------------------------------------------------
-
-# Resuelve un hostname a su IPv4 ("" si no se pudo).
-export function resolve(host: String) -> String { return net_resolve(host); }
-
-# Abre un socket UDP "conectado" a ip:port. Devuelve el handle (>=0) o <0 error.
-export function udpOpen(ip: String, port: int) -> int {
-    return int(u_open(ip, port));
-}
-
-# Envia los bytes de `buf` por el socket UDP. Devuelve los bytes enviados o -1.
-export function udpSend(h: int, buf: int[]) -> int { return int(u_send(h, buf)); }
-
-# Recibe un datagrama (hasta maxLen). [] si hay timeout/error.
-export function udpRecv(h: int, maxLen: int, timeoutMs: int) -> int[] {
-    return u_recv(h, maxLen, timeoutMs);
-}
-
-export function udpClose(h: int) -> int { return int(u_close(h)); }
-
-# Abre una conexion TCP a ip:port (framing DNS-over-TCP de 2 bytes BE).
-export function tcpOpen(ip: String, port: int) -> int {
-    return int(t_open(ip, port));
-}
-
-# Envia `buf` con el prefijo de longitud de 2 bytes BE.
-export function tcpSend(h: int, buf: int[]) -> int { return int(t_send(h, buf)); }
-
-# Lee un mensaje TCP completo (prefijo + payload). [] si hay timeout/error.
-export function tcpRecv(h: int, maxLen: int, timeoutMs: int) -> int[] {
-    return t_recv(h, maxLen, timeoutMs);
-}
-
-export function tcpClose(h: int) -> int { return int(t_close(h)); }
-
-# --- API OO ----------------------------------------------------------------
-
-# Cliente UDP con estado (handle encapsulado; el resto del programa no ve el
-# descriptor).
-export class UdpClient {
-    var h: int;
-    var timeoutMs: int;
-
-    function main(ip: String, port: int, timeoutMs: int = DEFAULT_TIMEOUT_MS) {
-        me.h = int(u_open(ip, port));
-        me.timeoutMs = timeoutMs;
-    }
-    function ok() -> bool { return me.h >= 0; }
-    function send(buf: int[]) -> int { return int(u_send(me.h, buf)); }
-    function recv(maxLen: int) -> int[] { return u_recv(me.h, maxLen, me.timeoutMs); }
-    function close() -> int { return int(u_close(me.h)); }
-};
-
-# Cliente TCP con estado (reintento de respuestas truncadas).
-export class TcpClient {
-    var h: int;
-    var timeoutMs: int;
-
-    function main(ip: String, port: int, timeoutMs: int = DEFAULT_TIMEOUT_MS) {
-        me.h = int(t_open(ip, port));
-        me.timeoutMs = timeoutMs;
-    }
-    function ok() -> bool { return me.h >= 0; }
-    function send(buf: int[]) -> int { return int(t_send(me.h, buf)); }
-    function recv(maxLen: int) -> int[] { return t_recv(me.h, maxLen, me.timeoutMs); }
-    function close() -> int { return int(t_close(me.h)); }
-};
+export { udp::udpOpen as udpOpen, udp::udpSend as udpSend,
+         udp::udpRecv as udpRecv, udp::udpClose as udpClose,
+         udp::UdpClient as UdpClient };
+export { tcp::tcpOpen as tcpOpen, tcp::tcpSend as tcpSend,
+         tcp::tcpRecv as tcpRecv, tcp::tcpClose as tcpClose,
+         tcp::TcpClient as TcpClient };
+export { lookup::resolve as resolve };
+export { convert::toChars as toChars, convert::toBytes as toBytes };
+export { consts::DEFAULT_TIMEOUT_MS as DEFAULT_TIMEOUT_MS,
+         consts::MAX_DNS_MSG as MAX_DNS_MSG };

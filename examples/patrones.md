@@ -441,8 +441,8 @@ tiene `export.entry`, se usa ese entry.
 Al cerrar cada prueba, **revisar qué artefactos son reutilizables** (drivers,
 ORM, parsers, protocolos, hashing, utilidades...) y **promoverlos a `/modules`**
 como módulos CLS + FFI; la prueba debe quedar como **consumidor** del módulo (no
-como copia). Ejemplos ya extraídos: `modules/config`, `modules/diag`,
-`modules/orm`, `modules/sqlite`.
+como copia). Ejemplos ya extraídos: `modules/config`, `modules/bytes`,
+`modules/orm`, `modules/sqlite`, `modules/net`, `modules/dns`.
 
 19. **Nada útil se queda hardcodeado en una prueba**: si otro proyecto podría
     reusarlo, se mueve a `/modules` (con su README y, si aplica, build script).
@@ -450,6 +450,12 @@ como copia). Ejemplos ya extraídos: `modules/config`, `modules/diag`,
     (p. ej. `orm` es genérico y `sqlite` es un backend enchufable).
 21. Al extraer, la prueba **debe seguir pasando** consumiendo el módulo
     (verificar con su runner y las suites).
+22. **Clean code en los módulos**: cada módulo es un **barrel** (`mod.clsx`) que
+    reexporta la API pública desde archivos enfocados (una responsabilidad por
+    archivo); los helpers internos no se reexportan. Los **stems** de archivo
+    deben ser únicos en todo el grafo (el typeck registra los módulos internos
+    por stem: p. ej. `io_ffi.clsx`/`net_ffi.clsx`, no `ffi.clsx` en ambos). Ver
+    `modules/README.md`.
 
 ---
 

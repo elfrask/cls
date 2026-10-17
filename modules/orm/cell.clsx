@@ -1,0 +1,34 @@
+# orm/cell.clsx - Valor neutro al motor: tag + campos tipados.
+#
+# El typeck del JIT no permite arrays heterogéneos ni tipos dinámicos
+# implícitos, así que un valor viaja como `Cell` y cada driver lo traduce al
+# tipo nativo de su motor.
+export const KIND_NULL = 1;
+export const KIND_INT = 2;
+export const KIND_FLOAT = 3;
+export const KIND_TEXT = 4;
+export const KIND_BLOB = 5;
+
+export class Cell {
+    public var kind: int;
+    public var i: int;
+    public var f: float;
+    public var s: String;      # TEXT, o hex del BLOB
+    public function main(kind: int, i: int, f: float, s: String) {
+        me.kind = kind;
+        me.i = i;
+        me.f = f;
+        me.s = s;
+    }
+    public function isNull() -> bool { return me.kind == KIND_NULL; }
+    public function isInt() -> bool { return me.kind == KIND_INT; }
+    public function isFloat() -> bool { return me.kind == KIND_FLOAT; }
+    public function isText() -> bool { return me.kind == KIND_TEXT; }
+    public function isBlob() -> bool { return me.kind == KIND_BLOB; }
+};
+
+export function cNull() -> Cell { return Cell(KIND_NULL, 0, 0.0, ""); }
+export function cInt(v: int) -> Cell { return Cell(KIND_INT, v, 0.0, ""); }
+export function cFloat(v: float) -> Cell { return Cell(KIND_FLOAT, 0, v, ""); }
+export function cText(v: String) -> Cell { return Cell(KIND_TEXT, 0, 0.0, v); }
+export function cBlob(hex: String) -> Cell { return Cell(KIND_BLOB, 0, 0.0, hex); }

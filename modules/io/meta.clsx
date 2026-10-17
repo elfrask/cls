@@ -1,0 +1,20 @@
+# io/meta.clsx - Metadatos y navegación del sistema de archivos.
+from "io_ffi" import o_exists, o_isdir, o_isfile, o_remove, o_cwd, o_chdir;
+
+# 1 si la ruta existe (archivo o directorio), 0 si no.
+export function exists(path: String) -> int { return int(o_exists(path)); }
+
+# 1 si la ruta es un directorio.
+export function isDir(path: String) -> int { return int(o_isdir(path)); }
+
+# 1 si la ruta es un archivo regular.
+export function isFile(path: String) -> int { return int(o_isfile(path)); }
+
+# Borra un archivo; 0 si tuvo éxito.
+export function remove(path: String) -> int { return int(o_remove(path)); }
+
+# Directorio de trabajo actual.
+export function cwd() -> String { return o_cwd(); }
+
+# Cambia el directorio de trabajo; 0 si tuvo éxito.
+export function chdir(path: String) -> int { return int(o_chdir(path)); }

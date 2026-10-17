@@ -1,0 +1,42 @@
+# httpc - Cliente HTTP/1.1 en CLS puro sobre `modules/socket`.
+#
+# Ladrillo de la stdlib autocontenida (examples/patrones.md §11): cliente HTTP
+# escrito DESDE CERO sobre sockets TCP (FFI), sin `host_calls` y sin `http` del
+# nodo. Paga la deuda §2.7 (reemplaza al `host_call http`).
+#
+#   url.clsx      - Url: parseo + percent-encoding + resolve
+#   headers.clsx  - Headers (case-insensitive, ordenada, duplicados)
+#   body.clsx     - JSON / form-urlencoded / multipart
+#   cookies.clsx  - cookie jar simple
+#   request.clsx  - Request + serialización
+#   response.clsx - Response (+ .text() / .json() / .header())
+#   stream.clsx    - lectura de cuerpo (chunked / length / EOF)
+#   transport.clsx - intercambio request/response sobre un socket
+#   session.clsx   - Session (keep-alive + redirecciones + cookies) + atajos
+#
+# LIMITACIÓN: solo `http://` (sin TLS). HTTPS requiere un shim TLS (pendiente).
+# La ruta del `.dll` de `socket` se resuelve relativa al CWD: correr desde la
+# raíz del repo.
+#
+# Barrel: se expone la API pública.
+
+import "url" as url;
+import "headers" as headers;
+import "body" as body;
+import "cookies" as cookies;
+import "request" as request;
+import "response" as response;
+import "session" as session;
+
+export { url::Url as Url, url::parse as parseUrl, url::resolve as resolveUrl,
+         url::percentEncode as percentEncode, url::percentDecode as percentDecode,
+         url::encodeQuery as encodeQuery };
+export { headers::Headers as Headers };
+export { body::jsonBody as jsonBody, body::formBody as formBody,
+         body::Multipart as Multipart };
+export { cookies::Cookies as Cookies };
+export { request::Request as Request, request::serialize as serializeRequest };
+export { response::Response as Response };
+export { session::Session as Session, session::emptyHeaders as emptyHeaders };
+export { session::get as get, session::head as head, session::del as del,
+         session::post as post, session::put as put, session::patch as patch };

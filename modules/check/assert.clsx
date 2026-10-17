@@ -1,0 +1,38 @@
+# check/assert.clsx - Aserciones que emiten el protocolo `CHECK <name>=...`.
+#
+# Cada aserción imprime una línea que consumen los oráculos externos y, en caso
+# de fallo, lo registra en el contador (ver `counter.clsx`).
+from "counter" import recordFail;
+
+# Emite una línea de fallo explícita y cuenta el fallo.
+export function fail(name: String) {
+    recordFail();
+    print("CHECK " + name + "=FAIL");
+}
+
+export function assertEq(name: String, got: int, exp: int) {
+    if (got == exp) {
+        print("CHECK " + name + "=ok");
+    } else {
+        recordFail();
+        print("CHECK " + name + "=FAIL got=" + str(got) + " exp=" + str(exp));
+    }
+}
+
+export function assertEqStr(name: String, got: String, exp: String) {
+    if (got == exp) {
+        print("CHECK " + name + "=ok");
+    } else {
+        recordFail();
+        print("CHECK " + name + "=FAIL got='" + got + "' exp='" + exp + "'");
+    }
+}
+
+export function assertTrue(name: String, cond: bool) {
+    if (cond) {
+        print("CHECK " + name + "=ok");
+    } else {
+        recordFail();
+        print("CHECK " + name + "=FAIL");
+    }
+}

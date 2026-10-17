@@ -1,0 +1,35 @@
+# net/tcp.clsx - Conexiones TCP (API funcional + cliente con estado).
+#
+# El framing de 2 bytes big-endian (DNS-over-TCP) lo aplica el shim.
+from "net_ffi" import t_open, t_send, t_recv, t_close;
+from "consts" import DEFAULT_TIMEOUT_MS;
+
+# Abre una conexión TCP a ip:port. Devuelve el handle (>=0) o <0 error.
+export function tcpOpen(ip: String, port: int) -> int {
+    return int(t_open(ip, port));
+}
+
+# Envía `buf` con el prefijo de longitud de 2 bytes BE.
+export function tcpSend(h: int, buf: int[]) -> int { return int(t_send(h, buf)); }
+
+# Lee un mensaje TCP completo (prefijo + payload). [] si hay timeout/error.
+export function tcpRecv(h: int, maxLen: int, timeoutMs: int) -> int[] {
+    return t_recv(h, maxLen, timeoutMs);
+}
+
+export function tcpClose(h: int) -> int { return int(t_close(h)); }
+
+# Cliente TCP con estado (reintento de respuestas truncadas).
+export class TcpClient {
+    var h: int;
+    var timeoutMs: int;
+
+    function main(ip: String, port: int, timeoutMs: int = DEFAULT_TIMEOUT_MS) {
+        me.h = int(t_open(ip, port));
+        me.timeoutMs = timeoutMs;
+    }
+    function ok() -> bool { return me.h >= 0; }
+    function send(buf: int[]) -> int { return int(t_send(me.h, buf)); }
+    function recv(maxLen: int) -> int[] { return t_recv(me.h, maxLen, me.timeoutMs); }
+    function close() -> int { return int(t_close(me.h)); }
+};
