@@ -50,16 +50,15 @@ extension "modules/sqlite/sqlite_shim.dll" as C {
 };
 
 # Mapea un valor del result set (codigos de tipo de SQLite, 1..4) a un Cell del
-# ORM. Se despacha por switch sobre el codigo de tipo.
+# ORM. Se despacha por `match` modo valor sobre el codigo de tipo.
 function cellOf(t: int, rr: int, i: int, c: int) -> orm::Cell {
-    switch (t) {
-        case (1) { return orm::cInt(int(o_cell_int(rr, i, c))); }
-        case (2) { return orm::cFloat(o_cell_double(rr, i, c)); }
-        case (3) { return orm::cText(o_cell_text(rr, i, c)); }
-        case (4) { return orm::cBlob(o_cell_blob_hex(rr, i, c)); }
-        case default { return orm::cNull(); }
-    }
-    return orm::cNull();
+    return match (t) in {
+        1 -> orm::cInt(int(o_cell_int(rr, i, c))),
+        2 -> orm::cFloat(o_cell_double(rr, i, c)),
+        3 -> orm::cText(o_cell_text(rr, i, c)),
+        4 -> orm::cBlob(o_cell_blob_hex(rr, i, c)),
+        default -> orm::cNull(),
+    };
 }
 
 # Result set del shim -> ResultSet neutro del ORM.
@@ -109,15 +108,14 @@ export class SqliteDriver: Driver {
     }
     function prepare(sql: String) -> int { return int(o_prepare(me.h, sql)); }
     function bind(stmt: int, idx: int, cell: orm::Cell) -> int {
-        switch (cell.kind) {
-            case (1) { return int(o_bind_null(stmt, idx)); }
-            case (2) { return int(o_bind_int(stmt, idx, cell.i)); }
-            case (3) { return int(o_bind_double(stmt, idx, cell.f)); }
-            case (4) { return int(o_bind_text(stmt, idx, cell.s)); }
-            case (5) { return int(o_bind_blob_hex(stmt, idx, cell.s)); }
-            case default { return int(o_bind_null(stmt, idx)); }
-        }
-        return int(o_bind_null(stmt, idx));
+        return match (cell.kind) in {
+            1 -> int(o_bind_null(stmt, idx)),
+            2 -> int(o_bind_int(stmt, idx, cell.i)),
+            3 -> int(o_bind_double(stmt, idx, cell.f)),
+            4 -> int(o_bind_text(stmt, idx, cell.s)),
+            5 -> int(o_bind_blob_hex(stmt, idx, cell.s)),
+            default -> int(o_bind_null(stmt, idx)),
+        };
     }
     function step(stmt: int) -> int { return int(o_step(stmt)); }
     function resetStmt(stmt: int) -> int { return int(o_reset(stmt)); }

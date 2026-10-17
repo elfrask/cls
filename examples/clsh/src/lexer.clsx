@@ -14,45 +14,36 @@ export function skip_cmdsubst(src: String, j0: int) -> int {
     var j = j0;
     var depth = 1;
     while (j < n && depth > 0) {
-        var c = src[j];
-        if (c == "'") {
-            j = j + 1;
-            while (j < n && src[j] != "'") { j = j + 1; }
-            j = j + 1;
-        } elif (c == "\"") {
-            j = j + 1;
-            while (j < n && src[j] != "\"") {
-                if (src[j] == "\\") { j = j + 2; }
-                else { j = j + 1; }
-            }
-            j = j + 1;
-        } elif (c == "\\") {
-            j = j + 2;
-        } elif (c == "(") {
-            depth = depth + 1; j = j + 1;
-        } elif (c == ")") {
-            depth = depth - 1; j = j + 1;
-        } else {
-            j = j + 1;
+        match (src[j]) in {
+            "'" -> {
+                j = j + 1;
+                while (j < n && src[j] != "'") { j = j + 1; }
+                j = j + 1;
+            },
+            "\"" -> {
+                j = j + 1;
+                while (j < n && src[j] != "\"") {
+                    if (src[j] == "\\") { j = j + 2; }
+                    else { j = j + 1; }
+                }
+                j = j + 1;
+            },
+            "\\" -> { j = j + 2; },
+            "(" -> { depth = depth + 1; j = j + 1; },
+            ")" -> { depth = depth - 1; j = j + 1; },
+            default -> { j = j + 1; },
         }
     }
     return j;
 }
 
-# True si el caracter es un operador no-cita. `switch` sobre String compara
-# CONTENIDO (fix del finding 06), asi que despacha por el caracter natural.
+# True si el caracter es un operador no-cita. `match` modo valor compara
+# CONTENIDO de String (igual que `switch` desde el fix del finding 06).
 function isOpByte(c: String) -> bool {
-    switch (c) {
-        case (";") { return true; }
-        case ("&") { return true; }
-        case ("|") { return true; }
-        case ("(") { return true; }
-        case (")") { return true; }
-        case ("<") { return true; }
-        case (">") { return true; }
-        case default { return false; }
-    }
-    return false;
+    return match (c) in {
+        (";", "&", "|", "(", ")", "<", ">") -> true,
+        default -> false,
+    };
 }
 
 # Tupla heterogenea `(kinds, texts)`: `t[0]` tipa `tk::Tok[]` y `t[1]` `String[]`.
@@ -74,28 +65,32 @@ export function tokenize(src: String) -> (tk::Tok[], String[]) {
             continue;
         }
 
-        if (c == "\n") { kinds.push(tk::Tok.Sep); texts.push("\n"); i = i + 1; continue; }
-        if (c == ";") { kinds.push(tk::Tok.Sep); texts.push(";"); i = i + 1; continue; }
-
-        if (c == "&") {
-            if (i + 1 < n && src[i + 1] == "&") { kinds.push(tk::Tok.And); texts.push("&&"); i = i + 2; }
-            else { kinds.push(tk::Tok.Sep); texts.push("&"); i = i + 1; }
-            continue;
-        }
-        if (c == "|") {
-            if (i + 1 < n && src[i + 1] == "|") { kinds.push(tk::Tok.Or); texts.push("||"); i = i + 2; }
-            else { kinds.push(tk::Tok.Pipe); texts.push("|"); i = i + 1; }
-            continue;
-        }
-        if (c == "(") { kinds.push(tk::Tok.LP); texts.push("("); i = i + 1; continue; }
-        if (c == ")") { kinds.push(tk::Tok.RP); texts.push(")"); i = i + 1; continue; }
-
-        if (c == "<") { kinds.push(tk::Tok.Redir); texts.push("<"); i = i + 1; continue; }
-        if (c == ">") {
-            if (i + 1 < n && src[i + 1] == ">") { kinds.push(tk::Tok.Redir); texts.push(">>"); i = i + 2; }
-            elif (i + 1 < n && src[i + 1] == "&") { kinds.push(tk::Tok.Redir); texts.push(">&"); i = i + 2; }
-            else { kinds.push(tk::Tok.Redir); texts.push(">"); i = i + 1; }
-            continue;
+        # Despacho por caracter con `match` modo valor (compara CONTENIDO de
+        # String). Cada arma avanza `i` y hace `continue`; el `2>` (que empieza
+        # con un digito de palabra) se chequea aparte antes del bucle de palabra.
+        match (c) in {
+            "\n" -> { kinds.push(tk::Tok.Sep); texts.push("\n"); i = i + 1; continue; },
+            ";" -> { kinds.push(tk::Tok.Sep); texts.push(";"); i = i + 1; continue; },
+            "&" -> {
+                if (i + 1 < n && src[i + 1] == "&") { kinds.push(tk::Tok.And); texts.push("&&"); i = i + 2; }
+                else { kinds.push(tk::Tok.Sep); texts.push("&"); i = i + 1; }
+                continue;
+            },
+            "|" -> {
+                if (i + 1 < n && src[i + 1] == "|") { kinds.push(tk::Tok.Or); texts.push("||"); i = i + 2; }
+                else { kinds.push(tk::Tok.Pipe); texts.push("|"); i = i + 1; }
+                continue;
+            },
+            "(" -> { kinds.push(tk::Tok.LP); texts.push("("); i = i + 1; continue; },
+            ")" -> { kinds.push(tk::Tok.RP); texts.push(")"); i = i + 1; continue; },
+            "<" -> { kinds.push(tk::Tok.Redir); texts.push("<"); i = i + 1; continue; },
+            ">" -> {
+                if (i + 1 < n && src[i + 1] == ">") { kinds.push(tk::Tok.Redir); texts.push(">>"); i = i + 2; }
+                elif (i + 1 < n && src[i + 1] == "&") { kinds.push(tk::Tok.Redir); texts.push(">&"); i = i + 2; }
+                else { kinds.push(tk::Tok.Redir); texts.push(">"); i = i + 1; }
+                continue;
+            },
+            default -> {},
         }
         if (c == "2" && i + 1 < n && src[i + 1] == ">") {
             if (i + 2 < n && src[i + 2] == ">") { kinds.push(tk::Tok.Redir); texts.push("2>>"); i = i + 3; }

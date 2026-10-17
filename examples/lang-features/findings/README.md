@@ -51,6 +51,7 @@ en la matriz tras la promoción.
 | 15 | local capturada pisa un global homónimo | **PROMOVIDO** | `emitter/mod.rs emit_ident_load/-store/-ptr`: el orden de resolución ponía `globals` antes que capturas/promoted/locales; una local que sombrea al global ahora gana. | `functions`: `fn.local.shadow`, `fn.closure.mutate` |
 | 16 | String fuera de rango | **PROMOVIDO** (no era bug) | `docs/lenguaje/datos.md` define el **clamping** (`s[99]` → `""`) y el oráculo `str-index.clsx` lo codifica. No se alinea con Array: es decisión de diseño. | `strings`: `str.index.oob`, `str.index.inrange` |
 | 17 | `module` / `namespace` | **GAP** | El parser acepta la sintaxis pero el typeck/emisor no cablean `NS::sym` / `NS.member`. Ver `gaps.txt`. | — (GAP, no se cubre) |
+| 18 | `match` con armas que devuelven `const` | **RESUELTO** | El typeck ensancha cada arma con `literal_base()` (antes la 1ª fijaba `Literal(v)`); `Literal(1)`/`Literal(2)` comparan como `Int`. Fix en `check_match`/`check_ternary`/`check_conditional`/`check_if_expr`. Workaround de `modules/dns` quitado. | `match` (matriz) + `findings/18` |
 
 ---
 
@@ -77,6 +78,15 @@ prohibido por las reglas de rendimiento del JIT.
 sintaxis, pero el typeck no registra los símbolos del namespace y el emisor no
 resuelve `NS::miembro`. Es una feature de scoping no implementada (no una
 regresión de un plan).
+
+### 18 — `match` cuyas armas devuelven constantes `const` (RESUELTO)
+El tipo del `match`-expresión se infiere de la primera arma. Antes, una referencia
+`const` conservaba su tipo **literal** (`Literal(1)`) y `Literal(1)` no era
+asignable a `Literal(2)`. **Fix:** el typeck ensancha cada tipo de arma con
+`literal_base()` (misma semántica que `check_binary`), en `check_match` y también
+en `check_ternary`/`check_conditional`/`check_if_expr`. El **workaround** de
+`modules/dns` (`typeCode`) se quitó. Repro: `findings/18-match-const-arm.clsx`
+(ahora **pasa**).
 
 ---
 

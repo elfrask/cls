@@ -40,35 +40,24 @@ enum Op {
 };
 
 # Codigo de instruccion a partir del caracter (String de 1 byte); `Op.Invalid`
-# si el caracter no es una instruccion. `switch` sobre String compara CONTENIDO
-# (fix del finding 06), asi que despacha por el caracter de forma natural.
+# si el caracter no es una instruccion. `match` modo valor compara CONTENIDO de
+# String (igual que `switch` desde el fix del finding 06).
 function cmd_of(ch: String) -> Op {
-    switch (ch) {
-        case (">") { return Op.Move; }
-        case ("<") { return Op.Left; }
-        case ("+") { return Op.Inc; }
-        case ("-") { return Op.Dec; }
-        case (".") { return Op.Out; }
-        case (",") { return Op.In; }
-        case ("[") { return Op.Loop; }
-        case ("]") { return Op.End; }
-        case default { return Op.Invalid; }
-    }
-    return Op.Invalid;
+    return match (ch) in {
+        ">" -> Op.Move,
+        "<" -> Op.Left,
+        "+" -> Op.Inc,
+        "-" -> Op.Dec,
+        "." -> Op.Out,
+        "," -> Op.In,
+        "[" -> Op.Loop,
+        "]" -> Op.End,
+        default -> Op.Invalid,
+    };
 }
 
 # Interprete en CLS puro. Devuelve los bytes de salida como int[].
 export function bf_run_cls(prog: String, input: String) -> int[] {
-    # Locales con las variantes del enum (el patron de `case` liga un identificador).
-    var OP_MOVE = Op.Move;
-    var OP_LEFT = Op.Left;
-    var OP_INC = Op.Inc;
-    var OP_DEC = Op.Dec;
-    var OP_OUT = Op.Out;
-    var OP_IN = Op.In;
-    var OP_LOOP = Op.Loop;
-    var OP_END = Op.End;
-
     # 1. Filtrar a un arreglo de opcodes (descarta comentarios/espacios).
     #    Se itera el programa por caracter (`prog[i]` -> String de 1 byte).
     var cmds: Op[] = [];
@@ -83,19 +72,19 @@ export function bf_run_cls(prog: String, input: String) -> int[] {
     for (var k = 0; k < m; k++) { jump.push(-1); }
     var stack: int[] = [];
     for (var k = 0; k < m; k++) {
-        switch (cmds[k]) {
-            case (OP_LOOP) {
+        match (op <- cmds[k]) {
+            Loop -> {
                 stack.push(k);
-            }
-            case (OP_END) {
+            },
+            End -> {
                 if (stack.length > 0) {
                     var o = stack[stack.length - 1];
                     stack.pop();
                     jump[o] = k;
                     jump[k] = o;
                 }
-            }
-            case default {}
+            },
+            default -> {},
         }
     }
 
@@ -111,39 +100,39 @@ export function bf_run_cls(prog: String, input: String) -> int[] {
     var inbytes = input.toChar();
     var inlen = inbytes.length;
     for (var pc = 0; pc < m; pc++) {
-        switch (cmds[pc]) {
-            case (OP_MOVE) {
+        match (op <- cmds[pc]) {
+            Move -> {
                 tp = tp + 1;
                 if (tp >= 30000) { tp = 0; }
-            }
-            case (OP_LEFT) {
+            },
+            Left -> {
                 tp = tp - 1;
                 if (tp < 0) { tp = 29999; }
-            }
-            case (OP_INC) {
+            },
+            Inc -> {
                 tape[tp] = (tape[tp] + 1) % 256;
-            }
-            case (OP_DEC) {
+            },
+            Dec -> {
                 tape[tp] = (tape[tp] + 255) % 256;
-            }
-            case (OP_OUT) {
+            },
+            Out -> {
                 out.push(tape[tp]);
-            }
-            case (OP_IN) {
+            },
+            In -> {
                 if (ip < inlen) {
                     tape[tp] = bytes::ord(inbytes[ip]);
                     ip = ip + 1;
                 } else {
                     tape[tp] = 0;
                 }
-            }
-            case (OP_LOOP) {
+            },
+            Loop -> {
                 if (tape[tp] == 0) { pc = jump[pc]; }
-            }
-            case (OP_END) {
+            },
+            End -> {
                 if (tape[tp] != 0) { pc = jump[pc]; }
-            }
-            case default {}
+            },
+            default -> {},
         }
     }
     return out;

@@ -77,8 +77,7 @@ function testBatch(o: orm::Orm, driver: sq::SqliteDriver) {
     o.begin();
     var stmt = o.prepareInsert("batch", cols);
     for (var id = 1; id <= 10000; id++) {
-        var nm = "user-" + str(id);
-        if (id % 97 == 0) { nm = "u-" + str(id) + "-ñá😀"; }
+        var nm = id % 97 == 0 ? "u-" + str(id) + "-ñá😀" : "user-" + str(id);
         o.bulkRow(stmt, [orm::cInt(id), orm::cText(nm), orm::cFloat(float(id) * 0.5)]);
     }
     o.commit();
@@ -155,6 +154,5 @@ function main(args: String[]) -> int {
     testOrder(o);
     emitS("integrity", o.integrity());
     driver.close();
-    if (g_fail == 0) { return 0; }
-    return 1;
+    return g_fail == 0 ? 0 : 1;
 }

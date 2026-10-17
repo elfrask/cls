@@ -14,16 +14,9 @@ import "tokens" as tk;
 
 # Tipos de token: vienen del enum compartido `tokens::Tok` (una sola definicion).
 # La identidad del enum en el JIT es su DEFINICION (no el alias de import), asi
-# que la comparacion `==` funciona entre modulos con cualquier alias. Se usa
-# `tk` por convencion (coincide con lexer.clsx).
-var K_WORD = tk::Tok.Word;
-var K_SEP = tk::Tok.Sep;
-var K_AND = tk::Tok.And;
-var K_OR = tk::Tok.Or;
-var K_PIPE = tk::Tok.Pipe;
-var K_LP = tk::Tok.LP;
-var K_RP = tk::Tok.RP;
-var K_REDIR = tk::Tok.Redir;
+# que la comparacion `==` funciona entre modulos con cualquier alias. El
+# despacho por tipo se hace con `match` modo patron sobre `tk::Tok` (sin locals
+# `K_*` intermedios).
 
 # Una redireccion (operador + destino), en vez de dos arrays paralelos.
 structure Redir {
@@ -117,35 +110,29 @@ export class Sh {
 
     function isCurWord(w: String) -> bool {
         if (me.p >= me.n) { return false; }
-        if (me.tk[me.p] != K_WORD) { return false; }
+        if (me.tk[me.p] != tk::Tok.Word) { return false; }
         return me.tx[me.p] == w;
     };
 
     function isOpenerWord(w: String) -> bool {
-        if (w == "if") { return true; }
-        if (w == "while") { return true; }
-        if (w == "for") { return true; }
-        if (w == "case") { return true; }
-        return false;
+        return match (w) in {
+            ("if", "while", "for", "case") -> true,
+            default -> false,
+        };
     };
 
     function isCloserWord(w: String) -> bool {
-        if (w == "fi") { return true; }
-        if (w == "done") { return true; }
-        if (w == "esac") { return true; }
-        return false;
+        return match (w) in {
+            ("fi", "done", "esac") -> true,
+            default -> false,
+        };
     };
 
     function isStopper(w: String) -> bool {
-        if (w == "then") { return true; }
-        if (w == "do") { return true; }
-        if (w == "done") { return true; }
-        if (w == "fi") { return true; }
-        if (w == "elif") { return true; }
-        if (w == "else") { return true; }
-        if (w == "esac") { return true; }
-        if (w == "in") { return true; }
-        return false;
+        return match (w) in {
+            ("then", "do", "done", "fi", "elif", "else", "esac", "in") -> true,
+            default -> false,
+        };
     };
 
     function containsStr(arr: String[], s: String) -> bool {
@@ -156,21 +143,24 @@ export class Sh {
     };
 
     # Indice del primer token que es stopword (a profundidad 0) desde `from`.
+    # Despacha el tipo de token con `match` modo patron sobre el enum `tk::Tok`.
     function scanKw(startIdx: int, stops: String[]) -> int {
         var i = startIdx;
         var depth = 0;
         while (i < me.n) {
-            var k = me.tk[i];
-            if (k == K_LP) { depth = depth + 1; i = i + 1; continue; }
-            if (k == K_RP) {
-                if (depth == 0) { return i; }
-                depth = depth - 1; i = i + 1; continue;
-            }
-            if (k == K_WORD) {
-                var w = me.tx[i];
-                if (depth == 0 && me.containsStr(stops, w)) { return i; }
-                if (me.isOpenerWord(w)) { depth = depth + 1; }
-                elif (me.isCloserWord(w)) { depth = depth - 1; }
+            match (k <- me.tk[i]) {
+                LP -> { depth = depth + 1; i = i + 1; continue; },
+                RP -> {
+                    if (depth == 0) { return i; }
+                    depth = depth - 1; i = i + 1; continue;
+                },
+                Word -> {
+                    var w = me.tx[i];
+                    if (depth == 0 && me.containsStr(stops, w)) { return i; }
+                    if (me.isOpenerWord(w)) { depth = depth + 1; }
+                    elif (me.isCloserWord(w)) { depth = depth - 1; }
+                },
+                default -> {},
             }
             i = i + 1;
         }
@@ -197,37 +187,47 @@ export class Sh {
         while (me.p < me.n && !me.exiting) {
             var before = me.p;
             me.run_list();
-            if (me.p < me.n && me.tk[me.p] == K_RP) { me.p = me.p + 1; continue; }
-            if (me.p < me.n && me.tk[me.p] == K_WORD && me.isStopper(me.tx[me.p])) { me.p = me.p + 1; continue; }
+            if (me.p < me.n) {
+                match (k <- me.tk[me.p]) {
+                    RP -> { me.p = me.p + 1; continue; },
+                    Word -> { if (me.isStopper(me.tx[me.p])) { me.p = me.p + 1; continue; } },
+                    default -> {},
+                }
+            }
             if (me.p == before) { me.p = me.p + 1; }
         }
     };
 
     function run_list() {
         while (me.p < me.n) {
-            var k = me.tk[me.p];
-            if (k == K_SEP) { me.p = me.p + 1; continue; }
-            if (k == K_RP) { return; }
-            if (k == K_WORD && me.isStopper(me.tx[me.p])) { return; }
+            match (k <- me.tk[me.p]) {
+                Sep -> { me.p = me.p + 1; continue; },
+                RP -> { return; },
+                Word -> { if (me.isStopper(me.tx[me.p])) { return; } },
+                default -> {},
+            }
             me.run_andor();
             if (me.exiting) { return; }
-            if (me.p < me.n && me.tk[me.p] == K_SEP) { me.p = me.p + 1; }
+            if (me.p < me.n && me.tk[me.p] == tk::Tok.Sep) { me.p = me.p + 1; }
         }
     };
 
     function run_andor() {
         me.run_pipeline();
         while (me.p < me.n) {
-            var k = me.tk[me.p];
-            if (k == K_AND) {
-                me.p = me.p + 1;
-                if (me.status == 0) { me.run_pipeline(); }
-                else { me.skip_pipeline(); }
-            } elif (k == K_OR) {
-                me.p = me.p + 1;
-                if (me.status != 0) { me.run_pipeline(); }
-                else { me.skip_pipeline(); }
-            } else { break; }
+            match (k <- me.tk[me.p]) {
+                And -> {
+                    me.p = me.p + 1;
+                    if (me.status == 0) { me.run_pipeline(); }
+                    else { me.skip_pipeline(); }
+                },
+                Or -> {
+                    me.p = me.p + 1;
+                    if (me.status != 0) { me.run_pipeline(); }
+                    else { me.skip_pipeline(); }
+                },
+                default -> { break; },
+            }
         }
     };
 
@@ -235,12 +235,12 @@ export class Sh {
         var i = me.p;
         var depth = 0;
         while (i < me.n) {
-            var k = me.tk[i];
-            if (k == K_LP) { depth = depth + 1; }
-            elif (k == K_RP) { if (depth == 0) { break; } depth = depth - 1; }
-            elif (depth == 0) {
-                if (k == K_SEP || k == K_AND || k == K_OR) { break; }
-                if (k == K_WORD && me.isStopper(me.tx[i])) { break; }
+            match (k <- me.tk[i]) {
+                LP -> { depth = depth + 1; },
+                RP -> { if (depth == 0) { break; } depth = depth - 1; },
+                Sep, And, Or -> { if (depth == 0) { break; } },
+                Word -> { if (depth == 0 && me.isStopper(me.tx[i])) { break; } },
+                default -> {},
             }
             i = i + 1;
         }
@@ -251,13 +251,13 @@ export class Sh {
         var i = me.p;
         var depth = 0;
         while (i < me.n) {
-            var k = me.tk[i];
-            if (k == K_LP) { depth = depth + 1; }
-            elif (k == K_RP) { if (depth == 0) { return false; } depth = depth - 1; }
-            elif (depth == 0) {
-                if (k == K_PIPE) { return true; }
-                if (k == K_SEP || k == K_AND || k == K_OR) { return false; }
-                if (k == K_WORD && me.isStopper(me.tx[i])) { return false; }
+            match (k <- me.tk[i]) {
+                LP -> { depth = depth + 1; },
+                RP -> { if (depth == 0) { return false; } depth = depth - 1; },
+                Pipe -> { if (depth == 0) { return true; } },
+                Sep, And, Or -> { if (depth == 0) { return false; } },
+                Word -> { if (depth == 0 && me.isStopper(me.tx[i])) { return false; } },
+                default -> {},
             }
             i = i + 1;
         }
@@ -278,7 +278,7 @@ export class Sh {
                 me.input = cap;
                 me.hasInput = true;
                 me.inputPos = 0;
-                if (me.p < me.n && me.tk[me.p] == K_PIPE) { me.p = me.p + 1; }
+                if (me.p < me.n && me.tk[me.p] == tk::Tok.Pipe) { me.p = me.p + 1; }
             } else {
                 me.run_command();
                 break;
@@ -288,13 +288,20 @@ export class Sh {
     };
 
     function run_command() {
-        if (me.p < me.n && me.tk[me.p] == K_WORD) {
-            var w = me.tx[me.p];
-            if (w == "if") { me.run_if(); return; }
-            if (w == "while") { me.run_while(); return; }
-            if (w == "for") { me.run_for(); return; }
+        if (me.p < me.n) {
+            match (k <- me.tk[me.p]) {
+                Word -> {
+                    match (me.tx[me.p]) in {
+                        "if" -> { me.run_if(); return; },
+                        "while" -> { me.run_while(); return; },
+                        "for" -> { me.run_for(); return; },
+                        default -> {},
+                    }
+                },
+                LP -> { me.run_subshell(); return; },
+                default -> {},
+            }
         }
-        if (me.p < me.n && me.tk[me.p] == K_LP) { me.run_subshell(); return; }
         me.parse_simple();
         me.exec_simple();
     };
@@ -302,7 +309,7 @@ export class Sh {
     function run_subshell() {
         me.p = me.p + 1;
         me.run_list();
-        if (me.p < me.n && me.tk[me.p] == K_RP) { me.p = me.p + 1; }
+        if (me.p < me.n && me.tk[me.p] == tk::Tok.RP) { me.p = me.p + 1; }
     };
 
     function run_if() {
@@ -368,17 +375,17 @@ export class Sh {
     function run_for() {
         me.p = me.p + 1;
         var name = "";
-        if (me.p < me.n && me.tk[me.p] == K_WORD) { name = me.tx[me.p]; me.p = me.p + 1; }
+        if (me.p < me.n && me.tk[me.p] == tk::Tok.Word) { name = me.tx[me.p]; me.p = me.p + 1; }
         var items: String[] = [];
         if (me.isCurWord("in")) {
             me.p = me.p + 1;
-            while (me.p < me.n && me.tk[me.p] == K_WORD && !me.isCurWord("do")) {
+            while (me.p < me.n && me.tk[me.p] == tk::Tok.Word && !me.isCurWord("do")) {
                 var f = me.expand(me.tx[me.p]);
                 for each ff in (f) { items.push(ff); }
                 me.p = me.p + 1;
             }
         }
-        while (me.p < me.n && me.tk[me.p] == K_SEP) { me.p = me.p + 1; }
+        while (me.p < me.n && me.tk[me.p] == tk::Tok.Sep) { me.p = me.p + 1; }
         if (me.isCurWord("do")) { me.p = me.p + 1; }
         var bodyStart = me.p;
         var doneIdx = me.scanKw(bodyStart, me.kwArr("done"));
@@ -412,10 +419,10 @@ export class Sh {
     };
 
     function isNameStart(c: String) -> bool {
-        if (c == "_") { return true; }
-        if ("abcdefghijklmnopqrstuvwxyz".contains(c)) { return true; }
-        if ("ABCDEFGHIJKLMNOPQRSTUVWXYZ".contains(c)) { return true; }
-        return false;
+        return match (c) in {
+            "_" -> true,
+            default -> "abcdefghijklmnopqrstuvwxyz".contains(c) || "ABCDEFGHIJKLMNOPQRSTUVWXYZ".contains(c),
+        };
     };
 
     function isNameChar(c: String) -> bool {
@@ -445,27 +452,26 @@ export class Sh {
         me.curAssign = [];
         var cmdSeen = false;
         while (me.p < me.n) {
-            var k = me.tk[me.p];
-            if (k == K_WORD) {
-                var raw = me.tx[me.p];
-                if (!cmdSeen && me.isAssignment(raw)) {
-                    me.curAssign.push(raw);
-                } else {
-                    me.curWords.push(raw);
-                    cmdSeen = true;
-                }
-                me.p = me.p + 1;
-            } elif (k == K_REDIR) {
-                var op = me.tx[me.p];
-                me.p = me.p + 1;
-                var tgt = "";
-                if (op == ">&") {
-                    if (me.p < me.n && me.tk[me.p] == K_WORD) { tgt = me.tx[me.p]; me.p = me.p + 1; }
-                } else {
-                    if (me.p < me.n && me.tk[me.p] == K_WORD) { tgt = me.tx[me.p]; me.p = me.p + 1; }
-                }
-                me.curRedirs.push(Redir(op, tgt));
-            } else { break; }
+            match (k <- me.tk[me.p]) {
+                Word -> {
+                    var raw = me.tx[me.p];
+                    if (!cmdSeen && me.isAssignment(raw)) {
+                        me.curAssign.push(raw);
+                    } else {
+                        me.curWords.push(raw);
+                        cmdSeen = true;
+                    }
+                    me.p = me.p + 1;
+                },
+                Redir -> {
+                    var op = me.tx[me.p];
+                    me.p = me.p + 1;
+                    var tgt = "";
+                    if (me.p < me.n && me.tk[me.p] == tk::Tok.Word) { tgt = me.tx[me.p]; me.p = me.p + 1; }
+                    me.curRedirs.push(Redir(op, tgt));
+                },
+                default -> { break; },
+            }
         }
     };
 
@@ -474,25 +480,33 @@ export class Sh {
             var op = r.op;
             var tgt = me.expandOne(r.tgt);
             var fd = 0;
-            if (op == "<") {
-                me.input = ffi::read_file(tgt);
-                me.hasInput = true;
-                me.inputPos = 0;
-            } elif (op == ">") {
-                fd = ffi::open(tgt, 1 + 256 + 512 + 32768, 420);
-                if (fd >= 0) { me.outFd = fd; }
-            } elif (op == ">>") {
-                fd = ffi::open(tgt, 1 + 256 + 8 + 32768, 420);
-                if (fd >= 0) { me.outFd = fd; }
-            } elif (op == "2>") {
-                fd = ffi::open(tgt, 1 + 256 + 512 + 32768, 420);
-                if (fd >= 0) { me.errFd = fd; }
-            } elif (op == "2>>") {
-                fd = ffi::open(tgt, 1 + 256 + 8 + 32768, 420);
-                if (fd >= 0) { me.errFd = fd; }
-            } elif (op == ">&") {
-                if (tgt == "2") { me.outFd = 2; }
-                if (tgt == "1") { me.outFd = 1; }
+            match (op) in {
+                "<" -> {
+                    me.input = ffi::read_file(tgt);
+                    me.hasInput = true;
+                    me.inputPos = 0;
+                },
+                ">" -> {
+                    fd = ffi::open(tgt, 1 + 256 + 512 + 32768, 420);
+                    if (fd >= 0) { me.outFd = fd; }
+                },
+                ">>" -> {
+                    fd = ffi::open(tgt, 1 + 256 + 8 + 32768, 420);
+                    if (fd >= 0) { me.outFd = fd; }
+                },
+                "2>" -> {
+                    fd = ffi::open(tgt, 1 + 256 + 512 + 32768, 420);
+                    if (fd >= 0) { me.errFd = fd; }
+                },
+                "2>>" -> {
+                    fd = ffi::open(tgt, 1 + 256 + 8 + 32768, 420);
+                    if (fd >= 0) { me.errFd = fd; }
+                },
+                ">&" -> {
+                    if (tgt == "2") { me.outFd = 2; }
+                    if (tgt == "1") { me.outFd = 1; }
+                },
+                default -> {},
             }
         }
     };
@@ -549,10 +563,10 @@ export class Sh {
     };
 
     function isIfs(c: String) -> bool {
-        if (c == " ") { return true; }
-        if (c == "\t") { return true; }
-        if (c == "\n") { return true; }
-        return false;
+        return match (c) in {
+            (" ", "\t", "\n") -> true,
+            default -> false,
+        };
     };
 
     function splitIfs(v: String) -> String[] {
@@ -695,36 +709,30 @@ export class Sh {
     # --- builtins -----------------------------------------------------------
 
     function isBuiltin(name: String) -> bool {
-        if (name == "echo") { return true; }
-        if (name == "pwd") { return true; }
-        if (name == "cd") { return true; }
-        if (name == "exit") { return true; }
-        if (name == "export") { return true; }
-        if (name == "read") { return true; }
-        if (name == "test") { return true; }
-        if (name == "[") { return true; }
-        if (name == "true") { return true; }
-        if (name == "false") { return true; }
-        if (name == ":") { return true; }
-        if (name == "unset") { return true; }
-        return false;
+        return match (name) in {
+            ("echo", "pwd", "cd", "exit", "export", "read", "test", "[", "true", "false", ":", "unset") -> true,
+            default -> false,
+        };
     };
 
     function runBuiltin(name: String, argv: String[]) {
-        if (name == "echo") { me.biEcho(argv); }
-        elif (name == "pwd") { me.biPwd(); }
-        elif (name == "cd") { me.biCd(argv); }
-        elif (name == "exit") { me.biExit(argv); }
-        elif (name == "export") { me.biExport(argv); }
-        elif (name == "read") { me.biRead(argv); }
-        elif (name == "test") { me.biTest(argv, false); }
-        elif (name == "[") { me.biTest(argv, true); }
-        elif (name == "true") { me.status = 0; }
-        elif (name == "false") { me.status = 1; }
-        elif (name == ":") { me.status = 0; }
-        elif (name == "unset") {
-            for (var i = 1; i < argv.length; i++) { me.setVar(argv[i], ""); }
-            me.status = 0;
+        match (name) in {
+            "echo" -> { me.biEcho(argv); },
+            "pwd" -> { me.biPwd(); },
+            "cd" -> { me.biCd(argv); },
+            "exit" -> { me.biExit(argv); },
+            "export" -> { me.biExport(argv); },
+            "read" -> { me.biRead(argv); },
+            "test" -> { me.biTest(argv, false); },
+            "[" -> { me.biTest(argv, true); },
+            "true" -> { me.status = 0; },
+            "false" -> { me.status = 1; },
+            ":" -> { me.status = 0; },
+            "unset" -> {
+                for (var i = 1; i < argv.length; i++) { me.setVar(argv[i], ""); }
+                me.status = 0;
+            },
+            default -> {},
         }
     };
 
@@ -736,14 +744,15 @@ export class Sh {
         while (i < n) {
             var c = s[i];
             if (c == "\\" && i + 1 < n) {
-                var d = s[i + 1];
-                if (d == "n") { out = out + "\n"; i = i + 2; }
-                elif (d == "t") { out = out + "\t"; i = i + 2; }
-                elif (d == "r") { out = out + "\r"; i = i + 2; }
-                elif (d == "b") { out = out + "\b"; i = i + 2; }
-                elif (d == "\\") { out = out + "\\"; i = i + 2; }
-                elif (d == "c") { stop = true; i = i + 2; }
-                else { out = out + s.slice(i, i + 2); i = i + 2; }
+                match (s[i + 1]) in {
+                    "n" -> { out = out + "\n"; i = i + 2; },
+                    "t" -> { out = out + "\t"; i = i + 2; },
+                    "r" -> { out = out + "\r"; i = i + 2; },
+                    "b" -> { out = out + "\b"; i = i + 2; },
+                    "\\" -> { out = out + "\\"; i = i + 2; },
+                    "c" -> { stop = true; i = i + 2; },
+                    default -> { out = out + s.slice(i, i + 2); i = i + 2; },
+                }
             } else {
                 var st = i;
                 while (i < n && s[i] != "\\") { i = i + 1; }
@@ -908,27 +917,31 @@ export class Sh {
         if (n == 2) {
             var op = args[0];
             var v = args[1];
-            if (op == "-z") { if (v == "") { return 0; } return 1; }
-            if (op == "-n") { if (v != "") { return 0; } return 1; }
-            if (op == "-e") { return me.boolToStatus(ffi::exists(v)); }
-            if (op == "-f") { return me.boolToStatus(ffi::isfile(v)); }
-            if (op == "-d") { return me.boolToStatus(ffi::isdir(v)); }
-            return 1;
+            return match (op) in {
+                "-z" -> v == "" ? 0 : 1,
+                "-n" -> v != "" ? 0 : 1,
+                "-e" -> me.boolToStatus(ffi::exists(v)),
+                "-f" -> me.boolToStatus(ffi::isfile(v)),
+                "-d" -> me.boolToStatus(ffi::isdir(v)),
+                default -> 1,
+            };
         }
         if (n == 3) {
             var a = args[0];
             var op3 = args[1];
             var b = args[2];
-            if (op3 == "=") { if (a == b) { return 0; } return 1; }
-            if (op3 == "==") { if (a == b) { return 0; } return 1; }
-            if (op3 == "!=") { if (a != b) { return 0; } return 1; }
-            if (op3 == "-eq") { return me.intCmp(a, b, 0); }
-            if (op3 == "-ne") { return me.intCmp(a, b, 1); }
-            if (op3 == "-lt") { return me.intCmp(a, b, 2); }
-            if (op3 == "-le") { return me.intCmp(a, b, 3); }
-            if (op3 == "-gt") { return me.intCmp(a, b, 4); }
-            if (op3 == "-ge") { return me.intCmp(a, b, 5); }
-            return 1;
+            return match (op3) in {
+                "=" -> a == b ? 0 : 1,
+                "==" -> a == b ? 0 : 1,
+                "!=" -> a != b ? 0 : 1,
+                "-eq" -> me.intCmp(a, b, 0),
+                "-ne" -> me.intCmp(a, b, 1),
+                "-lt" -> me.intCmp(a, b, 2),
+                "-le" -> me.intCmp(a, b, 3),
+                "-gt" -> me.intCmp(a, b, 4),
+                "-ge" -> me.intCmp(a, b, 5),
+                default -> 1,
+            };
         }
         return 1;
     };
@@ -942,15 +955,14 @@ export class Sh {
         if (!me.isNumber(a) || !me.isNumber(b)) { return 2; }
         var x = int(a);
         var y = int(b);
-        switch (mode) {
-            case (0) { if (x == y) { return 0; } return 1; }
-            case (1) { if (x != y) { return 0; } return 1; }
-            case (2) { if (x < y) { return 0; } return 1; }
-            case (3) { if (x <= y) { return 0; } return 1; }
-            case (4) { if (x > y) { return 0; } return 1; }
-            case (5) { if (x >= y) { return 0; } return 1; }
-            case default { return 1; }
-        }
-        return 1;
+        return match (mode) in {
+            0 -> x == y ? 0 : 1,
+            1 -> x != y ? 0 : 1,
+            2 -> x < y ? 0 : 1,
+            3 -> x <= y ? 0 : 1,
+            4 -> x > y ? 0 : 1,
+            5 -> x >= y ? 0 : 1,
+            default -> 1,
+        };
     };
 };

@@ -1,0 +1,34 @@
+# 18-match-const-arm.clsx - finding: `match` con armas que devuelven constantes
+# `const` de distinto valor NO compila.
+#
+# El tipo de un `match`-expresion se infiere de la PRIMERA arma; las demas deben
+# ser asignables a ese tipo. Un literal sintactico (`1`) se ensancha a su tipo
+# base, pero una referencia `const` (`KA = 1`) conserva su tipo LITERAL
+# (`Literal(1)`), de modo que armas `Literal(1)` / `Literal(2)` no son
+# asignables entre si -> error de compilacion.
+#
+# Comando: clx run examples\lang-features\findings\18-match-const-arm.clsx
+# Esperado: compila; imprime 1 y 2.
+# Obtenido: "Tipo de arma `match` (2) no asignable al tipo de la primera arma (1)"
+#           (exit != 0).
+#
+# Contraste: `1 -> 1, 2 -> 2` (literales sintacticos) SI compila.
+# Workaround usado en modules/dns (typeCode): ensanchar la primera arma con
+# `int(TYPE_A)` para fijar el tipo comun `int`.
+
+const KA = 1;
+const KB = 2;
+
+function f(x: int) -> int {
+    return match (x) in {
+        1 -> KA,
+        2 -> KB,
+        default -> 0,
+    };
+}
+
+function main(args: String[]) -> int {
+    print(str(f(1)));
+    print(str(f(2)));
+    return 0;
+}

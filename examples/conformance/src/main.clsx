@@ -18,7 +18,7 @@ var g_fail = 0;
 var g_body3 = 0;
 var g_fin3 = 0;
 
-function b2i(b: bool) -> int { if (b) { return 1; } return 0; }
+function b2i(b: bool) -> int { return b ? 1 : 0; }
 
 function chk_i(label: String, got: int, exp: int) {
     if (got != exp) {
@@ -272,7 +272,7 @@ function cls_collatz(n: int) -> int {
     var steps = 0;
     loop {
         if (n == 1) { break; }
-        if (n % 2 == 0) { n = n / 2; } else { n = 3 * n + 1; }
+        n = n % 2 == 0 ? n / 2 : 3 * n + 1;
         steps = steps + 1;
     }
     return steps;
@@ -285,8 +285,7 @@ function cls_gcd(a: int, b: int) -> int {
         b = a % b;
         a = t;
     }
-    if (a < 0) { return -a; }
-    return a;
+    return a < 0 ? -a : a;
 }
 
 function cls_flow_sum(n: int) -> int {
@@ -369,20 +368,18 @@ function axis_closures() {
 function cls_arr_script(n: int) -> int {
     var a: int[] = [];
     for (var i = 0; i < n; i++) {
-        switch (i % 3) {
-            case (0) { a.push(i); }
-            case (1) { a.unshift(i); }
-            case default { a.reverse(); }
+        match (i % 3) in {
+            0 -> a.push(i),
+            1 -> a.unshift(i),
+            default -> a.reverse(),
         }
     }
     var len = a.length;
     var sum = 0;
     for each v in (a) { sum = sum + v; }
-    var first = 0;
-    if (len > 0) { first = a[0]; }
+    var first = if (len > 0) { * <- a[0] } else { * <- 0 };
     var idx = a.indexOf(0);
-    var idxc = 0;
-    if (idx < 0) { idxc = 1000; } else { idxc = idx; }
+    var idxc = idx < 0 ? 1000 : idx;
     return sum + 1000 * len + 1000000 * first + 1000000000 * idxc;
 }
 
@@ -392,8 +389,7 @@ function cls_arr_indexof_sum(n: int, needle: int) -> int {
     var idx = a.indexOf(needle);
     var sum = 0;
     for each v in (a) { sum = sum + v; }
-    var idxc = 0;
-    if (idx < 0) { idxc = 999; } else { idxc = idx; }
+    var idxc = idx < 0 ? 999 : idx;
     return sum + 1000 * idxc;
 }
 
@@ -436,8 +432,8 @@ function cls_exc_trace(mode: int) -> int {
     var cth = 0;
     var fin = 0;
 
-    switch (mode) {
-        case (0) {
+    match (mode) in {
+        0 -> {
             try {
                 body = 1;
                 value = 1;
@@ -448,8 +444,8 @@ function cls_exc_trace(mode: int) -> int {
                 fin = 1;
                 value = 2;
             }
-        }
-        case (1) {
+        },
+        1 -> {
             try {
                 body = 1;
                 value = 1;
@@ -461,8 +457,8 @@ function cls_exc_trace(mode: int) -> int {
                 fin = 1;
                 value = 3;
             }
-        }
-        case (2) {
+        },
+        2 -> {
             try {
                 try {
                     body = 1;
@@ -475,8 +471,8 @@ function cls_exc_trace(mode: int) -> int {
                 cth = 1;
                 value = 2;
             }
-        }
-        case default {}
+        },
+        default -> {},
     }
 
     return value * 100 + body * 10 + cth + fin * 10000;
@@ -512,8 +508,7 @@ function axis_exceptions() {
 function run_axis(name: String, fails_before: int, passes_before: int) {
     var df = g_fail - fails_before;
     var dp = g_pass - passes_before;
-    var tag = " OK ";
-    if (df > 0) { tag = "FAIL"; }
+    var tag = df > 0 ? "FAIL" : " OK ";
     print("  [${tag}] " + name + ": casos=" + str(dp + df) + " coinciden=" + str(dp) + " divergen=" + str(df));
 }
 

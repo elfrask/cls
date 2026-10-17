@@ -76,8 +76,7 @@ function main(args: String[]) -> int {
         var d_cg = bytes::firstDiff(cls_out, golden);
 
         var ok = (d_cc == -2) && (d_cg == -2);
-        var tag = "FAIL";
-        if (ok) { tag = " OK "; }
+        var tag = ok ? " OK " : "FAIL";
         print("  [${tag}] ${pad(name, 9)} len cls=${cls_out.length} oracle=${c_out.length} golden=${golden.length} | t_cls=${t1 - t0}ms t_c=${t2 - t1}ms");
 
         if (!ok) {

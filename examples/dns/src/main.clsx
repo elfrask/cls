@@ -240,47 +240,67 @@ function runLive(host: String, port: int) -> int {
     var m10 = queryTcp(host, port, 8201, "big.example.test", dns::TYPE_TXT);
     dumpMessage("live10", m10);
 
-    # Aserciones explicitas (check::) usando `is` + narrowing sobre la clase
-    # cualificada del modulo (`dns::RrA`, etc.).
+    # Aserciones explicitas (check::) usando `match ... is` + narrowing sobre la
+    # clase cualificada del modulo (`dns::RrA`, etc.). Los Rr con campo IP
+    # (RrA/RrAAAA) se cubren con un arma multi-tipo (union F5).
     var r1: dns::Rr = firstRr(m1);
-    if (r1 is dns::RrA) { check::assertEqStr("attr.a.ip", r1.ip, "192.0.2.1"); }
-    else { check::fail("attr.a.ip"); }
+    match (r1) is {
+        (dns::RrA, dns::RrAAAA) -> check::assertEqStr("attr.a.ip", r1.ip, "192.0.2.1"),
+        default -> check::fail("attr.a.ip"),
+    }
 
     var r2: dns::Rr = firstRr(m2);
-    if (r2 is dns::RrAAAA) { check::assertEqStr("attr.aaaa.ip", r2.ip, "2001:db8::1"); }
-    else { check::fail("attr.aaaa.ip"); }
+    match (r2) is {
+        (dns::RrA, dns::RrAAAA) -> check::assertEqStr("attr.aaaa.ip", r2.ip, "2001:db8::1"),
+        default -> check::fail("attr.aaaa.ip"),
+    }
 
     var r3: dns::Rr = firstRr(m3);
-    if (r3 is dns::RrName) { check::assertEqStr("attr.cname.target", r3.target, "example.test"); }
-    else { check::fail("attr.cname.target"); }
+    match (r3) is {
+        dns::RrName -> check::assertEqStr("attr.cname.target", r3.target, "example.test"),
+        default -> check::fail("attr.cname.target"),
+    }
 
     check::assertEq("attr.chase.an", m4.anCount, 2);
 
     var r5: dns::Rr = firstRr(m5);
-    check::assertEqStr("attr.mx", r5.render(), "10 mail.example.test");
+    match (r5) is {
+        dns::RrMX -> check::assertEqStr("attr.mx", r5.render(), "10 mail.example.test"),
+        default -> check::fail("attr.mx"),
+    }
 
     var r6: dns::Rr = firstRr(m6);
-    check::assertEqStr("attr.txt", r6.render(), "v=spf1 -all");
+    match (r6) is {
+        dns::RrTXT -> check::assertEqStr("attr.txt", r6.render(), "v=spf1 -all"),
+        default -> check::fail("attr.txt"),
+    }
 
     var r7: dns::Rr = firstRr(m7);
-    if (r7 is dns::RrName) { check::assertEqStr("attr.ns", r7.target, "ns1.example.test"); }
-    else { check::fail("attr.ns"); }
+    match (r7) is {
+        dns::RrName -> check::assertEqStr("attr.ns", r7.target, "ns1.example.test"),
+        default -> check::fail("attr.ns"),
+    }
 
     var r8: dns::Rr = firstRr(m8);
-    if (r8 is dns::RrSOA) {
-        check::assertEqStr("attr.soa.mname", r8.mname, "ns1.example.test");
-        check::assertEq("attr.soa.serial", r8.serial, 2024010101);
-    } else {
-        check::fail("attr.soa.mname");
-        check::fail("attr.soa.serial");
+    match (r8) is {
+        dns::RrSOA -> {
+            check::assertEqStr("attr.soa.mname", r8.mname, "ns1.example.test");
+            check::assertEq("attr.soa.serial", r8.serial, 2024010101);
+        },
+        default -> {
+            check::fail("attr.soa.mname");
+            check::fail("attr.soa.serial");
+        },
     }
 
     check::assertTrue("attr.big.tc", m9.tc == 1);
     check::assertTrue("attr.big.tcp.tc", m10.tc == 0);
     check::assertEq("attr.big.tcp.an", m10.anCount, 1);
     var r10: dns::Rr = firstRr(m10);
-    if (r10 is dns::RrTXT) { check::assertEq("attr.big.tcp.txt3", r10.texts.length, 3); }
-    else { check::fail("attr.big.tcp.txt3"); }
+    match (r10) is {
+        dns::RrTXT -> check::assertEq("attr.big.tcp.txt3", r10.texts.length, 3),
+        default -> check::fail("attr.big.tcp.txt3"),
+    }
 
     return check::fails();
 }
@@ -293,22 +313,24 @@ function main(args: String[]) -> int {
         return 2;
     }
     var mode = args[0];
-    if (mode == "offline") {
-        var files: String[] = [];
-        var i = 1;
-        while (i < args.length) {
-            files.push(args[i]);
-            i++;
-        }
-        return runOffline(files);
+    match (mode) in {
+        "offline" -> {
+            var files: String[] = [];
+            var i = 1;
+            while (i < args.length) {
+                files.push(args[i]);
+                i++;
+            }
+            return runOffline(files);
+        },
+        "live" -> {
+            var host = args.length >= 2 ? args[1] : "127.0.0.1";
+            var port = args.length >= 3 ? int(args[2]) : 15353;
+            return runLive(host, port);
+        },
+        default -> {
+            print("modo desconocido: " + mode);
+            return 2;
+        },
     }
-    if (mode == "live") {
-        var host = "127.0.0.1";
-        var port = 15353;
-        if (args.length >= 2) { host = args[1]; }
-        if (args.length >= 3) { port = int(args[2]); }
-        return runLive(host, port);
-    }
-    print("modo desconocido: " + mode);
-    return 2;
 }

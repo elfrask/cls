@@ -62,29 +62,32 @@ export function pushAll(dst: int[], src: int[]) {
 
 # Nombre de tipo legible (para CHECK / render).
 export function typeName(rtype: int) -> String {
-    switch (rtype) {
-        case (1) { return "A"; }
-        case (2) { return "NS"; }
-        case (5) { return "CNAME"; }
-        case (6) { return "SOA"; }
-        case (15) { return "MX"; }
-        case (16) { return "TXT"; }
-        case (28) { return "AAAA"; }
-        case default { return "TYPE" + str(rtype); }
-    }
+    return match (rtype) in {
+        1 -> "A",
+        2 -> "NS",
+        5 -> "CNAME",
+        6 -> "SOA",
+        15 -> "MX",
+        16 -> "TXT",
+        28 -> "AAAA",
+        default -> "TYPE" + str(rtype),
+    };
 }
 
 # Codigo numerico a partir del nombre ("A", "AAAA", ...).
+# Codigo de tipo a partir del nombre (`"A" -> TYPE_A`). Los `const` de tipo
+# literal se ensanchan a su base (`int`) en el `match`.
 export function typeCode(name: String) -> int {
-    var n = name.upper();
-    if (n == "A") { return TYPE_A; }
-    if (n == "NS") { return TYPE_NS; }
-    if (n == "CNAME") { return TYPE_CNAME; }
-    if (n == "SOA") { return TYPE_SOA; }
-    if (n == "MX") { return TYPE_MX; }
-    if (n == "TXT") { return TYPE_TXT; }
-    if (n == "AAAA") { return TYPE_AAAA; }
-    return TYPE_ANY;
+    return match (name.upper()) in {
+        "A" -> TYPE_A,
+        "NS" -> TYPE_NS,
+        "CNAME" -> TYPE_CNAME,
+        "SOA" -> TYPE_SOA,
+        "MX" -> TYPE_MX,
+        "TXT" -> TYPE_TXT,
+        "AAAA" -> TYPE_AAAA,
+        default -> TYPE_ANY,
+    };
 }
 
 # --- Nombres ----------------------------------------------------------------
@@ -338,31 +341,31 @@ function parseTxt(b: int[], off: int, rdlen: int) -> String[] {
 }
 
 function makeRr(rtype: int, name: String, ttl: int, b: int[], off: int, rdlen: int) -> Rr {
-    # upcast por anotacion: la subclase se asigna a una variable tipada como la
-    # base `Rr` (el dispatch polimorfico de render() se conserva).
-    switch (rtype) {
-        case (1) { var ra: Rr = RrA(name, ttl, ipv4ToString(b, off)); return ra; }
-        case (28) { var raa: Rr = RrAAAA(name, ttl, ipv6ToString(b, off)); return raa; }
-        case (5) { var rc: Rr = RrName(name, ttl, TYPE_CNAME, decodeName(b, off).name); return rc; }
-        case (2) { var rn2: Rr = RrName(name, ttl, TYPE_NS, decodeName(b, off).name); return rn2; }
-        case (15) {
+    # Dispatch por `match` modo valor con armas-bloque que devuelven con `<-`
+    # (arrowReturn). upcast por anotacion: la subclase se asigna a una variable
+    # tipada como la base `Rr` (el dispatch polimorfico de render() se conserva),
+    # y `* <-` fija el tipo comun del match en `Rr`.
+    return match (rtype) in {
+        1 -> { var ra: Rr = RrA(name, ttl, ipv4ToString(b, off)); * <- ra; },
+        28 -> { var raa: Rr = RrAAAA(name, ttl, ipv6ToString(b, off)); * <- raa; },
+        5 -> { var rc: Rr = RrName(name, ttl, TYPE_CNAME, decodeName(b, off).name); * <- rc; },
+        2 -> { var rn2: Rr = RrName(name, ttl, TYPE_NS, decodeName(b, off).name); * <- rn2; },
+        15 -> {
             var pref = getU16(b, off);
             var rm: Rr = RrMX(name, ttl, pref, decodeName(b, off + 2).name);
-            return rm;
-        }
-        case (16) { var rt: Rr = RrTXT(name, ttl, parseTxt(b, off, rdlen)); return rt; }
-        case (6) {
+            * <- rm;
+        },
+        16 -> { var rt: Rr = RrTXT(name, ttl, parseTxt(b, off, rdlen)); * <- rt; },
+        6 -> {
             var mn = decodeName(b, off);
             var rn = decodeName(b, mn.next);
             var so = rn.next;
             var rs: Rr = RrSOA(name, ttl, mn.name, rn.name, getU32(b, so), getU32(b, so + 4),
                                getU32(b, so + 8), getU32(b, so + 12), getU32(b, so + 16));
-            return rs;
-        }
-        case default { var rd: Rr = Rr(name, ttl, rtype); return rd; }
-    }
-    var d: Rr = Rr(name, ttl, rtype);
-    return d;
+            * <- rs;
+        },
+        default -> { var rd: Rr = Rr(name, ttl, rtype); * <- rd; },
+    };
 }
 
 class RrResult {
