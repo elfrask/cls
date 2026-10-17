@@ -79,6 +79,16 @@ impl Type {
         }
     }
 
+    /// Compatibilidad para el JOIN de ramas/armas (`match`/ternario/`if`-expr):
+    /// asignables en cualquier dirección, o **mismo tipo base** (`Literal(1)` vs
+    /// `Int`, o `Literal(1)` vs `Literal(2)`). NO ensancha el tipo: preserva el
+    /// literal (para que siga siendo asignable a uniones de literales).
+    pub fn join_compatible(&self, other: &Type) -> bool {
+        self.is_assignable_to(other)
+            || other.is_assignable_to(self)
+            || self.literal_base() == other.literal_base()
+    }
+
     pub fn is_assignable_to(&self, other: &Type) -> bool {
         match (self, other) {
             // Any puede ser cualquier cosa

@@ -193,14 +193,14 @@ impl TypeChecker {
             };
             self.pop_scope();
             if let Some(bt) = bt_opt {
-                // Un literal type (`const K = 1` -> `1`) se ensancha a su base:
-                // armas con `const` de distinto valor (`1` vs `2`) deben ser
-                // asignables entre sí (misma semántica que `check_binary`).
-                let bt = bt.literal_base();
                 match &result {
                     None => result = Some(bt),
                     Some(rt) => {
-                        if !bt.is_assignable_to(rt) {
+                        // Armas con `const` de distinto valor (`Literal(1)` vs
+                        // `Literal(2)`) son compatibles (mismo tipo base). NO se
+                        // ensancha el tipo del match: preservar el literal evita
+                        // romper la asignación a uniones de literales.
+                        if !bt.join_compatible(rt) {
                             let msg = format!(
                                 "Tipo de arma `match` ({}) no asignable al tipo de la primera arma ({})",
                                 bt, rt
@@ -222,8 +222,7 @@ impl TypeChecker {
                 MatchBody::Block(b) => self.check_match_arm_block(b),
             };
             if let (Some(dt), Some(rt)) = (dt_opt, &result) {
-                let dt = dt.literal_base();
-                if !dt.is_assignable_to(rt) {
+                if !dt.join_compatible(rt) {
                     let msg = format!(
                         "Tipo de `default` de `match` ({}) no asignable al tipo de la primera arma ({})",
                         dt, rt
@@ -271,10 +270,8 @@ impl TypeChecker {
         self.ternary_yield_stack.push(None);
         self.check_block(&e.else_block);
         let else_y = self.ternary_yield_stack.pop().flatten();
-        // Ensanchar literales a su base (una rama que entrega `const K = 1`
-        // no debe tipar la `if`-expr como `Literal(1)`).
-        let then_y = then_y.map(|t| t.literal_base());
-        let else_y = else_y.map(|t| t.literal_base());
+        // El `if`-expr infiere de su rama: se conserva el tipo tal cual (sin
+        // ensanchar literales) para no romper uniones de literales.
         match (then_y, else_y) {
             (Some(t), _) => t,
             (None, Some(t)) => t,

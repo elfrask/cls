@@ -98,7 +98,7 @@ impl TypeChecker {
                     self.error(
                         &format!(
                             "Array heterogéneo: los elementos son de tipos incompatibles \
-                             ({} y {}). Usa `Record<String, any>` o un array homogéneo.",
+                             ({} y {}). Usa `Value[]` (o `Record<String, Value>`) o un array homogéneo.",
                             elem_type, spread_elem
                         ),
                         arr.span.clone(),
@@ -117,7 +117,7 @@ impl TypeChecker {
                 self.error(
                     &format!(
                         "Array heterogéneo: los elementos son de tipos incompatibles \
-                         ({} y {}). Usa `Record<String, any>` o un array homogéneo.",
+                         ({} y {}). Usa `Value[]` (o `Record<String, Value>`) o un array homogéneo.",
                         elem_type, t
                     ),
                     arr.span.clone(),
@@ -238,13 +238,15 @@ impl TypeChecker {
 
     pub(crate) fn check_conditional(&mut self, cond: &ConditionalExpr) -> Type {
         self.check_expression(&cond.condition);
-        let then_type = self.check_expression(&cond.then_expr).literal_base();
-        let else_type = self.check_expression(&cond.else_expr).literal_base();
+        let then_type = self.check_expression(&cond.then_expr);
+        let else_type = self.check_expression(&cond.else_expr);
 
         if then_type.is_assignable_to(&else_type) {
             then_type
         } else if else_type.is_assignable_to(&then_type) {
             else_type
+        } else if then_type.join_compatible(&else_type) {
+            then_type
         } else {
             Type::Any
         }
@@ -253,12 +255,14 @@ impl TypeChecker {
     /// `?:` estilo JS (F3). Misma semántica de tipo que el ternario legacy.
     pub(crate) fn check_ternary(&mut self, t: &TernaryExpr) -> Type {
         self.check_expression(&t.condition);
-        let then_type = self.check_expression(&t.then_expr).literal_base();
-        let else_type = self.check_expression(&t.else_expr).literal_base();
+        let then_type = self.check_expression(&t.then_expr);
+        let else_type = self.check_expression(&t.else_expr);
         if then_type.is_assignable_to(&else_type) {
             then_type
         } else if else_type.is_assignable_to(&then_type) {
             else_type
+        } else if then_type.join_compatible(&else_type) {
+            then_type
         } else {
             Type::Any
         }
