@@ -40,7 +40,7 @@ impl<'a> FuncEmitter<'a> {
                         .types
                         .get(&expr_span(&a.target))
                         .cloned()
-                        .unwrap_or(Type::Any);
+                        .unwrap_or(Type::Value);
                     let ty = self.value_type(&a.target)?;
                     self.emit_ident_load(name);
                     // `s += x` con String: APPEND in-place (dev-2) â€” escribe la
@@ -142,7 +142,7 @@ impl<'a> FuncEmitter<'a> {
                 // record dinÃ¡mico -> hashmap.
                 let dest_v = match self.types.get(&expr_span(&i.object)).cloned() {
                     Some(Type::Record(_, v)) => Some((*v).clone()),
-                    _ => Some(Type::Any),
+                    _ => Some(Type::Value),
                 };
                 self.emit_coerce(&a.value, dest_v.as_ref())?;
                 self.body.push(match elem_ty {
@@ -164,7 +164,7 @@ impl<'a> FuncEmitter<'a> {
                     .types
                     .get(&expr_span(&a.value))
                     .cloned()
-                    .unwrap_or(Type::Any);
+                    .unwrap_or(Type::Value);
                 // Tag del RUNTIME (runtime_tag_code: 1=string 6=array 7=record),
                 // NO arr_kind_code (binding: 4=string 5=array 6=record) — el
                 // record_set y la lectura/stringify usan el esquema runtime.
@@ -562,7 +562,7 @@ impl<'a> FuncEmitter<'a> {
                 }
                 // Record dinÃ¡mico: `r.campo = val` -> record_set(ptr, "campo",
                 // val_bits, tag) + write-back. El access por `.` sobre un
-                // Record<String,Any> (diferente del shape contiguo).
+                // Record<String,Value> (diferente del shape contiguo).
                 if matches!(
                     self.types.get(&expr_span(&m.object)),
                     Some(Type::Record(_, _))
@@ -581,7 +581,7 @@ impl<'a> FuncEmitter<'a> {
                     // record dinÃ¡mico -> hashmap.
                     let dest_v = match self.types.get(&expr_span(&m.object)).cloned() {
                         Some(Type::Record(_, v)) => Some((*v).clone()),
-                        _ => Some(Type::Any),
+                        _ => Some(Type::Value),
                     };
                     self.emit_coerce(&a.value, dest_v.as_ref())?;
                     // El valor se guarda como i64 (el local es i64): bool/char
@@ -600,7 +600,7 @@ impl<'a> FuncEmitter<'a> {
                         .types
                         .get(&expr_span(&a.value))
                         .cloned()
-                        .unwrap_or(Type::Any);
+                        .unwrap_or(Type::Value);
                     self.body
                         .push(Instruction::I64Const(runtime_tag_code_compound(&cls_t)));
                     if let Some(&idx) = self.func_indexes.get("__intr_record_set") {

@@ -388,7 +388,7 @@ impl TypeChecker {
                             );
                             for b in binds {
                                 if b != "_" {
-                                    self.define(b, Type::Any);
+                                    self.define(b, Type::Value);
                                 }
                             }
                             continue;
@@ -417,7 +417,7 @@ impl TypeChecker {
                                     );
                                     for b in binds {
                                         if b != "_" {
-                                            self.define(b, Type::Any);
+                                            self.define(b, Type::Value);
                                         }
                                     }
                                     continue;
@@ -433,7 +433,7 @@ impl TypeChecker {
                                     );
                                     for b in binds {
                                         if b != "_" {
-                                            self.define(b, Type::Any);
+                                            self.define(b, Type::Value);
                                         }
                                     }
                                     continue;
@@ -448,7 +448,7 @@ impl TypeChecker {
                                         }
                                         self.define(
                                             b,
-                                            types.get(i).cloned().unwrap_or(Type::Any),
+                                            types.get(i).cloned().unwrap_or(Type::Value),
                                         );
                                     }
                                 }
@@ -464,7 +464,7 @@ impl TypeChecker {
                                     );
                                     for b in binds {
                                         if b != "_" {
-                                            self.define(b, Type::Any);
+                                            self.define(b, Type::Value);
                                         }
                                     }
                                 }
@@ -493,15 +493,15 @@ impl TypeChecker {
                                 if b == "_" {
                                     continue;
                                 }
-                                let bt = params.get(i).cloned().unwrap_or(Type::Any);
+                                let bt = params.get(i).cloned().unwrap_or(Type::Value);
                                 self.define(b, bt);
                             }
                         }
                     } else {
-                        // Esquema desconocido: ligar Any (paridad F1).
+                        // Esquema desconocido: ligar Value (paridad F1).
                         for b in binds {
                             if b != "_" {
-                                self.define(b, Type::Any);
+                                self.define(b, Type::Value);
                             }
                         }
                     }
@@ -607,7 +607,7 @@ impl TypeChecker {
                 }
                 None
             }
-            // Tipos claramente no-enum -> error claro. `Any`/`Unknown`/`Union`
+            // Tipos claramente no-enum -> error claro. `Value`/`Unknown`/`Union`
             // no se fuerzan (el emisor decide).
             Some(other) if is_obviously_non_enum(other) => {
                 self.error(
@@ -672,7 +672,7 @@ impl TypeChecker {
         let iter_ty = self.check_expression(&fe.iterable);
         let item_ty = match &iter_ty {
             Type::Array(e) => (**e).clone(),
-            Type::Tuple(s) => s.first().cloned().unwrap_or(Type::Any),
+            Type::Tuple(s) => s.first().cloned().unwrap_or(Type::Value),
             Type::Named(n, _) if self.enums.contains(n) => iter_ty.clone(),
             // Magic methods __iter/__next: el item es el tipo del elemento del
             // array devuelto por __iter, o el retorno de __next del iterador.
@@ -684,11 +684,11 @@ impl TypeChecker {
                         .get(&itn)
                         .and_then(|im| im.get("__next"))
                         .cloned()
-                        .unwrap_or(Type::Any),
-                    _ => Type::Any,
+                        .unwrap_or(Type::Value),
+                    _ => Type::Value,
                 }
             }
-            _ => Type::Any,
+            _ => Type::Value,
         };
         self.push_scope();
         self.define(&fe.item_name, item_ty);
@@ -737,7 +737,7 @@ impl TypeChecker {
     pub(crate) fn check_with(&mut self, w: &WithStatement) -> Type {
         self.check_expression(&w.value);
         self.push_scope();
-        self.define(&w.name, Type::Any);
+        self.define(&w.name, Type::Value);
         self.check_block(&w.block);
         self.pop_scope();
         Type::Void
@@ -788,7 +788,7 @@ impl TypeChecker {
             );
             for b in &d.binds {
                 if b != "_" {
-                    self.define(b, Type::Any);
+                    self.define(b, Type::Value);
                 }
             }
             return;
@@ -831,7 +831,7 @@ impl TypeChecker {
             if b == "_" {
                 continue;
             }
-            let bt = params.get(i).cloned().unwrap_or(Type::Any);
+            let bt = params.get(i).cloned().unwrap_or(Type::Value);
             self.define(b, bt);
         }
     }
@@ -852,7 +852,7 @@ struct PatternCtx {
 
 /// Tipos de los bindings del payload de una clase (F6): best-effort contra el
 /// retorno anotado de `__unpack` (`T | (T1, T2, …)`).
-/// - `Some(tipos)` si la aridad es demostrable (o dinámica `Any`).
+/// - `Some(tipos)` si la aridad es demostrable (o dinámica `Value`).
 /// - `None` si el retorno contradice esa aridad (error estático) o no se conoce.
 fn class_bind_types(unpack_ret: Option<&Type>, arity: usize) -> Option<Vec<Type>> {
     fn from_type(t: &Type, arity: usize) -> Option<Vec<Type>> {
@@ -863,7 +863,7 @@ fn class_bind_types(unpack_ret: Option<&Type>, arity: usize) -> Option<Vec<Type>
             Type::Tuple(ts) if ts.len() == arity => Some(ts.clone()),
             Type::Tuple(_) => None,
             // Dinámico: laxo (se valida en runtime).
-            Type::Any | Type::Unknown | Type::Value | Type::Json => Some(vec![Type::Any; arity]),
+            Type::Value | Type::Unknown | Type::Json => Some(vec![Type::Value; arity]),
             // Valor único (no-tupla): solo vale para aridad 1.
             _ if arity == 1 => Some(vec![t.clone()]),
             _ => None,

@@ -56,14 +56,14 @@ impl<'a> Engine<'a> {
 
     fn resolve_annotation_type(&self, ann: &TypeAnnotation) -> ClsResult<Type> {
         // Phantom `!T`: el type param NO participa del tipo runtime (compile-time
-        // only). Se mapea a `Any` (i64 en la firma WASM), como los campos
+        // only). Se mapea a `Value` (i64 en la firma WASM), como los campos
         // dinámicos; así `function f<T>(x: !T)` compila.
         if matches!(ann.kind, crate::frontend::ast::TypeKind::Phantom(_)) {
-            return Ok(Type::Any);
+            return Ok(Type::Value);
         }
         let t = annotation_to_type(ann);
         match t {
-            Type::Any | Type::Unknown => Err(crate::error::ClsError::CompileError(
+            Type::Value | Type::Unknown => Err(crate::error::ClsError::CompileError(
                 "Anotación de tipo no soportada por el JIT (se requiere tipo concreto)".to_string(),
             )),
             other => Ok(other),
@@ -72,7 +72,7 @@ impl<'a> Engine<'a> {
 
 
     /// Tipo concreto de un campo de struct/clase. Si la anotació no resuelve a
-    /// un tipo concreto (`Any`/`Unknown`), se intenta el type map (el campo tiene
+    /// un tipo concreto (`Value`/`Unknown`), se intenta el type map (el campo tiene
     /// un span); si el kind es un tipo nombrado (struct/clase/enum) se trata como
     /// puntero (i64); si nada resuelve, error claro en vez de asumir i64.
     pub(crate) fn resolve_field_type(
@@ -80,11 +80,11 @@ impl<'a> Engine<'a> {
         ann: &TypeAnnotation,
     ) -> ClsResult<Type> {
         let t = annotation_to_type(ann);
-        if !matches!(t, Type::Any | Type::Unknown) {
+        if !matches!(t, Type::Value | Type::Unknown) {
             return Ok(t);
         }
         if let Some(rt) = self.types.get(&ann.span).cloned() {
-            if !matches!(rt, Type::Any | Type::Unknown) {
+            if !matches!(rt, Type::Value | Type::Unknown) {
                 return Ok(rt);
             }
         }
@@ -94,10 +94,10 @@ impl<'a> Engine<'a> {
                 args.iter().map(annotation_to_type).collect(),
             ));
         }
-        // `Any`/`Unknown` sin tipo concreto: campo dinámico (viaja como i64).
-        // El acceso a un campo `Any` usa dispatch por tag en runtime (records,
+        // `Value`/`Unknown` sin tipo concreto: campo dinámico (viaja como i64).
+        // El acceso a un campo `Value` usa dispatch por tag en runtime (records,
         // callbacks, valores JSON). Es el comportamiento del "dinamismo 0":
-        // `Any` sigue siendo un tipo de campo válido (el JIT lo rechaza solo en
+        // `Value` sigue siendo un tipo de campo válido (el JIT lo rechaza solo en
         // params/retornos de funciones, donde se requiere la firma WASM).
         Ok(t)
     }

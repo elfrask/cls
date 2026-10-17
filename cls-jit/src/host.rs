@@ -668,7 +668,7 @@ pub fn host_any_to_string<C: HostCtx>(ctx: &mut C, val: i64, tag: i64) -> i64 {
 }
 
 /// Truthiness de un valor dinámico `(val, tag)` (para `if (x)` / `bool(x)`
-/// sobre un valor leído de record/JSON/Any). Paridad con la truthiness del
+/// sobre un valor leído de record/JSON/Value). Paridad con la truthiness del
 /// walker por tipo: int/float != 0, string len != 0, bool, container len != 0,
 /// null -> false. Tags runtime: 0=int 1=string 2=float 3=bool 4=char 5=cmx
 /// 6=array 7=record.
@@ -1114,7 +1114,7 @@ pub fn host_json_parse<C: HostCtx>(ctx: &mut C, s: i64) -> i64 {
         Ok(serde_json::Value::Array(items)) => {
             // Array top-level de `json.parse`: se representa como RECORD con
             // claves "0","1",... (stride 24) para que el typeck/emisor (que lo
-            // tipa Record<String,Any>) lo indexe con record_get/any_member tag 7
+            // tipa Record<String,Value>) lo indexe con record_get/any_member tag 7
             // por la key numérica. Los arrays ANIDADOS (json_build) usan
             // stride 16 `[val,tag]` y se acceden con any_index tag 6.
             let n = items.len();
@@ -1730,7 +1730,7 @@ pub fn host_record_to_string<C: HostCtx>(ctx: &mut C, ptr: i64) -> i64 {
     ctx.write_str(&s)
 }
 
-/// `any_member(val, tag, key)`: acceso a miembro de un valor `Any` en runtime
+/// `any_member(val, tag, key)`: acceso a miembro de un valor `Value` en runtime
 /// (JSON parse anidado, p.ej. `o.a.c`). Despacha por tag.
 pub fn host_any_member<C: HostCtx>(ctx: &mut C, val: i64, tag: i64, key: i64) -> (i64, i64) {
     let t = tag_type(tag);
@@ -1798,7 +1798,7 @@ pub fn host_any_member<C: HostCtx>(ctx: &mut C, val: i64, tag: i64, key: i64) ->
     }
 }
 
-/// `any_index(val, tag, idx)`: indexar un valor `Any` en runtime.
+/// `any_index(val, tag, idx)`: indexar un valor `Value` en runtime.
 pub fn host_any_index<C: HostCtx>(ctx: &mut C, val: i64, tag: i64, idx: i64) -> (i64, i64) {
     let t = tag_type(tag);
     match t {

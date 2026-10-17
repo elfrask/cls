@@ -7,7 +7,7 @@ impl TypeChecker {
         // El scope local (variables/parámetros) GANA sobre los módulos internos:
         // `function f(path: String) { path.length }` es el String, no el módulo
         // `path` (bug dev-2: parámetro llamado path/os/fs/... se tipaba como
-        // módulo -> Any, rompiendo path.length / s.length en parámetros).
+        // módulo -> Value, rompiendo path.length / s.length en parámetros).
         // Un alias de import (`import "math" as math`) NO es una variable local:
         // sigue el camino de módulo (module_member_type, abajo).
         let is_local = match &*member.object {
@@ -35,7 +35,7 @@ impl TypeChecker {
                 if name == "http" {
                     return match member.member.as_str() {
                         "get" | "post" => Type::String,
-                        _ => Type::Any,
+                        _ => Type::Value,
                     };
                 }
                 if name == "fs" {
@@ -43,7 +43,7 @@ impl TypeChecker {
                         "exists" => Type::Bool,
                         "cwd" | "readFile" => Type::String,
                         "listDir" => Type::Array(Box::new(Type::String)),
-                        _ => Type::Any,
+                        _ => Type::Value,
                     };
                 }
                 if name == "json" {
@@ -53,7 +53,7 @@ impl TypeChecker {
                         // y stringify despachan por tag sin perder el tipo.
                         "parse" => Type::Json,
                         "stringify" => Type::String,
-                        _ => Type::Any,
+                        _ => Type::Value,
                     };
                 }
                 if name == "math" {
@@ -63,7 +63,7 @@ impl TypeChecker {
                         "sqrt" | "floor" | "ceil" | "round" | "sin" | "cos" | "tan" | "log"
                         | "pow" | "min" | "max" => Type::Float,
                         "abs" => Type::Int,
-                        _ => Type::Any,
+                        _ => Type::Value,
                     };
                 }
                 if name == "os" {
@@ -72,7 +72,7 @@ impl TypeChecker {
                         | "env" | "sep" => Type::String,
                         "cpus" | "pid" | "uptime" => Type::Int,
                         "isWindows" | "isUnix" => Type::Bool,
-                        _ => Type::Any,
+                        _ => Type::Value,
                     };
                 }
                 if name == "path" {
@@ -80,7 +80,7 @@ impl TypeChecker {
                         "join" | "basename" | "dirname" | "extname" | "resolve" | "normalize"
                         | "sep" => Type::String,
                         "isAbsolute" => Type::Bool,
-                        _ => Type::Any,
+                        _ => Type::Value,
                     };
                 }
                 if name == "process" {
@@ -89,7 +89,7 @@ impl TypeChecker {
                         "cwd" | "env" | "platform" | "title" => Type::String,
                         "pid" => Type::Int,
                         "exit" => Type::Void,
-                        _ => Type::Any,
+                        _ => Type::Value,
                     };
                 }
                 if name == "time" {
@@ -98,7 +98,7 @@ impl TypeChecker {
                         "now" | "seconds" | "year" | "month" | "day" | "hour" | "minute"
                         | "second" => Type::Int,
                         "sleep" => Type::Void,
-                        _ => Type::Any,
+                        _ => Type::Value,
                     };
                 }
                 if name == "random" {
@@ -106,11 +106,11 @@ impl TypeChecker {
                         "random" | "float" => Type::Float,
                         "int" => Type::Int,
                         "uuid" => Type::String,
-                        _ => Type::Any,
+                        _ => Type::Value,
                     };
                 }
                 // net eliminado (dev-2): no hay miembros conocidos. Si el usuario
-                // escribe `net.X` el typeck cae al default (Any/Unknown) y el
+                // escribe `net.X` el typeck cae al default (Value/Unknown) y el
                 // emisor lo rechaza con "miembro no soportado".
                 // Para sockets: `extension` con `when` por SO en el .clsx.
                 if name == "strings" {
@@ -118,7 +118,7 @@ impl TypeChecker {
                         "indexOf" => Type::Int,
                         "slice" => Type::String,
                         "split" => Type::Array(Box::new(Type::String)),
-                        _ => Type::Any,
+                        _ => Type::Value,
                     };
                 }
             }
@@ -134,7 +134,7 @@ impl TypeChecker {
                 "indexOf" => Type::Int,
                 "split" => Type::Array(Box::new(Type::String)),
                 "toChar" => Type::Array(Box::new(Type::Char)),
-                _ => Type::Any,
+                _ => Type::Value,
             },
             Type::Array(elem) => match member.member.as_str() {
                 "length" => Type::Int,
@@ -142,12 +142,12 @@ impl TypeChecker {
                 "includes" | "isEmpty" => Type::Bool,
                 "indexOf" => Type::Int,
                 "push" | "pop" | "shift" | "unshift" | "reverse" => Type::Array(elem.clone()),
-                _ => Type::Any,
+                _ => Type::Value,
             },
             Type::Tuple(_) => match member.member.as_str() {
                 "length" => Type::Int,
                 "join" | "toString" => Type::String,
-                _ => Type::Any,
+                _ => Type::Value,
             },
             Type::Record(k, _) => match member.member.as_str() {
                 "length" | "size" => Type::Int,
@@ -155,7 +155,7 @@ impl TypeChecker {
                 "keys" => Type::Array(k.clone()),
                 "values" => Type::Array(Box::new(Type::Value)),
                 "toString" => Type::String,
-                _ => Type::Any,
+                _ => Type::Value,
             },
             // JSON (objeto/array dinámico) y Value: el acceso a campo devuelve
             // un `Value` (el tag runtime viaja con el valor; las operaciones
@@ -175,7 +175,7 @@ impl TypeChecker {
             Type::Shape(fields) => match member.member.as_str() {
                 "length" | "size" => Type::Int,
                 "keys" => Type::Array(Box::new(Type::String)),
-                "values" => Type::Array(Box::new(Type::Any)),
+                "values" => Type::Array(Box::new(Type::Value)),
                 "has" => Type::Bool,
                 "toString" => Type::String,
                 name => fields
@@ -200,16 +200,16 @@ impl TypeChecker {
                 "children" => Type::Array(Box::new(Type::Cmx)),
                 "kind" => Type::Int,
                 "toString" => Type::String,
-                _ => Type::Any,
+                _ => Type::Value,
             },
             Type::Int | Type::Float => match member.member.as_str() {
                 "toString" => Type::String,
                 "abs" => obj_type,
-                _ => Type::Any,
+                _ => Type::Value,
             },
             Type::Bool | Type::Char => match member.member.as_str() {
                 "toString" => Type::String,
-                _ => Type::Any,
+                _ => Type::Value,
             },
             Type::Named(name, _) => {
                 if let Some(members) = self.class_members.get(name.as_str()) {
@@ -232,7 +232,7 @@ impl TypeChecker {
                 if let Some(t) = self.module_member_type(name.as_str(), &member.member) {
                     return t;
                 }
-                Type::Any
+                Type::Value
             }
             // Unión temporal (F5): en un arma multi-tipo del `match` el scrutinee
             // se estrecha a `A | B`. El miembro debe existir en TODOS los tipos
@@ -240,7 +240,7 @@ impl TypeChecker {
             // de ese miembro si difieren). Si falta en alguno -> error claro.
             Type::Union(members) => {
                 if members.is_empty() {
-                    return Type::Any;
+                    return Type::Value;
                 }
                 let mut tys: Vec<Type> = Vec::with_capacity(members.len());
                 for m in &members {
@@ -265,22 +265,22 @@ impl TypeChecker {
                     Type::Union(tys)
                 }
             }
-            // Any/Unknown (valor dinámico leído de un Record/JSON): `toString`
+            // Unknown (valor dinámico leído de un Record/JSON): `toString`
             // siempre produce String (despacho por tag en runtime:
             // __intr_any_to_string). Sin esto, `record[k].toString()` tipaba
-            // Any y rompía la concatenación `String + Any` (reporte dev).
-            Type::Any | Type::Unknown => match member.member.as_str() {
+            // Value y rompía la concatenación `String + Value` (reporte dev).
+            Type::Unknown => match member.member.as_str() {
                 "toString" => Type::String,
-                _ => Type::Any,
+                _ => Type::Value,
             },
-            _ => Type::Any,
+            _ => Type::Value,
         }
     }
 
     /// Tipo del miembro `member` sobre UN tipo miembro de una unión (F5).
     /// Devuelve `None` si ese tipo **no expone** el miembro: la unión exige que
     /// TODOS los tipos lo tengan. Es la versión de "presencia explícita" del
-    /// dispatch de `check_member_access` (que en sus ramas devuelve `Any` como
+    /// dispatch de `check_member_access` (que en sus ramas devuelve `Value` como
     /// fallback tolerante); acá el fallback es `None`.
     fn union_member_of(&mut self, obj: &Type, member: &str) -> Option<Type> {
         match obj {
@@ -320,7 +320,7 @@ impl TypeChecker {
                 let known = match member {
                     "length" | "size" => Some(Type::Int),
                     "keys" => Some(Type::Array(Box::new(Type::String))),
-                    "values" => Some(Type::Array(Box::new(Type::Any))),
+                    "values" => Some(Type::Array(Box::new(Type::Value))),
                     "has" => Some(Type::Bool),
                     "toString" => Some(Type::String),
                     _ => None,
@@ -380,10 +380,10 @@ impl TypeChecker {
             }
             Type::Literal(v) => self.union_member_of(&v.base_type(), member),
             // Valor dinámico: el miembro existe siempre (despacho por tag).
-            Type::Any | Type::Unknown | Type::Value | Type::Json => match member {
+            Type::Value | Type::Unknown | Type::Json => match member {
                 "toString" => Some(Type::String),
                 "length" | "size" => Some(Type::Int),
-                _ => Some(Type::Any),
+                _ => Some(Type::Value),
             },
             _ => None,
         }

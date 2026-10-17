@@ -61,13 +61,13 @@ impl<'a> FuncEmitter<'a> {
         // Scrutinee (evaluado UNA vez) salvo en modo condición.
         let mut scrut_local: Option<u32> = None;
         let mut scrut_was = WasTy::I64;
-        let mut scrut_cls = Type::Any;
+        let mut scrut_cls = Type::Value;
         let mut scrut_is_str = false;
         if m.mode != MatchMode::Cond {
             let s = m.scrutinee.as_ref().ok_or_else(|| {
                 crate::error::ClsError::compile_at("`match` sin scrutinee", &m.span)
             })?;
-            scrut_cls = self.types.get(&expr_span(s)).cloned().unwrap_or(Type::Any);
+            scrut_cls = self.types.get(&expr_span(s)).cloned().unwrap_or(Type::Value);
             scrut_is_str = self.is_string_expr(s);
             scrut_was = if scrut_is_str {
                 WasTy::I64
@@ -464,7 +464,7 @@ impl<'a> FuncEmitter<'a> {
             // Aridad 1 -> valor único; >1 -> tupla `[cap][len][slots*8]`.
             let slot_types = match class_bind_types(disc.unpack_ret.as_ref(), arity) {
                 Some(ts) => ts,
-                None => vec![Type::Any; arity],
+                None => vec![Type::Value; arity],
             };
             return Some(PayloadPlan::Class {
                 class_key: class_key.clone(),
@@ -507,7 +507,7 @@ impl<'a> FuncEmitter<'a> {
                     if b == "_" {
                         continue;
                     }
-                    let pty = params.get(i).cloned().unwrap_or(Type::Any);
+                    let pty = params.get(i).cloned().unwrap_or(Type::Value);
                     let w = was_type(&pty).unwrap_or(WasTy::I64);
                     self.emit_enum_payload_slot(obj_local, i);
                     match w {
@@ -570,7 +570,7 @@ impl<'a> FuncEmitter<'a> {
                     if b == "_" {
                         continue;
                     }
-                    let pty = slot_types.get(i).cloned().unwrap_or(Type::Any);
+                    let pty = slot_types.get(i).cloned().unwrap_or(Type::Value);
                     let w = was_type(&pty).unwrap_or(WasTy::I64);
                     self.body.push(Instruction::LocalGet(up));
                     if !single {
@@ -687,7 +687,7 @@ impl<'a> FuncEmitter<'a> {
             if b == "_" {
                 continue;
             }
-            let pty = params.get(i).cloned().unwrap_or(Type::Any);
+            let pty = params.get(i).cloned().unwrap_or(Type::Value);
             let w = was_type(&pty).unwrap_or(WasTy::I64);
             self.emit_enum_payload_slot(val, i);
             match w {
@@ -842,7 +842,7 @@ fn class_bind_types(unpack_ret: Option<&Type>, arity: usize) -> Option<Vec<Type>
             Type::Union(ms) => ms.iter().find_map(|m| from_type(m, arity)),
             Type::Tuple(ts) if ts.len() == arity => Some(ts.clone()),
             Type::Tuple(_) => None,
-            Type::Any | Type::Unknown | Type::Value | Type::Json => Some(vec![Type::Any; arity]),
+            Type::Value | Type::Unknown | Type::Json => Some(vec![Type::Value; arity]),
             _ if arity == 1 => Some(vec![t.clone()]),
             _ => None,
         }

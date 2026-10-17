@@ -10,7 +10,7 @@ impl TypeChecker {
             Type::Array(inner) => *inner,
             Type::Record(_k, v) => *v,
             // String: s[i] -> String de 1 byte (semántica de bytes, igual que
-            // length/slice). Char: c[i] no aplica (escalar) -> se deja Any y el
+            // length/slice). Char: c[i] no aplica (escalar) -> se deja Value y el
             // emisor da error claro si se intenta.
             Type::String => Type::String,
             // JSON / Value / Cmx: el índice (clave u offset) devuelve un `Value`
@@ -35,7 +35,7 @@ impl TypeChecker {
                             )
                         })
                 }
-                _ => Type::Any,
+                _ => Type::Value,
             },
             // Tupla: índice literal -> slot exacto; dinámico -> unión de slots
             Type::Tuple(ts) => match idx.index.as_ref() {
@@ -44,11 +44,11 @@ impl TypeChecker {
                         LiteralKind::Int(n) => *n as usize,
                         _ => 0,
                     };
-                    ts.get(i).cloned().unwrap_or(Type::Any)
+                    ts.get(i).cloned().unwrap_or(Type::Value)
                 }
                 _ => {
                     if ts.is_empty() {
-                        Type::Any
+                        Type::Value
                     } else {
                         Type::Union(ts.clone())
                     }
@@ -58,8 +58,8 @@ impl TypeChecker {
                 us.iter()
                     .map(|u| match u {
                         Type::Array(inner) => (**inner).clone(),
-                        Type::Tuple(ts) => ts.first().cloned().unwrap_or(Type::Any),
-                        _ => Type::Any,
+                        Type::Tuple(ts) => ts.first().cloned().unwrap_or(Type::Value),
+                        _ => Type::Value,
                     })
                     .collect(),
             ),
@@ -69,13 +69,13 @@ impl TypeChecker {
                     return ret;
                 }
                 let _ = index_type;
-                Type::Any
+                Type::Value
             }
         }
     }
 
     pub(crate) fn check_array(&mut self, arr: &ArrayExpr) -> Type {
-        let mut elem_type = Type::Any;
+        let mut elem_type = Type::Value;
         for elem in &arr.elements {
             // Spread `[...arr]`: el inner es Array<T> -> los elementos son T.
             if let Expression::Spread(inner, _) = elem {
@@ -87,10 +87,10 @@ impl TypeChecker {
                             &format!("Spread de array esperaba un Array, encontró {}", t),
                             arr.span.clone(),
                         );
-                        Type::Any
+                        Type::Value
                     }
                 };
-                if matches!(elem_type, Type::Any) {
+                if matches!(elem_type, Type::Value) {
                     elem_type = spread_elem;
                 } else if !spread_elem.is_assignable_to(&elem_type)
                     && !elem_type.is_assignable_to(&spread_elem)
@@ -108,7 +108,7 @@ impl TypeChecker {
                 continue;
             }
             let t = self.check_expression(elem);
-            if matches!(elem_type, Type::Any) {
+            if matches!(elem_type, Type::Value) {
                 elem_type = t;
             } else if !t.is_assignable_to(&elem_type) && !elem_type.is_assignable_to(&t) {
                 // Array heterogéneo: en CLS tipado no se permite mezclar tipos
@@ -193,7 +193,7 @@ impl TypeChecker {
                 p.type_ann
                     .as_ref()
                     .map(|ta| self.resolve_type_annotation(ta))
-                    .unwrap_or(Type::Any)
+                    .unwrap_or(Type::Value)
             })
             .collect();
 
@@ -217,7 +217,7 @@ impl TypeChecker {
             .as_ref()
             .map(|ta| self.resolve_type_annotation(ta))
             .unwrap_or_else(|| {
-                let mut t = Type::Any;
+                let mut t = Type::Value;
                 for stmt in &arrow.body.statements {
                     if let Statement::Return(Some(e)) = stmt {
                         let sp = expr_span(e);
@@ -248,7 +248,7 @@ impl TypeChecker {
         } else if then_type.join_compatible(&else_type) {
             then_type
         } else {
-            Type::Any
+            Type::Value
         }
     }
 
@@ -264,7 +264,7 @@ impl TypeChecker {
         } else if then_type.join_compatible(&else_type) {
             then_type
         } else {
-            Type::Any
+            Type::Value
         }
     }
 

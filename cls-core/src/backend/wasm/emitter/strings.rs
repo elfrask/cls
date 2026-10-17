@@ -492,7 +492,7 @@ impl<'a> FuncEmitter<'a> {
 
     pub(crate) fn emit_to_string(&mut self, arg: &Expression) -> ClsResult<()> {
         let span = expr_span(arg);
-        let t = self.types.get(&span).cloned().unwrap_or(Type::Any);
+        let t = self.types.get(&span).cloned().unwrap_or(Type::Value);
         match t {
             Type::String => {}
             Type::Bool => self.emit_str_host("__intr_str_bool"),
@@ -549,7 +549,7 @@ impl<'a> FuncEmitter<'a> {
                 // Handle de función -> `<function X>` (el nombre está en el handle).
                 self.host.call(HostFn::FnToString, &mut self.body);
             }
-            Type::Any | Type::Unknown | Type::Json | Type::Value => {
+            Type::Value | Type::Unknown | Type::Json => {
                 // Valor dinámico (leído de record/JSON): el tag del runtime
                 // decide la conversión. El caller dejó el val en el stack sin
                 // tag; re-emitimos con emit_any_chain (val + tag) y despachamos
@@ -570,7 +570,7 @@ impl<'a> FuncEmitter<'a> {
     /// `__intr_str_append`. Escalares concretos emiten valor+tag estático;
     /// dinámicos usan el camino por tag runtime (emit_any_chain).
     pub(crate) fn emit_append_piece(&mut self, expr: &Expression) -> ClsResult<()> {
-        let t = self.types.get(&expr_span(expr)).cloned().unwrap_or(Type::Any);
+        let t = self.types.get(&expr_span(expr)).cloned().unwrap_or(Type::Value);
         // Enums (unit o con payload): serializar por su representación
         // (`variante` / `variante(payload...)`) y anexar como string. Sin esto,
         // la interpolación `${enum}` caía al camino dinámico y perdía el valor.
@@ -614,7 +614,7 @@ impl<'a> FuncEmitter<'a> {
 
     pub(crate) fn emit_to_int(&mut self, arg: &Expression) -> ClsResult<()> {
         let span = expr_span(arg);
-        let t = self.types.get(&span).cloned().unwrap_or(Type::Any);
+        let t = self.types.get(&span).cloned().unwrap_or(Type::Value);
         match t {
             Type::Int => {}
             Type::Float => self.body.push(Instruction::I64TruncSatF64S),
@@ -664,7 +664,7 @@ impl<'a> FuncEmitter<'a> {
 
     pub(crate) fn emit_to_float(&mut self, arg: &Expression) -> ClsResult<()> {
         let span = expr_span(arg);
-        let t = self.types.get(&span).cloned().unwrap_or(Type::Any);
+        let t = self.types.get(&span).cloned().unwrap_or(Type::Value);
         match t {
             Type::Float => {}
             Type::Int => self.body.push(Instruction::F64ConvertI64S),
@@ -688,7 +688,7 @@ impl<'a> FuncEmitter<'a> {
     pub(crate) fn emit_to_bool(&mut self, arg: &Expression) -> ClsResult<()> {
         // Reutiliza coerce_to_bool: la misma semántica de truthiness del walker
         // (int/float != 0, string len != 0, array/record len != 0, cmx/objetos
-        // true). Antes los compuestos (cmx/array/record/any) caían en `_` y
+        // true). Antes los compuestos (cmx/array/record/value) caían en `_` y
         // dejaban el ptr i64 en el stack → `if (bool(x))` emitía WASM inválido.
         self.coerce_to_bool(arg)
     }

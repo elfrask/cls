@@ -197,7 +197,7 @@ impl TypeChecker {
                 }
                 Type::Bool
             }
-            _ => Type::Any,
+            _ => Type::Value,
         }
     }
 

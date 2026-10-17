@@ -177,7 +177,7 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I32WrapI64);
                 let el_cls = cmx_literal_type(el)
                     .or_else(|| self.types.get(&expr_span(el)).cloned())
-                    .unwrap_or(Type::Any);
+                    .unwrap_or(Type::Value);
                 self.body
                     .push(Instruction::I64Const(cmx_tag_for_type(&el_cls)));
                 self.body.push(Instruction::I64Store(MemArg {
@@ -270,7 +270,7 @@ impl<'a> FuncEmitter<'a> {
 
     /// Emite un literal de record como HASHMAP (`[cap][len][(key,val,tag)*24]`),
     /// sin importar si el type map dice Shape. Se usa cuando el literal es un
-    /// VALOR que se guarda en un contenedor dinámico (`Record<String,any>`):
+    /// VALOR que se guarda en un contenedor dinámico (`Record<String,Value>`):
     /// un shape contiguo NO es legible como hashmap por la lectura/stringify.
     pub(crate) fn emit_record_hashmap(&mut self, r: &RecordExpr) -> ClsResult<()> {
         let n = (r.entries.len() + r.spreads.len()) as i64;
@@ -303,7 +303,7 @@ impl<'a> FuncEmitter<'a> {
                 .types
                 .get(&expr_span(val))
                 .cloned()
-                .unwrap_or(Type::Any);
+                .unwrap_or(Type::Value);
             // Valores Named (struct/clase/enum) y tuplas en un record dinámico:
             // se guardan SERIALIZADOS a string RAW (tag 9) para que el formateo
             // no muestre punteros, corchetes ni comillas (bug dev-2: la tupla
@@ -367,14 +367,14 @@ impl<'a> FuncEmitter<'a> {
 
     /// Convierte un SHAPE (estructura contigua con offsets) a un HASHMAP
     /// (`[cap][len][(key,val,tag)*24]`). Se usa cuando un valor tipado Shape se
-    /// guarda en un contenedor dinámico (`Record<String,any>`): la lectura/
+    /// guarda en un contenedor dinámico (`Record<String,Value>`): la lectura/
     /// stringify lo trata como hashmap, y un shape contiguo no es legible como
     /// tal. Evalúa `expr` (deja el ptr del shape) y lo copia campo a campo.
     /// ¿Es un destino que lee los valores como hashmap dinámico?
     pub(crate) fn is_dynamic_dest(t: &Type) -> bool {
         matches!(
             t,
-            Type::Record(_, _) | Type::Json | Type::Value | Type::Any | Type::Unknown
+            Type::Record(_, _) | Type::Json | Type::Value | Type::Unknown
         )
     }
 
@@ -525,7 +525,7 @@ impl<'a> FuncEmitter<'a> {
                 }
                 Some(CmxAttributeValue::Expression(expr)) => {
                     self.emit_expression(expr)?;
-                    // Literales -> su tipo real (el type map puede dar Any).
+                    // Literales -> su tipo real (el type map puede dar Value).
                     cmx_literal_type(expr).or_else(|| self.types.get(&expr_span(expr)).cloned())
                 }
                 Some(CmxAttributeValue::Shorthand(name)) => {
@@ -548,7 +548,7 @@ impl<'a> FuncEmitter<'a> {
             let is_named_container = matches!(val_type, Some(Type::Named(_, _)));
             if is_named_container {
                 // El valor (ptr del struct/clase o i64 del enum) está en stack.
-                let cls_t = val_type.clone().unwrap_or(Type::Any);
+                let cls_t = val_type.clone().unwrap_or(Type::Value);
                 self.emit_typed_value_to_string(was, &cls_t)?;
                 self.body.push(Instruction::I64Const(9 << 8)); // tag raw (sin comillas)
             } else {
@@ -557,7 +557,7 @@ impl<'a> FuncEmitter<'a> {
                     WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
                     WasTy::I64 => {}
                 }
-                let cls = val_type.unwrap_or(Type::Any);
+                let cls = val_type.unwrap_or(Type::Value);
                 self.body
                     .push(Instruction::I64Const(cmx_tag_for_type(&cls)));
             }
@@ -578,7 +578,7 @@ impl<'a> FuncEmitter<'a> {
                 CmxChild::Expression(expr) => {
                     let t = cmx_literal_type(expr)
                         .or_else(|| self.types.get(&expr_span(expr)).cloned())
-                        .unwrap_or(Type::Any);
+                        .unwrap_or(Type::Value);
                     self.emit_expression(expr)?;
                     if matches!(t, Type::String) {
                         // Child de expresión String -> CmxValue de texto (kind=1):
@@ -606,10 +606,10 @@ impl<'a> FuncEmitter<'a> {
     pub(crate) fn emit_index_get(&mut self, i: &IndexExpr) -> ClsResult<()> {
         // Record: r["key"] -> record_get(ptr, key)
         let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
-        // `o.x[0]` con `o.x` Any/Value/JSON (json.parse anidado): indexar despachando por tag.
+        // `o.x[0]` con `o.x` Value/JSON (json.parse anidado): indexar despachando por tag.
         if matches!(
             obj_ty,
-            Some(Type::Any) | Some(Type::Json) | Some(Type::Value)
+            Some(Type::Value) | Some(Type::Json)
         ) {
             let expr = Expression::Index(i.clone());
             self.emit_any_chain(&expr)?;
@@ -676,7 +676,7 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
             // Clave no literal sobre shape: tratar el shape como hashmap y usar
-            // AnyIndex (el typeck ya tipó el resultado como Value/Any).
+            // AnyIndex (el typeck ya tipó el resultado como Value).
             let expr = Expression::Index(i.clone());
             self.emit_any_chain(&expr)?;
             self.body.push(Instruction::Drop);

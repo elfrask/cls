@@ -50,7 +50,7 @@ pub(super) fn cmx_literal_type(e: &Expression) -> Option<Type> {
             LiteralKind::String(_) => Type::String,
             LiteralKind::Bool(_) => Type::Bool,
             LiteralKind::Char(_) => Type::Char,
-            _ => Type::Any,
+            _ => Type::Value,
         });
     }
     None
@@ -99,7 +99,7 @@ pub(super) fn type_name_str(t: &Type) -> &'static str {
         Type::Bool => "Bool",
         Type::Char => "Char",
         Type::Array(_) => "Array",
-        _ => "Any",
+        _ => "Value",
     }
 }
 

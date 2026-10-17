@@ -4,7 +4,7 @@
 use wasm_encoder::ValType;
 /// Funciones host (`env.*`) que el nodo JIT debe implementar.
 ///
-/// Solo las que el emisor llama directo (I/O, reloj, closures, CMX, Any, JSON,
+/// Solo las que el emisor llama directo (I/O, reloj, closures, CMX, Value, JSON,
 /// módulos del nodo). Las operaciones de strings/arrays/records/math/parse se
 /// resuelven a internals fusionadas `__intr_*` (0 cruces de frontera); no hay
 /// variantes host para ellas (poda Fase 8).

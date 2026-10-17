@@ -135,20 +135,20 @@ impl TypeChecker {
             "print", "input", "args", "toString", "int", "float", "str", "bool",
             "len", "type", "now", "exit", "sleep", "throw", "config", "char", "ord",
         ];
-        tc.define("print", Type::Fun(vec![Type::Any], Box::new(Type::Void)));
+        tc.define("print", Type::Fun(vec![Type::Value], Box::new(Type::Void)));
         tc.define("input", Type::Fun(vec![Type::String], Box::new(Type::String)));
         tc.define("args", Type::Array(Box::new(Type::String)));
-        tc.define("toString", Type::Fun(vec![Type::Any], Box::new(Type::String)));
-        tc.define("int", Type::Fun(vec![Type::Any], Box::new(Type::Int)));
-        tc.define("float", Type::Fun(vec![Type::Any], Box::new(Type::Float)));
-        tc.define("str", Type::Fun(vec![Type::Any], Box::new(Type::String)));
-        tc.define("bool", Type::Fun(vec![Type::Any], Box::new(Type::Bool)));
-        tc.define("len", Type::Fun(vec![Type::Any], Box::new(Type::Int)));
-        tc.define("type", Type::Fun(vec![Type::Any], Box::new(Type::String)));
+        tc.define("toString", Type::Fun(vec![Type::Value], Box::new(Type::String)));
+        tc.define("int", Type::Fun(vec![Type::Value], Box::new(Type::Int)));
+        tc.define("float", Type::Fun(vec![Type::Value], Box::new(Type::Float)));
+        tc.define("str", Type::Fun(vec![Type::Value], Box::new(Type::String)));
+        tc.define("bool", Type::Fun(vec![Type::Value], Box::new(Type::Bool)));
+        tc.define("len", Type::Fun(vec![Type::Value], Box::new(Type::Int)));
+        tc.define("type", Type::Fun(vec![Type::Value], Box::new(Type::String)));
         tc.define("now", Type::Fun(vec![], Box::new(Type::Int)));
         tc.define("exit", Type::Fun(vec![Type::Int], Box::new(Type::Void)));
         tc.define("sleep", Type::Fun(vec![Type::Int], Box::new(Type::Void)));
-        tc.define("throw", Type::Fun(vec![Type::Any], Box::new(Type::Unknown)));
+        tc.define("throw", Type::Fun(vec![Type::Value], Box::new(Type::Unknown)));
         // `char(n: int) -> Char` / `ord(c: Char) -> int`: unidad de 1 byte para
         // buffers (modelo bytes/str). Intrínsecos primitivos (i32 trivial).
         tc.define("char", Type::Fun(vec![Type::Int], Box::new(Type::Char)));
@@ -195,7 +195,7 @@ impl TypeChecker {
 
     pub(crate) fn define_function_signature(&mut self, f: &FunctionDecl) {
         let param_tys: Vec<Type> = f.params.iter()
-            .map(|p| p.type_ann.as_ref().map(|t| self.resolve_type_annotation(t)).unwrap_or(Type::Any))
+            .map(|p| p.type_ann.as_ref().map(|t| self.resolve_type_annotation(t)).unwrap_or(Type::Value))
             .collect();
         let ret = f.return_type.as_ref()
             .map(|t| self.resolve_type_annotation(t))

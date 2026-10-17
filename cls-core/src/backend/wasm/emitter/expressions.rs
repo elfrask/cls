@@ -369,7 +369,7 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::I64Add);
             self.body.push(Instruction::I32WrapI64);
             self.body.push(Instruction::I64Const(cls_kind_code(
-                intr.params.get(i).unwrap_or(&Type::Any),
+                intr.params.get(i).unwrap_or(&Type::Value),
             )));
             self.body.push(Instruction::I64Store(MemArg {
                 offset: 0,

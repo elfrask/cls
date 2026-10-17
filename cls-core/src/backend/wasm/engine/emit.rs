@@ -127,7 +127,7 @@ impl<'a> Engine<'a> {
                     .map(|v| {
                         v.params
                             .iter()
-                            .map(|ta| self.resolve_field_type(ta).unwrap_or(Type::Any))
+                            .map(|ta| self.resolve_field_type(ta).unwrap_or(Type::Value))
                             .collect()
                     })
                     .collect();
@@ -809,7 +809,7 @@ impl<'a> Engine<'a> {
         }
         for f in &arrow_funcs {
             // Tipo del typeck (retorno inferido si la arrow no anota `-> T`).
-            let arrow_ty = self.types.get(&f.span).cloned().unwrap_or(Type::Any);
+            let arrow_ty = self.types.get(&f.span).cloned().unwrap_or(Type::Value);
             let (params, ret) = match arrow_ty {
                 Type::Fun(p, r) => (p, *r),
                 _ => {
@@ -820,7 +820,7 @@ impl<'a> Engine<'a> {
                             p.type_ann
                                 .as_ref()
                                 .map(annotation_to_type)
-                                .unwrap_or(Type::Any)
+                                .unwrap_or(Type::Value)
                         })
                         .collect();
                     let declared_ret = f

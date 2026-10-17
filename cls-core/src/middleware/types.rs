@@ -10,7 +10,6 @@ pub enum Type {
     String,
     Bool,
     Char,
-    Any,
     Unknown,
     Null,
     Void,
@@ -18,9 +17,9 @@ pub enum Type {
 
     // Valor JSON dinámico (alias `JSON = Record<String, Value | JSON | Value[]>`)
     // y Value (cualquier valor CLS: primitivo, JSON, array). Son los tipos
-    // "tipados pero dinámicos" que reemplazan a `Any` como contrato público:
-    // el tag runtime viaja con el valor, el typeck/emisor los tratan como
-    // contenedores polimórficos concretos.
+    // "tipados pero dinámicos": el tag runtime viaja con el valor, el
+    // typeck/emisor los tratan como contenedores polimórficos concretos. `Value`
+    // es el top universal del sistema (antes ocupado por `Any`).
     Json,
     Value,
 
@@ -91,9 +90,6 @@ impl Type {
 
     pub fn is_assignable_to(&self, other: &Type) -> bool {
         match (self, other) {
-            // Any puede ser cualquier cosa
-            (Type::Any, _) | (_, Type::Any) => true,
-
             // Value / Json: contenedores dinámicos. Cualquier valor CLS es
             // asignable a `Value` (primitivo, array, JSON); `JSON` (objeto
             // JSON) es un `Value`; `Value` se puede asignar a `JSON` solo si
@@ -115,7 +111,7 @@ impl Type {
             // Callable: cualquier función (con aridad concreta) es invocable.
             // Value/Cmx NO son assignables a Callable en compile-time (son
             // dinámicos — el `is Callable` resuelve en runtime por tag-bit).
-            // `Callable -> Value`/`Any` lo cubren los arms universales.
+            // `Callable -> Value` lo cubre el arm universal.
             (Type::Fun(_, _), Type::Callable) => true,
             (Type::Callable, Type::Callable) => true,
 
@@ -225,7 +221,6 @@ impl Type {
             Type::String => "String".to_string(),
             Type::Bool => "Bool".to_string(),
             Type::Char => "Char".to_string(),
-            Type::Any => "Any".to_string(),
             Type::Unknown => "Unknown".to_string(),
             Type::Null => "Null".to_string(),
             Type::Void => "Void".to_string(),
@@ -372,8 +367,6 @@ mod tests {
         assert!(!Type::Int.is_assignable_to(&Type::Json));
         // JSON es un Value (idempotencia).
         assert!(Type::Json.is_assignable_to(&Type::Value));
-        assert!(Type::Value.is_assignable_to(&Type::Any));
-        assert!(Type::Json.is_assignable_to(&Type::Any));
     }
 
     #[test]
@@ -383,7 +376,6 @@ mod tests {
         assert!(Type::Cmx.is_assignable_to(&Type::Value));
         assert!(Type::Value.is_assignable_to(&Type::Cmx));
         assert!(Type::Cmx.is_assignable_to(&Type::String));
-        assert!(Type::Cmx.is_assignable_to(&Type::Any));
         assert!(Type::Cmx.is_assignable_to(&Type::Cmx));
         assert!(!Type::Int.is_assignable_to(&Type::Cmx));
         assert!(!Type::String.is_assignable_to(&Type::Cmx));
@@ -397,7 +389,6 @@ mod tests {
         assert!(Type::Fun(vec![Type::Int], Box::new(Type::Int)).is_assignable_to(&Type::Callable));
         assert!(Type::Callable.is_assignable_to(&Type::Callable));
         assert!(Type::Callable.is_assignable_to(&Type::Value));
-        assert!(Type::Callable.is_assignable_to(&Type::Any));
         assert!(Type::Value.is_assignable_to(&Type::Callable));
         assert!(!Type::Cmx.is_assignable_to(&Type::Callable));
         assert!(!Type::Int.is_assignable_to(&Type::Callable));

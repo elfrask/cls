@@ -251,7 +251,7 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_str_host("__intr_str_eq");
                     return Ok(());
                 }
-                // Tipo común de comparación: si un lado es i64 (Int/Any dinámico)
+                // Tipo común de comparación: si un lado es i64 (Int/Value dinámico)
                 // y el otro i32 (Bool/Char), extender el i32 a i64 (antes emitía
                 // `i64.eq` con un i32 en el stack -> WASM inválido).
                 let cmp_ty = if lt == WasTy::F64 || rt == WasTy::F64 {
@@ -498,7 +498,7 @@ impl<'a> FuncEmitter<'a> {
                         // El tipo del left determina el resultado en compile-time.
                         // Comparar por Type (no WasTy: String e Int son ambos i64).
                         let left_span = expr_span(&b.left);
-                        let lt = self.types.get(&left_span).cloned().unwrap_or(Type::Any);
+                        let lt = self.types.get(&left_span).cloned().unwrap_or(Type::Value);
                         let matches = builtin_type_matches(&lt, &t);
                         self.emit_expression(&b.left)?;
                         self.body.push(Instruction::Drop);
@@ -677,7 +677,7 @@ impl<'a> FuncEmitter<'a> {
     /// solo para consultar el tipo estático (el valor ya está en el stack).
     /// Numéricos: != 0. String: len != 0 (los bits bajos del packed). Array/
     /// Tuple/Record/Shape: len del header (ptr+8) != 0. Char/Bool: ya son i32.
-    /// Cmx/Named/objetos: true (paridad walker). Any/Unknown/Null: error claro
+    /// Cmx/Named/objetos: true (paridad walker). Value/Unknown/Null: error claro
     /// (antes emitía WASM inválido "expected i32, found i64").
     /// ¿La expresión está tipada como String en el type map? (para `==`/`!=`
     /// de strings: comparar contenido, no el puntero empaquetado).
@@ -828,7 +828,7 @@ impl<'a> FuncEmitter<'a> {
             .types
             .get(&expr_span(expr))
             .cloned()
-            .unwrap_or(Type::Any);
+            .unwrap_or(Type::Value);
         match &ty {
             Type::Bool | Type::Char => Ok(()),
             Type::Int | Type::I8 | Type::I16 | Type::I32 | Type::I64 => {
@@ -896,10 +896,10 @@ impl<'a> FuncEmitter<'a> {
                     Ok(())
                 }
             }
-            // Valor dinámico (Any/Value/JSON, leído de record/JSON): despachar
+            // Valor dinámico (Value/JSON, leído de record/JSON): despachar
             // por tag en runtime (host_any_to_bool). `if (m.found)` donde `m`
-            // es Record<String,Any> o `bool(x)` sobre un valor JSON.
-            Type::Any | Type::Unknown | Type::Value | Type::Json => {
+            // es Record<String,Value> o `bool(x)` sobre un valor JSON.
+            Type::Value | Type::Unknown | Type::Json => {
                 self.body.push(Instruction::Drop);
                 self.emit_any_chain(expr)?;
                 self.host.call(HostFn::AnyToBool, &mut self.body);
@@ -1116,7 +1116,7 @@ impl<'a> FuncEmitter<'a> {
             }
             UnaryOp::TypeOf => {
                 let span = expr_span(&u.operand);
-                let t = self.types.get(&span).cloned().unwrap_or(Type::Any);
+                let t = self.types.get(&span).cloned().unwrap_or(Type::Value);
                 let idx = self.intern_string(type_name_str(&t));
                 self.emit_load_str(idx);
             }

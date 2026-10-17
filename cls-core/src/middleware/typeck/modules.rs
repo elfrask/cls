@@ -396,7 +396,7 @@ impl TypeChecker {
         v.type_ann.as_ref()
             .map(|ta| self.resolve_type_annotation(ta))
             .or_else(|| v.value.as_ref().map(|val| self.infer_literal_type(val)))
-            .unwrap_or(Type::Any)
+            .unwrap_or(Type::Value)
     }
 
 

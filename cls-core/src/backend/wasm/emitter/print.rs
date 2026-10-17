@@ -153,7 +153,7 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
         }
-        // Index sobre un record heterogéneo (value Any): imprimir según el tag del valor.
+        // Index sobre un record heterogéneo (value Value): imprimir según el tag del valor.
         if let Expression::Index(i) = arg {
             let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
             if matches!(obj_ty, Some(Type::Record(_, _))) {
@@ -213,12 +213,12 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
         }
-        // Cadenas de acceso sobre `Any`/Record (json.parse anidado): `o.x[0]`,
-        // `o.a.c`, `o.a.b[0]`. El objeto de la cadena tiene tipo `Any` o Record;
+        // Cadenas de acceso sobre `Value`/Record (json.parse anidado): `o.x[0]`,
+        // `o.a.c`, `o.a.b[0]`. El objeto de la cadena tipo `Value` o Record;
         // despachar por tag en runtime y formatear el valor (val, tag) real.
         if let Expression::Index(ix) = arg {
             let obj_ty = self.types.get(&expr_span(&ix.object)).cloned();
-            if matches!(obj_ty, Some(Type::Any) | Some(Type::Json) | Some(Type::Value)) {
+            if matches!(obj_ty, Some(Type::Value) | Some(Type::Json)) {
                 self.emit_any_chain(arg)?;
                 self.host.call(HostFn::PrintAny, &mut self.body);
                 return Ok(());
@@ -226,7 +226,7 @@ impl<'a> FuncEmitter<'a> {
         }
         if let Expression::MemberAccess(m) = arg {
             let obj_ty = self.types.get(&expr_span(&m.object)).cloned();
-            if matches!(obj_ty, Some(Type::Any) | Some(Type::Json) | Some(Type::Value)) {
+            if matches!(obj_ty, Some(Type::Value) | Some(Type::Json)) {
                 self.emit_any_chain(arg)?;
                 self.host.call(HostFn::PrintAny, &mut self.body);
                 return Ok(());
@@ -276,7 +276,7 @@ impl<'a> FuncEmitter<'a> {
                 .types
                 .get(&expr_span(arg))
                 .cloned()
-                .unwrap_or(Type::Any);
+                .unwrap_or(Type::Value);
             let is_container = matches!(
                 t,
                 Type::Array(_) | Type::Record(_, _) | Type::Cmx | Type::Tuple(_)
@@ -320,7 +320,7 @@ impl<'a> FuncEmitter<'a> {
             }
         }
         let span = expr_span(arg);
-        let t = self.types.get(&span).cloned().unwrap_or(Type::Any);
+        let t = self.types.get(&span).cloned().unwrap_or(Type::Value);
         match t {
             Type::String => self.host.call(HostFn::PrintStr, &mut self.body),
             Type::Bool => self.host.call(HostFn::PrintBool, &mut self.body),

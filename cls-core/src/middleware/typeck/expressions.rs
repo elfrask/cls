@@ -23,7 +23,7 @@ impl TypeChecker {
                 ) {
                     // Módulos internos del nodo: no son variables, pero se aceptan
                     // como namespace (el backend los resuelve).
-                    Type::Any
+                    Type::Value
                 } else {
                     self.lookup(name)
                         .cloned()
@@ -34,7 +34,7 @@ impl TypeChecker {
                                     span.clone(),
                                 )
                             } else {
-                                Type::Any
+                                Type::Value
                             }
                         })
                 }

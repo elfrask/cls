@@ -76,11 +76,11 @@ impl TypeChecker {
                 LiteralKind::Bool(_) => Type::Bool,
                 LiteralKind::Char(_) => Type::Char,
                 LiteralKind::Null => Type::Null,
-                _ => Type::Any,
+                _ => Type::Value,
             },
-            Expression::Array(_) => Type::Array(Box::new(Type::Any)),
-            Expression::Identifier(_, _) => Type::Any,
-            _ => Type::Any,
+            Expression::Array(_) => Type::Array(Box::new(Type::Value)),
+            Expression::Identifier(_, _) => Type::Value,
+            _ => Type::Value,
         }
     }
 
@@ -89,7 +89,7 @@ impl TypeChecker {
     pub(crate) fn function_decl_type(&mut self, f: &FunctionDecl) -> Type {        let params: Vec<Type> = f.params.iter()
             .map(|p| p.type_ann.as_ref()
                 .map(|ta| self.resolve_type_annotation(ta))
-                .unwrap_or(Type::Any))
+                .unwrap_or(Type::Value))
             .collect();
         let ret = f.return_type.as_ref()
             .map(|ta| self.resolve_type_annotation(ta))
@@ -122,9 +122,9 @@ impl TypeChecker {
             }
             Type::Named(n, _) if n == "CDouble" || n == "Double" => Type::Float,
             Type::Named(n, _) if n == "CBool" => Type::Bool,
-            Type::Named(n, _) if n == "CArray" => Type::Array(Box::new(Type::Any)),
+            Type::Named(n, _) if n == "CArray" => Type::Array(Box::new(Type::Value)),
             Type::Named(n, _) if n == "CRecord" => {
-                Type::Record(Box::new(Type::String), Box::new(Type::Any))
+                Type::Record(Box::new(Type::String), Box::new(Type::Value))
             }
             Type::Named(n, ref args) if n == "Struct" => {
                 if let Some(Type::Named(sn, _)) = args.first() {
@@ -207,7 +207,7 @@ impl TypeChecker {
             }
             TypeKind::Intersection(members) => {
                 // Merge de shapes: campos de todos los miembros (los no-shape se
-                // ignoran o resuelven a Any). Conflicto de tipo = error.
+                // ignoran o resuelven a Value). Conflicto de tipo = error.
                 let mut out: Vec<(String, Type)> = Vec::new();
                 for m in members {
                     let t = self.resolve_annotation_with(m, bindings);
@@ -318,7 +318,7 @@ impl TypeChecker {
             LiteralKind::Int(i) => Type::Literal(LitVal::Int(*i)),
             LiteralKind::Float(f) => Type::Literal(LitVal::Float(f.to_bits())),
             LiteralKind::Bool(b) => Type::Literal(LitVal::Bool(*b)),
-            _ => Type::Any,
+            _ => Type::Value,
         }
     }
 
@@ -369,14 +369,14 @@ impl TypeChecker {
                 Type::Shape(fields) => fields.iter()
                     .find(|(n, _)| n == key)
                     .map(|(_, t)| t.clone())
-                    .unwrap_or(Type::Any),
-                _ => Type::Any,
+                    .unwrap_or(Type::Value),
+                _ => Type::Value,
             },
             TypeAccess::Index(i) => match base_type {
-                Type::Tuple(ts) => ts.get(*i).cloned().unwrap_or(Type::Any),
+                Type::Tuple(ts) => ts.get(*i).cloned().unwrap_or(Type::Value),
                 Type::Array(inner) => *inner,
-                Type::Union(ts) => ts.get(*i).cloned().unwrap_or(Type::Any),
-                _ => Type::Any,
+                Type::Union(ts) => ts.get(*i).cloned().unwrap_or(Type::Value),
+                _ => Type::Value,
             },
         }
     }
@@ -392,7 +392,7 @@ impl TypeChecker {
                 let resolved = self.resolve_annotation_with(default, &bindings);
                 bindings.insert(tp.name.clone(), resolved);
             } else {
-                bindings.insert(tp.name.clone(), Type::Any);
+                bindings.insert(tp.name.clone(), Type::Value);
             }
         }
         bindings
@@ -414,7 +414,7 @@ impl TypeChecker {
         let params: Vec<Type> = sig.params.iter()
             .map(|p| p.type_ann.as_ref()
                 .map(|ta| self.resolve_annotation_with(ta, bindings))
-                .unwrap_or(Type::Any))
+                .unwrap_or(Type::Value))
             .collect();
         let ret = sig.return_type.as_ref()
             .map(|ta| self.resolve_annotation_with(ta, bindings))

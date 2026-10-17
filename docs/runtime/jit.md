@@ -53,7 +53,7 @@ host**: viven precompilados a WASM en el crate `cls-internals` (sub-crate
 - El emisor llama a `__intr_<area>_<op>` por nombre (`func_indexes`); la
   fusión es incondicional (ya no existen fallbacks host: la poda de la Fase 8
   eliminó los `else { host.call(...) }` muertos y podó `HostFn` de 130 a ~90
-  variantes — solo I/O, errores, closures, CMX, Any, JSON y módulos del nodo).
+  variantes — solo I/O, errores, closures, CMX, Value, JSON y módulos del nodo).
 - El re-mapeo es solo de **índices WASM** (types/funcs/globals/tabla), no de
   direcciones; el import `__cls_alloc` de internals se resuelve al `__alloc`
   del CLS (misma firma `(i64) -> i64`).
@@ -183,8 +183,8 @@ claro ("la condición debe ser Bool"). El intrínseco `bool(x)` usa la misma
 semántica (`bool(cmx)`, `bool(record)`, ... válidos).
 
 Errores explícitos del emisor ("El JIT (subconjunto WASM) aún no soporta...")
-para lo que no entra en el subset: tipos `Unknown` sin anotar (y `Any`, ya
-eliminado como anotación),
+para lo que no entra en el subset: tipos `Unknown` sin anotar (y el fallback
+interno `Value`,
 parámetros sin anotación de tipo, arrays vacíos sin anotación, `%=` sobre
 floats, índices dinámicos en records con shape, `await` (el `async` no está
 implementado en ningún intérprete desde la eliminación del walker). El subset

@@ -46,7 +46,7 @@ impl TypeChecker {
                                 p.type_ann
                                     .as_ref()
                                     .map(|t| self.resolve_type_annotation(t))
-                                    .unwrap_or(Type::Any)
+                                    .unwrap_or(Type::Value)
                             })
                             .collect(),
                     );
@@ -57,7 +57,7 @@ impl TypeChecker {
                         v.type_ann
                             .as_ref()
                             .map(|t| self.resolve_type_annotation(t))
-                            .unwrap_or(Type::Any),
+                            .unwrap_or(Type::Value),
                     );
                 }
             }

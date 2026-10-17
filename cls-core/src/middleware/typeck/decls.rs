@@ -45,7 +45,7 @@ impl TypeChecker {
             );
         }
 
-        if self.config.null_safety && matches!(inferred, Type::Null) && !matches!(declared, Type::Any) {
+        if self.config.null_safety && matches!(inferred, Type::Null) && !matches!(declared, Type::Value) {
             self.warn(
                 &format!("Posible null asignado a {} '{}'", declared, var.name),
                 var.span.clone(),
@@ -84,7 +84,7 @@ impl TypeChecker {
         self.types_by_span.insert(var.span.clone(), declared.clone());
         // Array literal vacío con anotación (p.ej. `const out: int[] = []`):
         // registrar el tipo anotado en el span del literal para que el backend
-        // sepa el tipo del elemento (check_array infiere Any, sin elementos).
+        // sepa el tipo del elemento (check_array infiere Value, sin elementos).
         if let Some(Expression::Array(arr)) = &var.value {
             if arr.elements.is_empty() {
                 if let Some(declared_arr) = var.type_ann.as_ref().map(|t| self.resolve_type_annotation(t)) {
@@ -118,7 +118,7 @@ impl TypeChecker {
             .map(|p| {
                 let t = p.type_ann.as_ref()
                     .map(|ta| self.resolve_type_annotation(ta))
-                    .unwrap_or(Type::Any);
+                    .unwrap_or(Type::Value);
                 (p.name.clone(), t)
             })
             .collect();

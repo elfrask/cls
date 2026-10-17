@@ -206,7 +206,7 @@ impl TypeChecker {
             // firma en compile-time -> resultado dinámico (`Any`, tag int).
             return match callee_type {
                 Type::Fun(_, ret) => *ret,
-                Type::Callable => Type::Any,
+                Type::Callable => Type::Value,
                 t => t,
             };
         }
@@ -257,7 +257,7 @@ impl TypeChecker {
                 let mut bindings = HashMap::new();
                 for (param, arg) in params.iter().zip(arg_types.iter()) {
                     if let Type::Named(n, ps) = param {
-                        if ps.is_empty() && !matches!(arg, Type::Any) {
+                        if ps.is_empty() && !matches!(arg, Type::Value) {
                             bindings.entry(n.clone()).or_insert_with(|| arg.clone());
                         }
                     }
@@ -268,8 +268,8 @@ impl TypeChecker {
                 for (i, (param, arg_ty)) in params.iter().zip(arg_types.iter()).enumerate() {
                     let param_subst = self.substitute(param, &bindings);
                     // Sin firma útil (Any/huecos/genérico sin binding) -> no validar.
-                    if matches!(param_subst, Type::Any | Type::Unknown)
-                        || matches!(arg_ty, Type::Any | Type::Unknown)
+                    if matches!(param_subst, Type::Value | Type::Unknown)
+                        || matches!(arg_ty, Type::Value | Type::Unknown)
                         || self.has_unbound_generic(&param_subst, &bindings)
                     {
                         continue;
@@ -340,13 +340,13 @@ impl TypeChecker {
                 }
                 callee_type.clone()
             }
-            Type::Any => Type::Any,
+            Type::Value => Type::Value,
             // Un valor `Callable` es invocable en runtime por tag-bit (handle de
             // función simple o closure); su firma/retorno no se conoce en
             // compile-time -> resultado dinámico (`Any`, tag int). Cubre
             // `Record<String,Callable>["k"](...)`, `Callable[i](...)` y campos
             // `var f: Callable` (`me.f(...)`).
-            Type::Callable => Type::Any,
+            Type::Callable => Type::Value,
             _ => self.error(
                 &format!("No se puede llamar como función: {}", callee_type),
                 call.span.clone(),

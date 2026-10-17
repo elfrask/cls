@@ -114,7 +114,7 @@ impl<'a> FuncEmitter<'a> {
     pub(crate) fn any_static_tag(&self, t: &Type) -> i64 {
         match t {
             Type::Record(_, _) | Type::Json | Type::Shape(_) => 7,
-            Type::Array(_) | Type::Value => 6,
+            Type::Array(_) => 6,
             Type::String => 1,
             Type::Bool => 3,
             Type::Float | Type::F32 | Type::F64 => 2,
@@ -126,7 +126,7 @@ impl<'a> FuncEmitter<'a> {
 
 
     /// Evalúa una cadena de acceso `o.a.c`, `o.x[0]`, `o.a.b[0]` sobre valores
-    /// `Any`/Record de json.parse, despachando por tag en runtime. Deja `(val, tag)`
+    /// `Value`/Record de json.parse, despachando por tag en runtime. Deja `(val, tag)`
     /// en el stack. La base (raíz de la cadena) se emite con su tag estático.
     pub(crate) fn emit_any_chain(&mut self, expr: &Expression) -> ClsResult<()> {
         match expr {
@@ -149,7 +149,7 @@ impl<'a> FuncEmitter<'a> {
                         .types
                         .get(&expr_span(&Expression::MemberAccess(m.clone())))
                         .cloned()
-                        .unwrap_or(Type::Any);
+                        .unwrap_or(Type::Value);
                     let tag = self.any_static_tag(&t);
                     self.body.push(Instruction::I64Const(tag));
                     return Ok(());
@@ -176,7 +176,7 @@ impl<'a> FuncEmitter<'a> {
                     .types
                     .get(&expr_span(other))
                     .cloned()
-                    .unwrap_or(Type::Any);
+                    .unwrap_or(Type::Value);
                 let tag = self.any_static_tag(&t);
                 self.body.push(Instruction::I64Const(tag));
                 Ok(())
@@ -300,7 +300,7 @@ impl<'a> FuncEmitter<'a> {
             .types
             .get(&expr_span(&m.object))
             .cloned()
-            .unwrap_or(Type::Any);
+            .unwrap_or(Type::Value);
         let obj_ty = match self.object_class_key(&m.object) {
             Some(key) => Type::Named(key, vec![]),
             None => obj_ty,
@@ -464,12 +464,12 @@ impl<'a> FuncEmitter<'a> {
             // Se discrimina por ese id y se carga el campo en el offset de CADA
             // miembro (los offsets pueden diferir). El objeto ya está en el stack.
             Type::Union(members) => self.emit_union_member_access(m, &members),
-            Type::Any | Type::Json | Type::Value => {
-                // `o.a.c` donde `o.a` es Any/Value/JSON (json.parse anidado): despachar por tag.
+            Type::Value | Type::Json => {
+                // `o.a.c` donde `o.a` es Value/JSON (json.parse anidado): despachar por tag.
                 let expr = Expression::MemberAccess(m.clone());
                 self.emit_any_chain(&expr)?;
                 // Resultado (val, tag) en el stack -> dejar solo el val (el tag se
-                // pierde en un valor Any; los prints usan emit_print_arg con PrintAny).
+                // pierde en un valor Value; los prints usan emit_print_arg con PrintAny).
                 self.body.push(Instruction::Drop);
                 Ok(())
             }
@@ -494,7 +494,7 @@ impl<'a> FuncEmitter<'a> {
             .types
             .get(&expr_span(&Expression::MemberAccess(m.clone())))
             .cloned()
-            .unwrap_or(Type::Any);
+            .unwrap_or(Type::Value);
         let res_w = was_type(&res_ty).unwrap_or(WasTy::I64);
 
         struct Arm {

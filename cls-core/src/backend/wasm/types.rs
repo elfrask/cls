@@ -189,7 +189,6 @@ pub(super) fn was_type(t: &Type) -> ClsResult<WasTy> {
         Type::Literal(LitVal::Bool(_)) => Ok(WasTy::I32),
         Type::Named(..) | Type::Literal(_) => Ok(WasTy::I64),
         Type::Fun(..) => Ok(WasTy::I64),
-        Type::Any => Ok(WasTy::I64),
         Type::Json | Type::Value => Ok(WasTy::I64),
         Type::Union(members) => {
             let mut it = members.iter();
@@ -277,7 +276,7 @@ pub(super) fn annotation_to_type(ann: &TypeAnnotation) -> Type {
         TypeKind::String => Type::String,
         TypeKind::Bool => Type::Bool,
         TypeKind::Char => Type::Char,
-        TypeKind::Any => Type::Any,
+        TypeKind::Any => Type::Value,
         TypeKind::Json => Type::Json,
         TypeKind::Value => Type::Value,
         TypeKind::Void | TypeKind::Empty => Type::Void,
@@ -288,7 +287,7 @@ pub(super) fn annotation_to_type(ann: &TypeAnnotation) -> Type {
         }
         // Tipo función `(A, B) -> C` / `fun(A) -> C`: el valor viaja como
         // handle i64 (call_indirect); la firma concreta vive aquí para el
-        // dispatch dinámico. Sin este brazo caía en `_ => Any` y el JIT lo
+        // dispatch dinámico. Sin este brazo caía en `_ => Value` y el JIT lo
         // rechazaba en params de funciones top-level.
         TypeKind::Fun(params, ret) => Type::Fun(
             params.iter().map(annotation_to_type).collect(),
@@ -317,7 +316,7 @@ pub(super) fn annotation_to_type(ann: &TypeAnnotation) -> Type {
             "Float" | "Double" => Type::Float,
             "Bool" | "Boolean" => Type::Bool,
             "Char" => Type::Char,
-            "Any" | "any" => Type::Any,
+            "Any" | "any" => Type::Value,
             "JSON" | "Json" | "json" => Type::Json,
             "Value" | "value" => Type::Value,
             // Struct(Nombre): struct de extensión -> se tipa como el struct
@@ -332,7 +331,7 @@ pub(super) fn annotation_to_type(ann: &TypeAnnotation) -> Type {
             _ => Type::Named(name.clone(), args.iter().map(annotation_to_type).collect()),
         },
         TypeKind::Cmx => Type::Cmx,
-        _ => Type::Any,
+        _ => Type::Value,
     }
 }
 /// Código de tipo nativo para la firma de extensiones: i=int, f=float, b=bool,

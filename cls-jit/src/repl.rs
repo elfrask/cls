@@ -271,9 +271,9 @@ impl ReplSession {
 
         // 4) Typeck de la sesión (con imports como prelude). Config casi
         //    PERMISIVA: el REPL es un playground (como el walker), sin
-        //    anotaciones los params/funciones caen a Any y el JIT despacha en
+        //    anotaciones los params/funciones caen a Value y el JIT despacha en
         //    runtime. PERO `no_implicit_any: true`: un identificador NO
-        //    definido es un error (antes caía a Any y `print(clear)` emitía 0
+        //    definido es un error (antes caía a Value y `print(clear)` emitía 0
         //    silenciosamente).
         let types_config = TypesConfig {
             check: true,
@@ -654,7 +654,7 @@ fn synthesize_main(body: Vec<Statement>) -> FunctionDecl {
 }
 
 /// Convierte un `Type` del typeck en una anotación reutilizable para el hoist.
-/// Devuelve `None` para tipos no anotables (Any/Null/Unknown/Void/Empty), en
+/// Devuelve `None` para tipos no anotables (Null/Unknown/Void/Empty), en
 /// cuyo caso el hoist queda sin anotación (el backend cae al type map).
 fn annotation_from_type(t: &Type) -> Option<TypeAnnotation> {
     let span = Span::new(1, 1, 1, 1);
@@ -664,7 +664,7 @@ fn annotation_from_type(t: &Type) -> Option<TypeAnnotation> {
         Type::String => TypeKind::String,
         Type::Bool => TypeKind::Bool,
         Type::Char => TypeKind::Char,
-        Type::Any | Type::Unknown | Type::Null | Type::Void | Type::Empty => return None,
+        Type::Unknown | Type::Null | Type::Void | Type::Empty => return None,
         Type::Json => TypeKind::Json,
         Type::Value => TypeKind::Value,
         Type::Cmx => TypeKind::Cmx,

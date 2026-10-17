@@ -12,7 +12,7 @@ impl<'a> FuncEmitter<'a> {
             .types
             .get(&expr_span(&member.object))
             .cloned()
-            .unwrap_or(Type::Any);
+            .unwrap_or(Type::Value);
         let slots = match &obj_ty {
             Type::Tuple(s) => s.clone(),
             _ => vec![],
@@ -442,7 +442,7 @@ impl<'a> FuncEmitter<'a> {
                                 let arg_ty = c.args.first()
                                     .and_then(|a| self.types.get(&expr_span(a)))
                                     .cloned()
-                                    .unwrap_or(Type::Any);
+                                    .unwrap_or(Type::Value);
                                 if matches!(arg_ty, Type::Float | Type::F32 | Type::F64) {
                                     Some(WasTy::F64)
                                 } else {

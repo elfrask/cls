@@ -166,12 +166,12 @@ impl<'a> FuncEmitter<'a> {
         }
         // Función como valor (variable con handle) -> call_indirect por tipo.
         let callee_ty = self.types.get(&expr_span(&c.callee)).cloned();
-        // `handler(req, res)` con `handler: Any/Value` (callback almacenado en un
-        // record/Any): call dinámico por handle. La firma es universal
+        // `handler(req, res)` con `handler: Value` (callback almacenado en un
+        // record/Value): call dinámico por handle. La firma es universal
         // `[capturas, i64...N] -> i64` (los args de objetos/records viajan como
         // ptr i64; el retorno es el valor como i64). El tag-bit del handle
         // decide si es closure (capturas en memoria) o función simple.
-        if matches!(callee_ty, Some(Type::Any | Type::Unknown | Type::Value | Type::Json | Type::Callable)) {
+        if matches!(callee_ty, Some(Type::Value | Type::Unknown | Type::Json | Type::Callable)) {
             let n = c.args.len();
             let mut pv_closure = vec![ValType::I64];
             pv_closure.extend(std::iter::repeat(ValType::I64).take(n));

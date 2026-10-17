@@ -59,7 +59,7 @@ impl<'a> FuncEmitter<'a> {
                         .types
                         .get(&expr_span(&c.args[0]))
                         .cloned()
-                        .unwrap_or(Type::Any);
+                        .unwrap_or(Type::Value);
                     // Objeto de clase: __toJson si lo define; si no -> "null" (paridad walker).
                     if let Type::Named(cn, _) = &t {
                         if self.class_defs.contains_key(cn.as_str()) {
@@ -92,12 +92,12 @@ impl<'a> FuncEmitter<'a> {
                         self.host.call(HostFn::JsonStringify, &mut self.body);
                         return Ok(true);
                     }
-                    // Para `Any`/`Value`/`JSON` (valor leído de un record/JSON o
+                    // Para `Value`/`JSON` (valor leído de un record/JSON o
                     // dinámico): emitir con emit_any_chain (val + tag) y serializar
                     // por TAG real en runtime (host_json_stringify serializa
                     // escalares/record/array por tag). Sin esto,
                     // `json.stringify(d["int"])` devolvía el raw (puntero).
-                    if matches!(t, Type::Any | Type::Unknown | Type::Json | Type::Value) {
+                    if matches!(t, Type::Value | Type::Unknown | Type::Json) {
                         self.emit_any_chain(&c.args[0])?;   // (val, tag)
                         self.host.call(HostFn::JsonStringify, &mut self.body);
                         return Ok(true);
@@ -166,7 +166,7 @@ impl<'a> FuncEmitter<'a> {
             .types
             .get(&expr_span(&member.object))
             .cloned()
-            .unwrap_or(Type::Any);
+            .unwrap_or(Type::Value);
         let obj_ty = match self.object_class_key(&member.object) {
             Some(key) => Type::Named(key, vec![]),
             None => obj_ty,
@@ -519,12 +519,12 @@ impl<'a> FuncEmitter<'a> {
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
                 }
             }
-            // Any/Unknown/Value/JSON (valor dinámico leído de un Record/JSON o
+            // Unknown/Value/JSON (valor dinámico leído de un Record/JSON o
             // anotado `Value`/`JSON`): `x.toString()` -> string por TAG en
             // runtime (__intr_any_to_string), un solo eval del receiver. Otros
             // métodos sobre estos tipos no se despachan acá (caen al camino
             // dinámico de emit_call).
-            Type::Any | Type::Unknown | Type::Value | Type::Json => {
+            Type::Value | Type::Unknown | Type::Json => {
                 if member.member.as_str() == "toString" {
                     self.emit_any_chain(&member.object)?; // (val, tag)
                     self.emit_str_host("__intr_any_to_string");
@@ -573,7 +573,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(arg)?;
                 // String -> decodifica el pack (ptr<<32|len); array/tuple/record
                 // -> lee el header. Despachar por el tipo del argumento.
-                let t = self.types.get(&expr_span(arg)).cloned().unwrap_or(Type::Any);
+                let t = self.types.get(&expr_span(arg)).cloned().unwrap_or(Type::Value);
                 match t {
                     Type::String => {
                         self.emit_str_host("__intr_str_length");
@@ -656,7 +656,7 @@ impl<'a> FuncEmitter<'a> {
                     return Ok(true);
                 }
                 let span = expr_span(arg);
-                let t = self.types.get(&span).cloned().unwrap_or(Type::Any);
+                let t = self.types.get(&span).cloned().unwrap_or(Type::Value);
                 // type_name del walker: clase->"Object", struct->"Struct", enum->"Enum".
                 let name = match &t {
                     Type::Named(cn, _) if self.class_defs.contains_key(cn.as_str()) => "Object",

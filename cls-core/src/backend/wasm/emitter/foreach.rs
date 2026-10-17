@@ -87,7 +87,7 @@ impl<'a> FuncEmitter<'a> {
             .types
             .get(&expr_span(&c.args[0]))
             .cloned()
-            .unwrap_or(Type::Any);
+            .unwrap_or(Type::Value);
         let (f_params, f_ret) = match ft {
             Type::Fun(p, r) => (p, *r),
             _ => {
@@ -375,7 +375,7 @@ impl<'a> FuncEmitter<'a> {
             .types
             .get(&expr_span(&fe.iterable))
             .cloned()
-            .unwrap_or(Type::Any);
+            .unwrap_or(Type::Value);
         // Magic methods __iter/__next (paridad walker interpreter.rs:723-767):
         // __iter() -> Array (caso 1) u objeto iterador con __next() hasta null
         // (caso 2). El tipo del iterable debe ser una clase con __iter.
