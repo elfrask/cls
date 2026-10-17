@@ -8,6 +8,24 @@ impl<'a> FuncEmitter<'a> {
     // == Emisión de expresiones ===========================================
 
     pub(crate) fn emit_expression(&mut self, expr: &Expression) -> ClsResult<()> {
+        self.emit_expression_inner(expr)?;
+        // Los arrays tienen IDENTIDAD estable: cuando `push`/`unshift` crecen,
+        // el buffer viejo se marca como forward hacia el nuevo (`__intr_arr_*`)
+        // para que cualquier alias (p.ej. la variable del llamador cuando el
+        // mutador se llamó sobre un parámetro) vea la versión crecida
+        // (semántica de referencia). Resolver la cadena acá, en el único punto
+        // por el que pasa todo valor leído, hace transparente el forward.
+        if !matches!(expr, Expression::Array(_) | Expression::Tuple(_)) {
+            if matches!(self.types.get(&expr_span(expr)), Some(Type::Array(_))) {
+                if let Some(&idx) = self.func_indexes.get("__intr_arr_deref") {
+                    self.body.push(Instruction::Call(idx));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn emit_expression_inner(&mut self, expr: &Expression) -> ClsResult<()> {
         match expr {
             Expression::Literal(l) => self.emit_literal(l),
             Expression::Identifier(name, _) => {

@@ -226,6 +226,37 @@ impl<'a> FuncEmitter<'a> {
         self.class_defs.keys().find(|k| k.ends_with(&suffix)).cloned()
     }
 
+    /// Clave en `class_defs` de la clase a la derecha de `is`: acepta el nombre
+    /// simple (`Clase`) o cualificado por el alias de import (`mod::Clase`).
+    /// `None` si no es una clase conocida (entonces se intenta enum/structure).
+    pub(crate) fn resolve_is_class_key(&self, expr: &Expression) -> Option<String> {
+        match expr {
+            Expression::Identifier(name, _) => self.resolve_class_key(name),
+            Expression::NamespaceAccess(ns, name, _) => {
+                let key = format!("{}::{}", ns, name);
+                if self.class_defs.contains_key(&key) {
+                    Some(key)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// `class_id` de definición de un nombre de ancestro (`Padre` o
+    /// `mod::Padre`), resolviendo por nombre exacto o por sufijo.
+    pub(crate) fn ancestor_class_id(&self, name: &str) -> Option<u32> {
+        if let Some(info) = self.class_defs.get(name) {
+            return Some(info.class_id);
+        }
+        let suffix = format!("::{}", name);
+        self.class_defs
+            .iter()
+            .find(|(k, _)| k.ends_with(&suffix))
+            .map(|(_, i)| i.class_id)
+    }
+
     /// Clave real de clase para una expresión objeto. `me` dentro de un método
     /// usa la clase ACTUAL (la clave aplanada real, p.ej. `lib::Clase` o el
     /// nombre renombrado por un import con alias), no el type map — que puede

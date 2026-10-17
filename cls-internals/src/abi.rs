@@ -75,6 +75,11 @@ pub static INTERNALS_FUNCTIONS: &[InternalsFn] = &[
         params: &[I64, I64, I64],
         results: &[I64],
     },
+    InternalsFn {
+        name: "__intr_arr_deref",
+        params: &[I64],
+        results: &[I64],
+    },
     // ── strings ───────────────────────────────────────────────────────────
     InternalsFn {
         name: "__intr_str_concat",

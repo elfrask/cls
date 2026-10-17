@@ -45,14 +45,56 @@ unsafe fn arr_realloc(ptr: usize, new_cap: usize, es: usize) -> usize {
     new_ptr
 }
 
+/// Magic de "buffer reubicado": cuando `push`/`unshift` crecen un array, el
+/// buffer viejo NO se libera (bump allocator) sino que se convierte en un
+/// **forward**: `cap = FWD_MAGIC`, `len = <ptr del buffer nuevo>`. Todos los
+/// accesos resuelven la cadena con `arr_resolve`, así que cualquier alias que
+/// todavía apunte al buffer viejo (p.ej. la variable del llamador cuando el
+/// mutador se llamó sobre un parámetro) ve la versión crecida == semántica de
+/// referencia para arrays.
+const FWD_MAGIC: i64 = i64::MIN;
+
+/// Sigue la cadena de forwards hasta el buffer real. `ptr == 0` o un buffer
+/// normal se devuelven tal cual. Idempotente (resolver un ptr ya resuelto es
+/// no-op), por lo que puede aplicarse sin miedo en cualquier acceso a array.
+pub(crate) unsafe fn arr_resolve(ptr: usize) -> usize {
+    let mut p = ptr;
+    let mut guard = 0u32;
+    while p != 0 && mem::read_i64(p) == FWD_MAGIC {
+        p = mem::read_i64(p + 8) as usize;
+        guard += 1;
+        if guard > 1_000_000 {
+            break;
+        }
+    }
+    p
+}
+
+/// Marca `old` como forward hacia `new`.
+unsafe fn arr_mark_forward(old: usize, new: usize) {
+    if old == new {
+        return;
+    }
+    mem::write_i64(old, FWD_MAGIC);
+    mem::write_i64(old + 8, new as i64);
+}
+
+/// `__intr_arr_deref(ptr) -> ptr` — resuelve la cadena de forwards (idempotente).
+#[no_mangle]
+pub extern "C" fn __intr_arr_deref(ptr: i64) -> i64 {
+    unsafe { arr_resolve(ptr as usize) as i64 }
+}
+
 #[no_mangle]
 pub extern "C" fn __intr_arr_push(ptr: i64, val: i64, es: i64) -> i64 {
     unsafe {
-        let p = ptr as usize;
+        let p = arr_resolve(ptr as usize);
         let len = arr_len(p);
         let cap = arr_cap(p);
         let new_p = if len + 1 > cap {
-            arr_realloc(p, ((cap * 2 + 1).max(len + 1)) as usize, es as usize)
+            let np = arr_realloc(p, ((cap * 2 + 1).max(len + 1)) as usize, es as usize);
+            arr_mark_forward(p, np);
+            np
         } else {
             p
         };
@@ -68,14 +110,17 @@ pub extern "C" fn __intr_arr_push(ptr: i64, val: i64, es: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn __intr_arr_realloc(ptr: i64, new_cap: i64, es: i64) -> i64 {
     unsafe {
-        arr_realloc(ptr as usize, new_cap as usize, es as usize) as i64
+        let p = arr_resolve(ptr as usize);
+        let np = arr_realloc(p, new_cap as usize, es as usize);
+        arr_mark_forward(p, np);
+        np as i64
     }
 }
 
 #[no_mangle]
 pub extern "C" fn __intr_arr_pop(ptr: i64, _es: i64) -> i64 {
     unsafe {
-        let p = ptr as usize;
+        let p = arr_resolve(ptr as usize);
         let len = arr_len(p);
         if len <= 0 {
             return p as i64;
@@ -88,7 +133,7 @@ pub extern "C" fn __intr_arr_pop(ptr: i64, _es: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn __intr_arr_shift(ptr: i64, es: i64) -> i64 {
     unsafe {
-        let p = ptr as usize;
+        let p = arr_resolve(ptr as usize);
         let es = es as usize;
         let len = arr_len(p);
         if len <= 0 {
@@ -106,12 +151,14 @@ pub extern "C" fn __intr_arr_shift(ptr: i64, es: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn __intr_arr_unshift(ptr: i64, val: i64, es: i64) -> i64 {
     unsafe {
-        let p = ptr as usize;
+        let p = arr_resolve(ptr as usize);
         let es = es as usize;
         let len = arr_len(p);
         let cap = arr_cap(p);
         let new_p = if len + 1 > cap {
-            arr_realloc(p, ((cap * 2 + 1).max(len + 1)) as usize, es)
+            let np = arr_realloc(p, ((cap * 2 + 1).max(len + 1)) as usize, es);
+            arr_mark_forward(p, np);
+            np
         } else {
             p
         };
@@ -128,7 +175,7 @@ pub extern "C" fn __intr_arr_unshift(ptr: i64, val: i64, es: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn __intr_arr_reverse(ptr: i64, es: i64) -> i64 {
     unsafe {
-        let p = ptr as usize;
+        let p = arr_resolve(ptr as usize);
         let es = es as usize;
         let len = arr_len(p);
         for i in 0..(len as usize / 2) {
@@ -144,7 +191,7 @@ pub extern "C" fn __intr_arr_reverse(ptr: i64, es: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn __intr_arr_index_of(ptr: i64, needle: i64, es: i64) -> i64 {
     unsafe {
-        let p = ptr as usize;
+        let p = arr_resolve(ptr as usize);
         let len = arr_len(p);
         for i in 0..len as usize {
             if arr_elem(p, i, es as usize) == needle {
@@ -158,7 +205,7 @@ pub extern "C" fn __intr_arr_index_of(ptr: i64, needle: i64, es: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn __intr_arr_includes(ptr: i64, needle: i64, es: i64) -> i32 {
     unsafe {
-        let p = ptr as usize;
+        let p = arr_resolve(ptr as usize);
         let len = arr_len(p);
         for i in 0..len as usize {
             if arr_elem(p, i, es as usize) == needle {
@@ -172,7 +219,7 @@ pub extern "C" fn __intr_arr_includes(ptr: i64, needle: i64, es: i64) -> i32 {
 #[no_mangle]
 pub extern "C" fn __intr_arr_join(ptr: i64, sep: i64, es: i64, kind: i64) -> i64 {
     unsafe {
-        let p = ptr as usize;
+        let p = arr_resolve(ptr as usize);
         let es = es as usize;
         let len = arr_len(p);
         let separator = mem::read_bytes(sep);
@@ -199,7 +246,7 @@ pub extern "C" fn __intr_arr_join(ptr: i64, sep: i64, es: i64, kind: i64) -> i64
 #[no_mangle]
 pub extern "C" fn __intr_arr_to_string(ptr: i64, es: i64, kind: i64) -> i64 {
     unsafe {
-        let s = crate::fmt::arr_to_string(ptr, es, kind);
+        let s = crate::fmt::arr_to_string(arr_resolve(ptr as usize) as i64, es, kind);
         mem::write_str(&s)
     }
 }

@@ -45,24 +45,36 @@ impl TypeChecker {
         Type::Void
     }
 
-    /// Si `cond` es `Identifier(x) is Tipo` (builtin/Callable), devuelve
-    /// `(x, tipo_estrecho)` para narrowing dentro del bloque.
+    /// Si `cond` es `Identifier(x) is Tipo` (builtin/Callable/clase), devuelve
+    /// `(x, tipo_estrecho)` para narrowing dentro del bloque. Acepta la clase
+    /// cualificada por el alias de import (`x is mod::Clase`), estrechando al
+    /// nombre local de la clase.
     fn narrowed_var(&self, cond: &Expression) -> Option<(String, Type)> {
         if let Expression::Binary(b) = cond {
             if b.op == Operator::Is {
                 if let Expression::Identifier(name, _) = &*b.left {
-                    if let Expression::Identifier(right, _) = &*b.right {
-                        if let Some(t) = crate::middleware::typeck::helpers::builtin_type_name(right) {
-                            return Some((name.clone(), t));
+                    match &*b.right {
+                        Expression::Identifier(right, _) => {
+                            if let Some(t) = crate::middleware::typeck::helpers::builtin_type_name(right) {
+                                return Some((name.clone(), t));
+                            }
+                            if right == "Callable" {
+                                return Some((name.clone(), Type::Callable));
+                            }
+                            // Clase de usuario: `x is Derived` estrecha `x` a `Derived`
+                            // (acceso a campos/métodos de la subclase dentro del bloque).
+                            if self.class_members.contains_key(right.as_str()) {
+                                return Some((name.clone(), Type::Named(right.clone(), vec![])));
+                            }
                         }
-                        if right == "Callable" {
-                            return Some((name.clone(), Type::Callable));
+                        // Clase importada cualificada `mod::Clase`: el nombre local
+                        // de la clase es el miembro tras `::`.
+                        Expression::NamespaceAccess(_ns, member, _) => {
+                            if self.class_members.contains_key(member.as_str()) {
+                                return Some((name.clone(), Type::Named(member.clone(), vec![])));
+                            }
                         }
-                        // Clase de usuario: `x is Derived` estrecha `x` a `Derived`
-                        // (acceso a campos/métodos de la subclase dentro del bloque).
-                        if self.class_members.contains_key(right.as_str()) {
-                            return Some((name.clone(), Type::Named(right.clone(), vec![])));
-                        }
+                        _ => {}
                     }
                 }
             }

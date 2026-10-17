@@ -519,38 +519,48 @@ impl<'a> FuncEmitter<'a> {
                     }
                 }
                 self.emit_expression(&b.left)?;
-                if let Expression::Identifier(right_name, _) = &*b.right {
-                    if let Some(info) = self.class_defs.get(right_name.as_str()) {
-                        // cid = obj[8]; true si el objeto ES la clase o una SUBCLASE.
-                        let obj_tmp = self.fresh_local();
-                        let cid_tmp = self.fresh_local();
-                        self.body.push(Instruction::LocalSet(obj_tmp));
-                        self.body.push(Instruction::LocalGet(obj_tmp));
-                        self.body.push(Instruction::I32WrapI64);
-                        self.body.push(Instruction::I64Load(MemArg {
-                            offset: 8,
-                            align: 3,
-                            memory_index: 0,
-                        }));
-                        self.body.push(Instruction::LocalSet(cid_tmp));
-                        let mut ids = vec![info.class_id];
-                        for (_, other) in self.class_defs.iter() {
-                            if other.ancestors.contains(&right_name) {
-                                ids.push(other.class_id);
+                // `o is Clase` / `o is mod::Clase` (clase importada cualificada).
+                // La clase se resuelve por DEFINICIÓN: `mod::Clase` y `Clase`
+                // comparten `class_id` (mismo span de la declaración al aplanar),
+                // así que el resultado no depende del alias con que se importó.
+                if let Some(target_key) = self.resolve_is_class_key(&b.right) {
+                    let target_id = self.class_defs[&target_key].class_id;
+                    // Ids de la clase objetivo + todas sus subclases (por
+                    // ancestros, resueltos a su id de definición).
+                    let mut ids: Vec<u32> = Vec::new();
+                    for info in self.class_defs.values() {
+                        let is_descendant = info.ancestors.iter().any(|a| {
+                            self.ancestor_class_id(a) == Some(target_id)
+                        });
+                        if info.class_id == target_id || is_descendant {
+                            if !ids.contains(&info.class_id) {
+                                ids.push(info.class_id);
                             }
                         }
-                        let mut first = true;
-                        for id in &ids {
-                            self.body.push(Instruction::LocalGet(cid_tmp));
-                            self.body.push(Instruction::I64Const(*id as i64));
-                            self.body.push(Instruction::I64Eq);
-                            if !first {
-                                self.body.push(Instruction::I32Or);
-                            }
-                            first = false;
-                        }
-                        return Ok(());
                     }
+                    // cid = obj[8]; true si el objeto ES la clase o una SUBCLASE.
+                    let obj_tmp = self.fresh_local();
+                    let cid_tmp = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(obj_tmp));
+                    self.body.push(Instruction::LocalGet(obj_tmp));
+                    self.body.push(Instruction::I32WrapI64);
+                    self.body.push(Instruction::I64Load(MemArg {
+                        offset: 8,
+                        align: 3,
+                        memory_index: 0,
+                    }));
+                    self.body.push(Instruction::LocalSet(cid_tmp));
+                    let mut first = true;
+                    for id in &ids {
+                        self.body.push(Instruction::LocalGet(cid_tmp));
+                        self.body.push(Instruction::I64Const(*id as i64));
+                        self.body.push(Instruction::I64Eq);
+                        if !first {
+                            self.body.push(Instruction::I32Or);
+                        }
+                        first = false;
+                    }
+                    return Ok(());
                 }
                 let (def_id, is_enum) = match &*b.right {
                     Expression::Identifier(name, _) => {

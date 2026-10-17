@@ -2,6 +2,30 @@
 
 use super::*;
 
+/// Resuelve la clave real en `class_defs` del padre de una clase a partir del
+/// nombre sin cualificar que trae `extends`. Para una clase prefijada por un
+/// import (`mod::Hijo`) se prefiere el padre del MISMO módulo (`mod::Padre`)
+/// antes que un homónimo local; si no, se resuelve exacto o por sufijo
+/// (`mod::Padre`). Así el layout/ancestors del clon prefijado coincide con el
+/// del clon sin prefijar de la misma declaración.
+fn resolve_parent_key(
+    class_defs: &HashMap<String, ClassInfo>,
+    child: &str,
+    parent: &str,
+) -> Option<String> {
+    if let Some((prefix, _)) = child.rsplit_once("::") {
+        let cand = format!("{}::{}", prefix, parent);
+        if class_defs.contains_key(&cand) {
+            return Some(cand);
+        }
+    }
+    if class_defs.contains_key(parent) {
+        return Some(parent.to_string());
+    }
+    let suffix = format!("::{}", parent);
+    class_defs.keys().find(|k| k.ends_with(&suffix)).cloned()
+}
+
 impl<'a> Engine<'a> {
 
     /// Itera los statements efectivos de un módulo respetando `when`: solo
@@ -127,7 +151,15 @@ impl<'a> Engine<'a> {
         }
         // Recolectar clases -> class_defs (layout de objeto) + declarar métodos/ctor.
         // `when`-aware (dev-2 fix).
+        //
+        // La IDENTIDAD de la clase es su DEFINICIÓN, no el nombre con que se
+        // importó: al aplanar, la misma `class C` reaparece renombrada una vez
+        // por alias (`lib::C`, ...). Todos esos clones comparten el span de la
+        // declaración fuente, así que se les asigna el MISMO `class_id` -> un
+        // objeto construido bajo un alias es reconocido por `is` desde otro
+        // (mismo criterio que `def_id_by_span` de los enums).
         let mut next_class_id = 0u32;
+        let mut class_id_by_span: HashMap<crate::error::diagnostic::Span, u32> = HashMap::new();
         for stmt in self.effective_statements(&module.statements) {
             if let Statement::ClassDecl(c) = stmt {
                 let mut fields = Vec::new();
@@ -136,15 +168,19 @@ impl<'a> Engine<'a> {
                 let mut off = 16i64; // 0..7 = vtable, 8..15 = class_id
                 let mut total = off;
                 let mut ancestors = Vec::new();
+                let mut resolved_parent: Option<String> = None;
                 if let Some(parent) = &c.extends {
-                    if let Some(pinfo) = self.class_defs.get(parent) {
-                        fields.extend(pinfo.fields.clone());
-                        methods = pinfo.methods.clone();
-                        method_vis = pinfo.method_vis.clone();
-                        off = pinfo.total;
-                        total = pinfo.total;
-                        ancestors.push(parent.clone());
-                        ancestors.extend(pinfo.ancestors.clone());
+                    if let Some(pkey) = resolve_parent_key(&self.class_defs, &c.name, parent) {
+                        if let Some(pinfo) = self.class_defs.get(&pkey) {
+                            fields.extend(pinfo.fields.clone());
+                            methods = pinfo.methods.clone();
+                            method_vis = pinfo.method_vis.clone();
+                            off = pinfo.total;
+                            total = pinfo.total;
+                            ancestors.push(pkey.clone());
+                            ancestors.extend(pinfo.ancestors.clone());
+                            resolved_parent = Some(pkey);
+                        }
                     }
                 }
                 for member in &c.body {
@@ -205,8 +241,11 @@ impl<'a> Engine<'a> {
                         _ => {}
                     }
                 }
-                let cid = next_class_id;
-                next_class_id += 1;
+                let cid = *class_id_by_span.entry(c.span.clone()).or_insert_with(|| {
+                    let id = next_class_id;
+                    next_class_id += 1;
+                    id
+                });
                 // El vtable_start se asigna AQUÍ (antes de compilar cuerpos): el
                 // ctor del objeto lo lee al emitir, y no debe depender del orden
                 // (no determinista) del HashMap.
@@ -215,7 +254,7 @@ impl<'a> Engine<'a> {
                 self.class_defs.insert(
                     c.name.clone(),
                     ClassInfo {
-                        parent: c.extends.clone(),
+                        parent: resolved_parent,
                         class_id: cid,
                         ancestors,
                         fields,

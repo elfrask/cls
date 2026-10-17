@@ -263,36 +263,44 @@ pub extern "C" fn __intr_str_split(s: i64, sep: i64) -> i64 {
     }
 }
 
-/// Magic del header de capacidad para appends in-place: `cap | MAGIC` guardado
-/// en los 8 bytes ANTERIORES al contenido (`ptr-8`). El ptr público sigue
-/// apuntando directo a los bytes — el layout `(ptr<<32)|len` no cambia.
-const APPEND_MAGIC: i64 = i64::MIN; // bit63 seteado: imposible en una cap real
+/// Magic del header de capacidad para appends in-place. El buffer con slack se
+/// layouta `[MAGIC:i64][cap:i64][bytes...]` y el `ptr` público apunta directo a
+/// los bytes — el layout `(ptr<<32)|len` NO cambia. El chequeo exige que la
+/// palabra de 64 bits en `ptr-16` sea EXACTAMENTE `APPEND_MAGIC`: un literal del
+/// pool de strings (que no tiene cabecera) no puede confundirse con un buffer
+/// con slack salvo colisión de 2^-64 (antes bastaba con el bit 63 del byte
+/// pegado al literal, que se activaba tras un string que termina en multibyte).
+const APPEND_MAGIC: i64 = 0x434c_535f_4341_5021; // "CLS_CAP!"
 
 #[inline]
 unsafe fn read_cap(ptr: usize) -> Option<usize> {
-    if ptr < 8 {
+    if ptr < 16 {
         return None;
     }
-    let hdr = mem::read_i64(ptr - 8);
-    if hdr & APPEND_MAGIC == APPEND_MAGIC {
-        Some((hdr & i64::MAX) as usize)
-    } else {
-        None
+    if mem::read_i64(ptr - 16) != APPEND_MAGIC {
+        return None;
     }
+    let cap = mem::read_i64(ptr - 8);
+    // Sanidad: una capacidad real es >= el room mínimo de append y < 4GiB.
+    if cap < 16 || cap > (1i64 << 32) {
+        return None;
+    }
+    Some(cap as usize)
 }
 
 #[inline]
 unsafe fn write_cap(ptr: usize, cap: usize) {
-    mem::write_i64(ptr - 8, (cap as i64) | APPEND_MAGIC);
+    mem::write_i64(ptr - 16, APPEND_MAGIC);
+    mem::write_i64(ptr - 8, cap as i64);
 }
 
 unsafe fn alloc_with_cap(bytes: usize) -> usize {
-    // [cap|MAGIC][bytes...] — devolvemos ptr a los bytes.
-    let block = crate::allocator::bump_alloc(bytes + 8);
+    // [MAGIC][cap][bytes...] — devolvemos ptr a los bytes.
+    let block = crate::allocator::bump_alloc(bytes + 16);
     if block == 0 {
         return 0;
     }
-    (block + 8) as usize
+    (block + 16) as usize
 }
 
 /// Concatenación normal (sin slack): usada por el emisor para el PRIMER
@@ -365,8 +373,13 @@ pub extern "C" fn __intr_str_append(old: i64, v_val: i64, v_tag: i64) -> i64 {
 
         // Slow path: `old` viene sin slack (literal/json/host) → concat con slack
         // para habilitar appends futuros. Copia los bytes crudos de `old`.
+        // La capacidad debe cubrir la LONGITUD TOTAL (old + pieza): calcularla
+        // solo con `so.len()` sub-alocaba cuando la pieza es mayor que el viejo
+        // (p.ej. `out = ""; out = out + <string de 100B>`) y desbordaba el
+        // buffer (el contenido correcto se pisaba con las alocaciones siguientes).
         let so = mem::read_bytes(old);
-        let cap = (so.len() * 2).max(so.len() + 16);
+        let total = so.len() + piece.len();
+        let cap = (total * 2).max(total + 16);
         let ptr = alloc_with_cap(cap);
         if ptr == 0 {
             return 0;
