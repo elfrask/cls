@@ -1,0 +1,13 @@
+# BUG: asignar un `Value` a una variable local pierde el tag de tipo; un string
+# se re-interpreta como puntero. Inline funciona; via local, no.
+
+function main(args: String[]) -> int {
+    var r: Record<String, Value> = {a: "x"};
+    var v = r["a"];
+    if (str(v) != "x") {
+        print("BUG PRESENTE: var v = r[\"a\"]; str(v) = '" + str(v) + "' (esperado 'x')");
+        return 1;
+    }
+    print("OK: local Value conserva el tag");
+    return 0;
+}

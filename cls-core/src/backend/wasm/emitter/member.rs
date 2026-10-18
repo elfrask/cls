@@ -383,6 +383,12 @@ impl<'a> FuncEmitter<'a> {
                 "children" => self.emit_cmx_field(16),
                 // kind en offset 24: 0=elemento, 1=texto (layout host_cmx_new).
                 "kind" => self.emit_cmx_field(24),
+                "tagCallable" => self.emit_cmx_field(32),
+                "isComponent" => {
+                    self.emit_cmx_field(40)?;
+                    self.body.push(Instruction::I32WrapI64);
+                    Ok(())
+                }
                 _ => Err(self.unsupported_expr(&Expression::MemberAccess(m.clone()))),
             },
             Type::Named(name, _) => {

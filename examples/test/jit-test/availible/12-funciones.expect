@@ -1,8 +1,8 @@
-f: <function suma>
+﻿f: <function suma>
 f(2,3): 5
 f(10,20): 30
-tag: <function App>
+tag: App
 titulo: demo
-cmx: <<function App> titulo="demo" />
-es callable: true
-app.tag(): app demo
+cmx: <App titulo="demo" />
+es componente: true
+app.tagCallable(): app demo

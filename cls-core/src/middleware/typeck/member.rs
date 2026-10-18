@@ -196,10 +196,14 @@ impl TypeChecker {
             // runtime); `.props` es Record<String, Value>; `.kind` distingue
             // texto (1) de elemento (0), necesario para un renderer CLS puro.
             Type::Cmx => match member.member.as_str() {
-                "tag" => Type::Value,
+                // Rework CMX: `tag` es SIEMPRE String (nombre del tag); el valor
+                // del componente vive en `tagCallable` y `isComponent` lo marca.
+                "tag" => Type::String,
                 "props" => Type::Record(Box::new(Type::String), Box::new(Type::Value)),
                 "children" => Type::Array(Box::new(Type::Cmx)),
                 "kind" => Type::Int,
+                "tagCallable" => Type::Callable,
+                "isComponent" => Type::Bool,
                 "toString" => Type::String,
                 _ => Type::Value,
             },

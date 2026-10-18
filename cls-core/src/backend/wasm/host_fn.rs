@@ -220,7 +220,11 @@ impl HostFn {
             FsListDir | FsMkdir | FsRm => (i64p.clone(), vec![ValType::I64]),
             HttpGet => (i64p.clone(), vec![ValType::I64]),
             HttpPost => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            CmxNew => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
+            // (tag, kind, tag_callable, is_component) -> ptr
+            CmxNew => (
+                vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
+                vec![ValType::I64],
+            ),
             CmxSetProp => (
                 vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
                 vec![ValType::I64],

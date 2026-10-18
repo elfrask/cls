@@ -53,11 +53,12 @@ function cmx_text_selfclose() -> int {
 function cmx_upper_callable() -> int {
     var base: Record<String, Value> = {titulo: "demo", activo: true};
     var app = (<CmxApp {...base} extra="x" />);
-    check::assertTrue("cmx.upper.isCallable", app.tag is Callable);
+    check::assertTrue("cmx.upper.tagName", app.tag == "CmxApp");
+    check::assertTrue("cmx.upper.isComponent", app.isComponent);
     check::assertTrue("cmx.upper.spread.own", app.props.extra == "x");
     check::assertTrue("cmx.upper.spread.base", app.props.titulo == "demo");
-    if (app.tag is Callable) {
-        var html: String = app.tag({...app.props, children: app.children});
+    if (app.isComponent) {
+        var html: String = app.tagCallable({...app.props, children: app.children});
         check::assertEqStr("cmx.upper.invoke", html, "App demo");
     }
     return 0;

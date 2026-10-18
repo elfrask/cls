@@ -209,6 +209,14 @@ usar servidor autoritativo propio.
 
 ## 7. Motor de plantillas CMX + golden files  ·  `examples/cmx-templates/`
 
+> **Estado: implementado.** Renderer CMX→HTML en CLS puro (`src/engine.clsx`) +
+> golden files (9 páginas) + oráculo cruzado Jinja2 (paridad) + 4 findings de
+> bugs del compilador hallados al construir el renderer. Ver
+> `examples/cmx-templates/README.md`. Hallazgos: `(cmx).tag is Callable` da
+> `true` para tags String; asignar un `Value` a un local pierde el tag;
+> atributo CMX sin valor no llega a `props`; literal CMX dentro de `{...}` no
+> parsea.
+
 **Oráculo:** golden files a mano (`tests/golden/*.html`) + Jinja2 (Python) donde
 solape.
 

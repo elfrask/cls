@@ -1845,13 +1845,16 @@ pub fn host_any_index<C: HostCtx>(ctx: &mut C, val: i64, tag: i64, idx: i64) -> 
 
 // ── CMX ─────────────────────────────────────────────────────────────────────
 
-pub fn host_cmx_new<C: HostCtx>(ctx: &mut C, tag: i64, kind: i64) -> i64 {
-    // layout: [tag][props_ptr][children_ptr][kind] (kind 0=elemento, 1=texto)
-    let ptr = ctx.alloc(32) as usize;
+pub fn host_cmx_new<C: HostCtx>(ctx: &mut C, tag: i64, kind: i64, tag_callable: i64, is_component: i64) -> i64 {
+    // layout: [tag][props_ptr][children_ptr][kind][tag_callable][is_component]
+    // (kind: 0=elemento, 1=texto; tag_callable: 0 = sin componente).
+    let ptr = ctx.alloc(48) as usize;
     ctx.write_i64(ptr, tag);
     ctx.write_i64(ptr + 8, 0);
     ctx.write_i64(ptr + 16, 0);
     ctx.write_i64(ptr + 24, kind);
+    ctx.write_i64(ptr + 32, tag_callable);
+    ctx.write_i64(ptr + 40, is_component);
     ptr as i64
 }
 

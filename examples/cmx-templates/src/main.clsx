@@ -1,0 +1,32 @@
+# main.clsx - Runner de cmx-templates.
+#
+# Renderiza cada vista a `out/<nombre>.html` (el oraculo son los golden en
+# `tests/golden/`; ver run.ps1).
+
+import "fs" as fs;
+import "engine" as engine;
+import "pages" as pages;
+
+function emit(name: String, cmx: Cmx) -> int {
+    var html: String = engine::render(cmx);
+    fs.writeFile("out/" + name + ".html", html + "\n");
+    print("  out/" + name + ".html (" + html.length.toString() + " bytes)");
+    return 0;
+}
+
+function main(args: String[]) -> int {
+    fs.mkdir("out");
+    print("== cmx-templates: renderizando paginas ==");
+    emit("01-escape", pages::pageEscape());
+    emit("02-interpolation", pages::pageInterpolation());
+    emit("03-attributes", pages::pageAttributes());
+    emit("04-void", pages::pageVoid());
+    emit("05-raw", pages::pageRaw());
+    emit("06-components", pages::pageComponents());
+    emit("07-list", pages::pageList());
+    emit("08-full", pages::pageFull());
+    emit("09-parity", pages::pageParity());
+    emit("10-component", pages::pageComponentTag());
+    print("OK: 10 paginas renderizadas");
+    return 0;
+}

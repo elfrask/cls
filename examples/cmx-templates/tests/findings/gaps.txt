@@ -1,0 +1,2 @@
+# GAPs documentados (limites de diseno, NO regresiones).
+# Una linea por archivo (aqui no hay ninguno todavia).

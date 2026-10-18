@@ -328,8 +328,8 @@ pub fn register_host_functions_opt(
             host::host_http_post(&mut c, u, d)
         });
     }
-    w!("cmx_new", |mut c: Caller<'_, HostState>, t: i64, k: i64| -> i64 {
-        host::host_cmx_new(&mut c, t, k)
+    w!("cmx_new", |mut c: Caller<'_, HostState>, t: i64, k: i64, tc: i64, ic: i64| -> i64 {
+        host::host_cmx_new(&mut c, t, k, tc, ic)
     });
     w!("cmx_set_prop", |mut c: Caller<'_, HostState>, p: i64, k: i64, v: i64, t: i64| -> i64 {
         host::host_cmx_set_prop(&mut c, p, k, v, t)

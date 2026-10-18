@@ -1,0 +1,121 @@
+# pages.clsx - Vistas de la demo (funciones CLS que devuelven Cmx).
+#
+# Cada pagina ejercita un eje de CMX + renderer:
+#   01 escape · 02 interpolacion · 03 atributos · 04 void · 05 raw
+#   06 componentes · 07 listas/navbar · 08 layout completo
+
+import "engine" as engine;
+import "components" as ui;
+
+export function pageEscape() -> Cmx {
+    return (
+        <div class="escape">
+            <p>{"<script>alert('x & y')</script>"}</p>
+            <p>{"Comillas: \"dobles\" y 'simples'"}</p>
+            <p>{"Emoji: café 😀 - multibyte UTF-8"}</p>
+        </div>
+    );
+}
+
+export function pageInterpolation() -> Cmx {
+    var n = 3;
+    var precio = 19.5;
+    return (
+        <div class="interp">
+            <p>{"Total: " + n.toString() + " x " + precio.toString()}</p>
+            <p>{"Doble: " + (n * 2).toString()}</p>
+            <p>{n > 2 ? "muchos" : "pocos"}</p>
+        </div>
+    );
+}
+
+export function pageAttributes() -> Cmx {
+    return (
+        <div id="main" class="box" data-count={7} hidden={true} title="Hola & adios">
+            <input type="text" value="a\"b" maxlength={10} />
+        </div>
+    );
+}
+
+export function pageVoid() -> Cmx {
+    return (
+        <div class="void">
+            <br />
+            <hr />
+            <img src="/logo.png" alt="Logo & marca" />
+            <input type="checkbox" checked={true} />
+            <meta name="x" content="y" />
+            <link rel="stylesheet" href="/a.css" />
+        </div>
+    );
+}
+
+export function pageRaw() -> Cmx {
+    var confiable = "<b>HTML crudo</b> & sin escapar";
+    return (
+        <div class="raw">
+            <p>{engine::raw(confiable)}</p>
+            <p>{"(esto SI se escapa: <b>x</b>)"}</p>
+        </div>
+    );
+}
+
+export function pageComponents() -> Cmx {
+    # Nota (bug abierto): un literal CMX como argumento dentro de un child de
+    # interpolacion `{card(..., (<p/>))}` no parsea; se precomputa en variables.
+    var bodyUno = (<p>Contenido 1</p>);
+    var bodyDos = (<p>Contenido & mas</p>);
+    return (
+        <div class="cards">
+            {ui::card("Uno", bodyUno)}
+            {ui::card("Dos", bodyDos)}
+            {ui::badge("nuevo", "verde")}
+        </div>
+    );
+}
+
+export function pageList() -> Cmx {
+    var items = ["Comprar leche", "Pagar <luz> & agua", "Llamar a Ana"];
+    return (
+        <div class="list">
+            {ui::navbar("MiApp", ["Home", "Docs", "About"])}
+            {ui::todoList(items)}
+        </div>
+    );
+}
+
+export function pageFull() -> Cmx {
+    var items = ["Tarea 1", "Tarea 2 & 3"];
+    var body = (
+        <main class="contenido">
+            {ui::navbar("MiApp", ["Home", "Docs"])}
+            {ui::card("Pendientes", ui::todoList(items))}
+        </main>
+    );
+    return ui::layout("Plantilla CMX", body);
+}
+
+# Componente (tag mayuscula): funcion CLS que devuelve HTML (String). El
+# renderer lo invoca via `isComponent` + `tagCallable`.
+function PageCard(props: Record<String, Value>) -> String {
+    return "<article class=\"pcard\">" + engine::e(str(props.title)) + "</article>";
+}
+
+export function pageComponentTag() -> Cmx {
+    return (
+        <div class="comp">
+            <PageCard title="Hola & <mundo>" />
+            <PageCard title="Otro" />
+        </div>
+    );
+}
+
+# Pagina de paridad con Jinja2 (tests/oracle/render_jinja.py): solo usa
+# escape de `& < > '` e interpolacion/bucles, donde ambos motores coinciden.
+export function pageParity() -> Cmx {
+    var items = ["<uno>", "dos & tres", "cua'ro"];
+    return (
+        <ul class="parity">{engine::raw(engine::renderEach(items, (it: String) -> <li>{it}</li>))}</ul>
+    );
+}
+

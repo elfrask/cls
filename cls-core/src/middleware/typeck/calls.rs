@@ -110,8 +110,10 @@ impl TypeChecker {
             // de función). El runtime despacha por tag-bit; aquí permitimos la
             // llamada y tipamos el retorno como Value (dinámico). Réplica del
             // patrón JSON/Value (ver plan completar-tipo-cmx.md).
+            // `app.tagCallable()`: componente CMX (tag mayúscula). El runtime
+            // despacha el handle de función; el retorno es dinámico.
             let obj_ty0 = self.check_expression(&m.object);
-            if matches!(obj_ty0, Type::Cmx) && m.member == "tag" {
+            if matches!(obj_ty0, Type::Cmx) && m.member == "tagCallable" {
                 for arg in &call.args {
                     self.check_expression(arg);
                 }

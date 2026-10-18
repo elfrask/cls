@@ -8,9 +8,10 @@ function App(props: Record<String, Value>) -> String {
 
 function main(args: String[]) -> int {
     var app = (<App titulo="demo"><p>hijo</p></App>);
-    print("es callable:", app.tag is Callable);
-    if (app.tag is Callable) {
-        var r: String = app.tag({...app.props, children: app.children});
+    print("tag:", app.tag);
+    print("es componente:", app.isComponent);
+    if (app.isComponent) {
+        var r: String = app.tagCallable({...app.props, children: app.children});
         print("render:", r);
     }
     return 0;

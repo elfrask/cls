@@ -183,35 +183,8 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_print_record_field(ptr_tmp, key_tmp);
                 return Ok(());
             }
-            // `app.tag`: puede ser un string (tag minúscula) o un handle de función
-            // (tag mayúscula). Despachar por tag-bit: handle (par O impar) =
-            // bits altos cero; string CLS = (off<<32)|len (bits altos != 0).
-            if matches!(obj_ty, Some(Type::Cmx)) && m.member == "tag" {
-                self.emit_expression(&m.object)?;
-                self.emit_cmx_field(0)?;
-                let v = self.fresh_local();
-                self.body.push(Instruction::LocalSet(v));
-                // if (v>>32 == 0) && (v != 0) -> handle -> FnToString
-                self.body.push(Instruction::LocalGet(v));
-                self.body.push(Instruction::I64Const(32));
-                self.body.push(Instruction::I64ShrU);
-                self.body.push(Instruction::I64Eqz);
-                self.body.push(Instruction::LocalGet(v));
-                self.body.push(Instruction::I64Eqz);
-                self.body.push(Instruction::I32Eqz);
-                self.body.push(Instruction::I32And);
-                self.block_depth += 1;
-                self.body.push(Instruction::If(BlockType::Empty));
-                self.body.push(Instruction::LocalGet(v));
-                self.host.call(HostFn::FnToString, &mut self.body);
-                self.host.call(HostFn::PrintStr, &mut self.body);
-                self.body.push(Instruction::Else);
-                self.body.push(Instruction::LocalGet(v));
-                self.host.call(HostFn::PrintStr, &mut self.body);
-                self.body.push(Instruction::End);
-                self.block_depth -= 1;
-                return Ok(());
-            }
+            // (Rework CMX) `app.tag` ahora es SIEMPRE String: lo maneja la rama
+            // genérica de print por tipo estático. Ya no hay tag-bit.
         }
         // Cadenas de acceso sobre `Value`/Record (json.parse anidado): `o.x[0]`,
         // `o.a.c`, `o.a.b[0]`. El objeto de la cadena tipo `Value` o Record;

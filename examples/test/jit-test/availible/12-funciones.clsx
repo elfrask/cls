@@ -16,10 +16,10 @@ function main(args: String[]) -> int {
     print("tag:", app.tag);
     print("titulo:", app.props.titulo);
     print("cmx:", app);
-    print("es callable:", app.tag is Callable);
-    if (app.tag is Callable) {
-        var r: String = app.tag({...app.props});
-        print("app.tag():", r);
+    print("es componente:", app.isComponent);
+    if (app.isComponent) {
+        var r: String = app.tagCallable({...app.props});
+        print("app.tagCallable():", r);
     }
     return 0;
 };

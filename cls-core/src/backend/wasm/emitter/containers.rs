@@ -385,40 +385,15 @@ impl<'a> FuncEmitter<'a> {
     /// layouts (si algo vuelve a ser contiguo, la conversión se implementa aquí
     /// y todas las transferencias lo heredan).
     pub(crate) fn emit_coerce(&mut self, expr: &Expression, dest: Option<&Type>) -> ClsResult<()> {
-        // Cmx -> String: el resultado es el **tag** como String, con un handle de
-        // componente (función, tag-bit) convertido a "" (vacío). Así un renderer
-        // CLS puede distinguir componentes (`tag.length == 0` -> se invoca la
-        // función) de elementos (`tag` = nombre del tag). Aplica a `x.tag` y a un
-        // valor Cmx completo (`var s: String = cmx`).
-        if matches!(dest, Some(Type::String)) {
-            let tag_source: Option<&Expression> = match expr {
-                Expression::MemberAccess(m)
-                    if m.member == "tag"
-                        && matches!(self.types.get(&expr_span(&m.object)), Some(Type::Cmx)) =>
-                {
-                    Some(&m.object)
-                }
-                _ if matches!(self.types.get(&expr_span(expr)), Some(Type::Cmx)) => Some(expr),
-                _ => None,
-            };
-            if let Some(src) = tag_source {
-                self.emit_expression(src)?; // ptr del CmxValue
-                self.emit_cmx_field(0)?; // tag (i64)
-                let tmp = self.fresh_local_ty(WasTy::I64);
-                self.body.push(Instruction::LocalSet(tmp));
-                // if (tag >> 32) == 0 -> handle (o vacío) -> 0 ("")
-                self.body.push(Instruction::LocalGet(tmp));
-                self.body.push(Instruction::I64Const(32));
-                self.body.push(Instruction::I64ShrU);
-                self.body.push(Instruction::I64Eqz);
-                self.body
-                    .push(Instruction::If(BlockType::Result(ValType::I64)));
-                self.body.push(Instruction::I64Const(0));
-                self.body.push(Instruction::Else);
-                self.body.push(Instruction::LocalGet(tmp));
-                self.body.push(Instruction::End);
-                return Ok(());
-            }
+        // Cmx -> String: el resultado es el **tag** (nombre del tag, o el texto
+        // de un nodo de texto). `.tag` ya es String por sí solo; esto cubre la
+        // coerción de un valor Cmx completo (`var s: String = cmx`).
+        if matches!(dest, Some(Type::String))
+            && matches!(self.types.get(&expr_span(expr)), Some(Type::Cmx))
+        {
+            self.emit_expression(expr)?; // ptr del CmxValue
+            self.emit_cmx_field(0)?; // tag (String)
+            return Ok(());
         }
         self.emit_expression(expr)
     }
@@ -442,31 +417,44 @@ impl<'a> FuncEmitter<'a> {
     pub(crate) fn emit_cmx(&mut self, c: &CmxElement) -> ClsResult<()> {
         // tag mayúscula -> resolver la variable/valor SIEMPRE (debe existir; si no, error).
         // tag minúscula -> String.
-        if c.tag.starts_with(|ch: char| ch.is_uppercase()) {
-            let name = c.tag.clone();
-            if self.globals.contains_key(&name) || self.locals.contains_key(&name) {
-                self.emit_ident_load(&name);
-            } else if self.fn_table_idx.contains_key(&name) {
-                // Función como tag -> handle de función (tag-bit) para que
-                // `app.tag` sea invocable y se imprima `<function X>` (paridad walker).
-                let ti = self.fn_table_idx[&name];
-                let n = self.intern_string(&format!("<function {}>", name));
-                self.body.push(Instruction::I64Const(ti as i64));
-                self.emit_load_str(n);
-                self.body.push(Instruction::I64Const(0));
-                self.host.call(HostFn::FnHandle, &mut self.body);
-            } else {
+        // `tag` es SIEMPRE el nombre (String). Solo un tag mayúscula que resuelva
+        // a una FUNCIÓN/CLASE es componente (`tag_callable` + `is_component=1`);
+        // un tag mayúscula ligado a una variable conserva su valor como tag
+        // (tag dinámico, p.ej. `<Seccion/>` con `Seccion="galeria"`).
+        let upper = c.tag.starts_with(|ch: char| ch.is_uppercase());
+        let name = c.tag.clone();
+        let is_var_tag = upper && (self.globals.contains_key(&name) || self.locals.contains_key(&name));
+        if is_var_tag {
+            self.emit_ident_load(&name); // tag = valor de la variable
+            self.body.push(Instruction::I64Const(0)); // kind=0
+            self.body.push(Instruction::I64Const(0)); // tag_callable
+            self.body.push(Instruction::I64Const(0)); // is_component
+        } else if upper {
+            if !self.fn_table_idx.contains_key(&name) {
                 return Err(crate::error::ClsError::CompileError(format!(
                     "El tag '<{}>' usa mayúscula pero '{}' no está definido: \
                      los tags con inicial mayúscula deben ser una función/valor existente",
                     c.tag, name
                 )));
             }
+            let t = self.intern_string(&c.tag);
+            self.emit_load_str(t); // tag = nombre
+            self.body.push(Instruction::I64Const(0)); // kind=0 -> elemento
+            // tag_callable = handle de la función.
+            let ti = self.fn_table_idx[&name];
+            let n = self.intern_string(&format!("<function {}>", name));
+            self.body.push(Instruction::I64Const(ti as i64));
+            self.emit_load_str(n);
+            self.body.push(Instruction::I64Const(0));
+            self.host.call(HostFn::FnHandle, &mut self.body);
+            self.body.push(Instruction::I64Const(1)); // is_component
         } else {
             let t = self.intern_string(&c.tag);
-            self.emit_load_str(t);
+            self.emit_load_str(t); // tag = nombre
+            self.body.push(Instruction::I64Const(0)); // kind=0 -> elemento
+            self.body.push(Instruction::I64Const(0)); // tag_callable
+            self.body.push(Instruction::I64Const(0)); // is_component
         }
-        self.body.push(Instruction::I64Const(0)); // kind=0 -> elemento
         self.host.call(HostFn::CmxNew, &mut self.body);
         let ptr = self.fresh_local();
         self.body.push(Instruction::LocalSet(ptr));
@@ -571,7 +559,9 @@ impl<'a> FuncEmitter<'a> {
                     // Texto -> CmxValue de texto (kind=1): el print lo muestra plano.
                     let s = self.intern_string(s);
                     self.emit_load_str(s);
-                    self.body.push(Instruction::I64Const(1));
+                    self.body.push(Instruction::I64Const(1)); // kind=1 (texto)
+                    self.body.push(Instruction::I64Const(0)); // tag_callable
+                    self.body.push(Instruction::I64Const(0)); // is_component
                     self.host.call(HostFn::CmxNew, &mut self.body);
                     self.body.push(Instruction::I64Const(5 << 8));
                 }
@@ -585,6 +575,8 @@ impl<'a> FuncEmitter<'a> {
                         // así `children[i]` se comporta como su contenido (== y
                         // print), consistente con `CmxChild::Text`.
                         self.body.push(Instruction::I64Const(1));
+                        self.body.push(Instruction::I64Const(0)); // tag_callable
+                        self.body.push(Instruction::I64Const(0)); // is_component
                         self.host.call(HostFn::CmxNew, &mut self.body);
                         self.body.push(Instruction::I64Const(5 << 8));
                     } else {
