@@ -256,6 +256,12 @@ pub static INTERNALS_FUNCTIONS: &[InternalsFn] = &[
         params: &[I64, I64],
         results: &[I64],
     },
+    // ── cmx ───────────────────────────────────────────────────────────────
+    InternalsFn {
+        name: "__intr_cmx_fmt",
+        params: &[I64],
+        results: &[I64],
+    },
     // ── math ──────────────────────────────────────────────────────────────
     InternalsFn {
         name: "__intr_math_sqrt",

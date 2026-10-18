@@ -222,3 +222,10 @@ pub fn cmx_format(p: usize) -> String {
         out
     }
 }
+
+/// `cmx_to_string` fusionado (0 host): formatea un CmxValue y devuelve el string.
+#[no_mangle]
+pub extern "C" fn __intr_cmx_fmt(ptr: i64) -> i64 {
+    let s = cmx_format(ptr as usize);
+    unsafe { mem::write_str(&s) }
+}

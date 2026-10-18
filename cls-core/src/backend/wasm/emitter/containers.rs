@@ -16,6 +16,13 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
+    /// `cmx_to_string` fusionado: el ptr del CMX está en el stack; deja el string.
+    pub(crate) fn emit_cmx_fmt(&mut self) {
+        if let Some(&idx) = self.func_indexes.get("__intr_cmx_fmt") {
+            self.body.push(Instruction::Call(idx));
+        }
+    }
+
     /// store `base[dest_off] = src_cmx[src_off]` (copia de un campo CMX).
     pub(crate) fn emit_cmx_copy_store(
         &mut self,
@@ -57,6 +64,92 @@ impl<'a> FuncEmitter<'a> {
         }
         self.body
             .push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+        Ok(())
+    }
+
+    /// Crea un CmxValue inline: `__alloc(48)` + stores. Espera en el stack
+    /// `[tag, tag_callable]`. Devuelve el local con el ptr.
+    pub(crate) fn emit_cmx_new(&mut self, kind: i64, is_component: i64) -> u32 {
+        let tc = self.fresh_local();
+        self.body.push(Instruction::LocalSet(tc));
+        let tag = self.fresh_local();
+        self.body.push(Instruction::LocalSet(tag));
+        let alloc = self.func_indexes["__alloc"];
+        self.body.push(Instruction::I64Const(48));
+        self.body.push(Instruction::Call(alloc));
+        let ptr = self.fresh_local();
+        self.body.push(Instruction::LocalSet(ptr));
+        self.emit_cmx_store_local(ptr, 0, tag);
+        self.emit_cmx_store_const(ptr, 8, 0);
+        self.emit_cmx_store_const(ptr, 16, 0);
+        self.emit_cmx_store_const(ptr, 24, kind);
+        self.emit_cmx_store_local(ptr, 32, tc);
+        self.emit_cmx_store_const(ptr, 40, is_component);
+        ptr
+    }
+
+    /// `base[off] = <local>` (i64).
+    pub(crate) fn emit_cmx_store_local(&mut self, base: u32, off: i64, val: u32) {
+        self.body.push(Instruction::LocalGet(base));
+        self.body.push(Instruction::I64Const(off));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::LocalGet(val));
+        self.body
+            .push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+    }
+
+    /// `base[off] = <const>` (i64).
+    pub(crate) fn emit_cmx_store_const(&mut self, base: u32, off: i64, c: i64) {
+        self.body.push(Instruction::LocalGet(base));
+        self.body.push(Instruction::I64Const(off));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::I64Const(c));
+        self.body
+            .push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+    }
+
+    /// Emite `[val, tag]` de un atributo CMX (para `__intr_record_set`).
+    pub(crate) fn emit_cmx_attr_val_tag(&mut self, attr: &CmxAttribute) -> ClsResult<()> {
+        let val_type: Option<Type> = match &attr.value {
+            Some(CmxAttributeValue::String(s)) => {
+                let s = self.intern_string(s);
+                self.emit_load_str(s);
+                Some(Type::String)
+            }
+            Some(CmxAttributeValue::Expression(expr)) => {
+                self.emit_expression(expr)?;
+                cmx_literal_type(expr).or_else(|| self.types.get(&expr_span(expr)).cloned())
+            }
+            Some(CmxAttributeValue::Shorthand(name)) => {
+                self.emit_ident_load(name);
+                None
+            }
+            None => {
+                self.body.push(Instruction::I64Const(1));
+                Some(Type::Bool)
+            }
+        };
+        let was = match &val_type {
+            Some(t) => was_type(t).unwrap_or(WasTy::I64),
+            None => WasTy::I64,
+        };
+        // Named (struct/clase/enum): serializar a string RAW (tag 9) para que el
+        // formateo del CmxValue no muestre punteros.
+        if matches!(val_type, Some(Type::Named(_, _))) {
+            let cls_t = val_type.clone().unwrap_or(Type::Value);
+            self.emit_typed_value_to_string(was, &cls_t)?;
+            self.body.push(Instruction::I64Const(9 << 8));
+        } else {
+            match was {
+                WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+                WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+                WasTy::I64 => {}
+            }
+            let cls = val_type.unwrap_or(Type::Value);
+            self.body.push(Instruction::I64Const(cmx_tag_for_type(&cls)));
+        }
         Ok(())
     }
 
@@ -467,12 +560,11 @@ impl<'a> FuncEmitter<'a> {
         // (tag dinámico, p.ej. `<Seccion/>` con `Seccion="galeria"`).
         let upper = c.tag.starts_with(|ch: char| ch.is_uppercase());
         let name = c.tag.clone();
-        let is_var_tag = upper && (self.globals.contains_key(&name) || self.locals.contains_key(&name));
+        let is_var_tag =
+            upper && (self.globals.contains_key(&name) || self.locals.contains_key(&name));
+        // [stack] tag (String): nombre del tag (o valor de una variable).
         if is_var_tag {
-            self.emit_ident_load(&name); // tag = valor de la variable
-            self.body.push(Instruction::I64Const(0)); // kind=0
-            self.body.push(Instruction::I64Const(0)); // tag_callable
-            self.body.push(Instruction::I64Const(0)); // is_component
+            self.emit_ident_load(&name);
         } else if upper {
             if !self.fn_table_idx.contains_key(&name) {
                 return Err(crate::error::ClsError::CompileError(format!(
@@ -482,49 +574,35 @@ impl<'a> FuncEmitter<'a> {
                 )));
             }
             let t = self.intern_string(&c.tag);
-            self.emit_load_str(t); // tag = nombre
-            self.body.push(Instruction::I64Const(0)); // kind=0 -> elemento
-            // tag_callable = handle de la función.
+            self.emit_load_str(t);
+        } else {
+            let t = self.intern_string(&c.tag);
+            self.emit_load_str(t);
+        }
+        // [stack] tag, tag_callable
+        if upper && !is_var_tag {
             let ti = self.fn_table_idx[&name];
             let n = self.intern_string(&format!("<function {}>", name));
             self.body.push(Instruction::I64Const(ti as i64));
             self.emit_load_str(n);
             self.body.push(Instruction::I64Const(0));
             self.host.call(HostFn::FnHandle, &mut self.body);
-            self.body.push(Instruction::I64Const(1)); // is_component
         } else {
-            let t = self.intern_string(&c.tag);
-            self.emit_load_str(t); // tag = nombre
-            self.body.push(Instruction::I64Const(0)); // kind=0 -> elemento
-            self.body.push(Instruction::I64Const(0)); // tag_callable
-            self.body.push(Instruction::I64Const(0)); // is_component
-        }
-        self.host.call(HostFn::CmxNew, &mut self.body);
-        let ptr = self.fresh_local();
-        self.body.push(Instruction::LocalSet(ptr));
-        // Spreads de props `{...expr}` (REST_SPREAD_PLAN): las props del CmxValue
-        // viven como hashmap (offset 8). Si hay spreads, alocar props (record
-        // vacío), setear en el CmxValue y mergear cada spread.
-        if !c.spreads.is_empty() {
             self.body.push(Instruction::I64Const(0));
+        }
+        let is_comp: i64 = if upper && !is_var_tag { 1 } else { 0 };
+        let ptr = self.emit_cmx_new(0, is_comp);
+        // props (`[cap][len][(key,val,tag)*24]`) via record intrinsics (inline,
+        // 0 host). Cubre atributos y spreads `{...expr}`.
+        if !c.attributes.is_empty() || !c.spreads.is_empty() {
+            let cap = (c.attributes.len() + c.spreads.len()) as i64;
+            self.body.push(Instruction::I64Const(cap));
             if let Some(&idx) = self.func_indexes.get("__intr_record_new") {
                 self.body.push(Instruction::Call(idx));
             }
             let props_ptr = self.fresh_local();
             self.body.push(Instruction::LocalSet(props_ptr));
-            // CmxValue.offset8 = props_ptr
-            self.body.push(Instruction::LocalGet(ptr));
-            self.body.push(Instruction::I64Const(8));
-            self.body.push(Instruction::I64Add);
-            self.body.push(Instruction::I32WrapI64);
-            self.body.push(Instruction::LocalGet(props_ptr));
-            self.body.push(Instruction::I64Store(MemArg {
-                offset: 0,
-                align: 3,
-                memory_index: 0,
-            }));
             for spread in &c.spreads {
-                // merge(dst=props_ptr, src=spread_ptr) — primero dst, luego src.
                 self.body.push(Instruction::LocalGet(props_ptr));
                 self.emit_expression(spread)?;
                 if let Some(&idx) = self.func_indexes.get("__intr_record_merge") {
@@ -532,108 +610,67 @@ impl<'a> FuncEmitter<'a> {
                 }
                 self.body.push(Instruction::LocalSet(props_ptr)); // write-back
             }
-            // Actualizar CmxValue.offset8 con el props_ptr final (el merge pudo
-            // reallocar). Sin esto, CmxSetProp/lectura usan el ptr viejo.
-            self.body.push(Instruction::LocalGet(ptr));
-            self.body.push(Instruction::I64Const(8));
-            self.body.push(Instruction::I64Add);
-            self.body.push(Instruction::I32WrapI64);
-            self.body.push(Instruction::LocalGet(props_ptr));
-            self.body.push(Instruction::I64Store(MemArg {
-                offset: 0,
-                align: 3,
-                memory_index: 0,
-            }));
-        }
-        for attr in &c.attributes {
-            self.body.push(Instruction::LocalGet(ptr));
-            let k = self.intern_string(&attr.name);
-            self.emit_load_str(k);
-            let val_type: Option<Type> = match &attr.value {
-                Some(CmxAttributeValue::String(s)) => {
-                    let s = self.intern_string(s);
-                    self.emit_load_str(s);
-                    Some(Type::String)
+            for attr in &c.attributes {
+                self.body.push(Instruction::LocalGet(props_ptr));
+                let k = self.intern_string(&attr.name);
+                self.emit_load_str(k);
+                self.emit_cmx_attr_val_tag(attr)?;
+                if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
+                    self.body.push(Instruction::Call(idx));
                 }
-                Some(CmxAttributeValue::Expression(expr)) => {
-                    self.emit_expression(expr)?;
-                    // Literales -> su tipo real (el type map puede dar Value).
-                    cmx_literal_type(expr).or_else(|| self.types.get(&expr_span(expr)).cloned())
-                }
-                Some(CmxAttributeValue::Shorthand(name)) => {
-                    self.emit_ident_load(name);
-                    None
-                }
-                None => {
-                    self.body.push(Instruction::I64Const(1));
-                    Some(Type::Bool)
-                }
-            };
-            let was = match &val_type {
-                Some(t) => was_type(t).unwrap_or(WasTy::I64),
-                None => WasTy::I64,
-            };
-            // Valores Named (struct/clase/enum) y contenedores como props CMX:
-            // se guardan serializados a STRING (tag 1) para que el formateo del
-            // CmxValue no muestre punteros (bug dev-2: `metadata="1900568"`).
-            // El CmxValue es un DOM de props planas; el string es la repr.
-            let is_named_container = matches!(val_type, Some(Type::Named(_, _)));
-            if is_named_container {
-                // El valor (ptr del struct/clase o i64 del enum) está en stack.
-                let cls_t = val_type.clone().unwrap_or(Type::Value);
-                self.emit_typed_value_to_string(was, &cls_t)?;
-                self.body.push(Instruction::I64Const(9 << 8)); // tag raw (sin comillas)
-            } else {
-                match was {
-                    WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
-                    WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
-                    WasTy::I64 => {}
-                }
-                let cls = val_type.unwrap_or(Type::Value);
-                self.body
-                    .push(Instruction::I64Const(cmx_tag_for_type(&cls)));
+                self.body.push(Instruction::LocalSet(props_ptr)); // write-back
             }
-            self.host.call(HostFn::CmxSetProp, &mut self.body);
-            self.body.push(Instruction::Drop);
+            self.emit_cmx_store_local(ptr, 8, props_ptr);
         }
-        for child in &c.children {
-            self.body.push(Instruction::LocalGet(ptr));
-            match child {
-                CmxChild::Text(s) => {
-                    // Texto -> CmxValue de texto (kind=1): el print lo muestra plano.
-                    let s = self.intern_string(s);
-                    self.emit_load_str(s);
-                    self.body.push(Instruction::I64Const(1)); // kind=1 (texto)
-                    self.body.push(Instruction::I64Const(0)); // tag_callable
-                    self.body.push(Instruction::I64Const(0)); // is_component
-                    self.host.call(HostFn::CmxNew, &mut self.body);
-                    self.body.push(Instruction::I64Const(5 << 8));
-                }
-                CmxChild::Expression(expr) => {
-                    let t = cmx_literal_type(expr)
-                        .or_else(|| self.types.get(&expr_span(expr)).cloned())
-                        .unwrap_or(Type::Value);
-                    self.emit_expression(expr)?;
-                    if matches!(t, Type::String) {
-                        // Child de expresión String -> CmxValue de texto (kind=1):
-                        // así `children[i]` se comporta como su contenido (== y
-                        // print), consistente con `CmxChild::Text`.
-                        self.body.push(Instruction::I64Const(1));
+        // children (`[cap][len][(val,tag)*16]`); n es estático -> alloc exacto.
+        let n = c.children.len() as i64;
+        if n > 0 {
+            self.body.push(Instruction::I64Const(16 + 16 * n));
+            let alloc = self.func_indexes["__alloc"];
+            self.body.push(Instruction::Call(alloc));
+            let arr = self.fresh_local();
+            self.body.push(Instruction::LocalSet(arr));
+            self.emit_cmx_store_const(arr, 0, n); // cap
+            self.emit_cmx_store_const(arr, 8, n); // len
+            for (i, child) in c.children.iter().enumerate() {
+                let off = 16 + 16 * i as i64;
+                match child {
+                    CmxChild::Text(s) => {
+                        // Texto -> CmxValue de texto (kind=1).
+                        let s = self.intern_string(s);
+                        self.emit_load_str(s);
                         self.body.push(Instruction::I64Const(0)); // tag_callable
-                        self.body.push(Instruction::I64Const(0)); // is_component
-                        self.host.call(HostFn::CmxNew, &mut self.body);
-                        self.body.push(Instruction::I64Const(5 << 8));
-                    } else {
-                        self.body.push(Instruction::I64Const(cmx_tag_for_type(&t)));
+                        let v = self.emit_cmx_new(1, 0);
+                        self.emit_cmx_store_local(arr, off, v);
+                        self.emit_cmx_store_const(arr, off + 8, 5 << 8);
+                    }
+                    CmxChild::Expression(expr) => {
+                        let t = cmx_literal_type(expr)
+                            .or_else(|| self.types.get(&expr_span(expr)).cloned())
+                            .unwrap_or(Type::Value);
+                        self.emit_expression(expr)?;
+                        if matches!(t, Type::String) {
+                            self.body.push(Instruction::I64Const(0)); // tag_callable
+                            let v = self.emit_cmx_new(1, 0);
+                            self.emit_cmx_store_local(arr, off, v);
+                            self.emit_cmx_store_const(arr, off + 8, 5 << 8);
+                        } else {
+                            let v = self.fresh_local();
+                            self.body.push(Instruction::LocalSet(v));
+                            self.emit_cmx_store_local(arr, off, v);
+                            self.emit_cmx_store_const(arr, off + 8, cmx_tag_for_type(&t));
+                        }
+                    }
+                    CmxChild::Element(el) => {
+                        self.emit_cmx(el)?; // deja el ptr del elemento en el stack
+                        let v = self.fresh_local();
+                        self.body.push(Instruction::LocalSet(v));
+                        self.emit_cmx_store_local(arr, off, v);
+                        self.emit_cmx_store_const(arr, off + 8, 5 << 8);
                     }
                 }
-                CmxChild::Element(el) => {
-                    self.emit_cmx(el)?;
-                    self.body.push(Instruction::I64Const(5 << 8));
-                }
             }
-            self.host.call(HostFn::CmxAddChild, &mut self.body);
-            self.body.push(Instruction::Drop);
+            self.emit_cmx_store_local(ptr, 16, arr);
         }
         self.body.push(Instruction::LocalGet(ptr));
         Ok(())

@@ -935,11 +935,11 @@ impl<'a> FuncEmitter<'a> {
         }
         self.emit_expression(left)?;
         if l_cmx {
-            self.host.call(HostFn::CmxToString, &mut self.body);
+            self.emit_cmx_fmt();
         }
         self.emit_expression(right)?;
         if r_cmx {
-            self.host.call(HostFn::CmxToString, &mut self.body);
+            self.emit_cmx_fmt();
         }
         self.emit_str_host("__intr_str_eq");
         if negate {

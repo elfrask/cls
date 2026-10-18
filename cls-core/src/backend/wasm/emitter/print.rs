@@ -355,7 +355,7 @@ impl<'a> FuncEmitter<'a> {
                 }
             }
             Type::Cmx => {
-                self.host.call(HostFn::CmxToString, &mut self.body);
+                self.emit_cmx_fmt();
                 self.host.call(HostFn::PrintStr, &mut self.body);
             }
             Type::Fun(..) => {

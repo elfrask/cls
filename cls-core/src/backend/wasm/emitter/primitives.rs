@@ -37,7 +37,7 @@ impl<'a> FuncEmitter<'a> {
                 }
                 "toString" | "__str" | "__repr" => {
                     self.emit_expression(&member.object)?;
-                    self.host.call(HostFn::CmxToString, &mut self.body);
+                    self.emit_cmx_fmt();
                     return Ok(true);
                 }
                 "flattenChildren" => {
