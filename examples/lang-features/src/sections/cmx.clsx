@@ -80,6 +80,9 @@ function cmx_methods() -> int {
     var tagOut: String = comp.tryCallTag();
     check::assertEqStr("cmx.tryCallTag", tagOut, "App x");
     check::assertTrue("cmx.tryCallTag.null", el.tryCallTag() == 0);
+    # Anotacion `CMX<P, PP>` (borrada): los params se aceptan y se ignoran.
+    var erased: Cmx<String, Int> = el;
+    check::assertTrue("cmx.erased.annotation", erased.tag == "div");
     var c = (<CmxApp titulo="demo" />);
     check::assertTrue("cmx.component.notPrimitive", !c.isPrimitive());
     check::assertTrue("cmx.component.isElementOf", c.isElementOf("CmxApp"));

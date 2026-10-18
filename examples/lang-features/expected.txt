@@ -312,6 +312,7 @@ CHECK cmx.clone.children=ok
 CHECK cmx.clone.notComponent=ok
 CHECK cmx.tryCallTag=ok
 CHECK cmx.tryCallTag.null=ok
+CHECK cmx.erased.annotation=ok
 CHECK cmx.component.notPrimitive=ok
 CHECK cmx.component.isElementOf=ok
 FEATURE cmx OK

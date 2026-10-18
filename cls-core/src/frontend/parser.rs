@@ -586,6 +586,9 @@ impl Parser {
         let name_str = name.as_str();
 
         // Acrónimos
+        // CMX<P, PP> (rework): los parámetros genéricos se aceptan pero se
+        // BORRAN; el tipo es el builtin `Cmx`. Se consume el `<...>` más abajo.
+        let mut is_cmx = false;
         match name_str {
             "int" | "Int" | "Integer" => return Ok(TypeKind::Int),
             "str" | "String" => return Ok(TypeKind::String),
@@ -598,7 +601,7 @@ impl Parser {
             "unknown" => return Ok(TypeKind::Unknown),
             "null" => return Ok(TypeKind::Null),
             "Void" | "void" => return Ok(TypeKind::Void),
-            "cmx" | "Cmx" | "CMX" => return Ok(TypeKind::Cmx),
+            "cmx" | "Cmx" | "CMX" => is_cmx = true,
             "i32" => return Ok(TypeKind::I32),
             "i64" => return Ok(TypeKind::I64),
             "i16" => return Ok(TypeKind::I16),
@@ -649,6 +652,9 @@ impl Parser {
             }
         }
 
+        if is_cmx {
+            return Ok(TypeKind::Cmx);
+        }
         Ok(TypeKind::Named(qualified, type_params))
     }
 
