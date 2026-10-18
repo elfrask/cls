@@ -16,6 +16,50 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
+    /// store `base[dest_off] = src_cmx[src_off]` (copia de un campo CMX).
+    pub(crate) fn emit_cmx_copy_store(
+        &mut self,
+        base: u32,
+        src: u32,
+        dest_off: i64,
+        src_off: i64,
+    ) -> ClsResult<()> {
+        self.body.push(Instruction::LocalGet(base));
+        self.body.push(Instruction::I64Const(dest_off));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::LocalGet(src));
+        self.emit_cmx_field(src_off)?;
+        self.body
+            .push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+        Ok(())
+    }
+
+    /// store `base[dest_off] = eval(arg)` si `arg` existe; si no, `src[src_off]`.
+    pub(crate) fn emit_cmx_store_arg(
+        &mut self,
+        base: u32,
+        dest_off: i64,
+        arg: Option<&Expression>,
+        src: u32,
+        src_off: i64,
+    ) -> ClsResult<()> {
+        self.body.push(Instruction::LocalGet(base));
+        self.body.push(Instruction::I64Const(dest_off));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I32WrapI64);
+        match arg {
+            Some(e) => self.emit_expression(e)?,
+            None => {
+                self.body.push(Instruction::LocalGet(src));
+                self.emit_cmx_field(src_off)?;
+            }
+        }
+        self.body
+            .push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+        Ok(())
+    }
+
     pub(crate) fn emit_array(&mut self, a: &ArrayExpr) -> ClsResult<()> {
         let has_spread = a
             .elements

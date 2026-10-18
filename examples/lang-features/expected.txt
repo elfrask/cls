@@ -307,6 +307,9 @@ CHECK cmx.isElementOf.true=ok
 CHECK cmx.isElementOf.false=ok
 CHECK cmx.toString.prefix=ok
 CHECK cmx.flatten.len=ok
+CHECK cmx.clone.tag=ok
+CHECK cmx.clone.children=ok
+CHECK cmx.clone.notComponent=ok
 CHECK cmx.component.notPrimitive=ok
 CHECK cmx.component.isElementOf=ok
 FEATURE cmx OK

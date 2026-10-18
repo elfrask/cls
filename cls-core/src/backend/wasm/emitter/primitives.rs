@@ -46,6 +46,26 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_cmx_field(16)?;
                     return Ok(true);
                 }
+                "cloneWith" => {
+                    // cloneWith(props?, children?) -> nuevo Cmx (copia inmutable;
+                    // conserva tag/kind/tagCallable/isComponent). Construccion inline.
+                    self.emit_expression(&member.object)?;
+                    let p = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(p));
+                    let alloc = self.func_indexes["__alloc"];
+                    self.body.push(Instruction::I64Const(48));
+                    self.body.push(Instruction::Call(alloc));
+                    let n = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(n));
+                    self.emit_cmx_copy_store(n, p, 0, 0)?; // tag
+                    self.emit_cmx_store_arg(n, 8, c.args.first(), p, 8)?; // props
+                    self.emit_cmx_store_arg(n, 16, c.args.get(1), p, 16)?; // children
+                    self.emit_cmx_copy_store(n, p, 24, 24)?; // kind
+                    self.emit_cmx_copy_store(n, p, 32, 32)?; // tagCallable
+                    self.emit_cmx_copy_store(n, p, 40, 40)?; // isComponent
+                    self.body.push(Instruction::LocalGet(n));
+                    return Ok(true);
+                }
                 _ => {}
             }
         }

@@ -121,6 +121,7 @@ impl TypeChecker {
                     "isPrimitive" | "isEmpty" | "isElementOf" => return Type::Bool,
                     "toString" | "__str" | "__repr" => return Type::String,
                     "flattenChildren" => return Type::Array(Box::new(Type::Cmx)),
+                    "cloneWith" => return Type::Cmx,
                     _ => {}
                 }
             }

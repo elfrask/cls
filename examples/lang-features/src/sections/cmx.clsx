@@ -72,6 +72,10 @@ function cmx_methods() -> int {
     check::assertTrue("cmx.isElementOf.false", !el.isElementOf("span"));
     check::assertTrue("cmx.toString.prefix", el.toString().startsWith("<div"));
     check::assertEq("cmx.flatten.len", el.flattenChildren().length, 1);
+    var clone = el.cloneWith(el.props, el.children);
+    check::assertTrue("cmx.clone.tag", clone.tag == "div");
+    check::assertEq("cmx.clone.children", clone.children.length, 1);
+    check::assertTrue("cmx.clone.notComponent", !clone.isComponent);
     var c = (<CmxApp titulo="demo" />);
     check::assertTrue("cmx.component.notPrimitive", !c.isPrimitive());
     check::assertTrue("cmx.component.isElementOf", c.isElementOf("CmxApp"));
