@@ -122,6 +122,7 @@ impl TypeChecker {
                     "toString" | "__str" | "__repr" => return Type::String,
                     "flattenChildren" => return Type::Array(Box::new(Type::Cmx)),
                     "cloneWith" => return Type::Cmx,
+                    "tryCallTag" => return Type::Value,
                     _ => {}
                 }
             }

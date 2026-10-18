@@ -1,5 +1,5 @@
 # Spread de props en CMX: <App {...props} /> + invocacion con is Callable.
-function App(props: Record<String, Value>) -> String {
+function App(props: Record<String, Value>, children: Cmx[]) -> String {
     var t: String = props.titulo;
     return "App:" + t;
 };
@@ -11,7 +11,7 @@ function main(args: String[]) -> int {
     print("titulo:", app.props.titulo);
     print("extra:", app.props.extra);
     if (app.isComponent) {
-        var r: String = app.tagCallable({...app.props, children: app.children});
+        var r: String = app.tagCallable(app.props, app.children);
         print("render:", r);
     }
     return 0;

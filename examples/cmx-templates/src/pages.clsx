@@ -97,7 +97,7 @@ export function pageFull() -> Cmx {
 
 # Componente (tag mayuscula): funcion CLS que devuelve HTML (String). El
 # renderer lo invoca via `isComponent` + `tagCallable`.
-function PageCard(props: Record<String, Value>) -> String {
+function PageCard(props: Record<String, Value>, children: Cmx[]) -> String {
     return "<article class=\"pcard\">" + engine::e(str(props.title)) + "</article>";
 }
 

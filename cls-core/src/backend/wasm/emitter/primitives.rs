@@ -66,6 +66,75 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::LocalGet(n));
                     return Ok(true);
                 }
+                "tryCallTag" => {
+                    // tryCallTag() -> Value: si es componente, invoca
+                    // `tagCallable(props, children)`; si no, Null (0).
+                    self.emit_expression(&member.object)?;
+                    let p = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(p));
+                    self.body.push(Instruction::LocalGet(p));
+                    self.emit_cmx_field(40)?; // is_component
+                    self.body.push(Instruction::I64Eqz); // i32: 0 = componente
+                    self.block_depth += 1;
+                    self.body.push(Instruction::If(BlockType::Result(ValType::I64)));
+                    self.body.push(Instruction::I64Const(0)); // else: Null
+                    self.body.push(Instruction::Else);
+                    self.body.push(Instruction::LocalGet(p));
+                    self.emit_cmx_field(32)?; // handle
+                    let h = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(h));
+                    let tidx = self.register_func_type(
+                        vec![ValType::I64, ValType::I64, ValType::I64],
+                        vec![ValType::I64],
+                    );
+                    // Dispatch por tag-bit: impar = closure, par = funcion simple.
+                    self.body.push(Instruction::LocalGet(h));
+                    self.body.push(Instruction::I64Const(1));
+                    self.body.push(Instruction::I64And);
+                    self.body.push(Instruction::I32WrapI64);
+                    self.block_depth += 1;
+                    self.body.push(Instruction::If(BlockType::Result(ValType::I64)));
+                    // closure: caps = load((h>>1)+8)
+                    self.body.push(Instruction::LocalGet(h));
+                    self.body.push(Instruction::I64Const(1));
+                    self.body.push(Instruction::I64ShrU);
+                    self.body.push(Instruction::I64Const(8));
+                    self.body.push(Instruction::I64Add);
+                    self.body.push(Instruction::I32WrapI64);
+                    self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                    // props, children
+                    self.body.push(Instruction::LocalGet(p));
+                    self.emit_cmx_field(8)?;
+                    self.body.push(Instruction::LocalGet(p));
+                    self.emit_cmx_field(16)?;
+                    // fnptr = load(h>>1)
+                    self.body.push(Instruction::LocalGet(h));
+                    self.body.push(Instruction::I64Const(1));
+                    self.body.push(Instruction::I64ShrU);
+                    self.body.push(Instruction::I32WrapI64);
+                    self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                    self.body.push(Instruction::I32WrapI64);
+                    self.emit_call_site(&c.span);
+                    self.body.push(Instruction::CallIndirect { type_index: tidx, table_index: 0 });
+                    self.body.push(Instruction::Else);
+                    // simple: caps = 0, props, children, idx = h>>1
+                    self.body.push(Instruction::I64Const(0));
+                    self.body.push(Instruction::LocalGet(p));
+                    self.emit_cmx_field(8)?;
+                    self.body.push(Instruction::LocalGet(p));
+                    self.emit_cmx_field(16)?;
+                    self.body.push(Instruction::LocalGet(h));
+                    self.body.push(Instruction::I64Const(1));
+                    self.body.push(Instruction::I64ShrU);
+                    self.body.push(Instruction::I32WrapI64);
+                    self.emit_call_site(&c.span);
+                    self.body.push(Instruction::CallIndirect { type_index: tidx, table_index: 0 });
+                    self.body.push(Instruction::End); // if odd
+                    self.block_depth -= 1;
+                    self.body.push(Instruction::End); // if isComponent
+                    self.block_depth -= 1;
+                    return Ok(true);
+                }
                 _ => {}
             }
         }

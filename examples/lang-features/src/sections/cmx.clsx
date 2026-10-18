@@ -8,7 +8,7 @@
 
 import "check" as check;
 
-function CmxApp(props: Record<String, Value>) -> String {
+function CmxApp(props: Record<String, Value>, children: Cmx[]) -> String {
     var t: String = props.titulo;
     return "App " + t;
 }
@@ -58,7 +58,7 @@ function cmx_upper_callable() -> int {
     check::assertTrue("cmx.upper.spread.own", app.props.extra == "x");
     check::assertTrue("cmx.upper.spread.base", app.props.titulo == "demo");
     if (app.isComponent) {
-        var html: String = app.tagCallable({...app.props, children: app.children});
+        var html: String = app.tagCallable(app.props, app.children);
         check::assertEqStr("cmx.upper.invoke", html, "App demo");
     }
     return 0;
@@ -76,6 +76,10 @@ function cmx_methods() -> int {
     check::assertTrue("cmx.clone.tag", clone.tag == "div");
     check::assertEq("cmx.clone.children", clone.children.length, 1);
     check::assertTrue("cmx.clone.notComponent", !clone.isComponent);
+    var comp = (<CmxApp titulo="x" />);
+    var tagOut: String = comp.tryCallTag();
+    check::assertEqStr("cmx.tryCallTag", tagOut, "App x");
+    check::assertTrue("cmx.tryCallTag.null", el.tryCallTag() == 0);
     var c = (<CmxApp titulo="demo" />);
     check::assertTrue("cmx.component.notPrimitive", !c.isPrimitive());
     check::assertTrue("cmx.component.isElementOf", c.isElementOf("CmxApp"));

@@ -1,9 +1,6 @@
-# components.clsx - Componentes de UI como funciones CLS que devuelven Cmx.
-#
-# Patron "composicion de funciones" (ver docs/lenguaje/cmx.md): en vez de
-# invocar tags mayuscula (`<Card />` + `is Callable`, que hoy no se puede
-# detectar en el renderer), los componentes son funciones que devuelven un
-# `Cmx` y se expanden en la vista con `{componente(...)}`.
+# components.clsx - Componentes de UI: (a) funciones CLS que devuelven `Cmx`
+# (patron "composicion de funciones", se expanden con `{componente(...)}`), y
+# (b) componentes por tag mayuscula que el renderer invoca via `isComponent`. 
 
 import "engine" as engine;
 

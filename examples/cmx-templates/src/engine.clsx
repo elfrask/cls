@@ -96,7 +96,7 @@ export function render(c: Cmx) -> String {
     if (c.kind == 1) { return e(c.tag); }
     # Componente (tag mayuscula): invocar el `tagCallable` con props + children.
     if (c.isComponent) {
-        var html: String = c.tagCallable({...c.props, children: c.children});
+        var html: String = c.tagCallable(c.props, c.children);
         return html;
     }
     var tag: String = c.tag;
