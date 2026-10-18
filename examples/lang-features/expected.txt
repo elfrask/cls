@@ -301,6 +301,14 @@ CHECK cmx.upper.isComponent=ok
 CHECK cmx.upper.spread.own=ok
 CHECK cmx.upper.spread.base=ok
 CHECK cmx.upper.invoke=ok
+CHECK cmx.isPrimitive.element=ok
+CHECK cmx.notEmpty=ok
+CHECK cmx.isElementOf.true=ok
+CHECK cmx.isElementOf.false=ok
+CHECK cmx.toString.prefix=ok
+CHECK cmx.flatten.len=ok
+CHECK cmx.component.notPrimitive=ok
+CHECK cmx.component.isElementOf=ok
 FEATURE cmx OK
 == when ==
 CHECK when.os.windows=ok

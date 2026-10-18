@@ -6,6 +6,49 @@ impl<'a> FuncEmitter<'a> {
     pub(crate) fn emit_primitive_method(&mut self, c: &CallExpr) -> ClsResult<bool> {
     // Métodos de primitivos (callee MemberAccess)
     if let Expression::MemberAccess(member) = &*c.callee {
+        // Métodos de CMX (rework): predicados, inspeccion y toString (inline, 0 host
+        // salvo toString que usa cmx_to_string).
+        if matches!(self.types.get(&expr_span(&member.object)), Some(Type::Cmx)) {
+            match member.member.as_str() {
+                "isPrimitive" => {
+                    self.emit_expression(&member.object)?;
+                    self.emit_cmx_field(40)?; // is_component
+                    self.body.push(Instruction::I64Eqz); // !isComponent
+                    return Ok(true);
+                }
+                "isEmpty" => {
+                    self.emit_expression(&member.object)?;
+                    self.emit_cmx_field(0)?; // tag = (off<<32)|len
+                    self.body.push(Instruction::I64Const(0xffff_ffff));
+                    self.body.push(Instruction::I64And);
+                    self.body.push(Instruction::I64Eqz); // len == 0
+                    return Ok(true);
+                }
+                "isElementOf" => {
+                    self.emit_expression(&member.object)?;
+                    self.emit_cmx_field(0)?; // tag (String)
+                    if let Some(arg) = c.args.first() {
+                        self.emit_expression(arg)?;
+                    } else {
+                        self.body.push(Instruction::I64Const(0));
+                    }
+                    self.emit_str_host("__intr_str_eq");
+                    return Ok(true);
+                }
+                "toString" | "__str" | "__repr" => {
+                    self.emit_expression(&member.object)?;
+                    self.host.call(HostFn::CmxToString, &mut self.body);
+                    return Ok(true);
+                }
+                "flattenChildren" => {
+                    // Devuelve los children (ya planos en el modelo CMX actual).
+                    self.emit_expression(&member.object)?;
+                    self.emit_cmx_field(16)?;
+                    return Ok(true);
+                }
+                _ => {}
+            }
+        }
         // `super.m(args)` -> call directo al método del padre (sin vtable).
         if let Expression::Identifier(sn, _) = &*member.object {
             if sn == "super" {

@@ -64,12 +64,27 @@ function cmx_upper_callable() -> int {
     return 0;
 }
 
+function cmx_methods() -> int {
+    var el = (<div class="x">hola</div>);
+    check::assertTrue("cmx.isPrimitive.element", el.isPrimitive());
+    check::assertTrue("cmx.notEmpty", !el.isEmpty());
+    check::assertTrue("cmx.isElementOf.true", el.isElementOf("div"));
+    check::assertTrue("cmx.isElementOf.false", !el.isElementOf("span"));
+    check::assertTrue("cmx.toString.prefix", el.toString().startsWith("<div"));
+    check::assertEq("cmx.flatten.len", el.flattenChildren().length, 1);
+    var c = (<CmxApp titulo="demo" />);
+    check::assertTrue("cmx.component.notPrimitive", !c.isPrimitive());
+    check::assertTrue("cmx.component.isElementOf", c.isElementOf("CmxApp"));
+    return 0;
+}
+
 export function cmx_run() -> int {
     print("== cmx ==");
     var before = check::fails();
     cmx_props_children();
     cmx_text_selfclose();
     cmx_upper_callable();
+    cmx_methods();
     var gained = check::fails() - before;
     if (gained == 0) { print("FEATURE cmx OK"); }
     return gained;
