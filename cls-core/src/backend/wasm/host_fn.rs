@@ -34,10 +34,6 @@ pub enum HostFn {
     FsRm,
     HttpGet,
     HttpPost,
-    CmxNew,
-    CmxSetProp,
-    CmxAddChild,
-    CmxToString,
     PrintAny,
     AnyMember,
     AnyIndex,
@@ -136,10 +132,6 @@ impl HostFn {
             FsRm => "fs_rm",
             HttpGet => "http_get",
             HttpPost => "http_post",
-            CmxNew => "cmx_new",
-            CmxSetProp => "cmx_set_prop",
-            CmxAddChild => "cmx_add_child",
-            CmxToString => "cmx_to_string",
             PrintAny => "print_any",
             AnyMember => "any_member",
             AnyIndex => "any_index",
@@ -220,20 +212,6 @@ impl HostFn {
             FsListDir | FsMkdir | FsRm => (i64p.clone(), vec![ValType::I64]),
             HttpGet => (i64p.clone(), vec![ValType::I64]),
             HttpPost => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            // (tag, kind, tag_callable, is_component) -> ptr
-            CmxNew => (
-                vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            CmxSetProp => (
-                vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            CmxAddChild => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            CmxToString => (i64p.clone(), vec![ValType::I64]),
             PrintAny => (vec![ValType::I64, ValType::I64], vec![]),
             AnyMember => (
                 vec![ValType::I64, ValType::I64, ValType::I64],

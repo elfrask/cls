@@ -328,18 +328,6 @@ pub fn register_host_functions_opt(
             host::host_http_post(&mut c, u, d)
         });
     }
-    w!("cmx_new", |mut c: Caller<'_, HostState>, t: i64, k: i64, tc: i64, ic: i64| -> i64 {
-        host::host_cmx_new(&mut c, t, k, tc, ic)
-    });
-    w!("cmx_set_prop", |mut c: Caller<'_, HostState>, p: i64, k: i64, v: i64, t: i64| -> i64 {
-        host::host_cmx_set_prop(&mut c, p, k, v, t)
-    });
-    w!("cmx_add_child", |mut c: Caller<'_, HostState>, p: i64, v: i64, t: i64| -> i64 {
-        host::host_cmx_add_child(&mut c, p, v, t)
-    });
-    w!("cmx_to_string", |mut c: Caller<'_, HostState>, p: i64| -> i64 {
-        host::host_cmx_to_string(&mut c, p)
-    });
     w!("fn_handle", |mut c: Caller<'_, HostState>, ti: i64, n: i64, cap: i64| -> i64 {
         host::host_fn_handle(&mut c, ti, n, cap)
     });
