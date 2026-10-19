@@ -254,32 +254,37 @@ versionar la salida esperada (sin walker, el golden **es** el oráculo).
 
 ## 8. Gestor de paquetes + verificación SHA-256  ·  `examples/pkgcheck/`
 
-**Oráculo:** `sha256sum` (Linux) / `certutil -hashfile SHA256` (Windows) +
-el propio `clx add`/`install` (Rust).
+> **Estado: implementado.** SHA-256 (FIPS 180-4) en CLS puro (0 FFI) validado
+> contra `hashlib` (205 digests: NIST + 1e6'a' + 200 LCG) y `certutil` (archivo).
+> Ver `examples/pkgcheck/README.md`.
 
-**Qué prueba:** aritmética entera/bitwise (núcleo del hash), y —de paso— el
-dogfooding del gestor.
+**Oráculo:** `hashlib` (Python) + `certutil -hashfile SHA256` (Windows).
+
+**Qué prueba:** aritmética entera de 32 bits (bitwise/shifts/overflow), y —de
+paso— el dogfooding de módulos y del nodo `fs`.
 
 **Estructura**
 ```
 examples/pkgcheck/
 ├── cls.json
+├── verify.ps1             # main.clsx + oraculo hashlib + certutil
 ├── src/sha256.clsx        # SHA-256 puro en CLS
-├── src/manifest.clsx      # parseo/hash de manifiestos
-├── tests/vectors.clsx     # vectores NIST + aleatorios
-└── verify.ps1             # compara contra certutil/sha256sum
+├── src/hashfile.clsx      # sha256 de un archivo (nodo fs)
+├── src/main.clsx          # 205 digests + corrupt=
+└── tests/oracle.py        # oraculo hashlib
 ```
 
 **Casos**
-- Vectores NIST ("" , "abc", 1M 'a') + 1000 inputs aleatorios.
-- Hash de un `.clsapp`/zip; comparación con `clx` (Rust) — debe coincidir byte a byte.
+- Vectores NIST ("" , "abc", 448-bit, 896-bit, 1M 'a') + 200 inputs aleatorios
+  (LCG determinista idéntico en CLS y Python).
+- Cross-check de archivo con `certutil` (independiente de Python).
 - Integridad: detectar corrupción (1 bit) → hash distinto.
 
-**Cómo detecta bugs:** shifts rotativos, overflow `u32`, endianness del digest.
-Si el SHA-256 en CLS ≠ `sha256sum`, el gestor es inútil.
+**Cómo detecta bugs:** shifts rotativos, overflow (máscara 32-bit), operadores
+bitwise. Si el SHA-256 en CLS ≠ `hashlib`/`certutil`, el gestor sería inútil.
 
 **Esfuerzo:** alto. **Prioridad:** media. **Nota:** el SHA-256 de `clx` hoy es en
-Rust (`packages.rs`) — este proyecto es el que lo porta a CLS.
+Rust (`packages.rs`) — este proyecto porta el algoritmo a CLS.
 
 ---
 
