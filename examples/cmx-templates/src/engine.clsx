@@ -26,12 +26,14 @@ export function e(s: String) -> String {
     var out = "";
     for each c in (s.toChar()) {
         var n = ord(c);
-        if (n == 38) { out = out + "&amp;"; }
-        elif (n == 60) { out = out + "&lt;"; }
-        elif (n == 62) { out = out + "&gt;"; }
-        elif (n == 34) { out = out + "&quot;"; }
-        elif (n == 39) { out = out + "&#39;"; }
-        else { out = out + c.toString(); }
+        out = out + match (n) in {
+            38 -> "&amp;",
+            60 -> "&lt;",
+            62 -> "&gt;",
+            34 -> "&quot;",
+            39 -> "&#39;",
+            default -> c.toString(),
+        };
     }
     return out;
 }
@@ -40,21 +42,11 @@ export function e(s: String) -> String {
 
 # Elementos vacios (sin cierre) en HTML5.
 export function isVoid(tag: String) -> bool {
-    if (tag == "area") { return true; }
-    if (tag == "base") { return true; }
-    if (tag == "br") { return true; }
-    if (tag == "col") { return true; }
-    if (tag == "embed") { return true; }
-    if (tag == "hr") { return true; }
-    if (tag == "img") { return true; }
-    if (tag == "input") { return true; }
-    if (tag == "link") { return true; }
-    if (tag == "meta") { return true; }
-    if (tag == "param") { return true; }
-    if (tag == "source") { return true; }
-    if (tag == "track") { return true; }
-    if (tag == "wbr") { return true; }
-    return false;
+    return match (tag) in {
+        ("area", "base", "br", "col", "embed", "hr", "img", "input", "link",
+         "meta", "param", "source", "track", "wbr") -> true,
+        default -> false,
+    };
 }
 
 # Ordena las claves de props alfabeticamente (salida determinista).
@@ -103,8 +95,10 @@ export function render(c: Cmx) -> String {
     if (tag == "raw") {
         var rawOut = "";
         for each ch in (c.children) {
-            if (ch.kind == 1) { rawOut = rawOut + ch.tag; }
-            else { rawOut = rawOut + render(ch); }
+            rawOut = rawOut + match (ch.kind) in {
+                1 -> ch.tag,
+                default -> render(ch),
+            };
         }
         return rawOut;
     }
