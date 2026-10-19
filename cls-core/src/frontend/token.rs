@@ -295,6 +295,8 @@ pub enum CmxToken {
     AttrExpr { name: String },
     /// Shorthand de atributo: `{nombre}` (lee la variable homónima).
     AttrShorthand { name: String },
+    /// Atributo desnudo (boolean): `disabled` (sin `=`) -> `true`.
+    AttrBare { name: String },
     /// Spread de props: {...expr} en el tag (REST_SPREAD_PLAN) — el parser lee
     /// la expresión hasta ExprEnd y la agrega a los spreads del CmxElement.
     AttrSpread,
@@ -334,6 +336,7 @@ impl fmt::Display for CmxToken {
             CmxToken::AttrString { name, value } => write!(f, "{}=\"{}\"", name, value),
             CmxToken::AttrExpr { name } => write!(f, "{}={{...}}", name),
             CmxToken::AttrShorthand { name } => write!(f, "{{{}}}", name),
+            CmxToken::AttrBare { name } => write!(f, "{}", name),
             CmxToken::AttrSpread => write!(f, "{{...}}"),
             CmxToken::ExprEnd => write!(f, "}}"),
         }

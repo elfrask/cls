@@ -27,6 +27,7 @@ function main(args: String[]) -> int {
     emit("08-full", pages::pageFull());
     emit("09-parity", pages::pageParity());
     emit("10-component", pages::pageComponentTag());
-    print("OK: 10 paginas renderizadas");
+    emit("11-bare-attr", pages::pageBareAttr());
+    print("OK: 11 paginas renderizadas");
     return 0;
 }

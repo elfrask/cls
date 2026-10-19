@@ -1963,6 +1963,7 @@ impl Parser {
             let is_attr_str = matches!(&self.current_token, Token::Cmx(CmxToken::AttrString { .. }));
             let is_attr_expr = matches!(&self.current_token, Token::Cmx(CmxToken::AttrExpr { .. }));
             let is_attr_shorthand = matches!(&self.current_token, Token::Cmx(CmxToken::AttrShorthand { .. }));
+            let is_attr_bare = matches!(&self.current_token, Token::Cmx(CmxToken::AttrBare { .. }));
             let is_attr_spread = matches!(&self.current_token, Token::Cmx(CmxToken::AttrSpread));
             if is_attr_str {
                 if let Token::Cmx(CmxToken::AttrString { name, value }) = &self.current_token {
@@ -1986,6 +1987,12 @@ impl Parser {
                 // `{nombre}` -> lee la variable `nombre` (valor Shorthand).
                 if let Token::Cmx(CmxToken::AttrShorthand { name }) = &self.current_token {
                     attributes.push(CmxAttribute { name: name.clone(), value: Some(CmxAttributeValue::Shorthand(name.clone())), span: self.span() });
+                }
+                self.advance();
+            } else if is_attr_bare {
+                // Atributo desnudo `disabled` -> props["disabled"] = true.
+                if let Token::Cmx(CmxToken::AttrBare { name }) = &self.current_token {
+                    attributes.push(CmxAttribute { name: name.clone(), value: None, span: self.span() });
                 }
                 self.advance();
             } else { break; }

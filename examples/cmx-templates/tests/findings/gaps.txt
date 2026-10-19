@@ -1,2 +1,7 @@
 # GAPs documentados (limites de diseno, NO regresiones).
 # Una linea por archivo (aqui no hay ninguno todavia).
+#
+# 02: local anotado `Value` no despacha por tag (GAP 19 de lang-features): el
+#     emisor no taggea el local, asi que `str(v)` sobre un `Value` local pierde
+#     el tipo. Camino soportado: no pasar por local (usar el valor inline).
+02-value-local-tag-loss.clsx

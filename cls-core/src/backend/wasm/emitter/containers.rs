@@ -127,7 +127,7 @@ impl<'a> FuncEmitter<'a> {
                 None
             }
             None => {
-                self.body.push(Instruction::I64Const(1));
+                self.body.push(Instruction::I32Const(1));
                 Some(Type::Bool)
             }
         };

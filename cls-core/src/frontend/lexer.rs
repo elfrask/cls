@@ -57,11 +57,11 @@ impl Lexer {
     fn next_token(&mut self) -> ClsResult<SpannedToken> {
         self.skip_whitespace_and_comments();
 
-        // Si hay tokens CMX en buffer y no estamos dentro de expresión CMX
-        if !self.in_cmx_expr {
-            if let Some(t) = self.cmx_buffer.pop_front() {
-                return Ok(t);
-            }
+        // Tokens CMX pendientes (children de un tag ya emitido por lex_cmx).
+        // Se drenan SIEMPRE, incluso dentro de una expresión `{...}` CMX: así un
+        // literal CMX anidado (`{f((<p>x</p>))}`) ve sus children en orden.
+        if let Some(t) = self.cmx_buffer.pop_front() {
+            return Ok(t);
         }
 
         if self.is_eof() {
@@ -413,6 +413,9 @@ impl Lexer {
                     }
                     self.in_cmx_expr = false;
                 } else { return Err(self.syntax_err("Valor attr CMX inválido")); }
+            } else {
+                // Atributo desnudo (boolean): `disabled` -> `true`.
+                tokens.push(SpannedToken::new(Token::Cmx(CmxToken::AttrBare { name }), self.current_span()));
             }
         }
     }

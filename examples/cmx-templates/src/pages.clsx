@@ -61,14 +61,12 @@ export function pageRaw() -> Cmx {
 }
 
 export function pageComponents() -> Cmx {
-    # Nota (bug abierto): un literal CMX como argumento dentro de un child de
-    # interpolacion `{card(..., (<p/>))}` no parsea; se precomputa en variables.
-    var bodyUno = (<p>Contenido 1</p>);
-    var bodyDos = (<p>Contenido & mas</p>);
+    # Un literal CMX puede ir directo como argumento dentro del child de
+    # interpolacion: `{ui::card(..., (<p/>))}` (cubria el finding 04).
     return (
         <div class="cards">
-            {ui::card("Uno", bodyUno)}
-            {ui::card("Dos", bodyDos)}
+            {ui::card("Uno", (<p>Contenido 1</p>))}
+            {ui::card("Dos", (<p>Contenido & mas</p>))}
             {ui::badge("nuevo", "verde")}
         </div>
     );
@@ -106,6 +104,17 @@ export function pageComponentTag() -> Cmx {
         <div class="comp">
             <PageCard title="Hola & <mundo>" />
             <PageCard title="Otro" />
+        </div>
+    );
+}
+
+# Atributos desnudos (booleanos): `<input ... disabled />` sin `=` -> props
+# `true` (cubria el finding 03).
+export function pageBareAttr() -> Cmx {
+    return (
+        <div class="bare">
+            <input type="checkbox" disabled />
+            <button disabled>Enviar</button>
         </div>
     );
 }
