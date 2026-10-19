@@ -32,6 +32,12 @@ class CMX {
     function flattenChildren() -> Cmx[] {
         return me.children;
     }
+    function tryCallTag() -> Value {
+        if (me.isComponent) {
+            return me.tagCallable(me.props, me.children);
+        }
+        return null;
+    }
 }
 "#;
 

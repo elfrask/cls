@@ -137,6 +137,7 @@ impl TypeChecker {
             cmx_methods.insert("isPrimitive".to_string(), Type::Bool);
             cmx_methods.insert("isEmpty".to_string(), Type::Bool);
             cmx_methods.insert("isElementOf".to_string(), Type::Bool);
+            cmx_methods.insert("tryCallTag".to_string(), Type::Value);
             cmx_methods.insert(
                 "flattenChildren".to_string(),
                 Type::Array(Box::new(Type::Cmx)),
