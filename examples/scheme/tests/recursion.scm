@@ -1,0 +1,12 @@
+(define (fact n) (if (< n 2) 1 (* n (fact (- n 1)))))
+(define (fib n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
+(define (sum n acc) (if (= n 0) acc (sum (- n 1) (+ acc n))))
+
+(display (fact 5))
+(newline)
+(display (fact 10))
+(newline)
+(display (fib 12))
+(newline)
+(display (sum 100 0))
+(newline)

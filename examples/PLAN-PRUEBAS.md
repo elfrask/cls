@@ -316,30 +316,39 @@ determinismo. **Esfuerzo:** bajo. **Prioridad:** baja.
 
 ---
 
-## 10. Compilador de Scheme (subconjunto)  ·  `examples/scheme/`  (o `lisp/`)
+## 10. Intérprete Scheme (subconjunto)  ·  `examples/scheme/`
 
-**Oráculo:** `guile`/`chicken-scheme` (Scheme formal como especificación).
+> **Estado: implementado.** Intérprete Scheme (subconjunto) en CLS puro: reader
+> de S-expresiones + evaluador con entornos/closures/recursión. 7 programas
+> verificados contra salidas esperadas (y guile opcional). Ver
+> `examples/scheme/README.md`.
 
-**Qué prueba:** el compilador más ambicioso — lexer/parser/compilador a bytecode
-propio + VM; GC (shadow stack), tail calls.
+**Oráculo:** salidas `.out` versionadas (semántica estándar) + `guile` (opcional).
+
+**Qué prueba:** compilador CLS con un workload real — parser, clases
+autorreferentes, funciones como valor, closures, recursión, arrays, strings.
 
 **Estructura**
 ```
 examples/scheme/
 ├── cls.json
-├── src/reader.clsx        # S-expr reader
-├── src/compiler.clsx      # -> bytecode/closure bytecode
-├── src/vm.clsx
-├── tests/*.scm, *.out     # salida esperada (generada con guile)
-└── diff.ps1               # vs guile
+├── src/main.clsx      # Val + Reader + Interp + main
+├── tests/*.scm        # programas Scheme
+├── tests/*.out        # salida esperada
+└── diff.ps1           # CLS vs .out (+ guile opcional)
 ```
 
 **Casos**
-- `(+ 1 2)`, `lambda`, `define`, `let`, `if`, `cond`, `quote`.
-- Listas, recursion, tail recursion (fib, ackermann chico).
-- Comparar stdout con `guile` por programa.
+- `+ - * /`, comparaciones, `display`/`write`/`newline`.
+- `define`, `lambda`, `let`, `if`, `cond`, `and`, `or`, `set!`, `quote`.
+- Listas (`cons/car/cdr/list/append/length`), recursión, `fib`, Ackermann.
+- Closures y orden superior (`make-adder`, `compose`, `twice`, `map`).
 
-**Cómo detecta bugs:** GC/closures/tail calls; `guile` es especificación formal.
+**Cómo detecta bugs:** cualquier divergencia del intérprete CLS respecto de la
+semántica Scheme esperada (o guile) señala un bug del compilador/runtime.
+
+**Esfuerzo:** alto. **Prioridad:** baja. **Nota:** intérprete tree-walking (no
+bytecode/VM); sin TCO ni floats (ver README).
 
 **Esfuerzo:** alto. **Prioridad:** baja (sube si sobra tiempo).
 
@@ -357,7 +366,7 @@ examples/scheme/
 | 7 | CMX templates | `cmx-templates/` | golden files | Medio | Media | cross |
 | 8 | Gestor + SHA-256 | `pkgcheck/` | sha256sum/certutil | Alto | Media | cross |
 | 9 | Snake/Tetris | `snake/` | replays | Bajo | Baja | cross |
-| 10 | Scheme | `scheme/` | guile | Alto | Baja | cross |
+| 10 | Intérprete Scheme | `scheme/` | .out (+guile) | Alto | Baja | cross |
 
 `*` requiere `sqlite3`/DLL por SO.
 

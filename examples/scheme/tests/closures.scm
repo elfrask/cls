@@ -1,0 +1,16 @@
+(define (make-adder n) (lambda (x) (+ x n)))
+(define (compose f g) (lambda (x) (f (g x))))
+(define (twice f) (lambda (x) (f (f x))))
+
+(define add5 (make-adder 5))
+(display (add5 37))
+(newline)
+
+(define inc (lambda (x) (+ x 1)))
+(define dbl (lambda (x) (* x 2)))
+(display ((compose inc dbl) 10))
+(newline)
+(display ((twice inc) 0))
+(newline)
+(display ((twice dbl) 3))
+(newline)

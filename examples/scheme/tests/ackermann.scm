@@ -1,0 +1,11 @@
+(define (ack m n)
+  (cond ((= m 0) (+ n 1))
+        ((= n 0) (ack (- m 1) 1))
+        (else (ack (- m 1) (ack m (- n 1))))))
+
+(display (ack 0 0))
+(newline)
+(display (ack 2 3))
+(newline)
+(display (ack 3 3))
+(newline)
