@@ -835,6 +835,81 @@ impl TypeChecker {
             self.define(b, bt);
         }
     }
+
+    /// `var Clase(a, b) = expr;`: desempaqueta vía el magic
+    /// `__destructurate() -> T | (T1, T2, …)`. El retorno anota el payload:
+    /// 1 bind = valor único; N binds = tupla de aridad N.
+    pub(crate) fn check_destructure_class(&mut self, d: &DestructureClass) {
+        let vt = self.check_expression(&d.value);
+        let target = Type::Named(d.class_name.clone(), vec![]);
+        if !self.class_members.contains_key(&d.class_name) {
+            self.error(
+                &format!(
+                    "destructuring-let: `{}` no es una clase conocida",
+                    d.class_name
+                ),
+                d.span.clone(),
+            );
+            for b in &d.binds {
+                if b != "_" {
+                    self.define(b, Type::Value);
+                }
+            }
+            return;
+        }
+        if !self.is_assignable(&vt, &target) {
+            self.error(
+                &format!(
+                    "destructuring-let de `{}`: el valor es `{}` (esperado `{}` o subclase)",
+                    d.class_name, vt, d.class_name
+                ),
+                d.span.clone(),
+            );
+        }
+        let Some(ret) = self.named_magic_ret(&target, "__destructurate") else {
+            self.error(
+                &format!(
+                    "`{}` debe definir `__destructurate()` para desempaquetarse con `var`",
+                    d.class_name
+                ),
+                d.span.clone(),
+            );
+            for b in &d.binds {
+                if b != "_" {
+                    self.define(b, Type::Value);
+                }
+            }
+            return;
+        };
+        match class_bind_types(Some(&ret), d.binds.len()) {
+            Some(types) => {
+                for (i, b) in d.binds.iter().enumerate() {
+                    if b == "_" {
+                        continue;
+                    }
+                    let bt = types.get(i).cloned().unwrap_or(Type::Value);
+                    self.define(b, bt);
+                }
+            }
+            None => {
+                self.error(
+                    &format!(
+                        "El patrón `{}(...)` pide {} binding(s), que no coinciden con la aridad \
+                         del retorno anotado de `{}::__destructurate`",
+                        d.class_name,
+                        d.binds.len(),
+                        d.class_name
+                    ),
+                    d.span.clone(),
+                );
+                for b in &d.binds {
+                    if b != "_" {
+                        self.define(b, Type::Value);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Contexto de patrones del `match` (modo PATRÓN, F6): namespace de variantes

@@ -139,6 +139,10 @@ impl TypeChecker {
                 self.check_destructure_let(d);
                 Type::Void
             }
+            Statement::DestructureClass(d) => {
+                self.check_destructure_class(d);
+                Type::Void
+            }
             Statement::ModuleDecl(m) => {
                 self.define_decl(&m.name, Type::Named(m.name.clone(), vec![]), &m.span);
                 self.push_scope();

@@ -113,6 +113,14 @@ impl NameResolver {
                     }
                 }
             }
+            Statement::DestructureClass(d) => {
+                self.resolve_expression(&d.value)?;
+                for b in &d.binds {
+                    if b != "_" {
+                        self.define(b.clone(), SymbolKind::Variable);
+                    }
+                }
+            }
             Statement::Expression(expr) => {
                 self.resolve_expression(expr)?;
             }

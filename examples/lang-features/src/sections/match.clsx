@@ -90,6 +90,24 @@ function match_destructuring() -> int {
     return 0;
 }
 
+# Desempaquetado de CLASE con `var` (campos de instancia en orden de layout).
+class MPayload {
+    var name: String;
+    var n: int;
+    function main(name: String, n: int) { me.name = name; me.n = n; }
+    function __destructurate() -> (String, int) { return (me.name, me.n); }
+}
+
+function match_destructuring_class() -> int {
+    var p = MPayload("dato", 7);
+    var MPayload(name, n) = p;
+    check::assertEqStr("match.classdestr.name", name, "dato");
+    check::assertEq("match.classdestr.n", n, 7);
+    var MPayload(name2, _) = MPayload("directo", 0);
+    check::assertEqStr("match.classdestr.directo", name2, "directo");
+    return 0;
+}
+
 # F5: un arma con varios tipos `(MVec2, MVec3)` estrecha a `MVec2 | MVec3` y
 # `v.x` carga el campo en el offset propio de cada clase (x vive en 16 en MVec2
 # y en 24 en MVec3 -> discrimina por class_id en runtime).
@@ -151,6 +169,7 @@ export function match_run() -> int {
     match_modes();
     match_payload();
     match_destructuring();
+    match_destructuring_class();
     match_union();
     match_class();
     var gained = check::fails() - before;

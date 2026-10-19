@@ -127,6 +127,25 @@ var resp::ok(result) = r;        # destructuring-let (estático)
   `err(cod, msg)`, `s1`) — **no** `resp::ok(...)`. Ver `enums.md` y
   `control-de-flujo.md`.
 
+## Desempaquetado de clases
+
+```clx
+class Payload {
+    var name: String;
+    var n: int;
+    function main(name: String, n: int) { me.name = name; me.n = n; }
+    function __destructurate() -> (String, int) { return (me.name, me.n); }
+}
+
+var p = Payload("Mi variable", 7);
+var Payload(NameVar, Count) = p;   # NameVar = "Mi variable", Count = 7
+```
+
+- La clase expone el payload con `__destructurate() -> T | (T1, T2, …)`:
+  **1 bind = valor único**; **N binds = tupla de aridad N**.
+- `_` ignora un slot. Sin el magic → error de compilación.
+- El valor debe ser estáticamente de tipo `Clase` (o subclase).
+
 ## Ternario y arrowReturn
 
 ```clx

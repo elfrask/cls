@@ -204,13 +204,33 @@ Los **otros modos** funcionan sobre clases sin cambios: TIPO (`is` → identidad
 clase + herencia), VALOR (`in` → `__equals` si está definido) y CONDICIÓN
 (`if` → `__bool` si está definido).
 
-> **Destructuring-let de clase (no implementado en F6).** El destructuring-let
-> estático de enums (`var resp::ok(x) = c;`) no tiene hoy una forma análoga para
-> clases: el payload **computado** de `__unpack` no se puede probar en
-> compile-time, así que una variante de la sintaxis (`var Clase::variante(...) =
-> obj;`) tendría que ser **runtime** y usar el enum `E` de `__match` como
-> namespace. Se deja **fuera de F6** (el patrón `match` ya cubre la extracción);
-> si se agrega, será con esa sintaxis (namespace = `E`) y validación en runtime.
+### Desempaquetado de clase con `var`
+
+Además del destructuring-let de enums, una clase se puede desempaquetar con el
+magic **`__destructurate()`**:
+
+```clx
+class Payload {
+    var name: String;
+    var n: int;
+    function main(name: String, n: int) { me.name = name; me.n = n; }
+    function __destructurate() -> (String, int) { return (me.name, me.n); }
+}
+
+var p = Payload("Mi variable", 7);
+var Payload(NameVar, Count) = p;   # NameVar = "Mi variable", Count = 7
+```
+
+- `__destructurate() -> T | (T1, T2, …)` anota la forma del payload: **1 bind =
+  valor único**; **N binds = tupla de aridad N**. `_` ignora un slot.
+- El valor debe ser estáticamente de tipo `Clase` (o subclase). Sin el magic →
+  error de compilación; un valor `Value`/unión → error estático.
+- El tipo de cada bind sale del retorno anotado (misma regla que `__unpack`).
+- Herencia: el magic se resuelve subiendo por `ancestors` (el hijo puede
+  overridearlo).
+
+> `var Clase::variante(...) = obj;` (variantes computadas) sigue **fuera** de
+> alcance; para eso usar `match` con `__match`/`__unpack`.
 
 ## Familia ternario
 

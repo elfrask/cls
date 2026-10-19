@@ -1,0 +1,18 @@
+# Negativo: el valor no es de la clase del patrón.
+class C {
+    var a: int;
+    function main(a: int) { me.a = a; }
+    function __destructurate() -> int { return me.a; }
+}
+
+class D {
+    var b: int;
+    function main(b: int) { me.b = b; }
+    function __destructurate() -> int { return me.b; }
+}
+
+function main(args: String[]) -> int {
+    var C(x) = D(1);
+    print(x.toString());
+    return 0;
+}

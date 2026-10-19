@@ -408,6 +408,10 @@ pub fn shift_stmt(s: &mut Statement, offset: u32) {
             d.span = shift_span(d.span.clone(), offset);
             shift_expr(&mut d.value, offset);
         }
+        Statement::DestructureClass(d) => {
+            d.span = shift_span(d.span.clone(), offset);
+            shift_expr(&mut d.value, offset);
+        }
         Statement::Import(_) | Statement::FromImport(_) => {}
         Statement::ExportList(e) => {
             e.span = shift_span(e.span.clone(), offset);

@@ -58,13 +58,12 @@ impl TypeChecker {
                     );
                 }
                 ClassMember::Property(v) => {
-                    members.insert(
-                        v.name.clone(),
-                        v.type_ann
-                            .as_ref()
-                            .map(|t| self.resolve_type_annotation(t))
-                            .unwrap_or(Type::Value),
-                    );
+                    let ft = v
+                        .type_ann
+                        .as_ref()
+                        .map(|t| self.resolve_type_annotation(t))
+                        .unwrap_or(Type::Value);
+                    members.insert(v.name.clone(), ft);
                 }
             }
         }

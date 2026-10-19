@@ -220,6 +220,7 @@ impl<'a> FuncEmitter<'a> {
             }
             // `var Enum::variant(a, b) = valor;` (F2, feature `match`).
             Statement::DestructureLet(d) => self.emit_destructure_let(d),
+            Statement::DestructureClass(d) => self.emit_destructure_class(d),
             other => Err(self.unsupported_stmt(other)),
         }
     }

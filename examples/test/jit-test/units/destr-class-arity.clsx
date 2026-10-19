@@ -1,0 +1,12 @@
+# Negativo: la aridad del patrón no coincide con el retorno de `__destructurate`.
+class C {
+    var a: int;
+    function main(a: int) { me.a = a; }
+    function __destructurate() -> int { return me.a; }
+}
+
+function main(args: String[]) -> int {
+    var C(x, y) = C(1);
+    print(x.toString() + y.toString());
+    return 0;
+}

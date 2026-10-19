@@ -542,58 +542,70 @@ impl<'a> FuncEmitter<'a> {
                 }
                 let up = self.fresh_local();
                 self.body.push(Instruction::LocalSet(up));
-                let single = binds.len() == 1;
-                if !single {
-                    // Guard de runtime: el payload debe ser una tupla de aridad
-                    // `binds.len()` (header `[cap][len]`).
-                    self.body.push(Instruction::LocalGet(up));
-                    self.body.push(Instruction::I32WrapI64);
-                    self.body.push(Instruction::I64Load(MemArg {
-                        offset: 8,
-                        align: 3,
-                        memory_index: 0,
-                    }));
-                    self.body.push(Instruction::I64Const(binds.len() as i64));
-                    self.body.push(Instruction::I64Eq);
-                    self.body.push(Instruction::I32Eqz);
-                    self.block_depth += 1;
-                    self.body.push(Instruction::If(BlockType::Empty));
-                    self.emit_throw(
-                        "el payload de `__unpack` no es una tupla de la aridad esperada por el patrón",
-                        span,
-                    );
-                    self.body.push(Instruction::Unreachable);
-                    self.body.push(Instruction::End);
-                    self.block_depth -= 1;
-                }
-                for (i, b) in binds.iter().enumerate() {
-                    if b == "_" {
-                        continue;
-                    }
-                    let pty = slot_types.get(i).cloned().unwrap_or(Type::Value);
-                    let w = was_type(&pty).unwrap_or(WasTy::I64);
-                    self.body.push(Instruction::LocalGet(up));
-                    if !single {
-                        // slot i de la tupla: base 16, stride 8.
-                        self.body.push(Instruction::I32WrapI64);
-                        self.body.push(Instruction::I64Load(MemArg {
-                            offset: (16 + 8 * i as i64) as u64,
-                            align: 3,
-                            memory_index: 0,
-                        }));
-                    }
-                    match w {
-                        WasTy::F64 => self.body.push(Instruction::F64ReinterpretI64),
-                        WasTy::I32 => self.body.push(Instruction::I32WrapI64),
-                        WasTy::I64 => {}
-                    }
-                    let idx = self.declare_var_ty(b, w);
-                    self.body.push(Instruction::LocalSet(idx));
-                    self.local_cls_types.insert(b.clone(), pty);
-                }
-                Ok(())
+                self.emit_payload_binds_from_value(up, binds, slot_types, span)
             }
         }
+    }
+
+    /// Liga binds desde el valor devuelto por `__unpack`/`__destructurate`:
+    /// valor único (1 bind) o tupla `[cap][len][slots*8]` (N binds).
+    fn emit_payload_binds_from_value(
+        &mut self,
+        up: u32,
+        binds: &[String],
+        slot_types: &[Type],
+        span: &Span,
+    ) -> ClsResult<()> {
+        let single = binds.len() == 1;
+        if !single {
+            // Guard de runtime: el payload debe ser una tupla de aridad
+            // `binds.len()` (header `[cap][len]`).
+            self.body.push(Instruction::LocalGet(up));
+            self.body.push(Instruction::I32WrapI64);
+            self.body.push(Instruction::I64Load(MemArg {
+                offset: 8,
+                align: 3,
+                memory_index: 0,
+            }));
+            self.body.push(Instruction::I64Const(binds.len() as i64));
+            self.body.push(Instruction::I64Eq);
+            self.body.push(Instruction::I32Eqz);
+            self.block_depth += 1;
+            self.body.push(Instruction::If(BlockType::Empty));
+            self.emit_throw(
+                "el payload de `__unpack`/`__destructurate` no es una tupla de la aridad esperada por el patrón",
+                span,
+            );
+            self.body.push(Instruction::Unreachable);
+            self.body.push(Instruction::End);
+            self.block_depth -= 1;
+        }
+        for (i, b) in binds.iter().enumerate() {
+            if b == "_" {
+                continue;
+            }
+            let pty = slot_types.get(i).cloned().unwrap_or(Type::Value);
+            let w = was_type(&pty).unwrap_or(WasTy::I64);
+            self.body.push(Instruction::LocalGet(up));
+            if !single {
+                // slot i de la tupla: base 16, stride 8.
+                self.body.push(Instruction::I32WrapI64);
+                self.body.push(Instruction::I64Load(MemArg {
+                    offset: (16 + 8 * i as i64) as u64,
+                    align: 3,
+                    memory_index: 0,
+                }));
+            }
+            match w {
+                WasTy::F64 => self.body.push(Instruction::F64ReinterpretI64),
+                WasTy::I32 => self.body.push(Instruction::I32WrapI64),
+                WasTy::I64 => {}
+            }
+            let idx = self.declare_var_ty(b, w);
+            self.body.push(Instruction::LocalSet(idx));
+            self.local_cls_types.insert(b.clone(), pty);
+        }
+        Ok(())
     }
 
     /// Construcción de una variante de enum (F2): unit-only -> i64 empacado;
@@ -699,6 +711,48 @@ impl<'a> FuncEmitter<'a> {
             self.body.push(Instruction::LocalSet(idx));
             self.local_cls_types.insert(b.clone(), pty);
         }
+        self.dead_flow = false;
+        Ok(())
+    }
+
+    /// `var Clase(a, b) = expr;`: desempaqueta vía `obj.__destructurate()`.
+    /// El retorno anotado del magic fija la forma: valor único (1 bind) o tupla
+    /// de aridad N.
+    pub(crate) fn emit_destructure_class(&mut self, d: &DestructureClass) -> ClsResult<()> {
+        let key = self.resolve_class_key(&d.class_name).ok_or_else(|| {
+            crate::error::ClsError::compile_at(
+                &format!("'{}' no es una clase conocida", d.class_name),
+                &d.span,
+            )
+        })?;
+        let Some(ret) = self.magic_ret_type(&key, "__destructurate") else {
+            return Err(crate::error::ClsError::compile_at(
+                &format!(
+                    "`{}` debe definir `__destructurate()` para desempaquetarse con `var`",
+                    d.class_name
+                ),
+                &d.span,
+            ));
+        };
+        let slot_types = class_bind_types(Some(&ret), d.binds.len())
+            .unwrap_or_else(|| vec![Type::Value; d.binds.len()]);
+        // Valor -> puntero a la instancia (i64).
+        self.emit_expression(&d.value)?;
+        let obj = self.fresh_local();
+        self.body.push(Instruction::LocalSet(obj));
+        let emitted = self.emit_class_method_call_on("__destructurate", &key, obj, &[])?;
+        if !emitted {
+            return Err(crate::error::ClsError::compile_at(
+                &format!(
+                    "la clase `{}` define `__destructurate` en el typeck pero no en el emisor",
+                    key
+                ),
+                &d.span,
+            ));
+        }
+        let up = self.fresh_local();
+        self.body.push(Instruction::LocalSet(up));
+        self.emit_payload_binds_from_value(up, &d.binds, &slot_types, &d.span)?;
         self.dead_flow = false;
         Ok(())
     }

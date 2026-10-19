@@ -197,6 +197,31 @@ impl Parser {
         }
         let name = self.expect_identifier()?;
 
+        // Desempaquetado de clase: `var Clase(a, b) = expr;` (usa
+        // `Clase::__destructurate()`).
+        if self.check_symbol(Symbol::LParen) {
+            self.advance(); // consume `(`
+            let mut binds = Vec::new();
+            if !self.check_symbol(Symbol::RParen) {
+                loop {
+                    binds.push(self.expect_identifier()?);
+                    if !self.consume_symbol(Symbol::Comma) {
+                        break;
+                    }
+                }
+            }
+            self.expect_symbol(Symbol::RParen)?;
+            self.expect_operator(Operator::Equal)?;
+            let value = self.parse_expression()?;
+            self.consume_symbol(Symbol::Semicolon);
+            return Ok(Statement::DestructureClass(DestructureClass {
+                class_name: name,
+                binds,
+                value,
+                span: decl_span,
+            }));
+        }
+
         // F2: destructuring-let `var Enum::variant(a, b) = valor;`.
         if self.check_operator(Operator::ColonColon) {
             self.advance(); // consume `::`

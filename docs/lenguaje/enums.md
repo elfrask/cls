@@ -119,7 +119,9 @@ enum resp { ok(String), err(int, String), s1, s2 };
   valida forma/variante/aridad/tipos y **exige que la variante sea demostrable**:
   el inicializador debe ser una construcción de la misma variante
   (`var c = resp::ok(x); var resp::ok(result) = c;`). Si no se puede probar →
-  **error de compilación**. `_` ignora un slot.
+  **error de compilación**. `_` ignora un slot. Para **clases** existe la forma
+  análoga `var Clase(a, b) = obj;` sobre el payload de `__destructurate()` (ver
+  `control-de-flujo.md`).
 - **`==` / `is`**: `==` compara por **identidad de variante** (`def_id` + `idx`);
   `is` compara el `def_id`. Misma semántica que los enums unit-only.
 - **`print` / `str`**: `variante` o `variante(payload...)`

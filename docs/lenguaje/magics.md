@@ -210,6 +210,7 @@ Una **clase** se conecta al modo PATRÓN de `match` (ver `control-de-flujo.md`
 |-------|:------:|:---:|----------|
 | `__match` | ❌ | ✅ | `__match() -> E` — devuelve el **discriminante** (un **enum** `E`). El typeck usa `E` como namespace de patrones; el emisor llama `obj.__match()` y compara contra el índice de variante de cada arma. |
 | `__unpack` | ❌ | ✅ | `__unpack(tag: String) -> T \| (T1, T2, …)` — payload **computado**. Con bindings, el emisor llama `obj.__unpack("<variante>")`: valor único (1 binding) o tupla (N bindings). |
+| `__destructurate` | ❌ | ✅ | `__destructurate() -> T \| (T1, T2, …)` — payload del desempaquetado de clase con `var Clase(a, b) = obj` (sin tag: 1 bind = valor único; N = tupla de aridad N). |
 
 **Dispatch** (JIT, `emitter/matching.rs`): estático por vtable (`call_indirect`,
 slot fijo como los demás magics, heredado por `ancestors`). El discriminante es

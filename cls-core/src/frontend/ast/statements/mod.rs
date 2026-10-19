@@ -9,6 +9,7 @@ mod class_decl;
 mod class_member;
 mod config_directive;
 mod destructure_let;
+mod destructure_class;
 mod elif_branch;
 mod enum_decl;
 mod export_list_decl;
@@ -51,6 +52,7 @@ pub use class_decl::*;
 pub use class_member::*;
 pub use config_directive::*;
 pub use destructure_let::*;
+pub use destructure_class::*;
 pub use elif_branch::*;
 pub use enum_decl::*;
 pub use export_list_decl::*;
@@ -134,6 +136,8 @@ pub enum Statement {
 
     /// `var resp::ok(result) = c;` (F2, feature `match`).
     DestructureLet(DestructureLet),
+    /// `var Clase(a, b) = obj;` (desempaqueta vía `__destructurate()`).
+    DestructureClass(DestructureClass),
 
     // Imports
     Import(ImportStatement),

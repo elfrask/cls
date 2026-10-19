@@ -265,6 +265,7 @@ fn statement_span(stmt: &Statement) -> Span {
         Statement::TypeAlias(s) => s.span,
         Statement::EnumDecl(s) => s.span,
         Statement::DestructureLet(s) => s.span,
+        Statement::DestructureClass(s) => s.span,
         Statement::ModuleDecl(s) => s.span,
         Statement::NamespaceDecl(s) => s.span,
         Statement::When(s) => s.span,

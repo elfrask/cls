@@ -193,6 +193,10 @@ impl fmt::Display for Statement {
                 "var {}::{}(...) = ...",
                 d.enum_name, d.variant
             )),
+            Statement::DestructureClass(d) => f.write_fmt(format_args!(
+                "var {}(...) = ...",
+                d.class_name
+            )),
             Statement::Import(i) => f.write_fmt(format_args!("import \"{}\"", i.path)),
             Statement::FromImport(fi) => f.write_fmt(format_args!("from \"{}\" import ...", fi.path)),
             Statement::ExportList(_) => f.write_str("export { ... }"),
