@@ -110,17 +110,21 @@ impl TypeChecker {
             // de función). El runtime despacha por tag-bit; aquí permitimos la
             // llamada y tipamos el retorno como Value (dinámico). Réplica del
             // patrón JSON/Value (ver plan completar-tipo-cmx.md).
-            // Métodos de CMX (rework): predicados / inspeccion / toString.
+            // Métodos de CMX (rework): los definidos en la clase core `CMX`
+            // (frontend/builtins) + los nativos que quedan (toString/cloneWith).
             let obj_ty0 = self.check_expression(&m.object);
             if matches!(obj_ty0, Type::Cmx) {
                 for arg in &call.args {
                     self.check_expression(arg);
                 }
+                if let Some(ms) = self.class_members.get("CMX") {
+                    if let Some(ret) = ms.get(m.member.as_str()) {
+                        return ret.clone();
+                    }
+                }
                 match m.member.as_str() {
                     "tagCallable" => return Type::Value,
-                    "isPrimitive" | "isEmpty" | "isElementOf" => return Type::Bool,
                     "toString" | "__str" | "__repr" => return Type::String,
-                    "flattenChildren" => return Type::Array(Box::new(Type::Cmx)),
                     "cloneWith" => return Type::Cmx,
                     "tryCallTag" => return Type::Value,
                     _ => {}

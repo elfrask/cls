@@ -9,41 +9,25 @@ impl<'a> FuncEmitter<'a> {
         // Métodos de CMX (rework): predicados, inspeccion y toString (inline, 0 host
         // salvo toString que usa cmx_to_string).
         if matches!(self.types.get(&expr_span(&member.object)), Some(Type::Cmx)) {
-            match member.member.as_str() {
-                "isPrimitive" => {
-                    self.emit_expression(&member.object)?;
-                    self.emit_cmx_field(40)?; // is_component
-                    self.body.push(Instruction::I64Eqz); // !isComponent
-                    return Ok(true);
-                }
-                "isEmpty" => {
-                    self.emit_expression(&member.object)?;
-                    self.emit_cmx_field(0)?; // tag = (off<<32)|len
-                    self.body.push(Instruction::I64Const(0xffff_ffff));
-                    self.body.push(Instruction::I64And);
-                    self.body.push(Instruction::I64Eqz); // len == 0
-                    return Ok(true);
-                }
-                "isElementOf" => {
-                    self.emit_expression(&member.object)?;
-                    self.emit_cmx_field(0)?; // tag (String)
-                    if let Some(arg) = c.args.first() {
-                        self.emit_expression(arg)?;
-                    } else {
-                        self.body.push(Instruction::I64Const(0));
+            // Métodos de la clase core `CMX` (frontend/builtins): dispatch DIRECTO
+            // `CMX::metodo(me, args)` (CMX es final; sin vtable).
+            if let Some(info) = self.class_defs.get("CMX") {
+                if info.methods.iter().any(|m| m == member.member.as_str()) {
+                    if let Some(&idx) = self.func_indexes.get(&format!("CMX::{}", member.member)) {
+                        self.emit_expression(&member.object)?; // me
+                        for a in &c.args {
+                            self.emit_expression(a)?;
+                        }
+                        self.emit_call_site(&c.span);
+                        self.body.push(Instruction::Call(idx));
+                        return Ok(true);
                     }
-                    self.emit_str_host("__intr_str_eq");
-                    return Ok(true);
                 }
+            }
+            match member.member.as_str() {
                 "toString" | "__str" | "__repr" => {
                     self.emit_expression(&member.object)?;
                     self.emit_cmx_fmt();
-                    return Ok(true);
-                }
-                "flattenChildren" => {
-                    // Devuelve los children (ya planos en el modelo CMX actual).
-                    self.emit_expression(&member.object)?;
-                    self.emit_cmx_field(16)?;
                     return Ok(true);
                 }
                 "cloneWith" => {
@@ -73,11 +57,11 @@ impl<'a> FuncEmitter<'a> {
                     let p = self.fresh_local();
                     self.body.push(Instruction::LocalSet(p));
                     self.body.push(Instruction::LocalGet(p));
-                    self.emit_cmx_field(40)?; // is_component
-                    self.body.push(Instruction::I64Eqz); // i32: 0 = componente
+                    self.emit_cmx_field(40)?;
+                    self.body.push(Instruction::I64Eqz);
                     self.block_depth += 1;
                     self.body.push(Instruction::If(BlockType::Result(ValType::I64)));
-                    self.body.push(Instruction::I64Const(0)); // else: Null
+                    self.body.push(Instruction::I64Const(0)); // Null
                     self.body.push(Instruction::Else);
                     self.body.push(Instruction::LocalGet(p));
                     self.emit_cmx_field(32)?; // handle
@@ -87,14 +71,13 @@ impl<'a> FuncEmitter<'a> {
                         vec![ValType::I64, ValType::I64, ValType::I64],
                         vec![ValType::I64],
                     );
-                    // Dispatch por tag-bit: impar = closure, par = funcion simple.
                     self.body.push(Instruction::LocalGet(h));
                     self.body.push(Instruction::I64Const(1));
                     self.body.push(Instruction::I64And);
                     self.body.push(Instruction::I32WrapI64);
                     self.block_depth += 1;
                     self.body.push(Instruction::If(BlockType::Result(ValType::I64)));
-                    // closure: caps = load((h>>1)+8)
+                    // closure: caps + props + children + fnptr
                     self.body.push(Instruction::LocalGet(h));
                     self.body.push(Instruction::I64Const(1));
                     self.body.push(Instruction::I64ShrU);
@@ -102,12 +85,10 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::I64Add);
                     self.body.push(Instruction::I32WrapI64);
                     self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
-                    // props, children
                     self.body.push(Instruction::LocalGet(p));
                     self.emit_cmx_field(8)?;
                     self.body.push(Instruction::LocalGet(p));
                     self.emit_cmx_field(16)?;
-                    // fnptr = load(h>>1)
                     self.body.push(Instruction::LocalGet(h));
                     self.body.push(Instruction::I64Const(1));
                     self.body.push(Instruction::I64ShrU);
@@ -117,7 +98,7 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_call_site(&c.span);
                     self.body.push(Instruction::CallIndirect { type_index: tidx, table_index: 0 });
                     self.body.push(Instruction::Else);
-                    // simple: caps = 0, props, children, idx = h>>1
+                    // simple: caps=0 + props + children + idx
                     self.body.push(Instruction::I64Const(0));
                     self.body.push(Instruction::LocalGet(p));
                     self.emit_cmx_field(8)?;
@@ -129,9 +110,9 @@ impl<'a> FuncEmitter<'a> {
                     self.body.push(Instruction::I32WrapI64);
                     self.emit_call_site(&c.span);
                     self.body.push(Instruction::CallIndirect { type_index: tidx, table_index: 0 });
-                    self.body.push(Instruction::End); // if odd
+                    self.body.push(Instruction::End);
                     self.block_depth -= 1;
-                    self.body.push(Instruction::End); // if isComponent
+                    self.body.push(Instruction::End);
                     self.block_depth -= 1;
                     return Ok(true);
                 }

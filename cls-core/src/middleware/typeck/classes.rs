@@ -7,7 +7,13 @@ impl TypeChecker {
 
 
     pub(crate) fn check_class(&mut self, c: &ClassDecl) -> Type {
-        let class_type = Type::Named(c.name.clone(), vec![]);
+        // La clase core `CMX` está RESPALDADA por el builtin `Cmx`: sus métodos
+        // operan sobre el valor nativo de 48B (no hay layout de instancia).
+        let class_type = if c.name == "CMX" {
+            Type::Cmx
+        } else {
+            Type::Named(c.name.clone(), vec![])
+        };
         self.define_decl(&c.name, class_type.clone(), &c.span);
         self.push_scope();
         self.define("me", class_type.clone());

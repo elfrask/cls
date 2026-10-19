@@ -128,6 +128,21 @@ impl TypeChecker {
             ternary_yield_stack: Vec::new(),
             match_yield_stack: Vec::new(),
         };
+        // Clase core `CMX` (respaldada por el builtin `Cmx`): firmas de sus
+        // métodos pre-registradas para que los MÓDULOS del prelude (que se
+        // chequean ANTES que el módulo principal) puedan usarlas. Los cuerpos
+        // viven en CLS (`frontend/builtins.rs`).
+        {
+            let mut cmx_methods: HashMap<String, Type> = HashMap::new();
+            cmx_methods.insert("isPrimitive".to_string(), Type::Bool);
+            cmx_methods.insert("isEmpty".to_string(), Type::Bool);
+            cmx_methods.insert("isElementOf".to_string(), Type::Bool);
+            cmx_methods.insert(
+                "flattenChildren".to_string(),
+                Type::Array(Box::new(Type::Cmx)),
+            );
+            tc.class_members.insert("CMX".to_string(), cmx_methods);
+        }
         // Registrar funciones built-in (core intrinsics) como CONSTANTES (no
         // redefinibles): print, input, args, toString, int, float, str, bool,
         // len, type, now, exit, sleep, throw.

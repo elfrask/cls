@@ -3,6 +3,7 @@ pub mod parser;
 pub mod token;
 pub mod ast;
 pub mod span_shift;
+pub mod builtins;
 
 pub use lexer::Lexer;
 pub use parser::Parser;

@@ -79,13 +79,14 @@ pub fn run_jit_with_opts(
     t = tick(timing, "lexer", t);
 
     let mut parser = cls_core::frontend::Parser::new(tokens);
-    let module = match parser.parse() {
+    let mut module = match parser.parse() {
         Ok(m) => m,
         Err(e) => {
             cls_runtime::show_syntax_error(e, &source, entry);
             return 1;
         }
     };
+    cls_core::frontend::builtins::inject_builtins(&mut module);
     t = tick(timing, "parser", t);
 
     // Type checker: llena el mapa Span -> Type (requerido por el backend).

@@ -282,7 +282,11 @@ impl<'a> FuncEmitter<'a> {
         if let Expression::Identifier(n, _) = object {
             if n == "me" {
                 if let Some(cur) = &self.current_class {
-                    return Some(cur.clone());
+                    // `CMX` está respaldada por el builtin `Cmx`: `me` es un Cmx
+                    // nativo, no una instancia de clase (sin layout de campos).
+                    if cur != "CMX" {
+                        return Some(cur.clone());
+                    }
                 }
             }
         }

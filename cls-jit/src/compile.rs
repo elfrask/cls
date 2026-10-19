@@ -99,7 +99,8 @@ pub fn compile_source(
     opts: &CompileOptions,
 ) -> ClsResult<CompiledModule> {
     let tokens = cls_core::frontend::Lexer::new(source).tokenize()?;
-    let module = cls_core::frontend::Parser::new(tokens).parse()?;
+    let mut module = cls_core::frontend::Parser::new(tokens).parse()?;
+    cls_core::frontend::builtins::inject_builtins(&mut module);
     compile_module(&module, source, name, base_dir, ctx, opts)
 }
 
