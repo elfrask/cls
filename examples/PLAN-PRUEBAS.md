@@ -288,31 +288,39 @@ Rust (`packages.rs`) — este proyecto porta el algoritmo a CLS.
 
 ---
 
-## 9. Snake / Tetris en terminal  ·  `examples/snake/`
+## 9. Snake: lógica pura + replays  ·  `examples/snake/`
 
-**Oráculo:** **grabaciones de input** reproducidas (estado final determinista) —
-sin oráculo externo automático.
+> **Estado: implementado (lógica pura; sin FFI de terminal).** `update(state,
+> input) -> state` determinista (LCG de comida en el estado) + replays. Verificado
+> contra `.final` versionado y un oráculo Python con el mismo algoritmo. Ver
+> `examples/snake/README.md`.
 
-**Qué prueba:** FFI de structs (`termios`/winapi), `VFS tmp://`, arrays, estado de
-juego, y el bucle principal caliente.
+**Oráculo:** grabaciones de input (`tests/*.replay`) reproducidas → estado final
+canónico (`tests/*.final`), + oráculo Python (`tests/oracle.py`).
+
+**Qué prueba:** lógica de estado, arrays (`int[]`), `while`, PRNG determinista,
+clases con métodos. El FFI de terminal queda fuera (headless/cross-platform).
 
 **Estructura**
 ```
 examples/snake/
 ├── cls.json
-├── src/game.clsx          # lógica pura (update(state, input) -> state)
-├── src/term.clsx          # extension termios/winapi (raw mode, colores)
-├── src/main.clsx          # loop + render
-└── replays/*.txt, *.final # secuencia de inputs + estado final esperado
+├── src/main.clsx          # clase Snake (update puro) + parseo de replay + main
+├── tests/*.replay         # "W H SEED MOVES"
+├── tests/*.final          # estado final esperado (versionado)
+├── tests/oracle.py        # oráculo Python (mismo algoritmo)
+└── replay.ps1             # CLS vs .final (+ oráculo Python)
 ```
 
 **Casos**
-- Update de lógica es **puro** ⇒ testeable con `replays`.
-- Colisión, wrap, crecimiento, game-over; pausa/reinicio.
-- Tamaño de terminal (SIGWINCH/consulta), sin crash en borde.
+- Update **puro** ⇒ testeable con replays (mismo PRNG => sin azar externo).
+- Colisión con pared, auto-colisión, reverso ignorado, crecimiento (comer) y
+  game-over (estado estable tras morir).
 
-**Cómo detecta bugs:** solo "no crashea" + FFI de structs; el replay da
-determinismo. **Esfuerzo:** bajo. **Prioridad:** baja.
+**Cómo detecta bugs:** cualquier divergencia del estado final respecto del
+`.final`/oráculo señala un bug de lógica o del compilador/runtime.
+
+**Esfuerzo:** bajo. **Prioridad:** baja.
 
 ---
 
@@ -365,7 +373,7 @@ bytecode/VM); sin TCO ni floats (ver README).
 | 6 | DNS | `dns/` | dig/nslookup | Medio | Media | cross |
 | 7 | CMX templates | `cmx-templates/` | golden files | Medio | Media | cross |
 | 8 | Gestor + SHA-256 | `pkgcheck/` | sha256sum/certutil | Alto | Media | cross |
-| 9 | Snake/Tetris | `snake/` | replays | Bajo | Baja | cross |
+| 9 | Snake (lógica) | `snake/` | .final + oracle.py | Bajo | Baja | cross |
 | 10 | Intérprete Scheme | `scheme/` | .out (+guile) | Alto | Baja | cross |
 
 `*` requiere `sqlite3`/DLL por SO.

@@ -1,0 +1,172 @@
+# main.clsx - Snake: lógica pura + replays. Prueba #9.
+#
+#   clx run src/main.clsx -- <replay>
+#
+# Formato replay: "W H SEED MOVES" (una linea; MOVES = U/D/L/R/.).
+# Imprime el estado final canonico (score/alive/dir/len/head/food/body) para
+# compararlo con el oraculo (tests/oracle.py, mismo algoritmo en Python).
+#
+# `update(state, input) -> state` puro y determinista: el PRNG de comida es
+# parte del estado (LCG), asi que no hay azar externo.
+
+import "fs" as fs;
+
+class Snake {
+    var w: int;
+    var h: int;
+    var seed: int;
+    var dir: String;
+    var body: int[];
+    var fx: int;
+    var fy: int;
+    var score: int;
+    var alive: Bool;
+
+    function rng() -> int {
+        me.seed = (me.seed * 1103515245 + 12345) % 2147483648;
+        return me.seed;
+    }
+
+    function onBody(x: int, y: int, upto: int) -> Bool {
+        var i = 0;
+        while (i < upto) {
+            if (me.body[i * 2] == x && me.body[i * 2 + 1] == y) { return true; }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    function spawnFood() {
+        var go = true;
+        while (go) {
+            var x = me.rng() % me.w;
+            var y = me.rng() % me.h;
+            if (!me.onBody(x, y, me.body.length / 2)) { me.fx = x; me.fy = y; go = false; }
+        }
+    }
+
+    function init(w: int, h: int, seed: int) {
+        me.w = w;
+        me.h = h;
+        me.seed = seed;
+        me.dir = "R";
+        me.score = 0;
+        me.alive = true;
+        var cx = w / 2;
+        var cy = h / 2;
+        me.body = [cx, cy, cx - 1, cy, cx - 2, cy];
+        me.fx = 0;
+        me.fy = 0;
+        me.spawnFood();
+    }
+
+    function opposite(a: String, b: String) -> Bool {
+        if (a == "U" && b == "D") { return true; }
+        if (a == "D" && b == "U") { return true; }
+        if (a == "L" && b == "R") { return true; }
+        if (a == "R" && b == "L") { return true; }
+        return false;
+    }
+
+    function step(code: int) {
+        if (!me.alive) { return; }
+        var nd = me.dir;
+        if (code == 85) { nd = "U"; }
+        elif (code == 68) { nd = "D"; }
+        elif (code == 76) { nd = "L"; }
+        elif (code == 82) { nd = "R"; }
+        if (me.opposite(me.dir, nd)) { nd = me.dir; }
+        me.dir = nd;
+
+        var dx = 0;
+        var dy = 0;
+        if (nd == "U") { dy = 0 - 1; }
+        elif (nd == "D") { dy = 1; }
+        elif (nd == "L") { dx = 0 - 1; }
+        else { dx = 1; }
+
+        var hx = me.body[0] + dx;
+        var hy = me.body[1] + dy;
+        if (hx < 0 || hy < 0 || hx >= me.w || hy >= me.h) { me.alive = false; return; }
+
+        var segs = me.body.length / 2;
+        var eating = (hx == me.fx && hy == me.fy);
+        var check = segs;
+        if (!eating) { check = segs - 1; }
+        if (me.onBody(hx, hy, check)) { me.alive = false; return; }
+
+        var keep = segs;
+        if (!eating) { keep = segs - 1; }
+        var nb: int[] = [hx, hy];
+        var k = 0;
+        while (k < keep) {
+            nb.push(me.body[k * 2]);
+            nb.push(me.body[k * 2 + 1]);
+            k = k + 1;
+        }
+        me.body = nb;
+        if (eating) { me.score = me.score + 1; me.spawnFood(); }
+    }
+
+    function bodyStr() -> String {
+        var out = "";
+        var i = 0;
+        while (i < me.body.length / 2) {
+            if (i > 0) { out = out + ";"; }
+            out = out + me.body[i * 2].toString() + "," + me.body[i * 2 + 1].toString();
+            i = i + 1;
+        }
+        return out;
+    }
+
+    function serialize() -> String {
+        return "score=" + me.score.toString()
+            + " alive=" + me.alive.toString()
+            + " dir=" + me.dir
+            + " len=" + (me.body.length / 2).toString()
+            + " head=" + me.body[0].toString() + "," + me.body[1].toString()
+            + " food=" + me.fx.toString() + "," + me.fy.toString()
+            + " body=" + me.bodyStr();
+    }
+}
+
+# --- parseo de replay -----------------------------------------------------
+
+function tokens(src: String) -> String[] {
+    var cs = src.toChar();
+    var out: String[] = [];
+    var cur = "";
+    var i = 0;
+    while (i < cs.length) {
+        var code = ord(cs[i]);
+        if (code == 32 || code == 10 || code == 9 || code == 13) {
+            if (cur.length > 0) { out.push(cur); cur = ""; }
+        } else {
+            cur = cur + cs[i].toString();
+        }
+        i = i + 1;
+    }
+    if (cur.length > 0) { out.push(cur); }
+    return out;
+}
+
+function toInt(s: String) -> int {
+    var cs = s.toChar();
+    var acc = 0;
+    var i = 0;
+    while (i < cs.length) { acc = acc * 10 + (ord(cs[i]) - 48); i = i + 1; }
+    return acc;
+}
+
+function main(args: String[]) -> int {
+    if (args.length < 1) { print("uso: clx run src/main.clsx -- <replay>"); return 2; }
+    var toks = tokens(fs.readFile(args[0]));
+    if (toks.length < 4) { print("replay invalido"); return 1; }
+    var g = Snake();
+    g.init(toInt(toks[0]), toInt(toks[1]), toInt(toks[2]));
+    var mv = toks[3].toChar();
+    var i = 0;
+    while (i < mv.length) { g.step(ord(mv[i])); i = i + 1; }
+    print(g.serialize());
+    return 0;
+}
