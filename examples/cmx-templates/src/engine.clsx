@@ -69,9 +69,8 @@ function sortKeys(ks: String[]) -> String[] {
     return a;
 }
 
-# ` key="valor"` por cada prop; prop `true` -> atributo booleano desnudo.
-# Nota (bug abierto): un atributo sin valor en la sintaxis CMX (`<input disabled />`)
-# NO llega a `props`; escribir `disabled={true}` (ver tests/findings).
+# ` key="valor"` por cada prop; prop `true` -> atributo booleano desnudo
+# (`<input disabled />` produce props["disabled"] = true).
 export function attrs(c: Cmx) -> String {
     var ks = sortKeys(c.props.keys());
     var out = "";

@@ -222,9 +222,9 @@ class App {
 ver `docs/lenguaje/cmx.md`). NO se inventa un motor de templates (nada de
 `{{ }}`, `@if`, `@for`, Blade).
 
-CMX construye un árbol `CmxValue { tag, props, children }` (DOM virtual).
-**No serializa a HTML por sí solo** (`cmx_to_string` produce debug abreviado),
-así que el framework incluye un **renderer en CLS puro** que recorre el árbol:
+CMX construye un árbol `Cmx { tag, props, children }` (DOM virtual) con
+`toString()` de depuración. **No serializa a HTML por sí solo**, así que el
+framework incluye un **renderer en CLS puro** que recorre el árbol:
 
 ```clx
 # modules/view.clsx — renderer CMX -> HTML (CLS puro, 0 host nuevo)
@@ -233,9 +233,10 @@ function e(s: String) -> String {
 }
 
 function render(cmx: Cmx) -> String {
-    # kind=1 (texto): devuelve e(texto)
+    # kind==1 (texto): devuelve e(cmx.tag)
+    # isComponent: invocar cmx.tagCallable(cmx.props, cmx.children)
     # tag + props: "<tag nombre=\"valor\" ...>"
-    # children: concat render() de cada hijo (si un hijo es Array, expandir cada elemento)
+    # children: concat render() de cada hijo
     # cierre: "</tag>"
 }
 ```
@@ -269,7 +270,7 @@ app.get("/", (req: Request) -> Response {
 | Loops | `{arr.map((x: T) -> <li>{x}</li>)}` — el renderer expande arrays de children |
 | Condicionales | `{cond ? a : b}` como expresión, o `if` fuera del marcado construyendo el CmxValue por partes |
 | Layouts/herencia | Composición de funciones: `layout_base(titulo, body)` que recibe el CmxValue del body |
-| Componentes reutilizables | Llamar la función y pasar el resultado: `{home_view(...)}`; invocar tags mayúscula con `if (tag is Callable) { tag({...props, children}) }` (ver `cmx.md`) |
+| Componentes reutilizables | Llamar la función y pasar el resultado: `{home_view(...)}`; invocar tags mayúscula con `if (cmx.isComponent) { cmx.tagCallable(props, children) }` (ver `cmx.md`) |
 | Spreads en children/props | `{...items}` expande arrays dentro de children (spread de arrays) y `{...props}` en attributes (ver `control-de-flujo.md`) |
 | Raw HTML (sin escape) | El renderer escapa por defecto; una función `raw(html)` marca el valor para que el renderer no lo escape (solo para contenido confiable) |
 

@@ -2691,7 +2691,7 @@ impl Parser {
                             Token::Keyword(k)
                                 if !matches!(k, Keyword::True | Keyword::False) =>
                             {
-                                k.to_string()
+                                k.as_str().to_string()
                             }
                             _ => return Err(self.syntax_err("Key de record inválida")),
                         };
@@ -3091,7 +3091,7 @@ impl Parser {
                 Ok(name)
             }
             Token::Keyword(k) if !matches!(k, Keyword::True | Keyword::False) => {
-                let name = k.to_string();
+                let name = k.as_str().to_string();
                 self.advance();
                 Ok(name)
             }

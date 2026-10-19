@@ -70,8 +70,22 @@ impl TypeChecker {
                     self.check_expression(s);
                 }
                 for attr in &c.attributes {
-                    if let Some(CmxAttributeValue::Expression(expr)) = &attr.value {
-                        self.check_expression(expr);
+                    match &attr.value {
+                        Some(CmxAttributeValue::Expression(expr)) => {
+                            self.check_expression(expr);
+                        }
+                        // Shorthand `{nombre}`: registrar el tipo de la variable en
+                        // el span del atributo para que el emisor ponga el tag
+                        // correcto (si no, un String local se leería como int).
+                        Some(CmxAttributeValue::Shorthand(name)) => {
+                            let ty = self.lookup(name).cloned().unwrap_or(Type::Value);
+                            self.types_by_span.insert(attr.span, ty);
+                        }
+                        // Atributo desnudo -> `true` (Bool).
+                        None => {
+                            self.types_by_span.insert(attr.span, Type::Bool);
+                        }
+                        Some(CmxAttributeValue::String(_)) => {}
                     }
                 }
                 for child in &c.children {

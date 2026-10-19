@@ -101,7 +101,7 @@ El módulo WASM importa **solo las host functions de I/O, errores y nodo**
 - `now`, `sleep`, `host_call(id, ptr, n)` - canal genérico para intrinsics del
   nodo.
 - Módulos desktop: `fs_*`, `http_*`, `strings_*`.
-- CMX (`cmx_*`) y funciones como valor (`fn_*`).
+- CMX (emisión **inline**, 0 host; `toString` vía `__intr_cmx_fmt`) y funciones como valor (`fn_*`).
 
 Los arrays/strings/records/math/conversiones se **fusionan** desde
 `cls-internals` (ver arriba; sin fallback host). Los métodos de primitivos

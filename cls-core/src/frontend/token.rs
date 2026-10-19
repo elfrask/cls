@@ -360,9 +360,10 @@ impl fmt::Display for Symbol {
     }
 }
 
-impl fmt::Display for Keyword {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
+impl Keyword {
+    /// Nombre crudo del keyword (sin comillas), p.ej. para keys de record.
+    pub fn as_str(&self) -> &'static str {
+        match self {
             Keyword::Var => "var",
             Keyword::Const => "const",
             Keyword::Let => "let",
@@ -423,8 +424,13 @@ impl fmt::Display for Keyword {
             Keyword::Then => "then",
             Keyword::True => "true",
             Keyword::False => "false",
-        };
-        write!(f, "'{}'", s)
+        }
+    }
+}
+
+impl fmt::Display for Keyword {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "'{}'", self.as_str())
     }
 }
 

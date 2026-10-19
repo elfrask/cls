@@ -209,36 +209,41 @@ usar servidor autoritativo propio.
 
 ## 7. Motor de plantillas CMX + golden files  ·  `examples/cmx-templates/`
 
-> **Estado: implementado.** Renderer CMX→HTML en CLS puro (`src/engine.clsx`) +
-> golden files (9 páginas) + oráculo cruzado Jinja2 (paridad) + 4 findings de
-> bugs del compilador hallados al construir el renderer. Ver
-> `examples/cmx-templates/README.md`. Hallazgos: `(cmx).tag is Callable` da
-> `true` para tags String; asignar un `Value` a un local pierde el tag;
-> atributo CMX sin valor no llega a `props`; literal CMX dentro de `{...}` no
-> parsea.
+> **Estado: implementado (reconstruido tras el rework CMX).** Renderer CMX→HTML
+> en CLS puro (`src/engine.clsx`) + golden files (16 páginas) + oráculo cruzado
+> Jinja2 (paridad) + findings. Ver `examples/cmx-templates/README.md`.
+> Resueltos: `tag` ya es String (componente en `tagCallable`/`isComponent`),
+> atributo desnudo → `true`, literal CMX dentro de `{...}` parsea. GAP: local
+> `Value` sin tag (GAP 19).
 
 **Oráculo:** golden files a mano (`tests/golden/*.html`) + Jinja2 (Python) donde
 solape.
 
-**Qué prueba:** CMX (la feature más nueva), `render()` en CLS puro, escape HTML,
-interpolación, componentes (tag mayúscula + `Callable`), spread de props.
+**Qué prueba:** CMX (la feature más nueva), la clase core `CMX` (métodos
+`isPrimitive/isEmpty/isElementOf/flattenChildren/tryCallTag/toString/cloneWith`),
+`tag`/`tagCallable`/`isComponent`, `render()` en CLS puro, escape HTML,
+interpolación, componentes (tag mayúscula), spread de props, shorthand, atributos
+desnudos, anidado en `{...}` y `CMX<P, PP>` borrado.
 
 **Estructura**
 ```
 examples/cmx-templates/
 ├── cls.json
-├── src/engine.clsx        # e(), raw(), render()
-├── src/templates/*.clsx   # layouts + partials + componentes
-├── tests/*.clsx
-└── tests/golden/*.html    # salida esperada versionada
+├── src/engine.clsx        # e(), raw(), render(), attrs
+├── src/components.clsx    # layout, navbar, card, badge, todoList
+├── src/pages.clsx         # vistas (un eje por página)
+├── tests/golden/*.html    # salida esperada versionada
+├── tests/oracle/*.py      # oráculo cruzado Jinja2
+└── tests/findings/*.clsx  # repros (exit != 0 = bug)
 ```
 
 **Casos**
 - Escape: `<`, `>`, `&`, `"`, `'` (y **no** doble-escape).
-- Loops `{arr.map(...)}`, condicionales `{c ? a : b}`, layouts por composición.
-- Componentes: `app.tag is Callable` → invocar con props+children.
-- `raw(...)` sin escape; children `Array` expandido.
-- Multibyte/emoji; props ordenadas; atributos vacíos/booleanos.
+- Loops vía `renderEach`, condicionales `{c ? a : b}`, layouts por composición.
+- Componentes: `isComponent` + `tagCallable(props, children)` (o `tryCallTag`).
+- `raw(...)` sin escape; props ordenadas; atributos desnudos/booleanos.
+- Clase `CMX`: predicados, `toString`, `cloneWith`, `is Cmx`, `CMX<P,PP>` borrado.
+- Multibyte/emoji; spread `{...base}`; shorthand `{var}`; CMX anidado en `{...}`.
 
 **Cómo detecta bugs:** cualquier cambio de CMX/runtime rompe un golden; fuerza a
 versionar la salida esperada (sin walker, el golden **es** el oráculo).

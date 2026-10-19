@@ -124,7 +124,15 @@ impl<'a> FuncEmitter<'a> {
             }
             Some(CmxAttributeValue::Shorthand(name)) => {
                 self.emit_ident_load(name);
-                None
+                // Tipo de la variable (registrado por el typeck en `attr.span`):
+                // el local es i64, convertir a su wasm-type para el tag correcto.
+                let t = self.types.get(&attr.span).cloned();
+                match t.as_ref().and_then(|ty| was_type(ty).ok()) {
+                    Some(WasTy::I32) => self.body.push(Instruction::I32WrapI64),
+                    Some(WasTy::F64) => self.body.push(Instruction::F64ReinterpretI64),
+                    _ => {}
+                }
+                t
             }
             None => {
                 self.body.push(Instruction::I32Const(1));

@@ -28,6 +28,11 @@ function main(args: String[]) -> int {
     emit("09-parity", pages::pageParity());
     emit("10-component", pages::pageComponentTag());
     emit("11-bare-attr", pages::pageBareAttr());
-    print("OK: 11 paginas renderizadas");
+    emit("12-cmx-methods", pages::pageCmxMethods());
+    emit("13-cmx-debug", pages::pageCmxDebug());
+    emit("14-spread-shorthand", pages::pageSpreadShorthand());
+    emit("15-clone-with", pages::pageCloneWith());
+    emit("16-erased-generics", pages::pageErased());
+    print("OK: 16 paginas renderizadas");
     return 0;
 }

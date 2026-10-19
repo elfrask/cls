@@ -79,8 +79,10 @@ Lo que permite `clx run`:
 
 ## Referencia de ejemplo
 
-- CMX: tokens en `lexer.rs` (`lex_cmx`), parseo en `parser.rs::parse_cmx`,
-  tipo en el typeck, emisión en `backend/wasm/` (host functions `cmx_*`).
+- CMX: tokens en `lexer.rs` (`lex_cmx`), parseo en `parser.rs::parse_cmx_element`,
+  tipo en el typeck (`Type::Cmx`), emisión **inline** en
+  `backend/wasm/emitter/containers.rs` (+ la clase core `CMX` en
+  `frontend/builtins.rs`).
 - Errores del emisor no soportado: `compile_at` en `backend/wasm/`
   (p. ej. `await`, índices dinámicos en records con shape).
 - Internals WASM: agregar una función `__intr_*` = implementar en

@@ -69,6 +69,29 @@ no está, el paso 3 se marca `SKIP`.
 | `08-full` | layout + navbar + card + lista (composición) |
 | `09-parity` | subset reproducible por Jinja2 |
 | `10-component` | componente por tag mayúscula (`isComponent` + `tagCallable`) |
+| `11-bare-attr` | atributo desnudo (`<input disabled />` → `true`) |
+| `12-cmx-methods` | clase `CMX`: `isPrimitive/isEmpty/isElementOf/flattenChildren`, `is Cmx` |
+| `13-cmx-debug` | `toString()` de CMX (representación de depuración, escapada) |
+| `14-spread-shorthand` | spread `{...base}`, shorthand `{var}`, desnudo |
+| `15-clone-with` | `cloneWith(props, children)` inmutable |
+| `16-erased-generics` | `CMX<P, PP>` borrado + `is Cmx` |
+
+## API de la clase `CMX` (cubierta)
+
+El builtin `Cmx` se expone como la **clase core `CMX`** (métodos en CLS,
+`cls-core/src/frontend/builtins.rs`). Campos: `tag` (String, siempre), `props`
+(`Record<String, Value>`), `children` (`Cmx[]`), `kind` (0=elemento/1=texto),
+`tagCallable` (`Value`), `isComponent` (`Bool`).
+
+| Método | Resultado |
+|---|---|
+| `isPrimitive()` | `!isComponent` |
+| `isEmpty()` | `tag.length == 0` |
+| `isElementOf(tag)` | `me.tag == tag` |
+| `flattenChildren()` | `Cmx[]` (mismo `children`) |
+| `tryCallTag()` | invoca `tagCallable(props, children)` si es componente; si no, `null` |
+| `toString()` / `__str` / `__repr` | representación de depuración (`<tag ...>... (n children)</tag>`) |
+| `cloneWith(props?, children?)` | copia inmutable (conserva tag/kind/tagCallable/isComponent) |
 
 ## Limitaciones de CMX (documentadas)
 
@@ -81,20 +104,19 @@ no está, el paso 3 se marca `SKIP`.
 3. **Los componentes** (tag mayúscula) sí se auto-invocan: el nodo trae
    `isComponent=true` y `tagCallable`, y el renderer lo llama con
    props+children. Los componentes devuelven HTML (`String`).
-4. **No se puede anidar un literal CMX dentro de `{...}`** (ver finding 04).
-5. **Escape por defecto**: todo lo interpolado se escapa salvo `raw()`.
+4. **Escape por defecto**: todo lo interpolado se escapa salvo `raw()`.
 
 ## Findings (bugs hallados)
 
 `run.ps1` los corre y espera `exit != 0` mientras existan (convención de
 `examples/lang-features`): mientras haya findings abiertos, el resultado global
 es `FAIL` (es señal, no una regresión de esta prueba). Al arreglarse cada bug,
-se marca `[FIX?]` y debe promoverse a la matriz (goldens).
+se promueve a la matriz (goldens) o se marca GAP en `gaps.txt`.
 
-| # | Bug |
-|---|---|
-| 02 | Asignar un `Value` a un local pierde el tag: `var v = r["a"]` → `str(v)` = puntero. |
-| 03 | Atributo CMX sin valor (`<input disabled />`) no llega a `props`. |
-| 04 | Literal CMX dentro de un child de interpolación `{...}` no parsea. |
+| # | Estado | Bug |
+|---|---|---|
+| 02 | **GAP 19** | Asignar un `Value` a un local pierde el tag: `var v = r["a"]` → `str(v)` = puntero. Ver `gaps.txt` y `examples/lang-features/findings/19-value-local.clsx`. |
+| 03 | resuelto | Atributo desnudo (`<input disabled />` → `true`): cubierto por `11-bare-attr`. |
+| 04 | resuelto | Literal CMX dentro de `{...}` (`{f((<p>x</p>))}`): cubierto por `06-components`. |
 
 Ver `tests/findings/README.md`.

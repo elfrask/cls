@@ -128,3 +128,70 @@ export function pageParity() -> Cmx {
     );
 }
 
+# --- API de la clase CMX (rework) -----------------------------------------
+
+# Metodos de la clase CMX: predicados e inspeccion.
+export function pageCmxMethods() -> Cmx {
+    var el = (<div id={1} class="x">hola</div>);
+    var txt = el.children[0];
+    return (
+        <div class="methods">
+            <p>{"tag=" + el.tag}</p>
+            <p>{"isComponent=" + el.isComponent.toString()}</p>
+            <p>{"isPrimitive=" + el.isPrimitive().toString()}</p>
+            <p>{"isEmpty=" + el.isEmpty().toString()}</p>
+            <p>{"isElementOf(div)=" + el.isElementOf("div").toString()}</p>
+            <p>{"isElementOf(span)=" + el.isElementOf("span").toString()}</p>
+            <p>{"children=" + el.flattenChildren().length.toString()}</p>
+            <p>{"isCmx=" + (el is Cmx).toString()}</p>
+            <p>{"txt.tag=" + txt.tag + " txt.isPrimitive=" + txt.isPrimitive().toString()}</p>
+        </div>
+    );
+}
+
+# toString()/print() de CMX: representacion de depuracion (se escapa al interpolar).
+export function pageCmxDebug() -> Cmx {
+    var el = (<div class="x" id={1}><span>t</span>hola</div>);
+    return (
+        <div class="debug">
+            <p>{el.toString()}</p>
+            <p>{(<br />).toString()}</p>
+        </div>
+    );
+}
+
+# Spread de props `{...base}`, shorthand `{var}` y atributo desnudo.
+export function pageSpreadShorthand() -> Cmx {
+    var base: Record<String, Value> = {class: "card", id: 7};
+    var titulo = "Hola";
+    var el = (<section {titulo} {...base} hidden>cuerpo</section>);
+    return (
+        <div class="spread">{engine::raw(engine::render(el))}</div>
+    );
+}
+
+# cloneWith(props, children): copia inmutable con props/children reemplazados.
+export function pageCloneWith() -> Cmx {
+    var el = (<div class="a">hola</div>);
+    var clon = el.cloneWith({class: "b"}, el.children);
+    return (
+        <div class="clone">
+            {engine::raw(engine::render(el))}
+            {engine::raw(engine::render(clon))}
+            <p>{"originalTag=" + el.tag + " clonTag=" + clon.tag}</p>
+        </div>
+    );
+}
+
+# Anotacion generica `CMX<P, PP>` borrada + `is Cmx`.
+export function pageErased() -> Cmx {
+    var a: CMX<String, Int> = (<div>uno</div>);
+    var b: CMX = (<span>dos</span>);
+    return (
+        <div class="erased">
+            {engine::raw(engine::render(a) + engine::render(b))}
+            <p>{"aTag=" + a.tag + " bTag=" + b.tag + " isCmx=" + (a is Cmx).toString()}</p>
+        </div>
+    );
+}
+
