@@ -1,0 +1,82 @@
+# httpd/srv_response.clsx - Response HTTP/1.1 (builder + serializer).
+#
+# `headers` es `Record<String, String>`: un valor por nombre (los duplicados,
+# como varios Set-Cookie, se sobrescriben; se resolverá en una fase posterior).
+import "srv_status" as status;
+
+export class Response {
+    public var status: int;
+    public var headers: Record<String, String>;
+    public var body: String;
+
+    function main(status: int, body: String) {
+        me.status = status;
+        me.body = body;
+        me.headers = {};
+    }
+
+    static function html(content: String) -> Response {
+        var res = Response(200, content);
+        res.headers["content-type"] = "text/html; charset=utf-8";
+        return res;
+    }
+
+    static function text(content: String) -> Response {
+        var res = Response(200, content);
+        res.headers["content-type"] = "text/plain; charset=utf-8";
+        return res;
+    }
+
+    # JSON ya serializado (el caller lo produce; v1 no incluye un encoder global).
+    static function json_raw(content: String) -> Response {
+        var res = Response(200, content);
+        res.headers["content-type"] = "application/json; charset=utf-8";
+        return res;
+    }
+
+    # Alias compatible con la API del framework (`Response.json_response`).
+    static function json_response(content: String) -> Response {
+        return Response.json_raw(content);
+    }
+
+    static function redirect(url: String, code: int) -> Response {
+        var res = Response(code, "");
+        res.headers["location"] = url;
+        return res;
+    }
+
+    static function status_only(code: int) -> Response {
+        return Response(code, "");
+    }
+
+    static function not_found() -> Response {
+        var res = Response(404, "404 Not Found");
+        res.headers["content-type"] = "text/plain; charset=utf-8";
+        return res;
+    }
+
+    function header(name: String, value: String) -> Response {
+        me.headers[name.lower()] = value;
+        return me;
+    }
+
+    function set_cookie(name: String, value: String) -> Response {
+        me.headers["set-cookie"] = name + "=" + value + "; Path=/";
+        return me;
+    }
+
+    # "HTTP/1.1 200 OK\r\n<headers>\r\n\r\n<body>"
+    function serialize() -> String {
+        me.headers["content-length"] = me.body.length.toString();
+        me.headers["connection"] = "close";
+        me.headers["server"] = "tombstone/0.1";
+
+        var out = "HTTP/1.1 " + me.status.toString() + " " + status::reason(me.status) + "\r\n";
+        var keys = me.headers.keys();
+        for each key in (keys) {
+            out = out + key + ": " + me.headers[key] + "\r\n";
+        };
+        out = out + "\r\n" + me.body;
+        return out;
+    }
+};

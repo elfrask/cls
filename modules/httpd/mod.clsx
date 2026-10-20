@@ -1,0 +1,24 @@
+# httpd - HTTP/1.1 del lado servidor (CLS puro sobre `modules/socket`).
+#
+# Ladrillo de la stdlib autocontenida (examples/patrones.md §2.2 y §11): parser
+# de request, builder de response y loop accept/handle/write. El transporte es
+# FFI (socket_shim); este módulo no usa `host_calls`.
+#
+#   srv_status.clsx  - razones HTTP
+#   srv_request.clsx - Request + parseo (query, headers, body)
+#   srv_response.clsx- Response + serialización
+#   srv_server.clsx  - read_request / handle_raw / serve
+#
+# Barrel: se expone la API pública.
+import "srv_status" as status;
+import "srv_request" as request;
+import "srv_response" as response;
+import "srv_server" as server;
+
+export { status::reason as statusReason, status::is_success as isSuccess,
+         status::is_redirect as isRedirect };
+export { request::Request as Request, request::parse_query as parseQuery,
+         request::content_length as contentLength };
+export { response::Response as Response };
+export { server::read_request as readRequest, server::handle_raw as handleRaw,
+         server::serve as serve };

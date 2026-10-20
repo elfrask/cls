@@ -1,0 +1,25 @@
+# Lib de regresion: arrow dentro de un METODO de una clase de modulo que
+# captura una variable local. La local debe promoverse al heap en el metodo
+# (igual que en una funcion top-level) para que la closure la lea por
+# referencia; antes no se promovia y la arrow desreferenciaba dos veces el
+# valor (trap WASM "indirect call type mismatch").
+export class Capturer {
+    var base: Int;
+
+    function main() {
+        me.base = 0;
+    };
+
+    function run() -> Int {
+        var step = 10;
+        var f = (x: Int) -> x + step;
+        return f(32);
+    };
+
+    function recapture() -> Int {
+        var step = 10;
+        var f = (x: Int) -> x + step;
+        step = 20;
+        return f(22);
+    };
+};

@@ -14,6 +14,7 @@
 # Barrel: se expone la API pública.
 
 import "client" as client;
+import "server" as server;
 
 export { client::connect as connect, client::connectTimeout as connectTimeout };
 export { client::sendAll as sendAll, client::sendText as sendText };
@@ -21,3 +22,4 @@ export { client::recv as recv, client::recvExact as recvExact, client::recvText 
 export { client::line as line, client::readable as readable, client::setTimeout as setTimeout };
 export { client::shutdownWrite as shutdownWrite, client::close as close };
 export { client::lastError as lastError, client::Client as Client };
+export { server::listen as listen, server::accept as accept, server::localPort as localPort };

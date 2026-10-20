@@ -184,9 +184,29 @@ impl<'a> Engine<'a> {
         // para que la mutació del closure sea visible en el scope externo (paridad
         // con el walker, que captura por referencia). Aplica también a main (que
         // puede declarar arrows locales).
-        if !is_method {
-            let mut arrows: Vec<ArrowFunctionExpr> = Vec::new();
-            collect_arrows_in_block(&f.body, &mut arrows);
+        let mut arrows: Vec<ArrowFunctionExpr> = Vec::new();
+        collect_arrows_in_block(&f.body, &mut arrows);
+        if is_method {
+            // En métodos `me` y los params NO tienen slot en el heap (son
+            // params del frame): promoverlos rompería todo acceso. Solo se
+            // promueven las locales DECLARADAS en el cuerpo (var/const/for each/
+            // with/destructure), que VarDecl ya sabe materializar como slot.
+            // Antes no se promovía nada en métodos y una arrow que capturaba
+            // una local desreferenciaba dos veces un valor (trap
+            // "indirect call type mismatch").
+            let mut declared: Vec<String> = Vec::new();
+            let mut unused_free: Vec<String> = Vec::new();
+            collect_free_vars_in_block(&f.body, &mut declared, &mut unused_free);
+            for a in &arrows {
+                if let Some(caps) = self.arrow_captures.get(&a.span) {
+                    for c in caps {
+                        if declared.contains(c) {
+                            fe.promoted.insert(c.clone());
+                        }
+                    }
+                }
+            }
+        } else {
             for a in &arrows {
                 if let Some(caps) = self.arrow_captures.get(&a.span) {
                     for c in caps {

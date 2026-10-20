@@ -17,7 +17,8 @@ socket/
 ├── cls.json
 ├── socket_shim.c      # FFI crudo (ws2_32/libc)
 ├── socket_ffi.clsx    # bindings (no público)
-├── client.clsx        # API funcional + clase `Client`
+├── client.clsx        # cliente: API funcional + clase `Client`
+├── server.clsx        # servidor: listen / accept / localPort
 ├── mod.clsx           # barrel
 └── build.ps1          # compila socket_shim.dll
 ```
@@ -39,6 +40,9 @@ Funcional:
 |---|---|
 | `connect(host, port) -> int` | conecta; handle `>=0` o `<0` error |
 | `connectTimeout(host, port, ms) -> int` | idem con timeout (`-4` = timeout) |
+| `listen(host, port, backlog=64) -> int` | socket de escucha; handle `>=0` o `<0` error (`host` vacío = 0.0.0.0) |
+| `accept(serverH) -> int` | acepta una conexión; handle del cliente o `<0` |
+| `localPort(serverH) -> int` | puerto efectivo (útil con `port=0`) |
 | `sendAll(h, buf: int[]) -> int` | envía TODOS los bytes |
 | `sendText(h, s: String) -> int` | envía texto (como bytes) |
 | `recv(h, maxLen, ms) -> int[]` | recibe hasta maxLen (`[]` en timeout/EOF) |
@@ -65,6 +69,24 @@ function main(args: String[]) -> int {
     c.writeText("GET / HTTP/1.1\r\n\r\n");
     print(c.readLine());          # primera línea de estado
     c.close();
+    return 0;
+};
+```
+
+Servidor TCP mínimo:
+
+```clx
+import "socket" as socket;
+
+function main(args: String[]) -> int {
+    var srv = socket::listen("127.0.0.1", 8080, 64);
+    if (srv < 0) { return 1; }
+    while (true) {
+        var c = socket::accept(srv);
+        if (c < 0) { continue; }
+        socket::sendText(c, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+        socket::close(c);
+    };
     return 0;
 };
 ```

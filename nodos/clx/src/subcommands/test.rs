@@ -51,20 +51,27 @@ pub fn execute(args: &[String]) -> i32 {
         .cloned()
         .collect();
 
+    // Manifiesto del CWD: aporta `testEntry` y `pathModules` (los tests deben
+    // resolver los mismos módulos que `clx run`, p.ej. `/modules` vía
+    // `pathModules`).
+    let manifest_path = cwd.join("cls.json");
+    let cwd_manifest = if manifest_path.exists() {
+        match ModuleManifest::from_file(&manifest_path) {
+            Ok(m) => Some(m),
+            Err(e) => {
+                eprintln!("Error: cls.json inválido: {}", e);
+                return 1;
+            }
+        }
+    } else {
+        None
+    };
+
     let mut from_manifest = false;
     if patterns.is_empty() {
-        let manifest_path = cwd.join("cls.json");
-        if manifest_path.exists() {
-            match ModuleManifest::from_file(&manifest_path) {
-                Ok(m) => {
-                    patterns = m.test_entry.clone();
-                    from_manifest = !patterns.is_empty();
-                }
-                Err(e) => {
-                    eprintln!("Error: cls.json inválido: {}", e);
-                    return 1;
-                }
-            }
+        if let Some(m) = &cwd_manifest {
+            patterns = m.test_entry.clone();
+            from_manifest = !patterns.is_empty();
         }
     }
 
@@ -99,6 +106,21 @@ pub fn execute(args: &[String]) -> i32 {
             println!("  {}", f.display());
         }
         return 0;
+    }
+
+    // `pathModules` (CWD + proyecto de cada test): el runner debe resolver los
+    // mismos módulos externos que `clx run` (p.ej. `/modules/httpd`).
+    let mut extra_paths: Vec<std::path::PathBuf> = Vec::new();
+    for f in &files {
+        let entry = f.to_string_lossy().to_string();
+        for p in crate::subcommands::run::collect_extra_paths(&entry, cwd_manifest.as_ref(), &[]) {
+            if !extra_paths.contains(&p) {
+                extra_paths.push(p);
+            }
+        }
+    }
+    if !extra_paths.is_empty() {
+        cls_jit::set_extra_module_paths(extra_paths);
     }
 
     println!("Ejecutando {} test(s):", files.len());

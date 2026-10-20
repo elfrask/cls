@@ -451,7 +451,7 @@ powershell -File examples/conformance/run.ps1
 powershell -File examples/cmx-templates/run.ps1
 ```
 
-Current status: `units` **83 PASS / 0 FAIL**, `availible` **24 PASS / 1 SKIP**,
+Current status: `units` **84 PASS / 0 FAIL**, `availible` **24 PASS / 1 SKIP**,
 `cargo test --workspace` **0 failed**. The JIT is the target: `--ast-walker` was
 removed (it only remains as a deprecated, ignored flag).
 

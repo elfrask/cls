@@ -132,7 +132,7 @@ fn resolve_entry(args: &[String], config: Option<&ModuleManifest>) -> String {
 ///   3. cada `--add-path-module=<path>` (o `--add-path-module <path>`).
 /// Las relativas se resuelven contra el directorio que las declara (los flags,
 /// contra el CWD). Ver `examples/patrones.md` §11.
-fn collect_extra_paths(
+pub(crate) fn collect_extra_paths(
     entry: &str,
     config: Option<&ModuleManifest>,
     args: &[String],

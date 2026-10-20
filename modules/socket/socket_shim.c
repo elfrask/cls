@@ -214,6 +214,62 @@ DL int64_t sk_connect_timeout(const char *host, int32_t port, int32_t timeout_ms
 }
 
 /* ------------------------------------------------------------------ */
+/* Servidor (listen / accept / localPort).                             */
+/* ------------------------------------------------------------------ */
+
+/* Crea un socket de escucha TCP en host:port. Devuelve el handle o <0. */
+DL int64_t sk_listen(const char *host, int32_t port, int32_t backlog) {
+    ensure_init();
+    char portstr[16];
+    snprintf(portstr, sizeof(portstr), "%d", (int)port);
+    struct addrinfo hints, *res = NULL;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+    const char *node = (host && host[0]) ? host : NULL;
+    if (getaddrinfo(node, portstr, &hints, &res) != 0 || !res) return -2;
+
+    sock_t s = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (s == SK_BAD) { freeaddrinfo(res); return -1; }
+
+#ifndef _WIN32
+    int one = 1;
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&one, sizeof(one));
+#endif
+    if (bind(s, res->ai_addr, (int)res->ai_addrlen) != 0) {
+        SK_CLOSE(s); freeaddrinfo(res); return -3;
+    }
+    if (listen(s, backlog > 0 ? backlog : 64) != 0) {
+        SK_CLOSE(s); freeaddrinfo(res); return -4;
+    }
+    freeaddrinfo(res);
+    return (int64_t)s;
+}
+
+/* Acepta una conexion. Devuelve el handle del cliente o <0. */
+DL int64_t sk_accept(int64_t h) {
+    sock_t c = accept((sock_t)h, NULL, NULL);
+    if (c == SK_BAD) return -1;
+    int one = 1;
+    setsockopt(c, IPPROTO_TCP, TCP_NODELAY, (char *)&one, sizeof(one));
+    return (int64_t)c;
+}
+
+/* Puerto local efectivo del socket (util con port=0). <0 error. */
+DL int32_t sk_local_port(int64_t h) {
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+#ifdef _WIN32
+    int len = (int)sizeof(addr);
+#else
+    socklen_t len = (socklen_t)sizeof(addr);
+#endif
+    if (getsockname((sock_t)h, (struct sockaddr *)&addr, &len) != 0) return -1;
+    return (int32_t)ntohs(addr.sin_port);
+}
+
+/* ------------------------------------------------------------------ */
 /* Envio / recepcion.                                                   */
 /* ------------------------------------------------------------------ */
 

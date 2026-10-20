@@ -10,6 +10,45 @@ when (os: windows) {
     extension "modules/socket/socket_shim.dll" as C {
         export function sk_connect(host: CString, port: CInt) -> CLong;
         export function sk_connect_timeout(host: CString, port: CInt, timeoutMs: CInt) -> CLong;
+        export function sk_listen(host: CString, port: CInt, backlog: CInt) -> CLong;
+        export function sk_accept(h: CLong) -> CLong;
+        export function sk_local_port(h: CLong) -> CInt;
+        export function sk_send(h: CLong, buf: CArray) -> CLong;
+        export function sk_shutdown_write(h: CLong) -> CLong;
+        export function sk_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;
+        export function sk_recv_exact(h: CLong, n: CInt, timeoutMs: CInt) -> CArray;
+        export function sk_readable(h: CLong, timeoutMs: CInt) -> CInt;
+        export function sk_set_timeout(h: CLong, ms: CInt) -> CLong;
+        export function sk_close(h: CLong) -> CLong;
+        export function sk_last_error() -> CString;
+    };
+};
+
+when (os: linux) {
+    extension "modules/socket/socket_shim.so" as C {
+        export function sk_connect(host: CString, port: CInt) -> CLong;
+        export function sk_connect_timeout(host: CString, port: CInt, timeoutMs: CInt) -> CLong;
+        export function sk_listen(host: CString, port: CInt, backlog: CInt) -> CLong;
+        export function sk_accept(h: CLong) -> CLong;
+        export function sk_local_port(h: CLong) -> CInt;
+        export function sk_send(h: CLong, buf: CArray) -> CLong;
+        export function sk_shutdown_write(h: CLong) -> CLong;
+        export function sk_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;
+        export function sk_recv_exact(h: CLong, n: CInt, timeoutMs: CInt) -> CArray;
+        export function sk_readable(h: CLong, timeoutMs: CInt) -> CInt;
+        export function sk_set_timeout(h: CLong, ms: CInt) -> CLong;
+        export function sk_close(h: CLong) -> CLong;
+        export function sk_last_error() -> CString;
+    };
+};
+
+when (os: macos) {
+    extension "modules/socket/socket_shim.dylib" as C {
+        export function sk_connect(host: CString, port: CInt) -> CLong;
+        export function sk_connect_timeout(host: CString, port: CInt, timeoutMs: CInt) -> CLong;
+        export function sk_listen(host: CString, port: CInt, backlog: CInt) -> CLong;
+        export function sk_accept(h: CLong) -> CLong;
+        export function sk_local_port(h: CLong) -> CInt;
         export function sk_send(h: CLong, buf: CArray) -> CLong;
         export function sk_shutdown_write(h: CLong) -> CLong;
         export function sk_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;

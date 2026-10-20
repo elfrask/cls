@@ -1,0 +1,141 @@
+# httpd/srv_request.clsx - Request HTTP/1.1 de servidor (parseo en CLS puro).
+#
+# v1: `Content-Length` (sin chunked), headers normalizados a minúsculas y
+# `Record<String, String>` (un valor por nombre; los duplicados quedan con el
+# último). El body se toma tal cual (sin decodificar form/urlencoded).
+
+# Parsea `a=1&b=2` a un record. Sin percent-decoding en v1.
+export function parse_query(qs: String) -> Record<String, String> {
+    var out: Record<String, String> = {};
+    if (qs.length == 0) {
+        return out;
+    };
+    var pairs = qs.split("&");
+    for each pair in (pairs) {
+        var kv = pair.split("=");
+        if (kv.length >= 2) {
+            out[kv[0]] = kv[1];
+        } elif (kv.length == 1) {
+            out[kv[0]] = "";
+        };
+    };
+    return out;
+}
+
+# Content-Length declarado en los headers crudos (0 si falta o es inválido).
+export function content_length(raw: String) -> int {
+    var head = raw;
+    var sep = raw.indexOf("\r\n\r\n");
+    if (sep >= 0) {
+        head = raw.slice(0, sep);
+    };
+    var lines = head.split("\r\n");
+    var i = 1;
+    while (i < lines.length) {
+        var line = lines[i];
+        var idx = line.indexOf(":");
+        if (idx > 0) {
+            var name = line.slice(0, idx).trim().lower();
+            if (name == "content-length") {
+                try {
+                    return int(line.slice(idx + 1, line.length).trim());
+                } catch (e) {
+                    return 0;
+                };
+            };
+        };
+        i = i + 1;
+    };
+    return 0;
+}
+
+export class Request {
+    public var http_method: String;
+    public var path: String;
+    public var query_string: String;
+    public var query: Record<String, String>;
+    public var headers: Record<String, String>;
+    public var body: String;
+    public var version: String;
+    # Parámetros de ruta: los rellena el Router de Tombstone.
+    public var params: Record<String, String>;
+
+    function main() {
+        me.http_method = "GET";
+        me.path = "/";
+        me.query_string = "";
+        me.query = {};
+        me.headers = {};
+        me.body = "";
+        me.version = "HTTP/1.1";
+        me.params = {};
+    }
+
+    # Parsea un request crudo (headers + body).
+    static function parse(raw: String) -> Request {
+        var req = Request();
+        var sep = raw.indexOf("\r\n\r\n");
+        var head = raw;
+        if (sep >= 0) {
+            head = raw.slice(0, sep);
+            req.body = raw.slice(sep + 4, raw.length);
+        };
+
+        var lines = head.split("\r\n");
+        if (lines.length == 0) {
+            return req;
+        };
+
+        var parts = lines[0].split(" ");
+        if (parts.length >= 2) {
+            req.http_method = parts[0];
+            var target = parts[1];
+            var q = target.indexOf("?");
+            if (q >= 0) {
+                req.path = target.slice(0, q);
+                req.query_string = target.slice(q + 1, target.length);
+                req.query = parse_query(req.query_string);
+            } else {
+                req.path = target;
+            };
+        };
+        if (parts.length >= 3) {
+            req.version = parts[2];
+        };
+
+        var i = 1;
+        while (i < lines.length) {
+            var line = lines[i];
+            var idx = line.indexOf(":");
+            if (idx > 0) {
+                var name = line.slice(0, idx).trim().lower();
+                var value = line.slice(idx + 1, line.length).trim();
+                req.headers[name] = value;
+            };
+            i = i + 1;
+        };
+        return req;
+    }
+
+    function header(name: String) -> String {
+        var key = name.lower();
+        if (me.headers.has(key)) {
+            return me.headers[key];
+        };
+        return "";
+    }
+
+    function param(name: String) -> String {
+        if (me.params.has(name)) {
+            return me.params[name];
+        };
+        return "";
+    }
+
+    function query_param(name: String) -> String {
+        if (me.query.has(name)) {
+            return me.query[name];
+        };
+        return "";
+    }
+};
