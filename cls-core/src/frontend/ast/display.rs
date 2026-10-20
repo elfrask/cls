@@ -184,7 +184,13 @@ impl fmt::Display for Statement {
             )),
             Statement::ClassDecl(c) => f.write_fmt(format_args!("class {}", c.name)),
             Statement::StructureDecl(s) => f.write_fmt(format_args!("structure {}", s.name)),
-            Statement::InterfaceDecl(i) => f.write_fmt(format_args!("interface {}", i.name)),
+            Statement::InterfaceDecl(i) => {
+                if i.extends.is_empty() {
+                    f.write_fmt(format_args!("interface {}", i.name))
+                } else {
+                    f.write_fmt(format_args!("interface {} extends ...", i.name))
+                }
+            }
             Statement::ModuleDecl(m) => f.write_fmt(format_args!("module {}", m.name)),
             Statement::NamespaceDecl(n) => f.write_fmt(format_args!("namespace {}", n.name)),
             Statement::TypeAlias(t) => f.write_fmt(format_args!("alias {} = ...", t.name)),

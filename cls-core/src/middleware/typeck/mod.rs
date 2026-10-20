@@ -27,7 +27,9 @@ use std::collections::HashMap;
 /// Definición compile-time de una interface (shapes con genéricos).
 #[derive(Clone)]
 pub(crate) struct InterfaceInfo {
+    name: String,
     type_params: Vec<TypeParam>,
+    extends: Vec<TypeAnnotation>,
     fields: HashMap<String, TypeAnnotation>,
     /// Orden de declaración de los campos (para offsets deterministas del shape).
     field_order: Vec<String>,

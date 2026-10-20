@@ -1,22 +1,79 @@
 # httpd/srv_request.clsx - Request HTTP/1.1 de servidor (parseo en CLS puro).
 #
-# v1: `Content-Length` (sin chunked), headers normalizados a minúsculas y
-# `Record<String, String>` (un valor por nombre; los duplicados quedan con el
-# último). El body se toma tal cual (sin decodificar form/urlencoded).
+# Soporta `Content-Length` (sin chunked), headers normalizados a minúsculas y:
+#   - application/json             -> `is_json` (input parsea por clave)
+#   - application/x-www-form-urlencoded -> `form`
+#   - multipart/form-data          -> `form` (campos) + `files` (archivos)
+#
+# `input(name)` prioriza body (form/JSON), luego query y params. `validate()`
+# valida los datos del request con httpd/validation.
+import "json" as json;
 
-# Parsea `a=1&b=2` a un record. Sin percent-decoding en v1.
+from "validation" import ValidationResult, Schema, validate_data;
+
+export class FormFile {
+    public var field: String;
+    public var filename: String;
+    public var content_type: String;
+    public var content: String;
+
+    function main(field: String, filename: String, content_type: String, content: String) {
+        me.field = field;
+        me.filename = filename;
+        me.content_type = content_type;
+        me.content = content;
+    }
+};
+
+function hex_value(n: int) -> int {
+    if (n >= 48 && n <= 57) { return n - 48; };
+    if (n >= 65 && n <= 70) { return n - 55; };
+    if (n >= 97 && n <= 102) { return n - 87; };
+    return -1;
+}
+
+# Decodifica `%XX` y `+` (application/x-www-form-urlencoded).
+export function url_decode(s: String) -> String {
+    var out = "";
+    var cs: Char[] = s.toChar();
+    var i = 0;
+    while (i < cs.length) {
+        var c = ord(cs[i]);
+        if (c == 43) {
+            out = out + " ";
+            i = i + 1;
+        } elif (c == 37 && i + 2 < cs.length) {
+            var hi = hex_value(ord(cs[i + 1]));
+            var lo = hex_value(ord(cs[i + 2]));
+            if (hi >= 0 && lo >= 0) {
+                out = out + char(hi * 16 + lo).toString();
+                i = i + 3;
+            } else {
+                out = out + cs[i].toString();
+                i = i + 1;
+            };
+        } else {
+            out = out + cs[i].toString();
+            i = i + 1;
+        };
+    };
+    return out;
+}
+
+# Parsea `a=1&b=2` (percent-decoding incluido).
 export function parse_query(qs: String) -> Record<String, String> {
     var out: Record<String, String> = {};
     if (qs.length == 0) {
         return out;
     };
-    var pairs = qs.split("&");
+    var pairs: String[] = qs.split("&");
     for each pair in (pairs) {
-        var kv = pair.split("=");
-        if (kv.length >= 2) {
-            out[kv[0]] = kv[1];
-        } elif (kv.length == 1) {
-            out[kv[0]] = "";
+        if (pair.length == 0) { continue; };
+        var eq = pair.indexOf("=");
+        if (eq >= 0) {
+            out[url_decode(pair.slice(0, eq))] = url_decode(pair.slice(eq + 1, pair.length));
+        } else {
+            out[url_decode(pair)] = "";
         };
     };
     return out;
@@ -29,7 +86,7 @@ export function content_length(raw: String) -> int {
     if (sep >= 0) {
         head = raw.slice(0, sep);
     };
-    var lines = head.split("\r\n");
+    var lines: String[] = head.split("\r\n");
     var i = 1;
     while (i < lines.length) {
         var line = lines[i];
@@ -49,6 +106,51 @@ export function content_length(raw: String) -> int {
     return 0;
 }
 
+function boundary_of(content_type: String) -> String {
+    var marker = "boundary=";
+    var ct = content_type;
+    var i = ct.lower().indexOf(marker);
+    if (i < 0) { return ""; };
+    var b = ct.slice(i + marker.length, ct.length).trim();
+    var semi = b.indexOf(";");
+    if (semi >= 0) { b = b.slice(0, semi).trim(); };
+    if (b.startsWith("\"") && b.endsWith("\"") && b.length >= 2) {
+        b = b.slice(1, b.length - 1);
+    };
+    return b;
+}
+
+function part_header(head: String, name: String) -> String {
+    var lines: String[] = head.split("\r\n");
+    for each line in (lines) {
+        var idx = line.indexOf(":");
+        if (idx > 0) {
+            var key = line.slice(0, idx).trim().lower();
+            if (key == name.lower()) {
+                return line.slice(idx + 1, line.length).trim();
+            };
+        };
+    };
+    return "";
+}
+
+function part_param(head: String, param: String) -> String {
+    var lines: String[] = head.split("\r\n");
+    var marker = param + "=\"";
+    for each line in (lines) {
+        if (!line.lower().startsWith("content-disposition:")) { continue; };
+        var i = line.indexOf(marker);
+        if (i < 0) { continue; };
+        var start = i + marker.length;
+        var rest = line.slice(start, line.length);
+        var rel = rest.indexOf("\"");
+        if (rel >= 0) {
+            return rest.slice(0, rel);
+        };
+    };
+    return "";
+}
+
 export class Request {
     public var http_method: String;
     public var path: String;
@@ -59,6 +161,10 @@ export class Request {
     public var version: String;
     # Parámetros de ruta: los rellena el Router de Tombstone.
     public var params: Record<String, String>;
+    # Body de formulario (urlencoded/multipart) y archivos multipart.
+    public var form: Record<String, String>;
+    public var files: FormFile[];
+    public var is_json: bool;
 
     function main() {
         me.http_method = "GET";
@@ -69,6 +175,9 @@ export class Request {
         me.body = "";
         me.version = "HTTP/1.1";
         me.params = {};
+        me.form = {};
+        me.files = [];
+        me.is_json = false;
     }
 
     # Parsea un request crudo (headers + body).
@@ -81,12 +190,12 @@ export class Request {
             req.body = raw.slice(sep + 4, raw.length);
         };
 
-        var lines = head.split("\r\n");
+        var lines: String[] = head.split("\r\n");
         if (lines.length == 0) {
             return req;
         };
 
-        var parts = lines[0].split(" ");
+        var parts: String[] = lines[0].split(" ");
         if (parts.length >= 2) {
             req.http_method = parts[0];
             var target = parts[1];
@@ -114,6 +223,7 @@ export class Request {
             };
             i = i + 1;
         };
+        parse_body(req);
         return req;
     }
 
@@ -138,4 +248,146 @@ export class Request {
         };
         return "";
     }
+
+    function content_type() -> String {
+        return me.header("content-type");
+    }
+
+    # ¿El body JSON contiene la clave? (chequeo textual para no depender de
+    # `JSON.keys()`, que el JIT no soporta).
+    function json_has(name: String) -> bool {
+        if (!me.is_json) { return false; };
+        return me.body.contains("\"" + name + "\"");
+    }
+
+    function json_input(name: String) -> String {
+        if (!me.json_has(name)) { return ""; };
+        var jd: JSON = json.parse(me.body);
+        return str(jd[name]);
+    }
+
+    # Valor de body (form/JSON), query o params de ruta (en ese orden).
+    function input(name: String) -> String {
+        if (me.form.has(name)) {
+            return me.form[name];
+        };
+        if (me.json_has(name)) {
+            return me.json_input(name);
+        };
+        if (me.query.has(name)) {
+            return me.query[name];
+        };
+        if (me.params.has(name)) {
+            return me.params[name];
+        };
+        return "";
+    }
+
+    # Datos enumerables (params + query + form). El JSON se agrega por clave de
+    # regla en `validate` porque `JSON` no expone keys en el JIT.
+    function data() -> Record<String, String> {
+        var out: Record<String, String> = {};
+        for each k in (me.params.keys()) { out[k] = me.params[k]; };
+        for each k in (me.query.keys()) { out[k] = me.query[k]; };
+        for each k in (me.form.keys()) { out[k] = me.form[k]; };
+        return out;
+    }
+
+    function all() -> Record<String, String> {
+        return me.data();
+    }
+
+    function file(name: String) -> FormFile {
+        for each f in (me.files) {
+            if (f.field == name) { return f; };
+        };
+        return FormFile("", "", "", "");
+    }
+
+    function has_file(name: String) -> bool {
+        for each f in (me.files) {
+            if (f.field == name) { return true; };
+        };
+        return false;
+    }
+    # Valida body/query/params. Devuelve errores por campo y los datos validados.
+    function validate(rules: Record<String, String>) -> ValidationResult {
+        var data = me.data();
+        if (me.is_json) {
+            var keys: String[] = rules.keys();
+            for each k in (keys) {
+                data[k] = me.json_input(k);
+                # `confirmed` usa <campo>_confirmation, que puede no estar en rules.
+                var confirmation = k + "_confirmation";
+                if (me.json_has(confirmation)) {
+                    data[confirmation] = me.json_input(confirmation);
+                };
+                # Referencias de same/different/required_if.
+                var parts: String[] = rules[k].split("|");
+                for each part in (parts) {
+                    var colon = part.indexOf(":");
+                    if (colon < 0) { continue; };
+                    var rname = part.slice(0, colon);
+                    if (rname == "same" || rname == "different" || rname == "required_if") {
+                        var arg = part.slice(colon + 1, part.length);
+                        var comma = arg.indexOf(",");
+                        var ref = arg;
+                        if (comma >= 0) { ref = arg.slice(0, comma); };
+                        if (me.json_has(ref)) { data[ref] = me.json_input(ref); };
+                    };
+                };
+            };
+        };
+        return validate_data(data, rules);
+    }
+
+    function validate_schema(schema: Schema) -> ValidationResult {
+        return me.validate(schema.rules());
+    }
 };
+
+function parse_multipart(req: Request, boundary: String) {
+    var marker = "--" + boundary;
+    var parts: String[] = req.body.split(marker);
+    for each raw in (parts) {
+        if (raw.length == 0) { continue; };
+        var part: String = raw;
+        if (part.startsWith("--")) { continue; };
+        if (part.startsWith("\r\n")) {
+            part = part.slice(2, part.length);
+        };
+        var sep = int(part.indexOf("\r\n\r\n"));
+        if (sep < 0) { continue; };
+        var head = part.slice(0, sep);
+        var content = part.slice(sep + 4, part.length);
+        if (content.endsWith("\r\n")) {
+            content = content.slice(0, content.length - 2);
+        };
+        var field = part_param(head, "name");
+        if (field == "") { continue; };
+        var filename = part_param(head, "filename");
+        if (filename != "") {
+            var ct = part_header(head, "content-type");
+            req.files.push(FormFile(field, filename, ct, content));
+        } else {
+            req.form[field] = content;
+        };
+    };
+}
+
+function parse_body(req: Request) {
+    var raw_ct = req.header("content-type");
+    var ct = raw_ct.lower();
+    if (ct.startsWith("application/x-www-form-urlencoded")) {
+        req.form = parse_query(req.body);
+    } elif (ct.startsWith("multipart/form-data")) {
+        var b = boundary_of(raw_ct);
+        if (b != "") { parse_multipart(req, b); };
+    } elif (ct.startsWith("application/json")) {
+        req.is_json = true;
+        try {
+            var _j: JSON = json.parse(req.body);
+        } catch (e) {
+        };
+    };
+}

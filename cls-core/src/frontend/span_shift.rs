@@ -384,6 +384,9 @@ pub fn shift_stmt(s: &mut Statement, offset: u32) {
             for f in &mut i.fields {
                 shift_type(&mut f.type_ann, offset);
             }
+            for parent in &mut i.extends {
+                shift_type(parent, offset);
+            }
         }
         Statement::ModuleDecl(m) => {
             m.span = shift_span(m.span.clone(), offset);

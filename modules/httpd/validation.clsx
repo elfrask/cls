@@ -1,0 +1,430 @@
+# httpd/validation.clsx - Validación de datos de request (CLS puro).
+#
+# Dos estilos, sin dependencias externas:
+#   - reglas tipo pipe:  req.validate({email: "required|email"})
+#   - builder tipo schema: V.schema({email: V.field().required().email()})
+#
+# `validate_data` trabaja sobre Record<String, String>: formularios, query y
+# params son strings; el JSON plano del Request se normaliza a strings.
+#
+# Los campos son obligatorios solo si la regla `required` está presente. Las
+# reglas se evalúan en orden y se conserva el primer error por campo.
+
+export class ValidationResult {
+    public var errors: Record<String, String>;
+    public var data: Record<String, String>;
+
+    function main(errors: Record<String, String>, data: Record<String, String>) {
+        me.errors = errors;
+        me.data = data;
+    }
+
+    function ok() -> bool { return me.errors.length == 0; }
+    function failed() -> bool { return me.errors.length > 0; }
+    function has(field: String) -> bool { return me.errors.has(field); }
+    function first(field: String) -> String {
+        if (me.errors.has(field)) {
+            return me.errors[field];
+        };
+        return "";
+    }
+    function to_json() -> JSON {
+        return {ok: me.ok(), errors: me.errors, data: me.data};
+    }
+};
+
+# ── Builder estilo schema (zod-like) ────────────────────────────────────────
+
+export class Field {
+    public var rules: String[];
+
+    function main() {
+        me.rules = [];
+    }
+
+    function add(rule: String) -> Field {
+        me.rules.push(rule);
+        return me;
+    }
+
+    function rule(rule: String) -> Field { return me.add(rule); }
+    function required() -> Field { return me.add("required"); }
+    function nullable() -> Field { return me.add("nullable"); }
+    function string() -> Field { return me.add("string"); }
+    function int() -> Field { return me.add("int"); }
+    function float() -> Field { return me.add("float"); }
+    function numeric() -> Field { return me.add("numeric"); }
+    function bool() -> Field { return me.add("bool"); }
+    function email() -> Field { return me.add("email"); }
+    function url() -> Field { return me.add("url"); }
+    function date() -> Field { return me.add("date"); }
+    function uuid() -> Field { return me.add("uuid"); }
+    function alpha() -> Field { return me.add("alpha"); }
+    function alnum() -> Field { return me.add("alnum"); }
+    function alpha_dash() -> Field { return me.add("alpha_dash"); }
+    function accepted() -> Field { return me.add("accepted"); }
+    function confirmed() -> Field { return me.add("confirmed"); }
+
+    function min(n: int) -> Field { return me.add("min:" + n.toString()); }
+    function max(n: int) -> Field { return me.add("max:" + n.toString()); }
+    function size(n: int) -> Field { return me.add("size:" + n.toString()); }
+    function between(a: int, b: int) -> Field {
+        return me.add("between:" + a.toString() + "," + b.toString());
+    }
+    function one_of(values: String[]) -> Field {
+        var out = "";
+        for each v and i in (values) {
+            if (i > 0) { out = out + ","; }
+            out = out + v;
+        };
+        return me.add("in:" + out);
+    }
+    function not_in(values: String[]) -> Field {
+        var out = "";
+        for each v and i in (values) {
+            if (i > 0) { out = out + ","; }
+            out = out + v;
+        };
+        return me.add("not_in:" + out);
+    }
+    function same(field: String) -> Field { return me.add("same:" + field); }
+    function different(field: String) -> Field { return me.add("different:" + field); }
+    function required_if(field: String, value: String) -> Field {
+        return me.add("required_if:" + field + "," + value);
+    }
+    function starts_with(prefix: String) -> Field { return me.add("starts_with:" + prefix); }
+    function ends_with(suffix: String) -> Field { return me.add("ends_with:" + suffix); }
+    function contains(text: String) -> Field { return me.add("contains:" + text); }
+
+    function to_rule() -> String {
+        var out = "";
+        for each r and i in (me.rules) {
+            if (i > 0) { out = out + "|"; }
+            out = out + r;
+        };
+        return out;
+    }
+};
+
+export function field() -> Field { return Field(); }
+
+# Envoltorio mínimo para conservar un nombre de schema. Las reglas se construyen
+# con `field()` (chainable) y se entregan como Record<String, String>.
+export class Schema {
+    public var rule_map: Record<String, String>;
+
+    function main(rules: Record<String, String>) {
+        me.rule_map = rules;
+    }
+
+    function rules() -> Record<String, String> {
+        return me.rule_map;
+    }
+};
+
+export function schema(rules: Record<String, String>) -> Schema {
+    return Schema(rules);
+}
+
+# ── Helpers ────────────────────────────────────────────────────────────────
+
+function rule_name(rule: String) -> String {
+    var i = rule.indexOf(":");
+    if (i < 0) { return rule; }
+    return rule.slice(0, i);
+}
+
+function rule_arg(rule: String) -> String {
+    var i = rule.indexOf(":");
+    if (i < 0) { return ""; }
+    return rule.slice(i + 1, rule.length);
+}
+
+function is_empty(v: String) -> bool { return v.length == 0; }
+
+function is_int(v: String) -> bool {
+    if (is_empty(v)) { return false; }
+    var cs = v.toChar();
+    var i = 0;
+    if (ord(cs[0]) == 43 || ord(cs[0]) == 45) { i = 1; };
+    if (i >= cs.length) { return false; }
+    while (i < cs.length) {
+        var n = ord(cs[i]);
+        if (n < 48 || n > 57) { return false; };
+        i = i + 1;
+    };
+    return true;
+}
+
+function is_numeric(v: String) -> bool {
+    if (is_empty(v)) { return false; }
+    var cs = v.toChar();
+    var i = 0;
+    if (ord(cs[0]) == 43 || ord(cs[0]) == 45) { i = 1; };
+    if (i >= cs.length) { return false; }
+    var digits = 0;
+    var dots = 0;
+    while (i < cs.length) {
+        var n = ord(cs[i]);
+        if (n >= 48 && n <= 57) {
+            digits = digits + 1;
+        } elif (n == 46) {
+            dots = dots + 1;
+            if (dots > 1) { return false; };
+        } else {
+            return false;
+        };
+        i = i + 1;
+    };
+    return digits > 0;
+}
+
+function is_email(v: String) -> bool {
+    if (is_empty(v) || v.contains(" ")) { return false; }
+    var at = v.indexOf("@");
+    if (at <= 0 || at >= v.length - 1) { return false; }
+    return v.slice(at + 1, v.length).indexOf(".") >= 0;
+}
+
+function is_alpha(v: String) -> bool {
+    if (is_empty(v)) { return false; }
+    for each c in (v.toChar()) {
+        var n = ord(c);
+        if (!((n >= 65 && n <= 90) || (n >= 97 && n <= 122) || n > 127)) {
+            return false;
+        };
+    };
+    return true;
+}
+
+function is_alnum(v: String) -> bool {
+    if (is_empty(v)) { return false; }
+    for each c in (v.toChar()) {
+        var n = ord(c);
+        if (!((n >= 65 && n <= 90) || (n >= 97 && n <= 122) ||
+              (n >= 48 && n <= 57) || n > 127)) {
+            return false;
+        };
+    };
+    return true;
+}
+
+function is_alpha_dash(v: String) -> bool {
+    if (is_empty(v)) { return false; }
+    for each c in (v.toChar()) {
+        var n = ord(c);
+        if (!((n >= 65 && n <= 90) || (n >= 97 && n <= 122) ||
+              (n >= 48 && n <= 57) || n == 45 || n == 95 || n > 127)) {
+            return false;
+        };
+    };
+    return true;
+}
+
+function is_digits(v: String) -> bool {
+    if (is_empty(v)) { return false; }
+    for each c in (v.toChar()) {
+        var n = ord(c);
+        if (n < 48 || n > 57) { return false; };
+    };
+    return true;
+}
+
+function is_date(v: String) -> bool {
+    if (v.length != 10) { return false; }
+    if (v[4] != "-" || v[7] != "-") { return false; }
+    return is_digits(v.slice(0, 4)) && is_digits(v.slice(5, 7)) && is_digits(v.slice(8, 10));
+}
+
+function is_uuid(v: String) -> bool {
+    if (v.length != 36) { return false; }
+    if (v[8] != "-" || v[13] != "-" || v[18] != "-" || v[23] != "-") { return false; }
+    var hex = "0123456789abcdefABCDEF";
+    for each c in (v.toChar()) {
+        if (c.toString() == "-") { continue; }
+        if (!hex.contains(c.toString())) { return false; };
+    };
+    return true;
+}
+
+function is_in(value: String, list: String) -> bool {
+    var items = list.split(",");
+    for each item in (items) {
+        if (item == value) { return true; };
+    };
+    return false;
+}
+
+function is_accepted(value: String) -> bool {
+    var v = value.lower();
+    return v == "1" || v == "true" || v == "on" || v == "yes" || v == "si";
+}
+
+function len_of(v: String) -> int { return v.length; }
+
+function num_of(v: String) -> float { return float(v); }
+
+function compare_min(v: String, n: float) -> bool {
+    if (is_numeric(v)) { return num_of(v) >= n; };
+    return len_of(v) >= int(n);
+}
+
+function compare_max(v: String, n: float) -> bool {
+    if (is_numeric(v)) { return num_of(v) <= n; };
+    return len_of(v) <= int(n);
+}
+
+# ── Motor de validación ────────────────────────────────────────────────────
+
+export function validate_data(
+    data: Record<String, String>,
+    rules: Record<String, String>
+) -> ValidationResult {
+    var errors: Record<String, String> = {};
+    var validated: Record<String, String> = {};
+    var fields: String[] = rules.keys();
+
+    for each field in (fields) {
+        var value = "";
+        if (data.has(field)) { value = data[field]; };
+        validated[field] = value;
+
+        var rule_text: String = rules[field];
+        var parts: String[] = rule_text.split("|");
+        var nullable = false;
+        for each p0 in (parts) {
+            var p: String = p0;
+            if (rule_name(p) == "nullable") { nullable = true; };
+        };
+        if (nullable && is_empty(value)) {
+            continue;
+        };
+
+        for each part0 in (parts) {
+            var part: String = part0;
+            if (errors.has(field)) { break; };
+            var name = rule_name(part);
+            var arg = rule_arg(part);
+
+            if (name == "nullable" || name == "sometimes" || name == "bail") {
+                continue;
+            } elif (name == "required") {
+                if (is_empty(value)) {
+                    errors[field] = "El campo " + field + " es obligatorio.";
+                };
+            } elif (name == "string") {
+                # Los datos de formulario/query ya son strings.
+            } elif (name == "int" || name == "integer") {
+                if (!is_int(value)) {
+                    errors[field] = "El campo " + field + " debe ser un entero.";
+                };
+            } elif (name == "float" || name == "numeric") {
+                if (!is_numeric(value)) {
+                    errors[field] = "El campo " + field + " debe ser numérico.";
+                };
+            } elif (name == "bool" || name == "boolean") {
+                var b = value.lower();
+                if (!(b == "1" || b == "0" || b == "true" || b == "false" ||
+                      b == "on" || b == "off" || b == "yes" || b == "no")) {
+                    errors[field] = "El campo " + field + " debe ser booleano.";
+                };
+            } elif (name == "email") {
+                if (!is_email(value)) {
+                    errors[field] = "El campo " + field + " debe ser un email válido.";
+                };
+            } elif (name == "url") {
+                var u = value.lower();
+                if (!(u.startsWith("http://") || u.startsWith("https://"))) {
+                    errors[field] = "El campo " + field + " debe ser una URL válida.";
+                };
+            } elif (name == "date") {
+                if (!is_date(value)) {
+                    errors[field] = "El campo " + field + " debe ser una fecha YYYY-MM-DD.";
+                };
+            } elif (name == "uuid") {
+                if (!is_uuid(value)) {
+                    errors[field] = "El campo " + field + " debe ser un UUID.";
+                };
+            } elif (name == "alpha") {
+                if (!is_alpha(value)) {
+                    errors[field] = "El campo " + field + " solo admite letras.";
+                };
+            } elif (name == "alnum") {
+                if (!is_alnum(value)) {
+                    errors[field] = "El campo " + field + " solo admite letras y números.";
+                };
+            } elif (name == "alpha_dash") {
+                if (!is_alpha_dash(value)) {
+                    errors[field] = "El campo " + field + " solo admite letras, números, - y _.";
+                };
+            } elif (name == "accepted") {
+                if (!is_accepted(value)) {
+                    errors[field] = "El campo " + field + " debe ser aceptado.";
+                };
+            } elif (name == "confirmed") {
+                var other = field + "_confirmation";
+                if (!data.has(other) || data[other] != value) {
+                    errors[field] = "La confirmación de " + field + " no coincide.";
+                };
+            } elif (name == "min") {
+                if (!compare_min(value, float(arg))) {
+                    errors[field] = "El campo " + field + " debe tener al menos " + arg + ".";
+                };
+            } elif (name == "max") {
+                if (!compare_max(value, float(arg))) {
+                    errors[field] = "El campo " + field + " debe tener como máximo " + arg + ".";
+                };
+            } elif (name == "size") {
+                if (len_of(value) != int(arg)) {
+                    errors[field] = "El campo " + field + " debe tener " + arg + " caracteres.";
+                };
+            } elif (name == "between") {
+                var b = arg.split(",");
+                if (b.length != 2) {
+                    errors[field] = "Regla between inválida.";
+                } else {
+                    if (!compare_min(value, float(b[0])) || !compare_max(value, float(b[1]))) {
+                        errors[field] = "El campo " + field + " debe estar entre " + b[0] + " y " + b[1] + ".";
+                    };
+                };
+            } elif (name == "in") {
+                if (!is_in(value, arg)) {
+                    errors[field] = "El campo " + field + " no es un valor permitido.";
+                };
+            } elif (name == "not_in") {
+                if (is_in(value, arg)) {
+                    errors[field] = "El campo " + field + " contiene un valor no permitido.";
+                };
+            } elif (name == "same") {
+                if (!data.has(arg) || data[arg] != value) {
+                    errors[field] = "El campo " + field + " debe coincidir con " + arg + ".";
+                };
+            } elif (name == "different") {
+                if (data.has(arg) && data[arg] == value) {
+                    errors[field] = "El campo " + field + " debe ser distinto de " + arg + ".";
+                };
+            } elif (name == "required_if") {
+                var p = arg.split(",");
+                if (p.length >= 2 && data.has(p[0]) && data[p[0]] == p[1] && is_empty(value)) {
+                    errors[field] = "El campo " + field + " es obligatorio.";
+                };
+            } elif (name == "starts_with") {
+                if (!value.startsWith(arg)) {
+                    errors[field] = "El campo " + field + " debe empezar con " + arg + ".";
+                };
+            } elif (name == "ends_with") {
+                if (!value.endsWith(arg)) {
+                    errors[field] = "El campo " + field + " debe terminar con " + arg + ".";
+                };
+            } elif (name == "contains") {
+                if (!value.contains(arg)) {
+                    errors[field] = "El campo " + field + " debe contener " + arg + ".";
+                };
+            } else {
+                errors[field] = "Regla de validación no soportada: " + name + ".";
+            };
+        };
+    };
+
+    return ValidationResult(errors, validated);
+}

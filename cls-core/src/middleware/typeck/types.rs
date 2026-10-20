@@ -288,16 +288,8 @@ impl TypeChecker {
                     name if self.interfaces.contains_key(name) => {
                         let info = self.interfaces[name].clone();
                         let bind = self.interface_bindings(&info, &param_types);
-                        let mut fields: Vec<(String, Type)> = info
-                            .field_order
-                            .iter()
-                            .filter_map(|fn_| info.fields.get(fn_).map(|ta| (fn_.clone(), self.resolve_annotation_with(ta, &bind))))
-                            .collect();
-                        for name_sig in &info.signature_order {
-                            if let Some(sig) = info.signatures.get(name_sig) {
-                                fields.push((name_sig.clone(), self.signature_type(sig, &bind)));
-                            }
-                        }
+                        let (mut fields, signatures) = self.interface_all_members(&info, &bind);
+                        fields.extend(signatures);
                         Type::Shape(fields)
                     }
                     _ => {
@@ -337,13 +329,14 @@ impl TypeChecker {
                     .map(|a| self.resolve_annotation_with(a, bindings))
                     .collect();
                 let b = self.interface_bindings(&info, &arg_types);
+                let (fields, signatures) = self.interface_all_members(&info, &b);
                 match access {
                     TypeAccess::Key(key) => {
-                        if let Some(ta) = info.fields.get(key) {
-                            return self.resolve_annotation_with(ta, &b);
+                        if let Some((_, ty)) = fields.iter().find(|(n, _)| n == key) {
+                            return ty.clone();
                         }
-                        if let Some(sig) = info.signatures.get(key) {
-                            return self.signature_type(sig, &b);
+                        if let Some((_, ty)) = signatures.iter().find(|(n, _)| n == key) {
+                            return ty.clone();
                         }
                         return self.error(
                             &format!("Interface '{}' no tiene miembro '{}'", name, key),
@@ -351,7 +344,8 @@ impl TypeChecker {
                         );
                     }
                     TypeAccess::Index(i) => {
-                        let order = self.interface_member_types(&info, &b);
+                        let mut order: Vec<Type> = fields.into_iter().map(|(_, t)| t).collect();
+                        order.extend(signatures.into_iter().map(|(_, t)| t));
                         return order.get(*i).cloned().unwrap_or_else(|| self.error(
                             &format!("Index '{}' fuera de rango en interface '{}'", i, name),
                             base.span.clone(),
@@ -399,14 +393,112 @@ impl TypeChecker {
     }
 
 
-    /// Tipos de los campos de una interface en orden de declaración (para acceso
-    /// por índice y offsets deterministas del shape). NO itera el HashMap: usa
-    /// `field_order` (el orden en que se declararon los campos).
-    pub(crate) fn interface_member_types(&mut self, info: &InterfaceInfo, bindings: &HashMap<String, Type>) -> Vec<Type> {
-        info.field_order.iter()
-            .filter_map(|name| info.fields.get(name).map(|ta| self.resolve_annotation_with(ta, bindings)))
-            .collect()
+    /// Campos y métodos de una interface incluyendo los heredados por `extends`.
+    /// Los padres se resuelven primero; un campo redefinido por el hijo conserva
+    /// su posición y reemplaza el tipo. `seen` evita ciclos de herencia.
+    pub(crate) fn interface_all_members(
+        &mut self,
+        info: &InterfaceInfo,
+        bindings: &HashMap<String, Type>,
+    ) -> (Vec<(String, Type)>, Vec<(String, Type)>) {
+        let mut seen = std::collections::HashSet::new();
+        self.interface_all_members_rec(info, bindings, &mut seen)
     }
+
+    fn interface_all_members_rec(
+        &mut self,
+        info: &InterfaceInfo,
+        bindings: &HashMap<String, Type>,
+        seen: &mut std::collections::HashSet<String>,
+    ) -> (Vec<(String, Type)>, Vec<(String, Type)>) {
+        if !seen.insert(info.name.clone()) {
+            return (Vec::new(), Vec::new());
+        }
+
+        let mut fields: Vec<(String, Type)> = Vec::new();
+        let mut signatures: Vec<(String, Type)> = Vec::new();
+        let mut field_pos: HashMap<String, usize> = HashMap::new();
+        let mut signature_pos: HashMap<String, usize> = HashMap::new();
+
+        for parent in &info.extends {
+            if let TypeKind::Named(parent_name, args) = &parent.kind {
+                if let Some(parent_info) = self.interfaces.get(parent_name).cloned() {
+                    let arg_types: Vec<Type> = args
+                        .iter()
+                        .map(|a| self.resolve_annotation_with(a, bindings))
+                        .collect();
+                    let parent_bind = self.interface_bindings(&parent_info, &arg_types);
+                    let (parent_fields, parent_signatures) =
+                        self.interface_all_members_rec(&parent_info, &parent_bind, seen);
+                    for (name, ty) in parent_fields {
+                        if let Some(&idx) = field_pos.get(&name) {
+                            if fields[idx].1 != ty {
+                                self.error(
+                                    &format!(
+                                        "El campo '{}' tiene tipos incompatibles en las interfaces base de '{}'",
+                                        name, info.name
+                                    ),
+                                    parent.span.clone(),
+                                );
+                            }
+                            fields[idx].1 = ty;
+                        } else {
+                            field_pos.insert(name.clone(), fields.len());
+                            fields.push((name, ty));
+                        }
+                    }
+                    for (name, ty) in parent_signatures {
+                        if let Some(&idx) = signature_pos.get(&name) {
+                            signatures[idx].1 = ty;
+                        } else {
+                            signature_pos.insert(name.clone(), signatures.len());
+                            signatures.push((name, ty));
+                        }
+                    }
+                } else {
+                    self.error(
+                        &format!(
+                            "La interface '{}' extiende '{}', que no está definida",
+                            info.name, parent_name
+                        ),
+                        parent.span.clone(),
+                    );
+                }
+            } else {
+                self.error(
+                    &format!("La interface '{}' solo puede extender interfaces", info.name),
+                    parent.span.clone(),
+                );
+            }
+        }
+
+        for name in &info.field_order {
+            if let Some(ta) = info.fields.get(name) {
+                let ty = self.resolve_annotation_with(ta, bindings);
+                if let Some(&idx) = field_pos.get(name) {
+                    fields[idx].1 = ty;
+                } else {
+                    field_pos.insert(name.clone(), fields.len());
+                    fields.push((name.clone(), ty));
+                }
+            }
+        }
+        for name in &info.signature_order {
+            if let Some(sig) = info.signatures.get(name) {
+                let ty = self.signature_type(sig, bindings);
+                if let Some(&idx) = signature_pos.get(name) {
+                    signatures[idx].1 = ty;
+                } else {
+                    signature_pos.insert(name.clone(), signatures.len());
+                    signatures.push((name.clone(), ty));
+                }
+            }
+        }
+
+        (fields, signatures)
+    }
+
+
 
 
     /// Tipo `fun(params) -> ret` de una signature, con genéricos aplicados.

@@ -2,9 +2,8 @@
 
 #[cfg(test)]
 mod tests {
-    use super::super::*;
-use crate::middleware::TypeChecker;
-use crate::config::types::TypesConfig;
+    use crate::middleware::TypeChecker;
+    use crate::config::types::TypesConfig;
     use crate::frontend::{Lexer, Parser};
     use crate::error::Diagnostic;
     use crate::error::diagnostic::Severity;
@@ -68,6 +67,34 @@ use crate::config::types::TypesConfig;
         let src = "interface H<T=Int> { num: T, }; function f() { var s: H<String>[\"num\"] = \"x\"; };";
         let d = check_source(src, true);
         assert_eq!(count_errors(&d), 0, "H<String>[\"num\"] es String: {:?}", d);
+    }
+
+    #[test]
+    fn interface_extends_inherits_fields() {
+        let src = "interface Base { id: String, }; interface Child extends Base { title: String, }; function f() { var a: Child[\"id\"] = \"x\"; var b: Child[\"title\"] = \"y\"; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "interface extends: {:?}", d);
+    }
+
+    #[test]
+    fn interface_extends_multiple_and_generic() {
+        let src = "interface A<T> { a: T, }; interface B { b: Bool, }; interface C extends A<String>, B { c: Int, }; function f() { var a: C[\"a\"] = \"x\"; var b: C[\"b\"] = true; var c: C[\"c\"] = 1; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "interface extends multiple/generic: {:?}", d);
+    }
+
+    #[test]
+    fn interface_extends_implements() {
+        let src = "interface Base { id: String, }; interface Child extends Base { title: String, }; class Card implements Child { var id: String = \"\"; var title: String = \"\"; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 0, "implements interface extends: {:?}", d);
+    }
+
+    #[test]
+    fn interface_extends_unknown_errors() {
+        let src = "interface Child extends Missing { title: String, }; function f() { var a: Child[\"title\"] = \"y\"; };";
+        let d = check_source(src, true);
+        assert_eq!(count_errors(&d), 1, "extends desconocido: {:?}", d);
     }
 
     #[test]

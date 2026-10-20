@@ -1430,7 +1430,18 @@ impl Parser {
             self.advance();
             self.expect_symbol(Symbol::RParen)?;
         }
-        
+
+        // Herencia de interfaces: `extends Base, Otra<T>`.
+        let mut extends = Vec::new();
+        if self.consume_keyword(Keyword::Extends) {
+            loop {
+                extends.push(self.parse_type_annotation()?);
+                if !self.consume_symbol(Symbol::Comma) {
+                    break;
+                }
+            }
+        }
+
         self.expect_symbol(Symbol::LBrace)?;
         
         let mut fields = Vec::new();
@@ -1475,6 +1486,7 @@ impl Parser {
             name,
             type_params,
             fields,
+            extends,
             signatures,
             span: self.span(),
             visibility: Visibility::Default,

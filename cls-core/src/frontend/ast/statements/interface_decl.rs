@@ -12,6 +12,10 @@ pub struct InterfaceDecl {
     pub type_params: Vec<TypeParam>,
     #[serde(default)]
     pub fields: Vec<InterfaceField>,
+    /// Interfaces base (`interface Hijo extends Base, Otra`). Los campos y
+    /// métodos heredados se resuelven en el typeck.
+    #[serde(default)]
+    pub extends: Vec<TypeAnnotation>,
     pub signatures: Vec<SignatureDecl>,
     pub span: Span,
     /// Visibilidad (export -> disponible en módulos importados)

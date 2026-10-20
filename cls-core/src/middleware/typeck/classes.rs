@@ -146,16 +146,15 @@ impl TypeChecker {
             }
         };
         let bind = self.interface_bindings(&info, &[]);
+        let (fields, signatures) = self.interface_all_members(&info, &bind);
         let member_types: HashMap<String, Type> = self.class_members
             .get(class_name)
             .cloned()
             .unwrap_or_default();
-        for fname in &info.field_order {
-            let Some(ta) = info.fields.get(fname) else { continue };
-            let required = self.resolve_annotation_with(ta, &bind);
+        for (fname, required) in &fields {
             let ok = member_types
                 .get(fname)
-                .map(|provided| provided.is_assignable_to(&required))
+                .map(|provided| provided.is_assignable_to(required))
                 .unwrap_or(false);
             if !ok {
                 self.error(
@@ -167,8 +166,7 @@ impl TypeChecker {
                 );
             }
         }
-        for (sig_name, sig) in &info.signatures {
-            let required_fun = self.signature_type(sig, &bind);
+        for (sig_name, required_fun) in &signatures {
             match member_types.get(sig_name) {
                 None => {
                     self.error(
@@ -180,7 +178,7 @@ impl TypeChecker {
                     );
                 }
                 Some(ret) => {
-                    if let Type::Fun(_, req_ret) = &required_fun {
+                    if let Type::Fun(_, req_ret) = required_fun {
                         if !ret.is_assignable_to(req_ret) {
                             self.error(
                                 &format!(

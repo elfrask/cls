@@ -40,7 +40,7 @@ o.insert("users", ["id", "name"], [orm::cInt(1), orm::cText("Ana")]);
 var rs = o.selectAll("users", "id");
 ```
 
-Métodos principales de `Orm`: `exec`, `query`, `begin`/`commit`/`rollback`,
+Métodos principales de `Orm`: `exec`, `query`, `queryBind`, `begin`/`commit`/`rollback`,
 `createTable`, `dropTable`, `insert`, `insertBatch`, `prepareInsert`/`bulkRow`/
 `finishInsert` (streaming), `runDml`, `selectAll`, `selectWhere`, `findById`,
 `update`, `deleteWhere`, `count`, `countWhere`, `integrity`, `engineVersion`,

@@ -79,6 +79,34 @@ print(p.nombre);
 
 Un shape es assignable a `Record<String, T>` si sus claves son `String`.
 
+### Herencia de interfaces (`extends`)
+
+Una interface puede heredar campos y métodos de una o varias interfaces:
+
+```clx
+interface Base {
+    id: String,
+};
+
+interface Labeled<T> {
+    label: T,
+};
+
+interface Card extends Base, Labeled<String> {
+    title: String,
+};
+
+var c: Card = { id: "1", label: "Hola", title: "Inicio" };
+print(c.label);   # String (heredado y sustituido)
+```
+
+- `extends A, B<T>` acepta varias bases y argumentos genéricos.
+- Los miembros heredados se fusionan; si el hijo redefine un campo, su tipo
+  reemplaza al del padre.
+- Los ciclos de herencia se ignoran (corte de recursión) y una base inexistente
+  produce error en el typeck.
+- Igual que el resto de interfaces, no genera código en runtime.
+
 ## Uniones y literal types (estilo TypeScript)
 
 ```clx

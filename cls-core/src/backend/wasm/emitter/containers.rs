@@ -2,6 +2,22 @@
 
 use super::*;
 
+/// ¿La expresión de un atributo CMX devuelve String de forma conocida?
+/// Se usa para no depender del type map cuando el span de la expresión colisiona
+/// con el del elemento CMX contenedor (bug de spans en CMX anidado).
+fn is_string_attr_expr(expr: &Expression) -> bool {
+    if let Expression::Call(c) = expr {
+        return match &*c.callee {
+            Expression::Identifier(name, _) => name == "str" || name == "toString",
+            Expression::MemberAccess(m) => {
+                matches!(m.member.as_str(), "toString" | "upper" | "lower" | "trim")
+            }
+            _ => false,
+        };
+    }
+    false
+}
+
 impl<'a> FuncEmitter<'a> {
     /// Carga un campo del CmxValue (tag/props/children) - el ptr está en el stack.
     pub(crate) fn emit_cmx_field(&mut self, offset: i64) -> ClsResult<()> {
@@ -120,7 +136,16 @@ impl<'a> FuncEmitter<'a> {
             }
             Some(CmxAttributeValue::Expression(expr)) => {
                 self.emit_expression(expr)?;
-                cmx_literal_type(expr).or_else(|| self.types.get(&expr_span(expr)).cloned())
+                // Los spans de expresiones dentro de un CMX anidado pueden
+                // colisionar con el span del elemento (Cmx) en el type map;
+                // para atributos que sabemos que devuelven String, forzamos el
+                // tipo para que el tag del valor sea String (si no, el
+                // renderer formatea el String como un Cmx vacío: `< />`).
+                if is_string_attr_expr(expr) {
+                    Some(Type::String)
+                } else {
+                    cmx_literal_type(expr).or_else(|| self.types.get(&expr_span(expr)).cloned())
+                }
             }
             Some(CmxAttributeValue::Shorthand(name)) => {
                 self.emit_ident_load(name);

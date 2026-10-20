@@ -14,11 +14,17 @@ import "srv_status" as status;
 import "srv_request" as request;
 import "srv_response" as response;
 import "srv_server" as server;
+import "validation" as validation;
 
 export { status::reason as statusReason, status::is_success as isSuccess,
          status::is_redirect as isRedirect };
-export { request::Request as Request, request::parse_query as parseQuery,
+export { request::Request as Request, request::FormFile as FormFile,
+         request::parse_query as parseQuery, request::url_decode as urlDecode,
          request::content_length as contentLength };
 export { response::Response as Response };
 export { server::read_request as readRequest, server::handle_raw as handleRaw,
          server::serve as serve };
+export { validation::ValidationResult as ValidationResult,
+         validation::Field as Field, validation::Schema as Schema,
+         validation::field as field, validation::schema as schema,
+         validation::validate_data as validateData };

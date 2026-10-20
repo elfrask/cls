@@ -92,7 +92,9 @@ impl TypeChecker {
                     .map(|s| (s.name.clone(), s.clone()))
                     .collect();
                 self.interfaces.insert(i.name.clone(), InterfaceInfo {
+                    name: i.name.clone(),
                     type_params: i.type_params.clone(),
+                    extends: i.extends.clone(),
                     fields,
                     field_order: i.fields.iter().map(|f| f.name.clone()).collect(),
                     signatures,

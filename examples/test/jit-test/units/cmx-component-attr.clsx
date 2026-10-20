@@ -1,0 +1,22 @@
+# Regresión: atributos dinámicos (`str(props.x)`) en un Cmx devuelto por un
+# componente con children Cmx anidados. Antes el type map del span colisionaba
+# con el elemento contenedor (Cmx) y el renderer formateaba el String como
+# `< />`. El emisor ahora fuerza String para `str`/`toString` en atributos CMX.
+
+function Panel(props: Record<String, Value>, children: Cmx[]) -> Cmx {
+    return (
+        <div id={str(props.id)} class={str(props.className)}>
+            <span>{str(props.title)}</span>
+        </div>
+    );
+};
+
+function main(args: String[]) -> int {
+    var node = (<Panel id="p1" className="panel" title="Hola" />);
+    var out: Cmx = node.tagCallable(node.props, node.children);
+    print("id=" + str(out.props["id"]));
+    print("class=" + str(out.props["class"]));
+    var child: Cmx = out.children[0];
+    print("child=" + child.tag);
+    return 0;
+}

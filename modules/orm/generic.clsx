@@ -17,6 +17,9 @@ export class Orm {
 
     function exec(sql: String) -> int { return me.d.exec(sql); }
     function query(sql: String) -> ResultSet { return me.d.query(sql); }
+    function queryBind(sql: String, params: Cell[]) -> ResultSet {
+        return me.d.queryBind(sql, params);
+    }
     function begin() -> int { return me.d.exec("BEGIN"); }
     function commit() -> int { return me.d.exec("COMMIT"); }
     function rollback() -> int { return me.d.exec("ROLLBACK"); }
