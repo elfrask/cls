@@ -75,6 +75,12 @@ pub struct ModuleManifest {
     #[serde(default, rename = "export", skip_serializing_if = "Option::is_none")]
     pub export_config: Option<ModuleExport>,
 
+    /// Script de setup (relativo a la raíz del paquete) que el gestor ejecuta
+    /// una sola vez al instalar el paquete por primera vez. Si no se declara,
+    /// se usa `setup.clsx` cuando existe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup: Option<String>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lockfile_version: Option<u32>,
 }
@@ -166,6 +172,7 @@ impl ModuleManifest {
             path_modules: Vec::new(),
             path_modules_natives: Vec::new(),
             export_config: None,
+            setup: None,
             lockfile_version: None,
         }
     }

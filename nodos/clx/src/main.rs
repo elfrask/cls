@@ -46,6 +46,7 @@ fn dispatch(cmd: &str, args: &[String]) -> i32 {
         "check" => subcommands::check::execute(args),
         "repl" => subcommands::repl::execute(args),
         "test" => subcommands::test::execute(args),
+        "start" => subcommands::start::execute(args),
 
         // Compilación
         "build" => subcommands::build::execute(args),
@@ -108,6 +109,7 @@ fn print_help() {
     println!("    --ast-walker              Ejecutar con el tree-walker DEPRECADO (solo referencia)");
     println!("  check [archivo|dir]         Type checking (escanea directorio si no se da archivo)");
     println!("  test [archivos|globs]       Ejecutar tests ('testEntry' de cls.json; globs permitidos)");
+    println!("  start [comando]             Shell con PATH de bins de los modulos (modules/*/bin, global)");
     println!("  repl                        REPL interactivo JIT (estado persistente entre líneas)");
     println!();
     println!("Compilación:");

@@ -12,3 +12,4 @@ pub mod info;
 pub mod ls;
 pub mod audit;
 pub mod test;
+pub mod start;

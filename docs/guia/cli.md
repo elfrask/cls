@@ -11,7 +11,7 @@ clx <subcomando> [opciones] [argumentos]
 
 | Subcomando | Estado |
 |---|---|
-| `new`, `add`, `remove`/`rm`, `install`/`i`, `ls`, `info`, `audit`, `test`, `run`, `check`, `repl`, `build`, `lsp`, `ast`, `maptype`, `clean`, `-v`/`--version`, `-h`/`--help` | Implementados |
+| `new`, `add`, `remove`/`rm`, `install`/`i`, `ls`, `info`, `audit`, `test`, `start`, `run`, `check`, `repl`, `build`, `lsp`, `ast`, `maptype`, `clean`, `-v`/`--version`, `-h`/`--help` | Implementados |
 | `login`, `publish`, `yank`, `search` | **Fase B/C** (requieren el registry) |
 | `init`, `tree`, `fmt` | **Placeholder** - imprimen "no implementado" y salen con código 1 |
 | `--quiet` | Silencia logs; se usa **antes** del subcomando: `clx --quiet run ...` |
@@ -72,6 +72,10 @@ Quita la dependencia de `cls.json` (no toca el store global).
 - **Con specs**: instala por nombre; si no está en global, lo baja del registry
   (Fase B) usando el **driver de git** (`gix`).
 - `--force` sobrescribe la versión ya instalada.
+- **Setup**: si el paquete declara `setup` (o tiene `setup.clsx`), se ejecuta una
+  sola vez por versión tras instalar. Recibe `CLS_MODULE_DIR`,
+  `CLS_MODULE_NAME`, `CLS_MODULE_VERSION`, `CLS_GLOBAL_MODULES` y
+  `CLS_GLOBAL_BIN`. Los ejecutables de `bin/` se copian a `~/.cls/bin`.
 
 ### `clx ls [-l|--local] [-g|--global]`
 
@@ -100,6 +104,17 @@ standalone en `drivers/gix-driver/`).
 Ejecuta los tests del proyecto. Sin argumentos usa `testEntry` de `cls.json`
 (array de rutas o globs, admite `*`, `**`, `?`). Cada archivo se ejecuta con el
 JIT; su exit code determina pass/fail. Ver `lenguaje/testing.md`.
+
+## `clx start [comando]`
+
+Abre una shell con el `PATH` enriquecido con los `bin/` de todos los módulos
+que resuelve el proyecto: `modules/*/bin`, `pathModules`, `~/.cls/modules` y
+`~/.cls/bin`. Sin comando abre una shell interactiva; con comando lo ejecuta:
+
+```bash
+clx start
+clx start tombstone migrate:status
+```
 
 ## `clx run [archivo] [--] [args...]`
 

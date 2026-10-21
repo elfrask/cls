@@ -290,6 +290,15 @@ fn install_local_file(p: &Path, save: bool, force: bool) -> i32 {
         dest.display()
     );
 
+    if run_setup(&dest) != 0 {
+        eprintln!("Error: el setup del paquete fallo; se conserva la instalacion.");
+        return 1;
+    }
+    if let Err(e) = install_global_bins(&dest) {
+        eprintln!("Error registrando bins globales: {}", e);
+        return 1;
+    }
+
     if save {
         if let Err(e) = save_cwd_dependency(&info.name, &info.version) {
             eprintln!("Aviso: --save no pudo actualizar cls.json: {}", e);
@@ -516,4 +525,104 @@ fn print_install_help() {
     println!();
     println!("Todo paquete se instala en ~/.cls/modules/[scope/]nombre@versión.");
     println!("Requiere 'name' y 'version' (semver) en el manifiesto del paquete.");
+}
+
+// -- setup / bins globales ---------------------------------------------------
+
+fn global_bin_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(|h| Path::new(&h).join(".cls").join("bin"))
+}
+
+/// Ejecuta `setup.clsx` (o el declarado en `setup`) una sola vez por version.
+fn run_setup(dest: &Path) -> i32 {
+    let manifest = match cls_core::config::ModuleManifest::from_file(&dest.join("cls.json")) {
+        Ok(m) => m,
+        Err(_) => return 0,
+    };
+    let script = manifest.setup.unwrap_or_else(|| "setup.clsx".to_string());
+    let script_path = if Path::new(&script).is_absolute() {
+        std::path::PathBuf::from(&script)
+    } else {
+        dest.join(&script)
+    };
+    if !script_path.is_file() {
+        return 0;
+    }
+    let marker = dest.join(".cls-setup");
+    if marker.is_file() {
+        println!("Setup ya ejecutado ({})", marker.display());
+        return 0;
+    }
+    let exe = match std::env::current_exe() {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("No se pudo localizar clx para setup: {}", e);
+            return 1;
+        }
+    };
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg("run").arg(&script_path).arg("--");
+    cmd.current_dir(dest);
+    cmd.env("CLS_MODULE_DIR", dest);
+    cmd.env("CLS_PACKAGE_ROOT", dest);
+    cmd.env("CLS_MODULE_NAME", &manifest.name);
+    cmd.env("CLS_MODULE_VERSION", &manifest.version);
+    if let Some(g) = global_bin_dir() {
+        cmd.env("CLS_GLOBAL_BIN", g);
+    }
+    if let Some(g) = packages::global_modules_dir() {
+        cmd.env("CLS_GLOBAL_MODULES", g);
+    }
+    println!("Ejecutando setup de {}@{}", manifest.name, manifest.version);
+    match cmd.status() {
+        Ok(st) if st.success() => {
+            let _ = fs::write(&marker, "ok\n");
+            0
+        }
+        Ok(st) => {
+            eprintln!("setup salio con estado {}", st);
+            1
+        }
+        Err(e) => {
+            eprintln!("No se pudo ejecutar setup: {}", e);
+            1
+        }
+    }
+}
+
+/// Copia los ejecutables del paquete a `~/.cls/bin` (PATH global del usuario).
+fn install_global_bins(dest: &Path) -> Result<(), String> {
+    let src = dest.join("bin");
+    if !src.is_dir() {
+        return Ok(());
+    }
+    let out = global_bin_dir().ok_or_else(|| "HOME/USERPROFILE no disponible".to_string())?;
+    fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+    let rd = fs::read_dir(&src).map_err(|e| e.to_string())?;
+    for entry in rd.flatten() {
+        let ft = entry.file_type().map_err(|e| e.to_string())?;
+        if !ft.is_file() {
+            continue;
+        }
+        let name = entry.file_name();
+        let n = name.to_string_lossy();
+        if n.starts_with('.') {
+            continue;
+        }
+        let to = out.join(&name);
+        fs::copy(entry.path(), &to).map_err(|e| format!("{}: {}", n, e))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = fs::metadata(&to) {
+                let mut p = meta.permissions();
+                p.set_mode(p.mode() | 0o755);
+                let _ = fs::set_permissions(&to, p);
+            }
+        }
+        println!("Bin global: {}", to.display());
+    }
+    Ok(())
 }
