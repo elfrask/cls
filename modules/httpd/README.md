@@ -81,6 +81,7 @@ curl.exe -i http://127.0.0.1:8080/
 | `Response.not_found()` | 404 listo |
 | `res.header(name, value)` | agrega/sobrescribe un header |
 | `res.set_cookie(name, value)` | `Set-Cookie: name=value; Path=/` |
+| `res.add_cookie(value)` | agrega un `Set-Cookie` completo (múltiples) |
 | `res.serialize() -> String` | status line + headers + body |
 | `readRequest(h, timeoutMs) -> String` | lee headers + body completo de un socket |
 | `handleRaw(handler, raw) -> String` | procesa un request crudo sin sockets (tests) |
@@ -123,8 +124,7 @@ Reglas: `required`, `nullable`, `string`, `int/integer`, `float/numeric`,
 
 - Solo `Content-Length`: sin `Transfer-Encoding: chunked`.
 - Una request por conexión (`Connection: close`); sin keep-alive.
-- `headers` es `Record<String, String>`: el último valor gana. `Set-Cookie`
-  múltiple queda para una fase posterior.
-- Multipart: los archivos se guardan como `String` (no hay stream binario); el
-  límite práctico lo fija `Content-Length`.
+- `headers` es `Record<String, String>`; los headers repetidos van por
+  `cookies` (`add_cookie`) para no pisarse. El resto de headers mantiene
+  el último valor.
 - El loop es bloqueante (sin `async`/`epoll`): suficiente para el MVP.

@@ -1,18 +1,20 @@
 # httpd/srv_response.clsx - Response HTTP/1.1 (builder + serializer).
 #
-# `headers` es `Record<String, String>`: un valor por nombre (los duplicados,
-# como varios Set-Cookie, se sobrescriben; se resolverá en una fase posterior).
+# `headers` es Record<String,String> para headers simples; `cookies` permite
+# varios Set-Cookie sin pisarse.
 import "srv_status" as status;
 
 export class Response {
     public var status: int;
     public var headers: Record<String, String>;
     public var body: String;
+    public var cookies: String[];
 
     function main(status: int, body: String) {
         me.status = status;
         me.body = body;
         me.headers = {};
+        me.cookies = [];
     }
 
     static function html(content: String) -> Response {
@@ -27,14 +29,12 @@ export class Response {
         return res;
     }
 
-    # JSON ya serializado (el caller lo produce; v1 no incluye un encoder global).
     static function json_raw(content: String) -> Response {
         var res = Response(200, content);
         res.headers["content-type"] = "application/json; charset=utf-8";
         return res;
     }
 
-    # Alias compatible con la API del framework (`Response.json_response`).
     static function json_response(content: String) -> Response {
         return Response.json_raw(content);
     }
@@ -60,12 +60,15 @@ export class Response {
         return me;
     }
 
-    function set_cookie(name: String, value: String) -> Response {
-        me.headers["set-cookie"] = name + "=" + value + "; Path=/";
+    function add_cookie(value: String) -> Response {
+        me.cookies.push(value);
         return me;
     }
 
-    # "HTTP/1.1 200 OK\r\n<headers>\r\n\r\n<body>"
+    function set_cookie(name: String, value: String) -> Response {
+        return me.add_cookie(name + "=" + value + "; Path=/");
+    }
+
     function serialize() -> String {
         me.headers["content-length"] = me.body.length.toString();
         me.headers["connection"] = "close";
@@ -75,6 +78,9 @@ export class Response {
         var keys = me.headers.keys();
         for each key in (keys) {
             out = out + key + ": " + me.headers[key] + "\r\n";
+        };
+        for each cookie in (me.cookies) {
+            out = out + "set-cookie: " + cookie + "\r\n";
         };
         out = out + "\r\n" + me.body;
         return out;
