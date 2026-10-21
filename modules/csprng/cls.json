@@ -1,0 +1,6 @@
+{
+  "name": "csprng",
+  "version": "0.1.0",
+  "description": "CSPRNG portatil para CLS",
+  "export": { "entry": "mod.clsx" }
+}

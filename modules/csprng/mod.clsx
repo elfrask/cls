@@ -1,0 +1,5 @@
+# csprng - CSPRNG del sistema (FFI; Windows BCrypt / unix /dev/urandom).
+
+from "./runtime" import random_bytes, random_hex, random_token;
+
+export { random_bytes, random_hex, random_token };
