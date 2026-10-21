@@ -32,6 +32,28 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: MSYS2 (Windows, gcc)
+        if: matrix.os_name == 'windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc
+
+      - name: Recursos nativos (Windows)
+        if: matrix.os_name == 'windows'
+        shell: msys2 {0}
+        run: |
+          powershell -ExecutionPolicy Bypass -File scripts/fetch-resources.ps1 -Only libargon2
+          bash modules/argon2/build.sh
+
+      - name: Recursos nativos (Linux)
+        if: matrix.os_name == 'linux'
+        shell: bash
+        run: |
+          bash scripts/fetch-resources.sh libargon2
+          bash modules/argon2/build.sh
+
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:

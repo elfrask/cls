@@ -1,0 +1,20 @@
+# argon2/argon2_runtime.clsx - API publica de Argon2id.
+from "./argon2_ffi" import o_hash, o_verify, o_needs_rehash;
+
+const T_COST: int = 2;
+const M_KIB: int = 19456; # 19 MiB (OWASP)
+const PARALLELISM: int = 1;
+const HASH_LEN: int = 32;
+
+export function hash_encoded(password: String, salt_hex: String) -> String {
+    return o_hash(password, salt_hex, T_COST, M_KIB, PARALLELISM, HASH_LEN);
+}
+
+export function verify(encoded: String, password: String) -> bool {
+    return int(o_verify(encoded, password)) == 1;
+}
+
+export function needs_rehash(encoded: String) -> bool {
+    return int(o_needs_rehash(encoded, T_COST, M_KIB, PARALLELISM)) == 1;
+}
+

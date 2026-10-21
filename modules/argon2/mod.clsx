@@ -1,0 +1,5 @@
+# argon2 - Argon2id (libargon2 compilado dentro del shim).
+
+from "./argon2_runtime" import hash_encoded, verify, needs_rehash;
+
+export { hash_encoded as hash_encoded, verify as verify, needs_rehash as needs_rehash };

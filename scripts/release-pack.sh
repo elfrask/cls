@@ -59,8 +59,23 @@ cp "$ROOT/bindings/js/lib/loader.js" "$JS_DIR/lib/"
 cp "$REL/$NATIVE_LIB" "$JS_DIR/lib/"
 (cd "$JS_DIR" && "$ZIP" . "../clsb-js-$OS.zip")
 
+# 2.5 Modulo nativo argon2 (libargon2 estatico en el shim)
+ARGON2_DIR="$OUT/native-modules/argon2"
+mkdir -p "$ARGON2_DIR"
+cp "$ROOT/modules/argon2/cls.json" "$ARGON2_DIR/"
+cp "$ROOT/modules/argon2/mod.clsx" "$ARGON2_DIR/"
+cp "$ROOT/modules/argon2/argon2_runtime.clsx" "$ARGON2_DIR/"
+cp "$ROOT/modules/argon2/argon2_ffi.clsx" "$ARGON2_DIR/"
+cp "$ROOT/modules/argon2/README.md" "$ARGON2_DIR/"
+case "$OS" in
+    windows) cp "$ROOT/modules/argon2/argon2_shim.dll" "$ARGON2_DIR/" ;;
+    linux)   cp "$ROOT/modules/argon2/argon2_shim.so" "$ARGON2_DIR/" ;;
+    macos)   cp "$ROOT/modules/argon2/argon2_shim.dylib" "$ARGON2_DIR/" ;;
+esac
+(cd "$ARGON2_DIR" && "$ZIP" . "../../argon2-$OS.zip")
+
 # Limpieza de dirs de trabajo (solo quedan los zips y binarios)
-rm -rf "$PORTABLE_DIR" "$C_DIR" "$PY_DIR" "$JS_DIR"
+rm -rf "$PORTABLE_DIR" "$C_DIR" "$PY_DIR" "$JS_DIR" "$ARGON2_DIR"
 
 echo "=== Artefactos $OS ==="
 ls -lh "$OUT"

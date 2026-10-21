@@ -1,0 +1,28 @@
+# argon2/argon2_ffi.clsx - Bindings FFI al shim estatico de libargon2.
+
+when (os: windows) {
+    extension "./argon2_shim.dll" as C {
+        export function o_hash(password: CString, salt_hex: CString, t: CInt, m: CInt, p: CInt, len: CInt) -> CString;
+        export function o_verify(encoded: CString, password: CString) -> CInt;
+        export function o_needs_rehash(encoded: CString, t: CInt, m: CInt, p: CInt) -> CInt;
+        export function o_error() -> CString;
+    };
+};
+
+when (os: linux) {
+    extension "./argon2_shim.so" as C {
+        export function o_hash(password: CString, salt_hex: CString, t: CInt, m: CInt, p: CInt, len: CInt) -> CString;
+        export function o_verify(encoded: CString, password: CString) -> CInt;
+        export function o_needs_rehash(encoded: CString, t: CInt, m: CInt, p: CInt) -> CInt;
+        export function o_error() -> CString;
+    };
+};
+
+when (os: macos) {
+    extension "./argon2_shim.dylib" as C {
+        export function o_hash(password: CString, salt_hex: CString, t: CInt, m: CInt, p: CInt, len: CInt) -> CString;
+        export function o_verify(encoded: CString, password: CString) -> CInt;
+        export function o_needs_rehash(encoded: CString, t: CInt, m: CInt, p: CInt) -> CInt;
+        export function o_error() -> CString;
+    };
+};

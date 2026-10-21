@@ -1,0 +1,55 @@
+name: Native modules
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  argon2:
+    name: argon2 (${{ matrix.os_name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            os_name: windows
+          - os: ubuntu-latest
+            os_name: linux
+          - os: macos-latest
+            os_name: macos
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: MSYS2 (Windows, gcc)
+        if: matrix.os_name == 'windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc
+
+      - name: Recursos nativos (Windows)
+        if: matrix.os_name == 'windows'
+        shell: msys2 {0}
+        run: |
+          powershell -ExecutionPolicy Bypass -File scripts/fetch-resources.ps1 -Only libargon2
+          bash modules/argon2/build.sh
+
+      - name: Recursos nativos (Linux/macOS)
+        if: matrix.os_name != 'windows'
+        shell: bash
+        env:
+          CC: ${{ matrix.os_name == 'macos' && 'clang' || 'gcc' }}
+        run: |
+          bash scripts/fetch-resources.sh libargon2
+          bash modules/argon2/build.sh
+
+      - name: Subir shim
+        uses: actions/upload-artifact@v4
+        with:
+          name: argon2-${{ matrix.os_name }}
+          path: modules/argon2/argon2_shim.*
+          if-no-files-found: error

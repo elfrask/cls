@@ -1,0 +1,9 @@
+{
+  "libargon2": {
+    "version": "20190702",
+    "url": "https://github.com/P-H-C/phc-winner-argon2/archive/refs/tags/20190702.zip",
+    "sha256": "506a80b90ac3ca8407636f3b26b7fed87a55f2f1275cde850cd6698903c4f008",
+    "archive": "argon2-20190702.zip",
+    "extract_dir": "phc-winner-argon2-20190702"
+  }
+}
