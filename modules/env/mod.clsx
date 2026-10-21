@@ -1,0 +1,110 @@
+# env - carga de archivos .env (CLS puro + io FFI).
+#
+#   import "env" as env;
+#   var e = env.load(".env");
+#   var db = e.get("TOMBSTONE_DB");
+#
+# No modifica el entorno del proceso: devuelve un `Env` con los valores.
+# Las variables del sistema siguen disponibles via `system_env`.
+import "io" as io;
+
+export class Env {
+    public var path: String;
+    public var values: Record<String, String>;
+
+    function main(path: String, values: Record<String, String>) {
+        me.path = path;
+        me.values = values;
+    }
+
+    function has(name: String) -> bool {
+        return me.values.has(name);
+    }
+
+    function get(name: String) -> String {
+        if (me.values.has(name)) { return me.values[name]; };
+        return "";
+    }
+
+    function get_int(name: String) -> int {
+        return int(me.get(name));
+    }
+
+    function get_bool(name: String) -> bool {
+        var v = me.get(name).lower();
+        return v == "1" || v == "true" || v == "yes" || v == "on";
+    }
+
+    function require(name: String) -> String {
+        if (!me.has(name)) {
+            throw("env: falta la variable " + name + " en " + me.path);
+        };
+        return me.values[name];
+    }
+
+    function set(name: String, value: String) -> Env {
+        me.values[name] = value;
+        return me;
+    }
+
+    function all() -> Record<String, String> {
+        return me.values;
+    }
+};
+
+export { Env };
+
+function unquote(value: String) -> String {
+    if (value.length >= 2) {
+        if (value.startsWith("\"") && value.endsWith("\"")) {
+            return value.slice(1, value.length - 1);
+        };
+        if (value.startsWith("'") && value.endsWith("'")) {
+            return value.slice(1, value.length - 1);
+        };
+    };
+    return value;
+}
+
+function strip_comment(value: String) -> String {
+    if (value.startsWith("\"") || value.startsWith("'")) { return value; };
+    var n = value.indexOf("#");
+    if (n >= 0) { return value.slice(0, n).trim(); };
+    return value;
+}
+
+export function parse(text: String, path: String) -> Env {
+    var values: Record<String, String> = {};
+    var lines: String[] = text.split("\n");
+    for each raw in (lines) {
+        var line = raw.trim();
+        if (line.length == 0) { continue; };
+        if (line.startsWith("#")) { continue; };
+        if (line.startsWith("export ")) { line = line.slice(7, line.length).trim(); };
+        var eq = line.indexOf("=");
+        if (eq <= 0) { continue; };
+        var key = line.slice(0, eq).trim();
+        var value = line.slice(eq + 1, line.length).trim();
+        value = strip_comment(value).trim();
+        values[key] = unquote(value);
+    };
+    return Env(path, values);
+}
+
+export function load(path: String) -> Env {
+    if (io::exists(path) == 0) { return Env(path, {}); };
+    return parse(io::readText(path), path);
+}
+
+export function load_default() -> Env {
+    return load(".env");
+}
+
+export function merge(base: Env, override: Env) -> Env {
+    var values: Record<String, String> = {};
+    var keys: String[] = base.values.keys();
+    for each k in (keys) { values[k] = base.values[k]; };
+    keys = override.values.keys();
+    for each k in (keys) { values[k] = override.values[k]; };
+    return Env(override.path, values);
+}

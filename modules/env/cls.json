@@ -1,0 +1,8 @@
+{
+  "name": "env",
+  "version": "0.1.0",
+  "description": "Carga de archivos .env (variables de configuración)",
+  "export": {
+    "entry": "mod.clsx"
+  }
+}
