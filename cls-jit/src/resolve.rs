@@ -418,7 +418,7 @@ pub fn load_import_modules_hooked(
                             &span,
                         )
                     })?;
-                let m = cls_core::frontend::Parser::new(toks).parse().map_err(|e| {
+                let mut m = cls_core::frontend::Parser::new(toks).parse().map_err(|e| {
                     ClsError::compile_at(
                         &format!(
                             "El módulo '{}' ({}) tiene un error de sintaxis: {}",
@@ -433,6 +433,25 @@ pub fn load_import_modules_hooked(
                 // Aislamiento de módulo: si el directorio del módulo tiene su
                 // propio `cls.json` con sección `export`, sus imports internos
                 // se resuelven desde esa raíz (no desde el proyecto principal).
+                let pkg_start = candidate.parent().unwrap_or(base_dir);
+                let pkg_root = crate::native_resolve::module_root(pkg_start, base_dir);
+                let pkg_manifest = cls_core::config::ModuleManifest::find_in_dir(&pkg_root);
+                crate::native_resolve::resolve_module_natives(
+                    &mut m,
+                    &pkg_root,
+                    pkg_manifest.as_ref(),
+                )
+                .map_err(|e| {
+                    ClsError::compile_at(
+                        &format!(
+                            "El modulo '{}' ({}) tiene una extension nativa invalida: {}",
+                            path,
+                            candidate.display(),
+                            e
+                        ),
+                        &span,
+                    )
+                })?;
                 let (mod_base, mod_manifest) = match candidate.parent() {
                     Some(d) if module_has_export(d) => {
                         let mb = d.to_path_buf();
@@ -458,12 +477,16 @@ pub fn load_import_modules_hooked(
                                     &span,
                                 )
                             })?;
-                        let m = cls_core::frontend::Parser::new(toks).parse().map_err(|e| {
+                        let mut m = cls_core::frontend::Parser::new(toks).parse().map_err(|e| {
                             ClsError::compile_at(
                                 &format!("El módulo '{}' (hook del nodo) tiene un error de sintaxis: {}", path, e),
                                 &span,
                             )
                         })?;
+                        let hook_root = crate::native_resolve::module_root(base_dir, base_dir);
+                        crate::native_resolve::resolve_module_natives(
+                            &mut m, &hook_root, manifest
+                        )?;
                         let key = format!("hook:{}", path);
                         seen.insert(key);
                         load_import_modules_hooked(&m, base_dir, seen, out, manifest, hook)?;

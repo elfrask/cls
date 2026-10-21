@@ -7,7 +7,7 @@
 # al archivo .clsx. Por eso hay que correr desde la raíz del repo (ver README).
 
 when (os: windows) {
-    extension "modules/socket/socket_shim.dll" as C {
+    extension "./socket_shim.dll" as C {
         export function sk_connect(host: CString, port: CInt) -> CLong;
         export function sk_connect_timeout(host: CString, port: CInt, timeoutMs: CInt) -> CLong;
         export function sk_listen(host: CString, port: CInt, backlog: CInt) -> CLong;
@@ -25,7 +25,7 @@ when (os: windows) {
 };
 
 when (os: linux) {
-    extension "modules/socket/socket_shim.so" as C {
+    extension "./socket_shim.so" as C {
         export function sk_connect(host: CString, port: CInt) -> CLong;
         export function sk_connect_timeout(host: CString, port: CInt, timeoutMs: CInt) -> CLong;
         export function sk_listen(host: CString, port: CInt, backlog: CInt) -> CLong;
@@ -43,7 +43,7 @@ when (os: linux) {
 };
 
 when (os: macos) {
-    extension "modules/socket/socket_shim.dylib" as C {
+    extension "./socket_shim.dylib" as C {
         export function sk_connect(host: CString, port: CInt) -> CLong;
         export function sk_connect_timeout(host: CString, port: CInt, timeoutMs: CInt) -> CLong;
         export function sk_listen(host: CString, port: CInt, backlog: CInt) -> CLong;

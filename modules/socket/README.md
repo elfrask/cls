@@ -29,8 +29,7 @@ socket/
 powershell -File modules\socket\build.ps1   # requiere gcc (MinGW-w64 x64)
 ```
 
-> El FFI resuelve la ruta del `.dll` relativa al **CWD**: correr desde la raíz del
-> repo.
+> El FFI resuelve la ruta del `.dll` contra la raíz del paquete; ya no depende del CWD.
 
 ## API
 

@@ -22,7 +22,24 @@ Toda la configuración de un proyecto vive en `cls.json`
 | `devDependencies` | map | `{}` | Dependencias de desarrollo (renombrada de `devDependencies`) |
 | `testEntry` | string[] | `[]` | Archivos/globs de test para `clx test` (p.ej. `["tests/**/*.clsx"]`) |
 | `pathModules` | string[] | `[]` | Rutas adicionales de búsqueda de módulos (equivale a `clx run --add-path-module`). Relativas a la raíz del proyecto. Ver `examples/patrones.md` §11 |
+| `pathModulesNatives` | string[] | `[]` | Rutas de búsqueda de librerías nativas (`extension`). Relativas a la raíz del módulo/proyecto; cada manifiesto tiene su propio alcance. Sin variables de entorno |
 | `lockfileVersion` | number | ausente | Versión del lockfile |
+
+### `pathModulesNatives`
+
+Cada `cls.json` puede declarar rutas para sus propios assets nativos:
+
+```json
+{
+  "pathModulesNatives": ["native", "../shared-native"]
+}
+```
+
+- Se resuelven contra la raíz de ese `cls.json`, no contra el CWD.
+- `./foo.dll` busca primero la raíz del paquete y luego estas rutas; si no existe, es error.
+- Un nombre simple (`foo.dll`) busca en la raíz y en estas rutas; si no aparece, se deja al loader del SO.
+- El proyecto y cada módulo tienen su propia lista: no se mezclan.
+- `clx build` copia los binarios a `dist/native-libs/<paquete>@<version>/` conservando sus nombres.
 
 ### `project`
 

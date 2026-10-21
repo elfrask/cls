@@ -8,7 +8,7 @@
 # al archivo .clsx. Por eso hay que correr desde la raíz del repo (ver README).
 
 when (os: windows) {
-    extension "modules/net/net_shim.dll" as C {
+    extension "./net_shim.dll" as C {
         export function u_open(ip: CString, port: CInt) -> CLong;
         export function u_send(h: CLong, buf: CArray) -> CLong;
         export function u_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;
@@ -24,7 +24,7 @@ when (os: windows) {
 };
 
 when (os: linux) {
-    extension "modules/net/net_shim.so" as C {
+    extension "./net_shim.so" as C {
         export function u_open(ip: CString, port: CInt) -> CLong;
         export function u_send(h: CLong, buf: CArray) -> CLong;
         export function u_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;
@@ -40,7 +40,7 @@ when (os: linux) {
 };
 
 when (os: macos) {
-    extension "modules/net/net_shim.dylib" as C {
+    extension "./net_shim.dylib" as C {
         export function u_open(ip: CString, port: CInt) -> CLong;
         export function u_send(h: CLong, buf: CArray) -> CLong;
         export function u_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;

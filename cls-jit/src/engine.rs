@@ -121,7 +121,11 @@ pub fn run_jit_with_opts(
     // Clave de caché: source + versión + target + sources de módulos + runtime
     // (wasmtime y wasmi emiten bytes distintos: el tag de excepciones) + el
     // máximo de memoria (cambia la sección memory del WASM).
-    let module_sources: Vec<String> = imports.iter().map(|(_, src, _)| src.clone()).collect();
+    let mut module_sources: Vec<String> = imports.iter().map(|(_, src, _)| src.clone()).collect();
+    module_sources.extend(crate::native_resolve::resolved_native_libraries(&module));
+    for (_, _, m) in &imports {
+        module_sources.extend(crate::native_resolve::resolved_native_libraries(m));
+    }
     let memory_max_pages = memory_max_pages_from_limit(crate::limits::memory_limit());
     let key = cache_key(
         &source,

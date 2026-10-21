@@ -20,4 +20,8 @@ pub struct NativeInfo {
     /// declaración; se conserva separado para que el rename de la exportación
     /// (`export { strlen as len }`) no cambie el símbolo C.
     pub symbol: String,
+    /// Ruta absoluta de un asset del paquete (resuelta antes del flatten).
+    /// `None` = librería del sistema (el loader del SO decide).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_library: Option<String>,
 }

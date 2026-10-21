@@ -53,9 +53,7 @@ copia de `sqlite3.dll` junto al shim basta; `CLS_SQLITE_PATH` es respaldo.
 
 ## Limitaciones conocidas
 
-- **La ruta del `.dll` FFI es relativa al CWD**, no al archivo `.clsx`. La
-  declaración `extension "modules/sqlite/sqlite_shim.dll"` se resuelve desde el
-  directorio de trabajo, así que hay que ejecutar desde la **raíz del repo** (o
-  ajustar la ruta). Documentado en `docs/lenguaje/extension.md`.
+- **La ruta del `.dll` FFI se resuelve contra la raíz del paquete**, no contra el CWD.
+  `extension "./sqlite_shim.dll"` se busca en el `cls.json` del módulo.
 - **Callbacks C→CLS** (`sqlite3_exec` con callback): no expresables hoy (no hay
   *function pointers* en el FFI). Ver `examples/sqlite-orm/findings/06`.

@@ -29,8 +29,7 @@ Requiere `modules/socket` compilado:
 powershell -File modules\socket\build.ps1
 ```
 
-> El FFI de `socket` resuelve la ruta del `.dll` relativa al **CWD**: para el
-> servidor hay que correr desde la raíz del repo CLS.
+> El FFI de `socket` resuelve la ruta del `.dll` contra la raíz del paquete; ya no depende del CWD.
 
 ## Uso
 

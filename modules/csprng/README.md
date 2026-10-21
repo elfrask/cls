@@ -6,9 +6,8 @@ determinista (`modules/prng`), que **no** es apto para seguridad.
 - Windows: `BCryptGenRandom` (`bcrypt.dll`).
 - Linux/macOS: lectura completa de `/dev/urandom`.
 - API: `random_bytes(n) -> int[]`, `random_hex(n)`, `random_token(n)`.
-- El shim vive en `modules/csprng/random_shim.dll` (Windows) y se resuelve
-  relativo al CWD, igual que `sqlite`/`socket`/`io`: ejecutar desde la raíz del
-  repo CLS.
+- El shim vive en `modules/csprng/random_shim.dll` y se resuelve contra la
+  raíz del paquete (`cls.json`), no contra el CWD.
 
 ## Compilar el shim (Windows)
 

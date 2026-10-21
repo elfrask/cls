@@ -1727,7 +1727,7 @@ impl Parser {
                     let stmt = self.parse_function_decl()?;
                     if let Statement::FunctionDecl(mut f) = stmt {
                         if is_export { f.visibility = Visibility::Export; }
-                        f.native = Some(NativeInfo { library: library.clone(), kind: kind.clone(), symbol: f.name.clone() });
+                        f.native = Some(NativeInfo { library: library.clone(), kind: kind.clone(), symbol: f.name.clone(), resolved_library: None });
                         declarations.push(Statement::FunctionDecl(f));
                     }
                 }
@@ -1735,7 +1735,7 @@ impl Parser {
                     let stmt = self.parse_structure_decl()?;
                     if let Statement::StructureDecl(mut s) = stmt {
                         if is_export { s.visibility = Visibility::Export; }
-                        s.native = Some(NativeInfo { library: library.clone(), kind: kind.clone(), symbol: s.name.clone() });
+                        s.native = Some(NativeInfo { library: library.clone(), kind: kind.clone(), symbol: s.name.clone(), resolved_library: None });
                         declarations.push(Statement::StructureDecl(s));
                     }
                 }
@@ -1743,7 +1743,7 @@ impl Parser {
                     let stmt = self.parse_var_decl()?;
                     if let Statement::VarDecl(mut v) = stmt {
                         if is_export { v.visibility = Visibility::Export; }
-                        v.native = Some(NativeInfo { library: library.clone(), kind: kind.clone(), symbol: v.name.clone() });
+                        v.native = Some(NativeInfo { library: library.clone(), kind: kind.clone(), symbol: v.name.clone(), resolved_library: None });
                         declarations.push(Statement::VarDecl(v));
                     }
                 }

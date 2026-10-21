@@ -8,7 +8,7 @@
 # El shim autolocaliza `sqlite3.dll` (junto a él, en `%CLS_SQLITE_PATH%` o PATH).
 
 when (os: windows) {
-    extension "modules/sqlite/sqlite_shim.dll" as C {
+    extension "./sqlite_shim.dll" as C {
         export function o_init() -> CLong;
         export function o_version(_d: CString) -> CString;
         export function o_error(_d: CString) -> CString;

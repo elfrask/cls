@@ -9,7 +9,7 @@
 # README).
 
 when (os: windows) {
-    extension "modules/io/io_shim.dll" as C {
+    extension "./io_shim.dll" as C {
         export function o_read_text(path: CString) -> CString;
         export function o_read_bytes(path: CString) -> CArray;
         export function o_write_text(path: CString, data: CString) -> CLong;

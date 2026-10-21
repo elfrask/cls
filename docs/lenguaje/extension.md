@@ -182,12 +182,14 @@ nativa, sin recompilar el core), ver [extension-when.md](extension-when.md).
 | `libm` / `m` | `msvcrt.dll` | `libm.so.6` | `libSystem.B.dylib` |
 
 - Las librerías se cachean por path (no se re-abren por llamada).
-- **Resolución de la ruta**: un string que no sea un nombre conocido se pasa
-  tal cual al cargador (`LoadLibraryExW`/`dlopen`). Una ruta **relativa** se
-  resuelve respecto al **directorio de trabajo (CWD)**, no al archivo `.clsx`
-  que la declara ni a la carpeta del módulo. Para módulos FFI reutilizables usa
-  una **ruta absoluta** o documenta el CWD requerido (limitación conocida; ver
-  `examples/brainfuck/README.md`).
+- **Resolución de la ruta**: una ruta relativa (`./...` o `../...`) se
+  resuelve contra la **raíz del paquete** (el `cls.json` del módulo/proyecto
+  que declara la extensión), y luego contra cada `pathModulesNatives` de ese
+  mismo `cls.json`. Un nombre simple busca en esas rutas y, si no existe, se
+  deja al loader del SO (`LoadLibraryExW`/`dlopen`). Ya no depende del CWD.
+- Cada manifiesto tiene su propio `pathModulesNatives`; no se mezcla con el de
+  otros módulos. Ver `docs/guia/configuracion.md`. El build copia los binarios
+  a `dist/native-libs/<paquete>@<version>/` conservando sus nombres.
 - **`CString` de retorno**: **byte-transparente** (los bytes del `char*` se
   copian tal cual a la memoria del módulo, sin normalizar UTF-8 a U+FFFD). Se
   corta en el primer byte `NUL` (semántica de string C, no un bug). Para

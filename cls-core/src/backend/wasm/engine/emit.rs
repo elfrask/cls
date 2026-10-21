@@ -330,8 +330,12 @@ impl<'a> Engine<'a> {
                     Some(total) => format!("S{}", total),
                     None => rc.to_string(),
                 };
+                let library = info
+                    .resolved_library
+                    .as_deref()
+                    .unwrap_or(info.library.as_str());
                 let import_name =
-                    format!("{}__{}{}@{}", info.symbol, rc_code, params_code, info.library);
+                    format!("{}__{}{}@{}", info.symbol, rc_code, params_code, library);
                 let idx = if let Some(&existing) = native_import_idx.get(&import_name) {
                     existing
                 } else {

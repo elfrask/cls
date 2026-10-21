@@ -18,6 +18,7 @@ pub mod error;
 pub mod flatten;
 pub mod host;
 pub mod limits;
+pub mod native_resolve;
 pub mod repl;
 pub mod resolve;
 pub mod runtime_config;

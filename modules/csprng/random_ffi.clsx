@@ -4,13 +4,13 @@
 # io/sqlite/socket): ejecutar desde la raíz del repo CLS.
 
 when (os: windows) {
-    extension "modules/csprng/random_shim.dll" as C {
+    extension "./random_shim.dll" as C {
         export function o_random_bytes(n: CInt) -> CArray;
     };
 };
 
 when (os: linux) or (os: macos) {
-    extension "modules/csprng/random_shim.so" as C {
+    extension "./random_shim.so" as C {
         export function o_random_bytes(n: CInt) -> CArray;
     };
 };

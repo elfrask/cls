@@ -75,9 +75,8 @@ import "io" as io;
 
 ## Limitaciones conocidas
 
-- **La ruta del `.dll` FFI es relativa al CWD**, no al archivo `.clsx`. La
-  declaración `extension "modules/io/io_shim.dll"` se resuelve desde el
-  directorio de trabajo, así que hay que ejecutar desde la **raíz del repo**.
+- **La ruta del `.dll` FFI se resuelve contra la raíz del paquete**, no contra el CWD.
+  `extension "./io_shim.dll"` se busca en el `cls.json` del módulo.
 - `writeText`/`appendText`/`writeFd` escriben hasta el primer byte NUL
   (los datos viajan como `CString`). Para bytes con NUL usar `readBytes` y un
   future `writeBytes` con `CArray`.

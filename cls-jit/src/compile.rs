@@ -138,11 +138,16 @@ fn compile_module(
     checker.register_host_intrinsics(ctx.host_intrinsics);
 
     // Resolver imports (errores con los candidatos probados + hook del nodo).
+    let entry_root = crate::native_resolve::module_root(base_dir, base_dir);
+    let manifest = cls_core::config::ModuleManifest::find_in_dir(&entry_root);
+    let mut module = module.clone();
+    crate::native_resolve::resolve_module_natives(
+        &mut module, &entry_root, manifest.as_ref()
+    )?;
     let mut seen = std::collections::HashSet::new();
     let mut imports: Vec<(String, String, ClsModule)> = Vec::new();
-    let manifest = cls_core::config::ModuleManifest::find_in_dir(base_dir);
     load_import_modules_hooked(
-        module,
+        &module,
         base_dir,
         &mut seen,
         &mut imports,
@@ -159,7 +164,7 @@ fn compile_module(
         .iter()
         .map(|(p, _, m)| (p.clone(), m.clone()))
         .collect();
-    checker.check_with_prelude(module, &prelude)?;
+    checker.check_with_prelude(&module, &prelude)?;
 
     // Diagnostics de tipo -> error estructurado (el primero).
     for diag in checker.diagnostics() {
@@ -173,7 +178,7 @@ fn compile_module(
         Some(tt) => cls_core::frontend::ast::Target::parse(tt),
         None => cls_core::frontend::ast::Target::host(),
     };
-    let merged = flatten_imports(module, &prelude);
+    let merged = flatten_imports(&module, &prelude);
     let backend_opts = cls_core::backend::wasm::WasmBackendOptions {
         exceptions: matches!(opts.runtime, RuntimeKind::Wasmtime),
         require_main: opts.require_main,
