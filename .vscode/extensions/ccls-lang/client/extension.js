@@ -17,15 +17,18 @@ async function activate(context) {
     const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath;
     const clxPath = findClx(flags.serverPath);
     const useStaticTypes = !flags.lspServer && flags.useStaticTypes;
+    let languageClient = null;
 
     // ─── Lanzar el servidor LSP ─────────────────────────────────────────
     if (flags.lspServer) {
         if (clxPath) {
             // No bloqueamos la activación esperando el handshake.
-            startLanguageServer(clxPath, context, flags).catch(err => {
-                console.error('[cls] Error al iniciar LSP:', err);
-                vscode.window.showErrorMessage(`No se pudo iniciar el LSP de CLS: ${err.message || err}`);
-            });
+            startLanguageServer(clxPath, context, flags)
+                .then(client => { languageClient = client; })
+                .catch(err => {
+                    console.error('[cls] Error al iniciar LSP:', err);
+                    vscode.window.showErrorMessage(`No se pudo iniciar el LSP de CLS: ${err.message || err}`);
+                });
         } else {
             console.log('[cls] clx no encontrado; el servidor LSP no se iniciará');
             vscode.window.showWarningMessage(
@@ -35,6 +38,35 @@ async function activate(context) {
     } else {
         console.log('[cls] LSP desactivado por cls.lsp.enabled=false');
     }
+
+    // ─── Comando para reiniciar el LSP sin recargar la ventana ──────────
+    context.subscriptions.push(
+        vscode.commands.registerCommand('cls.restartLanguageServer', async () => {
+            try {
+                if (languageClient) {
+                    await languageClient.stop();
+                    languageClient = null;
+                }
+                const currentFlags = getFeatureFlags();
+                if (!currentFlags.lspServer) {
+                    vscode.window.showWarningMessage('CLS: el LSP está desactivado (`cls.lsp.enabled=false`).');
+                    return;
+                }
+                const currentClx = findClx(currentFlags.serverPath);
+                if (!currentClx) {
+                    vscode.window.showWarningMessage(
+                        'CLS: no se encontró `clx`. Configurá `cls.lsp.serverPath`.'
+                    );
+                    return;
+                }
+                languageClient = await startLanguageServer(currentClx, context, currentFlags);
+                vscode.window.showInformationMessage('CLS: Language Server reiniciado.');
+            } catch (err) {
+                console.error('[cls] Error al reiniciar LSP:', err);
+                vscode.window.showErrorMessage(`CLS: no se pudo reiniciar el LSP: ${err.message || err}`);
+            }
+        })
+    );
 
     // ─── Fallback: type maps estáticos ──────────────────────────────────
     if (useStaticTypes && wsRoot) {

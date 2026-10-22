@@ -26,6 +26,12 @@
     "onLanguage:clx"
   ],
   "contributes": {
+    "commands": [
+      {
+        "command": "cls.restartLanguageServer",
+        "title": "CLS: Reiniciar Language Server"
+      }
+    ],
     "languages": [
       {
         "id": "clx",

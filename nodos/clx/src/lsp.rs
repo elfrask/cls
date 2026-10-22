@@ -515,11 +515,11 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
                 .complete_members(&source, pos, &uri, &segments)
                 .await
                 .unwrap_or_default();
-            return Ok(Some(CompletionResponse::Array(items)));
+            return Ok(Some(completion_response(items)));
         }
 
         let items = self.general_completions(&source, &uri, pos).await;
-        Ok(Some(CompletionResponse::Array(items)))
+        Ok(Some(completion_response(items)))
     }
 
     // ─── Hover ───────────────────────────────────────────────────────────
@@ -801,6 +801,15 @@ fn imported_symbol_file<'a>(
 }
 
 // ─── Completion helpers ─────────────────────────────────────────────────
+
+fn completion_response(items: Vec<CompletionItem>) -> CompletionResponse {
+    CompletionResponse::List(CompletionList {
+        // El scope cambia con cada edición; pedir re-consulta al cliente en
+        // vez de dejar que cachee la lista hasta cerrar el popup.
+        is_incomplete: true,
+        items,
+    })
+}
 
 fn push_symbol_completion(
     items: &mut Vec<CompletionItem>,

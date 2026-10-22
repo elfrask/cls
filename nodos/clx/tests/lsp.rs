@@ -155,9 +155,12 @@ fn line_col(source: &str, needle: &str) -> (u32, u32) {
 }
 
 fn completion_labels(response: &Value) -> Vec<String> {
-    response["result"]
+    let result = &response["result"];
+    let items = result
         .as_array()
-        .expect("completion no devolvió un array")
+        .or_else(|| result["items"].as_array())
+        .expect("completion no devolvió items");
+    items
         .iter()
         .filter_map(|item| item["label"].as_str().map(str::to_string))
         .collect()
