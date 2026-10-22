@@ -27,15 +27,8 @@ mkdir -p "$CACHE"
 command -v python3 >/dev/null 2>&1 || { echo "ERROR: falta python3 para leer manifest.json" >&2; exit 2; }
 
 # name<TAB>version<TAB>url<TAB>sha256<TAB>archive<TAB>extract_dir
-mapfile -t ROWS < <(python3 - "$MANIFEST" <<'PY'
-import json, sys
-m = json.load(open(sys.argv[1], encoding='utf-8'))
-for name, r in m.items():
-    print('\t'.join([name, r['version'], r['url'], r['sha256'], r['archive'], r['extract_dir']]))
-PY
-)
-
-for row in "${ROWS[@]}"; do
+# Sin `mapfile`: macOS trae bash 3.2 y no lo soporta.
+while IFS= read -r row; do
     IFS=$'\t' read -r name version url sha archive extract_name <<< "$row"
     if [ "${#ONLY[@]}" -gt 0 ]; then
         found=0
@@ -72,4 +65,10 @@ for row in "${ROWS[@]}"; do
         unzip -q -o "$zip" -d "$dir"
     fi
     echo "OK $name -> $extract"
-done
+done < <(python3 - "$MANIFEST" <<'PY'
+import json, sys
+m = json.load(open(sys.argv[1], encoding='utf-8'))
+for name, r in m.items():
+    print('\t'.join([name, r['version'], r['url'], r['sha256'], r['archive'], r['extract_dir']]))
+PY
+)
