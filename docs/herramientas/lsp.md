@@ -41,6 +41,9 @@ La configuración de tipos se toma de `cls.json` del workspace
 - **Tras `.` o `::`** (miembros): resuelve cadenas como `obj.campo.`,
   `modulo.miembro.` y `namespace::` usando imports, variables locales,
   structs/clases y las type definitions.
+- **Inferencia local**: `var p = Persona(...)`, `var p = makePersona()` y
+  `var x = p.campo` propagan el tipo para completar y navegar miembros sin
+  exigir una anotación explícita.
 - **Sin `.`**: variables y parámetros del scope local (detalle `scope`),
   funciones, clases, structs, interfaces, enums y alias del documento,
   símbolos de otros documentos abiertos (detalle `open-document`), keywords,
@@ -68,8 +71,11 @@ Devuelve markdown con la firma y los tags documentados:
 ## Go-to-definition
 
 - Símbolos declarados en el documento actual.
+- Miembros de clase/struct (`p.campo`, `me.campo`) resueltos por el tipo del
+  receptor.
 - Símbolos importados con `import "..." as alias` o `from "..." import x`.
 - Símbolos únicos encontrados en el workspace.
+- Las clases/structs/interface/enums apuntan a su declaración, no al `}` final.
 - Los builtins embebidos no tienen archivo físico; se documentan vía hover.
 
 ## Document symbols

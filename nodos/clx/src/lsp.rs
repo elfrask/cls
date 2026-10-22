@@ -18,8 +18,8 @@ use crate::lsp_index::{
 };
 use crate::lsp_scope::local_symbols_at;
 use crate::lsp_text::{
-    char_index_to_utf16_col, line_text, member_access_before_cursor, position_to_byte_index,
-    span_to_range as text_span_to_range, word_at,
+    char_index_to_utf16_col, line_text, member_access_at, member_access_before_cursor,
+    position_to_byte_index, span_to_range as text_span_to_range, word_at,
 };
 use crate::type_defs::{self, TypeModule};
 
@@ -540,10 +540,14 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
             return Ok(None);
         };
 
-        if let Some(sym) = local_symbols_at(&source, pos)
-            .into_iter()
-            .find(|sym| sym.name == word)
+        let local = local_symbols_at(&source, pos);
         {
+            let index = self.index.lock().await;
+            if let Some(target) = resolve_member_definition(&source, pos, &local, &index, &uri) {
+                return Ok(Some(symbol_hover(&target.symbol, range)));
+            }
+        }
+        if let Some(sym) = local.into_iter().find(|sym| sym.name == word) {
             return Ok(Some(symbol_hover(&sym, range)));
         }
 
@@ -608,10 +612,18 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
             return Ok(None);
         };
 
-        if let Some(sym) = local_symbols_at(&source, pos)
-            .into_iter()
-            .find(|sym| sym.name == word)
+        let local = local_symbols_at(&source, pos);
         {
+            let index = self.index.lock().await;
+            if let Some(target) = resolve_member_definition(&source, pos, &local, &index, &uri) {
+                return Ok(Some(definition_response(
+                    target.uri,
+                    &target.source,
+                    &target.symbol,
+                )));
+            }
+        }
+        if let Some(sym) = local.into_iter().find(|sym| sym.name == word) {
             return Ok(Some(definition_response(uri.clone(), &source, &sym)));
         }
 
@@ -782,6 +794,158 @@ fn path_leaf(path: &str) -> &str {
         .unwrap_or(path)
         .trim_end_matches(".clsx")
         .trim_end_matches(".clsi")
+}
+
+#[derive(Clone)]
+struct DefinitionTarget {
+    uri: Url,
+    source: String,
+    symbol: LspSymbol,
+}
+
+fn is_type_symbol(symbol: &LspSymbol) -> bool {
+    symbol.kind == SymbolKind::CLASS
+        || symbol.kind == SymbolKind::STRUCT
+        || symbol.kind == SymbolKind::INTERFACE
+        || symbol.kind == SymbolKind::ENUM
+}
+
+fn base_type_name(ty: &str) -> &str {
+    ty.split('<')
+        .next()
+        .unwrap_or(ty)
+        .trim()
+        .trim_end_matches("[]")
+}
+
+fn type_context(
+    local: &[LspSymbol],
+    index: &WorkspaceIndex,
+    current_uri: &Url,
+    current_source: &str,
+    type_name: &str,
+) -> Option<DefinitionTarget> {
+    if let Some(symbol) = local
+        .iter()
+        .find(|symbol| is_type_symbol(symbol) && symbol.name == type_name)
+    {
+        return Some(DefinitionTarget {
+            uri: current_uri.clone(),
+            source: current_source.to_string(),
+            symbol: symbol.clone(),
+        });
+    }
+    for (file, symbol) in index.find_global(type_name) {
+        if is_type_symbol(symbol) {
+            return Some(DefinitionTarget {
+                uri: file.uri.clone(),
+                source: file.source.clone(),
+                symbol: symbol.clone(),
+            });
+        }
+    }
+    None
+}
+
+fn resolve_member_definition(
+    source: &str,
+    position: Position,
+    local: &[LspSymbol],
+    index: &WorkspaceIndex,
+    current_uri: &Url,
+) -> Option<DefinitionTarget> {
+    let (segments, member) = member_access_at(source, position)?;
+    let first = segments.first()?;
+    let receiver = local.iter().find(|symbol| &symbol.name == first)?;
+    let receiver_type = base_type_name(receiver.ty.as_deref()?);
+    let mut target = type_context(local, index, current_uri, source, receiver_type)?;
+
+    for segment in &segments[1..] {
+        let child = target
+            .symbol
+            .children
+            .iter()
+            .find(|child| &child.name == segment)?
+            .clone();
+        let next_type = base_type_name(child.ty.as_deref()?);
+        target = type_context(local, index, &target.uri, &target.source, next_type)?;
+    }
+
+    let symbol = target
+        .symbol
+        .children
+        .iter()
+        .find(|child| child.name == member)?
+        .clone();
+    Some(DefinitionTarget {
+        uri: target.uri,
+        source: target.source,
+        symbol,
+    })
+}
+
+fn find_declaration_line(source: &str, name: &str) -> Option<u32> {
+    for (line_no, line) in source.lines().enumerate() {
+        let trimmed = line.trim_start();
+        for keyword in [
+            "class",
+            "structure",
+            "interface",
+            "enum",
+            "alias",
+            "module",
+            "namespace",
+            "function",
+            "var",
+            "const",
+        ] {
+            let pattern = format!("{} {}", keyword, name);
+            if trimmed.starts_with(&pattern) || trimmed.contains(&pattern) {
+                return Some(line_no as u32);
+            }
+        }
+    }
+    None
+}
+
+fn definition_range(source: &str, symbol: &LspSymbol) -> Range {
+    let fallback = text_span_to_range(source, &symbol.span);
+    let line = line_text(source, fallback.start.line).unwrap_or("");
+    let trimmed = line.trim_start();
+
+    // Los spans de clase/structure/interface/enum suelen apuntar al cierre.
+    if is_type_symbol(symbol) {
+        if let Some(line_no) = find_declaration_line(source, &symbol.name) {
+            return line_range(source, line_no);
+        }
+    }
+
+    let span_has_name = line.contains(&symbol.name);
+    if !trimmed.is_empty() && !trimmed.starts_with('}') && span_has_name {
+        return fallback;
+    }
+
+    let type_name = symbol.ty.as_deref().map(base_type_name);
+    let declaration_line = type_name
+        .and_then(|name| find_declaration_line(source, name))
+        .or_else(|| find_declaration_line(source, &symbol.name));
+    declaration_line
+        .map(|line_no| line_range(source, line_no))
+        .unwrap_or(fallback)
+}
+
+fn line_range(source: &str, line_no: u32) -> Range {
+    let text = line_text(source, line_no).unwrap_or("");
+    Range {
+        start: Position {
+            line: line_no,
+            character: 0,
+        },
+        end: Position {
+            line: line_no,
+            character: char_index_to_utf16_col(text, text.chars().count()),
+        },
+    }
 }
 
 fn imported_symbol_file<'a>(
@@ -1005,7 +1169,7 @@ fn format_doc_content(tm: &TypeModule, m: &type_defs::TypeMember) -> String {
 fn definition_response(uri: Url, source: &str, sym: &LspSymbol) -> GotoDefinitionResponse {
     GotoDefinitionResponse::Scalar(Location {
         uri,
-        range: text_span_to_range(source, &sym.span),
+        range: definition_range(source, sym),
     })
 }
 

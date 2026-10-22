@@ -6,14 +6,17 @@
 //! Este módulo recorre el AST y devuelve primero lo local y después el scope
 //! superior.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use cls_core::error::Span;
 use cls_core::frontend::ast::*;
 use cls_core::frontend::{Lexer, Parser};
 use tower_lsp::lsp_types::{Position, SymbolKind};
 
-use crate::lsp_index::{parse_source, symbols_from_statements, type_ann_to_string, LspSymbol};
+use crate::lsp_index::{
+    infer_simple_type, parse_source, symbols_from_statements, type_ann_to_string, var_symbol,
+    LspSymbol,
+};
 use crate::lsp_text::{line_text, position_to_byte_index, utf16_col_to_char_index};
 
 /// Símbolos visibles en `position`, priorizando el scope local.
@@ -25,13 +28,21 @@ pub fn local_symbols_at(source: &str, position: Position) -> Vec<LspSymbol> {
         // ofrecer el scope local mientras se completa el miembro.
         completion_parse_source(source, position).and_then(|text| parse_module(&text))
     });
+
+    let top_level = parsed
+        .as_ref()
+        .map(|module| symbols_from_statements(&module.statements, source))
+        .unwrap_or_else(|| parse_source(source));
+    for symbol in &top_level {
+        collector.known.insert(symbol.name.clone(), symbol.clone());
+    }
     if let Some(module) = parsed {
         collector.walk_top(&module.statements);
     }
 
     // Los locales primero; el scope de nivel superior queda como fallback.
     let mut out = collector.locals;
-    out.extend(parse_source(source));
+    out.extend(top_level);
     out
 }
 
@@ -47,6 +58,17 @@ fn parse_module(source: &str) -> Option<Module> {
     let tokens = lexer.tokenize().ok()?;
     let mut parser = Parser::new(tokens);
     parser.parse().ok()
+}
+
+fn is_type_symbol(symbol: &LspSymbol) -> bool {
+    symbol.kind == SymbolKind::CLASS
+        || symbol.kind == SymbolKind::STRUCT
+        || symbol.kind == SymbolKind::INTERFACE
+        || symbol.kind == SymbolKind::ENUM
+}
+
+fn starts_uppercase(name: &str) -> bool {
+    name.chars().next().is_some_and(|c| c.is_uppercase())
 }
 
 fn class_member_span(member: &ClassMember) -> Option<Span> {
@@ -131,6 +153,8 @@ struct Collector<'a> {
     column: usize,
     locals: Vec<LspSymbol>,
     seen: HashSet<String>,
+    /// Símbolos visibles para inferir tipos de inicializadores.
+    known: HashMap<String, LspSymbol>,
 }
 
 impl<'a> Collector<'a> {
@@ -144,6 +168,7 @@ impl<'a> Collector<'a> {
             column,
             locals: Vec::new(),
             seen: HashSet::new(),
+            known: HashMap::new(),
         }
     }
 
@@ -271,9 +296,8 @@ impl<'a> Collector<'a> {
 
     fn visit_statement(&mut self, statement: &Statement) {
         match statement {
-            Statement::VarDecl(_) | Statement::ConstDecl(_) => {
-                self.push_declaration(statement, true);
-            }
+            Statement::VarDecl(variable) => self.push_var(variable, false),
+            Statement::ConstDecl(variable) => self.push_var(variable, true),
             Statement::FunctionDecl(function) => {
                 self.push_declaration(statement, false);
                 self.walk_function(function);
@@ -534,6 +558,95 @@ impl<'a> Collector<'a> {
         }
     }
 
+    fn push_var(&mut self, variable: &VarDecl, is_const: bool) {
+        let kind = if is_const {
+            SymbolKind::CONSTANT
+        } else {
+            SymbolKind::VARIABLE
+        };
+        let mut symbol = var_symbol(variable, self.source, kind);
+        if symbol.ty.is_none() {
+            symbol.ty = variable
+                .value
+                .as_ref()
+                .and_then(|value| self.infer_expression_type(value, 0));
+        }
+        self.push(symbol, true);
+    }
+
+    fn infer_expression_type(&self, expression: &Expression, depth: usize) -> Option<String> {
+        if depth > 8 {
+            return None;
+        }
+        match expression {
+            Expression::Identifier(name, _) => {
+                let symbol = self.known.get(name)?;
+                if is_type_symbol(symbol) {
+                    Some(symbol.name.clone())
+                } else {
+                    symbol.ty.clone()
+                }
+            }
+            Expression::Call(call) => match &*call.callee {
+                Expression::Identifier(name, _) => {
+                    if let Some(symbol) = self.known.get(name) {
+                        if is_type_symbol(symbol) {
+                            Some(symbol.name.clone())
+                        } else {
+                            symbol.ty.clone()
+                        }
+                    } else if starts_uppercase(name) {
+                        Some(name.clone())
+                    } else {
+                        None
+                    }
+                }
+                Expression::NamespaceAccess(_, member, _) => {
+                    if let Some(symbol) = self.known.get(member) {
+                        if is_type_symbol(symbol) {
+                            Some(symbol.name.clone())
+                        } else {
+                            symbol.ty.clone()
+                        }
+                    } else if starts_uppercase(member) {
+                        Some(member.clone())
+                    } else {
+                        None
+                    }
+                }
+                Expression::MemberAccess(member) => {
+                    let receiver = self.infer_expression_type(&member.object, depth + 1)?;
+                    self.member_type(&receiver, &member.member)
+                }
+                _ => None,
+            },
+            Expression::MemberAccess(member) => {
+                let receiver = self.infer_expression_type(&member.object, depth + 1)?;
+                self.member_type(&receiver, &member.member)
+            }
+            Expression::Await(inner, _) | Expression::Parenthesized(inner, _) => {
+                self.infer_expression_type(inner, depth + 1)
+            }
+            _ => infer_simple_type(expression),
+        }
+    }
+
+    fn member_type(&self, type_name: &str, member: &str) -> Option<String> {
+        let base = type_name
+            .split('<')
+            .next()
+            .unwrap_or(type_name)
+            .trim()
+            .trim_end_matches("[]");
+        self.known
+            .get(base)?
+            .children
+            .iter()
+            .find(|child| child.name == member)?
+            .ty
+            .clone()
+    }
+
     fn push_declaration(&mut self, statement: &Statement, before_only: bool) {
         for symbol in symbols_from_statements(std::slice::from_ref(statement), self.source) {
             self.push(symbol, before_only);
@@ -589,6 +702,7 @@ impl<'a> Collector<'a> {
         if before_only && !self.starts_before(&symbol.span) {
             return;
         }
+        self.known.insert(symbol.name.clone(), symbol.clone());
         if self.seen.insert(symbol.name.clone()) {
             self.locals.push(symbol);
         }

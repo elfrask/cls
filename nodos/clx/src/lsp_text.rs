@@ -158,6 +158,62 @@ pub fn member_access_before_cursor(
     Some((segments, partial.to_string()))
 }
 
+/// Detecta un acceso a miembro **en la posición del cursor**, no solo después
+/// del separador. Devuelve `(segmentos_del_receptor, miembro_actual)`.
+///
+/// `p.nombre` -> `(["p"], "nombre")`
+/// `me.cuenta.saldo` -> `(["me", "cuenta"], "saldo")`
+pub fn member_access_at(source: &str, position: Position) -> Option<(Vec<String>, String)> {
+    let line = line_text(source, position.line)?;
+    let chars: Vec<char> = line.chars().collect();
+    let idx = utf16_col_to_char_index(line, position.character).min(chars.len());
+
+    let mut start = idx;
+    let mut end = idx;
+    while start > 0 && is_ident_char(chars[start - 1]) {
+        start -= 1;
+    }
+    while end < chars.len() && is_ident_char(chars[end]) {
+        end += 1;
+    }
+    if start == end {
+        return None;
+    }
+    let member: String = chars[start..end].iter().collect();
+
+    let before: String = chars[..start].iter().collect();
+    let dot = before.rfind('.');
+    let double_colon = before.rfind("::");
+    let separator = match (dot, double_colon) {
+        (Some(d), Some(c)) if c > d => c,
+        (Some(d), _) => d,
+        (None, Some(c)) => c,
+        (None, None) => return None,
+    };
+
+    let receiver = &before[..separator];
+    let receiver_chars: Vec<char> = receiver.chars().collect();
+    let mut receiver_start = receiver_chars.len();
+    while receiver_start > 0
+        && (is_ident_char(receiver_chars[receiver_start - 1])
+            || receiver_chars[receiver_start - 1] == '.'
+            || receiver_chars[receiver_start - 1] == ':')
+    {
+        receiver_start -= 1;
+    }
+    let chain: String = receiver_chars[receiver_start..].iter().collect();
+    let segments: Vec<String> = chain
+        .replace("::", ".")
+        .split('.')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
+    if segments.is_empty() {
+        return None;
+    }
+    Some((segments, member))
+}
+
 pub fn is_ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }

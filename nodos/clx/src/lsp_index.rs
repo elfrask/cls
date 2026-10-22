@@ -549,8 +549,73 @@ pub(crate) fn function_symbol(f: &FunctionDecl, source: &str) -> LspSymbol {
     }
 }
 
+pub(crate) fn infer_simple_type(expression: &Expression) -> Option<String> {
+    match expression {
+        Expression::Literal(literal) => match &literal.kind {
+            LiteralKind::Int(_) => Some("int".to_string()),
+            LiteralKind::Float(_) => Some("float".to_string()),
+            LiteralKind::String(_) => Some("String".to_string()),
+            LiteralKind::Bool(_) => Some("bool".to_string()),
+            LiteralKind::Char(_) => Some("char".to_string()),
+            LiteralKind::Null => Some("null".to_string()),
+            LiteralKind::Unknown => None,
+        },
+        Expression::Call(call) => match &*call.callee {
+            Expression::Identifier(name, _) if starts_uppercase(name) => Some(name.clone()),
+            Expression::NamespaceAccess(_, member, _) if starts_uppercase(member) => {
+                Some(member.clone())
+            }
+            _ => None,
+        },
+        Expression::Array(array) => {
+            let mut element_type = None;
+            for element in &array.elements {
+                let ty = infer_simple_type(element)?;
+                if let Some(previous) = &element_type {
+                    if previous != &ty {
+                        return None;
+                    }
+                } else {
+                    element_type = Some(ty);
+                }
+            }
+            element_type.map(|ty| format!("{}[]", ty))
+        }
+        Expression::Tuple(tuple) => {
+            let types = tuple
+                .elements
+                .iter()
+                .map(infer_simple_type)
+                .collect::<Option<Vec<_>>>()?;
+            Some(format!("({})", types.join(", ")))
+        }
+        Expression::Await(inner, _) | Expression::Parenthesized(inner, _) => {
+            infer_simple_type(inner)
+        }
+        Expression::Conditional(conditional) => {
+            let then_ty = infer_simple_type(&conditional.then_expr)?;
+            let else_ty = infer_simple_type(&conditional.else_expr)?;
+            (then_ty == else_ty).then_some(then_ty)
+        }
+        Expression::Ternary(ternary) => {
+            let then_ty = infer_simple_type(&ternary.then_expr)?;
+            let else_ty = infer_simple_type(&ternary.else_expr)?;
+            (then_ty == else_ty).then_some(then_ty)
+        }
+        _ => None,
+    }
+}
+
+fn starts_uppercase(name: &str) -> bool {
+    name.chars().next().is_some_and(|c| c.is_uppercase())
+}
+
 pub(crate) fn var_symbol(v: &VarDecl, source: &str, kind: SymbolKind) -> LspSymbol {
-    let ty = v.type_ann.as_ref().map(|a| type_ann_to_string(Some(a)));
+    let ty = v
+        .type_ann
+        .as_ref()
+        .map(|a| type_ann_to_string(Some(a)))
+        .or_else(|| v.value.as_ref().and_then(infer_simple_type));
     LspSymbol {
         name: v.name.clone(),
         kind,

@@ -304,7 +304,12 @@ class Persona {
     var nombre: String;
 }
 
-function describe(p: Persona) -> String {
+function makePersona() -> Persona {
+    return Persona("Ana");
+}
+
+function describe() -> String {
+    var p = makePersona();
     return p.
 }
 "#;
@@ -329,6 +334,75 @@ function describe(p: Persona) -> String {
         labels.iter().any(|label| label == "nombre"),
         "faltó nombre en completion de miembro local: {:?}",
         labels
+    );
+
+    // Navegación: la clase no debe apuntar al `}` y el campo debe resolver
+    // a la declaración de `nombre`, no a cualquier símbolo global con ese nombre.
+    let nav_source = r#"class Persona {
+    var nombre: String;
+}
+
+function makePersona() -> Persona {
+    return Persona("Ana");
+}
+
+function describe() -> String {
+    var p = makePersona();
+    var n: String = p.nombre;
+    return n;
+}
+"#;
+    server.notify(
+        "textDocument/didChange",
+        json!({
+            "textDocument": { "uri": main_uri, "version": 3 },
+            "contentChanges": [{ "text": nav_source }],
+        }),
+    );
+    let _ = server.wait_notification("textDocument/publishDiagnostics");
+
+    let (line, col) = line_col(nav_source, "Persona(\"Ana\")");
+    let definition = server.request(
+        "textDocument/definition",
+        json!({
+            "textDocument": { "uri": main_uri },
+            "position": { "line": line, "character": col + 1 },
+        }),
+    );
+    assert_eq!(
+        definition["result"]["range"]["start"]["line"].as_u64(),
+        Some(0),
+        "la clase apuntó a una ubicación incorrecta: {}",
+        definition
+    );
+
+    let (line, col) = line_col(nav_source, "p.nombre");
+    let definition = server.request(
+        "textDocument/definition",
+        json!({
+            "textDocument": { "uri": main_uri },
+            "position": { "line": line, "character": col + 2 },
+        }),
+    );
+    assert_eq!(
+        definition["result"]["range"]["start"]["line"].as_u64(),
+        Some(1),
+        "el campo apuntó a una ubicación incorrecta: {}",
+        definition
+    );
+
+    let hover = server.request(
+        "textDocument/hover",
+        json!({
+            "textDocument": { "uri": main_uri },
+            "position": { "line": line, "character": col + 2 },
+        }),
+    );
+    let hover_text = hover["result"]["contents"]["value"].as_str().unwrap_or("");
+    assert!(
+        hover_text.contains("nombre"),
+        "hover de campo inesperado: {}",
+        hover_text
     );
 
     server.shutdown();
