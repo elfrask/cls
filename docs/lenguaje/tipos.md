@@ -16,7 +16,7 @@ y `tests/test-types.clsx`.
 | Bool | `Bool` | |
 | Char | `Char` | sin literal propio (ver `sintaxis.md`) |
 | Unknown | `Unknown` | |
-| Value | `Value` | valor CLS dinámico pero **tipado** (primitivo, array o JSON) |
+| Value | `Value` | valor CLS dinámico pero **tipado** (primitivo, array o JSON). Aceptado en params/retornos del JIT (i64); sin tag de primitivo, `match is` sobre `Value` es error. |
 | JSON | `JSON` | documento JSON dinámico (objeto/array) |
 | Cmx | `Cmx` | nodo CMX (tag/props/children) |
 | Null | `Null` | |

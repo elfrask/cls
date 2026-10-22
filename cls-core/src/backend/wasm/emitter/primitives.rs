@@ -537,10 +537,10 @@ impl<'a> FuncEmitter<'a> {
                     // Método heredado sin override: buscar el índice en la clase
                     // que lo declara (no fallar con "Método sin tipo WASM").
                     let mut fn_cls = name.to_string();
-                    let ty = loop {
+                    let (ty, method_key) = loop {
                         let key = format!("{}::{}", fn_cls, member.member);
                         if let Some(t) = self.method_type_indexes.get(&key) {
-                            break *t;
+                            break (*t, key);
                         }
                         match self
                             .class_defs
@@ -559,14 +559,18 @@ impl<'a> FuncEmitter<'a> {
                             }
                         }
                     };
+                    // Params reales del método (incluye `me` como param 0) para
+                    // ensanchar escalares en la frontera (`Value` es i64, bool
+                    // i32 / float f64).
+                    let expected = self.func_types.get(&method_key).map(|(p, _)| p.clone());
+                    // `me` es el param 0 de los métodos de instancia.
+                    let me_offset = if expected.is_some() { 1 } else { 0 };
                     let obj_tmp = self.fresh_local();
                     self.emit_expression(&member.object)?;
                     self.body.push(Instruction::LocalSet(obj_tmp));
                     self.body.push(Instruction::LocalGet(obj_tmp));
-                    // Frontera única: métodos de clase (params no disponibles en
-                    // el emisor) -> destino desconocido, convertir si es Shape.
-                    for a in &c.args {
-                        self.emit_coerce(a, None)?;
+                    for (i, a) in c.args.iter().enumerate() {
+                        self.emit_call_arg(a, expected.as_deref(), i + me_offset)?;
                     }
                     // slot = vtable(obj[0]) + method_slot
                     self.body.push(Instruction::LocalGet(obj_tmp));

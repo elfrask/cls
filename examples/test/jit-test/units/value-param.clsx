@@ -1,0 +1,41 @@
+# `Value` es un tipo concreto en la firma del JIT (i64), pero sus escalares
+# no llevan tag runtime: se puede recibir/devolver y pasar a JSON/records,
+# no discriminar primitivos con `match is`.
+# Regresión: tras eliminar `Any`, el emisor rechazaba `Value` en params; al
+# permitirlo, pasar Bool/Float no se ensanchaba a i64 y el WASM era inválido.
+
+function identidad(valor: Value) -> Value {
+    return valor;
+}
+
+function acepta(valor: Value) -> String {
+    return "ok";
+}
+
+class Caja {
+    public var valor: Value;
+
+    function main(valor: Value) {
+        me.valor = valor;
+    }
+
+    function acepta(valor: Value) -> String {
+        return "ok";
+    }
+}
+
+function main(args: String[]) -> int {
+    print(acepta("abc"));
+    print(acepta(123));
+    print(acepta(false));
+    print(acepta(3.5));
+
+    var v: Value = 7;
+    print(identidad(v));
+
+    var caja = Caja(false);
+    print(caja.acepta(3.5));
+    print(caja.acepta(true));
+
+    return 0;
+}

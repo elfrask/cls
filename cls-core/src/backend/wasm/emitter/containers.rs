@@ -565,6 +565,21 @@ impl<'a> FuncEmitter<'a> {
             self.emit_cmx_field(0)?; // tag (String)
             return Ok(());
         }
+        // Destino dinámico (`Value`/`JSON`/`Unknown`): la representación es
+        // i64. Los escalares Bool/Char viajan como i32 y Float como f64, así
+        // que hay que ensancharlos en la frontera (misma regla que assignment).
+        // Sin esto, `f(valor: Value)` llamado con `true` emitía i32 en un
+        // parámetro i64 -> módulo WASM inválido.
+        if matches!(dest, Some(Type::Value | Type::Unknown | Type::Json)) {
+            let actual = self.value_type(expr).ok();
+            self.emit_expression(expr)?;
+            match actual {
+                Some(WasTy::F64) => self.body.push(Instruction::I64ReinterpretF64),
+                Some(WasTy::I32) => self.body.push(Instruction::I64ExtendI32U),
+                _ => {}
+            }
+            return Ok(());
+        }
         self.emit_expression(expr)
     }
 

@@ -41,11 +41,17 @@ impl<'a> Engine<'a> {
                     p.name, f.name
                 ))
             })?;
-            params.push(self.resolve_annotation_type(t)?);
+            params.push(self.resolve_annotation_type(
+                t,
+                &format!("el parámetro '{}' de '{}'", p.name, f.name),
+            )?);
             defaults.push(p.default_value.clone());
         }
         let ret = match &f.return_type {
-            Some(t) => Some(self.resolve_annotation_type(t)?),
+            Some(t) => Some(self.resolve_annotation_type(
+                t,
+                &format!("el retorno de '{}'", f.name),
+            )?),
             None => None,
         };
         self.func_types.insert(f.name.clone(), (params, ret));
@@ -54,7 +60,7 @@ impl<'a> Engine<'a> {
     }
 
 
-    fn resolve_annotation_type(&self, ann: &TypeAnnotation) -> ClsResult<Type> {
+    fn resolve_annotation_type(&self, ann: &TypeAnnotation, context: &str) -> ClsResult<Type> {
         // Phantom `!T`: el type param NO participa del tipo runtime (compile-time
         // only). Se mapea a `Value` (i64 en la firma WASM), como los campos
         // dinámicos; así `function f<T>(x: !T)` compila.
@@ -63,9 +69,13 @@ impl<'a> Engine<'a> {
         }
         let t = annotation_to_type(ann);
         match t {
-            Type::Value | Type::Unknown => Err(crate::error::ClsError::CompileError(
-                "Anotación de tipo no soportada por el JIT (se requiere tipo concreto)".to_string(),
-            )),
+            // `Value` es un tipo concreto en el JIT: viaja como i64 dinámico
+            // (igual que campos/locales `Value`). El antiguo `Any` se eliminó
+            // y su reemplazo no debe volver a rechazarse aquí.
+            Type::Unknown => Err(crate::error::ClsError::CompileError(format!(
+                "No se pudo resolver la anotación de tipo de {} (línea {}); el JIT requiere un tipo concreto",
+                context, ann.span.start_line
+            ))),
             other => Ok(other),
         }
     }

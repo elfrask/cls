@@ -443,27 +443,26 @@ impl<'a> FuncEmitter<'a> {
         let callsite = c.span.clone();
         let mut cur = Some(name.to_string());
         while let Some(cls) = cur {
-            if let Some(idx) = self.func_indexes.get(&format!("{}::__ctor", cls)) {
+            let ctor_key = format!("{}::__ctor", cls);
+            if let Some(idx) = self.func_indexes.get(&ctor_key).copied() {
+                // `me` es el param 0 del ctor; los args empiezan en el 1.
+                let expected = self.func_types.get(&ctor_key).map(|(p, _)| p.clone());
                 self.body.push(Instruction::LocalGet(obj));
-                for a in &c.args {
-                    self.emit_expression(a)?;
+                for (i, a) in c.args.iter().enumerate() {
+                    self.emit_call_arg(a, expected.as_deref(), i + 1)?;
                 }
                 // Parámetros opcionales del constructor: completar con sus
                 // valores por defecto para que el call tenga la aridad exacta.
-                if let Some(defaults) = self
-                    .func_defaults
-                    .get(&format!("{}::__ctor", cls))
-                    .cloned()
-                {
-                    for default in defaults.iter().skip(c.args.len()) {
+                if let Some(defaults) = self.func_defaults.get(&ctor_key).cloned() {
+                    for (i, default) in defaults.iter().enumerate().skip(c.args.len()) {
                         match default {
-                            Some(expr) => self.emit_expression(expr)?,
+                            Some(expr) => self.emit_call_arg(expr, expected.as_deref(), i + 1)?,
                             None => self.body.push(Instruction::I64Const(0)),
                         }
                     }
                 }
                 self.emit_call_site(&callsite);
-                self.body.push(Instruction::Call(*idx));
+                self.body.push(Instruction::Call(idx));
                 break;
             }
             cur = self.class_defs.get(&cls).and_then(|i| i.parent.clone());

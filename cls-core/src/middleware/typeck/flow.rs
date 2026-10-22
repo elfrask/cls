@@ -145,7 +145,17 @@ impl TypeChecker {
         // primera) o el WASM era inválido. Rechazo estático claro.
         if m.mode == MatchMode::Type {
             if let Some(st) = &scrut_ty {
-                if self.union_has_undiscriminable_builtin(st) {
+                if matches!(st, Type::Value | Type::Unknown) {
+                    // `Value` no lleva tag runtime para primitivos (int, bool,
+                    // float, string): las ramas `is String`/`is int` no se
+                    // pueden decidir y antes caían silenciosamente al default.
+                    self.error(
+                        "no se puede discriminar `Value` en `match is`: no tiene identidad de \
+                         runtime para tipos primitivos; usá un tipo concreto o una unión de \
+                         clases/enums/structures",
+                        m.span.clone(),
+                    );
+                } else if self.union_has_undiscriminable_builtin(st) {
                     self.error(
                         "no se puede discriminar el tipo de una unión de builtins en `match is`: \
                          usá un valor con tipo concreto o una unión de tipos con identidad de \

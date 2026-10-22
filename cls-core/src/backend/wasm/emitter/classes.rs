@@ -55,9 +55,13 @@ impl<'a> FuncEmitter<'a> {
                     if let Some(&ty) = self.method_type_indexes.get(&method_key) {
                         // receiver (me) — al fondo; los args van DESPUÉS (el
                         // call_indirect los espera en orden: me, args...).
+                        let expected = self.func_types.get(&method_key).map(|(p, _)| p.clone());
+                        // Los métodos de instancia incluyen `me` como param 0
+                        // (aunque tengan defaults y el call use menos args).
+                        let me_offset = if expected.is_some() { 1 } else { 0 };
                         self.body.push(Instruction::LocalGet(obj_ptr));
-                        for a in args {
-                            self.emit_expression(a)?;
+                        for (i, a) in args.iter().enumerate() {
+                            self.emit_call_arg(a, expected.as_deref(), i + me_offset)?;
                         }
                         // vtable(obj[0]) + slot
                         self.body.push(Instruction::LocalGet(obj_ptr));

@@ -185,9 +185,13 @@ objetos siempre verdaderos; tipos sin definir dan error de compilación
 claro ("la condición debe ser Bool"). El intrínseco `bool(x)` usa la misma
 semántica (`bool(cmx)`, `bool(record)`, ... válidos).
 
+`Value` sí se acepta como parámetro/retorno de función: viaja como i64
+dinámico y los escalares Bool/Char/Float se ensanchan en la frontera. No
+lleva tag runtime de primitivo, así que el typeck rechaza `match is` sobre
+`Value`/`Unknown` (no se puede distinguir `int` de `bool`/`string`).
+
 Errores explícitos del emisor ("El JIT (subconjunto WASM) aún no soporta...")
-para lo que no entra en el subset: tipos `Unknown` sin anotar (y el fallback
-interno `Value`,
+para lo que no entra en el subset: tipos `Unknown` sin anotar,
 parámetros sin anotación de tipo, arrays vacíos sin anotación, `%=` sobre
 floats, índices dinámicos en records con shape, `await` (el `async` no está
 implementado en ningún intérprete desde la eliminación del walker). El subset
