@@ -219,7 +219,9 @@ completas; las expresiones sueltas se imprimen. Comandos: `exit`, `quit`,
 ## `clx lsp [--silent]`
 
 Lanza el servidor LSP sobre **stdin/stdout**. `-s`/`--silent` suprime el banner
-de inicio. Ver `herramientas/lsp.md`.
+de inicio. El servidor indexa `.clsx`/`.clsi` del workspace y expone
+diagnósticos, completion, hover, go-to-definition y document symbols. Ver
+`herramientas/lsp.md`.
 
 ## `clx ast <archivo> [--json]`
 

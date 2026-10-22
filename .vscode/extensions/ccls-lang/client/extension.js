@@ -1,83 +1,91 @@
 const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const { LanguageClient, TransportKind } = require('vscode-languageclient/node');
 
-function activate(context) {
+async function activate(context) {
     console.log('[cls] Activando...');
 
     const flags = getFeatureFlags();
     console.log('[cls] flags:', flags);
 
-    // Cargar type maps builtins
+    // Cargar type maps builtins (solo se usan como fallback sin LSP).
     const builtinMaps = loadBuiltinMaps();
     let maptypeProcess = null;
 
-    // ─── Lanzar clx maptype --watch en el workspace ─────────────────────
     const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath;
-    const clxPath = findClx();
+    const clxPath = findClx(flags.serverPath);
+    const useStaticTypes = !flags.lspServer && flags.useStaticTypes;
+
+    // ─── Lanzar el servidor LSP ─────────────────────────────────────────
     if (flags.lspServer) {
         if (clxPath) {
-            startLanguageServer(clxPath, context);
+            // No bloqueamos la activación esperando el handshake.
+            startLanguageServer(clxPath, context, flags).catch(err => {
+                console.error('[cls] Error al iniciar LSP:', err);
+                vscode.window.showErrorMessage(`No se pudo iniciar el LSP de CLS: ${err.message || err}`);
+            });
         } else {
-            console.log('[cls] clx no encontrado, el servidor LSP no se iniciará');
+            console.log('[cls] clx no encontrado; el servidor LSP no se iniciará');
+            vscode.window.showWarningMessage(
+                'CLS: no se encontró el ejecutable `clx`. Configurá `cls.lsp.serverPath` o agregalo al PATH.'
+            );
         }
     } else {
-        console.log('[cls] LSP desactivado por cls.options.unnestableFeatures.lspServer=false');
+        console.log('[cls] LSP desactivado por cls.lsp.enabled=false');
     }
 
-    if (flags.useStaticTypes && wsRoot) {
+    // ─── Fallback: type maps estáticos ──────────────────────────────────
+    if (useStaticTypes && wsRoot) {
         if (clxPath) {
             console.log('[cls] Generando type maps iniciales...');
             runSync(clxPath, ['maptype', '.', '-o', '.cls-types'], { cwd: wsRoot });
-            // Luego iniciar watch mode
             maptypeProcess = spawn(clxPath, ['maptype', '.', '-o', '.cls-types', '--watch'], {
                 cwd: wsRoot,
                 stdio: ['ignore', 'ignore', 'pipe'],
                 windowsHide: true
             });
-            maptypeProcess.stderr.on('data', d => { /* silenciado */ });
+            maptypeProcess.stderr.on('data', () => { /* silenciado */ });
             maptypeProcess.on('error', err => console.log('[cls] maptype error:', err.message));
             console.log('[cls] maptype --watch activo');
-            // Indicador en status bar
             const statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
             statusItem.text = '$(sync) CLS Types';
             statusItem.tooltip = 'CLS Type Maps: auto-generando .cls-types/';
             statusItem.show();
             context.subscriptions.push(statusItem);
         } else {
-            console.log('[cls] clx no encontrado, type maps no se generaran automáticamente');
+            console.log('[cls] clx no encontrado; type maps no se generarán automáticamente');
         }
     } else {
-        console.log('[cls] maptypes desactivados por cls.options.unnestableFeatures.useStaticTypes=false');
+        console.log('[cls] type maps estáticos desactivados (LSP activo o cls.types.useStaticTypes=false)');
     }
 
-    // ─── Cargar workspace type maps ─────────────────────────────────────
-    reloadWorkspaceMaps();
+    // ─── Cargar workspace type maps (fallback) ──────────────────────────
+    if (useStaticTypes) {
+        reloadWorkspaceMaps();
 
-    // ─── Recargar type maps en eventos ──────────────────────────────────
-    context.subscriptions.push(
-        vscode.workspace.onDidOpenTextDocument(doc => {
-            if (isClsFile(doc)) reloadWorkspaceMaps();
-        })
-    );
-    context.subscriptions.push(
-        vscode.workspace.onDidSaveTextDocument(doc => {
-            if (isClsFile(doc)) {
-                // El watch process regenera automaticamente, solo recargar cache
-                setTimeout(() => reloadWorkspaceMaps(), 500);
-            }
-        })
-    );
-    context.subscriptions.push(
-        vscode.window.onDidChangeActiveTextEditor(() => {
-            reloadWorkspaceMaps();
-        })
-    );
+        context.subscriptions.push(
+            vscode.workspace.onDidOpenTextDocument(doc => {
+                if (isClsFile(doc)) reloadWorkspaceMaps();
+            })
+        );
+        context.subscriptions.push(
+            vscode.workspace.onDidSaveTextDocument(doc => {
+                if (isClsFile(doc)) {
+                    setTimeout(() => reloadWorkspaceMaps(), 500);
+                }
+            })
+        );
+        context.subscriptions.push(
+            vscode.window.onDidChangeActiveTextEditor(() => {
+                reloadWorkspaceMaps();
+            })
+        );
+    }
 
-    // ─── Completion provider ────────────────────────────────────────────
-    if (flags.useStaticTypes) {
+    // ─── Completion provider (solo fallback sin LSP) ────────────────────
+    if (useStaticTypes) {
         context.subscriptions.push(
             vscode.languages.registerCompletionItemProvider('clx', {
                 provideCompletionItems(document, position) {
@@ -171,11 +179,13 @@ function activate(context) {
 }
 
 function getFeatureFlags() {
-    const config = vscode.workspace.getConfiguration('cls.options.unnestableFeatures');
+    const config = vscode.workspace.getConfiguration('cls');
     return {
-        lspServer: config.get('lspServer', false),
-        useStaticTypes: config.get('useStaticTypes', true),
-        useMapClsi: config.get('useMapClsi', true),
+        lspServer: config.get('lsp.enabled', true),
+        serverPath: config.get('lsp.serverPath', ''),
+        trace: config.get('lsp.trace.server', 'off'),
+        useStaticTypes: config.get('types.useStaticTypes', true),
+        useMapClsi: config.get('types.useMapClsi', true),
     };
 }
 
@@ -257,42 +267,101 @@ function snip(label, body) {
     return item;
 }
 
-function findClx() {
-    const { execSync } = require('child_process');
-    try { execSync('clx --version', { stdio: 'pipe' }); return 'clx'; } catch {}
-    // Buscar en target/debug relativo al workspace
+function findClx(configuredPath) {
+    const candidates = [];
+    const add = (value) => {
+        if (value && !candidates.includes(value)) candidates.push(value);
+    };
+
+    add(configuredPath);
+    add(process.env.CLS_LSP_PATH);
+
     const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath;
     if (wsRoot) {
-        const debugPath = path.join(wsRoot, 'target', 'debug', 'clx');
-        const releasePath = path.join(wsRoot, 'target', 'release', 'clx');
-        for (const c of [debugPath, releasePath]) {
-            if (fs.existsSync(c) || fs.existsSync(c + '.exe')) {
-                const bin = fs.existsSync(c) ? c : c + '.exe';
-                try { execSync(`"${bin}" --version`, { stdio: 'pipe' }); return bin; } catch {}
-            }
-        }
+        add(path.join(wsRoot, 'target', 'debug', 'clx'));
+        add(path.join(wsRoot, 'target', 'release', 'clx'));
     }
-    // Fallback: ~/.cargo/bin/clx
+
     const home = process.env.HOME || process.env.USERPROFILE || '';
-    const cargoBin = path.join(home, '.cargo', 'bin', 'clx');
-    if (fs.existsSync(cargoBin) || fs.existsSync(cargoBin + '.exe')) {
-        const bin = fs.existsSync(cargoBin) ? cargoBin : cargoBin + '.exe';
-        try { execSync(`"${bin}" --version`, { stdio: 'pipe' }); return bin; } catch {}
+    if (home) add(path.join(home, '.cargo', 'bin', 'clx'));
+
+    const fromPath = findOnPath('clx');
+    if (fromPath) add(fromPath);
+
+    for (const candidate of candidates) {
+        const executable = resolveExecutable(candidate);
+        if (executable && canRun(executable)) return executable;
     }
     return null;
 }
 
-function startLanguageServer(clxPath, context) {
+function findOnPath(name) {
+    const pathValue = process.env.PATH || '';
+    const extensions = process.platform === 'win32' ? ['.exe', '.cmd', '.bat', ''] : [''];
+    for (const dir of pathValue.split(path.delimiter)) {
+        if (!dir) continue;
+        for (const ext of extensions) {
+            const candidate = path.join(dir.replace(/^"|"$/g, ''), name + ext);
+            if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+        }
+    }
+    return null;
+}
+
+function resolveExecutable(candidate) {
+    if (!candidate) return null;
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+    if (process.platform === 'win32') {
+        for (const ext of ['.exe', '.cmd', '.bat']) {
+            if (fs.existsSync(candidate + ext)) return candidate + ext;
+        }
+    }
+    return null;
+}
+
+function canRun(executable) {
+    try {
+        const result = spawnSync(executable, ['--version'], {
+            stdio: 'ignore',
+            windowsHide: true,
+            timeout: 5000,
+        });
+        return result.status === 0;
+    } catch {
+        return false;
+    }
+}
+
+async function startLanguageServer(clxPath, context, flags) {
+    const outputChannel = vscode.window.createOutputChannel('CLS Language Server');
+    const traceOutputChannel = vscode.window.createOutputChannel('CLS LSP Trace');
+    context.subscriptions.push(outputChannel, traceOutputChannel);
+
+    const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath;
+
     const serverOptions = {
         command: clxPath,
         args: ['lsp', '--silent'],
         transport: TransportKind.stdio,
+        options: {
+            cwd: wsRoot || undefined,
+            env: { ...process.env },
+        },
     };
 
     const clientOptions = {
         documentSelector: [{ scheme: 'file', language: 'clx' }],
         synchronize: {
-            fileEvents: vscode.workspace.createFileSystemWatcher('**/*.clsx'),
+            fileEvents: [
+                vscode.workspace.createFileSystemWatcher('**/*.clsx'),
+                vscode.workspace.createFileSystemWatcher('**/*.clsi'),
+                vscode.workspace.createFileSystemWatcher('**/cls.json'),
+            ],
+        },
+        outputChannel,
+        traceOutputChannel: flags.trace === 'off' ? undefined : traceOutputChannel,
+        initializationOptions: {
+            workspaceRoot: wsRoot || null,
         },
     };
 
@@ -303,21 +372,42 @@ function startLanguageServer(clxPath, context) {
         clientOptions
     );
 
-    context.subscriptions.push(client.start());
-    client.onReady().then(() => {
-        console.log('[cls] LSP cliente conectado');
-    }).catch(err => {
-        console.error('[cls] Error al iniciar LSP:', err);
+    context.subscriptions.push(client);
+
+    client.onDidChangeState(event => {
+        console.log(`[cls] LSP state: ${event.oldState} -> ${event.newState}`);
     });
+
+    await client.start();
+    outputChannel.appendLine(`[cls] LSP conectado usando ${clxPath}`);
+    console.log('[cls] LSP cliente conectado');
+
+    const traceLevel = flags.trace === 'verbose' ? 3 : flags.trace === 'messages' ? 1 : 0;
+    if (traceLevel > 0) {
+        try {
+            await client.setTrace(traceLevel);
+            outputChannel.appendLine(`[cls] trace LSP: ${flags.trace}`);
+        } catch (err) {
+            console.log('[cls] no se pudo activar el trace LSP:', err.message);
+        }
+    }
+    return client;
 }
 
 function runSync(cmd, args, opts) {
-    const { execSync } = require('child_process');
     try {
-        const full = `"${cmd}" ${args.join(' ')}`;
-        console.log('[cls] Running:', full);
-        execSync(full, { ...opts, timeout: 60000, encoding: 'utf8' });
-        console.log('[cls] OK:', full);
+        console.log('[cls] Running:', cmd, args.join(' '));
+        const result = spawnSync(cmd, args, {
+            ...opts,
+            timeout: 60000,
+            encoding: 'utf8',
+            windowsHide: true,
+        });
+        if (result.error) throw result.error;
+        if (result.status !== 0) {
+            throw new Error(`exit ${result.status}: ${result.stderr || ''}`.trim());
+        }
+        console.log('[cls] OK:', cmd, args.join(' '));
     } catch (e) {
         console.log('[cls] Error running maptype:', e.message);
     }

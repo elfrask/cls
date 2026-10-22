@@ -11,7 +11,7 @@
     "url": "https://github.com/elfrask/cls"
   },
   "engines": {
-    "vscode": "^1.80.0"
+    "vscode": "^1.91.0"
   },
   "dependencies": {
     "vscode-languageclient": "^10.1.0"
@@ -30,10 +30,41 @@
       {
         "id": "clx",
         "aliases": ["CLS", "clsx", "clx"],
-        "extensions": [".clsx"],
+        "extensions": [".clsx", ".clsi"],
         "configuration": "./language-configuration.json"
       }
     ],
+    "configuration": {
+      "title": "CLS",
+      "properties": {
+        "cls.lsp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Iniciar el servidor LSP de CLS al abrir archivos .clsx/.clsi."
+        },
+        "cls.lsp.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "Ruta al ejecutable clx. Vacío = buscarlo en PATH, target/debug, target/release o ~/.cargo/bin."
+        },
+        "cls.lsp.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Nivel de traza del protocolo LSP en el canal de salida."
+        },
+        "cls.types.useStaticTypes": {
+          "type": "boolean",
+          "default": true,
+          "description": "Usar type maps estáticos como fallback si el LSP está desactivado."
+        },
+        "cls.types.useMapClsi": {
+          "type": "boolean",
+          "default": true,
+          "description": "Incluir definiciones .clsi al generar type maps."
+        }
+      }
+    },
     "grammars": [
       {
         "language": "clx",

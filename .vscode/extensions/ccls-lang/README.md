@@ -17,6 +17,27 @@ Syntax highlighting, snippets, themes and language support for CLS (.clsx).
   con sus valores
 - **Theme "CLS Tipos Diferenciados"** con colores propios para Tipos, Clases y
   Métodos
+- **LSP** (`clx lsp`): diagnósticos, autocompletado, hover, go-to-definition y
+  outline jerárquico para `.clsx` y `.clsi`
+
+## Language Server
+
+La extensión busca el ejecutable `clx` en:
+
+1. `cls.lsp.serverPath`
+2. `CLS_LSP_PATH`
+3. `target/debug` y `target/release` del workspace
+4. `~/.cargo/bin`
+5. `PATH`
+
+Settings:
+
+| Setting | Default | Descripción |
+|---|---|---|
+| `cls.lsp.enabled` | `true` | Inicia el servidor LSP. |
+| `cls.lsp.serverPath` | `""` | Ruta explícita al ejecutable `clx`. |
+| `cls.lsp.trace.server` | `"off"` | `off`, `messages` o `verbose`. |
+| `cls.types.useStaticTypes` | `true` | Fallback de type maps si el LSP está desactivado. |
 
 ## Nuevas sintaxis resaltadas
 

@@ -60,7 +60,8 @@ backend los **fusiona dentro del módulo CLS** (cero imports de internals).
 ### Herramientas
 
 - `herramientas/repl.md` - REPL interactivo.
-- `herramientas/lsp.md` - servidor LSP (autocompletado, diagnósticos, hover).
+- `herramientas/lsp.md` - servidor LSP (autocompletado, diagnósticos, hover,
+  go-to-definition y document symbols).
 - `herramientas/maptype.md` - generador de type maps (`.type.json`).
 - `herramientas/clxr.md` - runtime ligero para ejecutar apps.
 - `herramientas/clxb.md` - bindings C para embedding (`clsb.h`).
