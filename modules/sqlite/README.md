@@ -2,7 +2,8 @@
 
 Módulo **CLS + FFI** que implementa el contrato de driver de `modules/orm`
 sobre la API C de SQLite, a través del shim `sqlite_shim.c`
-(`sqlite_shim.dll`). Es la mitad específica de motor de la prueba #5
+(`sqlite_shim.dll`, `sqlite_shim.so` o `sqlite_shim.dylib`). Es la mitad
+específica de motor de la prueba #5
 (`examples/sqlite-orm`), extraída a `/modules` (ver `examples/patrones.md` §11).
 
 No usa `host_calls`: el acceso a SQLite es **FFI puro**. El shim envuelve la API
@@ -31,8 +32,13 @@ var o = orm::Orm(driver);
 ## Compilar / consumir
 
 ```powershell
-# Compila sqlite_shim.dll y copia sqlite3.dll junto al shim (desde cualquier CWD)
+# Windows: compila sqlite_shim.dll y copia sqlite3.dll junto al shim
 powershell -File modules\sqlite\build.ps1
+```
+
+```bash
+# Linux/macOS (o `bash scripts/build-standard-modules.sh`)
+gcc -shared -fPIC -O2 -o modules/sqlite/sqlite_shim.so modules/sqlite/sqlite_shim.c -ldl
 ```
 
 `build.ps1`:
@@ -43,17 +49,21 @@ powershell -File modules\sqlite\build.ps1
 3. compila `sqlite_shim.dll` desde `sqlite_shim.c` si falta o está viejo
    (requiere `gcc` de MinGW-w64 x64 en `PATH`).
 
-El shim se **autolocaliza** (`GetModuleFileNameW`) y busca `sqlite3.dll` primero
-junto a él, luego en `%CLS_SQLITE_PATH%` y por último en `PATH`, resolviendo los
-símbolos con `GetProcAddress` (sin dependencia de import estática). Por eso la
-copia de `sqlite3.dll` junto al shim basta; `CLS_SQLITE_PATH` es respaldo.
+El shim se **autolocaliza** (`GetModuleFileNameW` en Windows, `dladdr` en
+POSIX) y busca `sqlite3.dll`/`libsqlite3` primero junto a él, luego en
+`CLS_SQLITE_PATH` y por último en la carga estándar del sistema, resolviendo los
+símbolos con `GetProcAddress`/`dlsym` (sin dependencia de import estática). Por
+eso la copia de `sqlite3.dll` junto al shim basta; `CLS_SQLITE_PATH` es respaldo.
+En Linux se prueban `libsqlite3.so.0` y `libsqlite3.so`; en macOS,
+`libsqlite3.dylib`.
 
 > El shim llama `sqlite3_initialize()` antes de la primera operación: el build de
 > SQLite de Python se compila con `SQLITE_OMIT_AUTOINIT`.
 
 ## Limitaciones conocidas
 
-- **La ruta del `.dll` FFI se resuelve contra la raíz del paquete**, no contra el CWD.
-  `extension "./sqlite_shim.dll"` se busca en el `cls.json` del módulo.
+- **La ruta del shim FFI se resuelve contra la raíz del paquete**, no contra el
+  CWD. `extension "./sqlite_shim.dll"` (o `.so`/`.dylib`) se busca en el
+  `cls.json` del módulo.
 - **Callbacks C→CLS** (`sqlite3_exec` con callback): no expresables hoy (no hay
   *function pointers* en el FFI). Ver `examples/sqlite-orm/findings/06`.
