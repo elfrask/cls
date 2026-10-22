@@ -11,7 +11,8 @@ CLS se compila desde fuente con **Cargo**. El proyecto es un workspace Rust
 | Rust | Edición 2021 (`rustup` recomendado) |
 | Cargo | Incluido con Rust |
 
-No hay binarios precompilados: se construye localmente.
+Para desarrollo, CLS se construye localmente. Las releases publicadas incluyen
+portables con los módulos estándar; el `cargo build` normal no copia módulos.
 
 ## Clonar el repositorio
 
@@ -109,3 +110,6 @@ portable/
 `clx` busca `modules/` junto al binario (`{dir_clx}/modules`), por lo que el
 portable funciona sin copiar módulos a `~/.cls/modules`. En el repo, esa misma
 búsqueda también cubre `{dir_clx}/../modules`.
+
+La copia de `modules/` ocurre **solo en `release-pack.sh`**, cuando se generan
+los binarios de release; no en builds de desarrollo.
