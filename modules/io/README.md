@@ -6,10 +6,11 @@ archivo. Es la **semilla del futuro `fs`** de la stdlib autocontenida
 `host_call` `fs` (`readFile`, `writeFile`, `exists`, `rm`, `mkdir`, `listDir`,
 `cwd`) por FFI puro + código CLS.
 
-No usa `host_calls`. El shim `io_shim.c` (`io_shim.dll`) envuelve `fopen`/
-`fwrite`/`fseek`, `_stat`, `_open`/`_read`/`_write`/`_close`/`_setmode` de la
-libc, y **nunca expone punteros** a CLS: todo via `CString`/`CArray`/`CLong`/
-`CInt`.
+No usa `host_calls`. El shim `io_shim.c` (`io_shim.dll`, `io_shim.so` o
+`io_shim.dylib`) envuelve `fopen`/`fwrite`/`fseek` y las llamadas de
+descriptores de la libc (`_stat`/`_open`/`_read`/`_write`/`_close`/`_setmode`
+en Windows; `stat`/`open`/`read`/`write`/`close` en POSIX), y **nunca expone
+punteros** a CLS: todo via `CString`/`CArray`/`CLong`/`CInt`.
 
 ## API
 
@@ -33,6 +34,8 @@ libc, y **nunca expone punteros** a CLS: todo via `CString`/`CArray`/`CLong`/
 | `setmode(fd, mode) -> int` | `_setmode` del descriptor (binario/texto) |
 
 Constantes: `O_RDONLY`, `O_WRONLY`, `O_CREAT`, `O_TRUNC`, `O_APPEND`, `O_BINARY`.
+Los valores son los de msvcrt; en POSIX el shim los traduce a los flags de
+`open(2)`. `setmode` es no-op en POSIX (no hay modo texto/binario).
 
 Uso:
 
@@ -65,8 +68,13 @@ var s   = buf.join("");                # Char[] -> String (byte-exacto)
 ## Compilar / consumir
 
 ```powershell
-# Compila io_shim.dll (desde cualquier CWD)
+# Windows: compila io_shim.dll (desde cualquier CWD)
 powershell -File modules\io\build.ps1
+```
+
+```bash
+# Linux/macOS (o `bash scripts/build-standard-modules.sh`)
+gcc -shared -fPIC -O2 -o modules/io/io_shim.so modules/io/io_shim.c
 ```
 
 ```clx
@@ -75,8 +83,9 @@ import "io" as io;
 
 ## Limitaciones conocidas
 
-- **La ruta del `.dll` FFI se resuelve contra la raíz del paquete**, no contra el CWD.
-  `extension "./io_shim.dll"` se busca en el `cls.json` del módulo.
+- **La ruta del shim FFI se resuelve contra la raíz del paquete**, no contra el
+  CWD. `extension "./io_shim.dll"` (o `.so`/`.dylib`) se busca en el `cls.json`
+  del módulo.
 - `writeText`/`appendText`/`writeFd` escriben hasta el primer byte NUL
   (los datos viajan como `CString`). Para bytes con NUL usar `readBytes` y un
   future `writeBytes` con `CArray`.

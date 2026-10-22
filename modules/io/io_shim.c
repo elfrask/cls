@@ -12,18 +12,63 @@
  * Este shim es FFI legitimo (no expone punteros al lenguaje): NO es un
  * `host_call`, NO es una feature del host. Es la "puerta de escape a C".
  *
- * Compilacion (Windows, MinGW-w64 x64):
- *   gcc -shared -O2 -o modules/io/io_shim.dll modules/io/io_shim.c
- * (o `powershell -File modules/io/build.ps1`).
+ * Compilacion:
+ *   Windows (MinGW-w64 x64):
+ *     gcc -shared -O2 -o modules/io/io_shim.dll modules/io/io_shim.c
+ *   Linux/macOS:
+ *     gcc -shared -fPIC -O2 -o modules/io/io_shim.so modules/io/io_shim.c
+ *   (o `powershell -File modules/io/build.ps1` / `scripts/build-standard-modules.sh`).
  */
 
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <direct.h>
-#include <io.h>
 #include <sys/stat.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#include <fcntl.h>
+#include <io.h>
+#define EXPORT __declspec(dllexport)
+#define CLS_STAT struct _stat
+#define cls_stat _stat
+#define CLS_ISDIR(m) (((m) & _S_IFMT) == _S_IFDIR)
+#define CLS_ISREG(m) (((m) & _S_IFMT) == _S_IFREG)
+#define CLS_GETCWD _getcwd
+#define CLS_CHDIR _chdir
+#define CLS_OPEN _open
+#define CLS_CLOSE _close
+#define CLS_WRITE _write
+#define CLS_READ _read
+#define CLS_SETMODE _setmode
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#define EXPORT __attribute__((visibility("default")))
+#define CLS_STAT struct stat
+#define cls_stat stat
+#define CLS_ISDIR(m) S_ISDIR(m)
+#define CLS_ISREG(m) S_ISREG(m)
+#define CLS_GETCWD getcwd
+#define CLS_CHDIR chdir
+#define CLS_CLOSE close
+#define CLS_WRITE write
+#define CLS_READ read
+#define CLS_SETMODE(fd, mode) ((void)(fd), (void)(mode), 0)
+
+/* La API CLS conserva los flags de msvcrt; en POSIX se traducen. */
+static int cls_open_posix(const char *path, int flags, int mode) {
+    int f = 0;
+    if ((flags & 1) != 0) f |= O_WRONLY;
+    if ((flags & 2) != 0) f |= O_RDWR;
+    if ((flags & 256) != 0) f |= O_CREAT;
+    if ((flags & 512) != 0) f |= O_TRUNC;
+    if ((flags & 8) != 0) f |= O_APPEND;
+    return open(path, f, (mode_t)mode);
+}
+#define CLS_OPEN cls_open_posix
+#endif
 
 /* Empaqueta bytes crudos como CArray CLS [cap:i64][len:i64][elems*8]. */
 static int64_t pack_bytes(const unsigned char *raw, size_t n) {
@@ -59,11 +104,11 @@ static char *read_file_raw(const char *path, size_t *out_len) {
 
 /* ---------------- Lectura / escritura de archivos completos ---------------- */
 
-__declspec(dllexport) char *o_read_text(const char *path) {
+EXPORT char *o_read_text(const char *path) {
     return read_file_raw(path, NULL);
 }
 
-__declspec(dllexport) int64_t o_read_bytes(const char *path) {
+EXPORT int64_t o_read_bytes(const char *path) {
     size_t n = 0;
     char *raw = read_file_raw(path, &n);
     if (!raw) return 0;
@@ -72,7 +117,7 @@ __declspec(dllexport) int64_t o_read_bytes(const char *path) {
     return arr;
 }
 
-__declspec(dllexport) int64_t o_write_text(const char *path, const char *data) {
+EXPORT int64_t o_write_text(const char *path, const char *data) {
     FILE *f = fopen(path, "wb");     /* "wb" trunca */
     if (!f) return -1;
     size_t n = data ? strlen(data) : 0;
@@ -81,7 +126,7 @@ __declspec(dllexport) int64_t o_write_text(const char *path, const char *data) {
     return (int64_t)w;
 }
 
-__declspec(dllexport) int64_t o_append_text(const char *path, const char *data) {
+EXPORT int64_t o_append_text(const char *path, const char *data) {
     FILE *f = fopen(path, "ab");     /* "ab" agrega al final */
     if (!f) return -1;
     size_t n = data ? strlen(data) : 0;
@@ -92,71 +137,71 @@ __declspec(dllexport) int64_t o_append_text(const char *path, const char *data) 
 
 /* ---------------- Metadatos / navegacion ---------------- */
 
-__declspec(dllexport) int32_t o_exists(const char *path) {
-    struct _stat st;
+EXPORT int32_t o_exists(const char *path) {
+    CLS_STAT st;
     if (!path) return 0;
-    return _stat(path, &st) == 0 ? 1 : 0;
+    return cls_stat(path, &st) == 0 ? 1 : 0;
 }
 
-__declspec(dllexport) int32_t o_isdir(const char *path) {
-    struct _stat st;
+EXPORT int32_t o_isdir(const char *path) {
+    CLS_STAT st;
     if (!path) return 0;
-    if (_stat(path, &st) != 0) return 0;
-    return (st.st_mode & _S_IFDIR) ? 1 : 0;
+    if (cls_stat(path, &st) != 0) return 0;
+    return CLS_ISDIR(st.st_mode) ? 1 : 0;
 }
 
-__declspec(dllexport) int32_t o_isfile(const char *path) {
-    struct _stat st;
+EXPORT int32_t o_isfile(const char *path) {
+    CLS_STAT st;
     if (!path) return 0;
-    if (_stat(path, &st) != 0) return 0;
-    return (st.st_mode & _S_IFREG) ? 1 : 0;
+    if (cls_stat(path, &st) != 0) return 0;
+    return CLS_ISREG(st.st_mode) ? 1 : 0;
 }
 
-__declspec(dllexport) int64_t o_remove(const char *path) {
+EXPORT int64_t o_remove(const char *path) {
     return (int64_t)remove(path);
 }
 
 /* NOTA: sin param dummy. El bug del typeck (una funcion nativa SIN parametros
  * que devuelve CString resolvia el retorno al tipo C crudo) esta corregido. */
-__declspec(dllexport) char *o_cwd(void) {
+EXPORT char *o_cwd(void) {
     char *buf = (char *)malloc(4096);
     if (!buf) return NULL;
-    if (!_getcwd(buf, 4096)) { free(buf); return NULL; }
+    if (!CLS_GETCWD(buf, 4096)) { free(buf); return NULL; }
     return buf;
 }
 
-__declspec(dllexport) int32_t o_chdir(const char *path) {
-    return (int32_t)_chdir(path);
+EXPORT int32_t o_chdir(const char *path) {
+    return (int32_t)CLS_CHDIR(path);
 }
 
 /* ---------------- Descriptores (open/close/read/write/setmode) ---------------- */
 
-__declspec(dllexport) int32_t o_open(const char *path, int32_t flags, int32_t mode) {
-    return (int32_t)_open(path, flags, mode);
+EXPORT int32_t o_open(const char *path, int32_t flags, int32_t mode) {
+    return (int32_t)CLS_OPEN(path, flags, mode);
 }
 
-__declspec(dllexport) int32_t o_close(int32_t fd) {
-    return (int32_t)_close(fd);
+EXPORT int32_t o_close(int32_t fd) {
+    return (int32_t)CLS_CLOSE(fd);
 }
 
 /* Escribe los bytes de `data` (null-terminated) al fd. Debe estar en modo
  * binario para ser byte-exacto. */
-__declspec(dllexport) int64_t o_write_fd(int32_t fd, const char *data) {
+EXPORT int64_t o_write_fd(int32_t fd, const char *data) {
     if (!data) return 0;
     size_t n = strlen(data);
     if (n == 0) return 0;
-    long r = _write(fd, data, (unsigned)n);
+    long r = CLS_WRITE(fd, data, (unsigned)n);
     return (int64_t)r;
 }
 
 /* Lee una linea del fd (sin el '\n'); "" en EOF. */
-__declspec(dllexport) char *o_read_line(int32_t fd) {
+EXPORT char *o_read_line(int32_t fd) {
     size_t cap = 128, len = 0;
     char *buf = (char *)malloc(cap);
     if (!buf) return NULL;
     for (;;) {
         char c;
-        long r = _read(fd, &c, 1);
+        long r = CLS_READ(fd, &c, 1);
         if (r <= 0) break;
         if (c == '\n') break;
         if (len + 1 >= cap) { cap *= 2; buf = (char *)realloc(buf, cap); }
@@ -166,6 +211,6 @@ __declspec(dllexport) char *o_read_line(int32_t fd) {
     return buf;
 }
 
-__declspec(dllexport) int32_t o_setmode(int32_t fd, int32_t mode) {
-    return (int32_t)_setmode(fd, mode);
+EXPORT int32_t o_setmode(int32_t fd, int32_t mode) {
+    return (int32_t)CLS_SETMODE(fd, mode);
 }
