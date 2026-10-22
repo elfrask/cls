@@ -1,8 +1,10 @@
 # Módulos, imports y exports
 
-CLS tiene dos sistemas de módulos: los **módulos fuente** (`.clsx`, con
-`import`/`from import`/`include`) y las **librerías compiladas** (`.clslib` vía
-`Lib.load`, pendiente de WASM). Este documento cubre los módulos fuente.
+CLS tiene tres formas de reutilizar código: los **módulos fuente** (`.clsx`, con
+`import`/`from import`), las **librerías compiladas** (`.clslib` vía `Lib.load`,
+todavía un stub) y los **módulos compartidos** de `/modules` (módulos fuente con
+manifiesto y rutas de búsqueda adicionales). Este documento cubre los módulos
+fuente y los compartidos; `.clslib` se detalla en `stdlib/desktop.md`.
 
 ## Imports
 
@@ -178,7 +180,7 @@ import "ffi" as f;                 # namespacing: f::strlen(...)
 ```
 
 Funciona: `export function ffiFn`, `export { ffiFn }` (promoción), rename `as`
-(para funciones nativas y cross-OS), reexport por namespace/`from`, e `include`.
+(para funciones nativas y cross-OS) y reexport por namespace/`from`.
 El `when`+`extension` cross-OS se transporta al módulo fusionado (el emisor elige
 la rama por target). La ABI (firma, `library`, símbolo C real) no cambia con el
 rename: el nombre exportado es solo el binding del lenguaje.
@@ -199,13 +201,15 @@ El `ModuleResolver` del runtime consulta en orden:
       **raíz del módulo** cuando el import ocurre dentro de un módulo con
       aislamiento; ver abajo)
    2. `{workspace}/modules/{nombre}/<export.entry>` o `.../mod.clsx`
-   3. `{cwd}/{path}.clsx`
-   4. `{cwd}/modules/{nombre}/<export.entry>` o `.../mod.clsx`
-   5. `{dir_clx}/modules/{nombre}/...` y `{dir_clx}/../modules/{nombre}/...`
+   3. rutas extra de `pathModules` / `--add-path-module`:
+      `{ruta}/{nombre}/<export.entry>`, `.../mod.clsx` y `{ruta}/{nombre}.clsx`
+   4. `{cwd}/{path}.clsx`
+   5. `{cwd}/modules/{nombre}/<export.entry>` o `.../mod.clsx`
+   6. `{dir_clx}/modules/{nombre}/...` y `{dir_clx}/../modules/{nombre}/...`
       (módulos junto al binario `clx`; útil sin setup global)
-   6. `~/.cls/modules/{nombre}@{version}/...` (globales versionadas; filtra por
+   7. `~/.cls/modules/{nombre}@{version}/...` (globales versionadas; filtra por
       el rango semver declarado en el `cls.json` del importador)
-   7. `~/.cls/modules/{nombre}/...` (globales sin versión)
+   8. `~/.cls/modules/{nombre}/...` (globales sin versión)
 
    Para un **paquete con scope** (`usuario/foo`, exactamente un `/` sin
    extensión) se busca primero el layout global anidado
@@ -246,10 +250,65 @@ ficheros de bajo nivel, etc.), ver [extension-when.md](extension-when.md):
 el patrón `when` + `extension` permite declarar esos bindings en un
 `.clsx` sin necesidad de recompilar cls-core o cls-jit.
 
+## Módulos compartidos (`/modules`)
+
+El repo CLS mantiene una **stdlib autocontenida** en `/modules`: módulos fuente
+reutilizables por los proyectos de `examples/` y `cls-repositories/`. No son
+paquetes del registry ni módulos propios de un proyecto; se referencian desde
+su ubicación en el repo.
+
+### Reglas
+
+1. **CLS puro + FFI.** No se agregan `host_calls` ni intrínsecos nuevos; si falta
+   una capacidad, se resuelve con `extension`.
+2. **Sin dependencias externas** fuera de CLS + FFI.
+3. **Un módulo = una carpeta** con su `cls.json` (`export.entry`).
+4. **Reutilizar, no copiar**: se referencian con `pathModules` o
+   `--add-path-module`.
+5. Si el módulo reemplaza un `host_call` (`fs`, `http`, `json`, `strings`), se
+   anota en la tabla de deuda de `examples/patrones.md` §2.7.
+
+### Estructura
+
+```text
+modules/<nombre>/
+├── cls.json          # { "name": "...", "version": "...", "export": { "entry": "mod.clsx" } }
+├── mod.clsx          # barrel: reexporta solo la API pública
+├── <dominio>.clsx    # una responsabilidad por archivo
+└── <mod>_ffi.clsx    # bindings FFI crudos (no públicos)
+```
+
+- Los imports internos se resuelven desde la **raíz del módulo** (aislamiento).
+- Los helpers internos se exportan entre archivos pero **no** se reexportan en el
+  barrel.
+- Las reexportaciones de tipos conservan el nombre original; funciones y
+  constantes admiten renombrado.
+- **Gotcha**: el typeck registra los módulos internos por el **stem** del
+  archivo, así que dos `.clsx` con el mismo nombre en módulos distintos del
+  grafo colisionan. Usá stems únicos (`io_ffi.clsx`, `net_ffi.clsx`, ...).
+
+### Consumo
+
+```json
+{
+  "name": "mi-app",
+  "entry": "src/main.clsx",
+  "pathModules": ["../../modules"]
+}
+```
+
+```bash
+clx run src/main.clsx --add-path-module=../../modules
+```
+
+`pathModules` es relativo a la raíz del proyecto; el flag es relativo al CWD y
+es repetible. `clx test` también aplica `pathModules`. El catálogo completo y
+los shims nativos están en [stdlib/modulos.md](../stdlib/modulos.md).
+
 ## Colisiones y reuso
 
-- `from "m" import *` (y `include`, ya eliminado) traen los símbolos **al scope
-  actual**; dos `import *` con el mismo nombre colisionan (gana el primero).
+- `from "m" import *` trae los símbolos **al scope actual**; dos `import *` con
+  el mismo nombre colisionan (gana el primero).
   Para evitar colisiones usá namespaces: `import "m" as ns` / `from "m" import *
   as ns` y referí con `ns::sym`.
 - Un módulo puede ser reutilizado por varios módulos (`a` y `b` importan `part`)
@@ -260,10 +319,17 @@ el patrón `when` + `extension` permite declarar esos bindings en un
 
 El JIT **aplana** los imports: compila el entry y todos sus módulos en **un
 solo** módulo WASM (`flatten_imports`), fusionando los spans con offsets de
-línea únicos. Los exports de `import ... as`/`... import * as ns` quedan
-namespaced bajo prefijos `alias::`; el mismo módulo se aplana **una sola vez**
-(dedupe) aunque lo importen varios. Editar cualquier `.clsx` del grafo invalida
-el caché.
+línea únicos. El flatten incluye funciones, variables/constantes, enums,
+clases, estructuras, interfaces y alias. Los exports de `import ... as`/
+`... import * as ns` quedan namespaced bajo prefijos `alias::`; el mismo módulo
+se aplana **una sola vez** (dedupe) aunque lo importen varios. Editar cualquier
+`.clsx` del grafo invalida el caché.
+
+> **Limitación conocida**: si un módulo exporta una clase que llama a otra
+> función exportada del mismo módulo y el consumidor no la importa
+> explícitamente, el flatten puede omitirla y la llamada termina en un trap
+> (`indirect call type mismatch`). Mitigación: que el barrel importe/exporte
+> todos los símbolos hermanos que usa.
 
 ## `module` y `namespace`
 

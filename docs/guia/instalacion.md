@@ -10,6 +10,8 @@ CLS se compila desde fuente con **Cargo**. El proyecto es un workspace Rust
 |---|---|
 | Rust | Edición 2021 (`rustup` recomendado) |
 | Cargo | Incluido con Rust |
+| `wasm32-unknown-unknown` | `rustup target add wasm32-unknown-unknown` (lo usa `cls-internals/build.rs`) |
+| `gcc` (MinGW-w64 / build-essential) | Solo para compilar los shims de `modules/` (Tombstone, sockets, SQLite, FFI) |
 
 Para desarrollo, CLS se construye localmente. Las releases publicadas incluyen
 portables con los módulos estándar; el `cargo build` normal no copia módulos.
@@ -19,7 +21,12 @@ portables con los módulos estándar; el `cargo build` normal no copia módulos.
 ```ps
 git clone https://github.com/frask/cls
 cd cls
+git submodule update --init --recursive
 ```
+
+> Los proyectos de `cls-repositories/` son **submódulos** independientes
+> (`tombstone`, `create-tombstone-app`). Sin `--recursive` esas carpetas quedan
+> vacías.
 
 > El remoto `origin` del repositorio actual apunta a
 > `https://github.com/elfrask/cls.git`; el metadata del workspace
@@ -41,6 +48,23 @@ El perfil de desarrollo compila las dependencias pesadas
 (wasmtime + Cranelift) con `opt-level = 2`
 (`[profile.dev.package."*"]` en el `Cargo.toml` raíz), de modo que el JIT
 compila WASM -> nativo mucho más rápido incluso en build debug.
+
+### Módulos y shims nativos
+
+Los módulos de `/modules` que usan FFI necesitan su shim compilado antes de
+ejecutar (ver `stdlib/modulos.md`):
+
+```powershell
+powershell -File modules\io\build.ps1
+powershell -File modules\net\build.ps1
+powershell -File modules\socket\build.ps1
+powershell -File modules\sqlite\build.ps1
+powershell -File modules\csprng\build.ps1
+bash modules/argon2/build.sh
+```
+
+En Linux/macOS: `bash scripts/build-standard-modules.sh`. Los shims se resuelven
+contra el `cls.json` de cada módulo, no contra el CWD.
 
 ### Binarios generados
 

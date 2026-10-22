@@ -55,8 +55,8 @@ Iterar un `Value::EnumDef` recorre sus variantes en orden de declaración.
 
 ## En módulos
 
-Los enums son exportables y funcionan con `include` (se inyectan sin
-namespacing - ver `modulos.md`):
+Los enums son exportables y se importan sin namespacing con
+`from "..." import *` (ver `modulos.md`):
 
 ```clx
 # lib/colores.clsx

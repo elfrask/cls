@@ -11,8 +11,11 @@ Es el único intérprete del proyecto (el tree-walker se eliminó en dev-2 — v
 1. **Lectura** - se lee el entry desde disco.
 2. **Lexer** - `cls_core::frontend::Lexer`.
 3. **Parser** - `cls_core::frontend::Parser` (AST).
-4. **Imports** - se resuelven `import` / `from import` / `include`
-   recursivamente (`load_import_modules_hooked`).
+4. **Imports** - se resuelven `import` / `from import` recursivamente
+   (`load_import_modules_hooked`), con el orden de `cls-jit/src/resolve.rs`:
+   archivo que importa → `modules/` del proyecto → `pathModules`/
+   `--add-path-module` → CWD → `modules/` junto al binario → `~/.cls/modules`.
+   Ver `lenguaje/modulos.md`.
 5. **Caché** - se calcula la clave de los fuentes; si el `.wasm` existe en
    `~/.cache/cls/`, se salta directo a la ejecución.
 6. **Desplazamiento de spans** - cada módulo importado se fusiona al módulo

@@ -28,7 +28,7 @@ exit code del proceso.
 
 Estándar: letras, dígitos y `_`, no pueden comenzar con un dígito.
 
-## Palabras clave (75)
+## Palabras clave
 
 | Categoría | Keywords |
 |---|---|
@@ -38,7 +38,7 @@ Estándar: letras, dígitos y `_`, no pueden comenzar con un dígito.
 | Funciones | `return`, `break`, `continue` |
 | Tipos/OOP | `class`, `structure`, `interface`, `module`, `namespace`, `alias`, `enum` |
 | Visibilidad | `public`, `private`, `protected`, `static`, `extends`, `is`, `super`, `readonly`, `me` |
-| Módulos | `import`, `from`, `as`, `include` |
+| Módulos | `import`, `from`, `as` |
 | Otros | `extension`, `async`, `await`, `sync`, `macro`, `global`, `config`, `then`, `and`, `or`, `not`, `true`, `false` |
 
 Nota: `let` es un alias de `var`. `true`/`false` son keywords (no literales

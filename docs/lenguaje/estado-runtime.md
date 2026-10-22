@@ -28,10 +28,11 @@
   ningún intérprete que lo corra.
 - Un programa CLS es **bloqueante**: una llamada a socket/lectura bloquea hasta
   completar.
-- **Servidor HTTP**: single-thread por request. La concurrencia (threads por
-  request vía `extension` a `pthread_create`, o multiplexación con
-  `select`/`poll`) es trabajo futuro — documentado como limitación en el
-  framework (`docs/desarrollo/minilaravel.md`), NO implementado en v1.
+- **Servidor HTTP**: Tombstone implementa HTTP/1.1 single-thread (una request
+  por conexión, `Connection: close`) sobre `modules/socket` + `modules/httpd`.
+  La concurrencia (threads por request vía `extension` a `pthread_create`, o
+  multiplexación con `select`/`poll`) es trabajo futuro — ver limitaciones en
+  `docs/desarrollo/minilaravel.md`.
 
 ## Límites del JIT relevantes para features nuevas
 
@@ -43,8 +44,8 @@
 | WASI | ❌ Kind declarado, NO implementado | — |
 | async/await | ❌ No existe en el JIT | `agent-context/ASYNC_PLAN.md` |
 | Threads | ❌ No hay API de threads en el lenguaje; posible vía `extension` a `pthread_create` (no documentado como API) | — |
-| HTTP cliente | ✅ `import "http" as http` (`get`/`post`) | `docs/stdlib/desktop.md` |
-| HTTP servidor | 🟡 Framework en `.clsx` puro (especificación delegada) | `docs/desarrollo/minilaravel.md` |
+| HTTP cliente | ✅ `import "http" as http` (`get`/`post`) o `modules/httpc` (CLS puro) | `docs/stdlib/desktop.md`, `docs/stdlib/modulos.md` |
+| HTTP servidor | ✅ Tombstone (CLS + FFI) sobre `modules/httpd`; sin concurrencia | `docs/desarrollo/minilaravel.md` |
 
 ## Por qué (restricción arquitectónica)
 

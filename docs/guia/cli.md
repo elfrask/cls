@@ -104,7 +104,9 @@ standalone en `drivers/gix-driver/`).
 
 Ejecuta los tests del proyecto. Sin argumentos usa `testEntry` de `cls.json`
 (array de rutas o globs, admite `*`, `**`, `?`). Cada archivo se ejecuta con el
-JIT; su exit code determina pass/fail. Ver `lenguaje/testing.md`.
+JIT; su exit code determina pass/fail. Aplica `pathModules` del `cls.json` del
+CWD y del proyecto de cada test. Ver `desarrollo/testing.md` y
+`lenguaje/testing.md`.
 
 ## `clx start [comando]`
 
@@ -164,11 +166,17 @@ exports como prelude (los tipos importados son verificables).
 
 Empaqueta la aplicación en un `.clsapp` (zip con dos entradas):
 
-- `manifest.json` - `{name, version, entry, format: "source"}`.
+- `manifest.json` - `{name, version, entry, format: "source"}`; si el proyecto
+  usa FFI, incluye `nativeLibs` con el mapa paquete → archivos.
 - `source.clsx` - el código fuente crudo del entry.
 
 Default de salida: `dist/app.clsapp`. Nota: el empaquetado es de **código
 fuente** (el AST/WASM embebido es un trabajo futuro).
+
+Si hay extensiones nativas, `clx build` copia las librerías resueltas a
+`dist/native-libs/<paquete>@<version>/`, conserva sus nombres originales,
+deduplica por contenido y falla ante colisiones. Cada paquete tiene su propia
+carpeta: no se mezclan versiones.
 
 ## `clx repl`
 

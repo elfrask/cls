@@ -159,4 +159,5 @@ if (app.isComponent) {
   en records y arrays).
 
 Ejemplo completo: `examples/cmx-templates/` (prueba #7) y
-`docs/desarrollo/minilaravel.md` (framework HTTP, F6).
+`docs/desarrollo/minilaravel.md` (Tombstone, renderer
+`cls-repositories/tombstone/modules/tombstone/view.clsx`).

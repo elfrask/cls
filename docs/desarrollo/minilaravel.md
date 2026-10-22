@@ -1,379 +1,276 @@
-# Minilaravel — Framework HTTP en CLS puro (especificación para implementar)
+# Tombstone — framework HTTP en CLS puro
 
-> **Estado**: especificación lista para delegar. La implementación la hace un
-> desarrollador asignado. Este documento es auto-contenido: el dev NO necesita
-> leer el código del proyecto para implementar; solo consultar los docs
-> referenciados.
->
-> **Requisito duro**: 100% `.clsx` puro. NO se toca el host (`cls-core`,
-> `cls-jit`, `cls-internals`, `nodos/clx/src/modules/`). Si una capacidad no es
-> expresable con `extension` + `when` + CLS puro, se documenta como limitación
-> — no se agrega código nativo.
+Tombstone es el framework web de CLS 2.0: router, middleware, HTTP/1.1,
+archivos estáticos, CORS, cookies, JSON, vistas CMX, plantillas, validación,
+controllers, ORM, migraciones, auth y consola. Se construye con **CLS puro +
+FFI**: no agrega `host_calls` ni intrínsecos al lenguaje.
 
-## Entregables
+> Este documento reemplaza la especificación histórica de “minilaravel”. La
+> implementación de referencia vive en el submódulo
+> [`cls-repositories/tombstone`](https://github.com/elfrask/tombstone), y la
+> plantilla para crear una app en
+> [`cls-repositories/create-tombstone-app`](https://github.com/elfrask/create-tombstone-app).
 
-1. `modules/socket.clsx` — capa de sockets TCP portables (F1)
-2. `modules/http.clsx` — parser HTTP + clases `Request`/`Response` (F2)
-3. `modules/router.clsx` — enrutador con params (F3)
-4. `modules/middleware.clsx` — cadena de middleware (F4)
-5. `modules/static.clsx` — archivos estáticos (F5)
-6. `modules/view.clsx` — renderer CMX → HTML (CLS puro) (F6)
-7. `examples/http-framework/main.clsx` — demo completa (F7)
-8. `examples/http-framework/views.clsx` — vistas de la demo (funciones CLS que devuelven CMX)
-9. `examples/http-framework/README.md` — cómo correr y probar
+## Ubicación
 
-## Docs de referencia (leer primero)
-
-| Tema | Doc |
+| Pieza | Ruta |
 |---|---|
-| FFI `extension` (tipos C, aridad 16, structs) | `docs/lenguaje/extension.md` |
-| Patrón `when` + `extension` (sockets TCP por SO) | `docs/lenguaje/extension-when.md` |
-| Directiva `when` (combinadores, target) | `docs/lenguaje/multi-entorno.md` |
-| Clases/OOP (ctor `main`, `me.`, `super`) | `docs/lenguaje/oop.md` |
-| Records/arrays/strings | `docs/lenguaje/datos.md` |
-| Módulos (`import`/`from`/`include`) | `docs/lenguaje/modulos.md` |
-| Estado real del runtime (WASI NO, async NO) | `docs/lenguaje/estado-runtime.md` |
-| **CMX (sintaxis de vistas)** | `docs/lenguaje/cmx.md` + tests `b8-cmx.clsx`, `10-cmx.clsx` |
-| Módulo `fs` (para static) y `json` | `docs/stdlib/desktop.md`, `docs/stdlib/core.md` |
-| Ejemplos funcionales de FFI | `examples/test/jit-test/extension-demo.clsx`, `examples/test/jit-test/units/test-ffi-arity.clsx` |
+| Motor del framework | `cls-repositories/tombstone/modules/tombstone/` |
+| Iconos CMX | `cls-repositories/tombstone/modules/tombstone-icons/` |
+| App demo / template | `cls-repositories/tombstone/src/` + `public/` |
+| Scaffold de apps | `cls-repositories/create-tombstone-app/` |
+| Dependencias compartidas | `/modules/socket`, `/modules/httpd`, `/modules/orm`, `/modules/sqlite`, `/modules/check`, `/modules/csprng`, `/modules/argon2` |
 
-## Restricciones del lenguaje (NO negociables)
+> El motor **no** está en `/modules/tombstone`: vive dentro del submódulo. Para
+> consumirlo desde otro proyecto hay que agregar las dos rutas a `pathModules`
+> (ver “Consumo como módulo”).
 
-1. **Comentarios con `#`**, no `//` (rompe el lexer). Nada de arrows no-ASCII `→` en `.clsx`.
-2. **Strings inmutables**: `s = s.upper()`, no `s.upper()` a secas.
-3. **Concatenación**: `"texto" + int` NO compila — usar `.toString()`.
-4. **Ctor de clase**: `function main(...)`, no `__init`.
-5. **Handlers con tipos explícitos**: `(req: Request) -> Response`, nunca params bare (el typeck **requiere anotación**: no hay `Any` implícito y el dispatch falla — ver `docs/lenguaje/magics.md`).
-6. **`when` envuelve `extension`, nunca al revés**.
-7. **Sin async/await**: el servidor es bloqueante por request.
-8. **Las vistas usan CMX** (la sintaxis nativa de maquetación). NO se inventa un
-   motor de templates (nada de `{{ }}`, `@if`, `@for`, Blade). El renderer
-   CMX→HTML es CLS puro (módulo `render.clsx`), ver F6.
+## Arquitectura
 
----
-
-## F1. Capa de sockets TCP (`modules/socket.clsx`)
-
-Patrón exacto de `docs/lenguaje/extension-when.md` (sección "Patrón canónico: sockets TCP portables"). Declarar por SO:
-
-```clx
-# Windows
-when (os: windows) {
-    extension "ws2_32.dll" as C {
-        function socket(af: CInt, type: CInt, proto: CInt) -> CInt;
-        function bind(sock: CInt, addr: CPtr, len: CInt) -> CInt;
-        function listen(sock: CInt, backlog: CInt) -> CInt;
-        function accept(sock: CInt, addr: CPtr, len: CPtr) -> CInt;
-        function recv(sock: CInt, buf: CPtr, len: CInt, flags: CInt) -> CInt;
-        function send(sock: CInt, buf: CPtr, len: CInt, flags: CInt) -> CInt;
-        function closesocket(sock: CInt) -> CInt;
-        function WSAGetLastError() -> CInt;
-        function htons(hostshort: CInt) -> CInt;
-        function inet_addr(cp: CString) -> CInt;
-    };
-}
-# Linux: igual con "libc.so.6", close(fd) en vez de closesocket, socket/recv/send
-# macOS: igual con "libSystem.B.dylib", close(fd)
+```text
+App (router + middleware + static + CORS)
+  └── Request / Response (validación de forms, multipart y JSON)
+        └── Controller (json/ok/created/invalid/redirect)
+              └── DTO → Action → Repository
+                    └── Model / Query / ModelRow
+                          └── modules/orm → modules/sqlite
 ```
 
-Capa de azúcar portable (CLS puro, la API que el resto ve):
+- **Transporte**: `modules/socket` (TCP persistente, FFI) + `modules/httpd`
+  (parser y loop HTTP/1.1 en CLS puro).
+- **Vistas**: CMX + `cls-repositories/tombstone/modules/tombstone/view.clsx`
+  (CMX → HTML con escape, `raw`, void elements, componentes y `renderEach`).
+- **Plantillas**: `Template` (title, metas, styles, scripts, favicon, body class,
+  `derive`).
+- **Seguridad**: Argon2id (`modules/argon2`), CSPRNG (`modules/csprng`),
+  sesiones SQLite, CSRF, `AuthGuard`, policies y rate limit.
+- **Aplicación**: `EventBus` + model events, `Logger`, `Action`/`Service`,
+  providers y DTOs.
 
-```clx
-class Socket {
-    var fd: int;
-    function main(fd: int) { me.fd = fd; }
-    static function listen(port: int) -> Socket {
-        # socket(AF_INET=2, SOCK_STREAM=1, 0)
-        # bind a INADDR_ANY (0.0.0.0) con sockaddr_in (16 bytes: fam=2, port, addr)
-        # listen(fd, backlog=16)
-        # devuelve Socket(fd) o null/0 si error
-    }
-    function accept() -> Socket { ... }      # accept(fd) -> nuevo Socket
-    function recv(max: int) -> String { ... } # recv(fd, buf, max, 0) -> bytes
-    function send(data: String) -> int { ... } # send(fd, data, len, 0)
-    function close() -> int { ... }
-};
+## Estructura del proyecto
+
+```text
+tombstone/
+├── cls.json
+├── modules/
+│   ├── tombstone/          # motor (App, router, controller, model, ...)
+│   │   ├── cls.json        # export.entry = mod.clsx
+│   │   ├── mod.clsx        # barrel público
+│   │   ├── types/          # interfaces de props CMX (HTML + UI)
+│   │   ├── bin/            # launcher global
+│   │   └── setup.clsx
+│   └── tombstone-icons/
+├── src/
+│   ├── main.clsx           # rutas + demo
+│   ├── components.clsx     # componentes CMX
+│   ├── controllers.clsx
+│   ├── config.clsx
+│   ├── dtos.clsx
+│   ├── repositories.clsx
+│   ├── actions.clsx
+│   ├── services.clsx       # ApplicationServices + providers
+│   ├── resources.clsx
+│   ├── scopes.clsx
+│   ├── migrations.clsx
+│   └── views.clsx
+├── public/                 # css / js / favicon
+└── tests/
+    ├── unit/
+    ├── db/
+    └── integration/
 ```
 
-**Notas**:
-- En Windows hay que llamar `WSAStartup` una vez antes de `socket` (declarar en la extension e invocar al iniciar). `WSADATA` ocupa 408 bytes en x64: declararlo completo con arrays inline (`i8[257]`/`i8[129]`) o la DLL escribe fuera de la alocacion.
-- `sockaddr_in` con `structure` y el layout C (ver `lenguaje/estructuras.md`): el `structure` CLS ya usa ABI C, así que se declara con los tipos C reales y se pasa como `CStruct` — el DLL recibe la data (`base+16`):
+`create-tombstone-app` genera la misma base (`app/`, `database/`, `config/`,
+`public/`, `tests/`, `.env.example`, `cls.json`).
 
-  ```clx
-  when (os: windows) {
-      extension "ws2_32.dll" as C {
-          function socket(af: CInt, type: CInt, protocol: CInt) -> CInt;
-          function bind(s: CInt, name: CStruct, namelen: CInt) -> CInt;
-          function listen(s: CInt, backlog: CInt) -> CInt;
-          function htons(hostshort: CInt) -> CInt;
-          function WSAStartup(wVersionRequired: CInt, lpWSAData: CStruct) -> CInt;
-      };
-      structure sockaddr_in { sin_family: i16, sin_port: i16, sin_addr: i32, sin_zero: i8[8] };
-  };
-  # addr = sockaddr_in(2, htons(9999), 0); bind(sock, addr, 16);
-  ```
-  Test de referencia (oráculo con `getsockname`): `examples/test/jit-test/units/ffi-cstruct.clsx`.
-- Aridad: todas las llamadas ≤ 16 args (decisión 002). Si alguna excede, empaquetar en struct.
-- El socket fd viaja como `int` (handle opaco — ver "tipos con layout opaco" en extension-when.md).
+## Crear y ejecutar una app
 
-## F2. Parser HTTP (`modules/http.clsx`)
+Instalación del launcher global (una vez):
 
-Clases:
-
-```clx
-class Request {
-    var method: String;      # GET/POST/PUT/DELETE
-    var path: String;        # /users/42
-    var query: Record<String, String>;  # ?a=1&b=2
-    var headers: Record<String, String>; # case-insensitive (guardar en minuscula)
-    var body: String;        # por Content-Length
-    function main(raw: String) { ... }   # parsea el buffer crudo
-    static function parse(raw: String) -> Request { ... }
-};
-
-class Response {
-    var status: int;
-    var headers: Record<String, String>;
-    var body: String;
-    function main(status: int, body: String, headers: Record<String, String>) { ... }
-    static function json(obj: Value) -> Response { ... }   # body = json.stringify(obj), header Content-Type: application/json
-    static function text(s: String) -> Response { ... }
-    static function html(s: String) -> Response { ... }  # Content-Type: text/html
-    static function status(n: int) -> Response { ... }   # sin body
-    function header(name: String, value: String) -> Response { ... }
-};
+```powershell
+powershell -File cls-repositories\tombstone\modules\tombstone\scripts\install-global.ps1
 ```
 
-**Parseo** (CLS puro, usar `str.split`, `str.indexOf`, `str.slice` del módulo strings o los métodos de String):
-1. Dividir el buffer por `\r\n\r\n` → headers vs body.
-2. Request line: `METHOD SP PATH SP HTTP/1.1`.
-3. Path + query: separar en `?`.
-4. Headers: cada línea `Nombre: valor`, normalizar nombre a minúsculas.
-5. Body: leer `Content-Length` bytes del resto.
-6. **Chunked encoding**: documentar como limitación v1 (o implementar si queda tiempo — `Transfer-Encoding: chunked`).
-
-**Serialización** (para enviar):
-```clx
-function serialize_response(res: Response) -> String {
-    # "HTTP/1.1 200 OK\r\nContent-Type: ...\r\nContent-Length: N\r\n\r\n" + body
-}
+```bash
+bash cls-repositories/tombstone/modules/tombstone/scripts/install-global.sh
 ```
 
-## F3. Router (`modules/router.clsx`)
+Agregá `~/.cls/bin` al `PATH`. También podés usar `clx start`, que construye el
+`PATH` con los `bin/` de los módulos resueltos:
 
-```clx
-class Router {
-    var routes: Array;  # [{method, pattern, handler}]
-    function main() { ... }
-    function get(pattern: String, handler: (Request) -> Response) { ... }
-    function post(pattern: String, handler: (Request) -> Response) { ... }
-    function put(pattern: String, handler: (Request) -> Response) { ... }
-    function delete(pattern: String, handler: (Request) -> Response) { ... }
-    function match(method: String, path: String, req: Request) -> Response {
-        # recorre routes; si method+pattern coinciden, extrae params en req y llama handler(req)
-        # si no: 404 (o 405 si el path existe con otro metodo)
-    }
-};
+```bash
+clx start tombstone migrate:status
 ```
 
-- Patrones: `/users/{id}` → params `{id: "42"}` en `req.query` o un campo `req.params: Record<String, String>`.
-- Coincidencia: split del path por `/` y comparar segmento a segmento; `{x}` matchea cualquier valor.
-- Handlers: tipo `(Request) -> Response` (función). Si un handler es una arrow `(req) => ...`, anotar el param `(req: Request) -> Response` (restricción 5).
-- 404 por defecto: `Response.status(404).text("Not Found")`.
+Crear una app en una carpeta vacía:
 
-## F4. Middleware (`modules/middleware.clsx`)
-
-```clx
-class App {
-    var router: Router;
-    var middlewares: Array;   # [(Request) -> Request|Response|...]
-    var static_dirs: Array;
-    function main() { ... }
-    function use(fn: (Request) -> Request) { ... }   # registra middleware
-    function get/post/put/delete(pattern, handler) { me.router.get(...); }
-    function static(prefix: String, dir: String) { ... }
-    function handle(raw: String) -> Response {
-        # 1. parsea Request
-        # 2. corre middlewares en cadena (cada uno puede mutar req o cortar con Response)
-        # 3. static si el path matchea un prefijo
-        # 4. router.match
-    }
-    function serve(port: int) {
-        # loop: socket.listen(port); accept(); recv() -> handle() -> send(); close()
-        # bloqueante; log a consola
-    }
-};
+```powershell
+tombstone create app
 ```
 
-- Middleware que corta: devolver un `Response` en vez de `Request` (convención: si el retorno es Response, se envía y se detiene la cadena).
-- Ejemplos: logging (imprimir método+path), CORS (`Access-Control-Allow-Origin: *`), parseo de body JSON.
+Correr el demo desde la raíz del repo CLS:
 
-## F5. Archivos estáticos (`modules/static.clsx`)
-
-- `app.static("/public", "./public")`: si `req.path` empieza con `/public/`, leer el archivo de `./public/` + el resto del path.
-- Usar el módulo desktop `fs` (`import "fs" as fs`): `fs.readFile(path)` (ver `docs/stdlib/desktop.md`).
-- Content-Type por extensión: `.html` → `text/html`, `.css` → `text/css`, `.js` → `application/javascript`, `.json` → `application/json`, `.png` → `image/png`, default `application/octet-stream`.
-- 404 si el archivo no existe (`fs.exists`).
-- **Nota**: `fs` es un host call del nodo — es la excepción permitida (file I/O no lo cubre WASI, que no está implementado). No es una violación de "host delgado": es el módulo desktop documentado.
-
-## F6. Vistas con CMX + renderer CLS puro (`modules/view.clsx`)
-
-**Las vistas usan CMX** — la sintaxis nativa de maquetación de CLS (JSX-like,
-ver `docs/lenguaje/cmx.md`). NO se inventa un motor de templates (nada de
-`{{ }}`, `@if`, `@for`, Blade).
-
-CMX construye un árbol `Cmx { tag, props, children }` (DOM virtual) con
-`toString()` de depuración. **No serializa a HTML por sí solo**, así que el
-framework incluye un **renderer en CLS puro** que recorre el árbol:
-
-```clx
-# modules/view.clsx — renderer CMX -> HTML (CLS puro, 0 host nuevo)
-function e(s: String) -> String {
-    # escape HTML: & -> &amp;, < -> &lt;, > -> &gt;, " -> &quot;, ' -> &#39;
-}
-
-function render(cmx: Cmx) -> String {
-    # kind==1 (texto): devuelve e(cmx.tag)
-    # isComponent: invocar cmx.tagCallable(cmx.props, cmx.children)
-    # tag + props: "<tag nombre=\"valor\" ...>"
-    # children: concat render() de cada hijo
-    # cierre: "</tag>"
-}
+```powershell
+target\debug\clx.exe run cls-repositories\tombstone\src\main.clsx -- 8080
 ```
 
-**Vista de la demo** — una función CLS que devuelve CMX:
+Build de la app (desde su directorio):
 
-```clx
-# views.clsx — las vistas son funciones CLS (no archivos .blade)
-function home_view(titulo: String, items: Array) -> Cmx {
-    return (
-        <div class="container">
-            <h1>{titulo}</h1>
-            <ul>
-                {items.map((x: String) -> <li>{x}</li>)}
-            </ul>
-        </div>
-    );
-}
+```powershell
+target\debug\clx.exe build
 ```
 
-**Handler**:
-```clx
-app.get("/", (req: Request) -> Response {
-    return Response.html(render(home_view("Bienvenido", ["A", "B", "C"])));
-});
-```
+Genera `dist/app.clsapp` y `dist/native-libs/<paquete>@<version>/`. El
+`.clsapp` es un zip de **código fuente**; las nativas se copian aparte.
 
-**Cómo se cubren los gaps de CMX (v1)**:
-| Necesidad | Patrón CMX |
+## API principal
+
+| Área | API |
 |---|---|
-| Loops | `{arr.map((x: T) -> <li>{x}</li>)}` — el renderer expande arrays de children |
-| Condicionales | `{cond ? a : b}` como expresión, o `if` fuera del marcado construyendo el CmxValue por partes |
-| Layouts/herencia | Composición de funciones: `layout_base(titulo, body)` que recibe el CmxValue del body |
-| Componentes reutilizables | Llamar la función y pasar el resultado: `{home_view(...)}`; invocar tags mayúscula con `if (cmx.isComponent) { cmx.tagCallable(props, children) }` (ver `cmx.md`) |
-| Spreads en children/props | `{...items}` expande arrays dentro de children (spread de arrays) y `{...props}` en attributes (ver `control-de-flujo.md`) |
-| Raw HTML (sin escape) | El renderer escapa por defecto; una función `raw(html)` marca el valor para que el renderer no lo escape (solo para contenido confiable) |
+| `App` | `get/post/put/patch/delete_route/options`, `controller`, `group`, `route`, `use`, `serve_static`, `cors`, `handle(raw)`, `dispatch(Request)`, `serve(host, port)` |
+| `Router` | `add`, `add_named`, `url`, `controller`, verbos, `{param}`, `{id?}`, named routes, 404/405 |
+| `Middleware` | `(Request) -> Response`; `status == 0` continúa la cadena |
+| `Request` | `http_method`, `path`, `query`, `query_param`, `headers`, `header`, `body`, `params`, `param`, `form`, `files`, `input`, `all`, `validate`, `validate_schema`, `file`, `has_file` |
+| `Response` | `text`, `html`, `json_raw`, `json_response`, `redirect`, `status_only`, `not_found`, `header`, `set_cookie`, `add_cookie`, `serialize` |
+| `Controller` | `input/all/param/file`, `validate`, `validate_schema`, `json/ok/created/accepted/no_content/invalid/error/redirect` |
+| `Template` | `set_*`, `add_style`, `add_script`, `add_meta`, `add_meta_prop`, `derive`, `render(page)` |
+| `view` | `e`, `raw`, `render`, `renderChildren`, `attrs`, `isVoid`, `renderEach`, `layout`, `ul_items` |
+| `Model` | CRUD, `where`, `paginate`, agregados, `first_or_create`, `update_or_create`, relaciones, soft deletes |
+| `Query` | `where_eq/like/in/null/not_null/between`, `order_by`, `limit/offset`, agregados, `update/delete` |
+| `DbSchema` | `blueprint`, `create`, `alter`, `drop`, `has_table`, `has_column` |
+| `MigrationRunner` | `add`, `run`, `rollback`, `reset`, `status` |
+| `Factory` | `make`, `create`, `create_many` |
+| Auth | `hash_password`/`verify_password`, `AuthGuard`, `Csrf`/`CsrfMiddleware`, `Session`/`DbSessionStore`, `Gate`, `RateLimiter` |
+| Utilidades | `EventBus`/`Event`/`Listener`, `Logger`, `Action`/`Service`, `Cache`/`FileCache`, `TestClient`/`TestResponse`, `HttpStatus` |
 
-**Escape**: `e()` en el renderer (texto y props). Sin escape = riesgo de
-inyección HTML — documentar que TODO lo interpolado se escapa salvo `raw()`.
+Ejemplo mínimo:
 
-> Nota (dev-2): la serialización recursiva de tipos compuestos (tuplas `(a, b)`,
-> structs/clases/enums anidados, ver `datos.md`) aplica al **print/toString** de
-> depuración; el renderer `render()` del framework recorre el `CmxValue` y
-> construye HTML — no usa esa serialización.
-
-## F7. Demo completa (`examples/http-framework/`)
-
-`main.clsx`:
 ```clx
-import "fs" as fs;      # solo para static
-import "modules/router" as router;
-# ... (los módulos del framework como imports, o un solo archivo si se prefiere)
+from "tombstone" import App, Request, Response, Template, render;
 
 function main(args: String[]) -> int {
     var app = App();
-    app.use(logging_middleware);
     app.get("/", (req: Request) -> Response {
-        return Response.html(render(layout_base("Home", home_view("Bienvenido", ["A", "B", "C"]))));
+        var t = Template();
+        t.set_title("Inicio");
+        return Response.html(render(t.render(<h1>{"Hola"}</h1>)));
     });
-    app.get("/api/users", (req: Request) -> Response {
-        return Response.json({ok: true, users: ["ana", "beto", "carla"]});
-    });
-    app.get("/users/{id}", (req: Request) -> Response {
-        return Response.json({id: req.params["id"]});
-    });
-    app.static("/public", "./public");
-    print("Servidor en http://localhost:8080");
-    app.serve(8080);
-    return 0;
+    return app.serve("127.0.0.1", 8080);
 };
 ```
 
-`views.clsx` (las vistas son funciones CLS que devuelven CMX — no archivos de
-template):
+## Tests
+
+Desde la raíz del repo CLS:
+
+```powershell
+powershell -File cls-repositories\tombstone\tests\unit\run.ps1
+powershell -File cls-repositories\tombstone\tests\db\run.ps1
+powershell -File cls-repositories\tombstone\tests\integration\http_smoke.ps1
+```
+
+Estado actual: **13 tests unitarios**, **75 checks DB** y **71 checks HTTP**
+(0 FAIL). La integración levanta el servidor real y usa `curl`; el `TestClient`
+permite requests in-process sin sockets.
+
+Prerrequisitos: shims de `io`, `socket`, `sqlite`, `csprng` y `argon2`
+compilados (ver `stdlib/modulos.md`).
+
+## Consola, seeds y generadores
+
+```powershell
+tombstone migrate
+tombstone migrate:rollback
+tombstone migrate:status
+tombstone db:seed
+tombstone make:controller Home
+tombstone make:model Note
+tombstone make:migration create_notes
+tombstone make:factory Note
+tombstone make:action CreateNote
+tombstone make:resource Note
+```
+
+- El launcher usa `CLX` (ruta de `clx`) y `TOMBSTONE_CONSOLE` (default
+  `src/console.clsx`).
+- Los seeders son idempotentes; con `TOMBSTONE_DB=archivo.db` persisten.
+- El setup del launcher vive en `modules/tombstone/bin` + `setup.clsx`;
+  `clx install` lo ejecuta una vez por versión y copia los bins a `~/.cls/bin`.
+
+## Configuración de seguridad
+
+| Variable | Efecto |
+|---|---|
+| `TOMBSTONE_SECURE_COOKIE=1` | Agrega `Secure` a la cookie de sesión (requiere HTTPS). |
+| `TOMBSTONE_DB=archivo.db` | Sesiones persistentes en SQLite (default `:memory:`). |
+| `TOMBSTONE_ENV=production` | Desactiva `debug`; no cambia el KDF. |
+
+CSRF: el login devuelve `X-CSRF-Token`; también `GET /api/csrf`. En métodos
+mutantes con cookie se acepta `X-CSRF-Token` o `_csrf`. Rate limit global:
+300 req/min por IP, además de 5/min en `/api/login`.
+
+## Consumo como módulo
+
+En el `cls.json` del proyecto consumidor:
+
+```json
+{
+  "pathModules": [
+    "<ruta-al-repo-cls>/modules",
+    "<ruta-al-repo-cls>/cls-repositories/tombstone/modules"
+  ]
+}
+```
 
 ```clx
-# layout_base: composicion de layout (no hay @extends en CMX; se compone)
-function layout_base(titulo: String, body: Cmx) -> Cmx {
-    return (
-        <html>
-            <head><title>{titulo}</title></head>
-            <body>
-                {body}
-            </body>
-        </html>
-    );
-}
-
-# home_view: la vista (CMX puro)
-function home_view(titulo: String, items: Array) -> Cmx {
-    return (
-        <div class="container">
-            <h1>{titulo}</h1>
-            <ul>
-                {items.map((x: String) -> <li>{x}</li>)}
-            </ul>
-        </div>
-    );
-}
+from "tombstone" import App, Request, Response, Template, render;
+from "tombstone" import AnchorProps, ButtonProps, DivProps;
+from "tombstone-icons" import icon;
 ```
 
-`README.md` de la demo: cómo correr (`clx run main.clsx`) y probar:
-```bash
-curl http://localhost:8080/              # HTML renderizado (layout + vista CMX)
-curl http://localhost:8080/api/users     # {"ok":true,...}
-curl http://localhost:8080/users/42      # {"id":"42"}
-curl http://localhost:8080/no-existe     # 404
-```
+El consumidor también necesita `modules/socket` y `modules/httpd`; si usa Model,
+`modules/orm` y `modules/sqlite`. `static` usa el módulo `fs` del nodo desktop.
 
-## Verificación del dev (criterio de aceptación)
+## Limitaciones conocidas
 
-1. `clx run examples/http-framework/main.clsx` arranca sin error.
-2. Los 4 curls de arriba responden con lo esperado.
-3. El servidor cierra limpiamente con Ctrl+C (o al menos no deja el puerto ocupado en el próximo run — manejar el error de `bind` en uso).
-4. No se tocó ningún archivo de `cls-core/`, `cls-jit/`, `cls-internals/`, `nodos/clx/src/modules/`.
-5. Suites de auditoría siguen verdes:
-   ```powershell
-   powershell -File examples/test/jit-test/run-tests.ps1     # 32 PASS
-   powershell -File examples/test/jit-test/run-availible.ps1 # 24 PASS
-   ```
+- HTTP/1.1 sin `Transfer-Encoding: chunked` ni keep-alive: una request por
+  conexión (`Connection: close`).
+- Sin concurrencia: el loop es bloqueante (no hay `async` ejecutable).
+- `headers` es `Record<String, String>`; los `Set-Cookie` múltiples usan
+  `Response.add_cookie`.
+- Router sin constraints (`where`); sí tiene `{id?}`, named routes y
+  controllers como clases.
+- CMX: un child que es `Array` no se expande solo; usar `renderEach` + `raw`.
+  Los componentes uppercase deben devolver `Cmx`.
+- Spread de props: el source debe ser `Record<String, Value>`; convertí el
+  interface (Shape) antes de `<Componente {...props} />`.
+- JSON: parser permisivo; `json.stringify(array)` no es fiable, usar
+  `json_string_array`.
+- `static`/sockets/IO resuelven los shims contra el `cls.json` del módulo, no
+  contra el CWD.
 
-## Limitaciones documentadas (v1)
+## Deudas del lenguaje encontradas
 
-| Limitación | Detalle |
+- **Identificador local `path`**: `path.miembro` se parsea como namespace del
+  módulo interno `path` aunque `path` sea un parámetro/local. En el motor se usa
+  `route_path`/`file_path`.
+- **Flatten de exports hermanos**: si una clase exportada llama a otra función
+  exportada del mismo módulo y el consumidor no la importa, el flatten puede
+  omitirla. El barrel importa explícitamente los símbolos hermanos que usa.
+
+## Historia
+
+La especificación original “minilaravel” definía las fases F1–F7; la
+implementación actual las cubre así:
+
+| Fase | Implementación actual |
 |---|---|
-| Sin concurrencia | Servidor bloqueante, un request a la vez. Concurrencia futura: threads vía `extension` a `pthread_create`, o `select`/`poll`. NO implementar en v1. |
-| Chunked encoding | Solo `Content-Length`. `Transfer-Encoding: chunked` no soportado (documentar). |
-| Keep-alive | Conexión se cierra tras cada request (Connection: close). |
-| Vistas CMX | El renderer CLS puro cubre tags/props/children y expande arrays. Loops vía `{arr.map()}`, condicionales vía `{cond ? a : b}` o `if` fuera del marcado, layouts por composición de funciones. Sin escape de raw salvo `raw()` explícito. |
-| Seguridad | Sin HTTPS/TLS. Body parseado como texto. Sin rate limiting. Documentar que es para desarrollo/educación, no producción. |
+| F1 sockets TCP | `modules/socket` (FFI) |
+| F2 parser HTTP | `modules/httpd` |
+| F3 router | `tombstone/modules/tombstone/router.clsx` |
+| F4 middleware | `tombstone/modules/tombstone/middleware.clsx` |
+| F5 static | `tombstone/modules/tombstone/static.clsx` |
+| F6 vistas CMX | `tombstone/modules/tombstone/view.clsx` |
+| F7 demo | `src/main.clsx` + `public/` |
 
-## Preguntas que el dev debe resolver (con sugerencia)
-
-| Pregunta | Sugerencia |
-|---|---|
-| ¿Un archivo por módulo o todo en main? | Módulos separados en `modules/` + imports (más limpio, testable) |
-| ¿Cómo se pasa `req.params`? | Campo `params: Record<String, String>` en Request, llenado por el router |
-| ¿Ctor de Socket con `main`? | Sí (regla 4). El ctor recibe el fd |
-| ¿Buffer de recv? | Alocar un string de capacidad fija (ej. 8192) por request; crecer si `Content-Length` lo pide |
-| ¿Cómo distinguir en el renderer un child texto de un child CMX? | El child texto tiene kind=1 (tag es el texto plano); los elementos tienen tag + props. Ver `cmx.md` (Representación) y los tests `b8-cmx.clsx`/`10-cmx.clsx` |
+Ver también `desarrollo/proyectos.md` y `stdlib/modulos.md`.

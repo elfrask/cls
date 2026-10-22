@@ -5,8 +5,8 @@
 - El remoto `origin` apunta a `https://github.com/elfrask/cls.git`
   (el metadata del workspace declara `https://github.com/frask/cls` como
   homepage/repository).
-- Ramas existentes: `master`, `2.0`, `2.X-jit`, `1.2`, `1.0-1.1`,
-  `respaldo-2.0`, `bindings` (rama de trabajo actual).
+- Ramas: `master` (trabajo actual), `releases` (dispara el CI de release),
+  `2.0`, `1.2`, `1.0-1.1`, `respaldo-2.0`, `refactor`.
 
 ## Estilo de commits
 

@@ -1,13 +1,15 @@
 # Arquitectura
 
-CLS es un workspace Rust (edición 2021) con 4 crates de librería y 3 nodos.
+CLS es un workspace Rust (edición 2021) con **siete crates**: cuatro de
+librería (`cls-core`, `cls-runtime`, `cls-jit`, `cls-internals`) y tres nodos
+(`nodos/clx`, `nodos/clxb`, `nodos/clxr`).
 
 ## Crates
 
 | Crate | Rol |
 |---|---|
 | `cls-core` | Frontend (lexer/parser/AST), middleware (typeck/resolver/optimizer), backend (`wasm/`, `json`), config, error, `ansi` |
-| `cls-runtime` | `Value`, stdlib core, VFS, `error_report`, `.clslib`/`ClsLibIndex`, FFI (`extension`) |
+| `cls-runtime` | `Value`, errores/formateo, VFS, FFI (`extension`), `.clslib`/`ClsLibIndex`; sin walker |
 | `cls-jit` | Motor JIT reusable: compile/engine/flatten/host/repl/resolve/state + `wasmtime_rt` / `wasmi_rt` |
 | `cls-internals` | Módulos internos e intrinsics **precompilados a WASM** (`cls-internals/wasm/` → `wasm32-unknown-unknown`, embebido con `include_bytes!`); se fusionan dentro del módulo CLS en la emisión (cero imports) |
 | `nodos/clx` | CLI de desarrollo + LSP + `maptype` + backend nativo + módulos desktop (`fs`, `http`, `strings`) |
@@ -111,6 +113,25 @@ Constructores:
 | `clxr` | `cls-core`, `cls-runtime`, `cls-jit` | Runtime ligero JIT-only (`clxr <archivo.clsx|.clsapp>`) |
 | `clxb` | core+runtime+jit; lib name `clsb`, `crate-type = ["rlib","cdylib"]` | `cargo build -p clxb` |
 
+## Módulos compartidos y proyectos
+
+Además de los crates, el repo tiene dos espacios que **no son parte del
+compilador**:
+
+| Ruta | Rol | Reglas |
+|---|---|---|
+| `modules/` | Stdlib autocontenida: módulos CLS + FFI reutilizables (`io`, `socket`, `httpd`, `orm`, `sqlite`, `env`, ...). | CLS puro + FFI, sin `host_calls` nuevos; ver `stdlib/modulos.md`. |
+| `cls-repositories/` | Proyectos reales independientes, versionados como **submódulos**. | Cada carpeta es su propio repo; no absorber su contenido en el repo padre. Ver `desarrollo/proyectos.md`. |
+
+Submódulos actuales: `cls-repositories/tombstone` y
+`cls-repositories/create-tombstone-app`. Inicializarlos con
+`git submodule update --init --recursive`.
+
+`examples/` queda para proyectos que **ponen a prueba** CLS (features,
+conformidad, diferenciales); no es el lugar para apps reales ni para módulos
+compartidos. `agent-context/` contiene planes e investigaciones, fuera de la
+documentación publicada.
+
 ## Reglas de arquitectura
 
 1. **Core/runtime agnósticos al entorno** - el nodo inyecta resolvers de
@@ -126,6 +147,9 @@ Constructores:
    viven **fusionadas dentro del módulo CLS** (cero imports de internals).
 5. **JIT = único intérprete** - el tree-walker se eliminó en dev-2; toda
    ejecución (`clx run`, `clxr`) usa el JIT.
+6. **Autocontención de `/modules` y `/cls-repositories`** - se construyen con
+   CLS + FFI; no se agregan `host_calls` para tapar carencias. `config()` es la
+   única excepción sancionada (introspección de solo lectura).
 
 ## Configuración
 

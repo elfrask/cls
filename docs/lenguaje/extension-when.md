@@ -236,7 +236,7 @@ nativo en cls-jit:
   prefijos, combinadores, simulacion con `--target`, comportamiento
   por interprete.
 - [modulos.md](modulos.md) — sistema de modulos fuente de CLS
-  (distinto del FFI: cubre `import`/`from`/`include`).
+  (distinto del FFI: cubre `import`/`from`).
 - [decisiones/001-no-implicit-coercion.md](../decisiones/001-no-implicit-coercion.md) —
   ejemplo de como se estructura una decision de diseno en este repo.
 - `examples/test/jit-test/extension-demo.clsx` — ejemplo
