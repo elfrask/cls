@@ -18,7 +18,7 @@ use crate::lsp_index::{
 };
 use crate::lsp_scope::local_symbols_at;
 use crate::lsp_text::{
-    char_index_to_utf16_col, line_text, member_access_before_cursor,
+    char_index_to_utf16_col, line_text, member_access_before_cursor, position_to_byte_index,
     span_to_range as text_span_to_range, word_at,
 };
 use crate::type_defs::{self, TypeModule};
@@ -446,11 +446,19 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        if let Some(change) = params.content_changes.into_iter().last() {
-            let uri = params.text_document.uri;
-            self.documents.lock().await.insert(uri.clone(), change.text);
-            self.send_diags(&uri).await;
+        let uri = params.text_document.uri;
+        let mut text = self
+            .documents
+            .lock()
+            .await
+            .get(&uri)
+            .cloned()
+            .unwrap_or_default();
+        for change in params.content_changes {
+            apply_content_change(&mut text, change);
         }
+        self.documents.lock().await.insert(uri.clone(), text);
+        self.send_diags(&uri).await;
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
@@ -801,6 +809,26 @@ fn imported_symbol_file<'a>(
 }
 
 // ─── Completion helpers ─────────────────────────────────────────────────
+
+fn apply_content_change(text: &mut String, change: TextDocumentContentChangeEvent) {
+    let Some(range) = change.range else {
+        *text = change.text;
+        return;
+    };
+    let Some(start) = position_to_byte_index(text, range.start) else {
+        *text = change.text;
+        return;
+    };
+    let Some(end) = position_to_byte_index(text, range.end) else {
+        *text = change.text;
+        return;
+    };
+    if start <= end && end <= text.len() {
+        text.replace_range(start..end, &change.text);
+    } else {
+        *text = change.text;
+    }
+}
 
 fn completion_response(items: Vec<CompletionItem>) -> CompletionResponse {
     CompletionResponse::List(CompletionList {
