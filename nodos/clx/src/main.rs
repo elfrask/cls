@@ -3,6 +3,7 @@
 mod modules;
 mod lsp;
 mod lsp_index;
+mod lsp_scope;
 mod lsp_text;
 mod type_defs;
 mod subcommands;

@@ -41,9 +41,12 @@ La configuración de tipos se toma de `cls.json` del workspace
 - **Tras `.` o `::`** (miembros): resuelve cadenas como `obj.campo.`,
   `modulo.miembro.` y `namespace::` usando imports, variables locales,
   structs/clases y las type definitions.
-- **Sin `.`**: símbolos del documento actual (detalle `scope`), símbolos de
-  otros documentos abiertos (detalle `open-document`), keywords, intrinsics de
-  `core.clsi`, módulos builtin y archivos `.clsx`/`.clsi` del workspace.
+- **Sin `.`**: variables y parámetros del scope local (detalle `scope`),
+  funciones, clases, structs, interfaces, enums y alias del documento,
+  símbolos de otros documentos abiertos (detalle `open-document`), keywords,
+  intrinsics de `core.clsi`, módulos builtin y archivos `.clsx`/`.clsi` del
+  workspace. Las variables locales se limitan a las declaradas antes del
+  cursor y al bloque que lo contiene.
 - Los módulos del workspace se indexan recursivamente y se identifican por
   nombre de archivo (o por el directorio si el archivo es `mod.clsx`).
 

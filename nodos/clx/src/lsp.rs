@@ -16,6 +16,7 @@ use crate::lsp_index::{
     find_member, members_from_type_module, parse_file, parse_source, ImportRef, LspSymbol,
     MemberInfo, ParsedFile, WorkspaceIndex,
 };
+use crate::lsp_scope::local_symbols_at;
 use crate::lsp_text::{
     char_index_to_utf16_col, line_text, member_access_before_cursor,
     span_to_range as text_span_to_range, word_at,
@@ -213,11 +214,16 @@ impl ClsLspBackend {
         });
     }
 
-    async fn general_completions(&self, source: &str, uri: &Url) -> Vec<CompletionItem> {
+    async fn general_completions(
+        &self,
+        source: &str,
+        uri: &Url,
+        position: Position,
+    ) -> Vec<CompletionItem> {
         let mut items = Vec::new();
         let mut seen = HashSet::new();
 
-        for sym in parse_source(source) {
+        for sym in local_symbols_at(source, position) {
             push_symbol_completion(&mut items, &mut seen, &sym, "scope");
         }
 
@@ -348,10 +354,15 @@ impl ClsLspBackend {
 
     async fn complete_members(
         &self,
+        source: &str,
+        position: Position,
         uri: &Url,
         segments: &[String],
     ) -> Option<Vec<CompletionItem>> {
-        let parsed = self.parsed_for_uri(uri).await?;
+        let mut parsed = self.parsed_for_uri(uri).await?;
+        // Incluye parámetros y variables locales visibles en el cursor.
+        parsed.symbols = local_symbols_at(source, position);
+        parsed.source = source.to_string();
         let defs = self.type_defs.lock().await.clone();
         let index = self.index.lock().await;
 
@@ -501,13 +512,13 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
 
         if let Some((segments, _partial)) = member_access_before_cursor(&source, pos) {
             let items = self
-                .complete_members(&uri, &segments)
+                .complete_members(&source, pos, &uri, &segments)
                 .await
                 .unwrap_or_default();
             return Ok(Some(CompletionResponse::Array(items)));
         }
 
-        let items = self.general_completions(&source, &uri).await;
+        let items = self.general_completions(&source, &uri, pos).await;
         Ok(Some(CompletionResponse::Array(items)))
     }
 
@@ -521,10 +532,11 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
             return Ok(None);
         };
 
-        if let Some(parsed) = self.parsed_for_uri(&uri).await {
-            if let Some(sym) = parsed.find_symbol(&word) {
-                return Ok(Some(symbol_hover(sym, range)));
-            }
+        if let Some(sym) = local_symbols_at(&source, pos)
+            .into_iter()
+            .find(|sym| sym.name == word)
+        {
+            return Ok(Some(symbol_hover(&sym, range)));
         }
 
         let defs = self.type_defs.lock().await.clone();
@@ -588,8 +600,11 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
             return Ok(None);
         };
 
-        if let Some(sym) = parsed.find_symbol(&word) {
-            return Ok(Some(definition_response(uri.clone(), &parsed.source, sym)));
+        if let Some(sym) = local_symbols_at(&source, pos)
+            .into_iter()
+            .find(|sym| sym.name == word)
+        {
+            return Ok(Some(definition_response(uri.clone(), &source, &sym)));
         }
 
         let index = self.index.lock().await;

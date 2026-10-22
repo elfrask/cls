@@ -537,7 +537,7 @@ pub fn symbols_from_statements(statements: &[Statement], source: &str) -> Vec<Ls
     out
 }
 
-fn function_symbol(f: &FunctionDecl, source: &str) -> LspSymbol {
+pub(crate) fn function_symbol(f: &FunctionDecl, source: &str) -> LspSymbol {
     LspSymbol {
         name: f.name.clone(),
         kind: SymbolKind::FUNCTION,
@@ -549,7 +549,7 @@ fn function_symbol(f: &FunctionDecl, source: &str) -> LspSymbol {
     }
 }
 
-fn var_symbol(v: &VarDecl, source: &str, kind: SymbolKind) -> LspSymbol {
+pub(crate) fn var_symbol(v: &VarDecl, source: &str, kind: SymbolKind) -> LspSymbol {
     let ty = v.type_ann.as_ref().map(|a| type_ann_to_string(Some(a)));
     LspSymbol {
         name: v.name.clone(),

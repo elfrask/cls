@@ -164,6 +164,142 @@ fn completion_labels(response: &Value) -> Vec<String> {
 }
 
 #[test]
+fn lsp_local_completion() {
+    let root = temp_workspace();
+    let main_path = root.join("src/main.clsx");
+    let main_uri = file_uri(&main_path);
+    let source = r#"function add(a: int, b: int) -> int {
+    var local: int = 1;
+    var result: int = a + b + local;
+    return result;
+}
+
+function nested(x: int) -> int {
+    if (x > 0) {
+        var positivo: int = x;
+        return positivo;
+    }
+    return 0;
+}
+
+class Persona {
+    var nombre: String;
+
+    function saludar(otro: String) -> String {
+        var saludo: String = otro;
+        return saludo;
+    }
+}
+"#;
+    fs::write(&main_path, source).unwrap();
+
+    let mut server = Server::start(&root);
+    server.initialize(&root);
+    server.notify(
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": main_uri,
+                "languageId": "clx",
+                "version": 1,
+                "text": source,
+            }
+        }),
+    );
+    let _ = server.wait_notification("textDocument/publishDiagnostics");
+
+    let (line, col) = line_col(source, "return result;");
+    let completion = server.request(
+        "textDocument/completion",
+        json!({
+            "textDocument": { "uri": main_uri },
+            "position": { "line": line, "character": col + 4 },
+        }),
+    );
+    let labels = completion_labels(&completion);
+    for expected in ["a", "b", "local", "result", "add", "Persona"] {
+        assert!(
+            labels.iter().any(|label| label == expected),
+            "faltó {} en completion local: {:?}",
+            expected,
+            labels
+        );
+    }
+
+    let (line, col) = line_col(source, "return positivo;");
+    let completion = server.request(
+        "textDocument/completion",
+        json!({
+            "textDocument": { "uri": main_uri },
+            "position": { "line": line, "character": col + 4 },
+        }),
+    );
+    let labels = completion_labels(&completion);
+    for expected in ["x", "positivo", "nested"] {
+        assert!(
+            labels.iter().any(|label| label == expected),
+            "faltó {} en completion de bloque anidado: {:?}",
+            expected,
+            labels
+        );
+    }
+
+    let (line, col) = line_col(source, "return result;");
+    let hover = server.request(
+        "textDocument/hover",
+        json!({
+            "textDocument": { "uri": main_uri },
+            "position": { "line": line, "character": col + 8 },
+        }),
+    );
+    let hover_text = hover["result"]["contents"]["value"].as_str().unwrap_or("");
+    assert!(
+        hover_text.contains("result"),
+        "hover local inesperado: {}",
+        hover_text
+    );
+
+    let definition = server.request(
+        "textDocument/definition",
+        json!({
+            "textDocument": { "uri": main_uri },
+            "position": { "line": line, "character": col + 8 },
+        }),
+    );
+    let declaration_line = source
+        .lines()
+        .position(|line| line.contains("var result"))
+        .unwrap() as u64;
+    assert_eq!(
+        definition["result"]["range"]["start"]["line"].as_u64(),
+        Some(declaration_line),
+        "definición local inesperada: {}",
+        definition
+    );
+
+    let (line, col) = line_col(source, "return saludo;");
+    let completion = server.request(
+        "textDocument/completion",
+        json!({
+            "textDocument": { "uri": main_uri },
+            "position": { "line": line, "character": col + 4 },
+        }),
+    );
+    let labels = completion_labels(&completion);
+    for expected in ["me", "otro", "saludo", "add", "Persona"] {
+        assert!(
+            labels.iter().any(|label| label == expected),
+            "faltó {} en completion de método: {:?}",
+            expected,
+            labels
+        );
+    }
+
+    server.shutdown();
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
 fn lsp_mvp() {
     let root = temp_workspace();
     let main_path = root.join("src/main.clsx");
