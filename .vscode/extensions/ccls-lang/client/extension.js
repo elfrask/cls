@@ -365,8 +365,8 @@ function canRun(executable) {
 }
 
 async function startLanguageServer(clxPath, context, flags) {
-    const outputChannel = vscode.window.createOutputChannel('CLS Language Server');
-    const traceOutputChannel = vscode.window.createOutputChannel('CLS LSP Trace');
+    const outputChannel = vscode.window.createOutputChannel('CLS Language Server', { log: true });
+    const traceOutputChannel = vscode.window.createOutputChannel('CLS LSP Trace', { log: true });
     context.subscriptions.push(outputChannel, traceOutputChannel);
 
     const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath;
