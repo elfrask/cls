@@ -14,12 +14,18 @@ use cls_core::frontend::{Lexer, Parser};
 use tower_lsp::lsp_types::{Position, SymbolKind};
 
 use crate::lsp_index::{parse_source, symbols_from_statements, type_ann_to_string, LspSymbol};
-use crate::lsp_text::{line_text, utf16_col_to_char_index};
+use crate::lsp_text::{line_text, position_to_byte_index, utf16_col_to_char_index};
 
 /// Símbolos visibles en `position`, priorizando el scope local.
 pub fn local_symbols_at(source: &str, position: Position) -> Vec<LspSymbol> {
     let mut collector = Collector::new(source, position);
-    if let Some(module) = parse_module(source) {
+    let parsed = parse_module(source).or_else(|| {
+        // Al escribir `objeto.` el archivo queda momentáneamente inválido.
+        // Insertamos un identificador ficticio para recuperar el AST y poder
+        // ofrecer el scope local mientras se completa el miembro.
+        completion_parse_source(source, position).and_then(|text| parse_module(&text))
+    });
+    if let Some(module) = parsed {
         collector.walk_top(&module.statements);
     }
 
@@ -27,6 +33,13 @@ pub fn local_symbols_at(source: &str, position: Position) -> Vec<LspSymbol> {
     let mut out = collector.locals;
     out.extend(parse_source(source));
     out
+}
+
+fn completion_parse_source(source: &str, position: Position) -> Option<String> {
+    let byte_index = position_to_byte_index(source, position)?;
+    let mut text = source.to_string();
+    text.insert_str(byte_index, "__cls_completion__");
+    Some(text)
 }
 
 fn parse_module(source: &str) -> Option<Module> {
@@ -41,6 +54,33 @@ fn class_member_span(member: &ClassMember) -> Option<Span> {
         ClassMember::Method(function) | ClassMember::Constructor(function) => Some(function.span),
         ClassMember::Property(property) => Some(property.span),
     }
+}
+
+fn expression_span(expression: &Expression) -> Option<Span> {
+    Some(match expression {
+        Expression::Literal(literal) => literal.span,
+        Expression::Identifier(_, span)
+        | Expression::NamespaceAccess(_, _, span)
+        | Expression::Parenthesized(_, span)
+        | Expression::Await(_, span)
+        | Expression::Spread(_, span) => *span,
+        Expression::Binary(value) => value.span,
+        Expression::Unary(value) => value.span,
+        Expression::Call(value) => value.span,
+        Expression::MemberAccess(value) => value.span,
+        Expression::Index(value) => value.span,
+        Expression::Array(value) => value.span,
+        Expression::Tuple(value) => value.span,
+        Expression::Record(value) => value.span,
+        Expression::ArrowFunction(value) => value.span,
+        Expression::Conditional(value) => value.span,
+        Expression::Ternary(value) => value.span,
+        Expression::IfExpr(value) => value.span,
+        Expression::Match(value) => value.span,
+        Expression::Assignment(value) => value.span,
+        Expression::StringInterpolation(value) => value.span,
+        _ => return None,
+    })
 }
 
 fn statement_start_line(statement: &Statement) -> Option<u32> {
@@ -78,6 +118,9 @@ fn statement_span(statement: &Statement) -> Option<Span> {
         Statement::ArrowReturn(value) => value.span,
         Statement::Break(span) | Statement::Continue(span) => *span,
         Statement::When(value) => value.span,
+        Statement::Return(Some(expression)) | Statement::Expression(expression) => {
+            return expression_span(expression);
+        }
         _ => return None,
     })
 }

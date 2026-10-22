@@ -295,6 +295,39 @@ class Persona {
         );
     }
 
+    // Completion de miembro sobre una variable local con el archivo
+    // momentáneamente inválido por el `.` final.
+    let member_source = r#"class Persona {
+    var nombre: String;
+}
+
+function describe(p: Persona) -> String {
+    return p.
+}
+"#;
+    server.notify(
+        "textDocument/didChange",
+        json!({
+            "textDocument": { "uri": main_uri, "version": 2 },
+            "contentChanges": [{ "text": member_source }],
+        }),
+    );
+    let _ = server.wait_notification("textDocument/publishDiagnostics");
+    let (line, col) = line_col(member_source, "return p.");
+    let completion = server.request(
+        "textDocument/completion",
+        json!({
+            "textDocument": { "uri": main_uri },
+            "position": { "line": line, "character": col + 9 },
+        }),
+    );
+    let labels = completion_labels(&completion);
+    assert!(
+        labels.iter().any(|label| label == "nombre"),
+        "faltó nombre en completion de miembro local: {:?}",
+        labels
+    );
+
     server.shutdown();
     let _ = fs::remove_dir_all(&root);
 }

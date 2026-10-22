@@ -28,6 +28,28 @@ pub fn char_index_to_utf16_col(line: &str, char_index: usize) -> u32 {
         .sum::<usize>() as u32
 }
 
+/// Posición LSP -> índice de byte en `source`.
+pub fn position_to_byte_index(source: &str, position: Position) -> Option<usize> {
+    let mut offset = 0usize;
+    for (line_no, line) in source.split_inclusive('\n').enumerate() {
+        let line_without_newline = line.strip_suffix('\n').unwrap_or(line);
+        let line_without_cr = line_without_newline
+            .strip_suffix('\r')
+            .unwrap_or(line_without_newline);
+        if line_no as u32 == position.line {
+            let char_index = utf16_col_to_char_index(line_without_cr, position.character);
+            let byte_in_line = line_without_cr
+                .char_indices()
+                .nth(char_index)
+                .map(|(index, _)| index)
+                .unwrap_or(line_without_cr.len());
+            return Some(offset + byte_in_line);
+        }
+        offset += line.len();
+    }
+    None
+}
+
 /// `Span` del parser (líneas/columnas 1-based, columnas en chars) -> `Range` LSP.
 pub fn span_to_range(source: &str, span: &Span) -> Range {
     let start_line = span.start_line.saturating_sub(1);
