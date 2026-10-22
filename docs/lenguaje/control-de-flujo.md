@@ -100,9 +100,9 @@ ninguna arma matchea y no hay
 # Modo VALOR (`in`): igualdad de valor
 var esPar: bool = match (n) in { (0, 2, 4, 6, 8) -> true, default -> false };
 
-# Modo TIPO (`is`): por el tipo del valor (clases/enums por identidad runtime;
-# builtins por el tipo estático). Sobre `Value`/`Unknown` se rechaza: no hay
-# tag de runtime para primitivos y las armas caerían siempre al default.
+# Modo TIPO (`is`): por el tipo real del valor. Clases/enums usan su identidad
+# runtime; las uniones de primitivos se boxean con tag ([tag][valor]) y también
+# se discriminan. Sobre `Value`/`Unknown` se rechaza: no llevan tag primitivo.
 var r = match (perro) is { Perro -> perro.ladra(), Gato -> perro.maulla(), default -> "?" };
 
 # Modo TIPO multi-tipo (F5): `(A, B)` estrecha a la unión `A | B`; sobre la

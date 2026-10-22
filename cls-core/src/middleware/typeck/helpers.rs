@@ -31,11 +31,11 @@ pub fn expr_span(expr: &Expression) -> Span {
 
 pub(crate) fn builtin_type_name(name: &str) -> Option<Type> {
     match name {
-        "String" => Some(Type::String),
-        "Int" => Some(Type::Int),
-        "Float" => Some(Type::Float),
-        "Bool" => Some(Type::Bool),
-        "Char" => Some(Type::Char),
+        "String" | "string" | "str" => Some(Type::String),
+        "Int" | "int" => Some(Type::Int),
+        "Float" | "float" => Some(Type::Float),
+        "Bool" | "bool" | "Boolean" | "boolean" => Some(Type::Bool),
+        "Char" | "char" => Some(Type::Char),
         "Array" => Some(Type::Array(Box::new(Type::Value))),
         "Tuple" => Some(Type::Tuple(vec![])),
         "Record" => Some(Type::Record(Box::new(Type::Value), Box::new(Type::Value))),

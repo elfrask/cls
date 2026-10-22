@@ -16,27 +16,34 @@ impl<'a> FuncEmitter<'a> {
         }
         match stmt {
             Statement::VarDecl(v) | Statement::ConstDecl(v) => {
+                // El typeck registró el tipo DECLARADO (con aliases resueltos)
+                // en el span del VarDecl; es la fuente para las uniones.
+                let declared_ty = self.types.get(&v.span).cloned().or_else(|| {
+                    v.type_ann
+                        .as_ref()
+                        .map(|a| annotation_to_type(a))
+                        .or_else(|| {
+                            v.value
+                                .as_ref()
+                                .and_then(|val| self.types.get(&expr_span(val)).cloned())
+                        })
+                });
                 let ty = match (&v.type_ann, &v.value) {
-                    (Some(ann), Some(val)) => match was_type(&annotation_to_type(ann)) {
-                        Ok(w) => w,
-                        // Anotación no resuelta (alias/unioón) -> tipo del valor.
-                        Err(_) => self.value_type(val)?,
+                    (Some(_), Some(val)) => match declared_ty.as_ref().and_then(|t| was_type(t).ok()) {
+                        Some(w) => w,
+                        // Anotación no resuelta (alias/unión) -> tipo del valor.
+                        None => self.value_type(val)?,
                     },
-                    (Some(ann), None) => was_type(&annotation_to_type(ann))?,
+                    (Some(_), None) => match declared_ty.as_ref().and_then(|t| was_type(t).ok()) {
+                        Some(w) => w,
+                        None => WasTy::I64,
+                    },
                     (None, Some(val)) => self.value_type(val)?,
                     (None, None) => WasTy::I64,
                 };
                 let idx = self.declare_var_ty(&v.name, ty);
                 // Tipo CLS declarado de la local (frontera de asignación).
-                let declared_cls: Option<Type> = v
-                    .type_ann
-                    .as_ref()
-                    .map(|a| annotation_to_type(a))
-                    .or_else(|| {
-                        v.value
-                            .as_ref()
-                            .and_then(|val| self.types.get(&expr_span(val)).cloned())
-                    });
+                let declared_cls: Option<Type> = declared_ty;
                 match &declared_cls {
                     Some(t) => {
                         self.local_cls_types.insert(v.name.clone(), t.clone());

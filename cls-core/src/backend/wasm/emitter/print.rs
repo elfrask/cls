@@ -102,6 +102,21 @@ impl<'a> FuncEmitter<'a> {
 
 
     pub(crate) fn emit_print_arg(&mut self, arg: &Expression) -> ClsResult<()> {
+        // Unión boxeada `[tag][valor]`: imprimir por tag real.
+        let arg_ty = self
+            .types
+            .get(&expr_span(arg))
+            .cloned()
+            .unwrap_or(Type::Value);
+        if Self::is_tagged_union(&arg_ty) {
+            self.emit_expression(arg)?;
+            let ptr = self.fresh_local_ty(WasTy::I64);
+            self.body.push(Instruction::LocalSet(ptr));
+            self.emit_tagged_union_raw_value(ptr);
+            self.emit_tagged_union_tag(ptr);
+            self.host.call(HostFn::PrintAny, &mut self.body);
+            return Ok(());
+        }
         // `u.values()` sobre un shape: los shapes viven como hashmap (default
         // invertido), asi que .values() produce un array normal y lo imprime el
         // camino generico de arrays. Sin caso especial.

@@ -155,23 +155,30 @@ propio de cada miembro** (los layouts pueden diferir), sin boxing. El índice
 `valor[i]` sobre una unión de arrays con el mismo ancho de elemento también está
 soportado.
 
-**Gap documentado (builtins/boxing)**: `str(valor)` sobre una unión de builtins
-**no** funciona (la afirmación anterior de que despachaba por el tipo runtime era
-falsa): el emisor elige la conversión por el tipo estático (`__intr_str_int` /
-`__intr_str_float` / …) y una unión mezcla representaciones (p. ej. `int | float`
-tiene ancho `i64` vs `f64`), generando WASM inválido o una conversión silenciosa
-incorrecta. Por eso el typeck lo **rechaza en compile-time** ("`str(…)` sobre una
-unión de builtins … no es discriminable en runtime"). Lo mismo aplica a
-`toString(valor)` y a las conversiones numéricas `int(valor)` / `float(valor)`.
+**Uniones de primitivos (tag runtime)**: una unión no literal de primitivos
+(`int | String`, `Boolean | float`) se guarda como puntero a `[tag][valor]`
+cuando cruza una variable, parámetro, retorno, campo o elemento de array. Esto
+permite discriminarla de verdad:
 
-Tampoco se puede discriminar el tipo de una **unión de builtins** en
-`match (valor) is { … }`: los builtins no tienen identidad de runtime
-(`class_id`/`def_id`/tag), así que toda arma daría verdadero (ganaría la primera)
-o el WASM sería inválido. El typeck lo rechaza en compile-time. Para
-clases/structs/enums el dispatch por id de runtime sí está soportado (y el
-acceso a miembro sobre esas uniones también). El **acceso a miembro/método**
-sobre una unión de builtins (`.toString()`, `.abs()`) sigue sin ser viable sin
-boxing.
+```clx
+alias M = String | int | Boolean;
+
+function tipo(v: M) -> String {
+    return match (v) is {
+        String  -> "string",
+        int     -> "int",
+        Boolean -> "bool",
+        default -> "?",
+    };
+}
+```
+
+`print(v)`, `str(v)`, `v.toString()` e interpolación usan el tag real. Las
+uniones de **literales** (`"red" | "green"`) no se boxean: se discriminan
+comparando el valor. Las conversiones numéricas `int(valor)` / `float(valor)`
+sobre la unión siguen rechazadas en compile-time; hacelas dentro del brazo ya
+estrechado. El acceso a miembro/método común sobre una unión de primitivos
+(`.abs()` fuera de un brazo) sigue sin estar soportado.
 
 ## Alias
 

@@ -28,8 +28,9 @@ impl<'a> FuncEmitter<'a> {
     fn emit_expression_inner(&mut self, expr: &Expression) -> ClsResult<()> {
         match expr {
             Expression::Literal(l) => self.emit_literal(l),
-            Expression::Identifier(name, _) => {
+            Expression::Identifier(name, span) => {
                 self.emit_ident_load(name);
+                self.maybe_unbox_tagged_identifier(name, span)?;
                 Ok(())
             }
             Expression::Binary(b) => self.emit_binary(b),

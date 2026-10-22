@@ -565,6 +565,20 @@ impl<'a> FuncEmitter<'a> {
             self.emit_cmx_field(0)?; // tag (String)
             return Ok(());
         }
+        // Unión de primitivos: se guarda como `[tag][valor]` para poder
+        // discriminarla en runtime. Si el origen ya es otra unión boxeada, se
+        // reutiliza el mismo puntero.
+        if dest.is_some_and(Self::is_tagged_union) {
+            let actual = self
+                .types
+                .get(&expr_span(expr))
+                .cloned()
+                .unwrap_or(Type::Value);
+            if Self::is_tagged_union(&actual) {
+                return self.emit_expression(expr);
+            }
+            return self.emit_box_tagged_union(expr);
+        }
         // Destino dinámico (`Value`/`JSON`/`Unknown`): la representación es
         // i64. Los escalares Bool/Char viajan como i32 y Float como f64, así
         // que hay que ensancharlos en la frontera (misma regla que assignment).

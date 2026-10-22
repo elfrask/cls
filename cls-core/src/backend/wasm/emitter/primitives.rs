@@ -133,13 +133,15 @@ impl<'a> FuncEmitter<'a> {
                         } else {
                             format!("{}::{}", parent, member.member)
                         };
-                        if let Some(idx) = self.func_indexes.get(&key) {
+                        if let Some(idx) = self.func_indexes.get(&key).copied() {
+                            let expected =
+                                self.func_types.get(&key).map(|(p, _)| p.clone());
                             self.body.push(Instruction::LocalGet(0)); // me
-                            for a in &c.args {
-                                self.emit_expression(a)?;
+                            for (i, a) in c.args.iter().enumerate() {
+                                self.emit_call_arg(a, expected.as_deref(), i + 1)?;
                             }
                             self.emit_call_site(&c.span);
-                            self.body.push(Instruction::Call(*idx));
+                            self.body.push(Instruction::Call(idx));
                             return Ok(true);
                         }
                     }
@@ -284,6 +286,15 @@ impl<'a> FuncEmitter<'a> {
             Some(key) => Type::Named(key, vec![]),
             None => obj_ty,
         };
+        if obj_ty.is_tagged_builtin_union() && member.member == "toString" {
+            self.emit_expression(&member.object)?;
+            let ptr = self.fresh_local_ty(WasTy::I64);
+            self.body.push(Instruction::LocalSet(ptr));
+            self.emit_tagged_union_raw_value(ptr);
+            self.emit_tagged_union_tag(ptr);
+            self.emit_str_host("__intr_any_to_string");
+            return Ok(true);
+        }
         match obj_ty {
             Type::Tuple(_) => match member.member.as_str() {
                 "join" => { self.emit_tuple_join(member, c)?; return Ok(true); },
@@ -709,14 +720,22 @@ impl<'a> FuncEmitter<'a> {
                 }
                 return Ok(true);
             }
-            "toString" => {
+            "toString" | "str" => {
                 let arg = &c.args[0];
-                self.emit_expression(arg)?;
-                self.emit_to_string(arg)?;
-                return Ok(true);
-            }
-            "str" => {
-                let arg = &c.args[0];
+                let t = self
+                    .types
+                    .get(&expr_span(arg))
+                    .cloned()
+                    .unwrap_or(Type::Value);
+                if t.is_tagged_builtin_union() {
+                    self.emit_expression(arg)?;
+                    let ptr = self.fresh_local_ty(WasTy::I64);
+                    self.body.push(Instruction::LocalSet(ptr));
+                    self.emit_tagged_union_raw_value(ptr);
+                    self.emit_tagged_union_tag(ptr);
+                    self.emit_str_host("__intr_any_to_string");
+                    return Ok(true);
+                }
                 self.emit_expression(arg)?;
                 self.emit_to_string(arg)?;
                 return Ok(true);

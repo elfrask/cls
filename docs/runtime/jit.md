@@ -88,6 +88,7 @@ Memoria mínima 32 páginas (2MB); `memory.grow` según demanda.
 | `String` | `i64` = `(ptr << 32) | len` en la memoria lineal |
 | `Array<T>` | `i64` = puntero a `[cap][len][elems...]` |
 | `Record`/`Shape`/`Tuple`/`Cmx`/clases/structs/enums | `i64` = puntero |
+| Unión de primitivos (`int \| String \| bool`) | `i64` = puntero a `[tag][valor]` (16 B) |
 
 Memoria: bump allocator (sin free) en `HEAP_START` (tras la ventana de
 internals + string pool + tabla), `memory.grow` según demanda. Los strings de

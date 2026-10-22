@@ -3,6 +3,7 @@
 use crate::error::ClsResult;
 use crate::frontend::ast::*;
 use crate::middleware::types::{LitVal, Type};
+use std::collections::HashMap;
 use wasm_encoder::{Instruction, MemArg, ValType};
 
 /// Tipo WASM de un valor (los que dejan un único valor en el stack).
@@ -209,11 +210,11 @@ pub(super) fn was_type(t: &Type) -> ClsResult<WasTy> {
 }
 /// Nombre de tipo builtin para `v is Tipo` (compile-time en el JIT).
 pub(super) fn builtin_was_type(name: &str) -> Option<BuiltinTypeName> {    match name {
-        "String" => Some(BuiltinTypeName::String),
-        "Int" => Some(BuiltinTypeName::Int),
-        "Float" => Some(BuiltinTypeName::Float),
-        "Bool" => Some(BuiltinTypeName::Bool),
-        "Char" => Some(BuiltinTypeName::Char),
+        "String" | "string" | "str" => Some(BuiltinTypeName::String),
+        "Int" | "int" => Some(BuiltinTypeName::Int),
+        "Float" | "float" => Some(BuiltinTypeName::Float),
+        "Bool" | "bool" | "Boolean" | "boolean" => Some(BuiltinTypeName::Bool),
+        "Char" | "char" => Some(BuiltinTypeName::Char),
         "Array" => Some(BuiltinTypeName::Array),
         "Tuple" => Some(BuiltinTypeName::Tuple),
         "Record" => Some(BuiltinTypeName::Record),
@@ -268,6 +269,66 @@ pub(super) fn builtin_type_matches(t: &Type, name: &BuiltinTypeName) -> bool {
     }
 }
 
+/// Sustituye aliases de tipo (`alias M = String | int | Boolean`) por su
+/// definición. El typeck ya lo hace para su mapa, pero el motor/emisor usa las
+/// anotaciones crudas en firmas, globals y VarDecl. Sin esto, un parámetro
+/// `valor: M` quedaba como `Named("M")` y no se reconocía como unión boxeable.
+pub(super) fn resolve_type_aliases(
+    ty: &Type,
+    aliases: &HashMap<String, Type>,
+    depth: usize,
+) -> Type {
+    if depth > 16 {
+        return ty.clone();
+    }
+    match ty {
+        Type::Named(name, args) if args.is_empty() => aliases
+            .get(name)
+            .map(|t| resolve_type_aliases(t, aliases, depth + 1))
+            .unwrap_or_else(|| ty.clone()),
+        Type::Named(name, args) => {
+            let args = args
+                .iter()
+                .map(|t| resolve_type_aliases(t, aliases, depth + 1))
+                .collect();
+            Type::Named(name.clone(), args)
+        }
+        Type::Union(ms) => Type::Union(
+            ms.iter()
+                .map(|t| resolve_type_aliases(t, aliases, depth + 1))
+                .collect(),
+        ),
+        Type::Array(inner) => Type::Array(Box::new(resolve_type_aliases(
+            inner,
+            aliases,
+            depth + 1,
+        ))),
+        Type::Tuple(ts) => Type::Tuple(
+            ts.iter()
+                .map(|t| resolve_type_aliases(t, aliases, depth + 1))
+                .collect(),
+        ),
+        Type::Record(k, v) => Type::Record(
+            Box::new(resolve_type_aliases(k, aliases, depth + 1)),
+            Box::new(resolve_type_aliases(v, aliases, depth + 1)),
+        ),
+        Type::Shape(fields) => Type::Shape(
+            fields
+                .iter()
+                .map(|(n, t)| (n.clone(), resolve_type_aliases(t, aliases, depth + 1)))
+                .collect(),
+        ),
+        Type::Fun(params, ret) => Type::Fun(
+            params
+                .iter()
+                .map(|t| resolve_type_aliases(t, aliases, depth + 1))
+                .collect(),
+            Box::new(resolve_type_aliases(ret, aliases, depth + 1)),
+        ),
+        _ => ty.clone(),
+    }
+}
+
 pub(super) fn annotation_to_type(ann: &TypeAnnotation) -> Type {
     use crate::frontend::ast::TypeKind;
     match &ann.kind {
@@ -277,9 +338,21 @@ pub(super) fn annotation_to_type(ann: &TypeAnnotation) -> Type {
         TypeKind::Bool => Type::Bool,
         TypeKind::Char => Type::Char,
         TypeKind::Any => Type::Value,
+        TypeKind::Unknown => Type::Unknown,
+        TypeKind::Null => Type::Null,
         TypeKind::Json => Type::Json,
         TypeKind::Value => Type::Value,
         TypeKind::Void | TypeKind::Empty => Type::Void,
+        TypeKind::Union(items) => {
+            Type::Union(items.iter().map(annotation_to_type).collect())
+        }
+        TypeKind::Literal(kind) => match kind {
+            LiteralKind::Int(v) => Type::Literal(LitVal::Int(*v)),
+            LiteralKind::Float(v) => Type::Literal(LitVal::Float(v.to_bits())),
+            LiteralKind::String(v) => Type::Literal(LitVal::Str(v.clone())),
+            LiteralKind::Bool(v) => Type::Literal(LitVal::Bool(*v)),
+            _ => Type::Value,
+        },
         TypeKind::Array(inner) => Type::Array(Box::new(annotation_to_type(inner))),
         TypeKind::Tuple(items) => Type::Tuple(items.iter().map(annotation_to_type).collect()),
         TypeKind::Record(k, v) => {

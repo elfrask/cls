@@ -155,7 +155,11 @@ impl TypeChecker {
                          clases/enums/structures",
                         m.span.clone(),
                     );
-                } else if self.union_has_undiscriminable_builtin(st) {
+                } else if self.union_has_undiscriminable_builtin(st)
+                    && !st.is_tagged_builtin_union()
+                {
+                    // Las uniones de primitivos ya no usan el tipo estático:
+                    // el emisor las boxea con un tag runtime (ver tagged_union.rs).
                     self.error(
                         "no se puede discriminar el tipo de una unión de builtins en `match is`: \
                          usá un valor con tipo concreto o una unión de tipos con identidad de \

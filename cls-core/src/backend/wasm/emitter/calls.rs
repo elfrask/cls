@@ -110,7 +110,10 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
             if let Some(fidx) = self.func_indexes.get(&key).copied() {
-                let expected = self.func_types.get(&key).map(|(p, _)| p.clone());
+                let expected = match self.types.get(&expr_span(&c.callee)) {
+                    Some(Type::Fun(params, _)) => Some(params.clone()),
+                    _ => self.func_types.get(&key).map(|(p, _)| p.clone()),
+                };
                 self.body.push(Instruction::I64Const(0)); // __capturas
                 for (i, arg) in c.args.iter().enumerate() {
                     match &expected {
@@ -132,7 +135,10 @@ impl<'a> FuncEmitter<'a> {
         }
         if let Expression::Identifier(name, _) = &*c.callee {
             if let Some(fidx) = self.func_indexes.get(name).copied() {
-                let expected = self.func_types.get(name).map(|(p, _)| p.clone());
+                let expected = match self.types.get(&expr_span(&c.callee)) {
+                    Some(Type::Fun(params, _)) => Some(params.clone()),
+                    _ => self.func_types.get(name).map(|(p, _)| p.clone()),
+                };
                 // Firma uniforme (B5): las funciones CLS top-level reciben
                 // __capturas (0) como primer arg. Internas y main no.
                 if !name.starts_with("__") && name != "main" {
@@ -147,9 +153,12 @@ impl<'a> FuncEmitter<'a> {
                 // Args faltantes -> valores por defecto (en el call site)
                 if let Some(defaults) = self.func_defaults.get(name) {
                     let provided = c.args.len();
-                    for d in defaults.iter().skip(provided) {
+                    for (k, d) in defaults.iter().skip(provided).enumerate() {
+                        let idx = provided + k;
                         match d {
-                            Some(expr) => self.emit_expression(expr)?,
+                            Some(expr) => {
+                                self.emit_call_arg(expr, expected.as_deref(), idx)?
+                            }
                             None => self.body.push(Instruction::I64Const(0)),
                         }
                     }

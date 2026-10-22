@@ -71,6 +71,21 @@ impl<'a> Engine<'a> {
     }
 
     pub(crate) fn emit(&mut self, module: &Module) -> ClsResult<Vec<u8>> {
+        // Aliases de tipo primero: las firmas/globals usan anotaciones crudas.
+        let mut raw_aliases: HashMap<String, Type> = HashMap::new();
+        for stmt in self.effective_statements(&module.statements) {
+            if let Statement::TypeAlias(alias) = stmt {
+                raw_aliases.insert(
+                    alias.name.clone(),
+                    annotation_to_type(&alias.type_ann),
+                );
+            }
+        }
+        for (name, ty) in &raw_aliases {
+            let resolved = resolve_type_aliases(ty, &raw_aliases, 0);
+            self.type_aliases.insert(name.clone(), resolved);
+        }
+
         self.collect_functions(module)?;
 
         // Alias de imports -> path del módulo. Permite referenciar los módulos
@@ -499,7 +514,12 @@ impl<'a> Engine<'a> {
                     continue;
                 }
                 let w = match (&v.type_ann, &v.value) {
-                    (Some(ann), _) => was_type(&annotation_to_type(ann)).unwrap_or(WasTy::I64),
+                    (Some(ann), _) => was_type(&resolve_type_aliases(
+                        &annotation_to_type(ann),
+                        &self.type_aliases,
+                        0,
+                    ))
+                    .unwrap_or(WasTy::I64),
                     (None, Some(val)) => self.expr_was_type(val).unwrap_or(WasTy::I64),
                     // Sin anotació ni init (REPL con estado persistente): el
                     // tipo viene del type map (registrado por el typeck en el
@@ -510,6 +530,17 @@ impl<'a> Engine<'a> {
                         .and_then(|t| was_type(t).ok())
                         .unwrap_or(WasTy::I64),
                 };
+                let declared = v
+                    .type_ann
+                    .as_ref()
+                    .map(|ann| {
+                        resolve_type_aliases(&annotation_to_type(ann), &self.type_aliases, 0)
+                    })
+                    .or_else(|| {
+                        v.value
+                            .as_ref()
+                            .and_then(|val| self.types.get(&expr_span(val)).cloned())
+                    });
                 let is_const = matches!(stmt, Statement::ConstDecl(_));
                 let _ = is_const;
                 let idx = next_global;
@@ -544,7 +575,7 @@ impl<'a> Engine<'a> {
                     // transferencia de estado entre instancias); sus strings se
                     // siembran igualmente en el pool (bloque de seed abajo).
                     if !v.pool_only {
-                        self.global_inits.push((idx, val.clone()));
+                        self.global_inits.push((idx, val.clone(), declared.clone()));
                     }
                 }
             }
@@ -559,9 +590,12 @@ impl<'a> Engine<'a> {
                     if let ClassMember::Property(p) = member {
                         if p.is_static {
                             let w = match (&p.type_ann, &p.value) {
-                                (Some(ann), _) => {
-                                    was_type(&annotation_to_type(ann)).unwrap_or(WasTy::I64)
-                                }
+                                (Some(ann), _) => was_type(&resolve_type_aliases(
+                                    &annotation_to_type(ann),
+                                    &self.type_aliases,
+                                    0,
+                                ))
+                                .unwrap_or(WasTy::I64),
                                 (None, Some(val)) => {
                                     self.expr_was_type(val).unwrap_or(WasTy::I64)
                                 }
@@ -571,6 +605,21 @@ impl<'a> Engine<'a> {
                                     .and_then(|t| was_type(t).ok())
                                     .unwrap_or(WasTy::I64),
                             };
+                            let declared = p
+                                .type_ann
+                                .as_ref()
+                                .map(|ann| {
+                                    resolve_type_aliases(
+                                        &annotation_to_type(ann),
+                                        &self.type_aliases,
+                                        0,
+                                    )
+                                })
+                                .or_else(|| {
+                                    p.value.as_ref().and_then(|val| {
+                                        self.types.get(&expr_span(val)).cloned()
+                                    })
+                                });
                             let idx = next_global;
                             next_global += 1;
                             self.user_global_idxs.push(idx);
@@ -591,7 +640,7 @@ impl<'a> Engine<'a> {
                                 },
                             );
                             if let Some(val) = &p.value {
-                                self.global_inits.push((idx, val.clone()));
+                                self.global_inits.push((idx, val.clone(), declared));
                             }
                         }
                     }

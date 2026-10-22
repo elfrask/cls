@@ -80,6 +80,21 @@ impl<'a> FuncEmitter<'a> {
             scrut_local = Some(l);
         }
 
+        // Unión boxeada: recordar que este identificador está estrechado en los
+        // brazos (para desempaquetar `v` dentro del arma).
+        let union_binding = if m.mode == MatchMode::Type && scrut_cls.is_tagged_builtin_union() {
+            match m.scrutinee.as_deref() {
+                Some(Expression::Identifier(name, _)) => Some(name.clone()),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if let Some(name) = &union_binding {
+            self.match_union_bindings
+                .push((name.clone(), scrut_cls.clone()));
+        }
+
         // F6: discriminante del modo PATRÓN (enum nativo o clase con protocolo).
         // Para una clase, emite `obj.__match()` una vez y guarda el enum.
         let pattern_disc: Option<PatternDisc> = if m.mode == MatchMode::Pattern {
@@ -175,6 +190,9 @@ impl<'a> FuncEmitter<'a> {
         self.body.push(Instruction::End); // $done
         self.block_depth -= 1;
         self.dead_flow = false;
+        if union_binding.is_some() {
+            self.match_union_bindings.pop();
+        }
         Ok(())
     }
 
@@ -256,6 +274,10 @@ impl<'a> FuncEmitter<'a> {
     ) -> ClsResult<()> {
         match p {
             MatchPattern::Literal(lit) => {
+                if cls.is_tagged_builtin_union() {
+                    return self
+                        .emit_tagged_union_literal_check(local.unwrap_or(0), lit);
+                }
                 // F6: modo VALOR sobre una clase con `__equals` -> obj.__equals(lit).
                 if mode == MatchMode::Value {
                     if let Some(cn) = self.class_magic_method(&Some(cls.clone()), "__equals") {
@@ -321,6 +343,10 @@ impl<'a> FuncEmitter<'a> {
             }
             MatchPattern::Type(ta) => {
                 let target = annotation_to_type(ta);
+                if cls.is_tagged_builtin_union() {
+                    return self
+                        .emit_tagged_union_type_check(local.unwrap_or(0), &target);
+                }
                 self.emit_match_type_check(local.unwrap_or(0), cls, &target)
             }
         }

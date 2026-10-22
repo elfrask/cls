@@ -238,7 +238,9 @@ impl TypeChecker {
         if let Expression::Identifier(name, _) = &*call.callee {
             if matches!(name.as_str(), "str" | "toString" | "int" | "float") {
                 if let Some(arg0) = arg_types.first() {
-                    if self.union_has_undiscriminable_builtin(arg0) {
+                    let tagged_str = matches!(name.as_str(), "str" | "toString")
+                        && arg0.is_tagged_builtin_union();
+                    if self.union_has_undiscriminable_builtin(arg0) && !tagged_str {
                         self.error(
                             &format!(
                                 "`{}(…)` sobre una unión de builtins ({}) no es discriminable en \

@@ -1,8 +1,0 @@
-# Negativo B2: `str()` sobre una unión de builtins de ancho mixto (`int|float`).
-# El emisor elige la conversión por el tipo estático: una unión no es
-# discriminable sin boxing -> rechazo estático.
-function main(args: String[]) -> int {
-    var v: int | float = 2.5;
-    print(str(v));
-    return 0;
-};

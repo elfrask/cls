@@ -1,8 +1,12 @@
-# Negativo B2: `str()` sobre una unión de builtins de ancho mixto (`int|float`).
-# Antes: WASM inválido ("type mismatch: expected i64, found f64"). Ahora: error
-# estático claro.
+# `str()` sobre una unión de primitivos usa el tag runtime.
+alias M = int | float | String;
+
 function main(args: String[]) -> int {
-    var v: int | float = 2.5;
+    var v: M = 2.5;
+    print(str(v));
+    v = 7;
+    print(str(v));
+    v = "hola";
     print(str(v));
     return 0;
 };

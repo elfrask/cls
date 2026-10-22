@@ -48,8 +48,6 @@ $expectedErrors = @{
     "arrow-return-bad.clsx" = "`<-` sin target (F4) -> error de compilacion"
     "ifexpr-no-else.clsx" = "`if`-expresion sin `else` (F3) -> error de sintaxis"
     "ifexpr-nodeliver.clsx" = "rama de `if`-expresion sin `<-` (B1) -> error de compilacion"
-    "match-union-builtin.clsx" = "`match is` sobre union de builtins (B2) -> error estatico"
-    "str-union.clsx" = "`str()` sobre union de builtins de ancho mixto (B2) -> error estatico"
     "conv-union.clsx" = "`float()` sobre union de builtins (B2) -> error estatico"
 }
 

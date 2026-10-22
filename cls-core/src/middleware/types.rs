@@ -78,6 +78,35 @@ impl Type {
         }
     }
 
+    /// ¿Es una unión de primitivos que el JIT puede representar como
+    /// `[tag, valor]` en heap? Se usa para permitir `match is` sobre uniones de
+    /// builtins (String|int|Bool|Float|Char): el emisor las "boxea" con un tag
+    /// runtime y las desboxea al estrechar. Las uniones de literales
+    /// (`"red"|"green"`) quedan afuera: se discriminan por valor, no por tipo.
+    pub fn is_tagged_builtin_union(&self) -> bool {
+        fn tagged_member(t: &Type) -> bool {
+            match t {
+                Type::Int
+                | Type::I8
+                | Type::I16
+                | Type::I32
+                | Type::I64
+                | Type::Float
+                | Type::F32
+                | Type::F64
+                | Type::String
+                | Type::Bool
+                | Type::Char => true,
+                Type::Union(ms) => !ms.is_empty() && ms.iter().all(tagged_member),
+                _ => false,
+            }
+        }
+        match self {
+            Type::Union(ms) => !ms.is_empty() && ms.iter().all(tagged_member),
+            _ => false,
+        }
+    }
+
     /// Compatibilidad para el JOIN de ramas/armas (`match`/ternario/`if`-expr):
     /// asignables en cualquier dirección, o **mismo tipo base** (`Literal(1)` vs
     /// `Int`, o `Literal(1)` vs `Literal(2)`). NO ensancha el tipo: preserva el

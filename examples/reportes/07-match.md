@@ -37,7 +37,7 @@ sobre `String` comparaba el **handle** en vez del contenido (ya resuelto antes p
 | ID | Fase | Síntoma | Causa raíz | Fix |
 |----|------|---------|------------|-----|
 | **B1** | F3/F4 | `if`-expr **anidada** en posición de sentencia dentro de un bloque-target → **WASM inválido** (`expected i64 but nothing on stack`) | El validador WASM no propaga la divergencia a través del `end` de un `if`/`match` interno: tras su `end` la caída vuelve a considerarse alcanzable y el bloque `(result)` queda sin valor | Emitir `Instruction::Unreachable` al cerrar la rama/arma cuando `dead_flow` (materializa la divergencia; pila polimórfica). `emitter/expressions.rs`, `emitter/matching.rs` |
-| **B2** | F5 | `match (v) is` sobre **unión de builtins**: falso positivo silencioso (`int\|String` → primera arma) y **WASM inválido** con ancho mixto (`int\|float`) | `match_type_static` respondía "la unión contiene el target" → toda arma verdadera; no hay tag/boxing para discriminar | **Rechazo estático claro** para `match is` y `str`/`float`/`int`/`toString` sobre unión de builtins. `typeck/flow.rs`, `typeck/calls.rs` |
+| **B2** | F5 | `match (v) is` sobre **unión de builtins**: falso positivo silencioso (`int\|String` → primera arma) y **WASM inválido** con ancho mixto (`int\|float`) | `match_type_static` respondía "la unión contiene el target" → toda arma verdadera; no hay tag/boxing para discriminar | Rechazo estático inmediato; después reemplazado por **uniones boxeadas `[tag][valor]`** (ver `emitter/tagged_union.rs`), que permiten `match is`, `is`, `print`, `str`/`toString` por tag real. `int`/`float` sobre la unión siguen rechazados. |
 | **B2-doc** | — | `tipos.md` afirmaba que `str(int \| float)` funciona | era **falso** | Doc corregida + límite documentado |
 
 Tests agregados por los fixes: `ifexpr-nested`, `ifexpr-nodeliver`,
@@ -63,8 +63,6 @@ Tests agregados por los fixes: `ifexpr-nested`, `ifexpr-nodeliver`,
 - `else if` dentro de `if`-expresión no encadenable.
 - Construcción de enum importado `mod::Enum::v(...)` no parseable (el matching de
   enum importado sí funciona).
-- **`match is` / conversiones sobre unión de *builtins*** → rechazo (necesitaría
-  tag/boxing).
 - **Destructuring-let de clase** (runtime) no implementado (stretch); `match`
   cubre la extracción. Sintaxis propuesta documentada.
 

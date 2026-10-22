@@ -79,7 +79,10 @@ pub(super) struct Engine<'a> {
     /// recibe la dirección de la DATA (base+16), no la del header.
     native_params: HashMap<String, Vec<char>>,
     globals: HashMap<String, u32>,
-    global_inits: Vec<(u32, Expression)>,
+    /// `alias M = ...` -> tipo resuelto. Necesario porque el motor usa las
+    /// anotaciones crudas en firmas/globals (el typeck sólo resuelve su mapa).
+    type_aliases: HashMap<String, Type>,
+    global_inits: Vec<(u32, Expression, Option<Type>)>,
     /// Índices WASM de las globals de usuario (var/const top-level y static
     /// fields), en orden de declaración; el host las exporta como `__g_{idx}`
     /// (0 = heap_ptr) para transferir estado entre instancias (REPL).
@@ -149,6 +152,7 @@ impl<'a> Engine<'a> {
             native_ret: HashMap::new(),
             native_params: HashMap::new(),
             globals: HashMap::new(),
+            type_aliases: HashMap::new(),
         global_inits: Vec::new(),
         user_global_idxs: Vec::new(),
         static_fields: HashMap::new(),

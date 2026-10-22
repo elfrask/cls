@@ -41,8 +41,8 @@ impl<'a> Engine<'a> {
             &self.intrinsics,
         );
         fe.shadow_ptr_global = self.shadow_ptr_global;
-        for (idx, val) in &self.global_inits {
-            fe.emit_expression(val)?;
+        for (idx, val, dest) in &self.global_inits {
+            fe.emit_coerce(val, dest.as_ref())?;
             fe.body.push(Instruction::GlobalSet(*idx));
         }
         fe.body.push(Instruction::End);

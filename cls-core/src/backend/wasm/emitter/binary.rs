@@ -495,10 +495,31 @@ impl<'a> FuncEmitter<'a> {
                 // con el tipo del lado izquierdo.
                 if let Expression::Identifier(right_name, _) = &*b.right {
                     if let Some(t) = builtin_was_type(right_name) {
-                        // El tipo del left determina el resultado en compile-time.
-                        // Comparar por Type (no WasTy: String e Int son ambos i64).
                         let left_span = expr_span(&b.left);
                         let lt = self.types.get(&left_span).cloned().unwrap_or(Type::Value);
+                        // Unión boxeada: comparar el tag real en runtime.
+                        if lt.is_tagged_builtin_union() {
+                            let target = match t {
+                                BuiltinTypeName::String => Some(Type::String),
+                                BuiltinTypeName::Int => Some(Type::Int),
+                                BuiltinTypeName::Float => Some(Type::Float),
+                                BuiltinTypeName::Bool => Some(Type::Bool),
+                                BuiltinTypeName::Char => Some(Type::Char),
+                                _ => None,
+                            };
+                            self.emit_expression(&b.left)?;
+                            let ptr = self.fresh_local_ty(WasTy::I64);
+                            self.body.push(Instruction::LocalSet(ptr));
+                            match target {
+                                Some(target) => {
+                                    self.emit_tagged_union_type_check(ptr, &target)?;
+                                }
+                                None => self.body.push(Instruction::I32Const(0)),
+                            }
+                            return Ok(());
+                        }
+                        // El tipo del left determina el resultado en compile-time.
+                        // Comparar por Type (no WasTy: String e Int son ambos i64).
                         let matches = builtin_type_matches(&lt, &t);
                         self.emit_expression(&b.left)?;
                         self.body.push(Instruction::Drop);

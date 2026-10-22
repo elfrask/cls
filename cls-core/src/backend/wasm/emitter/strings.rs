@@ -549,6 +549,16 @@ impl<'a> FuncEmitter<'a> {
                 // Handle de función -> `<function X>` (el nombre está en el handle).
                 self.host.call(HostFn::FnToString, &mut self.body);
             }
+            Type::Union(_) if t.is_tagged_builtin_union() => {
+                // Unión boxeada: el tag real está en la caja.
+                self.body.push(Instruction::Drop);
+                self.emit_expression(arg)?;
+                let ptr = self.fresh_local_ty(WasTy::I64);
+                self.body.push(Instruction::LocalSet(ptr));
+                self.emit_tagged_union_raw_value(ptr);
+                self.emit_tagged_union_tag(ptr);
+                self.emit_str_host("__intr_any_to_string");
+            }
             Type::Value | Type::Unknown | Type::Json => {
                 // Valor dinámico (leído de record/JSON): el tag del runtime
                 // decide la conversión. El caller dejó el val en el stack sin
@@ -581,6 +591,14 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I64Const(1)); // tag string
                 return Ok(());
             }
+        }
+        if t.is_tagged_builtin_union() {
+            self.emit_expression(expr)?;
+            let ptr = self.fresh_local_ty(WasTy::I64);
+            self.body.push(Instruction::LocalSet(ptr));
+            self.emit_tagged_union_raw_value(ptr);
+            self.emit_tagged_union_tag(ptr);
+            return Ok(());
         }
         if Self::is_dynamic_dest(&t) || matches!(t, Type::Fun(..) | Type::Named(..)) {
             return self.emit_any_chain(expr);

@@ -67,7 +67,7 @@ impl<'a> Engine<'a> {
         if matches!(ann.kind, crate::frontend::ast::TypeKind::Phantom(_)) {
             return Ok(Type::Value);
         }
-        let t = annotation_to_type(ann);
+        let t = resolve_type_aliases(&annotation_to_type(ann), &self.type_aliases, 0);
         match t {
             // `Value` es un tipo concreto en el JIT: viaja como i64 dinámico
             // (igual que campos/locales `Value`). El antiguo `Any` se eliminó
@@ -89,7 +89,7 @@ impl<'a> Engine<'a> {
         &self,
         ann: &TypeAnnotation,
     ) -> ClsResult<Type> {
-        let t = annotation_to_type(ann);
+        let t = resolve_type_aliases(&annotation_to_type(ann), &self.type_aliases, 0);
         if !matches!(t, Type::Value | Type::Unknown) {
             return Ok(t);
         }
@@ -250,8 +250,12 @@ impl<'a> Engine<'a> {
         }
         if is_method && !is_static {
             fe.declare_var_ty("me", was_type(&param_types[0])?);
+            fe.local_cls_types
+                .insert("me".to_string(), param_types[0].clone());
             for (i, p) in f.params.iter().enumerate() {
                 fe.declare_var_ty(&p.name, was_type(&param_types[i + 1])?);
+                fe.local_cls_types
+                    .insert(p.name.clone(), param_types[i + 1].clone());
             }
         } else {
             // Arrow y funcion CLS comparten la firma natural (los tipos reales
@@ -259,6 +263,8 @@ impl<'a> Engine<'a> {
             // reinterpretacion. Ver `emit.rs` (declaracion de arrows).
             for (i, p) in f.params.iter().enumerate() {
                 fe.declare_var_ty(&p.name, was_type(&param_types[i])?);
+                fe.local_cls_types
+                    .insert(p.name.clone(), param_types[i].clone());
             }
         }
         // Reservar los índices de los params implícitos (main sintetizado en
@@ -358,17 +364,20 @@ impl<'a> Engine<'a> {
             pv.push(ValType::I64);
         }
         for p in &f.params {
-            let t = p
-                .type_ann
-                .as_ref()
-                .map(annotation_to_type)
-                .unwrap_or(Type::Int);
+            let t = resolve_type_aliases(
+                &p.type_ann
+                    .as_ref()
+                    .map(annotation_to_type)
+                    .unwrap_or(Type::Int),
+                &self.type_aliases,
+                0,
+            );
             param_cls.push(t.clone());
             pv.push(was_type(&t).unwrap_or(WasTy::I64).val_type());
         }
         let rv: Vec<ValType> = match &f.return_type {
             Some(ann) => {
-                let t = annotation_to_type(ann);
+                let t = resolve_type_aliases(&annotation_to_type(ann), &self.type_aliases, 0);
                 if t != Type::Void {
                     vec![was_type(&t).unwrap_or(WasTy::I64).val_type()]
                 } else {
@@ -377,7 +386,10 @@ impl<'a> Engine<'a> {
             }
             None => vec![],
         };
-        let ret_cls = f.return_type.as_ref().map(annotation_to_type);
+        let ret_cls = f
+            .return_type
+            .as_ref()
+            .map(|ann| resolve_type_aliases(&annotation_to_type(ann), &self.type_aliases, 0));
         let tidx = self.register_func_type(pv, rv);
         let fidx = self.func_count;
         self.func_count += 1;

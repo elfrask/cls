@@ -16,6 +16,7 @@ mod print;
 mod primitives;
 mod statements;
 mod strings;
+mod tagged_union;
 
 /// Contexto de un loop para resolver `break`/`continue`.
 pub(crate) struct LoopGuard {
@@ -136,6 +137,10 @@ pub(crate) struct FuncEmitter<'a> {
     /// `None` si es un match-sentencia (no admite `<-`). `match <-` elige el
     /// más cercano; `match*` salta 1; etc.
     pub(crate) match_targets: Vec<(u32, Option<WasTy>)>,
+    /// Variables identificador que son la scrutinee de un `match is` sobre una
+    /// unión boxeada. Permite desempaquetar en los brazos aunque la variable
+    /// sea un global/param sin entrada en `local_cls_types`.
+    pub(crate) match_union_bindings: Vec<(String, Type)>,
 }
 
 impl<'a> FuncEmitter<'a> {
@@ -219,6 +224,7 @@ impl<'a> FuncEmitter<'a> {
             dead_flow: false,
             ternary_targets: Vec::new(),
             match_targets: Vec::new(),
+            match_union_bindings: Vec::new(),
         }
     }
 

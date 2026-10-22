@@ -146,7 +146,8 @@ en `FAIL`.
 | `async` / `await` | no ejecutable | el parser lo acepta; el JIT no compila `await` (docs/lenguaje/funciones.md) |
 | `macro`, `global`, `sync` | keywords reservados | sin implementación documentada |
 | `match` F6 (`__match`/`__unpack` de clases) | pendiente | ver `agent-context/MATCH_PLAN.md` §4-F6 |
-| acceso a miembro sobre unión de builtins (`int \| float`) | GAP | requiere boxing; `str(v)` sí funciona (ver docs/lenguaje/tipos.md) |
+| `match is` / `print` sobre unión de primitivos | OK | se boxea como `[tag][valor]` (ver docs/lenguaje/tipos.md) |
+| acceso a miembro sobre unión de builtins (`int \| float`) | GAP | sólo dentro de un brazo estrechado |
 | rest params `function f(...xs)` / spread en llamadas `f(...args)` | no soportado | `call_indirect` exige aridad estática |
 | `with` | **semántica pobre** | liga el valor como `Any`; `o.x`/aritmética fallan o devuelven basura; solo passthrough/print |
 | inferencia de retorno de genéricos en clases | parcial | `caja.obtener()` tipa `T`; requiere `int(...)`/asignación tipada |
