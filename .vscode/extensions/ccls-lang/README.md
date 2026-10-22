@@ -39,6 +39,10 @@ Settings:
 | `cls.lsp.trace.server` | `"off"` | `off`, `messages` o `verbose`. |
 | `cls.types.useStaticTypes` | `true` | Fallback de type maps si el LSP está desactivado. |
 
+Si actualizás el binario `clx`, usá el comando **CLS: Reiniciar Language
+Server** desde la paleta de comandos para reiniciar el servidor sin recargar la
+ventana.
+
 ## Nuevas sintaxis resaltadas
 
 | Sintaxis | Ejemplo |

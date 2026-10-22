@@ -113,7 +113,10 @@ como lenguaje `clx`. Settings:
 | `cls.lsp.trace.server` | `"off"` | Traza LSP (`off`, `messages`, `verbose`). |
 | `cls.types.useStaticTypes` | `true` | Type maps estáticos como fallback si el LSP está desactivado. |
 
-Fuente: `nodos/clx/src/lsp.rs`, `lsp_index.rs`, `lsp_text.rs` y
-`type_defs.rs`.
+Después de recompilar `clx`, el comando **CLS: Reiniciar Language Server**
+reinicia el servidor sin recargar la ventana.
+
+Fuente: `nodos/clx/src/lsp.rs`, `lsp_index.rs`, `lsp_scope.rs`, `lsp_text.rs`
+y `type_defs.rs`.
 
 [LSP]: https://microsoft.github.io/language-server-protocol/
