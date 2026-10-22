@@ -1,0 +1,15 @@
+# F6 negativo: una clase SIN `__match` en modo patrón -> error de compilación.
+class Foo {
+    var x: int;
+    function main(x: int) { me.x = x; }
+};
+
+function main(args: String[]) -> int {
+    var f = Foo(1);
+    var out = match (v <- f) {
+        algo    -> "x",
+        default -> "?",
+    };
+    print(out);
+    return 0;
+};

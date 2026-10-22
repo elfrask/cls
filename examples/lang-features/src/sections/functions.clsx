@@ -1,0 +1,148 @@
+# functions.clsx - eje de funciones.
+#
+# Ejercita: genericas, arrow functions con `->` y con fat arrow `=>` (expresion,
+# bloque, sin args, multi-arg, tipo anotado e inferido), closures (captura,
+# re-captura y mutacion), funciones como valor / Callable, recursion, llamada
+# indirecta y shadowing de una local sobre un global homonimo.
+
+import "check" as check;
+
+function fn_suma(a: int, b: int) -> int { return a + b; }
+
+function fn_factorial(n: int) -> int {
+    if (n <= 1) { return 1; }
+    return n * fn_factorial(n - 1);
+}
+
+function fn_fib(n: int) -> int {
+    if (n < 2) { return n; }
+    return fn_fib(n - 1) + fn_fib(n - 2);
+}
+
+function fn_apply(f: Callable, x: int) -> int {
+    return f(x);
+}
+
+function fn_identity<T>(x: T) -> T { return x; }
+
+function fn_default(a: int, b: int = 5) -> int { return a + b; }
+
+# global de modulo para el test de shadowing (ver fn.local.shadow).
+var fn_shadow: int = 0;
+
+function fn_shadow_bump() -> int {
+    fn_shadow = fn_shadow + 1;
+    return fn_shadow;
+}
+
+function functions_values() -> int {
+    # arrow de expresion
+    var doble = (x: int) -> x * 2;
+    check::assertEq("fn.arrow.expr", doble(21), 42);
+    # arrow de bloque
+    var multi = (a: int, b: int) -> { return a * b; };
+    check::assertEq("fn.arrow.block", multi(6, 7), 42);
+    # arrow sin args
+    var noventaynueve = () -> 99;
+    check::assertEq("fn.arrow.noargs", noventaynueve(), 99);
+    # closure que devuelve Bool (i32): la firma natural de arrows cierra el bug
+    # del finding 06 de conformance (antes emitia WASM invalido).
+    var esPar = (x: int) -> (x % 2 == 0);
+    check::assertTrue("fn.arrow.bool.true", esPar(4));
+    check::assertTrue("fn.arrow.bool.false", !esPar(5));
+    # funcion por defecto
+    check::assertEq("fn.default", fn_default(2), 7);
+    check::assertEq("fn.default2", fn_default(2, 8), 10);
+    # fat arrow `=>` (alias de `->`): expresion anotada, bloque, multi-arg,
+    # sin args, sin parentesis (inferido) y paren sin anotacion.
+    var fat_expr = (x: int) => x + 1;
+    check::assertEq("fn.fat.expr", fat_expr(41), 42);
+    var fat_block = (x: int) => { return x + 1; };
+    check::assertEq("fn.fat.block", fat_block(41), 42);
+    var fat_multi = (a: int, b: int) => a * b;
+    check::assertEq("fn.fat.multi", fat_multi(6, 7), 42);
+    var fat_noargs = () => 99;
+    check::assertEq("fn.fat.noargs", fat_noargs(), 99);
+    var fat_infer = x => x;
+    check::assertEqStr("fn.fat.infer", str(fat_infer(7)), "7");
+    var fat_infer_paren = (x) => x;
+    check::assertEqStr("fn.fat.infer.paren", str(fat_infer_paren(9)), "9");
+    return 0;
+}
+
+function functions_recursion() -> int {
+    check::assertEq("fn.factorial", fn_factorial(5), 120);
+    check::assertEq("fn.fib", fn_fib(10), 55);
+    return 0;
+}
+
+function functions_closures() -> int {
+    var base = 10;
+    var closure = (x: int) -> x + base;
+    check::assertEq("fn.closure.capture", closure(5), 15);
+    # re-captura: la closure ve el nuevo valor de `base`.
+    base = 100;
+    check::assertEq("fn.closure.recapture", closure(5), 105);
+
+    # la local `contador` sombrea el global homonimo `contador` de lib/util.clsx
+    # (aplanado por el JIT); la local NO debe mutar el global.
+    var contador = 0;
+    var inc = () -> { contador = contador + 1; return contador; };
+    inc();
+    inc();
+    check::assertEq("fn.closure.mutate", contador, 2);
+    return 0;
+}
+
+# una local (capturada por closure) con el mismo nombre que un global de modulo
+# debe ganar: la mutacion de la local no toca el global.
+function functions_shadowing() -> int {
+    var fn_shadow = 0;
+    var inc = () -> { fn_shadow = fn_shadow + 1; return fn_shadow; };
+    inc();
+    inc();
+    var local = fn_shadow;
+    var g1 = fn_shadow_bump();
+    var g2 = fn_shadow_bump();
+    check::assertEqStr("fn.local.shadow", str(local) + "," + str(g1) + "," + str(g2), "2,1,2");
+    return 0;
+}
+
+function functions_values_indirect() -> int {
+    var triple = (x: int) -> x * 3;
+    check::assertEq("fn.indirect", fn_apply(triple, 10), 30);
+    var f = fn_suma;
+    check::assertEq("fn.value", f(2, 3), 5);
+    check::assertTrue("fn.is.callable", f is Callable);
+    if (f is Callable) {
+        check::assertEq("fn.narrow.callable", f(4, 5), 9);
+    }
+    check::assertEq("fn.generic", fn_identity(7), 7);
+    check::assertEqStr("fn.generic.str", fn_identity("x"), "x");
+    return 0;
+}
+
+# el trap "indirect call type mismatch" (findings/09) ocurria cuando una funcion
+# plana guardada en una local se declaraba ANTES de una llamada indirecta con
+# closure; aqui se reproduce ese orden.
+function functions_indirect_order() -> int {
+    var f = fn_suma;
+    check::assertEq("fn.indirect.order.dir", f(2, 3), 5);
+    var triple = (x: int) -> x * 3;
+    check::assertEq("fn.indirect.order", fn_apply(triple, 10), 30);
+    return 0;
+}
+
+export function functions_run() -> int {
+    print("== functions ==");
+    var before = check::fails();
+    functions_values();
+    functions_recursion();
+    functions_closures();
+    functions_shadowing();
+    functions_values_indirect();
+    functions_indirect_order();
+    var gained = check::fails() - before;
+    if (gained == 0) { print("FEATURE functions OK"); }
+    return gained;
+}

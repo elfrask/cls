@@ -1,0 +1,25 @@
+# socket - Sockets TCP persistentes y bidireccionales (FFI a C).
+#
+# Ladrillo de la stdlib autocontenida (examples/patrones.md §2.2 y §11): expone
+# un stream TCP CRUDO (sin framing) sobre el shim `socket_shim`; a diferencia de
+# `modules/net` (framing DNS-over-TCP), la conexión se mantiene abierta y el
+# llamador envía/recibe cuantas veces quiera. Base de `modules/http`.
+#
+#   socket_ffi.clsx - bindings crudos al shim (no público)
+#   client.clsx     - API funcional + `Client`
+#
+# LIMITACIÓN CONOCIDA DEL FFI: la ruta del shim se resuelve relativa al CWD, no
+# al archivo .clsx; por eso hay que correr desde la raíz del repo (ver README).
+#
+# Barrel: se expone la API pública.
+
+import "client" as client;
+import "server" as server;
+
+export { client::connect as connect, client::connectTimeout as connectTimeout };
+export { client::sendAll as sendAll, client::sendText as sendText };
+export { client::recv as recv, client::recvExact as recvExact, client::recvText as recvText };
+export { client::line as line, client::readable as readable, client::setTimeout as setTimeout };
+export { client::shutdownWrite as shutdownWrite, client::close as close };
+export { client::lastError as lastError, client::Client as Client };
+export { server::listen as listen, server::accept as accept, server::localPort as localPort };

@@ -57,11 +57,11 @@ impl Lexer {
     fn next_token(&mut self) -> ClsResult<SpannedToken> {
         self.skip_whitespace_and_comments();
 
-        // Si hay tokens CMX en buffer y no estamos dentro de expresión CMX
-        if !self.in_cmx_expr {
-            if let Some(t) = self.cmx_buffer.pop_front() {
-                return Ok(t);
-            }
+        // Tokens CMX pendientes (children de un tag ya emitido por lex_cmx).
+        // Se drenan SIEMPRE, incluso dentro de una expresión `{...}` CMX: así un
+        // literal CMX anidado (`{f((<p>x</p>))}`) ve sus children en orden.
+        if let Some(t) = self.cmx_buffer.pop_front() {
+            return Ok(t);
         }
 
         if self.is_eof() {
@@ -255,6 +255,7 @@ impl Lexer {
             "when" => Token::Keyword(Keyword::When),
             "switch" => Token::Keyword(Keyword::Switch),
             "case" => Token::Keyword(Keyword::Case),
+            "match" => Token::Keyword(Keyword::Match),
             "default" => Token::Keyword(Keyword::Default),
             "try" => Token::Keyword(Keyword::Try),
             "catch" => Token::Keyword(Keyword::Catch),
@@ -358,8 +359,35 @@ impl Lexer {
             }
             if ch == '{' {
                 self.advance();
+                // Spread de props: {...expr} (REST_SPREAD_PLAN). Después de `{`
+                // viene `...` -> token AttrSpread y la expresión hasta `}`.
+                if self.current_char() == '.' && self.pos + 1 < self.source.len() && self.source[self.pos + 1] == '.' {
+                    self.advance(); // .
+                    self.advance(); // .
+                    self.advance(); // .
+                    let span = self.current_span();
+                    tokens.push(SpannedToken::new(Token::Cmx(CmxToken::AttrSpread), span));
+                    self.in_cmx_expr = true;
+                    let mut depth: i32 = 1;
+                    while !self.is_eof() && depth > 0 {
+                        let t = self.next_token()?;
+                        match &t.token {
+                            Token::Symbol(Symbol::LBrace) => depth += 1,
+                            Token::Symbol(Symbol::RBrace) => { depth -= 1; if depth == 0 { break; } }
+                            _ => {}
+                        }
+                        tokens.push(t);
+                    }
+                    self.in_cmx_expr = false;
+                    continue;
+                }
+                // Shorthand `{nombre}`: lee la variable homónima. Consumir el `}`
+                // de cierre (antes quedaba sin consumir y rompía el lexing).
+                self.skip_cmx_whitespace();
                 let name = self.read_cmx_identifier().unwrap_or_default();
-                tokens.push(SpannedToken::new(Token::Cmx(CmxToken::AttrExpr { name }), self.current_span()));
+                self.skip_cmx_whitespace();
+                if self.current_char() == '}' { self.advance(); }
+                tokens.push(SpannedToken::new(Token::Cmx(CmxToken::AttrShorthand { name }), self.current_span()));
                 continue;
             }
             let name = self.read_cmx_identifier()?;
@@ -385,6 +413,9 @@ impl Lexer {
                     }
                     self.in_cmx_expr = false;
                 } else { return Err(self.syntax_err("Valor attr CMX inválido")); }
+            } else {
+                // Atributo desnudo (boolean): `disabled` -> `true`.
+                tokens.push(SpannedToken::new(Token::Cmx(CmxToken::AttrBare { name }), self.current_span()));
             }
         }
     }

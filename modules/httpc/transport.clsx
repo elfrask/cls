@@ -1,0 +1,49 @@
+# http/transport.clsx - Envía una request por un socket conectado y parsea la respuesta.
+#
+# Nota de codegen: `socket::line` recibe `maxLen` explícito (ver stream.clsx).
+import "socket" as socket;
+from "headers" import Headers;
+from "request" import Request, serialize;
+from "response" import Response;
+from "stream" import readChunked, readBodyLength, readToEof;
+
+function parseStatusLine(line: String, resp: Response) {
+    var p1 = line.indexOf(" ");
+    if (p1 < 0) { return; }
+    var rest = line.slice(p1 + 1, line.length);
+    var p2 = rest.indexOf(" ");
+    if (p2 < 0) { resp.status = int(rest); return; }
+    resp.status = int(rest.slice(0, p2));
+    resp.reason = rest.slice(p2 + 1, rest.length);
+}
+
+function addHeaderLine(headers: Headers, line: String) {
+    var i = line.indexOf(":");
+    if (i < 0) { return; }
+    var name = line.slice(0, i).trim();
+    var value = line.slice(i + 1, line.length).trim();
+    headers.add(name, value);
+}
+
+# Realiza un intercambio request/response completo sobre `conn`.
+export function exchange(conn: socket::Client, req: Request, keepAlive: bool, timeoutMs: int) -> Response {
+    conn.writeText(serialize(req, keepAlive));
+    var resp = Response();
+    var statusLine = socket::line(conn.handle(), timeoutMs, 65536);
+    parseStatusLine(statusLine, resp);
+    loop {
+        var ln = socket::line(conn.handle(), timeoutMs, 65536);
+        if (ln == "") { break; }
+        addHeaderLine(resp.headers, ln);
+    }
+    var te = resp.headers.get("Transfer-Encoding").lower();
+    var cl = resp.headers.get("Content-Length");
+    if (te.indexOf("chunked") >= 0) {
+        resp.body = readChunked(conn.handle(), timeoutMs);
+    } elif (cl != "") {
+        resp.body = readBodyLength(conn.handle(), int(cl), timeoutMs);
+    } else {
+        resp.body = readToEof(conn.handle(), timeoutMs);
+    }
+    return resp;
+}

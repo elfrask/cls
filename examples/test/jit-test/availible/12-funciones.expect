@@ -1,0 +1,8 @@
+﻿f: <function suma>
+f(2,3): 5
+f(10,20): 30
+tag: App
+titulo: demo
+cmx: <App titulo="demo" />
+es componente: true
+app.tagCallable(): app demo

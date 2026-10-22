@@ -1,0 +1,7 @@
+# `from "m" import * as ns` (namespace).
+from "modfixes/star" import * as s;
+
+function main(args: String[]) -> int {
+    print("ns:", s::star_a(), s::star_b());
+    return 0;
+};

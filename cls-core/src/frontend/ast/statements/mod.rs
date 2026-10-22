@@ -1,5 +1,6 @@
 ﻿//! AST - statements (Fase 1: extraido de frontend/ast.rs).
 
+mod arrow_return;
 mod block;
 mod case_clause;
 mod case_pattern;
@@ -7,9 +8,11 @@ mod catch_clause;
 mod class_decl;
 mod class_member;
 mod config_directive;
+mod destructure_let;
+mod destructure_class;
 mod elif_branch;
 mod enum_decl;
-mod extension_decl;
+mod export_list_decl;
 mod extension_kind;
 mod field_decl;
 mod for_each_statement;
@@ -20,13 +23,12 @@ mod function_modifier;
 mod if_statement;
 mod import_name;
 mod import_statement;
-mod include_statement;
 mod interface_decl;
 mod interface_field;
 mod meta_directive;
 mod module_decl;
 mod namespace_decl;
-mod native_decl;
+mod native_info;
 mod parameter;
 mod signature_decl;
 mod structure_decl;
@@ -41,6 +43,7 @@ mod when_branch;
 mod while_statement;
 mod with_statement;
 
+pub use arrow_return::*;
 pub use block::*;
 pub use case_clause::*;
 pub use case_pattern::*;
@@ -48,9 +51,11 @@ pub use catch_clause::*;
 pub use class_decl::*;
 pub use class_member::*;
 pub use config_directive::*;
+pub use destructure_let::*;
+pub use destructure_class::*;
 pub use elif_branch::*;
 pub use enum_decl::*;
-pub use extension_decl::*;
+pub use export_list_decl::*;
 pub use extension_kind::*;
 pub use field_decl::*;
 pub use for_each_statement::*;
@@ -61,13 +66,12 @@ pub use function_modifier::*;
 pub use if_statement::*;
 pub use import_name::*;
 pub use import_statement::*;
-pub use include_statement::*;
 pub use interface_decl::*;
 pub use interface_field::*;
 pub use meta_directive::*;
 pub use module_decl::*;
 pub use namespace_decl::*;
-pub use native_decl::*;
+pub use native_info::*;
 pub use parameter::*;
 pub use signature_decl::*;
 pub use structure_decl::*;
@@ -114,6 +118,9 @@ pub enum Statement {
     /// `Continue(Span)` - el span permite ubicar el `continue;` en errores.
     Continue(Span),
 
+    /// `* <- expr` / `match <- expr` (F4, arrowReturn).
+    ArrowReturn(ArrowReturn),
+
     // Clases y estructuras
     ClassDecl(ClassDecl),
     StructureDecl(StructureDecl),
@@ -127,13 +134,16 @@ pub enum Statement {
     // Enums (variantes constantes con identidad)
     EnumDecl(EnumDecl),
 
+    /// `var resp::ok(result) = c;` (F2, feature `match`).
+    DestructureLet(DestructureLet),
+    /// `var Clase(a, b) = obj;` (desempaqueta vía `__destructurate()`).
+    DestructureClass(DestructureClass),
+
     // Imports
     Import(ImportStatement),
     FromImport(FromImportStatement),
-    Include(IncludeStatement),
-
-    // Nativo (FFI a librerías del sistema)
-    Extension(ExtensionDecl),
+    /// `export { a, b as c } [from "path"];`
+    ExportList(ExportListDecl),
 
     // Directiva multi-entorno (implementaciones por plataforma/arquitectura)
     When(WhenBlock),

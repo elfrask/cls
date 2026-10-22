@@ -1,5 +1,0 @@
-# Malformado: break fuera de bucle
-function main(args: String[]) -> int {
-    break;
-    return 0;
-};

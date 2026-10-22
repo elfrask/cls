@@ -1,0 +1,11 @@
+# NEGATIVO: llamar un metodo `private` desde fuera debe fallar.
+class C {
+    private function h() -> int { return 1; }
+    function main() {}
+};
+
+function main(args: String[]) -> int {
+    var c = C();
+    print(c.h());
+    return 0;
+}

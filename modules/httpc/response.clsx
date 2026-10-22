@@ -1,0 +1,23 @@
+# http/response.clsx - Response HTTP y accesos tipados.
+from "headers" import Headers;
+import "json" as json;
+
+export class Response {
+    var status: int;
+    var reason: String;
+    var headers: Headers;
+    var body: String;
+    function main() {
+        me.status = 0;
+        me.reason = "";
+        me.headers = Headers();
+        me.body = "";
+    }
+
+    function ok() -> bool { return me.status >= 200 && me.status < 300; }
+    function text() -> String { return me.body; }
+    function header(name: String) -> String { return me.headers.get(name); }
+
+    # Cuerpo parseado como JSON (import "json" interno del lenguaje).
+    function json() -> JSON { return json.parse(me.body); }
+};

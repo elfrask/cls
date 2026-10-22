@@ -1,8 +1,8 @@
 # El JIT (intérprete objetivo)
 
 `clx run` compila CLS a **WASM** y lo ejecuta con **wasmtime** (Cranelift).
-Es el intérprete objetivo del proyecto; el tree-walker (`runtime/walker.md`)
-está deprecado.
+Es el único intérprete del proyecto (el tree-walker se eliminó en dev-2 — ver
+[runtime/walker.md](walker.md)).
 
 ## Pipeline
 
@@ -11,8 +11,11 @@ está deprecado.
 1. **Lectura** - se lee el entry desde disco.
 2. **Lexer** - `cls_core::frontend::Lexer`.
 3. **Parser** - `cls_core::frontend::Parser` (AST).
-4. **Imports** - se resuelven `import` / `from import` / `include`
-   recursivamente (`load_import_modules_hooked`).
+4. **Imports** - se resuelven `import` / `from import` recursivamente
+   (`load_import_modules_hooked`), con el orden de `cls-jit/src/resolve.rs`:
+   archivo que importa → `modules/` del proyecto → `pathModules`/
+   `--add-path-module` → CWD → `modules/` junto al binario → `~/.cls/modules`.
+   Ver `lenguaje/modulos.md`.
 5. **Caché** - se calcula la clave de los fuentes; si el `.wasm` existe en
    `~/.cache/cls/`, se salta directo a la ejecución.
 6. **Desplazamiento de spans** - cada módulo importado se fusiona al módulo
@@ -50,8 +53,10 @@ host**: viven precompilados a WASM en el crate `cls-internals` (sub-crate
 `include_bytes!`) y el emisor los **fusiona dentro del módulo CLS**
 (`engine/fusion.rs`), compartiendo la memoria lineal:
 
-- El emisor llama a `__intr_<area>_<op>` por nombre (`func_indexes`); si una
-  internals no está presente cae al **host fallback** con la misma firma.
+- El emisor llama a `__intr_<area>_<op>` por nombre (`func_indexes`); la
+  fusión es incondicional (ya no existen fallbacks host: la poda de la Fase 8
+  eliminó los `else { host.call(...) }` muertos y podó `HostFn` de 130 a ~90
+  variantes — solo I/O, errores, closures, CMX, Value, JSON y módulos del nodo).
 - El re-mapeo es solo de **índices WASM** (types/funcs/globals/tabla), no de
   direcciones; el import `__cls_alloc` de internals se resuelve al `__alloc`
   del CLS (misma firma `(i64) -> i64`).
@@ -79,7 +84,7 @@ Memoria mínima 32 páginas (2MB); `memory.grow` según demanda.
 | `Int` | `i64` |
 | `Float` | `f64` |
 | `Bool` | `i32` (0/1) |
-| `Char` | `i32` (codepoint) |
+| `Char` | `i32` (byte 0..255 — unidad de buffer) |
 | `String` | `i64` = `(ptr << 32) | len` en la memoria lineal |
 | `Array<T>` | `i64` = puntero a `[cap][len][elems...]` |
 | `Record`/`Shape`/`Tuple`/`Cmx`/clases/structs/enums | `i64` = puntero |
@@ -98,15 +103,13 @@ El módulo WASM importa **solo las host functions de I/O, errores y nodo**
 - Impresión (`print_*`) y errores (`trap`, `exit`).
 - `now`, `sleep`, `host_call(id, ptr, n)` - canal genérico para intrinsics del
   nodo.
-- Módulos desktop: `fs_*`, `http_*`, `os_*`, `path_*`, `process_*`, `time_*`,
-  `random_*`.
-- CMX (`cmx_*`) y funciones como valor (`fn_*`).
+- Módulos desktop: `fs_*`, `http_*`, `strings_*`.
+- CMX (emisión **inline**, 0 host; `toString` vía `__intr_cmx_fmt`) y funciones como valor (`fn_*`).
 
 Los arrays/strings/records/math/conversiones se **fusionan** desde
-`cls-internals` (ver arriba); el `HostFn` correspondiente queda como fallback
-con la misma firma. Los métodos de primitivos (`"hola".upper()`,
-`arr.push(x)`, ...) se compilan a llamadas directas a internals u host (sin
-objetos ni boxing).
+`cls-internals` (ver arriba; sin fallback host). Los métodos de primitivos
+(`"hola".upper()`, `arr.push(x)`, ...) se compilan a llamadas directas a
+internals u host (sin objetos ni boxing).
 
 ## Excepciones y errores
 
@@ -129,7 +132,7 @@ objetos ni boxing).
 - **Dead-flow**: el emisor cierra las funciones con `unreachable` tras
   `return`/`break`/`if` con todas las ramas terminadas y un default de retorno
   para flujo vivo sin `return` (cranelift exige stack balanceado; test
-  `examples/audit/test-features/jit-test/units/deadflow.clsx`).
+  `examples/test/jit-test/units/deadflow.clsx`).
 - Errores de tipo del typeck estricto abortan antes de emitir.
 
 ## Límites del subconjunto JIT
@@ -138,35 +141,58 @@ El emisor soporta: literales, aritmética, comparaciones, lógicos,
 asignaciones (incl. compuestas e `++`/`--`), ternario, `if/elif/else`,
 `while`, `loop`, `for`, `for each`, `switch`, `with`, `try/catch` (solo
 wasmtime), `return`/`break`/`continue`, arrays, tuplas, records (dinámicos y
-con shape), strings e interpolación, CMX, enums, structs, clases (herencia,
-visibilidad, static, `super`, `is`, **magic methods completos 24/24**:
-`__toString`/`__repr`/`__type`/`__toJson`/`__len`/`__int`/`__float`/`__bool`/
-`__call`/`__iter`/`__next`/`__get`/`__set`/`__contains`/`__equals`/
-`__compare`/`__add`/`__sub`/`__mul`/`__div`/`__mod`/`__pow`/`__neg`/`__not`),
-arrow functions con capturas, funciones como valor, `when` (compile-time),
-módulos aplanados, `extension` (nativa, ≤ 4 args) y `main`.
+con shape), **spreads de records/arrays/props CMX**, strings e interpolación,
+CMX (tipo de primera clase con `.tag/.props/.children/.kind`), `Callable` +
+`is` con narrowing, enums, structs, clases (herencia, visibilidad, static,
+`super`, `is`, **magic methods completos 24/24**: `__toString`/`__repr`/
+`__type`/`__toJson`/`__len`/`__int`/`__float`/`__bool`/`__call`/`__iter`/
+`__next`/`__get`/`__set`/`__contains`/`__equals`/`__compare`/`__add`/`__sub`/
+`__mul`/`__div`/`__mod`/`__pow`/`__neg`/`__not`), arrow functions con
+capturas, funciones como valor, `when` (compile-time), módulos aplanados,
+`extension` (nativa, **≤ 16 args** — decisión 002; ver `extension.md`) y
+`main`.
+
+La serialización de tipos compuestos (print/str/toString) es **recursiva y
+preserva la sintaxis de cada tipo**: tuplas `(a, b)`, structs
+`Celula { id: 101, ... }`, clases `<Organismo {...}>`, enums por nombre de
+variante. Dentro de contenedores dinámicos (records/props CMX) los valores
+compuestos se guardan como string raw (tag 9) para no exponer punteros (ver
+`lenguaje/datos.md`).
+
+**FFI estructurado** (`CRecord`/`CArray`/`CStruct`): los valores viajan como
+puntero al layout de la memoria lineal (`array [cap][len][elems*8]`, `record
+[cap][len][(key,val,tag)*24]`, `struct` = header CLS de 16B + data con layout
+ABI C alineado). Los params struct reciben la dirección de la **data**
+(`base+16`), así el DLL ve el struct C con offsets desde 0 (read/write
+in-place: `getsockname`, `accept`). El wrapper del JIT traduce el offset wasm a
+la dirección host (`ffi_wasm_to_host`/`ffi_host_to_wasm`) para que el DLL
+lea/escriba el layout zero-copy; el backend del nodo pasa el ptr como
+`Value::Int`. Un fallo de la llamada nativa se reporta por stderr (no se
+silencia). Ver `docs/lenguaje/extension.md`, `docs/lenguaje/estructuras.md` y
+`examples/test/jit-examples/`.
 
 Los magic methods se despachan por la **vtable de la clase** con la firma
 declarada del método (`call_indirect`): el emisor busca el magic en el tipo
 estático del objeto y emite `me` + args + dispatch. Los magics deben **anotar
-su retorno** (el JIT no puede tipar `Any`); la iteración usa el protocolo
+su retorno** (el JIT requiere anotación; no hay `Any`); la iteración usa el protocolo
 `__iter` -> Array u objeto iterador con `__next` hasta `null`. Verificado en
-`examples/audit/test-features/tests/jit-magic-all.clsx`.
+`examples/test/jit-test/units/jit-magic-all.clsx`.
 
-**Truthiness de condiciones** (paridad walker): `if`/`while`/`for`/`elif`
+**Truthiness de condiciones**: `if`/`while`/`for`/`elif`
 coaccionan la condición a bool - numéricos `!= 0`, strings no vacíos
 (`len != 0`), arrays/records/tuplas con elementos (`len` del header), shapes y
-objetos siempre verdaderos; tipos sin definir (`Any`) dan error de compilación
+objetos siempre verdaderos; tipos sin definir dan error de compilación
 claro ("la condición debe ser Bool"). El intrínseco `bool(x)` usa la misma
 semántica (`bool(cmx)`, `bool(record)`, ... válidos).
 
 Errores explícitos del emisor ("El JIT (subconjunto WASM) aún no soporta...")
-para lo que no entra en el subset: tipos `Any`/`Unknown` sin anotar,
+para lo que no entra en el subset: tipos `Unknown` sin anotar (y el fallback
+interno `Value`,
 parámetros sin anotación de tipo, arrays vacíos sin anotación, `%=` sobre
-floats, índices dinámicos en records con shape, `await` (el `async` del
-walker no está compilado). El subset se compone de tipos homogéneos: los
-arrays heterogéneos se promueven a `Float`, y las uniones colapsan a su tipo
-base o a `i64` genérico.
+floats, índices dinámicos en records con shape, `await` (el `async` no está
+implementado en ningún intérprete desde la eliminación del walker). El subset
+se compone de tipos homogéneos: los arrays heterogéneos se promueven a
+`Float`, y las uniones colapsan a su tipo base o a `i64` genérico.
 
 ## Debugging
 

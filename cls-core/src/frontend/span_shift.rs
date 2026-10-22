@@ -146,6 +146,38 @@ pub fn shift_expr_xy(e: &mut Expression, dl: u32, dc: i64) {
             shift_expr_xy(&mut c.then_expr, dl, dc);
             shift_expr_xy(&mut c.else_expr, dl, dc);
         }
+        Expression::Ternary(c) => {
+            c.span = shift_span_xy(c.span.clone(), dl, dc);
+            shift_expr_xy(&mut c.condition, dl, dc);
+            shift_expr_xy(&mut c.then_expr, dl, dc);
+            shift_expr_xy(&mut c.else_expr, dl, dc);
+        }
+        Expression::IfExpr(ie) => {
+            ie.span = shift_span_xy(ie.span.clone(), dl, dc);
+            shift_expr_xy(&mut ie.condition, dl, dc);
+            shift_block(&mut ie.then_block, dl);
+            shift_block(&mut ie.else_block, dl);
+        }
+        Expression::Match(m) => {
+            m.span = shift_span_xy(m.span.clone(), dl, dc);
+            if let Some(s) = &mut m.scrutinee {
+                shift_expr_xy(s, dl, dc);
+            }
+            for arm in &mut m.arms {
+                for pat in &mut arm.patterns {
+                    match pat {
+                        MatchPattern::Literal(l) => shift_literal(l, dl, dc),
+                        MatchPattern::Type(t) => shift_type(t, dl),
+                        MatchPattern::Cond(e) => shift_expr_xy(e, dl, dc),
+                        MatchPattern::Ident(_) | MatchPattern::Variant { .. } => {}
+                    }
+                }
+                shift_match_body(&mut arm.body, dl, dc);
+            }
+            if let Some(d) = &mut m.default {
+                shift_match_body(d, dl, dc);
+            }
+        }
         Expression::Assignment(a) => {
             a.span = shift_span_xy(a.span.clone(), dl, dc);
             shift_expr_xy(&mut a.target, dl, dc);
@@ -168,6 +200,10 @@ pub fn shift_expr_xy(e: &mut Expression, dl: u32, dc: i64) {
             *s = shift_span_xy(s.clone(), dl, dc);
         }
         Expression::Await(inner, s) => {
+            *s = shift_span_xy(s.clone(), dl, dc);
+            shift_expr_xy(inner, dl, dc);
+        }
+        Expression::Spread(inner, s) => {
             *s = shift_span_xy(s.clone(), dl, dc);
             shift_expr_xy(inner, dl, dc);
         }
@@ -199,6 +235,13 @@ fn shift_block(b: &mut Block, offset: u32) {
     b.span = shift_span(b.span.clone(), offset);
     for st in &mut b.statements {
         shift_stmt(st, offset);
+    }
+}
+
+fn shift_match_body(b: &mut MatchBody, dl: u32, dc: i64) {
+    match b {
+        MatchBody::Expr(e) => shift_expr_xy(e, dl, dc),
+        MatchBody::Block(blk) => shift_block(blk, dl),
     }
 }
 
@@ -305,6 +348,10 @@ pub fn shift_stmt(s: &mut Statement, offset: u32) {
         Statement::Return(Some(e)) => shift_expr(e, offset),
         Statement::Return(None) => {}
         Statement::Break(_) | Statement::Continue(_) => {}
+        Statement::ArrowReturn(a) => {
+            a.span = shift_span(a.span.clone(), offset);
+            shift_expr(&mut a.value, offset);
+        }
         Statement::ClassDecl(c) => {
             c.span = shift_span(c.span.clone(), offset);
             for m in &mut c.body {
@@ -337,6 +384,9 @@ pub fn shift_stmt(s: &mut Statement, offset: u32) {
             for f in &mut i.fields {
                 shift_type(&mut f.type_ann, offset);
             }
+            for parent in &mut i.extends {
+                shift_type(parent, offset);
+            }
         }
         Statement::ModuleDecl(m) => {
             m.span = shift_span(m.span.clone(), offset);
@@ -357,8 +407,18 @@ pub fn shift_stmt(s: &mut Statement, offset: u32) {
         Statement::EnumDecl(e) => {
             e.span = shift_span(e.span.clone(), offset);
         }
-        Statement::Import(_) | Statement::FromImport(_) | Statement::Include(_) => {}
-        Statement::Extension(_) => {}
+        Statement::DestructureLet(d) => {
+            d.span = shift_span(d.span.clone(), offset);
+            shift_expr(&mut d.value, offset);
+        }
+        Statement::DestructureClass(d) => {
+            d.span = shift_span(d.span.clone(), offset);
+            shift_expr(&mut d.value, offset);
+        }
+        Statement::Import(_) | Statement::FromImport(_) => {}
+        Statement::ExportList(e) => {
+            e.span = shift_span(e.span.clone(), offset);
+        }
         Statement::When(w) => {
             for b in &mut w.branches {
                 shift_block(&mut b.block, offset);

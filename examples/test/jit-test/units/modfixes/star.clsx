@@ -1,0 +1,9 @@
+export function star_a() -> String {
+    return "a";
+};
+
+export function star_b() -> String {
+    return "b";
+};
+
+export var STAR_V = "9";

@@ -67,6 +67,16 @@ impl HostCtx for StoreCtx<'_> {
         String::new()
     }
 
+    fn read_bytes(&mut self, packed: i64) -> Vec<u8> {
+        let ptr = (packed >> 32) as usize;
+        let len = (packed & 0xffff_ffff) as usize;
+        let data = self.memory.data(&*self.store);
+        if ptr + len <= data.len() {
+            return data[ptr..ptr + len].to_vec();
+        }
+        Vec::new()
+    }
+
     fn write_str(&mut self, s: &str) -> i64 {
         let len = s.len() as i64;
         let cap = (len * 2 + 16).max(64);

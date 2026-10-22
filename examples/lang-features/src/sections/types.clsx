@@ -1,0 +1,130 @@
+# types.clsx - eje del sistema de tipos (compile-time) + valores en runtime.
+#
+# Ejercita: alias, uniones de literales, const (literal type), tuplas
+# heterogeneas (indice literal y dinamico), records tipados (Record<K,V>),
+# interfaces (shapes y genericas), extraccion T["k"], genericos
+# (function id<T>, class CajaGen<T>), phantom !T e interseccion de shapes.
+
+import "check" as check;
+
+alias Color = "red" | "green" | "blue";
+alias Vec3 = (int, int, int);
+alias Dict = Record<String, int>;
+alias FnInt = (int) -> int;
+
+interface Persona {
+    nombre: String,
+    edad: int,
+};
+
+interface Hello<T=Int> {
+    num: T,
+    greet(name: String): String,
+};
+
+# phantom `!T`: parametro compile-time-only (no se sustituye ni se unifica).
+interface Marca<T> {
+    real: T,
+    fantasma: !T,
+};
+
+alias Combinado = { a: int } & { b: String };
+
+const K = "constante";
+
+function id<T>(x: T) -> T { return x; }
+
+# `!T` en firma: el emisor lo mapea a i64 (no hay value parametrizado).
+function tomar_fantasma<T>(x: !T) -> int { return 1; }
+
+class CajaGen<T> {
+    var contenido: T;
+    function main(contenido: T) { me.contenido = contenido; }
+    function obtener() -> T { return me.contenido; }
+};
+
+class CajaFantasma<T> {
+    function tomar(x: !T) -> int { return 1; }
+};
+
+function apply_alias() -> int {
+    var c: Color = "green";
+    check::assertEqStr("types.alias.union", c, "green");
+    var v: Vec3 = (1, 2, 3);
+    check::assertEq("types.alias.tuple", v[2], 3);
+    var d: Dict = {a: 1, b: 2};
+    check::assertEq("types.alias.record", int(d.a) + int(d.b), 3);
+    return 0;
+}
+
+function apply_tuples() -> int {
+    var t: (int, String) = (1, "x");
+    check::assertEq("types.tuple.lit0", t[0], 1);
+    check::assertEqStr("types.tuple.lit1", t[1], "x");
+    check::assertEq("types.tuple.len", t.length, 2);
+
+    var homog = (10, 20, 30);
+    var i = 1;
+    check::assertEq("types.tuple.dyn.int", homog[i], 20);
+    check::assertEqStr("types.tuple.join", homog.join("-"), "10-20-30");
+    return 0;
+}
+
+function apply_shapes() -> int {
+    var p: Persona = {nombre: "Ana", edad: 30};
+    check::assertEqStr("types.interface.nombre", p.nombre, "Ana");
+    check::assertEq("types.interface.edad", p.edad, 30);
+
+    var c: Combinado = {a: 1, b: "x"};
+    check::assertEq("types.shape.inter.a", c.a, 1);
+    check::assertEqStr("types.shape.inter.b", c.b, "x");
+    return 0;
+}
+
+function apply_extraction() -> int {
+    var n: Hello["num"] = 1;
+    check::assertEq("types.extract.default", n, 1);
+    var s: Hello<String>["num"] = "hola";
+    check::assertEqStr("types.extract.generic", s, "hola");
+    return 0;
+}
+
+function apply_literals() -> int {
+    check::assertEqStr("types.const.literal", K, "constante");
+    let l = 5;
+    check::assertEq("types.let", l, 5);
+    return 0;
+}
+
+function apply_generics() -> int {
+    check::assertEq("types.generic.fn.int", id(5), 5);
+    check::assertEqStr("types.generic.fn.str", id("x"), "x");
+    var caja = CajaGen(42);
+    # nota: `caja.obtener()` tipa `T` (la inferencia del tipo instanciado esta
+    # pendiente); se coacciona con int() para comparar.
+    check::assertEq("types.generic.class", int(caja.contenido), 42);
+    check::assertEq("types.generic.class.method", int(caja.obtener()), 42);
+    return 0;
+}
+
+function apply_phantom() -> int {
+    check::assertEq("types.phantom.fn", tomar_fantasma(5), 1);
+    var cf = CajaFantasma();
+    check::assertEq("types.phantom.class", cf.tomar(5), 1);
+    return 0;
+}
+
+export function types_run() -> int {
+    print("== types ==");
+    var before = check::fails();
+    apply_alias();
+    apply_tuples();
+    apply_shapes();
+    apply_extraction();
+    apply_literals();
+    apply_generics();
+    apply_phantom();
+    var gained = check::fails() - before;
+    if (gained == 0) { print("FEATURE types OK"); }
+    return gained;
+}

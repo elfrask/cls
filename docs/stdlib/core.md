@@ -1,37 +1,34 @@
 # Biblioteca estándar core
 
-La stdlib core es la que existe **siempre** (con `clx run`, `clxr` y el REPL),
-tanto en el JIT como en el tree-walker. Se compone de dos partes:
+La stdlib core es la que existe **siempre** (con `clx run`, `clxr` y el REPL).
+Se compone de dos partes:
 
 - **Intrinsics globales**: funciones sin módulo, disponibles directamente.
-- **Módulos core**: `math`, `json` y `async` (este último solo en el walker -
-  el JIT no compila `await`).
+- **Módulos core**: `math` y `json`.
+- **Módulos estándar distribuidos**: `env` (carga `.env`; ver `stdlib/env.md`).
 
 Las firmas canónicas viven en `cls-runtime/clsi/` (`core.clsi`, `math.clsi`,
-`json.clsi`, `async.clsi`) y son la fuente de verdad para el typechecker y el
-LSP.
+`json.clsi`) y son la fuente de verdad para el typechecker y el LSP.
 
 ## Intrinsics globales
 
-Registrados en el `Interpreter` (globales del nodo + `register_core_intrinsics`)
-y en el typeck vía `core.clsi`. Iguales en el JIT (host functions `env.*`) y en
-el walker.
+Registrados en el JIT (host functions `env.*`) y en el typeck vía `core.clsi`.
 
 | Función | Firma | Descripción |
 |---|---|---|
 | `print` | `print(val...)` | Imprime en consola. Une múltiples args con un espacio. |
 | `input` | `input(prompt) -> String` | Lee una línea desde la entrada estándar. |
-| `toString` | `toString(val: Any) -> String` | Convierte cualquier valor a string. |
-| `int` | `int(val: Any) -> int` | Convierte a entero (float -> truncado, string -> parseo). |
-| `float` | `float(val: Any) -> float` | Convierte a flotante. |
-| `str` | `str(val: Any) -> String` | Alias de `toString`. |
-| `bool` | `bool(val: Any) -> bool` | Verdad del valor (`is_truthy`). |
-| `len` | `len(val: Any) -> int` | Longitud de arrays, strings o records. |
-| `type` | `type(val: Any) -> String` | Nombre del tipo del valor. |
+| `toString` | `toString(val: Value) -> String` | Convierte cualquier valor a string. |
+| `int` | `int(val: Value) -> int` | Convierte a entero (float -> truncado, string -> parseo). |
+| `float` | `float(val: Value) -> float` | Convierte a flotante. |
+| `str` | `str(val: Value) -> String` | Alias de `toString`. |
+| `bool` | `bool(val: Value) -> bool` | Verdad del valor (`is_truthy`). |
+| `len` | `len(val: Value) -> int` | Longitud de arrays, strings o records. |
+| `type` | `type(val: Value) -> String` | Nombre del tipo del valor. |
 | `now` | `now() -> int` | Timestamp actual en milisegundos. |
 | `exit` | `exit(code: int)` | Finaliza la ejecución con un código. |
 | `sleep` | `sleep(ms: int)` | Duerme la ejecución. |
-| `throw` | `throw(msg: Any)` | Lanza un error de runtime intencional. |
+| `throw` | `throw(msg: Value)` | Lanza un error de runtime intencional. |
 
 Los args de CLI no se exponen como variable global: llegan a
 `main(args: String[])` (ver `herramientas/clxr.md` y `lenguaje/funciones.md`).
@@ -86,26 +83,34 @@ json.stringify(d);                  # "{\"a\":1}"
 
 | Función | Firma | Descripción |
 |---|---|---|
-| `parse` | `parse(text: String) -> Any` | Parsea un string JSON: objetos -> `Record`, arrays -> `Array`, además de los escalares. |
-| `stringify` | `stringify(value: Any) -> String` | Convierte un valor a JSON string. |
+| `parse` | `parse(text: String) -> JSON` | Parsea un string JSON: objetos -> `Record`, arrays -> `Array`, además de los escalares. |
+| `stringify` | `stringify(value: Value) -> String` | Convierte un valor a JSON string. |
 
 `stringify` respeta el magic method `__toJson`: si el objeto lo define, lo usa
 para la serialización; si no, la representación nativa.
 
-## Módulo `async` (solo tree-walker)
+## Módulo estándar `env`
+
+`modules/env` carga archivos `.env` sin tocar el entorno del proceso:
 
 ```clx
-import "async" as async;
+import "env" as env;
 
-var p = async.delay(1000);   # Promise
+var e = env.load(".env");
+var name = e.get("APP_NAME");
+var port = e.get_int("PORT");
 ```
 
-| Función | Firma | Descripción |
-|---|---|---|
-| `delay` | `delay(ms: int) -> Promise` | Promesa que resuelve después de `ms` milisegundos. |
-| `all` | `all(promises: Array) -> Promise` | Resuelve cuando todas las promesas resolvieron (con todos los resultados). |
-| `race` | `race(promises: Array) -> Promise` | Resuelve con la primera promesa que resuelve. |
+Expone `load`, `load_default`, `parse`, `merge` y `Env` con `get`, `has`,
+`require`, `get_int`, `get_bool`, `set` y `all`. Ver `stdlib/env.md`.
 
-> **El JIT no compila `async`**: `await` y el módulo `async` del walker no
-> entran en el subconjunto WASM; el emisor aborta con error explícito. Este
-> módulo solo funciona en el tree-walker (deprecado).
+## Módulo `async` (no implementado)
+
+```clx
+import "async" as async;   # ERROR: no hay módulo async en el JIT
+```
+
+`async`/`await` existen en el parser pero **no están implementados**: el JIT
+no los compila (error explícito del emisor) y el tree-walker que los ejecutaba
+se eliminó en dev-2. No existe ningún intérprete que los corra. Ver
+`lenguaje/estado-runtime.md`.

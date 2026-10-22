@@ -1,0 +1,13 @@
+enum resp { ok(String), s1 };
+
+function make() -> resp {
+    return resp::ok("x");
+};
+
+function main(args: String[]) -> int {
+    var r = make();
+    # No demostrable: `make()` no expone su variante -> error de compilación.
+    var resp::ok(x) = r;
+    print(x);
+    return 0;
+};

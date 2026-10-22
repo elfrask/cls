@@ -1,0 +1,8 @@
+﻿=== try/catch con funcion que lanza ===
+catch funcion: Error de runtime: no puede ser cero
+=== funcion que no lanza ===
+ok: 25
+=== try anidado: catch interno primero ===
+inner: Error de runtime: anidado
+despues del inner
+fin

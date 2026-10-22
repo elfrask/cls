@@ -1,15 +1,18 @@
 # Módulos, imports y exports
 
-CLS tiene dos sistemas de módulos: los **módulos fuente** (`.clsx`, con
-`import`/`from import`/`include`) y las **librerías compiladas** (`.clslib` vía
-`Lib.load`, pendiente de WASM). Este documento cubre los módulos fuente.
+CLS tiene tres formas de reutilizar código: los **módulos fuente** (`.clsx`, con
+`import`/`from import`), las **librerías compiladas** (`.clslib` vía `Lib.load`,
+todavía un stub) y los **módulos compartidos** de `/modules` (módulos fuente con
+manifiesto y rutas de búsqueda adicionales). Este documento cubre los módulos
+fuente y los compartidos; `.clslib` se detalla en `stdlib/desktop.md`.
 
 ## Imports
 
 ```clx
 import "lib/mathx" as mathx;              # namespaced
 from "lib/stringsx" import gritar as gritarFn, repetir;
-include "lib/colores";
+from "lib/colores" import *;              # todos los exports (antes `include`)
+from "lib/colores" import * as colores;   # namespace
 ```
 
 ### `import "mod" as alias;`
@@ -29,8 +32,6 @@ function main(args: String[]) -> int {
 ```
 
 - `alias::funcion` (`NamespaceAccess`) es el acceso soportado por el JIT.
-- `alias.funcion()` y `alias.var` (member access sobre el Record del módulo)
-  funcionan en el tree-walker.
 - Si no se da alias, el runtime usa el path como nombre (`import "mod"` ->
   `mod::sym`).
 
@@ -51,19 +52,32 @@ function main(args: String[]) -> int {
 Solo se puede importar lo que está marcado `export`; importar algo no
 exportado da error (el typeck sugiere: `el módulo exporta: ...`).
 
-### `include "mod";`
+### `from "mod" import *;`
 
-Inyecta **todos** los exports del módulo en el scope actual, sin namespacing.
-Útil para enums u otros símbolos que quieras usar desnudos:
+Importa **todos** los exports del módulo al scope actual, sin namespacing.
+Reemplaza al antiguo `include` (eliminado del lenguaje en dev-2):
 
 ```clx
-include "lib/colores";
+from "lib/colores" import *;
 
 function main(args: String[]) -> int {
     var c = Color.Azul;      # sin prefijo
     return 0;
 };
 ```
+
+### `from "mod" import * as ns;`
+
+Binding del **namespace** (equivalente a `import "mod" as ns`). Se puede
+combinar con imports nombrados en la misma sentencia:
+
+```clx
+from "lib/colores" import Rojo, * as colores;
+# Rojo (desnudo) y colores::Azul
+```
+
+> `include "..."` **ya no es sintaxis válida**: da un error de migración. Usá
+> `from "..." import *;`.
 
 ## Exports
 
@@ -76,10 +90,100 @@ export enum Color { Rojo, Verde, Azul, };
 ```
 
 Declaraciones exportables: `export function`, `export var`/`const`,
-`export class`, `export enum`, `export structure`, `export extension`.
-La carga del módulo (centralizada en `Interpreter::load_module_source`)
-ejecuta el archivo en un scope aislado y devuelve únicamente los símbolos
-exportados.
+`export class`, `export enum`, `export structure`, `export interface`,
+`export alias`, `export extension`.
+El JIT aplana el módulo importado en el módulo único y solo los símbolos
+marcados `export` quedan visibles bajo el prefijo del alias.
+
+### `export { ... };` (lista de exportación)
+
+Forma adicional (estilo TypeScript) para exportar símbolos ya declarados
+(locales o importados), con renombrado opcional. Es **aditiva**: el
+`export <decl>` sigue funcionando igual.
+
+```clx
+class Caja { ... }              # sin prefijo `export`
+const VERSION = "1.0";
+function helper() -> int { return 1; };
+
+export { Caja, VERSION, helper as help };
+```
+
+Los elementos pueden ser:
+
+| Forma | Origen | `as` |
+|-------|--------|:----:|
+| `export { Foo }` | declaración local, binding de `from-import`, o export directo | opcional |
+| `export { Foo as Bar }` | idem, renombrado | opcional |
+| `export { ns::Foo as Bar }` | miembro de `import "..." as ns` | **obligatorio** |
+| `export { ns::* }` | todo el contenido de `ns`, aplanado | — |
+| `export { a, b as c } from "mod"` | reexport desde otro módulo | opcional |
+
+Reglas:
+- La lista no puede estar vacía.
+- No se puede exportar el mismo nombre dos veces (incluye colisiones de
+  `ns::*` con locales o exports directos).
+- `ns::member` requiere `as` (la exportación es plana).
+
+Módulos índice (barrel): un `.clsx` que solo reexporta otros módulos.
+
+```clx
+# framework/index.clsx
+import "framework/router" as router;
+import "framework/request" as request;
+
+export { router::* };                       # todo router, aplanado
+export { request::Request as Request };     # un miembro, renombrado
+```
+
+```clx
+# framework/reexport.clsx (forma `from`)
+export { Router, Request } from "framework/router";
+```
+
+El consumidor importa con la sintaxis ya existente:
+
+```clx
+from "framework/index" import Router, Request;
+```
+
+> Nota (limitación conocida): el **renombrado `as` de un tipo nombrado**
+> (`export { Clase as Otra }`, `enum As E`) hereda la limitación del aplanado:
+> el type map conserva el nombre original de la declaración. El `as` funciona
+> para funciones y variables/constantes. Las clases/enums/structs/interfaces se
+> reexportan con su **mismo nombre** (`export { Caja }`, `ns::Caja as Caja`).
+
+### FFI en el sistema de módulos
+
+Las declaraciones de `extension` se **desenvuelven** a su equivalente nativo del
+lenguaje: cada `function`/`structure`/`var` del bloque se convierte en una
+declaración top-level marcada como nativa (con su librería/`kind`/símbolo). Así
+participan del sistema de módulos con las **mismas reglas** que cualquier
+`function` — sin un camino paralelo para FFI.
+
+```clx
+# ffi.clsx (cross-OS)
+when (os: windows) {
+    extension "msvcrt.dll" as C { export function strlen(s: CString) -> CInt; };
+};
+when (os: linux) {
+    extension "libc.so.6" as C { export function strlen(s: CString) -> CInt; };
+};
+```
+
+```clx
+# consumidor
+from "ffi" import strlen;          # import normal
+import "ffi" as f;                 # namespacing: f::strlen(...)
+# reexport (barrel):   export { f::strlen as strlen };
+# rename:              export { strlen as len };   # el símbolo C se conserva
+```
+
+Funciona: `export function ffiFn`, `export { ffiFn }` (promoción), rename `as`
+(para funciones nativas y cross-OS) y reexport por namespace/`from`.
+El `when`+`extension` cross-OS se transporta al módulo fusionado (el emisor elige
+la rama por target). La ABI (firma, `library`, símbolo C real) no cambia con el
+rename: el nombre exportado es solo el binding del lenguaje.
 
 ## Resolución de módulos
 
@@ -87,33 +191,153 @@ El `ModuleResolver` del runtime consulta en orden:
 **caché -> internals -> hook externo -> error**.
 
 1. **Caché** - módulos ya cargados en esta ejecución.
-2. **Internals** del core: `math`, `json`, `async`. Del nodo desktop:
-   `fs`, `http`, `Lib`, `os`, `path`, `process`, `time`, `random`.
+2. **Internals** del core: `math`, `json`. Del nodo desktop: `fs`, `http`,
+   `strings` (los módulos `os`, `path`, `process`, `time`, `random` se
+   eliminaron en dev-2).
 3. **Hook externo** - el nodo resuelve módulos de usuario; en `clx` el orden de
-   candidatos es:
-   1. `{dir del archivo}/{path}.clsx` (junto al archivo que importa)
-   2. `{workspace}/modules/{nombre}/mod.clsx`
-   3. `{cwd}/{path}.clsx`
-   4. `{cwd}/modules/{nombre}/mod.clsx`
-   5. `~/.cls/modules/{nombre}@{version}/mod.clsx` (globales versionadas;
-      filtra por el rango semver declarado en `cls.json`)
-   6. `~/.cls/modules/{nombre}/mod.clsx` (globales sin versión)
+   candidatos es (para un **nombre simple**; una ruta con `/` o absoluta es un
+   path explícito relativo al archivo que importa):
+   1. `{base_dir}/{path}.clsx` — `base_dir` es el dir del **entry** (o el de la
+      **raíz del módulo** cuando el import ocurre dentro de un módulo con
+      aislamiento; ver abajo)
+   2. `{workspace}/modules/{nombre}/<export.entry>` o `.../mod.clsx`
+   3. rutas extra de `pathModules` / `--add-path-module`:
+      `{ruta}/{nombre}/<export.entry>`, `.../mod.clsx` y `{ruta}/{nombre}.clsx`
+   4. `{cwd}/{path}.clsx`
+   5. `{cwd}/modules/{nombre}/<export.entry>` o `.../mod.clsx`
+   6. `{dir_clx}/modules/{nombre}/...` y `{dir_clx}/../modules/{nombre}/...`
+      (módulos junto al binario `clx`; útil sin setup global)
+   7. `~/.cls/modules/{nombre}@{version}/...` (globales versionadas; filtra por
+      el rango semver declarado en el `cls.json` del importador)
+   8. `~/.cls/modules/{nombre}/...` (globales sin versión)
+
+   Para un **paquete con scope** (`usuario/foo`, exactamente un `/` sin
+   extensión) se busca primero el layout global anidado
+   `~/.cls/modules/{usuario}/{foo}@{version}/...` (filtrado por
+   `dependencies["usuario/foo"]`), y luego los `modules/{usuario}/{foo}`
+   locales; recién después cae al path relativo.
 4. **Error** - `Módulo 'X' no encontrado`.
+
+### Aislamiento por módulo (`cls.json` con `export`)
+
+Cada módulo puede tener su **propio** `cls.json` que lo declara como módulo:
+
+```json
+{
+  "name": "pkg",
+  "version": "1.0.0",
+  "export": {
+    "entry": "index.clsx",
+    "types": "api.clsi"
+  }
+}
+```
+
+- **`export.entry`**: script que expone la API pública del módulo. `import "pkg"`
+  carga ese entry (no `mod.clsx`). El consumidor solo ve lo que el entry exporta.
+- **`export.types`**: ruta del `.clsi` de tipos (typeck/maptype).
+- **Aislamiento**: si el módulo tiene su `cls.json` con `export`, sus imports
+  internos se resuelven desde **su raíz** (el dir de su `cls.json`), no desde el
+  proyecto principal; y su manifiesto se usa para el versionado de sus
+  dependencias. Así `index.clsx` puede hacer `from "lib/util" import *;` y
+  resolver `modules/pkg/lib/util.clsx` sin rutas absolutas.
+
+Módulos **sin** `cls.json` conservan la resolución clásica (todo relativo al
+entry) — es una limitación de compatibilidad, no el modo recomendado.
+
+Para módulos que requieren bindings nativos del SO (sockets, threads,
+ficheros de bajo nivel, etc.), ver [extension-when.md](extension-when.md):
+el patrón `when` + `extension` permite declarar esos bindings en un
+`.clsx` sin necesidad de recompilar cls-core o cls-jit.
+
+## Módulos compartidos (`/modules`)
+
+El repo CLS mantiene una **stdlib autocontenida** en `/modules`: módulos fuente
+reutilizables por los proyectos de `examples/` y `cls-repositories/`. No son
+paquetes del registry ni módulos propios de un proyecto; se referencian desde
+su ubicación en el repo.
+
+### Reglas
+
+1. **CLS puro + FFI.** No se agregan `host_calls` ni intrínsecos nuevos; si falta
+   una capacidad, se resuelve con `extension`.
+2. **Sin dependencias externas** fuera de CLS + FFI.
+3. **Un módulo = una carpeta** con su `cls.json` (`export.entry`).
+4. **Reutilizar, no copiar**: se referencian con `pathModules` o
+   `--add-path-module`.
+5. Si el módulo reemplaza un `host_call` (`fs`, `http`, `json`, `strings`), se
+   anota en la tabla de deuda de `examples/patrones.md` §2.7.
+
+### Estructura
+
+```text
+modules/<nombre>/
+├── cls.json          # { "name": "...", "version": "...", "export": { "entry": "mod.clsx" } }
+├── mod.clsx          # barrel: reexporta solo la API pública
+├── <dominio>.clsx    # una responsabilidad por archivo
+└── <mod>_ffi.clsx    # bindings FFI crudos (no públicos)
+```
+
+- Los imports internos se resuelven desde la **raíz del módulo** (aislamiento).
+- Los helpers internos se exportan entre archivos pero **no** se reexportan en el
+  barrel.
+- Las reexportaciones de tipos conservan el nombre original; funciones y
+  constantes admiten renombrado.
+- **Gotcha**: el typeck registra los módulos internos por el **stem** del
+  archivo, así que dos `.clsx` con el mismo nombre en módulos distintos del
+  grafo colisionan. Usá stems únicos (`io_ffi.clsx`, `net_ffi.clsx`, ...).
+
+### Consumo
+
+```json
+{
+  "name": "mi-app",
+  "entry": "src/main.clsx",
+  "pathModules": ["../../modules"]
+}
+```
+
+```bash
+clx run src/main.clsx --add-path-module=../../modules
+```
+
+`pathModules` es relativo a la raíz del proyecto; el flag es relativo al CWD y
+es repetible. `clx test` también aplica `pathModules`. El catálogo completo y
+los shims nativos están en [stdlib/modulos.md](../stdlib/modulos.md).
+
+## Colisiones y reuso
+
+- `from "m" import *` trae los símbolos **al scope actual**; dos `import *` con
+  el mismo nombre colisionan (gana el primero).
+  Para evitar colisiones usá namespaces: `import "m" as ns` / `from "m" import *
+  as ns` y referí con `ns::sym`.
+- Un módulo puede ser reutilizado por varios módulos (`a` y `b` importan `part`)
+  sin "declaración múltiple": el chequeo de tipos procesa cada módulo en su
+  propio scope.
 
 ## Módulos en el JIT
 
 El JIT **aplana** los imports: compila el entry y todos sus módulos en **un
 solo** módulo WASM (`flatten_imports`), fusionando los spans con offsets de
-línea únicos. Los exports de cada import quedan namespaced bajo prefijos
-`alias::`. Editar cualquier `.clsx` del grafo invalida el caché.
+línea únicos. El flatten incluye funciones, variables/constantes, enums,
+clases, estructuras, interfaces y alias. Los exports de `import ... as`/
+`... import * as ns` quedan namespaced bajo prefijos `alias::`; el mismo módulo
+se aplana **una sola vez** (dedupe) aunque lo importen varios. Editar cualquier
+`.clsx` del grafo invalida el caché.
+
+> **Limitación conocida**: si un módulo exporta una clase que llama a otra
+> función exportada del mismo módulo y el consumidor no la importa
+> explícitamente, el flatten puede omitirla y la llamada termina en un trap
+> (`indirect call type mismatch`). Mitigación: que el barrel importe/exporte
+> todos los símbolos hermanos que usa.
 
 ## `module` y `namespace`
 
 Existen las declaraciones de agrupación `module Nombre { ... };` y
 `namespace Nombre { ... };`. En runtime ambas ejecutan el body en un scope
 aislado y registran los símbolos definidos como un `Record` con el nombre dado
-en el scope actual (son equivalentes en comportamiento; ver
-`Interpreter::execute_module_decl` / `execute_namespace_decl`), accesibles
-luego vía `Nombre.miembro` / `Nombre::miembro`.
+en el scope actual (son equivalentes en comportamiento), accesibles luego vía
+`Nombre.miembro` / `Nombre::miembro`.
 
-Ejemplos completos: `examples/jit-examples/modules/src/`.
+Ejemplos completos: `examples/test/jit-examples/modules/src/`.
+Aislamiento: `examples/test/jit-examples/modules-isolation/`.

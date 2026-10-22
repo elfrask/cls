@@ -47,6 +47,18 @@ impl HostCtx for Caller<'_, HostState> {
         String::new()
     }
 
+    fn read_bytes(&mut self, packed: i64) -> Vec<u8> {
+        let ptr = (packed >> 32) as usize;
+        let len = (packed & 0xffff_ffff) as usize;
+        if let Some(memory) = self.get_export("memory").and_then(|e| e.into_memory()) {
+            let data = memory.data(self);
+            if ptr + len <= data.len() {
+                return data[ptr..ptr + len].to_vec();
+            }
+        }
+        Vec::new()
+    }
+
     fn write_str(&mut self, s: &str) -> i64 {
         let len = s.len() as i64;
         let cap = (len * 2 + 16).max(64);
@@ -151,6 +163,9 @@ pub fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), Str
     w!("trap", |mut c: Caller<'_, HostState>, m: i64, s: i64| host::host_trap(&mut c, m, s));
     w!("input", |mut c: Caller<'_, HostState>| -> i64 { host::host_input(&mut c) });
     w!("math_random", |mut c: Caller<'_, HostState>| -> f64 { host::host_math_random(&mut c) });
+    w!("any_to_bool", |mut c: Caller<'_, HostState>, v: i64, t: i64| -> i32 {
+        host::host_any_to_bool(&mut c, v, t)
+    });
     w!("json_stringify", |mut c: Caller<'_, HostState>, v: i64, k: i64| -> i64 {
         host::host_json_stringify(&mut c, v, k)
     });
@@ -178,18 +193,6 @@ pub fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), Str
     w!("http_post", |mut c: Caller<'_, HostState>, u: i64, d: i64| -> i64 {
         host::host_http_post(&mut c, u, d)
     });
-    w!("cmx_new", |mut c: Caller<'_, HostState>, t: i64, k: i64| -> i64 {
-        host::host_cmx_new(&mut c, t, k)
-    });
-    w!("cmx_set_prop", |mut c: Caller<'_, HostState>, p: i64, k: i64, v: i64, t: i64| -> i64 {
-        host::host_cmx_set_prop(&mut c, p, k, v, t)
-    });
-    w!("cmx_add_child", |mut c: Caller<'_, HostState>, p: i64, v: i64, t: i64| -> i64 {
-        host::host_cmx_add_child(&mut c, p, v, t)
-    });
-    w!("cmx_to_string", |mut c: Caller<'_, HostState>, p: i64| -> i64 {
-        host::host_cmx_to_string(&mut c, p)
-    });
     w!("fn_handle", |mut c: Caller<'_, HostState>, ti: i64, n: i64, cap: i64| -> i64 {
         host::host_fn_handle(&mut c, ti, n, cap)
     });
@@ -206,6 +209,7 @@ pub fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), Str
     w!("host_call", |mut c: Caller<'_, HostState>, id: i64, ptr: i64, n: i64| -> i64 {
         host::host_host_call(&mut c, id, ptr, n)
     });
+    w!("config_record", |mut c: Caller<'_, HostState>| -> i64 { host::host_config_record(&mut c) });
     // Módulo os
     w!("os_platform", |mut c: Caller<'_, HostState>| -> i64 { host::host_os_platform(&mut c) });
     w!("os_arch", |mut c: Caller<'_, HostState>| -> i64 { host::host_os_arch(&mut c) });
@@ -277,6 +281,17 @@ pub fn register_host_functions(linker: &mut Linker<HostState>) -> Result<(), Str
         host::host_random_float(&mut c, min, max)
     });
     w!("random_uuid", |mut c: Caller<'_, HostState>| -> i64 { host::host_random_uuid(&mut c) });
+    // net eliminado (dev-2): no se registran hosts de sockets.
+    // Módulo str (utilidades de string)
+    w!("str_index_of", |mut c: Caller<'_, HostState>, s: i64, sub: i64| -> i64 {
+        host::host_str_index_of(&mut c, s, sub)
+    });
+    w!("str_slice", |mut c: Caller<'_, HostState>, s: i64, a: i64, b: i64| -> i64 {
+        host::host_str_slice(&mut c, s, a, b)
+    });
+    w!("str_split", |mut c: Caller<'_, HostState>, s: i64, sep: i64| -> i64 {
+        host::host_str_split(&mut c, s, sep)
+    });
     Ok(())
 }
 
@@ -325,6 +340,9 @@ fn register_native_hosts(
             'c' => NativeType::CInt,
             's' => NativeType::CString,
             'I' => NativeType::CInt,
+            'r' => NativeType::CRecord,
+            'a' => NativeType::CArray,
+            'S' => NativeType::CStruct,
             _ => NativeType::Int,
         };
         let ret_to_i64 = |v: Result<Value, cls_core::error::ClsError>| -> i64 {
@@ -366,7 +384,13 @@ fn register_native_hosts(
                 Err(_) => 0,
             }
         };
-        let params: Vec<char> = sig.chars().skip(1).collect();
+        let params: Vec<char> = sig
+            .chars()
+            .skip(1)
+            // Retorno struct: el nombre del import trae el tamaño total en
+            // bytes (`make_punto__S32@lib`) -> esos dígitos no son params.
+            .skip_while(|c| c.is_ascii_digit())
+            .collect();
         let rcode = sig.chars().next().unwrap_or('i');
         let lib2 = lib.clone();
         let sym2 = sym.clone();
@@ -386,33 +410,58 @@ fn register_native_hosts(
                         'f' => Value::Float(a.f64().map(|f| f.into()).unwrap_or(0.0)),
                         'b' => Value::Bool(a.i32().unwrap_or(0) != 0),
                         'c' => Value::Int(a.i32().unwrap_or(0) as i64),
+                        'r' | 'a' | 'S' => Value::Int(a.i64().unwrap_or(0)),
                         _ => Value::Int(a.i64().unwrap_or(0)),
                     };
                     vals.push(v);
                     ptypes.push(native_type(letter));
                 }
-                let r = backend.call_function(&lib2, &sym2, &vals, &ptypes, native_type(rcode));
+                let r = backend.call_function_raw(&lib2, &sym2, &vals, &ptypes, native_type(rcode));
+                // Un fallo de la llamada nativa es FATAL: se propaga como trap
+                // (misma política que el wrapper de wasmtime) para no devolver
+                // 0 y continuar en silencio (falso éxito).
+                if let Err(e) = &r {
+                    return Err(wasmi::Error::new(format!(
+                        "Extensión '{}' ({} de '{}'): {}",
+                        sym2, sig, lib2, e
+                    )));
+                }
                 match rcode {
                     'v' => Ok(()),
                     's' => {
-                        let s = match r {
-                            Ok(Value::String(s)) => s,
-                            _ => String::new(),
+                        // Retorno `CString` byte-transparente (bytes crudos).
+                        let bytes = match r {
+                            Ok(cls_runtime::ffi::NativeRet::Bytes(b)) => b,
+                            Ok(cls_runtime::ffi::NativeRet::Value(Value::String(s))) => {
+                                s.into_bytes()
+                            }
+                            _ => Vec::new(),
                         };
-                        results[0] = Val::I64(caller.write_str(&s));
-                        Ok(())
-                    }
-                    'f' => {
-                        results[0] = Val::F64(ret_to_f64(r).into());
-                        Ok(())
-                    }
-                    'b' | 'c' => {
-                        results[0] = Val::I32(ret_to_i32(r));
+                        results[0] = Val::I64(host::write_packed_bytes(&mut caller, &bytes));
                         Ok(())
                     }
                     _ => {
-                        results[0] = Val::I64(ret_to_i64(r));
-                        Ok(())
+                        let rv = r.map(|x| x.into_value());
+                        match rcode {
+                            'f' => {
+                                results[0] = Val::F64(ret_to_f64(rv).into());
+                                Ok(())
+                            }
+                            'b' | 'c' => {
+                                results[0] = Val::I32(ret_to_i32(rv));
+                                Ok(())
+                            }
+                            'r' | 'a' | 'S' => {
+                                // En wasmi (browser/wasm32) no hay DLLs nativas; el
+                                // ptr del layout se devuelve tal cual (passthrough).
+                                results[0] = Val::I64(ret_to_i64(rv));
+                                Ok(())
+                            }
+                            _ => {
+                                results[0] = Val::I64(ret_to_i64(rv));
+                                Ok(())
+                            }
+                        }
                     }
                 }
             },
@@ -443,7 +492,8 @@ pub(crate) fn run_wasm_wasmi(
     let module = match Module::new(&engine, wasm_bytes) {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("[JIT] Módulo WASM inválido para '{}' (wasmi):\n{:?}", entry, e);
+            // Diagnóstico corto (el `{:?}` puede embeber bytes crudos).
+            eprintln!("[JIT] Módulo WASM inválido para '{}' (wasmi): {}", entry, e);
             if let Some(p) = &cache_path {
                 let _ = std::fs::remove_file(p);
             }
@@ -472,6 +522,8 @@ pub(crate) fn run_wasm_wasmi(
             host_call: ctx.host_call_handler.clone(),
             output: ctx.output.clone(),
             app_args: app_args.to_vec(),
+            limits: None,
+            config_handle: None,
         },
     );
     let mut linker = Linker::new(&engine);

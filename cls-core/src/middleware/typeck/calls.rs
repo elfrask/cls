@@ -6,14 +6,132 @@ impl TypeChecker {
 
 
 
+    /// Construcción de una variante de enum (F2): valida variante, aridad y
+    /// tipos de los args contra el esquema. Devuelve `Named(enum)`.
+    fn check_enum_construct(
+        &mut self,
+        enum_name: &str,
+        member: &str,
+        schema: &[(String, Vec<Type>)],
+        args: &[Expression],
+        span: &Span,
+    ) -> Type {
+        let named = Type::Named(enum_name.to_string(), vec![]);
+        let Some((_, params)) = schema.iter().find(|(v, _)| v == member) else {
+            self.error(
+                &format!("La variante `{}` no existe en el enum `{}`", member, enum_name),
+                span.clone(),
+            );
+            for a in args {
+                self.check_expression(a);
+            }
+            return named;
+        };
+        if params.len() != args.len() {
+            self.error(
+                &format!(
+                    "La variante `{}` del enum `{}` espera {} argumento(s), recibió {}",
+                    member,
+                    enum_name,
+                    params.len(),
+                    args.len()
+                ),
+                span.clone(),
+            );
+        }
+        for (i, a) in args.iter().enumerate() {
+            let at = self.check_expression(a);
+            if let Some(pt) = params.get(i) {
+                if self.config.strict && !at.is_assignable_to(pt) {
+                    self.error(
+                        &format!(
+                            "Argumento {} de `{}::{}` no asignable a `{}` (encontró `{}`)",
+                            i + 1,
+                            enum_name,
+                            member,
+                            pt,
+                            at
+                        ),
+                        expr_span(a),
+                    );
+                }
+            }
+        }
+        named
+    }
+
+    /// Tipo de un `X::v` (variante de enum como valor). Valida que la variante
+    /// exista; si tiene payload, no puede usarse desnuda (falta la llamada).
+    pub(crate) fn check_enum_variant_value(
+        &mut self,
+        enum_name: &str,
+        member: &str,
+        span: &Span,
+    ) -> Type {
+        let named = Type::Named(enum_name.to_string(), vec![]);
+        if let Some(schema) = self.enum_schema(enum_name) {
+            match schema.iter().find(|(v, _)| v == member) {
+                Some((_, params)) => {
+                    if !params.is_empty() {
+                        self.error(
+                            &format!(
+                                "La variante `{}` del enum `{}` tiene payload; construila con `{}::{}(...)`",
+                                member, enum_name, enum_name, member
+                            ),
+                            span.clone(),
+                        );
+                    }
+                }
+                None => {
+                    self.error(
+                        &format!("La variante `{}` no existe en el enum `{}`", member, enum_name),
+                        span.clone(),
+                    );
+                }
+            }
+        }
+        named
+    }
+
     pub(crate) fn check_call(&mut self, call: &CallExpr) -> Type {
+        // Construcción de variante de enum con payload (F2): `X::v(args)`.
+        // Validación estática de variante/aridad/tipos; el tipo es `Named(X)`.
+        if let Expression::NamespaceAccess(ns, member, span) = &*call.callee {
+            if let Some(schema) = self.enum_schema(ns) {
+                return self.check_enum_construct(ns, member, &schema, &call.args, span);
+            }
+        }
         let callee_type = self.check_expression(&call.callee);
 
         // Métodos de primitivos (callee MemberAccess): el tipo del miembro ES el
         // resultado (`.join(sep)` -> String, `.contains(x)` -> Bool, ...).
         if let Expression::MemberAccess(m) = &*call.callee {
+            // `app.tag()`: el tag de un Cmx es invocable si es mayúscula (handle
+            // de función). El runtime despacha por tag-bit; aquí permitimos la
+            // llamada y tipamos el retorno como Value (dinámico). Réplica del
+            // patrón JSON/Value (ver plan completar-tipo-cmx.md).
+            // Métodos de CMX (rework): los definidos en la clase core `CMX`
+            // (frontend/builtins) + los nativos que quedan (toString/cloneWith).
+            let obj_ty0 = self.check_expression(&m.object);
+            if matches!(obj_ty0, Type::Cmx) {
+                for arg in &call.args {
+                    self.check_expression(arg);
+                }
+                if let Some(ms) = self.class_members.get("CMX") {
+                    if let Some(ret) = ms.get(m.member.as_str()) {
+                        return ret.clone();
+                    }
+                }
+                match m.member.as_str() {
+                    "tagCallable" => return Type::Value,
+                    "toString" | "__str" | "__repr" => return Type::String,
+                    "cloneWith" => return Type::Cmx,
+                    "tryCallTag" => return Type::Value,
+                    _ => {}
+                }
+            }
             // Array.map(f) -> Array(retorno de f)
-            let obj_ty = self.check_expression(&m.object);
+            let obj_ty = obj_ty0;
             if matches!(&obj_ty, Type::Array(_)) && m.member == "map" {
                 for arg in &call.args {
                     self.check_expression(arg);
@@ -28,10 +146,40 @@ impl TypeChecker {
             for arg in &call.args {
                 self.check_expression(arg);
             }
+            // Aridad de los métodos de String (el emisor accede a c.args[i] y
+            // un índice fuera de rango paniquea; error de tipo claro aquí).
+            if matches!(&obj_ty, Type::String) {
+                let arity = match m.member.as_str() {
+                    "slice" => Some(2usize),
+                    "indexOf" | "split" | "contains" | "startsWith" | "endsWith" => Some(1),
+                    "upper" | "lower" | "trim" | "isEmpty" | "toString" | "length" => Some(0),
+                    _ => None,
+                };
+                if let Some(a) = arity {
+                    if call.args.len() != a {
+                        self.error(
+                            &format!(
+                                "String.{} esperaba {} argumento(s), recibió {}",
+                                m.member,
+                                a,
+                                call.args.len()
+                            ),
+                            call.span.clone(),
+                        );
+                    }
+                }
+            }
             // `math.abs` devuelve el tipo del primer argumento (int->Int, float->Float);
             // `math.pow` SIEMPRE devuelve Float (el walker usa `powf` incondicional
             // y el emisor emite MathPow f64). Paridad con module_call_ret del backend.
             if let Expression::Identifier(obj, _) = &*m.object {
+                // Resolver alias de import (`import "math" as m` -> `m` es math).
+                let canonical = self
+                    .import_aliases
+                    .get(obj)
+                    .cloned()
+                    .unwrap_or_else(|| obj.clone());
+                let obj = &canonical;
                 // Validar aridad de los módulos internos del nodo (os/path/process/
                 // time/random): el emisor accede a c.args[i] y un índice fuera de
                 // rango paniquea. Error de tipo claro aquí, antes de emitir.
@@ -67,9 +215,11 @@ impl TypeChecker {
                 }
             }
             // Llamar una función como valor (`app.tag()`, `f()`): el resultado es
-            // su retorno, no el tipo de la función.
+            // su retorno, no el tipo de la función. Un `Callable` no expone su
+            // firma en compile-time -> resultado dinámico (`Any`, tag int).
             return match callee_type {
                 Type::Fun(_, ret) => *ret,
+                Type::Callable => Type::Value,
                 t => t,
             };
         }
@@ -78,6 +228,29 @@ impl TypeChecker {
         let arg_types: Vec<Type> = call.args.iter()
             .map(|a| self.check_expression(a))
             .collect();
+
+        // B2: conversiones/formatos intrínsecos (`str`/`toString`/`int`/`float`)
+        // sobre una unión de builtins. El emisor elige el despacho por el tipo
+        // estático (`__intr_str_int`, `__intr_str_float`, `emit_to_int`, …);
+        // una unión mezcla representaciones (int vs float) y no es discriminable
+        // sin tag/boxing. Antes: WASM inválido (`expected i64, found f64`) o
+        // conversión silenciosa incorrecta. Rechazo estático claro.
+        if let Expression::Identifier(name, _) = &*call.callee {
+            if matches!(name.as_str(), "str" | "toString" | "int" | "float") {
+                if let Some(arg0) = arg_types.first() {
+                    if self.union_has_undiscriminable_builtin(arg0) {
+                        self.error(
+                            &format!(
+                                "`{}(…)` sobre una unión de builtins ({}) no es discriminable en \
+                                 runtime: usá un valor con tipo concreto",
+                                name, arg0
+                            ),
+                            call.span.clone(),
+                        );
+                    }
+                }
+            }
+        }
 
         match callee_type {
             Type::Fun(params, ret) => {
@@ -97,7 +270,7 @@ impl TypeChecker {
                 let mut bindings = HashMap::new();
                 for (param, arg) in params.iter().zip(arg_types.iter()) {
                     if let Type::Named(n, ps) = param {
-                        if ps.is_empty() && !matches!(arg, Type::Any) {
+                        if ps.is_empty() && !matches!(arg, Type::Value) {
                             bindings.entry(n.clone()).or_insert_with(|| arg.clone());
                         }
                     }
@@ -108,8 +281,8 @@ impl TypeChecker {
                 for (i, (param, arg_ty)) in params.iter().zip(arg_types.iter()).enumerate() {
                     let param_subst = self.substitute(param, &bindings);
                     // Sin firma útil (Any/huecos/genérico sin binding) -> no validar.
-                    if matches!(param_subst, Type::Any | Type::Unknown)
-                        || matches!(arg_ty, Type::Any | Type::Unknown)
+                    if matches!(param_subst, Type::Value | Type::Unknown)
+                        || matches!(arg_ty, Type::Value | Type::Unknown)
                         || self.has_unbound_generic(&param_subst, &bindings)
                     {
                         continue;
@@ -120,7 +293,7 @@ impl TypeChecker {
                         Expression::Literal(l) => self.literal_type(&l.kind),
                         _ => arg_ty.clone(),
                     };
-                    if !arg_check.is_assignable_to(&param_subst) {
+                    if !self.is_assignable(&arg_check, &param_subst) {
                         let msg = format!(
                             "Se esperaba {}, recibió {} en el argumento {}",
                             param_subst,
@@ -139,11 +312,21 @@ impl TypeChecker {
             }
             Type::Named(_, _) => {
                 // ¿Constructor de clase/struct? - el callee es el NOMBRE de la
-                // clase (Identifier) -> devuelve el tipo de la clase.
-                if let Expression::Identifier(n, _) = &*call.callee {
-                    if self.class_members.contains_key(n) || self.struct_members.contains_key(n) {
-                        return callee_type.clone();
+                // clase (Identifier) o `lib::Clase` (NamespaceAccess) -> devuelve
+                // el tipo de la clase.
+                let is_ctor = match &*call.callee {
+                    Expression::Identifier(n, _) => {
+                        self.class_members.contains_key(n)
+                            || self.struct_members.contains_key(n)
                     }
+                    Expression::NamespaceAccess(_, member, _) => {
+                        self.class_members.contains_key(member)
+                            || self.struct_members.contains_key(member)
+                    }
+                    _ => false,
+                };
+                if is_ctor {
+                    return callee_type.clone();
                 }
                 // Objeto callable (magic __call): el callee es una expresión cuyo
                 // tipo es una clase con __call -> tipo del retorno del __call.
@@ -170,7 +353,13 @@ impl TypeChecker {
                 }
                 callee_type.clone()
             }
-            Type::Any => Type::Any,
+            Type::Value => Type::Value,
+            // Un valor `Callable` es invocable en runtime por tag-bit (handle de
+            // función simple o closure); su firma/retorno no se conoce en
+            // compile-time -> resultado dinámico (`Any`, tag int). Cubre
+            // `Record<String,Callable>["k"](...)`, `Callable[i](...)` y campos
+            // `var f: Callable` (`me.f(...)`).
+            Type::Callable => Type::Value,
             _ => self.error(
                 &format!("No se puede llamar como función: {}", callee_type),
                 call.span.clone(),

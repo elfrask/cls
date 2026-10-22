@@ -1,0 +1,75 @@
+# http/headers.clsx - Colección de cabeceras HTTP (case-insensitive, ordenada).
+#
+# Se guardan en arrays paralelos (nombre, valor) para preservar el orden y
+# permitir duplicados (algunas cabeceras, como Set-Cookie, se repiten).
+
+export class Headers {
+    public var names: String[];
+    public var values: String[];
+    function main() {
+        me.names = [];
+        me.values = [];
+    }
+
+    function add(name: String, value: String) {
+        me.names.push(name);
+        me.values.push(value);
+    }
+
+    function has(name: String) -> bool { return me.indexOf(name) >= 0; }
+
+    # Primer valor de la cabecera; "" si no existe.
+    function get(name: String) -> String {
+        var i = me.indexOf(name);
+        if (i < 0) { return ""; }
+        return me.values[i];
+    }
+
+    # Todos los valores de la cabecera (Set-Cookie puede repetirse).
+    function getAll(name: String) -> String[] {
+        var out: String[] = [];
+        var low = name.lower();
+        for each nm and i in (me.names) {
+            if (nm.lower() == low) { out.push(me.values[i]); }
+        }
+        return out;
+    }
+
+    function set(name: String, value: String) {
+        var i = me.indexOf(name);
+        if (i < 0) { me.add(name, value); }
+        else { me.values[i] = value; }
+    }
+
+    function remove(name: String) {
+        var low = name.lower();
+        var nn: String[] = [];
+        var vv: String[] = [];
+        for each nm and i in (me.names) {
+            if (nm.lower() != low) { nn.push(nm); vv.push(me.values[i]); }
+        }
+        me.names = nn;
+        me.values = vv;
+    }
+
+    function indexOf(name: String) -> int {
+        var low = name.lower();
+        for each nm and i in (me.names) {
+            if (nm.lower() == low) { return i; }
+        }
+        return -1;
+    }
+
+    function count() -> int { return me.names.length; }
+    function nameAt(i: int) -> String { return me.names[i]; }
+    function valueAt(i: int) -> String { return me.values[i]; }
+
+    # Serialización para una request ("Nombre: valor\r\n" por cabecera).
+    function block() -> String {
+        var out = "";
+        for each nm and i in (me.names) {
+            out = out + nm + ": " + me.values[i] + "\r\n";
+        }
+        return out;
+    }
+};

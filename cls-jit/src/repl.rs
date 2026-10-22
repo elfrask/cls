@@ -185,8 +185,6 @@ impl ReplSession {
                 | Statement::EnumDecl(_)
                 | Statement::Import(_)
                 | Statement::FromImport(_)
-                | Statement::Include(_)
-                | Statement::Extension(_)
                 | Statement::When(_)
                 | Statement::Config(_)
                 | Statement::Meta(_) => other.push(stmt.clone()),
@@ -223,6 +221,7 @@ impl ReplSession {
                 is_readonly: false,
                 pool_only: true,
                 pool_seed: true,
+                native: None,
             }));
         }
         // Reasignaciones a vars hoisted (nombre, span del valor): B2 las
@@ -272,9 +271,9 @@ impl ReplSession {
 
         // 4) Typeck de la sesión (con imports como prelude). Config casi
         //    PERMISIVA: el REPL es un playground (como el walker), sin
-        //    anotaciones los params/funciones caen a Any y el JIT despacha en
+        //    anotaciones los params/funciones caen a Value y el JIT despacha en
         //    runtime. PERO `no_implicit_any: true`: un identificador NO
-        //    definido es un error (antes caía a Any y `print(clear)` emitía 0
+        //    definido es un error (antes caía a Value y `print(clear)` emitía 0
         //    silenciosamente).
         let types_config = TypesConfig {
             check: true,
@@ -360,6 +359,7 @@ impl ReplSession {
             require_main: true,
             intrinsics: ctx.host_intrinsics.to_vec(),
             trace_calls: true,
+            memory_max_pages: None,
         };
         let backend = cls_core::backend::wasm::WasmBackend::with_options(
             type_map,
@@ -408,6 +408,8 @@ impl ReplSession {
                 host_call: ctx.host_call_handler.clone(),
                 output: ctx.output.clone(),
                 app_args: Vec::new(),
+                limits: None,
+                config_handle: None,
             },
         );
         let mut linker = Linker::new(&self.engine);
@@ -538,6 +540,7 @@ impl ReplSession {
                 is_readonly: v.is_readonly,
                 pool_only: true,
                 pool_seed: false,
+                native: None,
             };
             hoisted.push(if *is_const {
                 Statement::ConstDecl(decl)
@@ -646,12 +649,12 @@ fn synthesize_main(body: Vec<Statement>) -> FunctionDecl {
         modifiers: vec![],
         span,
         type_params: vec![],
-        is_native: false,
+        native: None,
     }
 }
 
 /// Convierte un `Type` del typeck en una anotación reutilizable para el hoist.
-/// Devuelve `None` para tipos no anotables (Any/Null/Unknown/Void/Empty), en
+/// Devuelve `None` para tipos no anotables (Null/Unknown/Void/Empty), en
 /// cuyo caso el hoist queda sin anotación (el backend cae al type map).
 fn annotation_from_type(t: &Type) -> Option<TypeAnnotation> {
     let span = Span::new(1, 1, 1, 1);
@@ -661,8 +664,11 @@ fn annotation_from_type(t: &Type) -> Option<TypeAnnotation> {
         Type::String => TypeKind::String,
         Type::Bool => TypeKind::Bool,
         Type::Char => TypeKind::Char,
-        Type::Any | Type::Unknown | Type::Null | Type::Void | Type::Empty => return None,
+        Type::Unknown | Type::Null | Type::Void | Type::Empty => return None,
+        Type::Json => TypeKind::Json,
+        Type::Value => TypeKind::Value,
         Type::Cmx => TypeKind::Cmx,
+        Type::Callable => TypeKind::Named("Callable".into(), vec![]),
         Type::Array(inner) => TypeKind::Array(Box::new(annotation_from_type(inner)?)),
         Type::Tuple(items) => TypeKind::Tuple(
             items

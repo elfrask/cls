@@ -1,0 +1,8 @@
+from "modfixes/lib" import Acc;
+
+function main(args: String[]) -> int {
+    var a = Acc();
+    a.setup();
+    print("arrow:", a.first());
+    return 0;
+};

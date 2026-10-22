@@ -1,0 +1,2 @@
+export enum Estado { Inactivo, Activo, Pendiente };
+export function parsear(s: String) -> int { return s.length; };

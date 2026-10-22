@@ -1,0 +1,38 @@
+# config/access.clsx - Accesores tipados sobre el snapshot de configuración.
+from "snapshot" import all;
+
+# Valor de una clave; "" si no existe.
+export function get(key: String) -> String {
+    var r = all();
+    if (r.has(key)) {
+        return r[key];
+    }
+    return "";
+}
+
+# Valor booleano: "true" -> true; cualquier otra cosa -> false.
+export function getBool(key: String) -> bool {
+    return get(key) == "true";
+}
+
+# Valor entero; 0 si la clave no existe o no es numérica.
+export function getInt(key: String) -> int {
+    var v = get(key);
+    if (v == "") {
+        return 0;
+    }
+    return int(v);
+}
+
+# Pone en mayúscula la primera letra ("fs" -> "Fs").
+function capFirst(s: String) -> String {
+    if (s.length == 0) {
+        return s;
+    }
+    return s[0].upper() + s.slice(1, s.length);
+}
+
+# Sandbox: p.ej. sandboxEnabled("fs") -> sandbox.allowFs; "net" -> allowNet.
+export function sandboxEnabled(name: String) -> bool {
+    return getBool("sandbox.allow" + capFirst(name));
+}

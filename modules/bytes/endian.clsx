@@ -1,0 +1,29 @@
+# bytes/endian.clsx - Enteros big-endian sobre buffers de bytes (`int[]`, 0..255).
+#
+# Mutadores in-place: los arrays tienen semántica de referencia (mutar un
+# parámetro array afecta al llamador).
+
+export function getU16(b: int[], off: int) -> int {
+    return ((b[off] & 255) << 8) | (b[off + 1] & 255);
+}
+
+export function getU32(b: int[], off: int) -> int {
+    return ((b[off] & 255) << 24) | ((b[off + 1] & 255) << 16)
+         | ((b[off + 2] & 255) << 8) | (b[off + 3] & 255);
+}
+
+export function pushU16(out: int[], v: int) {
+    out.push((v >> 8) & 255);
+    out.push(v & 255);
+}
+
+export function pushU32(out: int[], v: int) {
+    out.push((v >> 24) & 255);
+    out.push((v >> 16) & 255);
+    out.push((v >> 8) & 255);
+    out.push(v & 255);
+}
+
+export function pushAll(dst: int[], src: int[]) {
+    for each v in (src) { dst.push(v); }
+}

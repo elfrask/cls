@@ -1,0 +1,10 @@
+﻿a: 10
+b: 20
+len: 3
+size: 3
+has a: true
+has x: false
+len tras set: 4
+d: 40
+keys len: 4
+values len: 4

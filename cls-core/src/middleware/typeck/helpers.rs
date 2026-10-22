@@ -16,12 +16,16 @@ pub fn expr_span(expr: &Expression) -> Span {
         Expression::Record(r) => r.span,
         Expression::ArrowFunction(a) => a.span,
         Expression::Conditional(c) => c.span,
+        Expression::Ternary(c) => c.span,
+        Expression::IfExpr(c) => c.span,
+        Expression::Match(m) => m.span,
         Expression::Assignment(a) => a.span,
         Expression::Cmx(c) => c.span,
         Expression::Parenthesized(_, s) => *s,
         Expression::StringInterpolation(s) => s.span,
         Expression::NamespaceAccess(_, _, s) => *s,
         Expression::Await(_, s) => *s,
+        Expression::Spread(_, s) => *s,
     }
 }
 
@@ -32,12 +36,15 @@ pub(crate) fn builtin_type_name(name: &str) -> Option<Type> {
         "Float" => Some(Type::Float),
         "Bool" => Some(Type::Bool),
         "Char" => Some(Type::Char),
-        "Array" => Some(Type::Array(Box::new(Type::Any))),
+        "Array" => Some(Type::Array(Box::new(Type::Value))),
         "Tuple" => Some(Type::Tuple(vec![])),
-        "Record" => Some(Type::Record(Box::new(Type::Any), Box::new(Type::Any))),
-        "Cmx" => Some(Type::Cmx),
+        "Record" => Some(Type::Record(Box::new(Type::Value), Box::new(Type::Value))),
+        "Cmx" | "cmx" | "CMX" => Some(Type::Cmx),
+        "Callable" => Some(Type::Callable),
         "Null" => Some(Type::Null),
         "Void" => Some(Type::Void),
+        "JSON" | "Json" | "json" => Some(Type::Json),
+        "Value" | "value" => Some(Type::Value),
         _ => None,
     }
 }

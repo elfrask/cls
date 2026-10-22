@@ -1,0 +1,5 @@
+﻿type persona: PersonaMagica
+json persona: {"p":"Ana"}
+type simple: Object
+json simple: null
+type int: Int type str: String

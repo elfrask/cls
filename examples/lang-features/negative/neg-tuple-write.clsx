@@ -1,0 +1,6 @@
+# NEGATIVO: asignar a un indice de tupla (inmutable) debe fallar.
+function main(args: String[]) -> int {
+    var t = (10, 20, 30);
+    t[0] = 99;
+    return 0;
+}

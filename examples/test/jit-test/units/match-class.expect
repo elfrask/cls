@@ -1,0 +1,9 @@
+﻿1: ok listo
+2: err 404 no encontrado
+3: pend
+tipo: es Resp
+valor: match
+cond-true: si
+cond-false: no
+perro: guau
+es-animal: animal

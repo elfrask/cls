@@ -1,0 +1,36 @@
+# orm/driver.clsx - Clase base del driver (backend).
+#
+# Contrato que DEBE cumplir todo driver:
+#   connect(path) -> int          abre una conexión (handle/0 ok)
+#   close() -> int
+#   exec(sql) -> int              ejecuta SQL sin resultados (rc 0 = ok)
+#   query(sql) -> ResultSet       SELECT (sin parámetros)
+#   queryBind(sql, params) -> ResultSet   SELECT con placeholders `?`
+#   prepare(sql) -> int           sentencia preparada (handle)
+#   bind(stmt, idx, cell) -> int  enlaza el parámetro idx (1-based)
+#   step(stmt) -> int             1 fila / 0 fin / <0 error
+#   resetStmt(stmt) -> int        reutiliza el stmt tras un step
+#   finalizeStmt(stmt) -> int
+#   lastId() -> int               last insert rowid
+#   changes() -> int              filas afectadas por el último DML
+#   integrity() -> String         chequeo de integridad del motor
+#   version() -> String
+from "cell" import Cell;
+from "result_set" import ResultSet;
+
+export class Driver {
+    public function connect(path: String) -> int { return -1; }
+    public function close() -> int { return -1; }
+    public function exec(sql: String) -> int { return -1; }
+    public function query(sql: String) -> ResultSet { return ResultSet(); }
+    public function queryBind(sql: String, params: Cell[]) -> ResultSet { return ResultSet(); }
+    public function prepare(sql: String) -> int { return -1; }
+    public function bind(stmt: int, idx: int, cell: Cell) -> int { return -1; }
+    public function step(stmt: int) -> int { return -1; }
+    public function resetStmt(stmt: int) -> int { return -1; }
+    public function finalizeStmt(stmt: int) -> int { return -1; }
+    public function lastId() -> int { return -1; }
+    public function changes() -> int { return -1; }
+    public function integrity() -> String { return ""; }
+    public function version() -> String { return ""; }
+};

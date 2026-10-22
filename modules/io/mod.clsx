@@ -1,0 +1,33 @@
+# io - I/O de archivos y descriptores via FFI (semilla del futuro `fs` de CLS).
+#
+# Ladrillo de la stdlib autocontenida (examples/patrones.md §11): envuelve el
+# shim C `io_shim.dll` con una API CLS idiomática. NO usa host_calls; el acceso
+# al SO es FFI puro. Paga la deuda §2.7 (reemplaza al host_call `fs`).
+#
+# LIMITACIÓN CONOCIDA DEL FFI: la ruta del `.dll` se resuelve relativa al CWD,
+# no al archivo .clsx. Por eso hay que correr desde la raíz del repo (ver
+# README).
+#
+#   io_ffi.clsx - bindings crudos al shim (no público)
+#   flags.clsx  - constantes O_*
+#   files.clsx  - archivos completos (readText/readBytes/writeText/appendText)
+#   meta.clsx   - metadatos y navegación (exists/isDir/remove/cwd/chdir)
+#   fd.clsx     - descriptores (open/close/writeFd/readLine/setmode)
+#
+# Barrel: se expone la API pública.
+
+import "files" as files;
+import "meta" as meta;
+import "fd" as fd;
+import "flags" as flags;
+
+export { files::readText as readText, files::readBytes as readBytes,
+         files::readChars as readChars, files::writeText as writeText,
+         files::appendText as appendText };
+export { meta::exists as exists, meta::isDir as isDir, meta::isFile as isFile,
+         meta::remove as remove, meta::cwd as cwd, meta::chdir as chdir };
+export { fd::open as open, fd::close as close, fd::writeFd as writeFd,
+         fd::readLine as readLine, fd::setmode as setmode };
+export { flags::O_RDONLY as O_RDONLY, flags::O_WRONLY as O_WRONLY,
+         flags::O_CREAT as O_CREAT, flags::O_TRUNC as O_TRUNC,
+         flags::O_APPEND as O_APPEND, flags::O_BINARY as O_BINARY };

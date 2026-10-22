@@ -1,0 +1,14 @@
+# Semántica de BYTES de String: s[i] devuelve el byte i (no U+FFFD) y la
+# reconstrucción byte a byte reproduce el string (bug dev-2 2026-10-13).
+function main(args: String[]) -> int {
+    var lit = "AóB";
+    print("len", lit.length);
+    var out = "";
+    var i = 0;
+    while (i < lit.length) { out = out + lit[i]; i = i + 1; };
+    print("rebuilt-eq", out == lit);
+    print("byte-len", lit[1].length);
+    print("slice-mid-len", lit.slice(1, 2).length);
+    print("out", out);
+    return 0;
+};

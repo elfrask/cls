@@ -1,8 +1,0 @@
-export function procesar(n: int) -> int {
-    var aux = calcular(n);
-    return aux;
-};
-
-function calcular(n: int) -> int {
-    return n * 2;
-};

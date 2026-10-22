@@ -1,0 +1,20 @@
+# config - Introspección de configuración (SOLO LECTURA).
+#
+# Envuelve el intrinsic `config()` con una caché perezosa a nivel de módulo: el
+# `Record<String, String>` del snapshot se pide al host UNA sola vez y se
+# reutiliza. Ladrillo de la stdlib autocontenida (examples/patrones.md §11): NO
+# añade host_calls; usa el intrinsic de introspección autorizado, que solo lee
+# parámetros del host (no expone punteros ni capacidades nuevas). Ver
+# `docs/guia/configuracion.md`.
+#
+#   snapshot.clsx - snapshot cacheado (`all`)
+#   access.clsx   - accesores tipados (`get`/`getBool`/`getInt`/`sandboxEnabled`)
+#
+# Barrel: se expone la API pública.
+
+import "snapshot" as snapshot;
+import "access" as access;
+
+export { snapshot::all as all };
+export { access::get as get, access::getBool as getBool,
+         access::getInt as getInt, access::sandboxEnabled as sandboxEnabled };

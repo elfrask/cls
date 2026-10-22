@@ -1,5 +1,0 @@
-function main(args: String[]) -> int {
-    time.sleep(5);
-    print("despues del sleep");
-    return 0;
-}

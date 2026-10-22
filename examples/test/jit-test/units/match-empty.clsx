@@ -1,0 +1,4 @@
+function main(args: String[]) -> int {
+    match (1) is { }
+    return 0;
+};

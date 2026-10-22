@@ -48,6 +48,9 @@ pub(crate) struct StructInfo {
     pub(crate)def_id: u32,
     /// campos (nombre, tipo CLS, tipo WASM).
     pub(crate)fields: Vec<(String, Type, WasTy)>,
+    /// offset absoluto de cada campo desde la base (layout C, data en +16).
     pub(crate)offsets: Vec<i64>,
+    /// ancho C de cada campo (escalar 1/2/4/8 o array inline `T[n]`).
+    pub(crate)kinds: Vec<FieldKind>,
     pub(crate)total: i64,
 }

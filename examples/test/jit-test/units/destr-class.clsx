@@ -1,0 +1,54 @@
+# Desempaquetado de clase con `var`: `var Clase(a, b) = expr;`.
+# La clase define el magic `__destructurate() -> T | (T1, T2, …)`; el retorno
+# anota la forma: 1 bind = valor único; N binds = tupla de aridad N.
+
+class Payload {
+    var name: String;
+    var n: int;
+    function main(name: String, n: int) { me.name = name; me.n = n; }
+    function __destructurate() -> (String, int) { return (me.name, me.n); }
+}
+
+class Base {
+    var id: int;
+    function main(id: int) { me.id = id; }
+    function __destructurate() -> int { return me.id; }
+}
+
+class Child: Base {
+    var label: String;
+    var ratio: float;
+    function main(id: int, label: String, ratio: float) {
+        super.main(id);
+        me.label = label;
+        me.ratio = ratio;
+    }
+    function __destructurate() -> (int, String, float) {
+        return (me.id, me.label, me.ratio);
+    }
+}
+
+function main(args: String[]) -> int {
+    # Construcción directa.
+    var Payload(a, b) = Payload("hola", 7);
+    print(a + " " + b.toString());
+
+    # Desde una variable.
+    var p = Payload("mundo", 9);
+    var Payload(c, d) = p;
+    print(c + " " + d.toString());
+
+    # Slot ignorado.
+    var Payload(e, _) = p;
+    print(e);
+
+    # Herencia: el hijo overridea `__destructurate` (id, label, ratio).
+    var ch = Child(3, "tres", 2.5);
+    var Child(i, j, k) = ch;
+    print(i.toString() + " " + j + " " + k.toString());
+
+    # Construcción directa en el propio patrón.
+    var Child(x, y, z) = Child(1, "uno", 0.5);
+    print(x.toString() + " " + y + " " + z.toString());
+    return 0;
+}

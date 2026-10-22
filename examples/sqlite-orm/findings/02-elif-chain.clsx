@@ -1,0 +1,18 @@
+# Regresion de control de flujo: una cadena `if / elif / elif / ... / else`
+# (>=2 `elif` + `else`) con cuerpos que NO hacen `return` ejecuta el `else`
+# de mas. Con 1 solo `elif` no pasa; sin `else` tampoco.
+function f(t: int) -> String {
+    var s = "";
+    if (t == 1) { s = "A"; }
+    elif (t == 2) { s = "B"; }
+    elif (t == 3) { s = "C"; }
+    else { s = "D"; }
+    return s;
+}
+function main(args: String[]) -> int {
+    print("f(1)=" + f(1) + "  (esperado A)");
+    print("f(2)=" + f(2) + "  (esperado B; BUG si D)");
+    print("f(3)=" + f(3) + "  (esperado C)");
+    print("f(4)=" + f(4) + "  (esperado D)");
+    return 0;
+}

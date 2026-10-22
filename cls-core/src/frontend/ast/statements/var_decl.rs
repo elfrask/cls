@@ -31,4 +31,7 @@ pub struct VarDecl {
     /// mantenerse estables entre sesiones para la transferencia de estado).
     #[serde(default)]
     pub pool_seed: bool,
+    /// Marca de declaración nativa/FFI (`extension`): variable nativa.
+    #[serde(default)]
+    pub native: Option<NativeInfo>,
 }

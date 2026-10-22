@@ -1,0 +1,19 @@
+# random - bytes y tokens con CSPRNG del sistema operativo.
+#
+# Windows: BCryptGenRandom. Linux/macOS: /dev/urandom.
+# No usa `math.random` (LCG): es apto para salts y tokens de sesión/CSRF.
+import "bytes" as bytes;
+from "random_ffi" import o_random_bytes;
+
+export function random_bytes(n: int) -> int[] {
+    var b: int[] = o_random_bytes(n);
+    return b;
+}
+
+export function random_hex(n_bytes: int) -> String {
+    return bytes::hexBytes(random_bytes(n_bytes));
+}
+
+export function random_token(bytes_count: int) -> String {
+    return random_hex(bytes_count);
+}

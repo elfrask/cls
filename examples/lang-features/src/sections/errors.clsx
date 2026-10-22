@@ -1,0 +1,97 @@
+# errors.clsx - eje de errores y excepciones.
+#
+# Ejercita: throw/catch, errores de runtime capturables (division por cero,
+# indice fuera de rango), propagacion a traves de llamadas, y que el flujo
+# continua tras el catch. (El `finally` y su interaccion con return/break/
+# continue se cubren en control.clsx.)
+
+import "check" as check;
+
+function err_falla_div(n: int) -> int {
+    return 100 / n;
+}
+
+function err_falla_indice(a: int[], i: int) -> int {
+    return a[i];
+}
+
+function errors_throw() -> int {
+    var msg = "";
+    try {
+        throw("boom");
+    } catch (e) {
+        msg = e;
+    }
+    check::assertEqStr("err.throw.catch", msg, "Error de runtime: boom");
+    # el flujo continua tras el catch
+    var continuo = "no";
+    try {
+        throw("x");
+    } catch (e) {
+        continuo = "si";
+    }
+    check::assertEqStr("err.throw.continua", continuo, "si");
+    return 0;
+}
+
+function errors_div_zero() -> int {
+    var msg = "";
+    try {
+        var r = err_falla_div(0);
+        print("no llega", r);
+    } catch (e) {
+        msg = e;
+    }
+    check::assertEqStr("err.divzero", msg, "Error de runtime: División por cero");
+    return 0;
+}
+
+function errors_index_oob() -> int {
+    var msg = "";
+    try {
+        var a = [1, 2, 3];
+        var r = err_falla_indice(a, 99);
+        print("no llega", r);
+    } catch (e) {
+        msg = e;
+    }
+    check::assertEqStr("err.index.oob", msg, "Error de runtime: Índice fuera de rango");
+    return 0;
+}
+
+function errors_propagation() -> int {
+    # error propagado a traves de varios frames hasta el catch de main.
+    var msg = "";
+    try {
+        err_falla_div(err_falla_div(0));
+    } catch (e) {
+        msg = e;
+    }
+    check::assertEqStr("err.propagacion", msg, "Error de runtime: División por cero");
+
+    # catch interno captura antes de propagar.
+    var log = "";
+    try {
+        try {
+            throw("interno");
+        } catch (e) {
+            log = "inner:" + e;
+        }
+    } catch (e) {
+        log = "outer:" + e;
+    }
+    check::assertEqStr("err.anidado", log, "inner:Error de runtime: interno");
+    return 0;
+}
+
+export function errors_run() -> int {
+    print("== errors ==");
+    var before = check::fails();
+    errors_throw();
+    errors_div_zero();
+    errors_index_oob();
+    errors_propagation();
+    var gained = check::fails() - before;
+    if (gained == 0) { print("FEATURE errors OK"); }
+    return gained;
+}

@@ -1,0 +1,56 @@
+enum resp { ok(String), err(int, String), s1, s2 };
+
+function main(args: String[]) -> int {
+    # Payload de 1 param.
+    var r = resp::ok("Hola");
+    var out1 = match (v <- r) {
+        ok(texto)     -> "ok ${texto}",
+        err(cod, msg) -> "err ${cod} ${msg}",
+        s1, s2        -> "unit",
+        default       -> "?"
+    };
+    print("p1:", out1);
+
+    # Payload de 2 params.
+    var e = resp::err(404, "no encontrado");
+    var out2 = match (v <- e) {
+        ok(texto)     -> "ok ${texto}",
+        err(cod, msg) -> "err ${cod} ${msg}",
+        s1, s2        -> "unit",
+        default       -> "?"
+    };
+    print("p2:", out2);
+
+    # Variante unit de un enum con payload.
+    var u = resp::s2;
+    var out3 = match (v <- u) {
+        ok(texto)     -> "ok ${texto}",
+        err(cod, msg) -> "err",
+        s1, s2        -> "unit",
+        default       -> "?"
+    };
+    print("p3:", out3);
+
+    # Destructuring-let (1 bind).
+    var c = resp::ok("destructurado");
+    var resp::ok(result) = c;
+    print("destr:", result);
+
+    # Destructuring-let (2 binds) + slot ignorado.
+    var d = resp::err(7, "siete");
+    var resp::err(code, _) = d;
+    print("destr2:", code);
+
+    # print/toString de la variante con payload.
+    print("repr:", e);
+    print("str:", str(r));
+
+    # `==` por identidad def_id+idx (documentado en MATCH_PLAN §4-F2).
+    print("eq same:", resp::ok("a") == resp::ok("b"));
+    print("eq diff:", resp::ok("a") == resp::err(1, "x"));
+
+    # `is` sobre enum con payload.
+    print("is:", c is resp);
+
+    return 0;
+};

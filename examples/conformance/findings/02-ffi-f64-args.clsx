@@ -1,0 +1,30 @@
+# FINDING #2 - FFI: los argumentos CDouble llegan mal a C (ABI).
+#
+# El dispatcher `extension` invoca el simbolo con una firma unica
+# `extern "C" fn(i64, i64, ...) -> ...`: TODO argumento viaja como i64 en
+# registros enteros. En x86_64, un parametro `double` de C debe ir en registro
+# XMM, asi que C lee basura (en la practica, el ULTIMO float procesado queda en
+# XMM0 y los demas parametros valen 0).
+#
+#   o_binop_f(op=0, a=2.5, b=0.5)  -> esperado 3.0 ; obtenido ~0.5
+#   o_mix(op=0, a=7, b=2.0)        -> esperado 9.0 ; obtenido 7.0
+#
+# Impacto: NINGUNA funcion nativa con parametros `CDouble` funciona (aritmetica
+# flotante, libm con doubles, etc.). El retorno CDouble si funciona.
+#
+# Repro (usa el oraculo de la suite; compilalo con run.ps1 o gcc):
+#   target\debug\clx.exe run examples\conformance\findings\02-ffi-f64-args.clsx
+
+extension "examples/conformance/oracle/oracle.dll" as C {
+    function o_binop_f(op: CLong, a: CDouble, b: CDouble) -> CDouble;
+    function o_mix(op: CLong, a: CLong, b: CDouble) -> CDouble;
+};
+
+function main(args: String[]) -> int {
+    var r1 = float(o_binop_f(0, 2.5, 0.5));
+    var r2 = float(o_mix(0, 7, 2.0));
+    print("o_binop_f(+,2.5,0.5)=" + str(r1) + " (esperado 3)");
+    print("o_mix(+,7,2.0)=" + str(r2) + " (esperado 9)");
+    if (r1 == 3.0 && r2 == 9.0) { return 0; }
+    return 1;
+}

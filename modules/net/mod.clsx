@@ -1,0 +1,34 @@
+# net - Transporte UDP/TCP via FFI a sockets (semilla del futuro `net` de CLS).
+#
+# Ladrillo de la stdlib autocontenida (examples/patrones.md §2.2 y §11): envuelve
+# el shim C `net_shim` con una API CLS idiomática. NO usa host_calls; el acceso
+# al SO es FFI puro. Paga la deuda §2.7 (reemplaza al `host_call http` en su capa
+# de transporte).
+#
+# LIMITACIÓN CONOCIDA DEL FFI: la ruta del shim se resuelve relativa al CWD, no
+# al archivo .clsx. Por eso hay que correr desde la raíz del repo (ver README).
+#
+#   net_ffi.clsx - bindings crudos al shim (no público)
+#   consts.clsx  - timeouts y límites
+#   udp.clsx     - UDP (funcional + UdpClient)
+#   tcp.clsx     - TCP (funcional + TcpClient)
+#   lookup.clsx  - resolución de nombres
+#
+# Para conversión de buffers (`int[]`/`Char[]`) usar `modules/bytes`.
+#
+# Barrel: se expone la API pública.
+
+import "udp" as udp;
+import "tcp" as tcp;
+import "lookup" as lookup;
+import "consts" as consts;
+
+export { udp::udpOpen as udpOpen, udp::udpSend as udpSend,
+         udp::udpRecv as udpRecv, udp::udpClose as udpClose,
+         udp::UdpClient as UdpClient };
+export { tcp::tcpOpen as tcpOpen, tcp::tcpSend as tcpSend,
+         tcp::tcpRecv as tcpRecv, tcp::tcpClose as tcpClose,
+         tcp::TcpClient as TcpClient };
+export { lookup::resolve as resolve };
+export { consts::DEFAULT_TIMEOUT_MS as DEFAULT_TIMEOUT_MS,
+         consts::MAX_DNS_MSG as MAX_DNS_MSG };

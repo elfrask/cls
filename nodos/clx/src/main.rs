@@ -5,8 +5,9 @@ mod lsp;
 mod type_defs;
 mod subcommands;
 mod jit;
-mod native;
 mod module_index;
+mod packages;
+mod git_driver;
 
 use std::env;
 use std::process;
@@ -36,11 +37,16 @@ fn dispatch(cmd: &str, args: &[String]) -> i32 {
         "add" | "remove" | "rm" | "install" | "i" => {
             subcommands::pkg::execute(cmd, args)
         }
+        "ls" | "list" => subcommands::ls::execute(args),
+        "audit" => subcommands::audit::execute(args),
+        "info" => subcommands::info::execute(args),
 
         // Desarrollo
         "run" => subcommands::run::execute(args),
         "check" => subcommands::check::execute(args),
         "repl" => subcommands::repl::execute(args),
+        "test" => subcommands::test::execute(args),
+        "start" => subcommands::start::execute(args),
 
         // Compilación
         "build" => subcommands::build::execute(args),
@@ -91,12 +97,19 @@ fn print_help() {
     println!("Gestión de paquetes:");
     println!("  add <paquete> [--dev]       Agregar dependencia a cls.json");
     println!("  remove|rm <paquete>         Quitar dependencia de cls.json");
-    println!("  install|i                   Instalar dependencias desde registry");
+    println!("  install|i [ruta|zip...]     Instalar deps del registry o paquetes locales (dir/.zip)");
+    println!("    -g, --global              Instalar en ~/.cls/modules");
+    println!("    -f, --force               Sobrescribir si ya existe");
+    println!("  ls|list [-l|-g]             Listar paquetes locales y globales");
+    println!("  info [ruta|paquete]         Info de un proyecto/paquete (.json/.zip)");
+    println!("  audit [-l|-g]               Auditar paquetes (manifiesto/entry/deps/duplicados)");
     println!();
     println!("Desarrollo:");
     println!("  run [archivo] [-- args]     Ejecutar con el JIT (default; usa 'entry' de cls.json si no se da archivo)");
     println!("    --ast-walker              Ejecutar con el tree-walker DEPRECADO (solo referencia)");
     println!("  check [archivo|dir]         Type checking (escanea directorio si no se da archivo)");
+    println!("  test [archivos|globs]       Ejecutar tests ('testEntry' de cls.json; globs permitidos)");
+    println!("  start [comando]             Shell con PATH de bins de los modulos (modules/*/bin, global)");
     println!("  repl                        REPL interactivo JIT (estado persistente entre líneas)");
     println!();
     println!("Compilación:");

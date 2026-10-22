@@ -330,8 +330,6 @@ fn rewrite_body(
     alloc_idx: u32,
     global_delta: u32,
 ) -> ClsResult<Function> {
-    use wasm_encoder::Instruction as I;
-
     let mut locals: Vec<ValType> = Vec::new();
     for group in body.get_locals_reader().map_err(|e| crate::error::ClsError::CompileError(e.to_string()))? {
         let (count, ty) = group.map_err(|e| crate::error::ClsError::CompileError(e.to_string()))?;
@@ -373,7 +371,6 @@ fn map_operator(
     global_delta: u32,
 ) -> ClsResult<wasm_encoder::Instruction> {
     use wasm_encoder::Instruction as I;
-    use wasm_encoder::MemArg;
     Ok(match op {
         // ── calls ────────────────────────────────────────────────────────
         wasmparser::Operator::Call { function_index } => {

@@ -1,0 +1,25 @@
+# GAP (no crashea): un retorno `CString` (char*) desde C se convierte a String
+# CLS usando strlen, por lo que se TRUNCA en el primer byte NUL. No hay forma
+# limpia (sin exponer punteros) de devolver bytes crudos de C a CLS.
+#
+# Comando:
+#   target\debug\clx.exe run examples\brainfuck\findings\05-gap-cstring-nul.clsx
+#
+# nul.bin contiene los bytes 41 00 42 ("A\0B").
+# Esperado (byte-safe): length >= 3
+# Obtenido:              length = 1  (se corta en el NUL)
+#
+# Workaround usado en la prueba: el oraculo expone `bf_read_bytes(path) -> CArray`
+# (devuelve un array de bytes [cap][len][elems*8], seguro con NUL).
+
+when (os: windows) {
+    extension "examples/brainfuck/oracle/bf.dll" as C {
+        function bf_read_file(path: CString) -> CString;
+    };
+};
+
+function main(args: String[]) -> int {
+    var s = bf_read_file("examples/brainfuck/findings/nul.bin");
+    print("length=${s.length}");
+    return 0;
+};

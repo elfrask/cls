@@ -1,0 +1,11 @@
+# NEGATIVO: leer un campo `private` desde fuera de la clase debe fallar.
+class C {
+    private var s: int;
+    function main() { me.s = 1; }
+};
+
+function main(args: String[]) -> int {
+    var c = C();
+    print(c.s);
+    return 0;
+}

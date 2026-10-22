@@ -1,4 +1,0 @@
-function main(args: String[]) -> int {
-    if (1) { print("si"); }
-    return 0;
-}

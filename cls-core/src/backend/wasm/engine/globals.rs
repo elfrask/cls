@@ -9,6 +9,7 @@ impl<'a> Engine<'a> {
         }
         let mut fe = FuncEmitter::new(
             self.types,
+            &self.import_aliases,
             HostCaller {
                 indexes: self.host_indexes.clone(),
             },
@@ -22,9 +23,11 @@ impl<'a> Engine<'a> {
             &mut self.type_count,
             &mut self.types_sec,
             &self.enum_defs,
+            &self.enum_params,
             &self.struct_defs,
             &self.native_indexes,
             &self.native_ret,
+            &self.native_params,
             &self.globals,
             &self.static_fields,
             &self.class_defs,

@@ -1,0 +1,39 @@
+# ffi.clsx - Puente de I/O de clsh sobre el modulo compartido `io` (/modules).
+#
+# Regla de autocontencion (examples/patrones.md §2): CLS puro + FFI a C; nada de
+# fs/http/json/strings ni host_calls. Tras la extraccion a /modules (§11.5),
+# este archivo YA NO declara FFI propio: todo el acceso al SO vive en
+# `modules/io` (shim `io_shim.dll`, sin punteros: CString/CArray/CLong/CInt), y
+# aqui solo se le dan a clsh los nombres que usa.
+#
+# El shell usa metodos de `String` (`.length`, `.slice`) en vez de FFI para el
+# manejo de texto, y el literal `"$"` (el workaround `dollar()` se elimino: el
+# bug del lexer/parser con un literal terminado en "$" esta corregido).
+#
+# La ruta del `.dll` de `io` es relativa al CWD (limitacion conocida del FFI):
+# por eso la prueba exige correr desde la raiz del repo (ver README).
+
+import "io" as io;
+
+# --- I/O de archivos --------------------------------------------------------
+
+export function read_file(path: String) -> String { return io::readText(path); }
+export function getcwd() -> String { return io::cwd(); }
+export function chdir(p: String) -> int { return io::chdir(p); }
+export function read_line(fd: int) -> String { return io::readLine(fd); }
+export function exists(path: String) -> int { return io::exists(path); }
+export function isdir(path: String) -> int { return io::isDir(path); }
+export function isfile(path: String) -> int { return io::isFile(path); }
+
+# Escribe los bytes de `s` al fd (byte-exacto; el fd debe estar en modo binario).
+export function write_fd(fd: int, s: String) {
+    io::writeFd(fd, s);
+}
+
+# --- Descriptores -----------------------------------------------------------
+
+export function open(path: String, flags: int, mode: int) -> int {
+    return io::open(path, flags, mode);
+}
+export function close(fd: int) -> int { return io::close(fd); }
+export function setmode(fd: int, mode: int) -> int { return io::setmode(fd, mode); }

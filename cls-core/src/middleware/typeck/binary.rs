@@ -35,25 +35,30 @@ impl TypeChecker {
 
         match bin.op {
             Operator::Plus => {
-                let is_str_l = matches!(left, Type::String);
-                let is_str_r = matches!(right, Type::String);
-                let is_num_l = matches!(left, Type::Int | Type::Float | Type::I32 | Type::I64);
-                let is_num_r = matches!(right, Type::Int | Type::Float | Type::I32 | Type::I64);
+                // Un literal type (p. ej. `const N = 5` -> `5`) opera como su
+                // tipo base: `N + x` es aritmética de Int, no un error. Las
+                // uniones de literales se conservan (no son operandos directos).
+                let lop = left.literal_base();
+                let rop = right.literal_base();
+                let is_str_l = matches!(lop, Type::String);
+                let is_str_r = matches!(rop, Type::String);
+                let is_num_l = matches!(lop, Type::Int | Type::Float | Type::I32 | Type::I64);
+                let is_num_r = matches!(rop, Type::Int | Type::Float | Type::I32 | Type::I64);
 
                 if is_str_l && is_str_r {
                     return Type::String;
                 }
                 if is_num_l && is_num_r {
-                    if matches!(left, Type::Float) || matches!(right, Type::Float) {
+                    if matches!(lop, Type::Float) || matches!(rop, Type::Float) {
                         return Type::Float;
                     }
                     return Type::Int;
                 }
                 // Int + Float -> Float
-                if is_num_l && matches!(right, Type::Float) {
+                if is_num_l && matches!(rop, Type::Float) {
                     return Type::Float;
                 }
-                if matches!(left, Type::Float) && is_num_r {
+                if matches!(lop, Type::Float) && is_num_r {
                     return Type::Float;
                 }
                 // Magic method __add: clase con __add (left primero, luego right).
@@ -82,10 +87,12 @@ impl TypeChecker {
                 )
             }
             Operator::Minus | Operator::Star | Operator::Slash | Operator::Percent | Operator::StarStar => {
-                let l_ok = matches!(left, Type::Int | Type::Float | Type::I32 | Type::I64);
-                let r_ok = matches!(right, Type::Int | Type::Float | Type::I32 | Type::I64);
+                let lop = left.literal_base();
+                let rop = right.literal_base();
+                let l_ok = matches!(lop, Type::Int | Type::Float | Type::I32 | Type::I64);
+                let r_ok = matches!(rop, Type::Int | Type::Float | Type::I32 | Type::I64);
                 if l_ok && r_ok {
-                    if matches!(left, Type::Float) || matches!(right, Type::Float) {
+                    if matches!(lop, Type::Float) || matches!(rop, Type::Float) {
                         return Type::Float;
                     }
                     return Type::Int;
@@ -121,13 +128,35 @@ impl TypeChecker {
             }
             // Operadores bit a bit: exigen enteros y devuelven Int.
             Operator::Caret | Operator::ShiftLeft | Operator::ShiftRight => {
-                let l_ok = matches!(left, Type::Int | Type::I32 | Type::I64 | Type::I8 | Type::I16);
-                let r_ok = matches!(right, Type::Int | Type::I32 | Type::I64 | Type::I8 | Type::I16);
+                let lop = left.literal_base();
+                let rop = right.literal_base();
+                let l_ok = matches!(lop, Type::Int | Type::I32 | Type::I64 | Type::I8 | Type::I16);
+                let r_ok = matches!(rop, Type::Int | Type::I32 | Type::I64 | Type::I8 | Type::I16);
                 if l_ok && r_ok {
                     return Type::Int;
                 }
                 self.error(
                     &format!("Operador bit a bit requiere enteros, encontró {} y {}", left, right),
+                    bin.span.clone(),
+                )
+            }
+            // `&` / `|`: bit a bit sobre enteros (Int) o lógicos sobre Bool.
+            Operator::BitAnd | Operator::BitOr => {
+                let l_int = matches!(left, Type::Int | Type::I32 | Type::I64 | Type::I8 | Type::I16);
+                let r_int = matches!(right, Type::Int | Type::I32 | Type::I64 | Type::I8 | Type::I16);
+                if l_int && r_int {
+                    return Type::Int;
+                }
+                let l_bool = matches!(left, Type::Bool) || left.is_assignable_to(&Type::Bool);
+                let r_bool = matches!(right, Type::Bool) || right.is_assignable_to(&Type::Bool);
+                if l_bool && r_bool {
+                    return Type::Bool;
+                }
+                self.error(
+                    &format!(
+                        "Operador bit a bit requiere enteros o Bool, encontró {} y {}",
+                        left, right
+                    ),
                     bin.span.clone(),
                 )
             }
@@ -168,7 +197,7 @@ impl TypeChecker {
                 }
                 Type::Bool
             }
-            _ => Type::Any,
+            _ => Type::Value,
         }
     }
 

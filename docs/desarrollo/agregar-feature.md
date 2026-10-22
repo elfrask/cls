@@ -7,7 +7,6 @@ y, si aplica al JIT, del emisor WASM. Estructura:
 cls-core/src/frontend/   lexer.rs, token.rs, parser.rs, ast/ (un archivo por tipo)
 cls-core/src/middleware/ typeck/ (check_*), types.rs, resolver.rs, optimizer.rs
 cls-core/src/backend/    wasm/ (engine/ + emitter/), json.rs, visitor.rs
-cls-runtime/src/walker/  interpreter.rs (evaluate_*), value.rs
 ```
 
 ## Pasos por capa
@@ -53,25 +52,17 @@ Lo que permite `clx run`:
   referencias -> `i64` (bump allocator).
 - Si la operación tiene equivalente en internals precompiladas
   (`cls-internals`, funciones `__intr_*`), emite `call __intr_*` por nombre
-  (con host fallback si no está fusionada).
+  (la fusión es incondicional; no hay fallback host).
 - Si el emisor no la soporta, produce un error explícito
   `El JIT (subconjunto WASM) aún no soporta ...` con `compile_at(msg, span)`.
-- Lo que el walker soporta pero no el emisor no frena la feature: **el JIT
-  manda** (ver Directiva en `AGENTS.md`).
 
-### 6. Walker (`cls-runtime/src/walker/interpreter.rs`) - opcional
-
-Solo si quieres la referencia sintáctica en el tree-walker:
-`evaluate_foo(...)` + `Value` en `value.rs`. El walker está deprecado; no
-inviertas tiempo en paridad.
-
-### 7. Tests
+### 6. Tests
 
 - Unit tests en cada capa tocada (lexer, parser, typeck, emisor).
-- QA: `examples/audit/features/NN-nombre.clsx` más
-  `examples/audit/test-features/jit-test/availible/` si entra en el subset.
-- **Si la feature es solo JIT**, va en `examples/jit-examples/` o
-  `jit-test/availible/` (no en la carpeta de paridad walker).
+- QA: `examples/test/jit-test/units/NN-nombre.clsx` más
+  `examples/test/jit-test/availible/` si entra en el subset.
+- **Si la feature es solo JIT**, va en `examples/test/jit-examples/` o
+  `jit-test/availible/`.
 
 ## Reglas
 
@@ -88,9 +79,10 @@ inviertas tiempo en paridad.
 
 ## Referencia de ejemplo
 
-- CMX: tokens en `lexer.rs` (`lex_cmx`), parseo en
-  `parser.rs::parse_cmx`, evaluación en `walker/interpreter.rs::evaluate_cmx`,
-  tipo en el typeck, emisión en `backend/wasm/` (host functions `cmx_*`).
+- CMX: tokens en `lexer.rs` (`lex_cmx`), parseo en `parser.rs::parse_cmx_element`,
+  tipo en el typeck (`Type::Cmx`), emisión **inline** en
+  `backend/wasm/emitter/containers.rs` (+ la clase core `CMX` en
+  `frontend/builtins.rs`).
 - Errores del emisor no soportado: `compile_at` en `backend/wasm/`
   (p. ej. `await`, índices dinámicos en records con shape).
 - Internals WASM: agregar una función `__intr_*` = implementar en

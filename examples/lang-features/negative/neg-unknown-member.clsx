@@ -1,0 +1,11 @@
+# NEGATIVO: acceder a un miembro inexistente debe fallar.
+class C {
+    var x: int;
+    function main() { me.x = 1; }
+};
+
+function main(args: String[]) -> int {
+    var c = C();
+    print(c.noExiste);
+    return 0;
+}

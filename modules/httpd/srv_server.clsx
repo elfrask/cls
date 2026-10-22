@@ -1,0 +1,68 @@
+# httpd/srv_server.clsx - Loop HTTP/1.1 sobre `modules/socket` (FFI).
+#
+# v1: una request por conexión (`Connection: close`), sin keep-alive, sin
+# chunked. El parser vive en `srv_request`; el handler devuelve un `Response`.
+import "socket" as socket;
+
+from "srv_request" import Request, content_length;
+from "srv_response" import Response;
+
+const MAX_REQUEST_BYTES = 1048576;
+
+# Lee headers + body completo (Content-Length). "" si no llegó nada.
+export function read_request(h: int, timeout_ms: int) -> String {
+    var raw = "";
+    var header_end = -1;
+    var body_need = 0;
+
+    while (raw.length < MAX_REQUEST_BYTES) {
+        var chunk = socket::recvText(h, 8192, timeout_ms);
+        if (chunk.length == 0) {
+            break;
+        };
+        raw = raw + chunk;
+        if (header_end < 0) {
+            header_end = raw.indexOf("\r\n\r\n");
+            if (header_end >= 0) {
+                body_need = content_length(raw);
+            };
+        };
+        if (header_end >= 0 && raw.length >= header_end + 4 + body_need) {
+            break;
+        };
+    };
+    return raw;
+}
+
+# Procesa un request crudo sin sockets (útil para tests unitarios).
+export function handle_raw(handler: (Request) -> Response, raw: String) -> String {
+    return handler(Request.parse(raw)).serialize();
+}
+
+# Loop bloqueante: listen -> accept -> read -> handler -> write -> close.
+# `host` vacío escucha en todas las interfaces (0.0.0.0).
+export function serve(host: String, port: int, handler: (Request) -> Response) -> int {
+    var server = socket::listen(host, port, 64);
+    if (server < 0) {
+        return server;
+    };
+    var actual = socket::localPort(server);
+    print("[httpd] listening on http://" + host + ":" + actual.toString());
+
+    while (true) {
+        var client = socket::accept(server);
+        if (client < 0) {
+            continue;
+        };
+        var raw = read_request(client, 5000);
+        if (raw.length > 0) {
+            var req = Request.parse(raw);
+            var res = handler(req);
+            socket::sendText(client, res.serialize());
+        };
+        socket::close(client);
+    };
+
+    socket::close(server);
+    return 0;
+}

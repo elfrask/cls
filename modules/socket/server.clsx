@@ -1,0 +1,22 @@
+# socket/server.clsx - Lado servidor de TCP (listen / accept).
+#
+# Mismo shim que el cliente (`socket_shim`): handles enteros, sin punteros.
+# `listen` devuelve un handle de escucha; `accept` devuelve el handle del
+# cliente. El llamador usa `send`/`recv`/`close` del módulo para el resto.
+from "socket_ffi" import sk_listen, sk_accept, sk_local_port;
+
+# Abre un socket de escucha en host:port. Handle >= 0 o < 0 error.
+# `host` vacío = todas las interfaces (0.0.0.0).
+export function listen(host: String, port: int, backlog: int = 64) -> int {
+    return int(sk_listen(host, port, backlog));
+}
+
+# Acepta una conexión entrante. Handle >= 0 o < 0 error.
+export function accept(server_h: int) -> int {
+    return int(sk_accept(server_h));
+}
+
+# Puerto local efectivo (útil cuando se escucha en el puerto 0).
+export function localPort(server_h: int) -> int {
+    return int(sk_local_port(server_h));
+}

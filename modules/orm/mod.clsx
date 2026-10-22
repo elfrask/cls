@@ -1,0 +1,28 @@
+# orm - Capa genérica de ORM (agnóstica al motor) + contrato de driver.
+#
+# Ladrillo de la stdlib autocontenida (examples/patrones.md §11): CLS puro, sin
+# FFI ni host_calls. La capa genérica NO conoce el motor: emite SQL estándar +
+# placeholders `?` y delega en un `Driver`. Un backend (SQLite en
+# `modules/sqlite`; MySQL/Postgres a futuro) hereda de `Driver`.
+#
+#   cell.clsx       - valor neutro (`Cell`) + constructores
+#   result_set.clsx - conjunto de resultados materializado
+#   driver.clsx     - clase base `Driver` (contrato)
+#   sql.clsx        - fragmentos SQL estándar (helpers)
+#   generic.clsx    - capa `Orm`
+#
+# Barrel: se expone la API pública.
+
+import "cell" as cell;
+import "result_set" as result_set;
+import "driver" as driver;
+import "generic" as generic;
+
+export { cell::KIND_NULL as KIND_NULL, cell::KIND_INT as KIND_INT,
+         cell::KIND_FLOAT as KIND_FLOAT, cell::KIND_TEXT as KIND_TEXT,
+         cell::KIND_BLOB as KIND_BLOB };
+export { cell::Cell as Cell, cell::cNull as cNull, cell::cInt as cInt,
+         cell::cFloat as cFloat, cell::cText as cText, cell::cBlob as cBlob };
+export { result_set::ResultSet as ResultSet };
+export { driver::Driver as Driver };
+export { generic::Orm as Orm };

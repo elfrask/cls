@@ -50,6 +50,9 @@ fn builtin_type_definitions() -> Vec<(&'static str, &'static str)> {
         ("json", include_str!("../../../cls-runtime/clsi/json.clsi")),
         ("fs", include_str!("../../../cls-runtime/clsi/fs.clsi")),
         ("http", include_str!("../../../cls-runtime/clsi/http.clsi")),
+        // net eliminado (dev-2): ver docs/lenguaje/extension.md para sockets
+        // via `extension` + `when` por SO en el .clsx del usuario.
+        ("strings", include_str!("../../../cls-runtime/clsi/strings.clsi")),
         ("Lib", include_str!("../../../cls-runtime/clsi/Lib.clsi")),
         ("async", include_str!("../../../cls-runtime/clsi/async.clsi")),
         ("os", include_str!("../../../cls-runtime/clsi/os.clsi")),
@@ -178,7 +181,15 @@ fn extract_enum_member(e: &EnumDecl, source: &str) -> TypeMember {
     TypeMember {
         name: e.name.clone(),
         kind: MemberKind::Enum,
-        signature: format!("enum {} (variants: {})", e.name, e.variants.join(", ")),
+        signature: format!(
+            "enum {} (variants: {})",
+            e.name,
+            e.variants
+                .iter()
+                .map(|v| v.name.clone())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         return_type: None,
         params: vec![],
         doc: extract_doc_before(source, e.span.start_line, e.span.start_col),
@@ -231,26 +242,32 @@ fn statement_span(stmt: &Statement) -> Span {
             Expression::Record(r) => r.span,
             Expression::ArrowFunction(a) => a.span,
             Expression::Conditional(c) => c.span,
+            Expression::Ternary(c) => c.span,
+            Expression::IfExpr(c) => c.span,
+            Expression::Match(m) => m.span,
             Expression::Assignment(a) => a.span,
             Expression::Identifier(_, span) | Expression::NamespaceAccess(_, _, span) => *span,
             Expression::Parenthesized(_, span) => *span,
             Expression::StringInterpolation(s) => s.span,
             Expression::Cmx(c) => c.span,
             Expression::Await(_, span) => *span,
+            Expression::Spread(_, span) => *span,
             Expression::Literal(_) => Span { start_line: 0, start_col: 0, end_line: 0, end_col: 0 },
         },
         Statement::Import(s) => s.span,
         Statement::FromImport(s) => s.span,
-        Statement::Include(s) => s.span,
+        Statement::ExportList(s) => s.span,
         Statement::Break(_) | Statement::Continue(_) => Span { start_line: 0, start_col: 0, end_line: 0, end_col: 0 },
+        Statement::ArrowReturn(a) => a.span,
         Statement::ClassDecl(s) => s.span,
         Statement::StructureDecl(s) => s.span,
         Statement::InterfaceDecl(s) => s.span,
         Statement::TypeAlias(s) => s.span,
         Statement::EnumDecl(s) => s.span,
+        Statement::DestructureLet(s) => s.span,
+        Statement::DestructureClass(s) => s.span,
         Statement::ModuleDecl(s) => s.span,
         Statement::NamespaceDecl(s) => s.span,
-        Statement::Extension(s) => s.span,
         Statement::When(s) => s.span,
         Statement::Cmx(s) => s.span,
         Statement::Config(s) => s.span,

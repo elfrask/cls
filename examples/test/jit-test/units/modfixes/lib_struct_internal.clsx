@@ -1,0 +1,9 @@
+# Lib de regresion: `structure` SIN export usada por un export (ahora funciona:
+# el tipo interno se transporta al modulo fusionado).
+structure Hidden {
+    a: i32,
+};
+
+export function make_hidden() -> Hidden {
+    return Hidden(9);
+};

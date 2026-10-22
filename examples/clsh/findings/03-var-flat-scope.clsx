@@ -1,0 +1,18 @@
+# REPRO (regresion del typeck): el cuerpo de una funcion se trata como UN SOLO
+# scope: un `var` declarado en bloques hermanos/anidados colisiona entre si.
+#
+# Uso:  target\debug\clx.exe check examples\clsh\findings\03-var-flat-scope.clsx
+#   Esperado: compila (cada bloque es un scope; `x` local a cada uno).
+#   Obtenido: ERROR "El nombre 'x' ya está declarado en este scope".
+#
+# causa: check_block() no hace push_scope(); el chequeo de duplicados usa
+# self.scopes.last() (el scope de la funcion) para TODO el cuerpo.
+function f() -> int {
+    if (true) { var x = 1; }
+    if (true) { var x = 2; }
+    return 0;
+};
+
+function main(args: String[]) -> int {
+    return f();
+};

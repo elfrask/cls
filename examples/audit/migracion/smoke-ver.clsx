@@ -1,4 +1,0 @@
-function main(args: String[]) -> int {
-    print("os.version:", os.version());
-    return 0;
-}

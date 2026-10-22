@@ -31,7 +31,7 @@ Cada línea se clasifica así:
 
 - **Declaración/sentencia**: si empieza con una keyword de sentencia (`var `,
   `const `, `function `, `for `, `while `, `if `, `switch `, `try `, `import `,
-  `from `, `include `, `with `, `loop `, `return `, `export `, `class `,
+  `from `, `with `, `loop `, `return `, `export `, `class `,
   `enum `, `struct `, `interface `, `alias `, `namespace `, `extension `,
   `config `, `meta `, `when `, `print(`) se ejecuta como sentencia.
 - **Asignación a lvalue**: una línea como `x = 5`, `arr[0] = 99` o `a.b = 1` se
@@ -80,7 +80,7 @@ Reasignar una variable declarada antes la actualiza:
 100
 ```
 
-**Truthiness de condiciones** (paridad con el walker): `if`, `while` y `for`
+**Truthiness de condiciones**: `if`, `while` y `for`
 aceptan cualquier valor como condición - numéricos `!= 0`, strings no vacíos,
 arrays/records con elementos, objetos siempre verdaderos:
 

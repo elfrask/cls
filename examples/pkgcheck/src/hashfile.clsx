@@ -1,0 +1,15 @@
+# hashfile.clsx - Cross-check: SHA-256 de un archivo leido por el nodo `fs`.
+#
+#   clx run src/hashfile.clsx <ruta>
+#
+# Delega en `sha256::sha256Hex` (mismo codigo que main.clsx).
+
+import "fs" as fs;
+import "sha256" as sha;
+
+function main(args: String[]) -> int {
+    if (args.length < 1) { print("uso: hashfile <ruta>"); return 2; }
+    var content: String = fs.readFile(args[0]);
+    print(sha::sha256Hex(content));
+    return 0;
+}

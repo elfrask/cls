@@ -1,0 +1,23 @@
+# F6 negativo: aridad del patrón que no coincide con el retorno de `__unpack`
+# (unión de tuplas) -> error estático best-effort.
+enum RespKind { ok, err };
+
+class Resp {
+    var kind: RespKind;
+    function main(k: RespKind) { me.kind = k; }
+    function __match() -> RespKind { return me.kind; }
+    function __unpack(tag: String) -> (String) | (int, String) {
+        if (tag == "ok") { return "x"; }
+        return (1, "y");
+    }
+};
+
+function main(args: String[]) -> int {
+    var r = Resp(RespKind.ok);
+    var out = match (v <- r) {
+        ok(a, b, c) -> "x",
+        default     -> "?",
+    };
+    print(out);
+    return 0;
+};

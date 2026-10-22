@@ -1,0 +1,24 @@
+# finding 06 - indice dinamico sobre tupla HETEROGENEA devuelve el slot crudo.
+#
+# docs/lenguaje/tipos.md: "a[i] -> Int | String (indice dinamico -> union de
+# slots)". El JIT devuelve el valor sin desempaquetar el tag de la union:
+#   - slot int    -> funciona (coincide con el entero)
+#   - slot String -> imprime un handle crudo (p. ej. 5066566760660993)
+#   - slot float  -> imprime el patron de bits en i64 (p. ej. 4612811918334230528
+#                    en vez de 2.5)
+#
+# Esperado: t[1] == "x" y t[2] == 2.5.
+
+function main(args: String[]) -> int {
+    var t: (int, String, float) = (1, "x", 2.5);
+    var i1 = 1;
+    var i2 = 2;
+    var s: String = t[i1];
+    print("dyn string:", s, " exp: x");
+    var f: float = t[i2];
+    print("dyn float:", f, " exp: 2.5");
+    if (s != "x") { print("BUG: slot String corrupto"); return 1; }
+    if (f != 2.5) { print("BUG: slot float corrupto"); return 1; }
+    print("resuelto");
+    return 0;
+}

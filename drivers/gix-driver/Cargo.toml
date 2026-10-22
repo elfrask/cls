@@ -1,0 +1,16 @@
+[package]
+name = "clxgix"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Driver de git (gix) para clx — cargado dinámicamente"
+
+# Standalone: NO es miembro del workspace de CLS (así gix no pesa en `clx`).
+[workspace]
+
+[lib]
+name = "clxgix"
+crate-type = ["cdylib"]
+
+[dependencies]
+gix = { version = "0.89", default-features = false, features = ["blocking-network-client", "worktree-mutation", "sha1"] }

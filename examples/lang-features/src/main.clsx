@@ -1,0 +1,51 @@
+# main.clsx - matriz de features del lenguaje CLS 2.0.
+#
+# Cada seccion ejercita un eje del lenguaje, verifica con modules/check y
+# emite "FEATURE <nombre> OK" cuando todas sus aserciones pasan. El runner
+# run.ps1 compara la salida completa contra expected.txt (golden).
+
+import "check" as check;
+import "sections/control" as control;
+import "sections/operators" as operators;
+import "sections/types" as types;
+import "sections/oop" as oop;
+import "sections/enums" as enums;
+import "sections/match" as matchs;
+import "sections/ternary" as ternary;
+import "sections/structs" as structs;
+import "sections/functions" as functions;
+import "sections/strings" as strings;
+import "sections/cmx" as cmx;
+import "sections/when" as whent;
+import "sections/modules" as modules;
+import "sections/errors" as errors;
+import "sections/extension" as ext;
+
+function main(args: String[]) -> int {
+    check::reset();
+    var fails = 0;
+
+    fails = fails + control::ctrl_run();
+    fails = fails + operators::op_run();
+    fails = fails + types::types_run();
+    fails = fails + oop::oop_run();
+    fails = fails + enums::enums_run();
+    fails = fails + matchs::match_run();
+    fails = fails + ternary::ternary_run();
+    fails = fails + structs::structs_run();
+    fails = fails + functions::functions_run();
+    fails = fails + strings::strings_run();
+    fails = fails + cmx::cmx_run();
+    fails = fails + whent::when_run();
+    fails = fails + modules::modules_run();
+    fails = fails + errors::errors_run();
+    fails = fails + ext::extension_run();
+
+    print("=====================");
+    print("FEATURES FALLIDAS:", fails);
+    if (fails > 0) {
+        return 1;
+    }
+    print("MATRIZ COMPLETA: OK");
+    return 0;
+}

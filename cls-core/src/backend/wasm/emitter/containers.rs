@@ -1,10 +1,24 @@
-﻿//! Containers: array/record/cmx/index access, writeback (Fase 1: extraido de emitter/mod.rs).
+//! Containers: array/record/cmx/index access, writeback (Fase 1: extraido de emitter/mod.rs).
 
 use super::*;
 
+/// ¿La expresión de un atributo CMX devuelve String de forma conocida?
+/// Se usa para no depender del type map cuando el span de la expresión colisiona
+/// con el del elemento CMX contenedor (bug de spans en CMX anidado).
+fn is_string_attr_expr(expr: &Expression) -> bool {
+    if let Expression::Call(c) = expr {
+        return match &*c.callee {
+            Expression::Identifier(name, _) => name == "str" || name == "toString",
+            Expression::MemberAccess(m) => {
+                matches!(m.member.as_str(), "toString" | "upper" | "lower" | "trim")
+            }
+            _ => false,
+        };
+    }
+    false
+}
+
 impl<'a> FuncEmitter<'a> {
-
-
     /// Carga un campo del CmxValue (tag/props/children) - el ptr está en el stack.
     pub(crate) fn emit_cmx_field(&mut self, offset: i64) -> ClsResult<()> {
         self.body.push(Instruction::I64Const(offset));
@@ -18,8 +32,165 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
+    /// `cmx_to_string` fusionado: el ptr del CMX está en el stack; deja el string.
+    pub(crate) fn emit_cmx_fmt(&mut self) {
+        if let Some(&idx) = self.func_indexes.get("__intr_cmx_fmt") {
+            self.body.push(Instruction::Call(idx));
+        }
+    }
+
+    /// store `base[dest_off] = src_cmx[src_off]` (copia de un campo CMX).
+    pub(crate) fn emit_cmx_copy_store(
+        &mut self,
+        base: u32,
+        src: u32,
+        dest_off: i64,
+        src_off: i64,
+    ) -> ClsResult<()> {
+        self.body.push(Instruction::LocalGet(base));
+        self.body.push(Instruction::I64Const(dest_off));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::LocalGet(src));
+        self.emit_cmx_field(src_off)?;
+        self.body
+            .push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+        Ok(())
+    }
+
+    /// store `base[dest_off] = eval(arg)` si `arg` existe; si no, `src[src_off]`.
+    pub(crate) fn emit_cmx_store_arg(
+        &mut self,
+        base: u32,
+        dest_off: i64,
+        arg: Option<&Expression>,
+        src: u32,
+        src_off: i64,
+    ) -> ClsResult<()> {
+        self.body.push(Instruction::LocalGet(base));
+        self.body.push(Instruction::I64Const(dest_off));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I32WrapI64);
+        match arg {
+            Some(e) => self.emit_expression(e)?,
+            None => {
+                self.body.push(Instruction::LocalGet(src));
+                self.emit_cmx_field(src_off)?;
+            }
+        }
+        self.body
+            .push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+        Ok(())
+    }
+
+    /// Crea un CmxValue inline: `__alloc(48)` + stores. Espera en el stack
+    /// `[tag, tag_callable]`. Devuelve el local con el ptr.
+    pub(crate) fn emit_cmx_new(&mut self, kind: i64, is_component: i64) -> u32 {
+        let tc = self.fresh_local();
+        self.body.push(Instruction::LocalSet(tc));
+        let tag = self.fresh_local();
+        self.body.push(Instruction::LocalSet(tag));
+        let alloc = self.func_indexes["__alloc"];
+        self.body.push(Instruction::I64Const(48));
+        self.body.push(Instruction::Call(alloc));
+        let ptr = self.fresh_local();
+        self.body.push(Instruction::LocalSet(ptr));
+        self.emit_cmx_store_local(ptr, 0, tag);
+        self.emit_cmx_store_const(ptr, 8, 0);
+        self.emit_cmx_store_const(ptr, 16, 0);
+        self.emit_cmx_store_const(ptr, 24, kind);
+        self.emit_cmx_store_local(ptr, 32, tc);
+        self.emit_cmx_store_const(ptr, 40, is_component);
+        ptr
+    }
+
+    /// `base[off] = <local>` (i64).
+    pub(crate) fn emit_cmx_store_local(&mut self, base: u32, off: i64, val: u32) {
+        self.body.push(Instruction::LocalGet(base));
+        self.body.push(Instruction::I64Const(off));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::LocalGet(val));
+        self.body
+            .push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+    }
+
+    /// `base[off] = <const>` (i64).
+    pub(crate) fn emit_cmx_store_const(&mut self, base: u32, off: i64, c: i64) {
+        self.body.push(Instruction::LocalGet(base));
+        self.body.push(Instruction::I64Const(off));
+        self.body.push(Instruction::I64Add);
+        self.body.push(Instruction::I32WrapI64);
+        self.body.push(Instruction::I64Const(c));
+        self.body
+            .push(Instruction::I64Store(MemArg { offset: 0, align: 3, memory_index: 0 }));
+    }
+
+    /// Emite `[val, tag]` de un atributo CMX (para `__intr_record_set`).
+    pub(crate) fn emit_cmx_attr_val_tag(&mut self, attr: &CmxAttribute) -> ClsResult<()> {
+        let val_type: Option<Type> = match &attr.value {
+            Some(CmxAttributeValue::String(s)) => {
+                let s = self.intern_string(s);
+                self.emit_load_str(s);
+                Some(Type::String)
+            }
+            Some(CmxAttributeValue::Expression(expr)) => {
+                self.emit_expression(expr)?;
+                // Los spans de expresiones dentro de un CMX anidado pueden
+                // colisionar con el span del elemento (Cmx) en el type map;
+                // para atributos que sabemos que devuelven String, forzamos el
+                // tipo para que el tag del valor sea String (si no, el
+                // renderer formatea el String como un Cmx vacío: `< />`).
+                if is_string_attr_expr(expr) {
+                    Some(Type::String)
+                } else {
+                    cmx_literal_type(expr).or_else(|| self.types.get(&expr_span(expr)).cloned())
+                }
+            }
+            Some(CmxAttributeValue::Shorthand(name)) => {
+                self.emit_ident_load(name);
+                // Tipo de la variable (registrado por el typeck en `attr.span`):
+                // el local es i64, convertir a su wasm-type para el tag correcto.
+                let t = self.types.get(&attr.span).cloned();
+                match t.as_ref().and_then(|ty| was_type(ty).ok()) {
+                    Some(WasTy::I32) => self.body.push(Instruction::I32WrapI64),
+                    Some(WasTy::F64) => self.body.push(Instruction::F64ReinterpretI64),
+                    _ => {}
+                }
+                t
+            }
+            None => {
+                self.body.push(Instruction::I32Const(1));
+                Some(Type::Bool)
+            }
+        };
+        let was = match &val_type {
+            Some(t) => was_type(t).unwrap_or(WasTy::I64),
+            None => WasTy::I64,
+        };
+        // Named (struct/clase/enum): serializar a string RAW (tag 9) para que el
+        // formateo del CmxValue no muestre punteros.
+        if matches!(val_type, Some(Type::Named(_, _))) {
+            let cls_t = val_type.clone().unwrap_or(Type::Value);
+            self.emit_typed_value_to_string(was, &cls_t)?;
+            self.body.push(Instruction::I64Const(9 << 8));
+        } else {
+            match was {
+                WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+                WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+                WasTy::I64 => {}
+            }
+            let cls = val_type.unwrap_or(Type::Value);
+            self.body.push(Instruction::I64Const(cmx_tag_for_type(&cls)));
+        }
+        Ok(())
+    }
 
     pub(crate) fn emit_array(&mut self, a: &ArrayExpr) -> ClsResult<()> {
+        let has_spread = a
+            .elements
+            .iter()
+            .any(|e| matches!(e, Expression::Spread(_, _)));
         let elem_ty = self.array_elem_type(a)?;
         // Array de Cmx -> entradas `[val, tag]` stride 16 (children del Cmx, etc.).
         let is_cmx = a
@@ -29,6 +200,111 @@ impl<'a> FuncEmitter<'a> {
             .map(|t| matches!(t, Type::Cmx))
             .unwrap_or(false);
         let elem_size = if is_cmx { 16 } else { elem_size_bytes(elem_ty) };
+        // Spread `[...arr, x]`: el tamaño final es dinámico -> construir con
+        // `__intr_arr_push` (maneja realloc) en vez de pre-alocar (REST_SPREAD_PLAN).
+        if has_spread {
+            if is_cmx {
+                return Err(self.unsupported_expr(&Expression::Array(a.clone())));
+            }
+            // Empezar con un array de capacidad 0 (solo el header 16 bytes).
+            self.body.push(Instruction::I64Const(0));
+            self.body.push(Instruction::I64Const(elem_size));
+            self.body.push(Instruction::I64Mul);
+            self.body.push(Instruction::I64Const(16));
+            self.body.push(Instruction::I64Add);
+            let alloc = self.func_indexes["__alloc"];
+            self.body.push(Instruction::Call(alloc));
+            let ptr = self.fresh_local();
+            self.body.push(Instruction::LocalSet(ptr));
+            self.body.push(Instruction::LocalGet(ptr));
+            self.body.push(Instruction::I64Const(0));
+            self.emit_i64_store(0); // cap
+            self.body.push(Instruction::LocalGet(ptr));
+            self.body.push(Instruction::I64Const(0));
+            self.emit_i64_store(8); // len
+            for el in &a.elements {
+                if let Expression::Spread(inner, _) = el {
+                    // Copiar cada elemento del array inner al nuevo (push).
+                    self.emit_expression(inner)?;
+                    let src_ptr = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(src_ptr));
+                    let src_len = self.fresh_local();
+                    self.body.push(Instruction::LocalGet(src_ptr));
+                    self.body.push(Instruction::I64Const(8));
+                    self.body.push(Instruction::I64Add);
+                    self.body.push(Instruction::I32WrapI64);
+                    self.body.push(Instruction::I64Load(MemArg {
+                        offset: 0,
+                        align: 3,
+                        memory_index: 0,
+                    }));
+                    self.body.push(Instruction::LocalSet(src_len));
+                    let i = self.fresh_local();
+                    self.body.push(Instruction::I64Const(0));
+                    self.body.push(Instruction::LocalSet(i));
+                    let d = self.block_depth;
+                    self.block_depth += 1;
+                    self.body.push(Instruction::Block(BlockType::Empty));
+                    let break_at = self.block_depth;
+                    self.block_depth += 1;
+                    self.body.push(Instruction::Loop(BlockType::Empty));
+                    // cond: i >= src_len -> break
+                    self.body.push(Instruction::LocalGet(i));
+                    self.body.push(Instruction::LocalGet(src_len));
+                    self.body.push(Instruction::I64GeS);
+                    self.body.push(Instruction::BrIf(break_at));
+                    // val = src[i]
+                    self.body.push(Instruction::LocalGet(src_ptr));
+                    self.body.push(Instruction::LocalGet(i));
+                    self.body.push(Instruction::I64Const(elem_size));
+                    self.body.push(Instruction::I64Mul);
+                    self.body.push(Instruction::I64Const(16));
+                    self.body.push(Instruction::I64Add);
+                    self.body.push(Instruction::I64Add);
+                    self.body.push(Instruction::I32WrapI64);
+                    self.body.push(Instruction::I64Load(MemArg {
+                        offset: 0,
+                        align: 3,
+                        memory_index: 0,
+                    }));
+                    // push(dst, val, es): guardar val en local, luego [ptr, val, es].
+                    let val_tmp = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(val_tmp));
+                    self.body.push(Instruction::LocalGet(ptr));
+                    self.body.push(Instruction::LocalGet(val_tmp));
+                    self.body.push(Instruction::I64Const(elem_size));
+                    if let Some(&idx) = self.func_indexes.get("__intr_arr_push") {
+                        self.body.push(Instruction::Call(idx));
+                    }
+                    self.body.push(Instruction::LocalSet(ptr)); // write-back (realloc)
+                                                                // i++
+                    self.body.push(Instruction::LocalGet(i));
+                    self.body.push(Instruction::I64Const(1));
+                    self.body.push(Instruction::I64Add);
+                    self.body.push(Instruction::LocalSet(i));
+                    self.body.push(Instruction::Br(0)); // continuar loop
+                    self.body.push(Instruction::End); // loop
+                    self.block_depth -= 1;
+                    self.body.push(Instruction::End); // block
+                    self.block_depth = d;
+                } else {
+                    // Elemento normal: push(dst, val, es) — primero el ptr,
+                    // luego el valor (el stack del push es [ptr, val, es]).
+                    self.body.push(Instruction::LocalGet(ptr));
+                    self.emit_expression(el)?;
+                    if elem_ty == WasTy::F64 {
+                        self.f64_promote(el)?;
+                    }
+                    self.body.push(Instruction::I64Const(elem_size));
+                    if let Some(&idx) = self.func_indexes.get("__intr_arr_push") {
+                        self.body.push(Instruction::Call(idx));
+                    }
+                    self.body.push(Instruction::LocalSet(ptr));
+                }
+            }
+            self.body.push(Instruction::LocalGet(ptr));
+            return Ok(());
+        }
         let n = a.elements.len() as i64;
         // layout: [cap:i64][len:i64][elem...] (base 16)
         self.body.push(Instruction::I64Const(n));
@@ -71,7 +347,7 @@ impl<'a> FuncEmitter<'a> {
                 self.body.push(Instruction::I32WrapI64);
                 let el_cls = cmx_literal_type(el)
                     .or_else(|| self.types.get(&expr_span(el)).cloned())
-                    .unwrap_or(Type::Any);
+                    .unwrap_or(Type::Value);
                 self.body
                     .push(Instruction::I64Const(cmx_tag_for_type(&el_cls)));
                 self.body.push(Instruction::I64Store(MemArg {
@@ -119,13 +395,18 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-
     pub(crate) fn array_elem_type(&self, a: &ArrayExpr) -> ClsResult<WasTy> {
-        if let Some(first) = a.elements.first() {
+        // Los spreads `[...arr]` no aportan tipo directo (el inner es Array<T>);
+        // inferir de los elementos normales.
+        let normals: Vec<&Expression> = a
+            .elements
+            .iter()
+            .filter(|e| !matches!(e, Expression::Spread(_, _)))
+            .collect();
+        if let Some(first) = normals.first() {
             // Promoción: si CUALQUIER elemento es float, el array es de f64
             // (p.ej. `[1, 2.0]` -> f64). El store promueve los ints a f64.
-            let has_float = a
-                .elements
+            let has_float = normals
                 .iter()
                 .any(|el| matches!(self.value_type(el), Ok(WasTy::F64)));
             if has_float {
@@ -133,8 +414,8 @@ impl<'a> FuncEmitter<'a> {
             }
             return self.value_type(first);
         }
-        // Array vacío: usar el tipo anotado registrado por el typeck (span del literal),
-        // p.ej. `const out: int[] = []`.
+        // Solo spreads (`[...a]`) o array vacío: usar el tipo anotado registrado
+        // por el typeck (span del literal), p.ej. `const out: int[] = []`.
         if let Some(Type::Array(elem)) = self.types.get(&a.span) {
             if let Ok(w) = was_type(elem) {
                 return Ok(w);
@@ -146,114 +427,152 @@ impl<'a> FuncEmitter<'a> {
         ))
     }
 
-
     /// Literal de record `{ a: 1, b: "x" }` -> record_new + record_set.
     pub(crate) fn emit_record(&mut self, r: &RecordExpr) -> ClsResult<()> {
-        // Si el type map dice Shape -> emitir como struct contiguo (offsets fijos).
-        // Es el caso de `var x = {a: 1, b: "1"}` (inferido) o anotado con
-        // interface/alias de shape. Sin hashmap, sin keys en memoria, sin tags.
-        if let Some(shape) = self.types.get(&r.span).cloned() {
-            if let Type::Shape(fields) = &shape {
-                return self.emit_shape_record(r, fields);
-            }
-        }
-        let n = r.entries.len() as i64;
+        // DEFAULT INVERTIDO (dev-3 paso 3): los record literals se emiten SIEMPRE
+        // como hashmap `[cap][len][(key,val,tag)*24]`. El layout contiguo queda
+        // reservado a las estructuras nombradas (`structure`) e instancias de
+        // clase, donde los offsets son parte del contrato (FFI CStruct, campos).
+        // Asi ningun valor `{...}` puede cruzar una frontera dinamica con un
+        // layout ilegible.
+        self.emit_record_hashmap(r)
+    }
+
+    /// Emite un literal de record como HASHMAP (`[cap][len][(key,val,tag)*24]`),
+    /// sin importar si el type map dice Shape. Se usa cuando el literal es un
+    /// VALOR que se guarda en un contenedor dinámico (`Record<String,Value>`):
+    /// un shape contiguo NO es legible como hashmap por la lectura/stringify.
+    pub(crate) fn emit_record_hashmap(&mut self, r: &RecordExpr) -> ClsResult<()> {
+        let n = (r.entries.len() + r.spreads.len()) as i64;
         self.body.push(Instruction::I64Const(n));
         if let Some(&idx) = self.func_indexes.get("__intr_record_new") {
             self.body.push(Instruction::Call(idx));
-        } else {
-            self.host.call(HostFn::RecordNew, &mut self.body);
         }
         let ptr = self.fresh_local();
         self.body.push(Instruction::LocalSet(ptr));
+        // Spreads `{...expr, ...}`: evaluar cada uno (deja ptr de record) y
+        // mergear sus campos al nuevo record (REST_SPREAD_PLAN Fase 2).
+        // merge(dst, src): dst = ptr nuevo (LocalGet), src = expr del spread.
+        for spread in &r.spreads {
+            self.body.push(Instruction::LocalGet(ptr));
+            self.emit_expression(spread)?;
+            if let Some(&idx) = self.func_indexes.get("__intr_record_merge") {
+                self.body.push(Instruction::Call(idx));
+            }
+            // Write-back: merge puede reallocar (copiar N campos al nuevo).
+            self.body.push(Instruction::LocalSet(ptr));
+        }
         for (key, val) in &r.entries {
             self.body.push(Instruction::LocalGet(ptr));
             let k = self.intern_string(key);
             self.emit_load_str(k);
+            // Valor anidado: los literals viven como hashmap (default invertido),
+            // así que la emisión recursiva ya produce un record legible.
             self.emit_expression(val)?;
-            match self.value_type(val)? {
-                WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
-                WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
-                WasTy::I64 => {}
-            }
             let cls_t = self
                 .types
                 .get(&expr_span(val))
                 .cloned()
-                .unwrap_or(Type::Any);
-            // Tag del valor en el record: tag del RUNTIME interno (Record -> 7,
-            // Array -> 6, String -> 1...). Antes usaba arr_kind_code, que devolvía
-            // 0 para records -> el binding los leía como int (ptr crudo).
-            self.body.push(Instruction::I64Const(runtime_tag_code(&cls_t)));
+                .unwrap_or(Type::Value);
+            // Valores Named (struct/clase/enum) y tuplas en un record dinámico:
+            // se guardan SERIALIZADOS a string RAW (tag 9) para que el formateo
+            // no muestre punteros, corchetes ni comillas (bug dev-2: la tupla
+            // se imprimia como array [a, b] o como string "(a, b)" con
+            // comillas). El registro dinámico no conoce los tipos del programa;
+            // el string es la representación portable.
+            if matches!(cls_t, Type::Named(_, _) | Type::Tuple(_)) {
+                let w = self.value_type(val)?;
+                self.emit_typed_value_to_string(w, &cls_t)?;
+                self.body.push(Instruction::I64Const(9)); // tag string raw
+            } else if let Type::Array(elem) = &cls_t {
+                // Array de contenedores (Named: struct/clase/enum; record/tuple/
+                // array anidado): serializar el array completo a string (el
+                // formateo genérico no conoce el tipo de los elementos -> ptrs).
+                // Recorre y construye [e1, e2, ...].
+                let elem_is_container = matches!(
+                    **elem,
+                    Type::Named(_, _)
+                        | Type::Record(_, _)
+                        | Type::Shape(_)
+                        | Type::Tuple(_)
+                        | Type::Array(_)
+                );
+                if elem_is_container {
+                    self.emit_named_array_to_string(elem)?;
+                    self.body.push(Instruction::I64Const(9)); // tag string raw
+                } else {
+                    match self.value_type(val)? {
+                        WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+                        WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+                        WasTy::I64 => {}
+                    }
+                    self.body
+                        .push(Instruction::I64Const(runtime_tag_code_compound(&cls_t)));
+                }
+            } else {
+                match self.value_type(val)? {
+                    WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+                    WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+                    WasTy::I64 => {}
+                }
+                // Tag del valor en el record: para ARRAYS debe ser COMPUESTO
+                // (6<<8 | kind del elem): el formateador (`fmt_val_to_string`)
+                // interpreta kind=6 como "array de Cmx" (es=16) y lee ints a
+                // saltos de 16 -> basura (bug dev-2: `celulas: [1,2,3]` como
+                // floats/ptr).
+                self.body
+                    .push(Instruction::I64Const(runtime_tag_code_compound(&cls_t)));
+            }
             if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
                 self.body.push(Instruction::Call(idx));
-            } else {
-                self.host.call(HostFn::RecordSet, &mut self.body);
             }
-            self.body.push(Instruction::Drop);
+            // Write-back: record_set puede reallocar si el capacity se excede
+            // (p. ej. con spreads que ya llenaron el record). El ptr retornado
+            // reemplaza al local para que el siguiente set/lectura use el nuevo.
+            self.body.push(Instruction::LocalSet(ptr));
         }
         self.body.push(Instruction::LocalGet(ptr));
         Ok(())
     }
 
-
-    /// Emite un record con shape como struct contiguo: `[campo0][campo1]...`.
-    /// Los offsets se calculan del shape (cada campo con su WasTy).
-    pub(crate) fn emit_shape_record(&mut self, r: &RecordExpr, fields: &[(String, Type)]) -> ClsResult<()> {
-        let layout = self.shape_layout(fields)?;
-        let mut total = 0i64;
-        for (_, w, off) in &layout {
-            total = *off + elem_size_bytes(*w);
-        }
-        self.body.push(Instruction::I64Const(total));
-        let alloc = self.func_indexes["__alloc"];
-        self.body.push(Instruction::Call(alloc));
-        let ptr = self.fresh_local();
-        self.body.push(Instruction::LocalSet(ptr));
-        for (name, val) in &r.entries {
-            let (_, w, off) = layout
-                .iter()
-                .find(|(n, _, _)| n == name)
-                .cloned()
-                .ok_or_else(|| {
-                    crate::error::ClsError::compile_at(
-                        &format!("El record no tiene el campo '{}' en su shape", name),
-                        &r.span,
-                    )
-                })?;
-            self.emit_expression(val)?;
-            let val_tmp = self.fresh_local_ty(w);
-            self.body.push(Instruction::LocalSet(val_tmp));
-            self.body.push(Instruction::LocalGet(ptr));
-            self.body.push(Instruction::I64Const(off));
-            self.body.push(Instruction::I64Add);
-            self.body.push(Instruction::I32WrapI64);
-            self.body.push(Instruction::LocalGet(val_tmp));
-            match w {
-                WasTy::F64 => self.body.push(Instruction::F64Store(MemArg {
-                    offset: 0,
-                    align: 3,
-                    memory_index: 0,
-                })),
-                WasTy::I32 => self.body.push(Instruction::I32Store(MemArg {
-                    offset: 0,
-                    align: 2,
-                    memory_index: 0,
-                })),
-                WasTy::I64 => self.body.push(Instruction::I64Store(MemArg {
-                    offset: 0,
-                    align: 3,
-                    memory_index: 0,
-                })),
-            }
-        }
-        self.body.push(Instruction::LocalGet(ptr));
-        Ok(())
+    /// Convierte un SHAPE (estructura contigua con offsets) a un HASHMAP
+    /// (`[cap][len][(key,val,tag)*24]`). Se usa cuando un valor tipado Shape se
+    /// guarda en un contenedor dinámico (`Record<String,Value>`): la lectura/
+    /// stringify lo trata como hashmap, y un shape contiguo no es legible como
+    /// tal. Evalúa `expr` (deja el ptr del shape) y lo copia campo a campo.
+    /// ¿Es un destino que lee los valores como hashmap dinámico?
+    pub(crate) fn is_dynamic_dest(t: &Type) -> bool {
+        matches!(
+            t,
+            Type::Record(_, _) | Type::Json | Type::Value | Type::Unknown
+        )
     }
 
+    /// FRONTERA ÚNICA de valores: emite `expr` para ser consumido como `dest`.
+    /// Tras INVERTIR EL DEFAULT (los record literals viven como hashmap), ningún
+    /// valor de tipo `Shape` es contiguo en runtime, así que esta frontera es
+    /// hoy pass-through: existe como PUNTO único de coerción para futuros
+    /// layouts (si algo vuelve a ser contiguo, la conversión se implementa aquí
+    /// y todas las transferencias lo heredan).
+    pub(crate) fn emit_coerce(&mut self, expr: &Expression, dest: Option<&Type>) -> ClsResult<()> {
+        // Cmx -> String: el resultado es el **tag** (nombre del tag, o el texto
+        // de un nodo de texto). `.tag` ya es String por sí solo; esto cubre la
+        // coerción de un valor Cmx completo (`var s: String = cmx`).
+        if matches!(dest, Some(Type::String))
+            && matches!(self.types.get(&expr_span(expr)), Some(Type::Cmx))
+        {
+            self.emit_expression(expr)?; // ptr del CmxValue
+            self.emit_cmx_field(0)?; // tag (String)
+            return Ok(());
+        }
+        self.emit_expression(expr)
+    }
 
     /// Calcula `(nombre, WasTy, offset)` para cada campo de un shape (contiguo).
-    pub(crate) fn shape_layout(&self, fields: &[(String, Type)]) -> ClsResult<Vec<(String, WasTy, i64)>> {
+    pub(crate) fn shape_layout(
+        &self,
+        fields: &[(String, Type)],
+    ) -> ClsResult<Vec<(String, WasTy, i64)>> {
         let mut out = Vec::with_capacity(fields.len());
         let mut off = 0i64;
         for (name, t) in fields {
@@ -264,114 +583,140 @@ impl<'a> FuncEmitter<'a> {
         Ok(out)
     }
 
-
     /// Construye un `CmxValue` en memoria: [tag][props_ptr][children_ptr].
     pub(crate) fn emit_cmx(&mut self, c: &CmxElement) -> ClsResult<()> {
         // tag mayúscula -> resolver la variable/valor SIEMPRE (debe existir; si no, error).
         // tag minúscula -> String.
-        if c.tag.starts_with(|ch: char| ch.is_uppercase()) {
-            let name = c.tag.clone();
-            if self.globals.contains_key(&name) || self.locals.contains_key(&name) {
-                self.emit_ident_load(&name);
-            } else if self.fn_table_idx.contains_key(&name) {
-                // Función como tag -> handle de función (tag-bit) para que
-                // `app.tag` sea invocable y se imprima `<function X>` (paridad walker).
-                let ti = self.fn_table_idx[&name];
-                let n = self.intern_string(&format!("<function {}>", name));
-                self.body.push(Instruction::I64Const(ti as i64));
-                self.emit_load_str(n);
-                self.body.push(Instruction::I64Const(0));
-                self.host.call(HostFn::FnHandle, &mut self.body);
-            } else {
+        // `tag` es SIEMPRE el nombre (String). Solo un tag mayúscula que resuelva
+        // a una FUNCIÓN/CLASE es componente (`tag_callable` + `is_component=1`);
+        // un tag mayúscula ligado a una variable conserva su valor como tag
+        // (tag dinámico, p.ej. `<Seccion/>` con `Seccion="galeria"`).
+        let upper = c.tag.starts_with(|ch: char| ch.is_uppercase());
+        let name = c.tag.clone();
+        let is_var_tag =
+            upper && (self.globals.contains_key(&name) || self.locals.contains_key(&name));
+        // [stack] tag (String): nombre del tag (o valor de una variable).
+        if is_var_tag {
+            self.emit_ident_load(&name);
+        } else if upper {
+            if !self.fn_table_idx.contains_key(&name) {
                 return Err(crate::error::ClsError::CompileError(format!(
                     "El tag '<{}>' usa mayúscula pero '{}' no está definido: \
                      los tags con inicial mayúscula deben ser una función/valor existente",
                     c.tag, name
                 )));
             }
+            let t = self.intern_string(&c.tag);
+            self.emit_load_str(t);
         } else {
             let t = self.intern_string(&c.tag);
             self.emit_load_str(t);
         }
-        self.body.push(Instruction::I64Const(0)); // kind=0 -> elemento
-        self.host.call(HostFn::CmxNew, &mut self.body);
-        let ptr = self.fresh_local();
-        self.body.push(Instruction::LocalSet(ptr));
-        for attr in &c.attributes {
-            self.body.push(Instruction::LocalGet(ptr));
-            let k = self.intern_string(&attr.name);
-            self.emit_load_str(k);
-            let val_type: Option<Type> = match &attr.value {
-                Some(CmxAttributeValue::String(s)) => {
-                    let s = self.intern_string(s);
-                    self.emit_load_str(s);
-                    Some(Type::String)
-                }
-                Some(CmxAttributeValue::Expression(expr)) => {
-                    self.emit_expression(expr)?;
-                    // Literales -> su tipo real (el type map puede dar Any).
-                    cmx_literal_type(expr).or_else(|| self.types.get(&expr_span(expr)).cloned())
-                }
-                Some(CmxAttributeValue::Shorthand(name)) => {
-                    self.emit_ident_load(name);
-                    None
-                }
-                None => {
-                    self.body.push(Instruction::I64Const(1));
-                    Some(Type::Bool)
-                }
-            };
-            let was = match &val_type {
-                Some(t) => was_type(t).unwrap_or(WasTy::I64),
-                None => WasTy::I64,
-            };
-            match was {
-                WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
-                WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
-                WasTy::I64 => {}
-            }
-            let cls = val_type.unwrap_or(Type::Any);
-            self.body
-                .push(Instruction::I64Const(cmx_tag_for_type(&cls)));
-            self.host.call(HostFn::CmxSetProp, &mut self.body);
-            self.body.push(Instruction::Drop);
+        // [stack] tag, tag_callable
+        if upper && !is_var_tag {
+            let ti = self.fn_table_idx[&name];
+            let n = self.intern_string(&format!("<function {}>", name));
+            self.body.push(Instruction::I64Const(ti as i64));
+            self.emit_load_str(n);
+            self.body.push(Instruction::I64Const(0));
+            self.host.call(HostFn::FnHandle, &mut self.body);
+        } else {
+            self.body.push(Instruction::I64Const(0));
         }
-        for child in &c.children {
-            self.body.push(Instruction::LocalGet(ptr));
-            match child {
-                CmxChild::Text(s) => {
-                    // Texto -> CmxValue de texto (kind=1): el print lo muestra plano.
-                    let s = self.intern_string(s);
-                    self.emit_load_str(s);
-                    self.body.push(Instruction::I64Const(1));
-                    self.host.call(HostFn::CmxNew, &mut self.body);
-                    self.body.push(Instruction::I64Const(5 << 8));
+        let is_comp: i64 = if upper && !is_var_tag { 1 } else { 0 };
+        let ptr = self.emit_cmx_new(0, is_comp);
+        // props (`[cap][len][(key,val,tag)*24]`) via record intrinsics (inline,
+        // 0 host). Cubre atributos y spreads `{...expr}`.
+        if !c.attributes.is_empty() || !c.spreads.is_empty() {
+            let cap = (c.attributes.len() + c.spreads.len()) as i64;
+            self.body.push(Instruction::I64Const(cap));
+            if let Some(&idx) = self.func_indexes.get("__intr_record_new") {
+                self.body.push(Instruction::Call(idx));
+            }
+            let props_ptr = self.fresh_local();
+            self.body.push(Instruction::LocalSet(props_ptr));
+            for spread in &c.spreads {
+                self.body.push(Instruction::LocalGet(props_ptr));
+                self.emit_expression(spread)?;
+                if let Some(&idx) = self.func_indexes.get("__intr_record_merge") {
+                    self.body.push(Instruction::Call(idx));
                 }
-                CmxChild::Expression(expr) => {
-                    self.emit_expression(expr)?;
-                    let t = cmx_literal_type(expr)
-                        .or_else(|| self.types.get(&expr_span(expr)).cloned())
-                        .unwrap_or(Type::Any);
-                    self.body.push(Instruction::I64Const(cmx_tag_for_type(&t)));
+                self.body.push(Instruction::LocalSet(props_ptr)); // write-back
+            }
+            for attr in &c.attributes {
+                self.body.push(Instruction::LocalGet(props_ptr));
+                let k = self.intern_string(&attr.name);
+                self.emit_load_str(k);
+                self.emit_cmx_attr_val_tag(attr)?;
+                if let Some(&idx) = self.func_indexes.get("__intr_record_set") {
+                    self.body.push(Instruction::Call(idx));
                 }
-                CmxChild::Element(el) => {
-                    self.emit_cmx(el)?;
-                    self.body.push(Instruction::I64Const(5 << 8));
+                self.body.push(Instruction::LocalSet(props_ptr)); // write-back
+            }
+            self.emit_cmx_store_local(ptr, 8, props_ptr);
+        }
+        // children (`[cap][len][(val,tag)*16]`); n es estático -> alloc exacto.
+        let n = c.children.len() as i64;
+        if n > 0 {
+            self.body.push(Instruction::I64Const(16 + 16 * n));
+            let alloc = self.func_indexes["__alloc"];
+            self.body.push(Instruction::Call(alloc));
+            let arr = self.fresh_local();
+            self.body.push(Instruction::LocalSet(arr));
+            self.emit_cmx_store_const(arr, 0, n); // cap
+            self.emit_cmx_store_const(arr, 8, n); // len
+            for (i, child) in c.children.iter().enumerate() {
+                let off = 16 + 16 * i as i64;
+                match child {
+                    CmxChild::Text(s) => {
+                        // Texto -> CmxValue de texto (kind=1).
+                        let s = self.intern_string(s);
+                        self.emit_load_str(s);
+                        self.body.push(Instruction::I64Const(0)); // tag_callable
+                        let v = self.emit_cmx_new(1, 0);
+                        self.emit_cmx_store_local(arr, off, v);
+                        self.emit_cmx_store_const(arr, off + 8, 5 << 8);
+                    }
+                    CmxChild::Expression(expr) => {
+                        let t = cmx_literal_type(expr)
+                            .or_else(|| self.types.get(&expr_span(expr)).cloned())
+                            .unwrap_or(Type::Value);
+                        self.emit_expression(expr)?;
+                        if matches!(t, Type::String) {
+                            self.body.push(Instruction::I64Const(0)); // tag_callable
+                            let v = self.emit_cmx_new(1, 0);
+                            self.emit_cmx_store_local(arr, off, v);
+                            self.emit_cmx_store_const(arr, off + 8, 5 << 8);
+                        } else {
+                            let v = self.fresh_local();
+                            self.body.push(Instruction::LocalSet(v));
+                            self.emit_cmx_store_local(arr, off, v);
+                            self.emit_cmx_store_const(arr, off + 8, cmx_tag_for_type(&t));
+                        }
+                    }
+                    CmxChild::Element(el) => {
+                        self.emit_cmx(el)?; // deja el ptr del elemento en el stack
+                        let v = self.fresh_local();
+                        self.body.push(Instruction::LocalSet(v));
+                        self.emit_cmx_store_local(arr, off, v);
+                        self.emit_cmx_store_const(arr, off + 8, 5 << 8);
+                    }
                 }
             }
-            self.host.call(HostFn::CmxAddChild, &mut self.body);
-            self.body.push(Instruction::Drop);
+            self.emit_cmx_store_local(ptr, 16, arr);
         }
         self.body.push(Instruction::LocalGet(ptr));
         Ok(())
     }
 
-
     pub(crate) fn emit_index_get(&mut self, i: &IndexExpr) -> ClsResult<()> {
         // Record: r["key"] -> record_get(ptr, key)
         let obj_ty = self.types.get(&expr_span(&i.object)).cloned();
-        // `o.x[0]` con `o.x` Any (json.parse anidado): indexar despachando por tag.
-        if matches!(obj_ty, Some(Type::Any)) {
+        // `o.x[0]` con `o.x` Value/JSON (json.parse anidado): indexar despachando por tag.
+        if matches!(
+            obj_ty,
+            Some(Type::Value) | Some(Type::Json)
+        ) {
             let expr = Expression::Index(i.clone());
             self.emit_any_chain(&expr)?;
             // Resultado (val, tag) -> dejar solo el val.
@@ -388,20 +733,35 @@ impl<'a> FuncEmitter<'a> {
         if matches!(obj_ty, Some(Type::Record(_, _))) {
             self.emit_expression(&i.object)?;
             self.emit_expression(&i.index)?;
+            // Índice numérico sobre un Record (p.ej. `json.parse("[..]")[j]`
+            // que se representa como record con claves "0","1",...): convertir
+            // el int a string antes de record_get (la key es string).
+            if matches!(
+                self.types.get(&expr_span(&i.index)),
+                Some(
+                    Type::Int
+                        | Type::I8
+                        | Type::I16
+                        | Type::I32
+                        | Type::I64
+                        | Type::Literal(LitVal::Int(_))
+                )
+            ) {
+                self.emit_str_host("__intr_str_int");
+            }
             if let Some(&idx) = self.func_indexes.get("__intr_record_get") {
                 self.body.push(Instruction::Call(idx));
-            } else {
-                self.host.call(HostFn::RecordGet, &mut self.body);
             }
             let elem_ty = self.index_elem_type(i)?;
             self.bits_to_elem(elem_ty)?;
             return Ok(());
         }
-        // Shape: r["campo"] con clave literal -> load por offset (como member access).
+        // Shape: r["campo"] con clave literal -> los literals viven como hashmap
+        // (default invertido): record_get por la clave.
         if let Some(Type::Shape(fields)) = &obj_ty {
             if let Expression::Literal(l) = &*i.index {
                 if let LiteralKind::String(key) = &l.kind {
-                    let (_, w, off) = self
+                    let (_, w, _off) = self
                         .shape_layout(fields)?
                         .into_iter()
                         .find(|(n, _, _)| n == key)
@@ -412,33 +772,35 @@ impl<'a> FuncEmitter<'a> {
                             )
                         })?;
                     self.emit_expression(&i.object)?;
-                    self.body.push(Instruction::I64Const(off));
-                    self.body.push(Instruction::I64Add);
-                    self.body.push(Instruction::I32WrapI64);
-                    match w {
-                        WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        })),
-                        WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
-                            offset: 0,
-                            align: 2,
-                            memory_index: 0,
-                        })),
-                        WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        })),
+                    let k = self.intern_string(key);
+                    self.emit_load_str(k);
+                    if let Some(&idx) = self.func_indexes.get("__intr_record_get") {
+                        self.body.push(Instruction::Call(idx));
                     }
+                    self.bits_to_elem(w)?;
                     return Ok(());
                 }
             }
-            return Err(crate::error::ClsError::compile_at(
-                "Índice dinámico no soportado en un record con shape (usa Record<K,V> o any)",
-                &i.span,
-            ));
+            // Clave no literal sobre shape: tratar el shape como hashmap y usar
+            // AnyIndex (el typeck ya tipó el resultado como Value).
+            let expr = Expression::Index(i.clone());
+            self.emit_any_chain(&expr)?;
+            self.body.push(Instruction::Drop);
+            return Ok(());
+        }
+        // String: s[i] -> byte i como String de 1 byte (semántica de bytes,
+        // igual que length/slice/indexOf). El resultado es un string packed
+        // (i64), sin conversión de bits.
+        if matches!(obj_ty, Some(Type::String)) {
+            // `s[i]`: byte i como String de 1 byte. FUERA DE RANGO devuelve `""`
+            // (clamping) — documentado en docs/lenguaje/datos.md. NO se alinea con
+            // Array (que sí lanza): es la semántica definida de String.
+            self.emit_expression(&i.object)?;
+            self.emit_expression(&i.index)?;
+            if let Some(&idx) = self.func_indexes.get("__intr_str_char_at") {
+                self.body.push(Instruction::Call(idx));
+            }
+            return Ok(());
         }
         let elem_ty = self.index_elem_type(i)?;
         self.emit_expression(&i.object)?;
@@ -452,7 +814,6 @@ impl<'a> FuncEmitter<'a> {
         };
         self.emit_index_access(elem_ty, elem_size, i)
     }
-
 
     /// Asume [ptr, idx] en stack; deja el valor del elemento (con bounds check).
     pub(crate) fn emit_index_access(
@@ -496,7 +857,6 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-
     /// Emite el check `0 <= idx < len[ptr]`, trap si falla. Usa locals.
     pub(crate) fn bounds_check(&mut self, ptr: u32, idx: u32, span: &Span) {
         self.body.push(Instruction::LocalGet(idx));
@@ -520,7 +880,6 @@ impl<'a> FuncEmitter<'a> {
         self.block_depth -= 1;
     }
 
-
     pub(crate) fn index_elem_type(&self, i: &IndexExpr) -> ClsResult<WasTy> {
         let span = expr_span(&i.object);
         let t = self.types.get(&span).ok_or_else(|| {
@@ -528,6 +887,44 @@ impl<'a> FuncEmitter<'a> {
         })?;
         match t {
             Type::Array(elem) => was_type(elem),
+            // Unión de arrays (F5): `valor[i]` con `valor: A[] | B[]`. Si TODOS
+            // los arrays comparten el ancho del elemento, el índice es estándar
+            // (mismo layout `[cap][len][elems]`); si difieren -> sin boxing.
+            Type::Union(members) => {
+                let mut w: Option<WasTy> = None;
+                for m in members {
+                    match m {
+                        Type::Array(elem) => {
+                            let ew = was_type(elem)?;
+                            if let Some(prev) = w {
+                                if prev != ew {
+                                    return Err(crate::error::ClsError::compile_at(
+                                        "índice sobre una unión de arrays con elementos \
+                                         heterogéneos: no se puede sin boxing",
+                                        &i.span,
+                                    ));
+                                }
+                            }
+                            w = Some(ew);
+                        }
+                        _ => {
+                            return Err(crate::error::ClsError::compile_at(
+                                &format!(
+                                    "índice sobre una unión: el tipo `{}` no es un array",
+                                    m
+                                ),
+                                &i.span,
+                            ));
+                        }
+                    }
+                }
+                w.ok_or_else(|| {
+                    crate::error::ClsError::compile_at(
+                        "índice sobre una unión de arrays vacía",
+                        &i.span,
+                    )
+                })
+            }
             Type::Record(_, v) => was_type(v),
             Type::Tuple(slots) => {
                 // índice literal → slot exacto; dinámico → primer slot (o i64)
@@ -551,7 +948,6 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-
     /// Tamaño de slot de un contenedor: tuplas usan slots de 8 bytes; arrays el
     /// tamaño del tipo del elemento.
     pub(crate) fn container_elem_size(&self, i: &IndexExpr, elem_ty: WasTy) -> i64 {
@@ -561,7 +957,6 @@ impl<'a> FuncEmitter<'a> {
             _ => elem_size_bytes(elem_ty),
         }
     }
-
 
     /// Asume [arr_ptr, idx, value] en stack. Escribe el valor.
     pub(crate) fn emit_index_set(&mut self, i: &IndexExpr, elem_size: i64) -> ClsResult<()> {
@@ -605,7 +1000,6 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-
     pub(crate) fn emit_array_len(&mut self) {
         // ptr está en stack -> len = i64.load(ptr+8)
         self.body.push(Instruction::I32WrapI64);
@@ -615,7 +1009,6 @@ impl<'a> FuncEmitter<'a> {
             memory_index: 0,
         }));
     }
-
 
     /// Tipo WASM del elemento de un array (del type map del object).
     pub(crate) fn array_elem_was_type(&self, obj: &Expression) -> ClsResult<WasTy> {
@@ -628,7 +1021,6 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-
     /// Tipo CLS del elemento de un array.
     pub(crate) fn array_elem_cls_type(&self, obj: &Expression) -> ClsResult<Type> {
         let span = expr_span(obj);
@@ -640,7 +1032,6 @@ impl<'a> FuncEmitter<'a> {
         }
     }
 
-
     /// Convierte el valor en stack (del elem type) a i64 bits (para los hosts).
     pub(crate) fn elem_to_bits(&mut self, _arg: &Expression, elem_ty: WasTy) -> ClsResult<()> {
         match elem_ty {
@@ -651,7 +1042,6 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-
     /// Convierte i64 bits (del host) al valor del elem type.
     pub(crate) fn bits_to_elem(&mut self, elem_ty: WasTy) -> ClsResult<()> {
         match elem_ty {
@@ -661,7 +1051,6 @@ impl<'a> FuncEmitter<'a> {
         }
         Ok(())
     }
-
 
     /// Escribe de vuelta el ptr mutado (resultado de push/unshift/reverse) a la
     /// variable y deja el valor como resultado (para `drop` del statement).
@@ -716,7 +1105,6 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
-
     pub(crate) fn emit_i64_store(&mut self, offset: u32) {
         // stack: [addr(i64), value] -> reordenar con wrap
         let v = self.fresh_local();
@@ -729,5 +1117,4 @@ impl<'a> FuncEmitter<'a> {
             memory_index: 0,
         }));
     }
-
 }

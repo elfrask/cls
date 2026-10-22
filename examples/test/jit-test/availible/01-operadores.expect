@@ -1,0 +1,10 @@
+﻿suma: 5 resta: 4 mult: 8 div: 2
+mod: 1 potencia: 256
+mod float: 1.5
+postfix ++: 2
+postfix --: 1
+compuestos: 9
+cmp: true true false
+logicos: false true false
+type int: Int type str: String type arr: Array
+str(42): 42

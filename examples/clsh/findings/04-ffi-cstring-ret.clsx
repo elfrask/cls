@@ -1,0 +1,23 @@
+# REPRO (regresion del typeck / FFI): una funcion nativa de C que devuelve
+# `CString` y NO tiene ningun parametro `CString` se resuelve con su tipo C
+# crudo y NO es asignable a `String` -> error de tipo. En cambio, si la firma
+# tiene al menos un parametro `CString`, el retorno infiere `String` y compila.
+#
+# Uso:  target\debug\clx.exe run examples\clsh\findings\04-ffi-cstring-ret.clsx
+#   Esperado: compila (ambos devuelven char*).
+#   Obtenido: ERROR (exit 1) "Tipo de retorno CString no coincide con el declarado
+#             String" en g0 (la de 0 parametros); g1 (param CString) compila.
+#   Nota: `clx check` (no estricto) solo lo marca WARN (exit 0); el JIT
+#   (`clx run`, estricto) lo trata como ERROR y aborta.
+#
+# Workaround aplicado en examples/clsh/src/ffi.clsx: parametro `CString` dummy
+# en las funciones de 0 parametros (el C homonimo ignora el arg extra de la ABI).
+extension "examples/clsh/oracle/clsh_io.dll" as C {
+    function clsh_getcwd() -> CString;                    # 0 params -> CString -> ERROR
+    function clsh_read_file(path: CString) -> CString;    # param CString -> String -> ok
+};
+
+function g0() -> String { return clsh_getcwd(); }             # <-- error
+function g1(p: String) -> String { return clsh_read_file(p); } # <-- ok
+
+function main(args: String[]) -> int { return 0; };

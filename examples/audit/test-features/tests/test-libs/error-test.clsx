@@ -1,5 +1,0 @@
-
-export function down() -> Int {
-  throw("Fallo exitosamente");
-  return 0;
-}

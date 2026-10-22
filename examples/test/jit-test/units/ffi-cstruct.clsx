@@ -1,0 +1,139 @@
+# ffi-cstruct.clsx - FFI: `structure` con layout C ABI (i16/i32/i8[n]) pasado
+# como CStruct. El DLL recibe la DATA (base+16, no el header CLS de 16 bytes),
+# asi que el kernel ve el sockaddr_in real.
+#
+# Regresion del reporte del dev (2026-09-10, "bind/listen retornan exito pero
+# socket no escucha"): antes los campos se guardaban con slots de 8 bytes y el
+# bind leia `sin_family` = def_id del struct y `sin_port` = 0 -> el socket
+# escuchaba en un puerto EFIMERO (netstat no mostraba el puerto pedido).
+# El oracle valida family/port con getsockname (out-param C in-place).
+
+when (os: windows) {
+    extension "ws2_32.dll" as C {
+        function socket(af: CInt, type: CInt, protocol: CInt) -> CInt;
+        function bind(s: CInt, name: CStruct, namelen: CInt) -> CInt;
+        function listen(s: CInt, backlog: CInt) -> CInt;
+        function getsockname(s: CInt, name: CStruct, namelen: CStruct) -> CInt;
+        function closesocket(s: CInt) -> CInt;
+        function htons(hostshort: CInt) -> CInt;
+        function ntohs(netshort: CInt) -> CInt;
+        function WSAStartup(wVersionRequired: CInt, lpWSAData: CStruct) -> CInt;
+        function WSACleanup() -> CInt;
+        function WSAGetLastError() -> CInt;
+    };
+
+    # WSADATA real (408 bytes en x64): iMaxUdpDg en 392 y el ptr alineado a 8.
+    # Los arrays inline `i8[n]` ocupan su tamano C (257+129), sin eso WSAStartup
+    # escribe 408B sobre una alocacion menor.
+    structure WSADATA {
+        wVersion: i16,
+        wHighVersion: i16,
+        szDescription: i8[257],
+        szSystemStatus: i8[129],
+        iMaxSockets: i16,
+        iMaxUdpDg: i16,
+        lpVendorInfo: i64,
+    };
+
+    # sockaddr_in (WinSock/glibc): family@0(2B), port@2(2B), addr@4(4B),
+    # zero@8(8B) = 16 bytes.
+    structure sockaddr_in {
+        sin_family: i16,
+        sin_port: i16,
+        sin_addr: i32,
+        sin_zero: i8[8],
+    };
+}
+
+when (os: linux) {
+    extension "libc.so.6" as C {
+        function socket(domain: CInt, type: CInt, protocol: CInt) -> CInt;
+        function bind(sockfd: CInt, addr: CStruct, addrlen: CInt) -> CInt;
+        function listen(sockfd: CInt, backlog: CInt) -> CInt;
+        function getsockname(sockfd: CInt, addr: CStruct, addrlen: CStruct) -> CInt;
+        function close(fd: CInt) -> CInt;
+        function htons(hostshort: CInt) -> CInt;
+        function ntohs(netshort: CInt) -> CInt;
+    };
+
+    structure sockaddr_in {
+        sin_family: i16,
+        sin_port: i16,
+        sin_addr: i32,
+        sin_zero: i8[8],
+    };
+}
+
+when (os: macos) {
+    extension "libSystem.B.dylib" as C {
+        function socket(domain: CInt, type: CInt, protocol: CInt) -> CInt;
+        function bind(sockfd: CInt, addr: CStruct, addrlen: CInt) -> CInt;
+        function listen(sockfd: CInt, backlog: CInt) -> CInt;
+        function getsockname(sockfd: CInt, addr: CStruct, addrlen: CStruct) -> CInt;
+        function close(fd: CInt) -> CInt;
+        function htons(hostshort: CInt) -> CInt;
+        function ntohs(netshort: CInt) -> CInt;
+    };
+
+    # BSD: sin_len (1B) + sin_family (1B) antes del puerto.
+    structure sockaddr_in {
+        sin_len: i8,
+        sin_family: i8,
+        sin_port: i16,
+        sin_addr: i32,
+        sin_zero: i8[8],
+    };
+}
+
+# socklen_t de los out-params: int (mismo layout en las 3 plataformas).
+structure csocklen {
+    v: i32,
+}
+
+function main(args: String[]) -> int {
+    when (os: windows) {
+        var wsa = WSADATA(0, 0, 0, 0, 0);
+        print("WSAStartup =", WSAStartup(513, wsa));
+    };
+
+    var sock = socket(2, 1, 0);
+    print("socket =", sock >= 0);
+
+    # sockaddr_in con los campos C reales: family(i16) + port(i16) + addr(i32)
+    # + zero(i8[8]) = 16 bytes (en macOS, BSD: sin_len + sin_family).
+    var addr = sockaddr_in(2, htons(9999), 0);
+    when (os: macos) {
+        addr = sockaddr_in(16, 2, htons(9999), 0);
+    };
+
+    var r = bind(sock, addr, 16);
+    print("bind =", r);
+    if (r != 0) {
+        when (os: windows) {
+            print("WSA error =", WSAGetLastError());
+        };
+        return 1;
+    };
+
+    print("listen =", listen(sock, 5));
+
+    # getsockname escribe el sockaddr real in-place en addr (out-param C):
+    # si el layout C y el paso de ptr+16 funcionan, vuelve 2:9999.
+    var len = csocklen(16);
+    var g = getsockname(sock, addr, len);
+    print("getsockname =", g, "len =", len.v);
+    print("family =", addr.sin_family);
+    print("port =", ntohs(addr.sin_port));
+
+    when (os: windows) {
+        closesocket(sock);
+        WSACleanup();
+    };
+    when (os: linux) {
+        close(sock);
+    };
+    when (os: macos) {
+        close(sock);
+    };
+    return 0;
+};

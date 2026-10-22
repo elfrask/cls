@@ -1,0 +1,7 @@
+from "modfixes/lib" import make_pt;
+
+function main(args: String[]) -> int {
+    var p = make_pt(3, 4);
+    print("pt:", p);
+    return 0;
+};

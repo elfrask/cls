@@ -1,0 +1,18 @@
+# Callable + is narrowing + spread en records (plan tipo-callable-is-narrowing-spread).
+# Invoca un componente CMX de tag mayúscula pasandole props + children.
+
+function App(props: Record<String, Value>, children: Cmx[]) -> String {
+    var t: String = props.titulo;
+    return "App:" + t + ":" + children.length.toString();
+};
+
+function main(args: String[]) -> int {
+    var app = (<App titulo="demo"><p>hijo</p></App>);
+    print("tag:", app.tag);
+    print("es componente:", app.isComponent);
+    if (app.isComponent) {
+        var r: String = app.tagCallable(app.props, app.children);
+        print("render:", r);
+    }
+    return 0;
+};

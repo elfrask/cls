@@ -1,0 +1,33 @@
+# util.clsx - modulo local de prueba para import/from/namespacing/reexport.
+
+export const VERSION = "1.0";
+
+export var contador: int = 0;
+
+export function saludar(nombre: String) -> String {
+    return "Hola " + nombre;
+}
+
+export function suma(a: int, b: int) -> int {
+    return a + b;
+}
+
+export function incrementar() -> int {
+    contador = contador + 1;
+    return contador;
+}
+
+export class Caja {
+    var v: int;
+    function main(v: int) { me.v = v; }
+    function get() -> int { return me.v; }
+}
+
+export enum Color {
+    Rojo,
+    Verde,
+    Azul,
+}
+
+# no exportada: no debe ser visible desde fuera del modulo.
+function interna() -> int { return 99; }

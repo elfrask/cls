@@ -1,0 +1,7 @@
+from "ffi-export-mod/lazy" import strlen, atoi;
+
+function main(args: String[]) -> int {
+    print("lazy strlen:", strlen("abc"));
+    print("lazy atoi:", atoi("7"));
+    return 0;
+};

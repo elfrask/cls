@@ -1,0 +1,460 @@
+# main.clsx - Intérprete Scheme (subconjunto) en CLS puro. Prueba #10.
+#
+#   clx run src/main.clsx -- <archivo.scm>
+#
+# Lee un programa Scheme, lo evalúa y escribe la salida de `display`/`newline`.
+# Todos los valores (números, símbolos, strings, pares, closures, entornos y
+# primitivas) se representan con la clase `Val` (kind + campos). `null` no es
+# asignable a una clase => el centinela de lista vacía es `kind == "nil"`.
+# El reader y el evaluador son clases (sus métodos pueden ser mutuamente
+# recursivos; las funciones libres deben definirse antes de usarse).
+
+import "fs" as fs;
+
+class Val {
+    var kind: String;
+    var num: int;
+    var s: String;
+    var car: Val;
+    var cdr: Val;
+    var cenv: Val;
+}
+
+# --- constructores y helpers (antes de las clases que los usan) -----------
+
+function mkVal(k: String) -> Val {
+    var v = Val();
+    v.kind = k;
+    v.num = 0;
+    v.s = "";
+    v.car = v;
+    v.cdr = v;
+    v.cenv = v;
+    return v;
+}
+
+function mkNil() -> Val { return mkVal("nil"); }
+
+function mkNum(n: int) -> Val { var v = mkVal("num"); v.num = n; return v; }
+function mkSym(name: String) -> Val { var v = mkVal("sym"); v.s = name; return v; }
+function mkStr(text: String) -> Val { var v = mkVal("str"); v.s = text; return v; }
+function mkBool(b: Bool) -> Val { var v = mkVal("bool"); if (b) { v.num = 1; } return v; }
+function mkPrim(name: String) -> Val { var v = mkVal("prim"); v.s = name; return v; }
+function mkErr(msg: String) -> Val { var v = mkVal("err"); v.s = msg; return v; }
+
+function mkPair(a: Val, d: Val) -> Val { var v = mkVal("pair"); v.car = a; v.cdr = d; return v; }
+function mkClosure(params: Val, body: Val, env: Val) -> Val { var v = mkVal("closure"); v.car = params; v.cdr = body; v.cenv = env; return v; }
+function mkEnv(bindings: Val, parent: Val) -> Val { var v = mkVal("env"); v.car = bindings; v.cdr = parent; v.cenv = v; return v; }
+
+function isNil(v: Val) -> Bool { return v.kind == "nil"; }
+function truthy(v: Val) -> Bool { return !(v.kind == "bool" && v.num == 0); }
+function isSym(v: Val, name: String) -> Bool { return v.kind == "sym" && v.s == name; }
+
+function listLen(l: Val) -> int {
+    var n = 0;
+    var p = l;
+    while (p.kind == "pair") { n = n + 1; p = p.cdr; }
+    return n;
+}
+
+function listNth(l: Val, i: int) -> Val {
+    var p = l;
+    var k = 0;
+    while (p.kind == "pair" && k < i) { p = p.cdr; k = k + 1; }
+    return p.car;
+}
+
+function toWrite(v: Val) -> String {
+    if (v.kind == "num") { return v.num.toString(); }
+    if (v.kind == "sym") { return v.s; }
+    if (v.kind == "str") { return "\"" + v.s + "\""; }
+    if (v.kind == "bool") { if (v.num == 1) { return "#t"; } return "#f"; }
+    if (v.kind == "nil") { return "()"; }
+    if (v.kind == "prim") { return "#<prim " + v.s + ">"; }
+    if (v.kind == "closure") { return "#<closure>"; }
+    if (v.kind == "pair") {
+        var out = "(";
+        var cur = v;
+        var first = true;
+        while (cur.kind == "pair") {
+            if (!first) { out = out + " "; }
+            out = out + toWrite(cur.car);
+            first = false;
+            cur = cur.cdr;
+        }
+        if (cur.kind != "nil") { out = out + " . " + toWrite(cur); }
+        return out + ")";
+    }
+    return "#<" + v.kind + ">";
+}
+
+function toDisplay(v: Val) -> String {
+    if (v.kind == "str") { return v.s; }
+    return toWrite(v);
+}
+
+function isDelim(code: int) -> Bool {
+    if (code == 32 || code == 9 || code == 10 || code == 13) { return true; }
+    if (code == 40 || code == 41 || code == 34 || code == 59 || code == 39) { return true; }
+    return false;
+}
+
+# --- reader ---------------------------------------------------------------
+
+class Reader {
+    var src: Char[];
+    var n: int;
+    var pos: int;
+
+    function codeAt() -> int {
+        if (me.pos >= me.n) { return -1; }
+        return ord(me.src[me.pos]);
+    }
+
+    function skipWs() {
+        var go = true;
+        while (go) {
+            if (me.pos >= me.n) { go = false; }
+            else {
+                var c = me.codeAt();
+                if (c == 32 || c == 9 || c == 10 || c == 13) { me.pos = me.pos + 1; }
+                elif (c == 59) { while (me.pos < me.n && me.codeAt() != 10) { me.pos = me.pos + 1; } }
+                else { go = false; }
+            }
+        }
+    }
+
+    function readForm() -> Val {
+        me.skipWs();
+        if (me.pos >= me.n) { return mkErr("eof"); }
+        var c = me.codeAt();
+        if (c == 40) { me.pos = me.pos + 1; return me.readList(); }
+        if (c == 41) { me.pos = me.pos + 1; return mkErr("unexpected )"); }
+        if (c == 39) {
+            me.pos = me.pos + 1;
+            var d = me.readForm();
+            return mkPair(mkSym("quote"), mkPair(d, mkNil()));
+        }
+        if (c == 34) { me.pos = me.pos + 1; return me.readString(); }
+        if (c >= 48 && c <= 57) { return me.readNumber(); }
+        if (c == 45 && me.pos + 1 < me.n && ord(me.src[me.pos + 1]) >= 48 && ord(me.src[me.pos + 1]) <= 57) {
+            return me.readNumber();
+        }
+        return me.readSymbol();
+    }
+
+    function readList() -> Val {
+        var items: Val[] = [];
+        var go = true;
+        while (go) {
+            me.skipWs();
+            if (me.pos >= me.n) { go = false; }
+            elif (me.codeAt() == 41) { me.pos = me.pos + 1; go = false; }
+            else { items.push(me.readForm()); }
+        }
+        var out = mkNil();
+        var i = items.length - 1;
+        while (i >= 0) { out = mkPair(items[i], out); i = i - 1; }
+        return out;
+    }
+
+    function readString() -> Val {
+        var out = "";
+        var go = true;
+        while (go) {
+            if (me.pos >= me.n) { go = false; }
+            else {
+                var c = me.codeAt();
+                if (c == 34) { me.pos = me.pos + 1; go = false; }
+                elif (c == 92) {
+                    me.pos = me.pos + 1;
+                    var e = me.codeAt();
+                    if (e == 110) { out = out + char(10).toString(); }
+                    elif (e == 116) { out = out + char(9).toString(); }
+                    else { out = out + char(e).toString(); }
+                    me.pos = me.pos + 1;
+                }
+                else { out = out + me.src[me.pos].toString(); me.pos = me.pos + 1; }
+            }
+        }
+        return mkStr(out);
+    }
+
+    function readNumber() -> Val {
+        var neg = false;
+        if (me.codeAt() == 45) { neg = true; me.pos = me.pos + 1; }
+        var acc = 0;
+        while (me.pos < me.n && !isDelim(me.codeAt())) {
+            acc = acc * 10 + (me.codeAt() - 48);
+            me.pos = me.pos + 1;
+        }
+        if (neg) { acc = 0 - acc; }
+        return mkNum(acc);
+    }
+
+    function readSymbol() -> Val {
+        var out = "";
+        while (me.pos < me.n && !isDelim(me.codeAt())) {
+            out = out + me.src[me.pos].toString();
+            me.pos = me.pos + 1;
+        }
+        return mkSym(out);
+    }
+}
+
+function readAll(src: String) -> Val[] {
+    var r = Reader();
+    r.src = src.toChar();
+    r.n = r.src.length;
+    r.pos = 0;
+    var out: Val[] = [];
+    var go = true;
+    while (go) {
+        r.skipWs();
+        if (r.pos >= r.n) { go = false; }
+        else { out.push(r.readForm()); }
+    }
+    return out;
+}
+
+# --- evaluador ------------------------------------------------------------
+
+class Interp {
+    var out: String;
+    function lookup(name: String, env: Val) -> Val {
+        var e = env;
+        while (e.kind == "env") {
+            var b = e.car;
+            while (b.kind == "pair") {
+                if (b.car.car.s == name) { return b.car.cdr; }
+                b = b.cdr;
+            }
+            e = e.cdr;
+        }
+        return mkErr("no definido: " + name);
+    }
+
+    function defineVar(name: String, value: Val, env: Val) {
+        env.car = mkPair(mkPair(mkSym(name), value), env.car);
+    }
+
+    function setVar(name: String, value: Val, env: Val) -> Bool {
+        var e = env;
+        while (e.kind == "env") {
+            var b = e.car;
+            while (b.kind == "pair") {
+                if (b.car.car.s == name) { b.car.cdr = value; return true; }
+                b = b.cdr;
+            }
+            e = e.cdr;
+        }
+        return false;
+    }
+
+    function evalList(forms: Val, env: Val) -> Val {
+        var result = mkNil();
+        var p = forms;
+        while (p.kind == "pair") {
+            result = me.eval(p.car, env);
+            p = p.cdr;
+        }
+        return result;
+    }
+
+    function evalArgs(args: Val, env: Val) -> Val {
+        var head = mkNil();
+        var tail = head;
+        var p = args;
+        while (p.kind == "pair") {
+            var cell = mkPair(me.eval(p.car, env), mkNil());
+            if (head.kind == "nil") { head = cell; }
+            else { tail.cdr = cell; }
+            tail = cell;
+            p = p.cdr;
+        }
+        return head;
+    }
+
+    function eval(v: Val, env: Val) -> Val {
+        if (v.kind == "sym") { return me.lookup(v.s, env); }
+        if (v.kind != "pair") { return v; }
+        var head = v.car;
+        if (head.kind == "sym") {
+            var name = head.s;
+            if (name == "quote") { return v.cdr.car; }
+            if (name == "if") {
+                if (truthy(me.eval(v.cdr.car, env))) { return me.eval(v.cdr.cdr.car, env); }
+                if (v.cdr.cdr.cdr.kind == "pair") { return me.eval(v.cdr.cdr.cdr.car, env); }
+                return mkNil();
+            }
+            if (name == "define") {
+                var target = v.cdr.car;
+                if (target.kind == "sym") {
+                    me.defineVar(target.s, me.eval(v.cdr.cdr.car, env), env);
+                } else {
+                    me.defineVar(target.car.s, mkClosure(target.cdr, v.cdr.cdr, env), env);
+                }
+                return mkNil();
+            }
+            if (name == "set!") { me.setVar(v.cdr.car.s, me.eval(v.cdr.cdr.car, env), env); return mkNil(); }
+            if (name == "lambda") { return mkClosure(v.cdr.car, v.cdr.cdr, env); }
+            if (name == "begin") { return me.evalList(v.cdr, env); }
+            if (name == "let") {
+                var binds = v.cdr.car;
+                var frame = mkEnv(mkNil(), env);
+                var p = binds;
+                while (p.kind == "pair") {
+                    me.defineVar(p.car.car.s, me.eval(p.car.cdr.car, env), frame);
+                    p = p.cdr;
+                }
+                return me.evalList(v.cdr.cdr, frame);
+            }
+            if (name == "cond") { return me.evalCond(v.cdr, env); }
+            if (name == "and") {
+                var r = mkBool(true);
+                var p = v.cdr;
+                while (p.kind == "pair") { r = me.eval(p.car, env); if (!truthy(r)) { return r; } p = p.cdr; }
+                return r;
+            }
+            if (name == "or") {
+                var p = v.cdr;
+                while (p.kind == "pair") { var r = me.eval(p.car, env); if (truthy(r)) { return r; } p = p.cdr; }
+                return mkBool(false);
+            }
+        }
+        return me.apply(me.eval(head, env), me.evalArgs(v.cdr, env));
+    }
+
+    function evalCond(clauses: Val, env: Val) -> Val {
+        var p = clauses;
+        while (p.kind == "pair") {
+            var clause = p.car;
+            if (isSym(clause.car, "else") || truthy(me.eval(clause.car, env))) {
+                if (clause.cdr.kind == "nil") { return me.eval(clause.car, env); }
+                return me.evalList(clause.cdr, env);
+            }
+            p = p.cdr;
+        }
+        return mkNil();
+    }
+
+    function append2(a: Val, b: Val) -> Val {
+        var items: Val[] = [];
+        var p = a;
+        while (p.kind == "pair") { items.push(p.car); p = p.cdr; }
+        var out = b;
+        var i = items.length - 1;
+        while (i >= 0) { out = mkPair(items[i], out); i = i - 1; }
+        return out;
+    }
+
+    function apply(f: Val, args: Val) -> Val {
+        if (f.kind == "prim") { return me.callPrim(f.s, args); }
+        if (f.kind == "closure") {
+            var frame = mkEnv(mkNil(), f.cenv);
+            var params = f.car;
+            var a = args;
+            while (params.kind == "pair") {
+                me.defineVar(params.car.s, a.car, frame);
+                params = params.cdr;
+                a = a.cdr;
+            }
+            return me.evalList(f.cdr, frame);
+        }
+        return mkErr("no aplicable: " + toWrite(f));
+    }
+
+    function num(args: Val, i: int) -> int { return listNth(args, i).num; }
+
+    function callPrim(name: String, args: Val) -> Val {
+        if (name == "+") {
+            var acc = 0;
+            var p = args;
+            while (p.kind == "pair") { acc = acc + p.car.num; p = p.cdr; }
+            return mkNum(acc);
+        }
+        if (name == "*") {
+            var acc = 1;
+            var p = args;
+            while (p.kind == "pair") { acc = acc * p.car.num; p = p.cdr; }
+            return mkNum(acc);
+        }
+        if (name == "-") {
+            if (listLen(args) == 1) { return mkNum(0 - me.num(args, 0)); }
+            var acc = me.num(args, 0);
+            var p = args.cdr;
+            while (p.kind == "pair") { acc = acc - p.car.num; p = p.cdr; }
+            return mkNum(acc);
+        }
+        if (name == "/") {
+            var acc = me.num(args, 0);
+            var p = args.cdr;
+            while (p.kind == "pair") { acc = acc / p.car.num; p = p.cdr; }
+            return mkNum(acc);
+        }
+        if (name == "modulo" || name == "mod") { return mkNum(me.num(args, 0) % me.num(args, 1)); }
+        if (name == "abs") { var n = me.num(args, 0); if (n < 0) { return mkNum(0 - n); } return mkNum(n); }
+        if (name == "=") { return mkBool(me.num(args, 0) == me.num(args, 1)); }
+        if (name == "<") { return mkBool(me.num(args, 0) < me.num(args, 1)); }
+        if (name == ">") { return mkBool(me.num(args, 0) > me.num(args, 1)); }
+        if (name == "<=") { return mkBool(me.num(args, 0) <= me.num(args, 1)); }
+        if (name == ">=") { return mkBool(me.num(args, 0) >= me.num(args, 1)); }
+        if (name == "max") { if (me.num(args, 0) >= me.num(args, 1)) { return mkNum(me.num(args, 0)); } return mkNum(me.num(args, 1)); }
+        if (name == "min") { if (me.num(args, 0) <= me.num(args, 1)) { return mkNum(me.num(args, 0)); } return mkNum(me.num(args, 1)); }
+        if (name == "cons") { return mkPair(listNth(args, 0), listNth(args, 1)); }
+        if (name == "car") { return listNth(args, 0).car; }
+        if (name == "cdr") { return listNth(args, 0).cdr; }
+        if (name == "list") { return args; }
+        if (name == "null?") { return mkBool(isNil(listNth(args, 0))); }
+        if (name == "pair?") { return mkBool(listNth(args, 0).kind == "pair"); }
+        if (name == "number?") { return mkBool(listNth(args, 0).kind == "num"); }
+        if (name == "symbol?") { return mkBool(listNth(args, 0).kind == "sym"); }
+        if (name == "string?") { return mkBool(listNth(args, 0).kind == "str"); }
+        if (name == "procedure?") { var k = listNth(args, 0).kind; return mkBool(k == "prim" || k == "closure"); }
+        if (name == "not") { return mkBool(!truthy(listNth(args, 0))); }
+        if (name == "length") { return mkNum(listLen(listNth(args, 0))); }
+        if (name == "append") { return me.append2(listNth(args, 0), listNth(args, 1)); }
+        if (name == "eq?") {
+            var a = listNth(args, 0);
+            var b = listNth(args, 1);
+            if (a.kind != b.kind) { return mkBool(false); }
+            if (a.kind == "num" || a.kind == "bool") { return mkBool(a.num == b.num); }
+            if (a.kind == "sym" || a.kind == "str") { return mkBool(a.s == b.s); }
+            if (a.kind == "nil") { return mkBool(true); }
+            return mkBool(a == b);
+        }
+        if (name == "display") { me.out = me.out + toDisplay(listNth(args, 0)); return mkNil(); }
+        if (name == "write") { me.out = me.out + toWrite(listNth(args, 0)); return mkNil(); }
+        if (name == "newline") { me.out = me.out + "\n"; return mkNil(); }
+        return mkErr("primitiva desconocida: " + name);
+    }
+}
+
+# --- main -----------------------------------------------------------------
+
+function setup(env: Val) {
+    var names = ["car", "cdr", "cons", "list", "+", "-", "*", "/", "modulo",
+        "abs", "=", "<", ">", "<=", ">=", "max", "min", "null?", "pair?",
+        "number?", "symbol?", "string?", "procedure?", "not", "eq?", "length",
+        "append", "display", "write", "newline"];
+    for each nm in (names) {
+        env.car = mkPair(mkPair(mkSym(nm), mkPrim(nm)), env.car);
+    }
+}
+
+function main(args: String[]) -> int {
+    if (args.length < 1) { print("uso: clx run src/main.clsx -- <archivo.scm>"); return 2; }
+    var src: String = fs.readFile(args[0]);
+    var forms = readAll(src);
+    var env = mkEnv(mkNil(), mkNil());
+    setup(env);
+    var interp = Interp();
+    var i = 0;
+    while (i < forms.length) {
+        var r = interp.eval(forms[i], env);
+        if (r.kind == "err") { print("ERROR: " + r.s); return 1; }
+        i = i + 1;
+    }
+    print(interp.out);
+    return 0;
+}

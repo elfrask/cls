@@ -1,0 +1,49 @@
+# http/cookies.clsx - Cookie jar simple (por host).
+from "url" import Url;
+
+export class Cookies {
+    var hosts: String[];
+    var names: String[];
+    var values: String[];
+    function main() {
+        me.hosts = [];
+        me.names = [];
+        me.values = [];
+    }
+
+    function set(host: String, name: String, value: String) {
+        for each h and i in (me.hosts) {
+            if (h == host && me.names[i] == name) {
+                me.values[i] = value;
+                return;
+            }
+        }
+        me.hosts.push(host);
+        me.names.push(name);
+        me.values.push(value);
+    }
+
+    # "name=value; name2=value2" para el host de `url`; "" si no hay.
+    function headerFor(url: Url) -> String {
+        var out = "";
+        for each h and i in (me.hosts) {
+            if (h == url.host) {
+                if (out != "") { out = out + "; "; }
+                out = out + me.names[i] + "=" + me.values[i];
+            }
+        }
+        return out;
+    }
+
+    # Registra un Set-Cookie ("name=value; Path=/; ...") para el host.
+    function store(host: String, setCookie: String) {
+        var semi = setCookie.indexOf(";");
+        var pair = setCookie;
+        if (semi >= 0) { pair = setCookie.slice(0, semi); }
+        var eq = pair.indexOf("=");
+        if (eq < 0) { return; }
+        var name = pair.slice(0, eq).trim();
+        var value = pair.slice(eq + 1, pair.length).trim();
+        me.set(host, name, value);
+    }
+};

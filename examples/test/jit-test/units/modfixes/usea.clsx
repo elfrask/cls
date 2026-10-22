@@ -1,0 +1,6 @@
+# Modulo que reutiliza `star` via import *.
+from "modfixes/star" import *;
+
+export function usea() -> String {
+    return star_a();
+};

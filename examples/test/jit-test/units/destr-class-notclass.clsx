@@ -1,0 +1,6 @@
+# Negativo: el nombre del patrón no es una clase conocida.
+function main(args: String[]) -> int {
+    var NotAClass(x) = 1;
+    print(x);
+    return 0;
+}

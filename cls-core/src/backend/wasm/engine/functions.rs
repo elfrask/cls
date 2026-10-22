@@ -27,6 +27,11 @@ impl<'a> Engine<'a> {
 
 
     pub(crate) fn collect_function(&mut self, f: &FunctionDecl) -> ClsResult<()> {
+        // Declaración nativa (FFI): se emite como import en `emit`, no como
+        // función CLS. No se registra en `func_types`/`func_indexes`.
+        if f.native.is_some() {
+            return Ok(());
+        }
         let mut params: Vec<Type> = Vec::new();
         let mut defaults: Vec<Option<Expression>> = Vec::new();
         for p in &f.params {
@@ -50,10 +55,16 @@ impl<'a> Engine<'a> {
 
 
     fn resolve_annotation_type(&self, ann: &TypeAnnotation) -> ClsResult<Type> {
+        // Phantom `!T`: el type param NO participa del tipo runtime (compile-time
+        // only). Se mapea a `Value` (i64 en la firma WASM), como los campos
+        // dinámicos; así `function f<T>(x: !T)` compila.
+        if matches!(ann.kind, crate::frontend::ast::TypeKind::Phantom(_)) {
+            return Ok(Type::Value);
+        }
         let t = annotation_to_type(ann);
         match t {
-            Type::Any | Type::Unknown => Err(crate::error::ClsError::CompileError(
-                "Anotació de tipo no soportada por el JIT (se requiere tipo concreto)".to_string(),
+            Type::Value | Type::Unknown => Err(crate::error::ClsError::CompileError(
+                "Anotación de tipo no soportada por el JIT (se requiere tipo concreto)".to_string(),
             )),
             other => Ok(other),
         }
@@ -61,21 +72,19 @@ impl<'a> Engine<'a> {
 
 
     /// Tipo concreto de un campo de struct/clase. Si la anotació no resuelve a
-    /// un tipo concreto (`Any`/`Unknown`), se intenta el type map (el campo tiene
+    /// un tipo concreto (`Value`/`Unknown`), se intenta el type map (el campo tiene
     /// un span); si el kind es un tipo nombrado (struct/clase/enum) se trata como
     /// puntero (i64); si nada resuelve, error claro en vez de asumir i64.
     pub(crate) fn resolve_field_type(
         &self,
-        owner: &str,
-        field: &str,
         ann: &TypeAnnotation,
     ) -> ClsResult<Type> {
         let t = annotation_to_type(ann);
-        if !matches!(t, Type::Any | Type::Unknown) {
+        if !matches!(t, Type::Value | Type::Unknown) {
             return Ok(t);
         }
         if let Some(rt) = self.types.get(&ann.span).cloned() {
-            if !matches!(rt, Type::Any | Type::Unknown) {
+            if !matches!(rt, Type::Value | Type::Unknown) {
                 return Ok(rt);
             }
         }
@@ -85,17 +94,45 @@ impl<'a> Engine<'a> {
                 args.iter().map(annotation_to_type).collect(),
             ));
         }
-        Err(crate::error::ClsError::CompileError(format!(
-            "Campo '{}' de '{}' con tipo desconocido (el JIT requiere un tipo concreto)",
-            field, owner
-        )))
+        // `Value`/`Unknown` sin tipo concreto: campo dinámico (viaja como i64).
+        // El acceso a un campo `Value` usa dispatch por tag en runtime (records,
+        // callbacks, valores JSON). Es el comportamiento del "dinamismo 0":
+        // `Value` sigue siendo un tipo de campo válido (el JIT lo rechaza solo en
+        // params/retornos de funciones, donde se requiere la firma WASM).
+        Ok(t)
+    }
+
+
+    /// Separa `{clase}::{metodo}` para métodos de clase. La clase puede contener
+    /// `::` (namespaced: `lib::Clase`), así que se toma el prefijo más largo que
+    /// sea una clase conocida (`rfind("::")`). `None` si no es un método de una
+    /// clase conocida (p.ej. `mod::fn`).
+    fn split_class_method(&self, name: &str) -> Option<(String, String)> {
+        let idx = name.rfind("::")?;
+        let class = &name[..idx];
+        let method = &name[idx + 2..];
+        if self.class_defs.contains_key(class) {
+            Some((class.to_string(), method.to_string()))
+        } else {
+            None
+        }
     }
 
 
     pub(crate) fn compile_function(&mut self, f: &FunctionDecl) -> ClsResult<Function> {
         let (param_types, ret) = self.func_types[&f.name].clone();
+        // Métodos de clase: `me` (la instancia) es el primer param implícito.
+        // La clase puede contener `::` (namespaced: `lib::Clase`), así que se
+        // resuelve como el prefijo más largo que sea una clase conocida.
+        // (se calcula ANTES de crear el emitter, que toma prestado `self` mut.)
+        let (class_name, method_name) = match self.split_class_method(&f.name) {
+            Some((c, m)) => (Some(c), Some(m)),
+            None => (None, None),
+        };
+        let is_method = class_name.is_some();
         let mut fe = FuncEmitter::new(
             self.types,
+            &self.import_aliases,
             HostCaller {
                 indexes: self.host_indexes.clone(),
             },
@@ -109,9 +146,11 @@ impl<'a> Engine<'a> {
             &mut self.type_count,
             &mut self.types_sec,
             &self.enum_defs,
+            &self.enum_params,
             &self.struct_defs,
             &self.native_indexes,
             &self.native_ret,
+            &self.native_params,
             &self.globals,
             &self.static_fields,
             &self.class_defs,
@@ -124,42 +163,50 @@ impl<'a> Engine<'a> {
             self.exceptions,
             &self.intrinsics,
         );
-        // Métodos de clase: `me` (la instancia) es el primer param implícito.
-        // `Clase::metodo` es método si el prefijo es una clase conocida; si no,
-        // es un símbolo de mí³dulo importado (`mod::fn`, sin `me`).
-
-        let is_method = f
-            .name
-            .split("::")
-            .next()
-            .map(|c| self.class_defs.contains_key(c))
-            .unwrap_or(false);
         // Un método static NO recibe `me` ni establece la clase actual (así que
         // `me.` dentro de él da error de variable no definida, paridad walker).
         let is_static = f
             .modifiers
             .contains(&crate::frontend::ast::FunctionModifier::Static);
-        let current_class = if is_method && !is_static {
-            f.name.split("::").next().map(|s| s.to_string())
+        fe.current_class = if is_method && !is_static {
+            class_name.clone()
         } else {
             None
         };
-        fe.current_class = current_class;
-        fe.current_method = if is_method {
-            f.name.split("::").nth(1).map(|s| s.to_string())
-        } else {
-            None
-        };
+        fe.current_method = method_name;
         fe.current_fn_span = f.span.clone();
+        // Retorno declarado (frontera de `return`): convertir Shape→hashmap si
+        // el retorno es dinámico y el valor es un shape contiguo.
+        fe.fn_ret = self.func_types.get(&f.name).and_then(|(_, r)| r.clone());
         fe.shadow_ptr_global = self.shadow_ptr_global;
         let is_main = f.name == "main";
         // Promover al heap las variables locales capturadas por arrows del body:
         // para que la mutació del closure sea visible en el scope externo (paridad
         // con el walker, que captura por referencia). Aplica también a main (que
         // puede declarar arrows locales).
-        if !is_method {
-            let mut arrows: Vec<ArrowFunctionExpr> = Vec::new();
-            collect_arrows_in_block(&f.body, &mut arrows);
+        let mut arrows: Vec<ArrowFunctionExpr> = Vec::new();
+        collect_arrows_in_block(&f.body, &mut arrows);
+        if is_method {
+            // En métodos `me` y los params NO tienen slot en el heap (son
+            // params del frame): promoverlos rompería todo acceso. Solo se
+            // promueven las locales DECLARADAS en el cuerpo (var/const/for each/
+            // with/destructure), que VarDecl ya sabe materializar como slot.
+            // Antes no se promovía nada en métodos y una arrow que capturaba
+            // una local desreferenciaba dos veces un valor (trap
+            // "indirect call type mismatch").
+            let mut declared: Vec<String> = Vec::new();
+            let mut unused_free: Vec<String> = Vec::new();
+            collect_free_vars_in_block(&f.body, &mut declared, &mut unused_free);
+            for a in &arrows {
+                if let Some(caps) = self.arrow_captures.get(&a.span) {
+                    for c in caps {
+                        if declared.contains(c) {
+                            fe.promoted.insert(c.clone());
+                        }
+                    }
+                }
+            }
+        } else {
             for a in &arrows {
                 if let Some(caps) = self.arrow_captures.get(&a.span) {
                     for c in caps {
@@ -197,6 +244,9 @@ impl<'a> Engine<'a> {
                 fe.declare_var_ty(&p.name, was_type(&param_types[i + 1])?);
             }
         } else {
+            // Arrow y funcion CLS comparten la firma natural (los tipos reales
+            // de `param_types`); no hay normalizacion a i64 ni prologue de
+            // reinterpretacion. Ver `emit.rs` (declaracion de arrows).
             for (i, p) in f.params.iter().enumerate() {
                 fe.declare_var_ty(&p.name, was_type(&param_types[i])?);
             }

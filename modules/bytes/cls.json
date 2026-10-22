@@ -1,0 +1,7 @@
+{
+    "name": "bytes",
+    "version": "0.1.0",
+    "export": {
+        "entry": "mod.clsx"
+    }
+}

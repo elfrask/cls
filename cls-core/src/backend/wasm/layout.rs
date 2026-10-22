@@ -4,12 +4,33 @@ use crate::frontend::token::Operator;
 use crate::middleware::types::{LitVal, Type};
 use wasm_encoder::Instruction;
 
-use super::types::WasTy;
+use super::types::{FieldKind, WasTy};
 pub(super) fn elem_size_bytes(w: WasTy) -> i64 {
     match w {
         WasTy::I64 | WasTy::F64 => 8,
         WasTy::I32 => 4,
     }
+}
+
+/// Layout C ABI de los campos de un `structure`: offsets ABSOLUTOS desde la
+/// base (el header CLS `[def_id:i64][n_campos:i64]` ocupa los primeros 16 bytes
+/// y la data C empieza en +16) y tamaño total. Cada campo se alinea a su tamaño
+/// natural (i8->1, i16->2, i32->4, i64/f64->8); el total se redondea a 8 para
+/// que el allocator no solape un struct con el siguiente.
+///
+/// El DLL recibe `base + 16` en los params `CStruct`/`Struct(...)`, así que ve
+/// exactamente el layout C (offset C 0 = byte +16). Ver docs/lenguaje/extension.md.
+pub(super) fn c_struct_layout(kinds: &[FieldKind]) -> (Vec<i64>, i64) {
+    let mut offsets = Vec::with_capacity(kinds.len());
+    let mut off = 16i64;
+    for k in kinds {
+        let a = k.align();
+        off = (off + a - 1) & !(a - 1);
+        offsets.push(off);
+        off += k.size();
+    }
+    let total = (off + 7) & !7;
+    (offsets, total)
 }
 /// Aplica el operador compuesto a los dos valores del stack (según el tipo).
 pub(super) fn apply_compound_ty(
@@ -56,7 +77,10 @@ pub(super) fn cmx_tag_for_type(t: &Type) -> i64 {
     }
 }
 /// Código del tipo de elemento para `arr_join`/`arr_to_string`
-/// (0=int, 1=string, 2=float, 3=bool, 4=char, 5=cmx).
+/// (0=int, 1=string, 2=float, 3=bool, 4=char, 5=cmx, 6=array/tuple, 7=record).
+/// Los contenedores (6/7) hacen que el formateador despache cada elemento por
+/// su tag compuesto (`fmt_val_to_string(e, kind<<8)`), no como int crudo
+/// (bug dev-2: `enums: [{...}]` imprimía punteros).
 pub(super) fn arr_kind_code(t: &Type) -> i64 {
     match t {
         Type::String => 1,
@@ -64,6 +88,8 @@ pub(super) fn arr_kind_code(t: &Type) -> i64 {
         Type::Bool => 3,
         Type::Char => 4,
         Type::Cmx => 5,
+        Type::Array(_) | Type::Tuple(_) => 6,
+        Type::Record(_, _) | Type::Shape(_) => 7,
         _ => 0,
     }
 }
@@ -96,6 +122,22 @@ pub(super) fn runtime_tag_code(t: &Type) -> i64 {
         _ => 8,
     }
 }
+
+/// Tag COMPUESTO para guardar un valor en un record/array heterogéneo: para
+/// arrays usa `6<<8 | arr_kind` (el formateador `fmt_val_to_string` interpreta
+/// kind=6 como "array de Cmx" con es=16 — un tag plano 6 hace que lea ints a
+/// saltos de 16 bytes -> basura). Las TUPLAS se guardan como array (layout
+/// contiguo `[cap][len][slots]`, igual que un array) — tag 6<<8|0, NO 7 (record):
+/// el formateador de records asume hashmap y una tupla no lo es (bug dev-2:
+/// `enums: [{e: (1,2)}]` trapeaba al formatear la tupla como record).
+/// Los demás valores usan `runtime_tag_code`.
+pub(super) fn runtime_tag_code_compound(t: &Type) -> i64 {
+    match t {
+        Type::Array(e) => (6 << 8) | arr_kind_code(e),
+        Type::Tuple(_) => 6 << 8,
+        _ => runtime_tag_code(t),
+    }
+}
 /// host usa para el marshalling de valores):
 /// 0=int 1=float 2=bool 3=char 4=string 5=array 6=record/shape 7=tuple
 /// 8=otro i64 (enum/struct/clase/named/union) 9=void 10=cmx 11=funcion 12=null.
@@ -117,36 +159,28 @@ pub(super) fn cls_kind_code(t: &Type) -> i64 {
         _ => 8,
     }
 }
-/// Base de la tabla de índices de strings (8 bytes por entrada: offset, len).
-/// Layout de memoria:
-///   `[STRING_DATA_BASE .. +data_len)`  = bytes de los strings (append-only)
-///   `[STRING_TABLE_BASE .. +8N)`       = tabla: cada entrada (offset, len)
-/// Con bases FIJAS, los offsets de los datos no dependen del tamaño total del
-/// pool: el REPL JIT (estado persistente) transfiere punteros de strings entre
-/// instancias y estos siguen siendo válidos.
-pub const STRING_DATA_BASE: u32 = INTERNALS_WINDOW_END; // justo tras la ventana de internals
-pub const STRING_TABLE_BASE: u32 = STRING_DATA_BASE + 512 * 1024; // 1.5625MB
-pub const HEAP_START: u32 = STRING_TABLE_BASE + 256 * 1024; // 1.8125MB - tras la tabla
-
-/// Sentinel de fin de iteración del protocolo `__next` (el `return null` de un
-/// método `__next` se emite con este valor; un iterador puede devolver 0 como
-/// valor legítimo, así que el null NO puede ser 0).
-pub const NULL_ITER_SENTINEL: i64 = i64::MIN;
-
-// ── Shadow call stack en memoria lineal (plan-performance/shadow-stack-wasm.md) ──
-// Región fija FUERA del heap del usuario. El REPL (`transfer_state`) copia
-// solo `[HEAP_START..]`, así que estas regiones NO se transfieren entre líneas.
-
 /// Fin de la ventana de las internals WASM (el sub-crate compila a 17 páginas =
 /// 1_114_112 bytes; vive en `[0..INTERNALS_WINDOW_END)` con sus direcciones
 /// internas INTACTAS — data/bss/shadow stack del runtime de Rust). Todo el CLS
 /// queda por ENCIMA de esta ventana para no colisionar (ver fusion.rs).
 pub const INTERNALS_WINDOW_END: u32 = 1_114_112;
 
-/// Base de la región de frames del shadow stack (tras el heap, en [2MB..)).
-/// El heap del CLS arranca en HEAP_START; el shadow stack y sus slots quedan
-/// por encima (el heap crece hacia arriba con memory.grow).
-pub const SHADOW_STACK_BASE: u32 = HEAP_START + 128 * 1024; // HEAP_START + 128KB
+// ── Shadow call stack en memoria lineal (plan-performance/shadow-stack-wasm.md) ──
+// Región fija por DEBAJO del string pool y del heap. El heap (`__alloc`) arranca
+// en HEAP_START y crece hacia ARRIBA con `memory.grow`, así que NUNCA puede
+// sobrescribir el shadow stack (que queda entre la ventana de internals y el
+// string pool). El REPL (`transfer_state`) copia solo `[HEAP_START..]`, de modo
+// que estas regiones tampoco se transfieren entre líneas.
+
+/// Call site pendiente del llamador (line:u32, col:u32) — el `fn_enter` del
+/// callee lo usa como span del frame (paridad con `pending_call_site` del host).
+/// En u32 (no u16) por los spans desplazados de módulos importados (100000*n).
+pub const PENDING_CALL_SLOT_ADDR: u32 = INTERNALS_WINDOW_END;
+/// Slot del reporte del error no capturado (futuro wrapper try_table).
+#[allow(dead_code)]
+pub const ERROR_SLOT_ADDR: u32 = PENDING_CALL_SLOT_ADDR + 8 * 1024;
+/// Base de la región de frames del shadow stack (tras los slots, antes del pool).
+pub const SHADOW_STACK_BASE: u32 = ERROR_SLOT_ADDR + 8 * 1024;
 /// Tamaño de cada frame (name_idx:u32 + line:u32 + col:u32). line/col en u32 y
 /// NO en u16: los spans de los módulos importados se desplazan a `100000*n +
 /// línea` y u16 los truncaría (perdían el offset del módulo -> trace 65535:N).
@@ -155,10 +189,23 @@ pub const FRAME_SIZE: u32 = 12;
 pub const SHADOW_MAX_FRAMES: u32 = 1000;
 /// `shadow_ptr` alcanzó el tope → no escribir más frames.
 pub const SHADOW_LIMIT: u32 = SHADOW_STACK_BASE + FRAME_SIZE * SHADOW_MAX_FRAMES;
-/// Call site pendiente del llamador (line:u32, col:u32) — el `fn_enter` del
-/// callee lo usa como span del frame (paridad con `pending_call_site` del host).
-/// En u32 (no u16) por los spans desplazados de módulos importados (100000*n).
-pub const PENDING_CALL_SLOT_ADDR: u32 = SHADOW_STACK_BASE - 8 * 1024;
-/// Slot del reporte del error no capturado (futuro wrapper try_table).
-#[allow(dead_code)]
-pub const ERROR_SLOT_ADDR: u32 = SHADOW_STACK_BASE - 16 * 1024;
+
+/// Base de la tabla de índices de strings (8 bytes por entrada: offset, len).
+/// Layout de memoria:
+///   `[STRING_DATA_BASE .. +data_len)`  = bytes de los strings (append-only)
+///   `[STRING_TABLE_BASE .. +8N)`       = tabla: cada entrada (offset, len)
+/// Con bases FIJAS, los offsets de los datos no dependen del tamaño total del
+/// pool: el REPL JIT (estado persistente) transfiere punteros de strings entre
+/// instancias y estos siguen siendo válidos.
+///
+/// El string pool empieza tras el shadow stack (alineado a página) y el heap
+/// del CLS tras la tabla de strings; el heap crece hacia arriba sin tocar
+/// ninguna de las regiones anteriores.
+pub const STRING_DATA_BASE: u32 = (SHADOW_LIMIT + 65535) & !65535;
+pub const STRING_TABLE_BASE: u32 = STRING_DATA_BASE + 512 * 1024;
+pub const HEAP_START: u32 = STRING_TABLE_BASE + 256 * 1024;
+
+/// Sentinel de fin de iteración del protocolo `__next` (el `return null` de un
+/// método `__next` se emite con este valor; un iterador puede devolver 0 como
+/// valor legítimo, así que el null NO puede ser 0).
+pub const NULL_ITER_SENTINEL: i64 = i64::MIN;

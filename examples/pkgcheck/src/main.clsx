@@ -1,0 +1,59 @@
+# main.clsx - Prueba #8 (pkgcheck): emite digests SHA-256 (uno por linea) para
+# el oraculo (tests/oracle.py == hashlib) y una linea `corrupt=` al final.
+#
+# Orden de vectores (identico en el oraculo):
+#   1. ""  2. "abc"  3. NIST 448-bit  4. NIST 896-bit  5. 1e6 * 'a'
+#   6..205. 200 inputs pseudoaleatorios (LCG determinista)
+
+import "sha256" as sha;
+
+# 200 vectores pseudoaleatorios (mismo PRNG que el oraculo).
+function randomVecs(count: int) -> int[][] {
+    var out: int[][] = [];
+    var s = 123456789;
+    var n = 0;
+    while (n < count) {
+        s = (s * 1103515245 + 12345) % 2147483648;
+        var len = s % 256;
+        var buf: int[] = [];
+        var k = 0;
+        while (k < len) {
+            s = (s * 1103515245 + 12345) % 2147483648;
+            buf.push((s >> 16) & 255);
+            k = k + 1;
+        }
+        out.push(buf);
+        n = n + 1;
+    }
+    return out;
+}
+
+function bigA() -> int[] {
+    var b: int[] = [];
+    var i = 0;
+    while (i < 1000000) { b.push(97); i = i + 1; }
+    return b;
+}
+
+function main(args: String[]) -> int {
+    print(sha::sha256Hex(""));
+    print(sha::sha256Hex("abc"));
+    print(sha::sha256Hex("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"));
+    print(sha::sha256Hex("abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu"));
+    print(sha::toHex(sha::sha256Bytes(bigA())));
+
+    var vecs = randomVecs(200);
+    for each v in (vecs) {
+        print(sha::toHex(sha::sha256Bytes(v)));
+    }
+
+    # Integridad: corromper 1 bit debe cambiar el hash.
+    var m: int[] = [];
+    var i = 0;
+    while (i < 32) { m.push(i); i = i + 1; }
+    var a = sha::toHex(sha::sha256Bytes(m));
+    m[0] = m[0] ^ 1;
+    var b = sha::toHex(sha::sha256Bytes(m));
+    print("corrupt=" + a + ":" + b);
+    return 0;
+}

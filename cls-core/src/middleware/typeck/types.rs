@@ -76,11 +76,11 @@ impl TypeChecker {
                 LiteralKind::Bool(_) => Type::Bool,
                 LiteralKind::Char(_) => Type::Char,
                 LiteralKind::Null => Type::Null,
-                _ => Type::Any,
+                _ => Type::Value,
             },
-            Expression::Array(_) => Type::Array(Box::new(Type::Any)),
-            Expression::Identifier(_, _) => Type::Any,
-            _ => Type::Any,
+            Expression::Array(_) => Type::Array(Box::new(Type::Value)),
+            Expression::Identifier(_, _) => Type::Value,
+            _ => Type::Value,
         }
     }
 
@@ -89,12 +89,52 @@ impl TypeChecker {
     pub(crate) fn function_decl_type(&mut self, f: &FunctionDecl) -> Type {        let params: Vec<Type> = f.params.iter()
             .map(|p| p.type_ann.as_ref()
                 .map(|ta| self.resolve_type_annotation(ta))
-                .unwrap_or(Type::Any))
+                .unwrap_or(Type::Value))
             .collect();
         let ret = f.return_type.as_ref()
             .map(|ta| self.resolve_type_annotation(ta))
             .unwrap_or(Type::Void);
+        // Función nativa (FFI): el retorno usa el mapeo C (`CArray`/`CRecord`/
+        // `Struct(Nombre)`), igual que el emisor.
+        let ret = if f.native.is_some() { self.map_native_ret(ret) } else { ret };
         Type::Fun(params, Box::new(ret))
+    }
+
+
+    /// Mapeo del retorno de una función nativa: `CArray`/`CRecord` son punteros
+    /// al layout indexables como Array/Record; `Struct(Nombre)` referencia un
+    /// `structure` declarado (acceso a campos por offsets). Los escalares C se
+    /// mapean a su tipo CLS equivalente **independientemente de los params**
+    /// (si no, `CString` quedaba como `Named("CString")` y no era asignable a
+    /// `String`; además la inferencia genérica de `check_call` lo trataba como
+    /// variable de tipo y lo sustituía según los args).
+    pub(crate) fn map_native_ret(&self, ret: Type) -> Type {
+        match ret {
+            Type::Named(n, _) if n == "CString" => Type::String,
+            Type::Named(n, _)
+                if matches!(
+                    n.as_str(),
+                    "CInt" | "CUInt" | "CShort" | "CUShort" | "CChar" | "CUChar"
+                        | "CLong" | "CULong"
+                ) =>
+            {
+                Type::Int
+            }
+            Type::Named(n, _) if n == "CDouble" || n == "Double" => Type::Float,
+            Type::Named(n, _) if n == "CBool" => Type::Bool,
+            Type::Named(n, _) if n == "CArray" => Type::Array(Box::new(Type::Value)),
+            Type::Named(n, _) if n == "CRecord" => {
+                Type::Record(Box::new(Type::String), Box::new(Type::Value))
+            }
+            Type::Named(n, ref args) if n == "Struct" => {
+                if let Some(Type::Named(sn, _)) = args.first() {
+                    Type::Named(sn.clone(), vec![])
+                } else {
+                    Type::Named("Struct".to_string(), args.clone())
+                }
+            }
+            r => r,
+        }
     }
 
 
@@ -119,11 +159,20 @@ impl TypeChecker {
             TypeKind::String => Type::String,
             TypeKind::Bool => Type::Bool,
             TypeKind::Char => Type::Char,
-            TypeKind::Any => Type::Any,
+            TypeKind::Any => {
+                return self.error(
+                    "`Any` ya no es un tipo válido: CLS es estático. Usá un tipo concreto \
+                     (Int, Float, String, Bool, Char, un enum/clase/structure, una tupla/unión…) \
+                     o `Value`/`JSON`/`Cmx` para valores dinámicos tipados.",
+                    ann.span.clone(),
+                );
+            }
             TypeKind::Unknown => Type::Unknown,
             TypeKind::Null => Type::Null,
             TypeKind::Void => Type::Void,
             TypeKind::Empty => Type::Empty,
+            TypeKind::Json => Type::Json,
+            TypeKind::Value => Type::Value,
             TypeKind::Array(inner) => {
                 Type::Array(Box::new(self.resolve_annotation_with(inner, bindings)))
             }
@@ -158,7 +207,7 @@ impl TypeChecker {
             }
             TypeKind::Intersection(members) => {
                 // Merge de shapes: campos de todos los miembros (los no-shape se
-                // ignoran o resuelven a Any). Conflicto de tipo = error.
+                // ignoran o resuelven a Value). Conflicto de tipo = error.
                 let mut out: Vec<(String, Type)> = Vec::new();
                 for m in members {
                     let t = self.resolve_annotation_with(m, bindings);
@@ -197,6 +246,30 @@ impl TypeChecker {
                 if let Some(t) = bindings.get(name) {
                     return t.clone();
                 }
+                // Tipo calificado de módulo importado: `alias::Clase` /
+                // `alias::Enum` / `alias::Alias` (el alias está en
+                // import_aliases). Se resuelve contra los exports del módulo.
+                if let Some((alias, member)) = name.split_once("::") {
+                    if self.import_aliases.contains_key(alias) {
+                        if let Some(t) = self.module_member_type(alias, member) {
+                            // Aplicar params genéricos si el export los tiene
+                            // (p. ej. `alias::Caja<Int>`): por ahora se devuelve
+                            // el tipo del export sin instanciar (igual que las
+                            // clases locales con params).
+                            return t;
+                        }
+                        return self.error(
+                            &format!(
+                                "El módulo '{}' no exporta el tipo '{}'",
+                                alias, member
+                            ),
+                            ann.span.clone(),
+                        );
+                    }
+                    // alias desconocido: dejar Named calificado (error claro en
+                    // el uso, no acá)
+                    return Type::Named(name.clone(), vec![]);
+                }
                 let param_types: Vec<Type> = params.iter()
                     .map(|p| self.resolve_annotation_with(p, bindings))
                     .collect();
@@ -206,6 +279,7 @@ impl TypeChecker {
                     "Float" => Type::Float,
                     "Character" => Type::Char,
                     "Boolean" => Type::Bool,
+                    "Callable" => Type::Callable,
                     // Record<K, V> -> diccionario tipado
                     "Record" if param_types.len() == 2 => Type::Record(
                         Box::new(param_types[0].clone()),
@@ -214,16 +288,8 @@ impl TypeChecker {
                     name if self.interfaces.contains_key(name) => {
                         let info = self.interfaces[name].clone();
                         let bind = self.interface_bindings(&info, &param_types);
-                        let mut fields: Vec<(String, Type)> = info
-                            .field_order
-                            .iter()
-                            .filter_map(|fn_| info.fields.get(fn_).map(|ta| (fn_.clone(), self.resolve_annotation_with(ta, &bind))))
-                            .collect();
-                        for name_sig in &info.signature_order {
-                            if let Some(sig) = info.signatures.get(name_sig) {
-                                fields.push((name_sig.clone(), self.signature_type(sig, &bind)));
-                            }
-                        }
+                        let (mut fields, signatures) = self.interface_all_members(&info, &bind);
+                        fields.extend(signatures);
                         Type::Shape(fields)
                     }
                     _ => {
@@ -244,7 +310,7 @@ impl TypeChecker {
             LiteralKind::Int(i) => Type::Literal(LitVal::Int(*i)),
             LiteralKind::Float(f) => Type::Literal(LitVal::Float(f.to_bits())),
             LiteralKind::Bool(b) => Type::Literal(LitVal::Bool(*b)),
-            _ => Type::Any,
+            _ => Type::Value,
         }
     }
 
@@ -263,13 +329,14 @@ impl TypeChecker {
                     .map(|a| self.resolve_annotation_with(a, bindings))
                     .collect();
                 let b = self.interface_bindings(&info, &arg_types);
+                let (fields, signatures) = self.interface_all_members(&info, &b);
                 match access {
                     TypeAccess::Key(key) => {
-                        if let Some(ta) = info.fields.get(key) {
-                            return self.resolve_annotation_with(ta, &b);
+                        if let Some((_, ty)) = fields.iter().find(|(n, _)| n == key) {
+                            return ty.clone();
                         }
-                        if let Some(sig) = info.signatures.get(key) {
-                            return self.signature_type(sig, &b);
+                        if let Some((_, ty)) = signatures.iter().find(|(n, _)| n == key) {
+                            return ty.clone();
                         }
                         return self.error(
                             &format!("Interface '{}' no tiene miembro '{}'", name, key),
@@ -277,7 +344,8 @@ impl TypeChecker {
                         );
                     }
                     TypeAccess::Index(i) => {
-                        let order = self.interface_member_types(&info, &b);
+                        let mut order: Vec<Type> = fields.into_iter().map(|(_, t)| t).collect();
+                        order.extend(signatures.into_iter().map(|(_, t)| t));
                         return order.get(*i).cloned().unwrap_or_else(|| self.error(
                             &format!("Index '{}' fuera de rango en interface '{}'", i, name),
                             base.span.clone(),
@@ -295,14 +363,14 @@ impl TypeChecker {
                 Type::Shape(fields) => fields.iter()
                     .find(|(n, _)| n == key)
                     .map(|(_, t)| t.clone())
-                    .unwrap_or(Type::Any),
-                _ => Type::Any,
+                    .unwrap_or(Type::Value),
+                _ => Type::Value,
             },
             TypeAccess::Index(i) => match base_type {
-                Type::Tuple(ts) => ts.get(*i).cloned().unwrap_or(Type::Any),
+                Type::Tuple(ts) => ts.get(*i).cloned().unwrap_or(Type::Value),
                 Type::Array(inner) => *inner,
-                Type::Union(ts) => ts.get(*i).cloned().unwrap_or(Type::Any),
-                _ => Type::Any,
+                Type::Union(ts) => ts.get(*i).cloned().unwrap_or(Type::Value),
+                _ => Type::Value,
             },
         }
     }
@@ -318,21 +386,119 @@ impl TypeChecker {
                 let resolved = self.resolve_annotation_with(default, &bindings);
                 bindings.insert(tp.name.clone(), resolved);
             } else {
-                bindings.insert(tp.name.clone(), Type::Any);
+                bindings.insert(tp.name.clone(), Type::Value);
             }
         }
         bindings
     }
 
 
-    /// Tipos de los campos de una interface en orden de declaración (para acceso
-    /// por índice y offsets deterministas del shape). NO itera el HashMap: usa
-    /// `field_order` (el orden en que se declararon los campos).
-    pub(crate) fn interface_member_types(&mut self, info: &InterfaceInfo, bindings: &HashMap<String, Type>) -> Vec<Type> {
-        info.field_order.iter()
-            .filter_map(|name| info.fields.get(name).map(|ta| self.resolve_annotation_with(ta, bindings)))
-            .collect()
+    /// Campos y métodos de una interface incluyendo los heredados por `extends`.
+    /// Los padres se resuelven primero; un campo redefinido por el hijo conserva
+    /// su posición y reemplaza el tipo. `seen` evita ciclos de herencia.
+    pub(crate) fn interface_all_members(
+        &mut self,
+        info: &InterfaceInfo,
+        bindings: &HashMap<String, Type>,
+    ) -> (Vec<(String, Type)>, Vec<(String, Type)>) {
+        let mut seen = std::collections::HashSet::new();
+        self.interface_all_members_rec(info, bindings, &mut seen)
     }
+
+    fn interface_all_members_rec(
+        &mut self,
+        info: &InterfaceInfo,
+        bindings: &HashMap<String, Type>,
+        seen: &mut std::collections::HashSet<String>,
+    ) -> (Vec<(String, Type)>, Vec<(String, Type)>) {
+        if !seen.insert(info.name.clone()) {
+            return (Vec::new(), Vec::new());
+        }
+
+        let mut fields: Vec<(String, Type)> = Vec::new();
+        let mut signatures: Vec<(String, Type)> = Vec::new();
+        let mut field_pos: HashMap<String, usize> = HashMap::new();
+        let mut signature_pos: HashMap<String, usize> = HashMap::new();
+
+        for parent in &info.extends {
+            if let TypeKind::Named(parent_name, args) = &parent.kind {
+                if let Some(parent_info) = self.interfaces.get(parent_name).cloned() {
+                    let arg_types: Vec<Type> = args
+                        .iter()
+                        .map(|a| self.resolve_annotation_with(a, bindings))
+                        .collect();
+                    let parent_bind = self.interface_bindings(&parent_info, &arg_types);
+                    let (parent_fields, parent_signatures) =
+                        self.interface_all_members_rec(&parent_info, &parent_bind, seen);
+                    for (name, ty) in parent_fields {
+                        if let Some(&idx) = field_pos.get(&name) {
+                            if fields[idx].1 != ty {
+                                self.error(
+                                    &format!(
+                                        "El campo '{}' tiene tipos incompatibles en las interfaces base de '{}'",
+                                        name, info.name
+                                    ),
+                                    parent.span.clone(),
+                                );
+                            }
+                            fields[idx].1 = ty;
+                        } else {
+                            field_pos.insert(name.clone(), fields.len());
+                            fields.push((name, ty));
+                        }
+                    }
+                    for (name, ty) in parent_signatures {
+                        if let Some(&idx) = signature_pos.get(&name) {
+                            signatures[idx].1 = ty;
+                        } else {
+                            signature_pos.insert(name.clone(), signatures.len());
+                            signatures.push((name, ty));
+                        }
+                    }
+                } else {
+                    self.error(
+                        &format!(
+                            "La interface '{}' extiende '{}', que no está definida",
+                            info.name, parent_name
+                        ),
+                        parent.span.clone(),
+                    );
+                }
+            } else {
+                self.error(
+                    &format!("La interface '{}' solo puede extender interfaces", info.name),
+                    parent.span.clone(),
+                );
+            }
+        }
+
+        for name in &info.field_order {
+            if let Some(ta) = info.fields.get(name) {
+                let ty = self.resolve_annotation_with(ta, bindings);
+                if let Some(&idx) = field_pos.get(name) {
+                    fields[idx].1 = ty;
+                } else {
+                    field_pos.insert(name.clone(), fields.len());
+                    fields.push((name.clone(), ty));
+                }
+            }
+        }
+        for name in &info.signature_order {
+            if let Some(sig) = info.signatures.get(name) {
+                let ty = self.signature_type(sig, bindings);
+                if let Some(&idx) = signature_pos.get(name) {
+                    signatures[idx].1 = ty;
+                } else {
+                    signature_pos.insert(name.clone(), signatures.len());
+                    signatures.push((name.clone(), ty));
+                }
+            }
+        }
+
+        (fields, signatures)
+    }
+
+
 
 
     /// Tipo `fun(params) -> ret` de una signature, con genéricos aplicados.
@@ -340,7 +506,7 @@ impl TypeChecker {
         let params: Vec<Type> = sig.params.iter()
             .map(|p| p.type_ann.as_ref()
                 .map(|ta| self.resolve_annotation_with(ta, bindings))
-                .unwrap_or(Type::Any))
+                .unwrap_or(Type::Value))
             .collect();
         let ret = sig.return_type.as_ref()
             .map(|ta| self.resolve_annotation_with(ta, bindings))
@@ -353,7 +519,7 @@ impl TypeChecker {
     pub(crate) fn check_type_alias(&mut self, alias: &TypeAliasDecl) {
         let type_ann = alias.type_ann.clone();
         let resolved = self.resolve_annotation_with(&type_ann, &HashMap::new());
-        self.define(&alias.name, resolved);
+        self.define_decl(&alias.name, resolved, &alias.span);
     }
 
 }

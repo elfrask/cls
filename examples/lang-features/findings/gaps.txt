@@ -1,0 +1,19 @@
+# GAPs (features no implementadas / limite de diseno) — NO cuentan como bug abierto.
+#
+# Cada linea es el nombre de un repro `findings/*.clsx` que documenta una
+# feature NO implementada o un limite de diseno del runtime. `run.ps1` los
+# reporta como [GAP] y NO los cuenta como `findings abiertos` ni como resueltos.
+#
+# 06: indice dinamico sobre tupla HETEROGENEA. Las tuplas se almacenan como
+#     slots crudos de 8 bytes SIN tag. Recuperar el tipo del slot en runtime
+#     exigiria taggear/boxear cada slot (contradice la regla de "sin boxing").
+#     El indice literal y el dinamico HOMOGENEO si funcionan.
+# 17: `module`/`namespace` no exponen sus simbolos (`NS::hi()` / `Geo.area()`).
+#     El parser acepta la sintaxis, pero el typeck/emisor no la cablean.
+# 19: un local anotado `Value` no despacha por tag: `print(v)`/`str(v)` sobre
+#     un `Value` LOCAL dan basura o WASM invalido (el emisor trata
+#     Type::Any/Value/Json igual y no taggea el local). Preexistente; el camino
+#     soportado es leer de un Record/JSON (availible/18-json, units/any-tostring).
+06-tuple-dynamic-heterogeneous.clsx
+17-module-namespace.clsx
+19-value-local.clsx

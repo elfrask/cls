@@ -1,0 +1,6 @@
+# Negativo F4: `<-` sin target (no hay `if`-expresión ni arma de `match`
+# bloque envolvente en la función) -> error de compilación.
+function main(args: String[]) -> int {
+    * <- 5
+    return 0;
+};

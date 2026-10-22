@@ -1,0 +1,5 @@
+export function util_fn(x: int) -> int {
+    return x * 2;
+};
+
+export var PKG_NAME = "pkg";

@@ -1,0 +1,24 @@
+# ffi-export-mod/ffi.clsx - Declaraciones FFI exportables como funcion nativa.
+# El patron cross-OS `when + extension` debe poder reexportarse por el sistema
+# de modulos (equivalente a una `function` del lenguaje).
+
+when (os: windows) {
+    extension "msvcrt.dll" as C {
+        export function strlen(s: CString) -> CInt;
+        export function atoi(s: CString) -> CInt;
+    };
+};
+
+when (os: linux) {
+    extension "libc.so.6" as C {
+        export function strlen(s: CString) -> CInt;
+        export function atoi(s: CString) -> CInt;
+    };
+};
+
+when (os: macos) {
+    extension "libSystem.B.dylib" as C {
+        export function strlen(s: CString) -> CInt;
+        export function atoi(s: CString) -> CInt;
+    };
+};

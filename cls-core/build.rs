@@ -12,6 +12,11 @@ fn main() {
     let mut h = DefaultHasher::new();
     let mut n = 0u32;
     hash_dir(&Path::new("src/backend/wasm"), &mut h, &mut n);
+    // El parser/lexer (frontend) y el typeck (middleware) también determinan el
+    // WASM emitido: cambiarlos DEBE invalidar el caché CLS->WASM de cls-jit (sin
+    // esto, editar el parser servía módulos stale y confundía el debug).
+    hash_dir(&Path::new("src/frontend"), &mut h, &mut n);
+    hash_dir(&Path::new("src/middleware"), &mut h, &mut n);
     // cls-internals (Fase 2): si el crate interno cambia, el módulo embebido en
     // el core no cambia por sí solo, pero el hash anticipa su integración.
     // IMPORTANTE: se hashea TAMBIÉN el sub-crate `wasm/src` (el fuente del que
@@ -29,6 +34,8 @@ fn main() {
     h.finish().hash(&mut h);
     println!("cargo:rustc-env=CLS_BACKEND_HASH={:016x}", h.finish());
     println!("cargo:rerun-if-changed=src/backend/wasm");
+    println!("cargo:rerun-if-changed=src/frontend");
+    println!("cargo:rerun-if-changed=src/middleware");
     if internals.exists() {
         println!("cargo:rerun-if-changed=../cls-internals/src");
     }
@@ -39,17 +46,20 @@ fn main() {
 
 fn hash_dir(dir: &Path, h: &mut DefaultHasher, n: &mut u32) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
-    let mut files: Vec<_> = entries
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| p.is_file() && p.extension().map_or(false, |x| x == "rs"))
-        .collect();
-    files.sort();
-    for f in files {
-        if let Ok(bytes) = std::fs::read(&f) {
-            f.to_string_lossy().to_string().hash(h);
-            bytes.hash(h);
-            *n += 1;
+    // Recursivo: el backend vive en subcarpetas (`emitter/`, `engine/`). Sin
+    // esta recursión, editar p.ej. `emitter/statements.rs` NO cambiaba el hash
+    // y el caché CLS->WASM de cls-jit servía módulos stale.
+    let mut paths: Vec<_> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+    paths.sort();
+    for p in paths {
+        if p.is_dir() {
+            hash_dir(&p, h, n);
+        } else if p.is_file() && p.extension().map_or(false, |x| x == "rs") {
+            if let Ok(bytes) = std::fs::read(&p) {
+                p.to_string_lossy().to_string().hash(h);
+                bytes.hash(h);
+                *n += 1;
+            }
         }
     }
 }

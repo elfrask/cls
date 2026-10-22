@@ -1,0 +1,12 @@
+function takes(fn: () -> Int) -> Int {
+    return fn();
+};
+
+function takes2(fn: fun() -> Int) -> Int {
+    return fn();
+};
+
+function main(args: String[]) -> int {
+    print("fntype:", takes(() -> 7), takes2(() -> 9));
+    return 0;
+};

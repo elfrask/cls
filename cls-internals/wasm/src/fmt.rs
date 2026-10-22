@@ -8,6 +8,13 @@ use alloc::vec::Vec;
 use crate::arrays::{arr_elem, arr_len};
 use crate::mem;
 
+/// Formatea un `Char` (unidad de 1 byte 0..255) como texto. Para bytes ASCII
+/// es exacto; para bytes >= 128 produce el reemplazo UTF-8 (`from_utf8_lossy`),
+/// coherente con la decodificación de strings del runtime.
+pub fn char_byte_to_string(v: i64) -> String {
+    String::from_utf8_lossy(&[(v & 0xff) as u8]).into_owned()
+}
+
 /// Formatea un f64 como el host (`format!("{}", v)`).
 pub fn format_float(v: f64) -> String {
     format!("{}", v)
@@ -44,14 +51,21 @@ pub fn fmt_val_to_string(val: i64, tag: i64) -> String {
                     "false".to_string()
                 }
             }
-            4 => char::from_u32(val as u32).unwrap_or('?').to_string(),
+            4 => char_byte_to_string(val),
             5 => cmx_format(val as usize),
             6 => {
-                let es = if kind == 5 || kind == 6 { 16 } else { 8 };
-                let arr_kind = if kind == 6 { 5 } else { kind };
+                // kind 5 = array de Cmx (entradas `[val, tag]` stride 16);
+                // cualquier otro kind = array/tupla contigua con es=8 (ints/ptr).
+                let es = if kind == 5 { 16 } else { 8 };
+                let arr_kind = if kind == 5 { 5 } else { kind };
                 arr_to_string(val, es, arr_kind as i64)
             }
             7 => record_to_string(val),
+            // 8 = valores Named sin serializar (legacy, se muestran como int).
+            // 9 = string RAW (serializado por el emisor: tuplas/structs/clases/
+            // enums/arrays de contenedores ya formateados). Se imprime sin
+            // comillas, a diferencia del tag 1 (string con comillas en records).
+            9 => mem::read_str(val),
             _ => val.to_string(),
         }
     }
@@ -80,7 +94,7 @@ pub fn arr_to_string(ptr: i64, es: i64, kind: i64) -> String {
                 }
                 2 => out.push_str(&format_float(f64::from_bits(e as u64))),
                 3 => out.push_str(if e != 0 { "true" } else { "false" }),
-                4 => out.push(char::from_u32(e as u32).unwrap_or('?')),
+                4 => out.push_str(&char_byte_to_string(e)),
                 5 => {
                     let tg = mem::read_i64(p + 16 + i * 16 + 8);
                     let tv = tag_type(tg);
@@ -102,6 +116,11 @@ pub fn arr_to_string(ptr: i64, es: i64, kind: i64) -> String {
                         out.push_str(&fmt_val_to_string(e, tg));
                     }
                 }
+                // Contenedores (6=array/tupla, 7=record): cada elemento es un
+                // ptr a un contenedor anidado; despachar por su tag compuesto.
+                // Bug dev-2: `enums: [{...}]` imprimía punteros crudos porque
+                // el kind 0 (default) los trataba como ints.
+                6 | 7 => out.push_str(&fmt_val_to_string(e, kind << 8)),
                 _ => out.push_str(&e.to_string()),
             }
         }
@@ -202,4 +221,11 @@ pub fn cmx_format(p: usize) -> String {
         }
         out
     }
+}
+
+/// `cmx_to_string` fusionado (0 host): formatea un CmxValue y devuelve el string.
+#[no_mangle]
+pub extern "C" fn __intr_cmx_fmt(ptr: i64) -> i64 {
+    let s = cmx_format(ptr as usize);
+    unsafe { mem::write_str(&s) }
 }

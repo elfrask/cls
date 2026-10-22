@@ -1,0 +1,112 @@
+# run.ps1 - Runner diferencial de la prueba #5 (SQLite ORM).
+#
+#   1. construye el backend FFI llamando a modules/sqlite/build.ps1
+#      (compila sqlite_shim.dll + copia sqlite3.dll junto al shim)
+#   2. corre el runner CLS (ORM)  -> out/cls.db + CHECK de lectura
+#   3. corre el oraculo Python    -> out/py.db + CHECK de referencia
+#   4. compara BYTE A BYTE:
+#        - las lineas CHECK de CLS vs Python (lectura via ORM)
+#        - dump(cls.db) vs dump(py.db)     (contenido/tipos/UTF-8/orden)
+#        - integrity_check(cls.db) == ok
+#
+# Falla (exit != 0) si CUALQUIER comparacion diverge.
+#
+# Uso (desde la raiz del repo):
+#   powershell -File examples\sqlite-orm\run.ps1
+#
+# Requiere: gcc (MinGW-w64 x64) en PATH, Python 3 en PATH y
+# target\debug\clx.exe compilado. CWD = raiz del repo (el .dll del shim FFI se
+# resuelve relativo al CWD; ver README).
+
+$ErrorActionPreference = "Continue"
+$here = $PSScriptRoot
+$repo = (Resolve-Path (Join-Path $here "..\..")).Path
+$clx = Join-Path $repo "target\debug\clx.exe"
+$oraclePy = Join-Path $here "oracle\oracle.py"
+$buildPs1 = Join-Path $repo "modules\sqlite\build.ps1"
+$outDir = Join-Path $here "out"
+$clsDb = Join-Path $outDir "cls.db"
+$pyDb = Join-Path $outDir "py.db"
+
+if (-not (Test-Path $clx)) {
+    Write-Host "ERROR: no existe $clx. Compila con: cargo build --bin clx"
+    exit 2
+}
+$python = Get-Command python -ErrorAction SilentlyContinue
+if (-not $python) { Write-Host "ERROR: no se encontro 'python' en PATH (oraculo)."; exit 2 }
+
+New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+# --- backend FFI (modules/sqlite): compila el shim y prepara sqlite3.dll ---
+if (-not (Test-Path $buildPs1)) { Write-Host "ERROR: no existe $buildPs1"; exit 2 }
+& $buildPs1
+if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: modules/sqlite/build.ps1 fallo."; exit 1 }
+
+function Compare-Bytes([string]$a, [string]$b, [string]$label) {
+    $ba = [System.IO.File]::ReadAllBytes($a)
+    $bb = [System.IO.File]::ReadAllBytes($b)
+    if ($ba.Length -ne $bb.Length) {
+        Write-Host ("  [FAIL] {0}: longitudes {1} vs {2}" -f $label, $ba.Length, $bb.Length)
+        return $false
+    }
+    for ($i = 0; $i -lt $ba.Length; $i++) {
+        if ($ba[$i] -ne $bb[$i]) {
+            Write-Host ("  [FAIL] {0}: primer byte distinto en {1}" -f $label, $i)
+            return $false
+        }
+    }
+    Write-Host ("  [ OK ] {0}: {1} bytes identicos" -f $label, $ba.Length)
+    return $true
+}
+
+Write-Host ""
+Write-Host "=== SQLite ORM: CLS (ORM) vs oraculo Python sqlite3 (diferencial byte a byte) ==="
+Write-Host ""
+
+# --- 1. CLS (ORM) ---
+Write-Host "== corriendo runner CLS (ORM) =="
+Push-Location $repo
+& $clx run "examples\sqlite-orm\src\main.clsx" 1> (Join-Path $outDir "cls_checks.txt") 2> (Join-Path $outDir "cls_stderr.txt")
+$clsExit = $LASTEXITCODE
+Pop-Location
+if ($clsExit -ne 0) {
+    Write-Host "ERROR: el runner CLS fallo (exit=$clsExit). stderr:"
+    Get-Content (Join-Path $outDir "cls_stderr.txt") | Select-Object -Last 20
+    exit 1
+}
+if (-not (Test-Path $clsDb)) { Write-Host "ERROR: no se genero $clsDb"; exit 1 }
+
+# --- 2. Oraculo Python ---
+Write-Host "== corriendo oraculo Python (construye py.db) =="
+& python $oraclePy run $pyDb 1> (Join-Path $outDir "py_checks.txt") 2> (Join-Path $outDir "py_stderr.txt")
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: el oraculo Python fallo. stderr:"
+    Get-Content (Join-Path $outDir "py_stderr.txt") | Select-Object -Last 20
+    exit 1
+}
+
+# --- 3. Comparaciones ---
+Write-Host ""
+Write-Host "== comparando =="
+$ok = $true
+$ok = (Compare-Bytes (Join-Path $outDir "cls_checks.txt") (Join-Path $outDir "py_checks.txt") "CHECK (lectura ORM vs Python)") -and $ok
+
+& python $oraclePy dump $clsDb 1> (Join-Path $outDir "cls_dump.txt") 2>$null
+& python $oraclePy dump $pyDb  1> (Join-Path $outDir "py_dump.txt")  2>$null
+$ok = (Compare-Bytes (Join-Path $outDir "cls_dump.txt") (Join-Path $outDir "py_dump.txt") "dump(cls.db) vs dump(py.db)") -and $ok
+
+$integ = (& python $oraclePy integrity $clsDb).Trim()
+if ($integ -eq "ok") {
+    Write-Host "  [ OK ] PRAGMA integrity_check(cls.db) = ok"
+} else {
+    Write-Host "  [FAIL] PRAGMA integrity_check(cls.db) = '$integ'"
+    $ok = $false
+}
+
+Write-Host ""
+if ($ok) {
+    Write-Host "RESULTADO: OK (ORM CLS == oraculo Python byte a byte; integridad ok)"
+    exit 0
+}
+Write-Host "RESULTADO: DIVERGENCIA (ver arriba)"
+exit 1

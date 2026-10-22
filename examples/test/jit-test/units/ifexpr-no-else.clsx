@@ -1,0 +1,5 @@
+# Negativo F3: `if`-expresión sin `else` -> error de sintaxis.
+function main(args: String[]) -> int {
+    var x = if (true) { * <- 1 }
+    return x;
+};

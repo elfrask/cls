@@ -1,0 +1,10 @@
+p1: ok Hola
+p2: err 404 no encontrado
+p3: unit
+destr: destructurado
+destr2: 7
+repr: err(404, no encontrado)
+str: ok(Hola)
+eq same: true
+eq diff: false
+is: true

@@ -1,0 +1,10 @@
+# Módulo índice (barrel): reexporta miembros de namespaces.
+# - `base::X as X`: miembro de namespace (requiere `as`).
+# - `router::*`: todo el contenido, aplanado.
+
+import "export-list-mod/base" as base;
+import "export-list-mod/router" as router;
+
+export { base::saludo as saludo };
+export { base::Caja as Caja, base::VERSION as VERSION, base::Color as Color, base::Punto as Punto, base::Saludador as Saludador };
+export { router::* };

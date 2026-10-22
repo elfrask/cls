@@ -1,0 +1,13 @@
+# 19-value-local.clsx - finding: un local anotado `Value` no despacha por tag.
+# `print(v)` / `str(v)` sobre un `Value` local dan basura o WASM invalido (el
+# emisor trata Type::Any/Value/Json igual y no taggea el local). PREEXISTENTE;
+# el camino soportado es leer de un Record/JSON (ver availible/18-json.clsx,
+# units/any-tostring.clsx).
+# Comando: clx run examples\lang-features\findings\19-value-local.clsx
+function main(args: String[]) -> int {
+    var v: Value = "hola";
+    print(v);
+    var n: Value = 1;
+    print(str(n));
+    return 0;
+};

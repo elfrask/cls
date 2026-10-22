@@ -1,4 +1,4 @@
-﻿//! Helpers sueltos del backend WASM (Fase 1: extraido de wasm/mod.rs).
+//! Helpers sueltos del backend WASM (Fase 1: extraido de wasm/mod.rs).
 
 use crate::error::Span;
 use crate::frontend::ast::*;
@@ -22,7 +22,7 @@ pub(super) fn noop_main_decl() -> FunctionDecl {
         modifiers: vec![],
         span,
         type_params: vec![],
-        is_native: false,
+        native: None,
     }
 }
 /// Tipo CLS de un literal (fallback cuando el type map no lo tiene).
@@ -50,7 +50,7 @@ pub(super) fn cmx_literal_type(e: &Expression) -> Option<Type> {
             LiteralKind::String(_) => Type::String,
             LiteralKind::Bool(_) => Type::Bool,
             LiteralKind::Char(_) => Type::Char,
-            _ => Type::Any,
+            _ => Type::Value,
         });
     }
     None
@@ -99,7 +99,7 @@ pub(super) fn type_name_str(t: &Type) -> &'static str {
         Type::Bool => "Bool",
         Type::Char => "Char",
         Type::Array(_) => "Array",
-        _ => "Any",
+        _ => "Value",
     }
 }
 

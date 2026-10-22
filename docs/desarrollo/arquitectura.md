@@ -1,18 +1,20 @@
 # Arquitectura
 
-CLS es un workspace Rust (edición 2021) con 4 crates de librería y 3 nodos.
+CLS es un workspace Rust (edición 2021) con **siete crates**: cuatro de
+librería (`cls-core`, `cls-runtime`, `cls-jit`, `cls-internals`) y tres nodos
+(`nodos/clx`, `nodos/clxb`, `nodos/clxr`).
 
 ## Crates
 
 | Crate | Rol |
 |---|---|
 | `cls-core` | Frontend (lexer/parser/AST), middleware (typeck/resolver/optimizer), backend (`wasm/`, `json`), config, error, `ansi` |
-| `cls-runtime` | Tree-walker deprecado (`walker/`), `Value`, stdlib core, VFS, `error_report`, `.clslib`/`ClsLibIndex`, FFI (`extension`) |
+| `cls-runtime` | `Value`, errores/formateo, VFS, FFI (`extension`), `.clslib`/`ClsLibIndex`; sin walker |
 | `cls-jit` | Motor JIT reusable: compile/engine/flatten/host/repl/resolve/state + `wasmtime_rt` / `wasmi_rt` |
 | `cls-internals` | Módulos internos e intrinsics **precompilados a WASM** (`cls-internals/wasm/` → `wasm32-unknown-unknown`, embebido con `include_bytes!`); se fusionan dentro del módulo CLS en la emisión (cero imports) |
-| `nodos/clx` | CLI de desarrollo + LSP + `maptype` + backend nativo + módulos desktop (`fs`, `http`, `Lib`, `os`, `path`, `process`, `time`, `random`) |
+| `nodos/clx` | CLI de desarrollo + LSP + `maptype` + backend nativo + módulos desktop (`fs`, `http`, `strings`) |
 | `nodos/clxb` | Bindings C (`clsb`) - motor de embedding (compile, call, run_main, eval) |
-| `nodos/clxr` | Runtime ligero (solo `cls-core` + `cls-runtime`) |
+| `nodos/clxr` | Runtime ligero (JIT-only) |
 
 ## Pipeline del compilador
 
@@ -57,10 +59,20 @@ sin clonar. El JIT corre el checker con `strict: true`,
 pub struct WasmBackendOptions {
     pub exceptions: bool,      // tag + try_table (wasmtime) vs modo sin excepciones (wasmi)
     pub require_main: bool,    // true = debe existir main(args) ; false = modo librería (main no-op)
-    pub intrinsics: Vec<HostIntrinsic>, // intrinsics del nodo vía env.host_call
+    pub intrinsics: Vec<HostIntrinsic>, // API generica para intrinsics del nodo (canal env.host_call). Ver "Estado de uso" abajo.
     pub trace_calls: bool,     // true = shadow call stack en memoria lineal (default); false = CLS_JIT_TRACE=0 (pierde el trace de errores)
 }
 ```
+
+**Estado de uso de `intrinsics` (dev-2)**:
+- `nodos/clx` (CLI de desarrollo): pasa `intrinsics: &[]` y `host_call_handler: None`. No usa el canal genérico. Todos los intrinsics están migrados a imports WASM dedicados con nombre fijo (ver `cls-jit/src/wasmtime_rt.rs:265-425`).
+- `nodos/clxb` (bindings C): usa el mecanismo activamente para permitir que el host C registre intrinsics custom (ver `nodos/clxb/src/engine.rs:123`).
+- `cls-jit/tests/host_call.rs`: test que verifica el mecanismo funciona.
+
+El canal `env.host_call` **se mantiene** como API genérica de la librería
+porque es parte del contrato público de `cls-jit` (consumido por `clxb`).
+El nodo `clx` no lo usa, pero su existencia no afecta performance en el path
+del nodo (no se registra si `intrinsics` está vacío).
 
 Constructores:
 
@@ -84,26 +96,47 @@ Constructores:
 - `repl.rs` - `ReplSession`: REPL JIT con estado persistente (cada línea
   compila un módulo nuevo; globals + heap se transfieren entre instancias).
 - `host.rs` + `wasmtime_rt.rs` - cuerpos genéricos de las host functions
-  `env.*` y `register_host_functions` en el `Linker`; canal
-  `env.host_call(id, ptr, n)` para intrinsics del nodo (`HostCallHandler`).
+  `env.*` y `register_host_functions` en el `Linker`. **API de intrinsics**:
+  el nodo puede pasar `JitContext { host_intrinsics, host_call_handler }`
+  para registrar funciones custom vía el canal `env.host_call(id, ptr, n)`.
+  `nodos/clx` no usa esta API (todos los intrinsics son imports dedicados);
+  `nodos/clxb` la usa para los bindings C.
 - `resolve.rs` - `cache_dir()`, `load_import_modules`, `module_candidates`.
-- El nodo inyecta `JitContext { native_backend, module_index, host_intrinsics,
-  host_call_handler, module_source_resolver, output }`.
+- El nodo inyecta `JitContext { native_backend, module_index,
+  module_source_resolver, output, host_intrinsics, host_call_handler }`.
 
 ## Nodos
 
 | Nodo | Dependencias | Notas |
 |---|---|---|
 | `clx` | `cls-core` (wasm-backend), `cls-runtime`, `cls-jit` (wasmi-runtime), `tokio`/`tower-lsp` (LSP), `libloading` (extensiones dinámicas) | `cargo build --bin clx` |
-| `clxr` | `cls-core`, `cls-runtime`, `zip` | Walker deprecado; no lleva JIT |
+| `clxr` | `cls-core`, `cls-runtime`, `cls-jit` | Runtime ligero JIT-only (`clxr <archivo.clsx|.clsapp>`) |
 | `clxb` | core+runtime+jit; lib name `clsb`, `crate-type = ["rlib","cdylib"]` | `cargo build -p clxb` |
+
+## Módulos compartidos y proyectos
+
+Además de los crates, el repo tiene dos espacios que **no son parte del
+compilador**:
+
+| Ruta | Rol | Reglas |
+|---|---|---|
+| `modules/` | Stdlib autocontenida: módulos CLS + FFI reutilizables (`io`, `socket`, `httpd`, `orm`, `sqlite`, `env`, ...). | CLS puro + FFI, sin `host_calls` nuevos; ver `stdlib/modulos.md`. |
+| `cls-repositories/` | Proyectos reales independientes, versionados como **submódulos**. | Cada carpeta es su propio repo; no absorber su contenido en el repo padre. Ver `desarrollo/proyectos.md`. |
+
+Submódulos actuales: `cls-repositories/tombstone` y
+`cls-repositories/create-tombstone-app`. Inicializarlos con
+`git submodule update --init --recursive`.
+
+`examples/` queda para proyectos que **ponen a prueba** CLS (features,
+conformidad, diferenciales); no es el lugar para apps reales ni para módulos
+compartidos. `agent-context/` contiene planes e investigaciones, fuera de la
+documentación publicada.
 
 ## Reglas de arquitectura
 
 1. **Core/runtime agnósticos al entorno** - el nodo inyecta resolvers de
-   módulos, internals (`fs`, `http`, ...), VFS y backends nativos. El
-   runtime centraliza la carga/ejecución/exports
-   (`Interpreter::load_module_source`).
+   módulos, internals (`fs`, `http`, ...), VFS y backends nativos. El JIT
+   centraliza la carga/ejecución/exports (`flatten.rs`).
 2. **Errores runtime con trace completo** - `build_error_report` ->
    `error_report.rs` (formatos Plain/Console/Html/Json; el nodo elige).
    Typecheck de un solo nivel (ver `runtime/errores.md`).
@@ -112,9 +145,11 @@ Constructores:
    los métodos de primitivos se compilan a llamadas directas a internals/host
    functions; el typeck es la fuente de tipos para la emisión. Las internals
    viven **fusionadas dentro del módulo CLS** (cero imports de internals).
-5. **Sin paridad con el walker** - el walker (`cls-runtime/src/walker/`)
-   está deprecado (se elimina tras 2.0-dev1) y solo sirve de referencia
-   sintáctica.
+5. **JIT = único intérprete** - el tree-walker se eliminó en dev-2; toda
+   ejecución (`clx run`, `clxr`) usa el JIT.
+6. **Autocontención de `/modules` y `/cls-repositories`** - se construyen con
+   CLS + FFI; no se agregan `host_calls` para tapar carencias. `config()` es la
+   única excepción sancionada (introspección de solo lectura).
 
 ## Configuración
 

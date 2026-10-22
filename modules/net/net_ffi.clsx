@@ -1,0 +1,56 @@
+# net/ffi.clsx - Bindings FFI al shim C `net_shim` (sockets UDP/TCP).
+#
+# Capa cruda del módulo (no forma parte de la API pública). El shim NO expone
+# punteros: los handles son enteros y los paquetes cruzan como `int[]` (CArray,
+# un byte por elemento i64) — NO como CString (el DNS usa bytes NUL).
+#
+# LIMITACIÓN CONOCIDA DEL FFI: la ruta del shim se resuelve relativa al CWD, no
+# al archivo .clsx. Por eso hay que correr desde la raíz del repo (ver README).
+
+when (os: windows) {
+    extension "./net_shim.dll" as C {
+        export function u_open(ip: CString, port: CInt) -> CLong;
+        export function u_send(h: CLong, buf: CArray) -> CLong;
+        export function u_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;
+        export function u_close(h: CLong) -> CLong;
+
+        export function t_open(ip: CString, port: CInt) -> CLong;
+        export function t_send(h: CLong, buf: CArray) -> CLong;
+        export function t_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;
+        export function t_close(h: CLong) -> CLong;
+
+        export function net_resolve(host: CString) -> CString;
+    };
+};
+
+when (os: linux) {
+    extension "./net_shim.so" as C {
+        export function u_open(ip: CString, port: CInt) -> CLong;
+        export function u_send(h: CLong, buf: CArray) -> CLong;
+        export function u_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;
+        export function u_close(h: CLong) -> CLong;
+
+        export function t_open(ip: CString, port: CInt) -> CLong;
+        export function t_send(h: CLong, buf: CArray) -> CLong;
+        export function t_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;
+        export function t_close(h: CLong) -> CLong;
+
+        export function net_resolve(host: CString) -> CString;
+    };
+};
+
+when (os: macos) {
+    extension "./net_shim.dylib" as C {
+        export function u_open(ip: CString, port: CInt) -> CLong;
+        export function u_send(h: CLong, buf: CArray) -> CLong;
+        export function u_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;
+        export function u_close(h: CLong) -> CLong;
+
+        export function t_open(ip: CString, port: CInt) -> CLong;
+        export function t_send(h: CLong, buf: CArray) -> CLong;
+        export function t_recv(h: CLong, maxLen: CInt, timeoutMs: CInt) -> CArray;
+        export function t_close(h: CLong) -> CLong;
+
+        export function net_resolve(host: CString) -> CString;
+    };
+};

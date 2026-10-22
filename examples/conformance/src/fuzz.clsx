@@ -1,0 +1,67 @@
+# fuzz.clsx - Fuzzer determinista (differential vs C).
+#
+# Genera N expresiones enteras aleatorias (op, a, b) con un LCG de semilla FIJA,
+# las evalua en CLS puro (e::dispatch_binop) y en el oraculo C (e::orc_binop), y
+# compara. Imprime el PRIMER mismatch (op/a/b/cls/c) y el total. Exit != 0 si hay
+# cualquier divergencia.
+#
+# Determinista y reproducible: la secuencia de (op,a,b) solo depende de la
+# semilla y del LCG (ambos fijos). Nada de red/tiempo/azar del sistema.
+#
+# El LCG NO se redefine aqui: se consume el modulo compartido `prng`
+# (examples/patrones.md §11.5). Misma secuencia/semilla que antes.
+#
+# Uso (desde la raiz del repo):
+#   target\debug\clx.exe run examples\conformance\src\fuzz.clsx --add-path-module=modules
+
+import "expr" as e;
+import "prng" as prng;
+
+function main(args: String[]) -> int {
+    var seed = 88172645463325252;   # semilla fija
+    var p = prng::Prng(seed);
+    var n = 20000;
+    var ok = 0;
+    var bad = 0;
+    var first = true;
+
+    print("=== Fuzz determinista CLS vs C (N=" + str(n) + ", seed=88172645463325252) ===");
+
+    for (var i = 0; i < n; i++) {
+        var a = p.next();
+        var b = p.next();
+        var op = (p.next() >> 59) & 15;      # 0..15
+
+        # Mezcla escalas: a veces valores chicos, a veces modulo acotado.
+        if ((op & 3) == 0) { a = a & 1023; b = b & 1023; }
+        if ((op & 4) == 0) { a = a % 1000000; b = b % 1000000; }
+
+        # Evitar los casos que trapean el WASM (no son divergencias de valor):
+        #   division/resto por cero, y INT64_MIN / -1 (overflow de div_s/rem_s).
+        var divmod = (op == 3 || op == 4);
+        var skip = (divmod && b == 0) || (divmod && a == e::i64_min() && b == -1);
+
+        if (!skip) {
+            var got = e::dispatch_binop(op, a, b);
+            var exp = e::orc_binop(op, a, b);
+            if (got == exp) {
+                ok = ok + 1;
+            } else {
+                bad = bad + 1;
+                if (first) {
+                    first = false;
+                    print("  [MISMATCH] op=" + str(op) + " a=" + str(a) + " b=" + str(b));
+                    print("             cls=" + str(got) + " c=" + str(exp));
+                }
+            }
+        }
+    }
+
+    print("  casos=" + str(ok + bad) + " coinciden=" + str(ok) + " divergen=" + str(bad));
+    if (bad == 0) {
+        print("RESULTADO: OK (0 divergencias)");
+        return 0;
+    }
+    print("RESULTADO: ${bad} divergencia(s)");
+    return 1;
+}

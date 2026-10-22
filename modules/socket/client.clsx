@@ -1,0 +1,123 @@
+# socket/client.clsx - API de sockets TCP persistentes (funcional + OO).
+#
+# El stream queda ABIERTO y es BIDIRECCIONAL: el llamador puede enviar y recibir
+# cuantas veces quiera. Es la base de HTTP keep-alive, WebSocket, o cualquier
+# protocolo propio.
+import "bytes" as bytes;
+from "socket_ffi" import sk_connect, sk_connect_timeout, sk_send,
+    sk_shutdown_write, sk_recv, sk_recv_exact, sk_readable, sk_set_timeout,
+    sk_close, sk_last_error;
+
+# --- API funcional -----------------------------------------------------------
+
+# Conecta a host:port. Devuelve el handle (>=0) o <0 error.
+export function connect(host: String, port: int) -> int {
+    return int(sk_connect(host, port));
+}
+
+# Igual que `connect` con timeout de conexión (ms). <0 error (incl. -4 timeout).
+export function connectTimeout(host: String, port: int, timeoutMs: int) -> int {
+    return int(sk_connect_timeout(host, port, timeoutMs));
+}
+
+# Envía TODOS los bytes del buffer. Devuelve los bytes escritos o -1.
+export function sendAll(h: int, buf: int[]) -> int { return int(sk_send(h, buf)); }
+
+# Envía el texto como bytes. Devuelve los bytes escritos o -1.
+export function sendText(h: int, s: String) -> int { return int(sk_send(h, s.toBytes())); }
+
+# Recibe hasta maxLen bytes. [] en timeout/EOF/error.
+export function recv(h: int, maxLen: int, timeoutMs: int) -> int[] {
+    return sk_recv(h, maxLen, timeoutMs);
+}
+
+# Lee EXACTAMENTE n bytes (o [] si no se pudieron leer todos).
+export function recvExact(h: int, n: int, timeoutMs: int) -> int[] {
+    return sk_recv_exact(h, n, timeoutMs);
+}
+
+# Recibe hasta maxLen bytes como texto.
+export function recvText(h: int, maxLen: int, timeoutMs: int) -> String {
+    var b: int[] = sk_recv(h, maxLen, timeoutMs);
+    return bytes::toStr(b);
+}
+
+# Lee una línea (sin '\n'; descarta '\r'). "" en EOF/timeout.
+export function line(h: int, timeoutMs: int, maxLen: int = 65536) -> String {
+    var out = "";
+    var n = 0;
+    while (n < maxLen) {
+        var b: int[] = sk_recv_exact(h, 1, timeoutMs);
+        if (b.length == 0) { break; }
+        var c = b[0] & 255;
+        if (c == 10) { break; }
+        if (c != 13) { out = out + char(c).toString(); }
+        n = n + 1;
+    }
+    return out;
+}
+
+# 1 si hay datos (o EOF) listos; 0 si expiró el timeout.
+export function readable(h: int, timeoutMs: int) -> int {
+    return int(sk_readable(h, timeoutMs));
+}
+
+# Ajusta el timeout de E/S a nivel de socket (ms).
+export function setTimeout(h: int, ms: int) -> int { return int(sk_set_timeout(h, ms)); }
+
+# Cierra el lado de escritura (half-close): señala EOF al peer.
+export function shutdownWrite(h: int) -> int { return int(sk_shutdown_write(h)); }
+
+# Cierra el socket.
+export function close(h: int) -> int { return int(sk_close(h)); }
+
+# Último error del sistema (texto); "" si no hay.
+export function lastError() -> String { return sk_last_error(); }
+
+# --- API OO ------------------------------------------------------------------
+
+# Timeout por defecto de E/S (ms) para `Client`.
+const DEFAULT_TIMEOUT_MS = 30000;
+
+# Cliente TCP persistente (handle encapsulado).
+#
+# Notas de codegen (ver README, "Limitaciones conocidas"): los métodos no usan
+# valores por defecto de parámetro, y asignan los retornos `CArray` de FFI a un
+# temporal `int[]` anotado antes de devolverlos.
+export class Client {
+    var h: int;
+    var timeoutMs: int;
+
+    function main(host: String, port: int) {
+        me.timeoutMs = DEFAULT_TIMEOUT_MS;
+        me.h = int(sk_connect_timeout(host, port, me.timeoutMs));
+    }
+
+    function ok() -> bool { return me.h >= 0; }
+    function handle() -> int { return me.h; }
+
+    function write(buf: int[]) -> int { return int(sk_send(me.h, buf)); }
+    function writeText(s: String) -> int { return int(sk_send(me.h, s.toBytes())); }
+
+    function read(maxLen: int) -> int[] {
+        var b: int[] = sk_recv(me.h, maxLen, me.timeoutMs);
+        return b;
+    }
+    function readExact(n: int) -> int[] {
+        var b: int[] = sk_recv_exact(me.h, n, me.timeoutMs);
+        return b;
+    }
+    function readText(maxLen: int) -> String {
+        var b: int[] = sk_recv(me.h, maxLen, me.timeoutMs);
+        return bytes::toStr(b);
+    }
+    function readLine() -> String { return line(me.h, me.timeoutMs, 65536); }
+
+    # 1 si hay datos (o EOF) listos ya; `waitReadable(ms)` espera hasta ms.
+    function readableNow() -> int { return int(sk_readable(me.h, 0)); }
+    function waitReadable(ms: int) -> int { return int(sk_readable(me.h, ms)); }
+
+    function setTimeout(ms: int) -> int { me.timeoutMs = ms; return int(sk_set_timeout(me.h, ms)); }
+    function shutdownWrite() -> int { return int(sk_shutdown_write(me.h)); }
+    function close() -> int { return int(sk_close(me.h)); }
+};

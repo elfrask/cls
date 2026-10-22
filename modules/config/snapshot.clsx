@@ -1,0 +1,16 @@
+# config/snapshot.clsx - Snapshot de configuración del host, con caché perezosa.
+#
+# El `Record<String, String>` se pide al host UNA sola vez y se reutiliza; el
+# módulo `config/` es la capa CLS idiomática sobre el intrinsic autorizado
+# `config()` (solo lectura; no expone punteros ni capacidades nuevas).
+var _loaded: bool = false;
+var _cache: Record<String, String>;
+
+# Snapshot completo de configuración (cacheado; una sola llamada al host).
+export function all() -> Record<String, String> {
+    if (_loaded == false) {
+        _cache = config();
+        _loaded = true;
+    }
+    return _cache;
+}

@@ -1,21 +1,50 @@
+# === Build (Rust) ===
 /target
-AGENTS.md
-agent-context
-opencode.jsonc
-out.txt
-err.txt
-*.clsapp
-cls.zip
-contexto-completo.md
-.cls-types
-**/node_modules
-**/.cls-cache
+**/target
+**/out/
 wasmdump
-*.exe
+
+# === Caches ===
+**/.cls-cache
+.cls-types
+**/_logs
+.pytest_cache/
+
+# === Node ===
+**/node_modules
+
+# === Python ===
 __pycache__/
 *.pyc
-**/_logs
-.pytest_cache
-**/target
+
+# === Artefactos CLS (empaquetado / compilado) ===
+*.clsapp
+*.clslib
+*.clbin
 *.zip
+
+# === Binarios nativos ===
+*.exe
+*.dll
+
+# === Extensiones de editor ===
 *.vsix
+
+# === Bases de datos ===
+*.db
+*.db-journal
+
+# === Salidas y respaldos ===
+out.txt
+err.txt
+*.md.bak
+
+# === Local (agentes / contexto de sesión) ===
+AGENTS.md
+agent-context/
+opencode.jsonc
+.commandcode
+contexto-completo.md
+.resources/
+NUL
+.cls-cache-test/

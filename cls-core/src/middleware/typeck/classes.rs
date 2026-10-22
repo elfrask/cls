@@ -7,8 +7,14 @@ impl TypeChecker {
 
 
     pub(crate) fn check_class(&mut self, c: &ClassDecl) -> Type {
-        let class_type = Type::Named(c.name.clone(), vec![]);
-        self.define(&c.name, class_type.clone());
+        // La clase core `CMX` está RESPALDADA por el builtin `Cmx`: sus métodos
+        // operan sobre el valor nativo de 48B (no hay layout de instancia).
+        let class_type = if c.name == "CMX" {
+            Type::Cmx
+        } else {
+            Type::Named(c.name.clone(), vec![])
+        };
+        self.define_decl(&c.name, class_type.clone(), &c.span);
         self.push_scope();
         self.define("me", class_type.clone());
         self.define("super", class_type.clone());
@@ -46,19 +52,18 @@ impl TypeChecker {
                                 p.type_ann
                                     .as_ref()
                                     .map(|t| self.resolve_type_annotation(t))
-                                    .unwrap_or(Type::Any)
+                                    .unwrap_or(Type::Value)
                             })
                             .collect(),
                     );
                 }
                 ClassMember::Property(v) => {
-                    members.insert(
-                        v.name.clone(),
-                        v.type_ann
-                            .as_ref()
-                            .map(|t| self.resolve_type_annotation(t))
-                            .unwrap_or(Type::Any),
-                    );
+                    let ft = v
+                        .type_ann
+                        .as_ref()
+                        .map(|t| self.resolve_type_annotation(t))
+                        .unwrap_or(Type::Value);
+                    members.insert(v.name.clone(), ft);
                 }
             }
         }
@@ -88,6 +93,43 @@ impl TypeChecker {
 
 
 
+    /// Asignabilidad que además conoce la jerarquía de clases (upcast por
+    /// herencia) y la covarianza de arrays/tuplas. `Type::is_assignable_to` es
+    /// puramente estructural y no puede consultar `class_parents`, por eso una
+    /// instancia derivada no era asignable a su clase base.
+    pub(crate) fn is_assignable(&self, from: &Type, to: &Type) -> bool {
+        if from.is_assignable_to(to) {
+            return true;
+        }
+        match (from, to) {
+            // Uniones: algún miembro del objetivo la acepta / todos los del origen
+            // deben ser aceptados.
+            (_, Type::Union(members)) => members.iter().any(|m| self.is_assignable(from, m)),
+            (Type::Union(members), _) => members.iter().all(|m| self.is_assignable(m, to)),
+            (Type::Named(a, ap), Type::Named(b, bp)) => {
+                if ap.len() != bp.len()
+                    || !ap.iter().zip(bp.iter()).all(|(x, y)| self.is_assignable(x, y))
+                {
+                    return false;
+                }
+                // Upcast: ¿`b` es ancestro de `a`?
+                let mut cur = self.class_parents.get(a).cloned();
+                while let Some(p) = cur {
+                    if &p == b {
+                        return true;
+                    }
+                    cur = self.class_parents.get(&p).cloned();
+                }
+                false
+            }
+            (Type::Array(a), Type::Array(b)) => self.is_assignable(a, b),
+            (Type::Tuple(a), Type::Tuple(b)) => {
+                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| self.is_assignable(x, y))
+            }
+            _ => false,
+        }
+    }
+
     /// Verifica que la clase provea los campos y métodos que exige la interface.
     pub(crate) fn check_implements(&mut self, class_name: &str, iface_name: &str, span: Span) {
         let info = match self.interfaces.get(iface_name) {
@@ -104,16 +146,15 @@ impl TypeChecker {
             }
         };
         let bind = self.interface_bindings(&info, &[]);
+        let (fields, signatures) = self.interface_all_members(&info, &bind);
         let member_types: HashMap<String, Type> = self.class_members
             .get(class_name)
             .cloned()
             .unwrap_or_default();
-        for fname in &info.field_order {
-            let Some(ta) = info.fields.get(fname) else { continue };
-            let required = self.resolve_annotation_with(ta, &bind);
+        for (fname, required) in &fields {
             let ok = member_types
                 .get(fname)
-                .map(|provided| provided.is_assignable_to(&required))
+                .map(|provided| provided.is_assignable_to(required))
                 .unwrap_or(false);
             if !ok {
                 self.error(
@@ -125,8 +166,7 @@ impl TypeChecker {
                 );
             }
         }
-        for (sig_name, sig) in &info.signatures {
-            let required_fun = self.signature_type(sig, &bind);
+        for (sig_name, required_fun) in &signatures {
             match member_types.get(sig_name) {
                 None => {
                     self.error(
@@ -138,7 +178,7 @@ impl TypeChecker {
                     );
                 }
                 Some(ret) => {
-                    if let Type::Fun(_, req_ret) = &required_fun {
+                    if let Type::Fun(_, req_ret) = required_fun {
                         if !ret.is_assignable_to(req_ret) {
                             self.error(
                                 &format!(

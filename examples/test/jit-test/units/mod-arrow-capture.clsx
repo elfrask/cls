@@ -1,0 +1,8 @@
+from "modfixes/lib_capture" import Capturer;
+
+function main(args: String[]) -> int {
+    var c = Capturer();
+    print("capture:", c.run());
+    print("recapture:", c.recapture());
+    return 0;
+};

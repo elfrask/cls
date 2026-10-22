@@ -1,0 +1,7 @@
+﻿WSAStartup = 0
+socket = true
+bind = 0
+listen = 0
+getsockname = 0 len = 16
+family = 2
+port = 9999

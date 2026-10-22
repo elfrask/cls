@@ -1,6 +1,27 @@
 //! Caché CLS->WASM en disco y resolución de imports de módulos de usuario.
 
 use cls_core::frontend::ast::Module as ClsModule;
+use std::path::PathBuf;
+use std::sync::OnceLock;
+
+/// Rutas adicionales de búsqueda de módulos. Las configura el nodo (CLI
+/// `--add-path-module=<path>` o `cls.json` -> `pathModules`) antes de compilar.
+/// Ver `examples/patrones.md` §11.
+static EXTRA_MODULE_PATHS: OnceLock<Vec<PathBuf>> = OnceLock::new();
+
+/// Fija las rutas adicionales de búsqueda de módulos. Idempotente: el proceso
+/// compila una sola vez, así que la primera llamada gana.
+pub fn set_extra_module_paths(paths: Vec<PathBuf>) {
+    let _ = EXTRA_MODULE_PATHS.set(paths);
+}
+
+/// Rutas adicionales de búsqueda de módulos (vacío si no se configuraron).
+pub fn extra_module_paths() -> &'static [PathBuf] {
+    EXTRA_MODULE_PATHS
+        .get()
+        .map(|v| v.as_slice())
+        .unwrap_or(&[])
+}
 
 /// Directorio del caché de compilación: `~/.cache/cls/` (HOME o USERPROFILE).
 pub fn cache_dir() -> std::path::PathBuf {
@@ -32,6 +53,7 @@ pub(crate) fn cache_key(
     module_sources: &[String],
     runtime: &str,
     trace_calls: bool,
+    memory_max_pages: Option<u64>,
 ) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -45,6 +67,8 @@ pub(crate) fn cache_key(
     runtime.hash(&mut h);
     // El shadow call stack (trace_calls) cambia el WASM: incluirlo en la key.
     trace_calls.hash(&mut h);
+    // El máximo de memoria (páginas) cambia la sección memory del WASM.
+    memory_max_pages.hash(&mut h);
     // Integridad de los módulos importados: se hashean los SOURCES de los módulos
     // resueltos (locales del proyecto Y globales de ~/.cls). Así editar cualquier
     // .clsx importado invalida el caché aunque esté fuera del workspace.
@@ -134,11 +158,31 @@ fn project_root(start: &std::path::Path) -> std::path::PathBuf {
     start.to_path_buf()
 }
 
+/// `scope/nombre` de un paquete con scope (exactamente un `/`, sin `.`/`..`,
+/// sin extensión). `None` si es un path explícito o un nombre plano.
+fn scoped_parts(name: &str) -> Option<(&str, &str)> {
+    if name.contains('\\') {
+        return None;
+    }
+    let (a, b) = name.split_once('/')?;
+    if a.is_empty() || b.is_empty() || b.contains('/') {
+        return None;
+    }
+    if a == "." || a == ".." || a.starts_with('.') {
+        return None;
+    }
+    if std::path::Path::new(b).extension().is_some() {
+        return None;
+    }
+    Some((a, b))
+}
+
 /// Candidatos de archivo para un import de módulo, en orden de búsqueda.
 ///
 /// Orden (RESOLVERS.md):
 ///   1. {base_dir}/{path}.clsx            (junto al archivo que importa)
 ///   2. {proyecto}/modules/{name}/mod.clsx (módulos del workspace)
+///   2b. rutas extra (--add-path-module / cls.json pathModules): {ruta}/{name}/
 ///   3. {cwd}/{path}.clsx                 (relativo al CWD)
 ///   4. {cwd}/modules/{name}/mod.clsx     (módulos del proyecto)
 ///   5. {home}/.cls/modules/{name}@{version}/mod.clsx (globales usuario, versionado)
@@ -146,16 +190,83 @@ fn project_root(start: &std::path::Path) -> std::path::PathBuf {
 ///
 /// Si `manifest` declara `dependencies[name]`, la búsqueda global filtra por el
 /// rango semver declarado (prioriza la versión instalada que lo cumpla).
+
+/// Raices de modulos junto al binario `clx`: `<dir_clx>/modules` y
+/// `<dir_clx>/../modules` (layout `~/.cls/bin/clx` + `~/.cls/modules`).
+fn binary_module_roots() -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            out.push(dir.join("modules"));
+            if let Some(parent) = dir.parent() {
+                out.push(parent.join("modules"));
+            }
+        }
+    }
+    out
+}
+
 pub fn module_candidates(
     path: &str,
     base_dir: &std::path::Path,
     manifest: Option<&cls_core::config::ModuleManifest>,
 ) -> Vec<std::path::PathBuf> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let user_modules = cls_runtime::user_modules_dir();
+    // Migracion dev-2 (Fase 7): antes se llamaba `cls_runtime::user_modules_dir()`
+    // (parte del walker eliminado). La logica es trivial: el path a
+    // `~/.cls/modules` del usuario actual. Se inlinea para evitar
+    // agregar una API publica a `cls-runtime` solo por esto.
+    let user_modules: Option<std::path::PathBuf> = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(|h| std::path::PathBuf::from(h).join(".cls").join("modules"));
     let name = path.trim_start_matches(['/', '\\']).trim();
     let proj = project_root(base_dir);
+    let extras = extra_module_paths();
+    let binary_roots = binary_module_roots();
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    // Paquete con scope `scope/nombre`: layout global anidado
+    // `~/.cls/modules/{scope}/{nombre}@{version}/` (filtrado por el rango de
+    // `dependencies[{scope/name}]`). Se resuelve ANTES del path directo.
+    if let Some((scope, pkg)) = scoped_parts(name) {
+        if let Some(ref um) = user_modules {
+            let declared = manifest.and_then(|m| m.dependency_version(name).map(|s| s.to_string()));
+            let scope_dir = um.join(scope);
+            if let Ok(entries) = std::fs::read_dir(&scope_dir) {
+                let mut versions: Vec<(String, std::path::PathBuf)> = entries
+                    .flatten()
+                    .filter(|e| e.path().is_dir())
+                    .filter_map(|e| {
+                        let n = e.file_name().to_string_lossy().to_string();
+                        n.strip_prefix(&format!("{}@", pkg))
+                            .map(|ver| (ver.to_string(), e.path()))
+                    })
+                    .collect();
+                versions.sort_by(|a, b| cmp_semver(&a.0, &b.0).reverse());
+                for (ver, p) in versions {
+                    if let Some(ref d) = declared {
+                        if !semver_matches(d, &ver) {
+                            continue;
+                        }
+                    }
+                    push_module_dir_candidates(&p, &mut candidates);
+                }
+            }
+            if declared.is_none() {
+                push_module_dir_candidates(&scope_dir.join(pkg), &mut candidates);
+            }
+        }
+        // Fallbacks (módulos propios o path relativo).
+        push_module_dir_candidates(&proj.join("modules").join(scope).join(pkg), &mut candidates);
+        for e in extras {
+            push_module_dir_candidates(&e.join(scope).join(pkg), &mut candidates);
+        }
+        push_module_dir_candidates(&cwd.join("modules").join(scope).join(pkg), &mut candidates);
+        for br in &binary_roots {
+            push_module_dir_candidates(&br.join(scope).join(pkg), &mut candidates);
+        }
+        candidates.push(base_dir.join(format!("{}.clsx", name)));
+        return candidates;
+    }
     if name.contains('/') || name.contains('\\') || std::path::Path::new(name).is_absolute() {
         // Path explícito: directo. Agregar `.clsx` si no lo trae.
         let p = std::path::Path::new(&path);
@@ -172,9 +283,17 @@ pub fn module_candidates(
     } else {
         // Módulo por nombre: buscar en orden.
         candidates.push(base_dir.join(format!("{}.clsx", name)));
-        candidates.push(proj.join("modules").join(name).join("mod.clsx"));
+        push_module_dir_candidates(&proj.join("modules").join(name), &mut candidates);
+        for e in extras {
+            push_module_dir_candidates(&e.join(name), &mut candidates);
+            candidates.push(e.join(format!("{}.clsx", name)));
+        }
         candidates.push(cwd.join(format!("{}.clsx", name)));
-        candidates.push(cwd.join("modules").join(name).join("mod.clsx"));
+        push_module_dir_candidates(&cwd.join("modules").join(name), &mut candidates);
+        for br in &binary_roots {
+            push_module_dir_candidates(&br.join(name), &mut candidates);
+            candidates.push(br.join(format!("{}.clsx", name)));
+        }
         if let Some(ref um) = user_modules {
             let declared = manifest.and_then(|m| m.dependency_version(name).map(|s| s.to_string()));
             // Versiones instaladas (nombre@versión): ordenar desc y filtrar por rango.
@@ -195,16 +314,57 @@ pub fn module_candidates(
                             continue;
                         }
                     }
-                    candidates.push(p.join("mod.clsx"));
+                    push_module_dir_candidates(&p, &mut candidates);
                 }
             }
             // Sin versión (fallback): solo si no hay rango declarado que exigir.
             if declared.is_none() {
-                candidates.push(um.join(name).join("mod.clsx"));
+                push_module_dir_candidates(&um.join(name), &mut candidates);
             }
         }
     }
     candidates
+}
+
+/// Candidatos de un directorio de módulo `{root}/modules/{name}` (o global
+/// `~/.cls/modules/{name}[@ver]`): primero el `export.entry` de su `cls.json`
+/// (aislamiento de módulo), luego `mod.clsx`.
+fn push_module_dir_candidates(dir: &std::path::Path, candidates: &mut Vec<std::path::PathBuf>) {
+    if let Some(entry) = module_manifest_entry(dir) {
+        candidates.push(entry);
+    }
+    candidates.push(dir.join("mod.clsx"));
+}
+
+/// `dir/cls.json` con `export.entry` -> `dir/<entry>` (si el archivo existe).
+fn module_manifest_entry(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let manifest_path = dir.join("cls.json");
+    if !manifest_path.exists() {
+        return None;
+    }
+    let m = cls_core::config::ModuleManifest::from_file(&manifest_path).ok()?;
+    let entry = m.export_config?.entry;
+    if entry.is_empty() {
+        return None;
+    }
+    let p = dir.join(&entry);
+    if p.exists() {
+        Some(p)
+    } else {
+        None
+    }
+}
+
+/// ¿`dir/cls.json` describe un **módulo** (tiene sección `export`)? Si no,
+/// el módulo no tiene aislamiento propio.
+fn module_has_export(dir: &std::path::Path) -> bool {
+    let manifest_path = dir.join("cls.json");
+    if !manifest_path.exists() {
+        return false;
+    }
+    cls_core::config::ModuleManifest::from_file(&manifest_path)
+        .map(|m| m.export_config.is_some())
+        .unwrap_or(false)
 }
 
 /// Resuelve los imports de un módulo (recursivamente) y los carga como AST.
@@ -233,14 +393,17 @@ pub fn load_import_modules_hooked(
 ) -> cls_core::error::ClsResult<()> {
     use cls_core::error::ClsError;
     // Módulos internos del core/nodo: NO se resuelven como archivos.
+    // `net` eliminado en dev-2 (era código muerto: los host_net_* nunca se
+    // usaron desde ningún .clsx; los sockets deben venir de `extension`+`when`
+    // en el .clsx del usuario, ver docs/lenguaje/extension.md).
     const INTERNALS: &[&str] = &[
-        "math", "json", "fs", "http", "Lib", "async", "os", "path", "process", "time", "random",
+        "math", "json", "fs", "http", "Lib", "async", "os", "path", "process", "time", "random", "strings",
     ];
     for stmt in &module.statements {
         let import = match stmt {
             Statement::Import(i) => Some((i.path.clone(), i.span.clone())),
             Statement::FromImport(fi) => Some((fi.path.clone(), fi.span.clone())),
-            Statement::Include(inc) => Some((inc.path.clone(), inc.span.clone())),
+            Statement::ExportList(el) => el.from.clone().map(|p| (p, el.span.clone())),
             _ => None,
         };
         if let Some((path, span)) = import {
@@ -257,31 +420,102 @@ pub fn load_import_modules_hooked(
                     found = true;
                     continue;
                 }
-                if let Ok(source) = std::fs::read_to_string(candidate) {
-                    if let Ok(toks) = cls_core::frontend::Lexer::new(&source).tokenize() {
-                        if let Ok(m) = cls_core::frontend::Parser::new(toks).parse() {
-                            seen.insert(key);
-                            load_import_modules_hooked(&m, base_dir, seen, out, manifest, hook)?;
-                            out.push((path.clone(), source, m));
-                            found = true;
-                            break;
-                        }
+                // Solo seguimos al siguiente candidato si el archivo NO existe.
+                let source = match std::fs::read_to_string(candidate) {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
+                // El archivo EXISTE: si no lexea/parsea, es un error real del
+                // módulo (no un "módulo no encontrado"). Lo propagamos con el
+                // path y la causa, en vez de silenciarlo y reportar el error
+                // genérico de resolución (que desorienta).
+                let toks = cls_core::frontend::Lexer::new(&source)
+                    .tokenize()
+                    .map_err(|e| {
+                        ClsError::compile_at(
+                            &format!(
+                                "El módulo '{}' ({}) tiene un error de lexing: {}",
+                                path,
+                                candidate.display(),
+                                e
+                            ),
+                            &span,
+                        )
+                    })?;
+                let mut m = cls_core::frontend::Parser::new(toks).parse().map_err(|e| {
+                    ClsError::compile_at(
+                        &format!(
+                            "El módulo '{}' ({}) tiene un error de sintaxis: {}",
+                            path,
+                            candidate.display(),
+                            e
+                        ),
+                        &span,
+                    )
+                })?;
+                seen.insert(key);
+                // Aislamiento de módulo: si el directorio del módulo tiene su
+                // propio `cls.json` con sección `export`, sus imports internos
+                // se resuelven desde esa raíz (no desde el proyecto principal).
+                let pkg_start = candidate.parent().unwrap_or(base_dir);
+                let pkg_root = crate::native_resolve::module_root(pkg_start, base_dir);
+                let pkg_manifest = cls_core::config::ModuleManifest::find_in_dir(&pkg_root);
+                crate::native_resolve::resolve_module_natives(
+                    &mut m,
+                    &pkg_root,
+                    pkg_manifest.as_ref(),
+                )
+                .map_err(|e| {
+                    ClsError::compile_at(
+                        &format!(
+                            "El modulo '{}' ({}) tiene una extension nativa invalida: {}",
+                            path,
+                            candidate.display(),
+                            e
+                        ),
+                        &span,
+                    )
+                })?;
+                let (mod_base, mod_manifest) = match candidate.parent() {
+                    Some(d) if module_has_export(d) => {
+                        let mb = d.to_path_buf();
+                        let mm = cls_core::config::ModuleManifest::find_in_dir(&mb);
+                        (mb, mm)
                     }
-                }
+                    _ => (base_dir.to_path_buf(), manifest.cloned()),
+                };
+                load_import_modules_hooked(&m, &mod_base, seen, out, mod_manifest.as_ref(), hook)?;
+                out.push((path.clone(), source, m));
+                found = true;
+                break;
             }
             // Hook del nodo: el import no está en disco -> el nodo provee el source.
             if !found {
                 if let Some(h) = hook {
                     if let Some(source) = h.resolve_source(&path, base_dir) {
-                        if let Ok(toks) = cls_core::frontend::Lexer::new(&source).tokenize() {
-                            if let Ok(m) = cls_core::frontend::Parser::new(toks).parse() {
-                                let key = format!("hook:{}", path);
-                                seen.insert(key);
-                                load_import_modules_hooked(&m, base_dir, seen, out, manifest, hook)?;
-                                out.push((path.clone(), source, m));
-                                found = true;
-                            }
-                        }
+                        let toks = cls_core::frontend::Lexer::new(&source)
+                            .tokenize()
+                            .map_err(|e| {
+                                ClsError::compile_at(
+                                    &format!("El módulo '{}' (hook del nodo) tiene un error de lexing: {}", path, e),
+                                    &span,
+                                )
+                            })?;
+                        let mut m = cls_core::frontend::Parser::new(toks).parse().map_err(|e| {
+                            ClsError::compile_at(
+                                &format!("El módulo '{}' (hook del nodo) tiene un error de sintaxis: {}", path, e),
+                                &span,
+                            )
+                        })?;
+                        let hook_root = crate::native_resolve::module_root(base_dir, base_dir);
+                        crate::native_resolve::resolve_module_natives(
+                            &mut m, &hook_root, manifest
+                        )?;
+                        let key = format!("hook:{}", path);
+                        seen.insert(key);
+                        load_import_modules_hooked(&m, base_dir, seen, out, manifest, hook)?;
+                        out.push((path.clone(), source, m));
+                        found = true;
                     }
                 }
             }

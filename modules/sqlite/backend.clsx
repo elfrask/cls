@@ -1,0 +1,66 @@
+# sqlite/backend.clsx - Backend SQLite del ORM (implementa el contrato `Driver`).
+import "orm" as orm;
+from "orm" import Driver;
+from "map" import materialize;
+from "sqlite_ffi" import o_init, o_open, o_close, o_exec, o_last_id, o_changes,
+     o_integrity, o_query, o_result_from_stmt, o_prepare, o_bind_null, o_bind_int,
+     o_bind_double, o_bind_text, o_bind_blob_hex, o_step, o_reset, o_finalize,
+     o_column_int, o_free_result, o_version, o_error, o_remove;
+
+export class SqliteDriver: Driver {
+    var h: int;
+    function main() {
+        me.h = -1;
+        o_init();
+    }
+
+    function connect(path: String) -> int {
+        me.h = int(o_open(path));
+        return me.h;
+    }
+    function close() -> int { return int(o_close(me.h)); }
+    function exec(sql: String) -> int { return int(o_exec(me.h, sql)); }
+    function query(sql: String) -> orm::ResultSet {
+        return materialize(int(o_query(me.h, sql)));
+    }
+    function queryBind(sql: String, params: orm::Cell[]) -> orm::ResultSet {
+        var s = int(o_prepare(me.h, sql));
+        for each prm and k in (params) {
+            me.bind(s, k + 1, prm);
+        }
+        var rs = materialize(int(o_result_from_stmt(s)));
+        o_finalize(s);
+        return rs;
+    }
+    function prepare(sql: String) -> int { return int(o_prepare(me.h, sql)); }
+    function bind(stmt: int, idx: int, cell: orm::Cell) -> int {
+        return match (cell.kind) in {
+            1 -> int(o_bind_null(stmt, idx)),
+            2 -> int(o_bind_int(stmt, idx, cell.i)),
+            3 -> int(o_bind_double(stmt, idx, cell.f)),
+            4 -> int(o_bind_text(stmt, idx, cell.s)),
+            5 -> int(o_bind_blob_hex(stmt, idx, cell.s)),
+            default -> int(o_bind_null(stmt, idx)),
+        };
+    }
+    function step(stmt: int) -> int { return int(o_step(stmt)); }
+    function resetStmt(stmt: int) -> int { return int(o_reset(stmt)); }
+    function finalizeStmt(stmt: int) -> int { return int(o_finalize(stmt)); }
+    function lastId() -> int { return int(o_last_id(me.h)); }
+    function changes() -> int { return int(o_changes(me.h)); }
+    function integrity() -> String { return o_integrity(me.h); }
+    function version() -> String { return o_version(""); }
+    function errmsg() -> String { return o_error(""); }
+
+    # Devuelve una columna entera como `CArray` (int[]) directo del shim:
+    # ejercita el marshalling CArray del FFI sin pasar por ResultSet.
+    function columnInts(sql: String, col: int) -> int[] {
+        var rr = int(o_query(me.h, sql));
+        var arr = o_column_int(rr, col);
+        o_free_result(rr);
+        return arr;
+    }
+};
+
+# Utilidad de archivo del shim (borrar la db para correr desde cero).
+export function removeFile(path: String) -> int { return int(o_remove(path)); }

@@ -25,7 +25,7 @@
         "optimization": false,
         "mode": "pure-ast",
         "runtime": {
-            "memoryLimit": "512MB",
+            "memoryLimit": "1GB",
             "stackSize": "8MB",
             "gc": {
                 "enabled": false,

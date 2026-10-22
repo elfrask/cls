@@ -3,6 +3,11 @@
 
 use wasm_encoder::ValType;
 /// Funciones host (`env.*`) que el nodo JIT debe implementar.
+///
+/// Solo las que el emisor llama directo (I/O, reloj, closures, CMX, Value, JSON,
+/// módulos del nodo). Las operaciones de strings/arrays/records/math/parse se
+/// resuelven a internals fusionadas `__intr_*` (0 cruces de frontera); no hay
+/// variantes host para ellas (poda Fase 8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HostFn {
     PrintInt,
@@ -15,50 +20,9 @@ pub enum HostFn {
     Exit,
     Sleep,
     Trap,
-    ParseInt,
-    ParseFloat,
-    ParseBool,
-    StrConcat,
-    StrInt,
-    StrFloat,
-    StrBool,
-    StrChar,
-    PowNum,
-    Fmod,
     Input,
-    StrUpper,
-    StrLower,
-    StrTrim,
-    StrContains,
-    StrStartsWith,
-    StrEndsWith,
-    StrIsEmpty,
-    StrLength,
-    StrRepr,
-    IntAbs,
-    FloatAbs,
-    ArrPush,
-    ArrPop,
-    ArrShift,
-    ArrUnshift,
-    ArrIndexOf,
-    ArrIncludes,
-    ArrJoin,
-    ArrReverse,
-    ArrToString,
-    MathSqrt,
-    MathPow,
-    MathMin,
-    MathMax,
-    MathFloor,
-    MathCeil,
-    MathRound,
+    AnyToBool,
     MathRandom,
-    MathSin,
-    MathCos,
-    MathTan,
-    MathLog,
-    MathRange,
     JsonStringify,
     JsonParse,
     FsExists,
@@ -68,21 +32,8 @@ pub enum HostFn {
     FsListDir,
     FsMkdir,
     FsRm,
-    RecordNew,
-    RecordSet,
-    RecordGet,
-    RecordHas,
-    RecordTag,
-    RecordLen,
-    RecordKeys,
-    RecordValues,
-    RecordToString,
     HttpGet,
     HttpPost,
-    CmxNew,
-    CmxSetProp,
-    CmxAddChild,
-    CmxToString,
     PrintAny,
     AnyMember,
     AnyIndex,
@@ -94,6 +45,10 @@ pub enum HostFn {
     /// Canal genérico de funciones host del nodo: `host_call(id, ptr, n) -> i64`
     /// con args empaquetados `[n:i64][(val:i64, tag:i64)*n]`.
     HostCall,
+    /// Intrinsic de introspección de configuración (solo lectura): devuelve el
+    /// snapshot de config como `Record<String, String>` en la memoria lineal.
+    /// Construido una sola vez; llamadas posteriores devuelven el mismo handle.
+    ConfigRecord,
     // Módulo os
     OsPlatform,
     OsArch,
@@ -143,6 +98,10 @@ pub enum HostFn {
     RandomInt,
     RandomFloat,
     RandomUuid,
+    // Módulo net (sockets TCP)
+    // NetListen/Accept/Recv/Send/Close/LastError eliminados (dev-2):
+    // el módulo `net` ya no existe en el runtime. Los sockets deben venir
+    // de `extension`+`when` en el .clsx del usuario.
 }
 
 impl HostFn {
@@ -159,50 +118,9 @@ impl HostFn {
             Exit => "exit",
             Sleep => "sleep",
             Trap => "trap",
-            ParseInt => "parse_int",
-            ParseFloat => "parse_float",
-            ParseBool => "parse_bool",
-            StrConcat => "str_concat",
-            StrInt => "str_int",
-            StrFloat => "str_float",
-            StrBool => "str_bool",
-            StrChar => "str_char",
-            PowNum => "pow_num",
-            Fmod => "fmod",
             Input => "input",
-            StrUpper => "str_upper",
-            StrLower => "str_lower",
-            StrTrim => "str_trim",
-            StrContains => "str_contains",
-            StrStartsWith => "str_starts_with",
-            StrEndsWith => "str_ends_with",
-            StrIsEmpty => "str_is_empty",
-            StrLength => "str_length",
-            StrRepr => "str_repr",
-            IntAbs => "int_abs",
-            FloatAbs => "float_abs",
-            ArrPush => "arr_push",
-            ArrPop => "arr_pop",
-            ArrShift => "arr_shift",
-            ArrUnshift => "arr_unshift",
-            ArrIndexOf => "arr_index_of",
-            ArrIncludes => "arr_includes",
-            ArrJoin => "arr_join",
-            ArrReverse => "arr_reverse",
-            ArrToString => "arr_to_string",
-            MathSqrt => "math_sqrt",
-            MathPow => "math_pow",
-            MathMin => "math_min",
-            MathMax => "math_max",
-            MathFloor => "math_floor",
-            MathCeil => "math_ceil",
-            MathRound => "math_round",
+            AnyToBool => "any_to_bool",
             MathRandom => "math_random",
-            MathSin => "math_sin",
-            MathCos => "math_cos",
-            MathTan => "math_tan",
-            MathLog => "math_log",
-            MathRange => "math_range",
             JsonStringify => "json_stringify",
             JsonParse => "json_parse",
             FsExists => "fs_exists",
@@ -212,21 +130,8 @@ impl HostFn {
             FsListDir => "fs_list_dir",
             FsMkdir => "fs_mkdir",
             FsRm => "fs_rm",
-            RecordNew => "record_new",
-            RecordSet => "record_set",
-            RecordGet => "record_get",
-            RecordHas => "record_has",
-            RecordTag => "record_tag",
-            RecordLen => "record_len",
-            RecordKeys => "record_keys",
-            RecordValues => "record_values",
-            RecordToString => "record_to_string",
             HttpGet => "http_get",
             HttpPost => "http_post",
-            CmxNew => "cmx_new",
-            CmxSetProp => "cmx_set_prop",
-            CmxAddChild => "cmx_add_child",
-            CmxToString => "cmx_to_string",
             PrintAny => "print_any",
             AnyMember => "any_member",
             AnyIndex => "any_index",
@@ -236,6 +141,7 @@ impl HostFn {
             FnExit => "fn_exit",
             CallSite => "fn_call_site",
             HostCall => "host_call",
+            ConfigRecord => "config_record",
             OsPlatform => "os_platform",
             OsArch => "os_arch",
             OsVersion => "os_version",
@@ -294,53 +200,9 @@ impl HostFn {
             Now => (vec![], vec![ValType::I64]),
             Exit | Sleep => (i64p.clone(), vec![]),
             Trap => (vec![ValType::I64, ValType::I64], vec![]),
-            ParseInt | StrInt => (i64p.clone(), vec![ValType::I64]),
-            ParseBool => (i64p.clone(), vec![ValType::I32]),
-            ParseFloat => (i64p.clone(), vec![ValType::F64]),
-            StrFloat => (vec![ValType::F64], vec![ValType::I64]),
-            StrBool | StrChar => (vec![ValType::I32], vec![ValType::I64]),
-            StrConcat => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            PowNum => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            Fmod => (vec![ValType::F64, ValType::F64], vec![ValType::F64]),
             Input => (vec![], vec![ValType::I64]),
-            StrUpper | StrLower | StrTrim | StrLength | StrRepr => {
-                (i64p.clone(), vec![ValType::I64])
-            }
-            StrContains | StrStartsWith | StrEndsWith => {
-                (vec![ValType::I64, ValType::I64], vec![ValType::I32])
-            }
-            StrIsEmpty => (i64p.clone(), vec![ValType::I32]),
-            IntAbs => (i64p.clone(), vec![ValType::I64]),
-            FloatAbs => (vec![ValType::F64], vec![ValType::F64]),
-            ArrPush | ArrUnshift => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            ArrPop | ArrShift | ArrReverse => {
-                (vec![ValType::I64, ValType::I64], vec![ValType::I64])
-            }
-            ArrIndexOf => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            ArrIncludes => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I32],
-            ),
-            ArrJoin => (
-                vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            ArrToString => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            MathSqrt | MathFloor | MathCeil | MathRound | MathSin | MathCos | MathTan | MathLog => {
-                (vec![ValType::F64], vec![ValType::F64])
-            }
-            MathPow | MathMin | MathMax => (vec![ValType::F64, ValType::F64], vec![ValType::F64]),
+            AnyToBool => (vec![ValType::I64, ValType::I64], vec![ValType::I32]),
             MathRandom => (vec![], vec![ValType::F64]),
-            MathRange => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             JsonStringify => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             JsonParse => (i64p.clone(), vec![ValType::I64]),
             FsExists => (i64p.clone(), vec![ValType::I32]),
@@ -348,29 +210,8 @@ impl HostFn {
             FsReadFile => (i64p.clone(), vec![ValType::I64]),
             FsWriteFile => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             FsListDir | FsMkdir | FsRm => (i64p.clone(), vec![ValType::I64]),
-            RecordNew => (i64p.clone(), vec![ValType::I64]),
-            RecordSet => (
-                vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            RecordGet => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            RecordHas => (vec![ValType::I64, ValType::I64], vec![ValType::I32]),
-            RecordTag => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            RecordLen => (i64p.clone(), vec![ValType::I64]),
-            RecordKeys | RecordValues => (i64p.clone(), vec![ValType::I64]),
-            RecordToString => (i64p.clone(), vec![ValType::I64]),
             HttpGet => (i64p.clone(), vec![ValType::I64]),
             HttpPost => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            CmxNew => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
-            CmxSetProp => (
-                vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            CmxAddChild => (
-                vec![ValType::I64, ValType::I64, ValType::I64],
-                vec![ValType::I64],
-            ),
-            CmxToString => (i64p.clone(), vec![ValType::I64]),
             PrintAny => (vec![ValType::I64, ValType::I64], vec![]),
             AnyMember => (
                 vec![ValType::I64, ValType::I64, ValType::I64],
@@ -395,6 +236,7 @@ impl HostFn {
                 vec![],
             ),
             HostCall => (vec![ValType::I64, ValType::I64, ValType::I64], vec![ValType::I64]),
+            ConfigRecord => (vec![], vec![ValType::I64]),
             // Módulo os: sin args -> i64 (string) o i32 (bool); env(key) -> i64
             OsPlatform | OsArch | OsVersion | OsHostname | OsHome | OsTempdir
             | OsCpus | OsPid | OsUptime | OsSep => (vec![], vec![ValType::I64]),
@@ -424,6 +266,9 @@ impl HostFn {
             RandomInt => (vec![ValType::I64, ValType::I64], vec![ValType::I64]),
             RandomFloat => (vec![ValType::F64, ValType::F64], vec![ValType::F64]),
             RandomUuid => (vec![], vec![ValType::I64]),
+            // Módulo net: listen(port)->handle, accept(handle)->sock,
+            // recv(sock,max)->String, send(sock,data)->n, close(sock)->0, lastError()->String
+            // net_* eliminados (dev-2): ver comentario arriba.
         }
     }
 }

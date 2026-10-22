@@ -1,4 +1,0 @@
-export function suma(a: int, b: int) -> int {
-    var x: int = "texto";
-    return a + b;
-};

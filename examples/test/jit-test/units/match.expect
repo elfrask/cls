@@ -1,0 +1,9 @@
+﻿valor int: true
+valor str: hey
+tipo builtin: int
+tipo enum: color
+tipo array: uno
+tipo clase: guau
+cond: <
+patron enum: frio
+sentencia: cuatro

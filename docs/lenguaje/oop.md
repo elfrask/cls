@@ -134,8 +134,43 @@ nombres `__xxx` dentro de la clase. **Catálogo completo soportado por el JIT
 | `__equals` / `__compare` | `==` `!=` / `<` `>` `<=` `>=` sobre objetos |
 | `__add` `__sub` `__mul` `__div` `__mod` `__pow` | operadores aritméticos |
 | `__neg` / `__not` | unario `-` / `!` |
+| `__match` / `__unpack` | modo PATRÓN de `match` sobre la clase (protocolo) |
 
-> Catálogo detallado con contratos por intérprete: `agent-context/magics.md`.
+> Catálogo detallado con contratos por intérprete: `docs/lenguaje/magics.md`.
+
+### Protocolo de match (F6)
+
+Una clase entra al **modo PATRÓN** de `match` definiendo `__match() -> E` (el
+**discriminante**, un enum `E` cuyo namespace son las variantes) y
+`__unpack(tag: String) -> T | (T1, T2, …)` (el **payload** computado). Con
+bindings, `obj.__unpack("<variante>")` devuelve un valor único (1 binding) o una
+tupla (N); el emisor liga por posición. Sin `__match`, usar la clase como
+scrutinee en modo PATRÓN es **error de compilación**.
+
+```clx
+enum RespKind { ok, err };
+
+class Resp {
+    var kind: RespKind;
+    var code: int;
+    var body: String;
+    function main(k: RespKind, c: int, b: String) { me.kind = k; me.code = c; me.body = b; }
+    function __match() -> RespKind { return me.kind; }
+    function __unpack(tag: String) -> (String) | (int, String) {
+        if (tag == "ok") { return (me.body); }
+        return (me.code, me.body);
+    }
+};
+
+var out = match (v <- Resp(RespKind.err, 404, "no")) {
+    ok(texto)     -> "ok ${texto}",
+    err(cod, msg) -> "err ${cod} ${msg}",
+    default       -> "?",
+};
+```
+
+El resto de los modos ya funcionan sobre clases: `is` (identidad + herencia),
+`in` (`__equals`) e `if` (`__bool`).
 
 ### Ejemplo integral (JIT)
 
@@ -180,14 +215,13 @@ function main(args: String[]) -> int {
 }
 ```
 
-Verificado en `examples/audit/test-features/tests/jit-magic-all.clsx` (24
+Verificado en `examples/test/jit-test/units/jit-magic-all.clsx` (24
 magics: aritmética, unarios, conversiones, contenedores, callable, iteración).
 
 ### Contratos de comportamiento
 
 - **Aritmética binaria** (`__add` … `__pow`): `left.__op(right)`; si el lado
-  izquierdo no lo define, se prueba `right.__op(left)` (simetría, paridad
-  walker).
+  izquierdo no lo define, se prueba `right.__op(left)` (simetría).
 - **Igualdad y orden**: `__equals` -> el resultado se usa como truthy (`!=`
   lo niega); `__compare` -> devuelve un entero (`<0`, `0`, `>0`) comparado
   contra 0 según el operador.
@@ -201,8 +235,8 @@ magics: aritmética, unarios, conversiones, contenedores, callable, iteración).
 
 - **Anotación obligatoria**: los magic methods deben anotar su tipo de retorno
   (y el de los parámetros de clase). El JIT despacha estáticamente por la firma
-  declarada del método - un parámetro sin anotar tipa `Any` y no se puede
-  despachar (el walker sí lo tolera).
+  declarada del método - un parámetro sin anotar no se puede despachar
+  (no hay `Any` implícito).
 - **Sentinel de iteración**: `return null` dentro de `__next` termina el `for
   each` con un sentinel interno distinto de `0` - un iterador puede devolver
   `0` como valor legítimo (p. ej. `Rango(3)` -> `0 1 2`).
@@ -212,6 +246,6 @@ magics: aritmética, unarios, conversiones, contenedores, callable, iteración).
   `var items: int[] = []` no se ejecuta - inicializar en el constructor
   (`function main() { me.items = []; }`).
 
-Referencia de ejemplos: `examples/audit/features/09-clases.clsx`,
-`examples/audit/features/16-magic-methods.clsx` y
-`examples/audit/test-features/tests/jit-magic-all.clsx`.
+Referencia de ejemplos: `examples/test/jit-test/units/09-clases.clsx`,
+`examples/test/jit-test/units/16-magic-methods.clsx` y
+`examples/test/jit-test/units/jit-magic-all.clsx`.

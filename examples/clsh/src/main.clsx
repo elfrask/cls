@@ -1,0 +1,31 @@
+# main.clsx - CLI de clsh: lee un script .sh (FFI) y lo ejecuta.
+#
+# Uso (desde la raiz del repo; el .dll de FFI es relativo al CWD):
+#   target\debug\clx.exe run examples\clsh\src\main.clsx -- <script.sh>
+
+import "ffi" as ffi;
+import "shell" as shell;
+
+function main(args: String[]) -> int {
+    # fd 0/1/2 en modo binario: evita la traduccion LF->CRLF de msvcrt
+    # (imprescindible para comparar byte a byte con dash).
+    ffi::setmode(1, 32768);
+    ffi::setmode(2, 32768);
+    ffi::setmode(0, 32768);
+
+    if (args.length < 1) {
+        ffi::write_fd(2, "clsh: falta el script\n");
+        return 2;
+    }
+    var path = args[0];
+    if (ffi::exists(path) == 0) {
+        ffi::write_fd(2, "clsh: no se puede abrir " + path + "\n");
+        return 2;
+    }
+    var src = ffi::read_file(path);
+    var sh = shell::Sh();
+    sh.init();
+    sh.load(src);
+    sh.run();
+    return sh.status;
+};

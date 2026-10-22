@@ -1,0 +1,15 @@
+﻿interpolacion: Hola CLS
+expr: 3
+upper: HOLA
+lower: hola
+trim: x
+length: 4
+contains: true
+startsWith: true
+endsWith: true
+isEmpty: true
+in substring: true
+toString: 42
+int.toString: 42 float.toString: 2.5
+int.abs: 7 float.abs: 3.5
+bool.toString: true char.toString: x

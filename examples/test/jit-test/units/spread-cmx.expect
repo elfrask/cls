@@ -1,0 +1,4 @@
+props: {activo: true, extra: "x", titulo: "demo"}
+titulo: demo
+extra: x
+render: App:demo

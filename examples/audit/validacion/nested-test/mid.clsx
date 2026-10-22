@@ -1,4 +1,0 @@
-import "libmod" as na;
-export function suma(n: int) -> int {
-    return na::base() + n;
-};

@@ -1,0 +1,12 @@
+# Métodos de String (intrínsecos, sin importar el módulo `strings`):
+# split / slice / indexOf / upper / lower / trim.
+function main(args: String[]) -> int {
+    var parts = "a,b,c".split(",");
+    print("n", parts.length);
+    print("parts", parts);
+    print("idx", "hola".indexOf("l"));
+    print("sl", "hola".slice(1, 3));
+    print("up", "hola".upper());
+    print("trim", "  x  ".trim());
+    return 0;
+};

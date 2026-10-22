@@ -1,0 +1,17 @@
+# bytes/diff.clsx - Localiza la primera diferencia entre dos buffers de bytes.
+#
+# Pensado para los oráculos de prueba: comparar la salida del JIT contra la
+# esperada y reportar dónde divergen.
+
+# -2 si a == b; si no, el índice de la primera diferencia.
+export function firstDiff(a: int[], b: int[]) -> int {
+    var la = a.length;
+    var lb = b.length;
+    for (var i = 0; i < la && i < lb; i++) {
+        if (a[i] != b[i]) { return i; }
+    }
+    var m = la;
+    if (lb < m) { m = lb; }
+    if (la != lb) { return m; }
+    return -2;
+}

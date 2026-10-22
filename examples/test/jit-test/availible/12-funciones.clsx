@@ -1,0 +1,25 @@
+function suma(a: int, b: int) -> int {
+    return a + b;
+};
+
+function App(props: Record<String, Value>, children: Cmx[]) -> String {
+    var t: String = props.titulo;
+    return "app " + t;
+};
+
+function main(args: String[]) -> int {
+    var f = suma;
+    print("f:", f);
+    print("f(2,3):", f(2, 3));
+    print("f(10,20):", f(10, 20));
+    var app = (<App titulo="demo" />);
+    print("tag:", app.tag);
+    print("titulo:", app.props.titulo);
+    print("cmx:", app);
+    print("es componente:", app.isComponent);
+    if (app.isComponent) {
+        var r: String = app.tagCallable(app.props, app.children);
+        print("app.tagCallable():", r);
+    }
+    return 0;
+};

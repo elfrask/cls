@@ -1,0 +1,6 @@
+[submodule "cls-repositories/tombstone"]
+	path = cls-repositories/tombstone
+	url = https://github.com/elfrask/tombstone
+[submodule "cls-repositories/create-tombstone-app"]
+	path = cls-repositories/create-tombstone-app
+	url = https://github.com/elfrask/create-tombstone-app

@@ -3,91 +3,124 @@
 use super::*;
 
 impl TypeChecker {
-
-
-
     pub(crate) fn check_member_access(&mut self, member: &MemberAccessExpr) -> Type {
+        // El scope local (variables/parámetros) GANA sobre los módulos internos:
+        // `function f(path: String) { path.length }` es el String, no el módulo
+        // `path` (bug dev-2: parámetro llamado path/os/fs/... se tipaba como
+        // módulo -> Value, rompiendo path.length / s.length en parámetros).
+        // Un alias de import (`import "math" as math`) NO es una variable local:
+        // sigue el camino de módulo (module_member_type, abajo).
+        let is_local = match &*member.object {
+            Expression::Identifier(name, _) => {
+                self.lookup(name).is_some() && !self.import_aliases.contains_key(name)
+            }
+            _ => false,
+        };
         // Módulos internos del nodo (resueltos por nombre en el JIT): se manejan
         // ANTES de evaluar el object (que no está definido como variable).
-        if let Expression::Identifier(name, _) = &*member.object {
-            if self.enums.contains(name) {
-                return Type::Named(name.clone(), vec![]);
-            }
-            if name == "http" {
-                return match member.member.as_str() {
-                    "get" | "post" => Type::String,
-                    _ => Type::Any,
-                };
-            }
-            if name == "fs" {
-                return match member.member.as_str() {
-                    "exists" => Type::Bool,
-                    "cwd" | "readFile" => Type::String,
-                    "listDir" => Type::Array(Box::new(Type::String)),
-                    _ => Type::Any,
-                };
-            }
-            if name == "json" {
-                return match member.member.as_str() {
-                    // parse devuelve un Record<String, any> (para acceso por
-                    // índice obj["k"] y print). El layout del host es compatible.
-                    "parse" => Type::Record(Box::new(Type::String), Box::new(Type::Any)),
-                    "stringify" => Type::String,
-                    _ => Type::Any,
-                };
-            }
-            if name == "math" {
-                return match member.member.as_str() {
-                    "range" => Type::Array(Box::new(Type::Int)),
-                    "random" => Type::Float,
-                    "sqrt" | "floor" | "ceil" | "round" | "sin" | "cos" | "tan"
-                    | "log" | "pow" | "min" | "max" => Type::Float,
-                    "abs" => Type::Int,
-                    _ => Type::Any,
-                };
-            }
-            if name == "os" {
-                return match member.member.as_str() {
-                    "platform" | "arch" | "version" | "hostname" | "home"
-                    | "tempdir" | "env" | "sep" => Type::String,
-                    "cpus" | "pid" | "uptime" => Type::Int,
-                    "isWindows" | "isUnix" => Type::Bool,
-                    _ => Type::Any,
-                };
-            }
-            if name == "path" {
-                return match member.member.as_str() {
-                    "join" | "basename" | "dirname" | "extname" | "resolve"
-                    | "normalize" | "sep" => Type::String,
-                    "isAbsolute" => Type::Bool,
-                    _ => Type::Any,
-                };
-            }
-            if name == "process" {
-                return match member.member.as_str() {
-                    "args" => Type::Array(Box::new(Type::String)),
-                    "cwd" | "env" | "platform" | "title" => Type::String,
-                    "pid" => Type::Int,
-                    "exit" => Type::Void,
-                    _ => Type::Any,
-                };
-            }
-            if name == "time" {
-                return match member.member.as_str() {
-                    "iso" | "date" | "clock" => Type::String,
-                    "now" | "seconds" | "year" | "month" | "day" | "hour"
-                    | "minute" | "second" => Type::Int,
-                    "sleep" => Type::Void,
-                    _ => Type::Any,
-                };
-            }
-            if name == "random" {
-                return match member.member.as_str() {
-                    "random" | "float" => Type::Float,
-                    "int" => Type::Int,
-                    "uuid" => Type::String,
-                    _ => Type::Any,
-                };
+        if !is_local {
+            if let Expression::Identifier(name, _) = &*member.object {
+                if self.enums.contains(name) {
+                    return Type::Named(name.clone(), vec![]);
+                }
+                // Resolver alias de import: `import "math" as m` -> `m.sqrt` es
+                // `math.sqrt`. Sin esto el dispatch por nombre literal era rígido
+                // (solo funcionaba con el alias igual al módulo).
+                let canonical = self
+                    .import_aliases
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| name.clone());
+                let name = &canonical;
+                if name == "http" {
+                    return match member.member.as_str() {
+                        "get" | "post" => Type::String,
+                        _ => Type::Value,
+                    };
+                }
+                if name == "fs" {
+                    return match member.member.as_str() {
+                        "exists" => Type::Bool,
+                        "cwd" | "readFile" => Type::String,
+                        "listDir" => Type::Array(Box::new(Type::String)),
+                        _ => Type::Value,
+                    };
+                }
+                if name == "json" {
+                    return match member.member.as_str() {
+                        // parse devuelve un JSON (objeto/array/valor dinámico tipado).
+                        // El tag runtime viaja con el valor: acceso por índice, print
+                        // y stringify despachan por tag sin perder el tipo.
+                        "parse" => Type::Json,
+                        "stringify" => Type::String,
+                        _ => Type::Value,
+                    };
+                }
+                if name == "math" {
+                    return match member.member.as_str() {
+                        "range" => Type::Array(Box::new(Type::Int)),
+                        "random" => Type::Float,
+                        "sqrt" | "floor" | "ceil" | "round" | "sin" | "cos" | "tan" | "log"
+                        | "pow" | "min" | "max" => Type::Float,
+                        "abs" => Type::Int,
+                        _ => Type::Value,
+                    };
+                }
+                if name == "os" {
+                    return match member.member.as_str() {
+                        "platform" | "arch" | "version" | "hostname" | "home" | "tempdir"
+                        | "env" | "sep" => Type::String,
+                        "cpus" | "pid" | "uptime" => Type::Int,
+                        "isWindows" | "isUnix" => Type::Bool,
+                        _ => Type::Value,
+                    };
+                }
+                if name == "path" {
+                    return match member.member.as_str() {
+                        "join" | "basename" | "dirname" | "extname" | "resolve" | "normalize"
+                        | "sep" => Type::String,
+                        "isAbsolute" => Type::Bool,
+                        _ => Type::Value,
+                    };
+                }
+                if name == "process" {
+                    return match member.member.as_str() {
+                        "args" => Type::Array(Box::new(Type::String)),
+                        "cwd" | "env" | "platform" | "title" => Type::String,
+                        "pid" => Type::Int,
+                        "exit" => Type::Void,
+                        _ => Type::Value,
+                    };
+                }
+                if name == "time" {
+                    return match member.member.as_str() {
+                        "iso" | "date" | "clock" => Type::String,
+                        "now" | "seconds" | "year" | "month" | "day" | "hour" | "minute"
+                        | "second" => Type::Int,
+                        "sleep" => Type::Void,
+                        _ => Type::Value,
+                    };
+                }
+                if name == "random" {
+                    return match member.member.as_str() {
+                        "random" | "float" => Type::Float,
+                        "int" => Type::Int,
+                        "uuid" => Type::String,
+                        _ => Type::Value,
+                    };
+                }
+                // net eliminado (dev-2): no hay miembros conocidos. Si el usuario
+                // escribe `net.X` el typeck cae al default (Value/Unknown) y el
+                // emisor lo rechaza con "miembro no soportado".
+                // Para sockets: `extension` con `when` por SO en el .clsx.
+                if name == "strings" {
+                    return match member.member.as_str() {
+                        "indexOf" => Type::Int,
+                        "slice" => Type::String,
+                        "split" => Type::Array(Box::new(Type::String)),
+                        _ => Type::Value,
+                    };
+                }
             }
         }
         let obj_type = self.check_expression(&member.object);
@@ -96,9 +129,13 @@ impl TypeChecker {
         match obj_type {
             Type::String => match member.member.as_str() {
                 "length" => Type::Int,
-                "upper" | "lower" | "trim" | "toString" => Type::String,
+                "upper" | "lower" | "trim" | "toString" | "slice" => Type::String,
                 "contains" | "startsWith" | "endsWith" | "isEmpty" => Type::Bool,
-                _ => Type::Any,
+                "indexOf" => Type::Int,
+                "split" => Type::Array(Box::new(Type::String)),
+                "toChar" => Type::Array(Box::new(Type::Char)),
+                "toBytes" => Type::Array(Box::new(Type::Int)),
+                _ => Type::Value,
             },
             Type::Array(elem) => match member.member.as_str() {
                 "length" => Type::Int,
@@ -106,51 +143,78 @@ impl TypeChecker {
                 "includes" | "isEmpty" => Type::Bool,
                 "indexOf" => Type::Int,
                 "push" | "pop" | "shift" | "unshift" | "reverse" => Type::Array(elem.clone()),
-                _ => Type::Any,
+                _ => Type::Value,
             },
             Type::Tuple(_) => match member.member.as_str() {
                 "length" => Type::Int,
                 "join" | "toString" => Type::String,
-                _ => Type::Any,
+                _ => Type::Value,
             },
             Type::Record(k, _) => match member.member.as_str() {
                 "length" | "size" => Type::Int,
                 "has" => Type::Bool,
                 "keys" => Type::Array(k.clone()),
-                "values" => Type::Array(Box::new(Type::Any)),
+                "values" => Type::Array(Box::new(Type::Value)),
                 "toString" => Type::String,
-                _ => Type::Any,
+                _ => Type::Value,
             },
-            Type::Shape(fields) => {
-                match member.member.as_str() {
-                    "length" | "size" => Type::Int,
-                    "keys" => Type::Array(Box::new(Type::String)),
-                    "values" => Type::Array(Box::new(Type::Any)),
-                    "has" => Type::Bool,
-                    "toString" => Type::String,
-                    name => fields.iter()
-                        .find(|(n, _)| *n == name)
-                        .map(|(_, t)| t.clone())
-                        .unwrap_or_else(|| self.error(
+            // JSON (objeto/array dinámico) y Value: el acceso a campo devuelve
+            // un `Value` (el tag runtime viaja con el valor; las operaciones
+            // posteriores — str, ==, print, stringify, index — despachan por tag).
+            Type::Json => match member.member.as_str() {
+                "toString" => Type::String,
+                "length" | "size" => Type::Int,
+                "has" => Type::Bool,
+                "keys" => Type::Array(Box::new(Type::String)),
+                _ => Type::Value,
+            },
+            Type::Value => match member.member.as_str() {
+                "toString" => Type::String,
+                "length" => Type::Int,
+                _ => Type::Value,
+            },
+            Type::Shape(fields) => match member.member.as_str() {
+                "length" | "size" => Type::Int,
+                "keys" => Type::Array(Box::new(Type::String)),
+                "values" => Type::Array(Box::new(Type::Value)),
+                "has" => Type::Bool,
+                "toString" => Type::String,
+                name => fields
+                    .iter()
+                    .find(|(n, _)| *n == name)
+                    .map(|(_, t)| t.clone())
+                    .unwrap_or_else(|| {
+                        self.error(
                             &format!("El record no tiene el campo '{}'", name),
                             member.span.clone(),
-                        )),
-                }
-            }
+                        )
+                    }),
+            },
+            // Cmx: tipo de primera clase (réplica del patrón JSON, ver plan
+            // completar-tipo-cmx.md). `.tag` es Value (string para tag
+            // minúscula, handle para mayúscula — el tag-bit decide en
+            // runtime); `.props` es Record<String, Value>; `.kind` distingue
+            // texto (1) de elemento (0), necesario para un renderer CLS puro.
             Type::Cmx => match member.member.as_str() {
-                "tag" => Type::Fun(vec![Type::Any], Box::new(Type::String)),
-                "props" => Type::Record(Box::new(Type::String), Box::new(Type::Any)),
+                // Rework CMX: `tag` es SIEMPRE String (nombre del tag); el valor
+                // del componente vive en `tagCallable` y `isComponent` lo marca.
+                "tag" => Type::String,
+                "props" => Type::Record(Box::new(Type::String), Box::new(Type::Value)),
                 "children" => Type::Array(Box::new(Type::Cmx)),
-                _ => Type::Any,
+                "kind" => Type::Int,
+                "tagCallable" => Type::Callable,
+                "isComponent" => Type::Bool,
+                "toString" => Type::String,
+                _ => Type::Value,
             },
             Type::Int | Type::Float => match member.member.as_str() {
                 "toString" => Type::String,
                 "abs" => obj_type,
-                _ => Type::Any,
+                _ => Type::Value,
             },
             Type::Bool | Type::Char => match member.member.as_str() {
                 "toString" => Type::String,
-                _ => Type::Any,
+                _ => Type::Value,
             },
             Type::Named(name, _) => {
                 if let Some(members) = self.class_members.get(name.as_str()) {
@@ -173,10 +237,161 @@ impl TypeChecker {
                 if let Some(t) = self.module_member_type(name.as_str(), &member.member) {
                     return t;
                 }
-                Type::Any
+                Type::Value
             }
-            _ => Type::Any,
+            // Unión temporal (F5): en un arma multi-tipo del `match` el scrutinee
+            // se estrecha a `A | B`. El miembro debe existir en TODOS los tipos
+            // de la unión; el resultado es el tipo común (o la unión de los tipos
+            // de ese miembro si difieren). Si falta en alguno -> error claro.
+            Type::Union(members) => {
+                if members.is_empty() {
+                    return Type::Value;
+                }
+                let mut tys: Vec<Type> = Vec::with_capacity(members.len());
+                for m in &members {
+                    match self.union_member_of(m, &member.member) {
+                        Some(t) => tys.push(t),
+                        None => {
+                            return self.error(
+                                &format!(
+                                    "la unión no tiene el miembro `{}` en todos sus tipos \
+                                     (falta en `{}`)",
+                                    member.member, m
+                                ),
+                                member.span.clone(),
+                            );
+                        }
+                    }
+                }
+                let first = tys[0].clone();
+                if tys.iter().all(|t| *t == first) {
+                    first
+                } else {
+                    Type::Union(tys)
+                }
+            }
+            // Unknown (valor dinámico leído de un Record/JSON): `toString`
+            // siempre produce String (despacho por tag en runtime:
+            // __intr_any_to_string). Sin esto, `record[k].toString()` tipaba
+            // Value y rompía la concatenación `String + Value` (reporte dev).
+            Type::Unknown => match member.member.as_str() {
+                "toString" => Type::String,
+                _ => Type::Value,
+            },
+            _ => Type::Value,
         }
     }
 
+    /// Tipo del miembro `member` sobre UN tipo miembro de una unión (F5).
+    /// Devuelve `None` si ese tipo **no expone** el miembro: la unión exige que
+    /// TODOS los tipos lo tengan. Es la versión de "presencia explícita" del
+    /// dispatch de `check_member_access` (que en sus ramas devuelve `Value` como
+    /// fallback tolerante); acá el fallback es `None`.
+    fn union_member_of(&mut self, obj: &Type, member: &str) -> Option<Type> {
+        match obj {
+            Type::String => match member {
+                "length" => Some(Type::Int),
+                "upper" | "lower" | "trim" | "toString" | "slice" => Some(Type::String),
+                "contains" | "startsWith" | "endsWith" | "isEmpty" => Some(Type::Bool),
+                "indexOf" => Some(Type::Int),
+                "split" => Some(Type::Array(Box::new(Type::String))),
+                "toChar" => Some(Type::Array(Box::new(Type::Char))),
+                "toBytes" => Some(Type::Array(Box::new(Type::Int))),
+                _ => None,
+            },
+            Type::Array(elem) => match member {
+                "length" => Some(Type::Int),
+                "join" | "toString" => Some(Type::String),
+                "includes" | "isEmpty" => Some(Type::Bool),
+                "indexOf" => Some(Type::Int),
+                "push" | "pop" | "shift" | "unshift" | "reverse" => {
+                    Some(Type::Array(elem.clone()))
+                }
+                _ => None,
+            },
+            Type::Tuple(_) => match member {
+                "length" => Some(Type::Int),
+                "join" | "toString" => Some(Type::String),
+                _ => None,
+            },
+            Type::Record(k, _) => match member {
+                "length" | "size" => Some(Type::Int),
+                "has" => Some(Type::Bool),
+                "keys" => Some(Type::Array(k.clone())),
+                "values" => Some(Type::Array(Box::new(Type::Value))),
+                "toString" => Some(Type::String),
+                _ => None,
+            },
+            Type::Shape(fields) => {
+                let known = match member {
+                    "length" | "size" => Some(Type::Int),
+                    "keys" => Some(Type::Array(Box::new(Type::String))),
+                    "values" => Some(Type::Array(Box::new(Type::Value))),
+                    "has" => Some(Type::Bool),
+                    "toString" => Some(Type::String),
+                    _ => None,
+                };
+                known.or_else(|| {
+                    fields
+                        .iter()
+                        .find(|(n, _)| n == member)
+                        .map(|(_, t)| t.clone())
+                })
+            }
+            Type::Int | Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Float
+            | Type::F32 | Type::F64 => match member {
+                "toString" => Some(Type::String),
+                "abs" => Some(obj.clone()),
+                _ => None,
+            },
+            Type::Bool | Type::Char => match member {
+                "toString" => Some(Type::String),
+                _ => None,
+            },
+            // Clase/struct: campo o método (retorno). Nombre exacto o por sufijo
+            // (`mod::Clase` cuando el tipo viene cualificado).
+            Type::Named(name, _) => {
+                if let Some(t) = self
+                    .class_members
+                    .get(name.as_str())
+                    .and_then(|m| m.get(member))
+                {
+                    return Some(t.clone());
+                }
+                if let Some(t) = self
+                    .struct_members
+                    .get(name.as_str())
+                    .and_then(|m| m.get(member))
+                {
+                    return Some(t.clone());
+                }
+                let suffix = format!("::{}", name);
+                if let Some(t) = self
+                    .class_members
+                    .iter()
+                    .find(|(k, _)| k.ends_with(&suffix))
+                    .and_then(|(_, m)| m.get(member))
+                {
+                    return Some(t.clone());
+                }
+                if let Some(t) = self
+                    .struct_members
+                    .iter()
+                    .find(|(k, _)| k.ends_with(&suffix))
+                    .and_then(|(_, m)| m.get(member))
+                {
+                    return Some(t.clone());
+                }
+                None
+            }
+            Type::Literal(v) => self.union_member_of(&v.base_type(), member),
+            // Valor dinámico: el miembro existe siempre (despacho por tag).
+            Type::Value | Type::Unknown | Type::Json => match member {
+                "toString" => Some(Type::String),
+                "length" | "size" => Some(Type::Int),
+                _ => Some(Type::Value),
+            },
+            _ => None,
+        }
+    }
 }

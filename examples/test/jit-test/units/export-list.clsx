@@ -1,0 +1,23 @@
+# export-list.clsx - `export { ... }` (lista de exportación) sobre módulos índice.
+# Cubre: promoción de locales, miembros de namespace con `as`, `ns::*`,
+# reexport `from`, y clases/funciones/const/enum/alias/interface reexportados.
+
+from "export-list-mod/index" import saludo, Caja, VERSION, Color, Punto, Saludador, ruta, Router;
+from "export-list-mod/reexport" import saludo as saludo2;
+
+function describir(s: Saludador) -> String { return "saludador"; };
+
+function main(args: String[]) -> int {
+    print(saludo("CLS"));
+    print(saludo2("Mundo"));
+    var c = Caja(7);
+    print(c.get());
+    print(VERSION);
+    print(Color.Verde is Color);
+    print(ruta());
+    var r = Router();
+    print(r.add(), r.add());
+    var p: Punto = (1, 2);
+    print(p[0], p[1]);
+    return 0;
+};

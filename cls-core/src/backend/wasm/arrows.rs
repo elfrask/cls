@@ -66,6 +66,8 @@ pub(crate) fn collect_arrows_in_stmt(stmt: &Statement, out: &mut Vec<ArrowFuncti
             collect_arrows_in_block(&w.block, out);
         }
         Statement::Loop(b) => collect_arrows_in_block(b, out),
+        Statement::DestructureLet(d) => collect_arrows_in_expr(&d.value, out),
+        Statement::DestructureClass(d) => collect_arrows_in_expr(&d.value, out),
         _ => {}
     }
 }
@@ -111,6 +113,38 @@ pub(crate) fn collect_arrows_in_expr(expr: &Expression, out: &mut Vec<ArrowFunct
             collect_arrows_in_expr(&c.condition, out);
             collect_arrows_in_expr(&c.then_expr, out);
             collect_arrows_in_expr(&c.else_expr, out);
+        }
+        Expression::Ternary(c) => {
+            collect_arrows_in_expr(&c.condition, out);
+            collect_arrows_in_expr(&c.then_expr, out);
+            collect_arrows_in_expr(&c.else_expr, out);
+        }
+        Expression::IfExpr(ie) => {
+            collect_arrows_in_expr(&ie.condition, out);
+            collect_arrows_in_block(&ie.then_block, out);
+            collect_arrows_in_block(&ie.else_block, out);
+        }
+        Expression::Match(m) => {
+            if let Some(s) = &m.scrutinee {
+                collect_arrows_in_expr(s, out);
+            }
+            for arm in &m.arms {
+                for p in &arm.patterns {
+                    if let MatchPattern::Cond(e) = p {
+                        collect_arrows_in_expr(e, out);
+                    }
+                }
+                match &arm.body {
+                    MatchBody::Expr(e) => collect_arrows_in_expr(e, out),
+                    MatchBody::Block(b) => collect_arrows_in_block(b, out),
+                }
+            }
+            if let Some(d) = &m.default {
+                match d {
+                    MatchBody::Expr(e) => collect_arrows_in_expr(e, out),
+                    MatchBody::Block(b) => collect_arrows_in_block(b, out),
+                }
+            }
         }
         Expression::Assignment(a) => {
             collect_arrows_in_expr(&a.target, out);
@@ -163,6 +197,23 @@ pub(crate) fn collect_free_vars_in_stmt(stmt: &Statement, locals: &mut Vec<Strin
         }
         Statement::Expression(e) => collect_free_vars_in_expr(e, locals, free),
         Statement::Return(Some(e)) => collect_free_vars_in_expr(e, locals, free),
+        Statement::ArrowReturn(a) => collect_free_vars_in_expr(&a.value, locals, free),
+        Statement::DestructureLet(d) => {
+            collect_free_vars_in_expr(&d.value, locals, free);
+            for b in &d.binds {
+                if b != "_" {
+                    locals.push(b.clone());
+                }
+            }
+        }
+        Statement::DestructureClass(d) => {
+            collect_free_vars_in_expr(&d.value, locals, free);
+            for b in &d.binds {
+                if b != "_" {
+                    locals.push(b.clone());
+                }
+            }
+        }
         Statement::If(i) => {
             collect_free_vars_in_expr(&i.condition, locals, free);
             collect_free_vars_in_block(&i.then_block, locals, free);
@@ -259,6 +310,52 @@ pub(crate) fn collect_free_vars_in_expr(expr: &Expression, locals: &mut Vec<Stri
             collect_free_vars_in_expr(&c.condition, locals, free);
             collect_free_vars_in_expr(&c.then_expr, locals, free);
             collect_free_vars_in_expr(&c.else_expr, locals, free);
+        }
+        Expression::Ternary(c) => {
+            collect_free_vars_in_expr(&c.condition, locals, free);
+            collect_free_vars_in_expr(&c.then_expr, locals, free);
+            collect_free_vars_in_expr(&c.else_expr, locals, free);
+        }
+        Expression::IfExpr(ie) => {
+            collect_free_vars_in_expr(&ie.condition, locals, free);
+            collect_free_vars_in_block(&ie.then_block, locals, free);
+            collect_free_vars_in_block(&ie.else_block, locals, free);
+        }
+        Expression::Match(m) => {
+            if let Some(s) = &m.scrutinee {
+                collect_free_vars_in_expr(s, locals, free);
+            }
+            // Los bindings (`nombre <- expr`) y los binds de variante son
+            // locales dentro de cada arma.
+            let mut arm_locals: Vec<String> = locals.clone();
+            if let Some(b) = &m.binding {
+                arm_locals.push(b.clone());
+            }
+            for arm in &m.arms {
+                for p in &arm.patterns {
+                    match p {
+                        MatchPattern::Cond(e) => collect_free_vars_in_expr(e, &mut arm_locals, free),
+                        MatchPattern::Variant { binds, .. } => {
+                            for b in binds {
+                                if !arm_locals.contains(b) {
+                                    arm_locals.push(b.clone());
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                match &arm.body {
+                    MatchBody::Expr(e) => collect_free_vars_in_expr(e, &mut arm_locals, free),
+                    MatchBody::Block(b) => collect_free_vars_in_block(b, &mut arm_locals, free),
+                }
+            }
+            if let Some(d) = &m.default {
+                match d {
+                    MatchBody::Expr(e) => collect_free_vars_in_expr(e, &mut arm_locals, free),
+                    MatchBody::Block(b) => collect_free_vars_in_block(b, &mut arm_locals, free),
+                }
+            }
         }
         Expression::Assignment(a) => {
             collect_free_vars_in_expr(&a.target, locals, free);

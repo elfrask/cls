@@ -1,0 +1,158 @@
+# operators.clsx - eje de operadores.
+#
+# Ejercita: aritmeticos (+ - * / % **), bit a bit (& | ^ ~ << >>), comparacion
+# (== != < <= > >=), logicos (&& || !), unarios (- ~), prefijo ++x/--x y
+# postfix x++/x--, asignacion compuesta (+= -= *= /= %=), spread (...) de record
+# y array, `in` (String, array, record y clase con __contains) e `is` con
+# narrowing.
+
+import "check" as check;
+
+class OpBox {
+    var items: int[];
+    function main() { me.items = [1, 2, 3]; }
+    function __contains(x: int) -> bool {
+        for each v in (me.items) {
+            if (v == x) { return true; }
+        }
+        return false;
+    }
+};
+
+class OpBase {
+    var v: int;
+    function main(v: int) { me.v = v; }
+};
+
+class OpDerived: OpBase {
+    var extra: int;
+    function main(v: int, e: int) { super.main(v); me.extra = e; }
+};
+
+function op_div_mod_pow() -> int {
+    check::assertEq("op.div", 10 / 4, 2);
+    check::assertEq("op.div.neg", -10 / 4, -2);
+    check::assertEq("op.div.mix", 10 / -4, -2);
+    check::assertEq("op.mod", 10 % 3, 1);
+    check::assertEq("op.mod.neg", -10 % 3, -1);
+    check::assertEq("op.mod.mix", 10 % -3, 1);
+    check::assertEq("op.pow", 2 ** 8, 256);
+    check::assertEq("op.pow.zero", 2 ** 0, 1);
+    check::assertEq("op.pow.cube", 3 ** 3, 27);
+    check::assertEq("op.add", 2 + 3, 5);
+    check::assertEq("op.sub", 5 - 8, -3);
+    check::assertEq("op.mul", 4 * 6, 24);
+    return 0;
+}
+
+function op_bitwise() -> int {
+    check::assertEq("op.band", 6 & 3, 2);
+    check::assertEq("op.bor", 6 | 3, 7);
+    check::assertEq("op.bxor", 6 ^ 3, 5);
+    check::assertEq("op.bnot", ~5, -6);
+    check::assertEq("op.shl", 1 << 4, 16);
+    check::assertEq("op.shr", 16 >> 2, 4);
+    return 0;
+}
+
+function op_compare_logical() -> int {
+    check::assertTrue("op.eq", 3 == 3);
+    check::assertTrue("op.ne", 3 != 4);
+    check::assertTrue("op.lt", 2 < 3);
+    check::assertTrue("op.le", 3 <= 3);
+    check::assertTrue("op.gt", 4 > 3);
+    check::assertTrue("op.ge", 3 >= 3);
+    check::assertTrue("op.and", true && true);
+    check::assertTrue("op.and.false", !(true && false));
+    check::assertTrue("op.or", true || false);
+    check::assertTrue("op.or.false", !(false || false));
+    check::assertTrue("op.not", !false);
+    return 0;
+}
+
+function op_unary_incdec() -> int {
+    check::assertEq("op.neg", -7, -7);
+    var x = 5;
+    check::assertEq("op.postinc.ret", x++, 5);
+    check::assertEq("op.postinc.after", x, 6);
+    check::assertEq("op.postdec.ret", x--, 6);
+    check::assertEq("op.postdec.after", x, 5);
+    # prefijo ++x / --x (devuelven el valor ya incrementado).
+    var y = 5;
+    check::assertEq("op.preinc.ret", ++y, 6);
+    check::assertEq("op.preinc.after", y, 6);
+    check::assertEq("op.predec.ret", --y, 5);
+    check::assertEq("op.predec.after", y, 5);
+    return 0;
+}
+
+function op_compound() -> int {
+    var z = 10;
+    z += 5;
+    check::assertEq("op.addassign", z, 15);
+    z -= 3;
+    check::assertEq("op.subassign", z, 12);
+    z *= 2;
+    check::assertEq("op.mulassign", z, 24);
+    z /= 4;
+    check::assertEq("op.divassign", z, 6);
+    z %= 4;
+    check::assertEq("op.modassign", z, 2);
+    return 0;
+}
+
+function op_spread() -> int {
+    var a = [1, 2, 3];
+    var b = [0, ...a, 4];
+    check::assertEq("op.spread.arr.len", len(b), 5);
+    check::assertEqStr("op.spread.arr", b.join(","), "0,1,2,3,4");
+
+    var base: Record<String, int> = {x: 1, y: 2};
+    var ext = {...base, z: 3};
+    check::assertEq("op.spread.rec.z", ext.z, 3);
+    check::assertEq("op.spread.rec.x", ext.x, 1);
+    check::assertEq("op.spread.rec.len", ext.length, 3);
+    return 0;
+}
+
+function op_in() -> int {
+    check::assertTrue("op.in.str.yes", "l" in "hola");
+    check::assertTrue("op.in.str.no", !("z" in "hola"));
+    var box = OpBox();
+    check::assertTrue("op.in.class.yes", 2 in box);
+    check::assertTrue("op.in.class.no", !(9 in box));
+    # `in` sobre array (membership) y sobre record (claves).
+    check::assertTrue("op.in.arr.yes", "a" in ["a", "b"]);
+    check::assertTrue("op.in.arr.no", !(9 in [1, 2, 3]));
+    var rec: Record<String, int> = {x: 1, y: 2};
+    check::assertTrue("op.in.rec.yes", "x" in rec);
+    check::assertTrue("op.in.rec.no", !("z" in rec));
+    return 0;
+}
+
+function op_is() -> int {
+    var d = OpDerived(1, 2);
+    check::assertTrue("op.is.derived", d is OpDerived);
+    check::assertTrue("op.is.base", d is OpBase);
+    var base2 = OpBase(9);
+    check::assertTrue("op.is.not.derived", !(base2 is OpDerived));
+    var box = OpBox();
+    check::assertTrue("op.is.class", box is OpBox);
+    return 0;
+}
+
+export function op_run() -> int {
+    print("== operators ==");
+    var before = check::fails();
+    op_div_mod_pow();
+    op_bitwise();
+    op_compare_logical();
+    op_unary_incdec();
+    op_compound();
+    op_spread();
+    op_in();
+    op_is();
+    var gained = check::fails() - before;
+    if (gained == 0) { print("FEATURE operators OK"); }
+    return gained;
+}

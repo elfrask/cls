@@ -1,0 +1,46 @@
+# dns - Codec DNS (mensajes) en CLS puro, RFC 1035.
+#
+# Ladrillo de la stdlib autocontenida (examples/patrones.md §11). SIN FFI: es
+# manipulación de bits / big-endian / parseo binario sobre `int[]` (bytes). El
+# transporte vive en `modules/net`.
+#
+#   types.clsx   - códigos de tipo/clase + nombre legible
+#   name.clsx    - nombres con compresión 0xC0 + guard anti-loop
+#   addr.clsx    - render A (IPv4) / AAAA (IPv6, RFC 5952)
+#   rr.clsx      - clases Rr* + parser de RRs
+#   message.clsx - DnsMessage + parseMessage + buildQuery
+#   zone.clsx    - servidor autoritativo (`Zone`, `answer`)
+#   dns_hex.clsx - volcado hex / nombre decodificado
+#
+# Manipulación de bits/big-endian vía `modules/bytes` (`getU16`/`pushU16`...).
+# Modelo de datos: clases + herencia (Rr y subclases por tipo, con `render()`
+# polimórfico). Los bytes viven en `int[]` (0..255).
+#
+# Barrel: se expone la API pública.
+
+import "bytes" as bytes;
+import "types" as types;
+import "name" as name;
+import "addr" as addr;
+import "rr" as rr;
+import "message" as message;
+import "zone" as zone;
+import "dns_hex" as dns_hex;
+
+export { types::TYPE_A as TYPE_A, types::TYPE_NS as TYPE_NS,
+         types::TYPE_CNAME as TYPE_CNAME, types::TYPE_SOA as TYPE_SOA,
+         types::TYPE_MX as TYPE_MX, types::TYPE_TXT as TYPE_TXT,
+         types::TYPE_AAAA as TYPE_AAAA, types::TYPE_ANY as TYPE_ANY,
+         types::CLASS_IN as CLASS_IN };
+export { types::typeName as typeName, types::typeCode as typeCode };
+export { bytes::getU16 as getU16, bytes::getU32 as getU32,
+         bytes::pushU16 as pushU16, bytes::pushU32 as pushU32, bytes::pushAll as pushAll };
+export { name::encodeName as encodeName, name::decodeName as decodeName,
+         name::NameResult as NameResult };
+export { addr::ipv6ToString as ipv6ToString };
+export { rr::Rr as Rr, rr::RrA as RrA, rr::RrAAAA as RrAAAA, rr::RrName as RrName,
+         rr::RrMX as RrMX, rr::RrTXT as RrTXT, rr::RrSOA as RrSOA };
+export { message::DnsMessage as DnsMessage, message::parseMessage as parseMessage,
+         message::rrLine as rrLine, message::buildQuery as buildQuery };
+export { zone::ZoneRecord as ZoneRecord, zone::Zone as Zone, zone::answer as answer };
+export { dns_hex::toHex as toHex, dns_hex::decodedName as decodedName };

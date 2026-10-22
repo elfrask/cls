@@ -1,0 +1,6 @@
+﻿=== try/catch div por cero ===
+catch div: Error de runtime: División por cero
+=== try sin excepcion ===
+try normal
+=== try normal con catch que no se dispara ===
+y: 6

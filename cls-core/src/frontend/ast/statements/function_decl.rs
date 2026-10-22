@@ -17,7 +17,9 @@ pub struct FunctionDecl {
     /// Parámetros de tipo genérico `<T, U>` (compile-time)
     #[serde(default)]
     pub type_params: Vec<TypeParam>,
-    /// Función nativa (sin cuerpo, declarada en `extension` o como símbolo del SO)
+    /// Marca de declaración nativa/FFI (`extension`). `None` = función normal;
+    /// `Some` = la función es un import nativo (sin body) equivalente a una
+    /// `function` del lenguaje.
     #[serde(default)]
-    pub is_native: bool,
+    pub native: Option<NativeInfo>,
 }

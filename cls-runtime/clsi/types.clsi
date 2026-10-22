@@ -51,12 +51,12 @@ interface Char () {
 interface Array () {
     # @kind getter
     length() : int,
-    push(value: Any) : Array,
+    push(value: Value) : Array,
     pop() : Array,
     shift() : Array,
-    unshift(value: Any) : Array,
-    indexOf(value: Any) : int,
-    includes(value: Any) : bool,
+    unshift(value: Value) : Array,
+    indexOf(value: Value) : int,
+    includes(value: Value) : bool,
     join(separator: String) : String,
     reverse() : Array,
     toString() : Array,

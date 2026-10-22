@@ -1,0 +1,8 @@
+# El proyecto importa `pkg` por nombre: el resolver usa el `export.entry` del
+# `cls.json` del modulo (index.clsx). No hace falta conocer su estructura interna.
+from "pkg" import util_fn, PKG_NAME;
+
+function main(args: String[]) -> int {
+    print("pkg:", util_fn(21), PKG_NAME);
+    return 0;
+};

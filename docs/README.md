@@ -9,9 +9,9 @@ Node.js (`bindings/js`, paquete `@cls-embed/node`), ambos sobre la ABI C
 `clsb_v1_*`. `cls-internals` precompila los módulos internos a WASM y el
 backend los **fusiona dentro del módulo CLS** (cero imports de internals).
 
-> **JIT = intérprete objetivo.** El tree-walker (`clx run --ast-walker`) está
-> **DEPRECADO**: es solo referencia sintáctica y se eliminará tras
-> CLS 2.0-dev1. Toda ejecución normal usa el JIT.
+> **JIT = único intérprete.** `clx run` (CLS → WASM → wasmtime) es el motor
+> de ejecución. El tree-walker se eliminó en dev-2; `--ast-walker` se acepta
+> por compatibilidad pero se ignora.
 
 ## Estructura de la documentación
 
@@ -27,27 +27,33 @@ backend los **fusiona dentro del módulo CLS** (cero imports de internals).
 - `lenguaje/sintaxis.md` - léxico: literales, strings, comentarios, keywords, operadores.
 - `lenguaje/tipos.md` - el sistema de tipos compile-time: tuplas, uniones, alias, interfaces, extracción, genéricos.
 - `lenguaje/datos.md` - arrays, tuplas, records, strings e interpolación en runtime.
-- `lenguaje/control-de-flujo.md` - `if`, `while`, `loop`, `for`, `for each`, `switch`, `with`, `break`, `continue`.
+- `lenguaje/control-de-flujo.md` - `if`, `while`, `loop`, `for`, `for each`, `switch`, `with`, `match`, ternarios, `<-` y `break`/`continue`.
 - `lenguaje/funciones.md` - funciones, parámetros con default, arrow functions, closures, `main`.
-- `lenguaje/oop.md` - clases, herencia, visibilidad, `super`, `is`, `me`, magic methods.
-- `lenguaje/enums.md` - enums con identidad, comparación e iteración.
-- `lenguaje/estructuras.md` - `structure` (datos planos).
-- `lenguaje/modulos.md` - `import` / `from import` / `include`, exports, resolución.
+- `lenguaje/oop.md` - clases, herencia, visibilidad, `super`, `is`, `me`, magic methods y `__destructurate`.
+- `lenguaje/enums.md` - enums con identidad, variantes con payload, comparación, iteración y `match`.
+- `lenguaje/estructuras.md` - `structure` y su layout ABI C.
+- `lenguaje/modulos.md` - `import` / `from import`, exports, resolución, módulos compartidos y `pathModules`.
 - `lenguaje/errores.md` - `throw`, `try/catch/finally` y errores en runtime.
 - `lenguaje/multi-entorno.md` - directiva `when` (implementaciones por SO/arquitectura).
 - `lenguaje/extension.md` - FFI a librerías nativas del sistema (`extension`).
-- `lenguaje/cmx.md` - el lenguaje de marcado CMX (JSX-like).
+- `lenguaje/extension-when.md` - el patrón combinado `when` + `extension` (sockets TCP portables, receta de migración host → `.clsx`).
+- `lenguaje/magics.md` - magic methods (`__add`, `__len`, ...) en runtime.
+- `lenguaje/estado-runtime.md` - estado real de WASI, async/concurrencia y límites del JIT.
+- `lenguaje/cmx.md` - el lenguaje de marcado CMX (JSX-like), la clase core `CMX` y los componentes.
+- `lenguaje/testing.md` - estado y propuesta de los tests escritos en CLS (`clx test`).
 
 ### Biblioteca estándar
 
 - `stdlib/core.md` - intrinsics globales (`print`, `input`, `toString`, `int`, ...) y módulos core `math`, `json`, `async`.
-- `stdlib/desktop.md` - módulos del nodo desktop: `fs`, `http`, `os`, `path`, `process`, `time`, `random`, `Lib`.
+- `stdlib/env.md` - carga de archivos `.env` mediante el módulo estándar `env`.
+- `stdlib/modulos.md` - módulos compartidos de `/modules`: reglas, catálogo, `pathModules` y shims nativos.
+- `stdlib/desktop.md` - módulos del nodo desktop: `fs`, `http`, `strings`, `Lib`.
 - `stdlib/primitivos.md` - métodos de tipos primitivos (sin boxing).
 
 ### Runtime y ejecución
 
 - `runtime/jit.md` - el JIT: pipeline CLS -> WASM -> wasmtime, caché, internals fusionadas, host functions, límites.
-- `runtime/walker.md` - el tree-walker DEPRECADO (referencia sintáctica).
+- `runtime/walker.md` - el tree-walker ELIMINADO en dev-2 (stub histórico).
 - `runtime/errores.md` - el sistema de errores y sus formatos.
 - `runtime/vfs.md` - VFS (sistema de archivos virtual), protocolos y `.clsapp`.
 
@@ -64,11 +70,18 @@ backend los **fusiona dentro del módulo CLS** (cero imports de internals).
 
 ### Desarrollo
 
-- `desarrollo/arquitectura.md` - workspace, crates, pipeline del compilador.
+- `desarrollo/arquitectura.md` - workspace, crates, pipeline del compilador, `/modules` y `/cls-repositories`.
+- `desarrollo/proyectos.md` - proyectos reales en `/cls-repositories`: reglas, submódulos, `cls.json` y ejecución.
 - `desarrollo/contribuir.md` - workflow, estilo y reglas.
-- `desarrollo/testing.md` - cómo ejecutar y escribir tests.
+- `desarrollo/testing.md` - suites Rust/JIT/diferenciales, Tombstone y `clx test`.
 - `desarrollo/agregar-feature.md` - cómo agregar una feature al lenguaje.
 - `desarrollo/agregar-modulo-interno.md` - cómo agregar un módulo interno.
+- `desarrollo/minilaravel.md` - Tombstone: framework HTTP en CLS puro (App, router, CMX, ORM, auth, consola y tests).
+
+### Decisiones de diseño
+
+- `decisiones/001-no-implicit-coercion.md` - por qué no hay coerción implícita (salvo `Int -> Float`).
+- `decisiones/002-ffi-arity-limit.md` - límite de aridad en FFI y contrapartidas.
 
 > Los planes de las 4 fases de rendimiento (refactor atómico, crate
 > `cls-internals`, adaptación del core, auditoría final) viven en

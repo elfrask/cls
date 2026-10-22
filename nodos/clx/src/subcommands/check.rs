@@ -81,10 +81,11 @@ pub fn execute(args: &[String]) -> i32 {
         };
 
         let mut parser = cls_core::frontend::Parser::new(tokens);
-        let module = match parser.parse() {
+        let mut module = match parser.parse() {
             Ok(m) => m,
             Err(e) => { cls_runtime::show_syntax_error(e, &source, file); total_errors += 1; continue; }
         };
+        cls_core::frontend::builtins::inject_builtins(&mut module);
 
         let mut checker = cls_core::middleware::TypeChecker::new(types_config.clone());
         // El nodo resuelve los imports (lee los archivos) y los pasa como prelude;

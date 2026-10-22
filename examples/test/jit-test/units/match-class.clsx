@@ -1,0 +1,97 @@
+# F6: protocolo de match para clases (`__match` / `__unpack`).
+#
+# Una clase se conecta al matching definiendo dos magics:
+#   __match() -> E                  -> discriminante (namespace de variantes E)
+#   __unpack(tag: String) -> T | (T1, T2, …)  -> payload computado
+#
+# El emisor llama `obj.__match()` y compara contra el índice de variante de E;
+# con bindings llama `obj.__unpack(tag)` y liga posicionalmente (valor único
+# para 1 binding, tupla para N).
+
+enum RespKind { ok, err, pend };
+
+class Resp {
+    var kind: RespKind;
+    var code: int;
+    var body: String;
+    function main(k: RespKind, c: int, b: String) {
+        me.kind = k;
+        me.code = c;
+        me.body = b;
+    }
+    function __match() -> RespKind { return me.kind; }
+    function __unpack(tag: String) -> (String) | (int, String) {
+        if (tag == "ok") { return (me.body); }
+        return (me.code, me.body);
+    }
+};
+
+# Clase con `__equals`/`__bool` para los "otros modos" (valor / condición).
+class Wrapper {
+    var v: int;
+    function main(v: int) { me.v = v; }
+    function __equals(other: int) -> bool { return me.v == other; }
+    function __bool() -> bool { return me.v != 0; }
+};
+
+class Animal {
+    function habla() -> String { return "..."; }
+};
+class Perro: Animal {
+    function ladra() -> String { return "guau"; }
+};
+class Gato: Animal {
+    function maulla() -> String { return "miau"; }
+};
+
+function describe(r: Resp) -> String {
+    return match (v <- r) {
+        ok(texto)     -> "ok ${texto}",
+        err(cod, msg) -> "err ${cod} ${msg}",
+        pend          -> "pend",
+        default       -> "?",
+    };
+}
+
+function main(args: String[]) -> int {
+    # Payload de 1 binding (valor único) + 2 bindings (tupla) + unit + default.
+    print("1:", describe(Resp(RespKind.ok, 0, "listo")));
+    print("2:", describe(Resp(RespKind.err, 404, "no encontrado")));
+    print("3:", describe(Resp(RespKind.pend, 0, "")));
+
+    # Modo TIPO sobre la clase (identidad + herencia).
+    print("tipo:", match (r <- Resp(RespKind.ok, 1, "x")) is {
+        Resp  -> "es Resp",
+        default -> "?",
+    });
+
+    # Modo VALOR sobre una clase con `__equals`.
+    print("valor:", match (w <- Wrapper(5)) in {
+        (0, 5, 7) -> "match",
+        default   -> "no",
+    });
+
+    # Modo CONDICIÓN usando `__bool` de la clase.
+    print("cond-true:", match() if {
+        bool(Wrapper(5)) -> "si",
+        default          -> "no",
+    });
+    print("cond-false:", match() if {
+        bool(Wrapper(0)) -> "si",
+        default          -> "no",
+    });
+
+    # Modo TIPO con herencia (Perro extends Animal) + narrowing por clase.
+    var a: Animal = Perro();
+    print("perro:", match (a) is {
+        Perro -> a.ladra(),
+        Gato  -> a.maulla(),
+        default -> "?",
+    });
+    print("es-animal:", match (a) is {
+        Animal -> "animal",
+        default -> "?",
+    });
+
+    return 0;
+};

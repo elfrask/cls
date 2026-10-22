@@ -1,0 +1,78 @@
+# io/ffi.clsx - Bindings FFI al shim C `io_shim.dll`.
+#
+# Capa cruda del módulo (no forma parte de la API pública): los archivos
+# hermanos la envuelven con la API idiomática. El shim no expone punteros; todo
+# viaja como CString/CArray/CLong/CInt.
+#
+# LIMITACIÓN CONOCIDA DEL FFI: la ruta del `.dll` se resuelve relativa al CWD,
+# no al archivo .clsx. Por eso hay que correr desde la raíz del repo (ver
+# README).
+
+when (os: windows) {
+    extension "./io_shim.dll" as C {
+        export function o_read_text(path: CString) -> CString;
+        export function o_read_bytes(path: CString) -> CArray;
+        export function o_write_text(path: CString, data: CString) -> CLong;
+        export function o_append_text(path: CString, data: CString) -> CLong;
+
+        export function o_exists(path: CString) -> CInt;
+        export function o_isdir(path: CString) -> CInt;
+        export function o_isfile(path: CString) -> CInt;
+        export function o_remove(path: CString) -> CLong;
+
+        export function o_cwd() -> CString;
+        export function o_chdir(path: CString) -> CInt;
+
+        export function o_open(path: CString, flags: CInt, mode: CInt) -> CInt;
+        export function o_close(fd: CInt) -> CInt;
+        export function o_write_fd(fd: CInt, data: CString) -> CLong;
+        export function o_read_line(fd: CInt) -> CString;
+        export function o_setmode(fd: CInt, mode: CInt) -> CInt;
+    };
+};
+
+when (os: linux) {
+    extension "./io_shim.so" as C {
+        export function o_read_text(path: CString) -> CString;
+        export function o_read_bytes(path: CString) -> CArray;
+        export function o_write_text(path: CString, data: CString) -> CLong;
+        export function o_append_text(path: CString, data: CString) -> CLong;
+
+        export function o_exists(path: CString) -> CInt;
+        export function o_isdir(path: CString) -> CInt;
+        export function o_isfile(path: CString) -> CInt;
+        export function o_remove(path: CString) -> CLong;
+
+        export function o_cwd() -> CString;
+        export function o_chdir(path: CString) -> CInt;
+
+        export function o_open(path: CString, flags: CInt, mode: CInt) -> CInt;
+        export function o_close(fd: CInt) -> CInt;
+        export function o_write_fd(fd: CInt, data: CString) -> CLong;
+        export function o_read_line(fd: CInt) -> CString;
+        export function o_setmode(fd: CInt, mode: CInt) -> CInt;
+    };
+};
+
+when (os: macos) {
+    extension "./io_shim.dylib" as C {
+        export function o_read_text(path: CString) -> CString;
+        export function o_read_bytes(path: CString) -> CArray;
+        export function o_write_text(path: CString, data: CString) -> CLong;
+        export function o_append_text(path: CString, data: CString) -> CLong;
+
+        export function o_exists(path: CString) -> CInt;
+        export function o_isdir(path: CString) -> CInt;
+        export function o_isfile(path: CString) -> CInt;
+        export function o_remove(path: CString) -> CLong;
+
+        export function o_cwd() -> CString;
+        export function o_chdir(path: CString) -> CInt;
+
+        export function o_open(path: CString, flags: CInt, mode: CInt) -> CInt;
+        export function o_close(fd: CInt) -> CInt;
+        export function o_write_fd(fd: CInt, data: CString) -> CLong;
+        export function o_read_line(fd: CInt) -> CString;
+        export function o_setmode(fd: CInt, mode: CInt) -> CInt;
+    };
+};

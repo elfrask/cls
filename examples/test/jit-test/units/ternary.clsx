@@ -1,0 +1,51 @@
+enum E { case1(bool, float), none };
+
+# Ejemplo de aceptacion (pariente canonico: arma-bloque como ternary-target).
+# Equivale al ejemplo del plan (MATCH_PLAN §2.4): `if`-expresion con `* <-`,
+# `match <-` que salta directo al match, y `* <-` final que entrega el arma.
+function calcular(con_iva: bool, monto: float, e: E) -> float {
+    return match (e) {
+        case1(_, _) -> {
+            var iva = if (con_iva) {
+                * <- monto * 0.16
+            } else {
+                match <- monto
+            }
+            * <- iva + monto
+        },
+        none -> { * <- 0.0 }
+    };
+};
+
+function main(args: String[]) -> int {
+    # ?: basico
+    var mayor: bool = 10 > 5 ? true : false;
+    print("ternario:", mayor);
+
+    # asociatividad a derecha: a ? b : c ? d : e == a ? b : (c ? d : e)
+    var x = 0;
+    var r1 = x == 0 ? 1 : x == 1 ? 2 : 3;
+    print("asoc1:", r1);
+
+    var y = 1;
+    var r2 = y == 0 ? 1 : y == 1 ? 2 : 3;
+    print("asoc2:", r2);
+
+    var z = 9;
+    var r3 = z == 0 ? 1 : z == 1 ? 2 : 3;
+    print("asoc3:", r3);
+
+    # anidado en la rama then
+    var t = 10 > 5 ? (2 > 1 ? "aa" : "bb") : "cc";
+    print("anidado:", t);
+
+    # if-expresion con * <-
+    var iva = if (true) { * <- 1.6 } else { * <- 0.0 }
+    print("ifexpr:", iva);
+
+    # ejemplo de aceptacion
+    print("ac iva:", calcular(true, 100.0, E::case1(true, 100.0)));
+    print("ac sin iva:", calcular(false, 100.0, E::case1(true, 100.0)));
+
+    return 0;
+};

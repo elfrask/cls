@@ -52,8 +52,50 @@ pub struct ModuleManifest {
     #[serde(default, rename = "devDependencies")]
     pub dev_dependencies: HashMap<String, String>,
 
+    /// Archivos/patrones de test (globs permitidos), relativos a la raíz del
+    /// proyecto. `clx test` los descubre y ejecuta. Se serializa como
+    /// `testEntry` (array).
+    #[serde(default, rename = "testEntry")]
+    pub test_entry: Vec<String>,
+
+    /// Rutas adicionales de búsqueda de módulos (equivale a
+    /// `clx run --add-path-module=<path>`, repetible). Relativas a la raíz del
+    /// proyecto (CWD). Se combinan con el flag CLI: primero `cls.json`, luego
+    /// los `--add-path-module`. Ver `examples/patrones.md` §11.
+    #[serde(default, rename = "pathModules", skip_serializing_if = "Vec::is_empty")]
+    pub path_modules: Vec<String>,
+
+    /// Rutas de búsqueda de librerías nativas (`extension`). Relativas a la
+    /// raíz del módulo/proyecto; cada manifiesto tiene su propio alcance.
+    #[serde(default, rename = "pathModulesNatives", skip_serializing_if = "Vec::is_empty")]
+    pub path_modules_natives: Vec<String>,
+
+    /// Configuración de módulo: `export.entry` (index público) y `export.types`.
+    /// Solo aplica cuando este `cls.json` describe un **módulo** (no un proyecto).
+    #[serde(default, rename = "export", skip_serializing_if = "Option::is_none")]
+    pub export_config: Option<ModuleExport>,
+
+    /// Script de setup (relativo a la raíz del paquete) que el gestor ejecuta
+    /// una sola vez al instalar el paquete por primera vez. Si no se declara,
+    /// se usa `setup.clsx` cuando existe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup: Option<String>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lockfile_version: Option<u32>,
+}
+
+/// Sección `export` de un `cls.json` de módulo: qué script expone la API y
+/// dónde viven los tipos. Permite que un módulo se importe por su `entry` y que
+/// sus scripts internos se resuelvan desde la raíz del módulo (no del proyecto).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ModuleExport {
+    /// Ruta (relativa a la raíz del módulo) del script de entrada/index.
+    pub entry: String,
+    /// Ruta (relativa) del archivo de tipos `.clsi`, si aplica.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub types: Option<String>,
 }
 
 fn default_registry() -> String {
@@ -126,6 +168,11 @@ impl ModuleManifest {
             interpreter: InterpreterConfig::default(),
             dependencies: HashMap::new(),
             dev_dependencies: HashMap::new(),
+            test_entry: Vec::new(),
+            path_modules: Vec::new(),
+            path_modules_natives: Vec::new(),
+            export_config: None,
+            setup: None,
             lockfile_version: None,
         }
     }

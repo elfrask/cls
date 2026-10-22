@@ -1,4 +1,0 @@
-function main(args) -> int {
-    print("Hello!";
-    return 0;
-}

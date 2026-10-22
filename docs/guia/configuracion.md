@@ -18,9 +18,49 @@ Toda la configuración de un proyecto vive en `cls.json`
 | `project` | object | - | Ver `project` |
 | `compiler` | object | - | Ver `compiler` |
 | `interpreter` | object | - | Ver `interpreter` |
-| `dependencies` | map | `{}` | Dependencias (`"<pkg>": "^1.0.0"`) |
+| `dependencies` | map | `{}` | Dependencias (`"<pkg>": "^1.0.0"` o exacta) |
 | `devDependencies` | map | `{}` | Dependencias de desarrollo (renombrada de `devDependencies`) |
+| `testEntry` | string[] | `[]` | Archivos/globs de test para `clx test` (p.ej. `["tests/**/*.clsx"]`) |
+| `pathModules` | string[] | `[]` | Rutas adicionales de búsqueda de módulos (equivale a `clx run --add-path-module`). Relativas a la raíz del proyecto. Ver `examples/patrones.md` §11 |
+| `pathModulesNatives` | string[] | `[]` | Rutas de búsqueda de librerías nativas (`extension`). Relativas a la raíz del módulo/proyecto; cada manifiesto tiene su propio alcance. Sin variables de entorno |
+| `setup` | string | `setup.clsx` si existe | Script CLS que `clx install` ejecuta una sola vez por versión instalada. |
 | `lockfileVersion` | number | ausente | Versión del lockfile |
+
+### `pathModulesNatives`
+
+Cada `cls.json` puede declarar rutas para sus propios assets nativos:
+
+```json
+{
+  "pathModulesNatives": ["native", "../shared-native"]
+}
+```
+
+- Se resuelven contra la raíz de ese `cls.json`, no contra el CWD.
+- `./foo.dll` busca primero la raíz del paquete y luego estas rutas; si no existe, es error.
+- Un nombre simple (`foo.dll`) busca en la raíz y en estas rutas; si no aparece, se deja al loader del SO.
+- El proyecto y cada módulo tienen su propia lista: no se mezclan.
+- `clx build` copia los binarios a `dist/native-libs/<paquete>@<version>/` conservando sus nombres.
+
+### `setup` de paquetes
+
+`clx install` ejecuta el setup declarado en `cls.json` (o `setup.clsx` si existe)
+después de copiar el paquete y antes de terminar la instalación. El marcador
+`.cls-setup` evita repetirlo para la misma versión.
+
+Variables disponibles:
+
+| Variable | Contenido |
+|---|---|
+| `CLS_MODULE_DIR` | Directorio absoluto del paquete instalado |
+| `CLS_PACKAGE_ROOT` | Igual que `CLS_MODULE_DIR` |
+| `CLS_MODULE_NAME` | `name` del manifiesto |
+| `CLS_MODULE_VERSION` | `version` del manifiesto |
+| `CLS_GLOBAL_MODULES` | `~/.cls/modules` |
+| `CLS_GLOBAL_BIN` | `~/.cls/bin` |
+
+Los archivos de `bin/` del paquete se copian a `~/.cls/bin`; el setup puede
+escribir configuración adicional usando `fs` y `env`.
 
 ### `project`
 
@@ -71,7 +111,7 @@ Toda la configuración de un proyecto vive en `cls.json`
 
 | Campo | Default | Descripción |
 |---|---|---|
-| `memoryLimit` | `"512MB"` | Límite de memoria |
+| `memoryLimit` | `"1GB"` | Límite de memoria lineal del sandbox (bytes; `"512MB"`, `"1GiB"`, `"500"`...). **Aplicado** por el JIT (wasmtime `StoreLimits`); `"0"` = sin límite. Override: env `CLS_MEMORY_LIMIT` |
 | `stackSize` | `"8MB"` | Tamaño de stack |
 | `gc` | object | GC (`GcConfig`: `enabled` `false`, `strategy` `"compiled"`, `threshold` `"64MB"`) |
 
@@ -79,13 +119,57 @@ Toda la configuración de un proyecto vive en `cls.json`
 
 | Campo | Default | Descripción |
 |---|---|---|
-| `allowFs` | `false` | Permitir acceso a filesystem |
-| `allowNet` | `false` | Permitir acceso a red |
-| `maxExecutionTime` | `5000` | Tiempo máximo de ejecución (ms) |
+| `allowFs` | `false` | Permitir acceso a filesystem (expuesto en `config()`; el módulo `fs` de CLS es futuro, ver limitaciones) |
+| `allowNet` | `false` | Permitir acceso a red (expuesto en `config()`) |
+| `allowProcess` | `false` | Permitir procesos/comandos (expuesto en `config()`) |
+| `allowEnv` | `false` | Permitir leer variables de entorno (expuesto en `config()`) |
+| `readPaths` | `[]` | Rutas de lectura permitidas |
+| `writePaths` | `[]` | Rutas de escritura permitidas |
+| `allowedHosts` | `[]` | Hosts de red permitidos |
+| `maxExecutionTime` | `0` | Tiempo máximo de ejecución (ms; `0` = sin límite). Si es `> 0` el JIT activa la interrupción por epoch de wasmtime. Override: env `CLS_TIME_LIMIT`. **Aplicado** |
+| `maxOutputBytes` | `0` | Límite de bytes de salida (`0` = sin límite). Expuesto en `config()` |
+| `maxFileSize` | `0` | Límite de tamaño de archivo en bytes (`0` = sin límite). Expuesto en `config()` |
+
+> **Sandbox de memoria**: `memoryLimit` (o `CLS_MEMORY_LIMIT`) sí se aplica —
+> se declara como máximo de páginas de la memoria lineal del módulo WASM y
+> además se fija como `StoreLimits` de wasmtime; al superarlo, la ejecución
+> trapea con un error de ejecución (exit ≠ 0). La reserva virtual por memoria
+> se reduce a 64 MiB (guard 64 KiB) para acotar el VA reservado.
+>
+> **Alcance**: el sandbox (`StoreLimits`, `memoryLimit`, `maxExecutionTime`) es
+> **solo runtime-WASM** — limita la ejecución del programa, **no** al compilador
+> ni a `clx build`. El compilador/emisión corre en el host sin esos límites.
+
+### `config()` — introspección de la configuración (solo lectura)
+
+El lenguaje expone la configuración efectiva del host como un **intrinsic de
+introspección autorizado** (excepción sancionada a la regla de no añadir
+`host_calls`; no añade features, solo **lee parámetros del host**):
+
+```clx
+from "config" import *;   # o import "config" as cfg;
+
+config();                 // intrinsic crudo: Record<String, String> (host level)
+get("project.name");      // "" si no existe
+getBool("sandbox.allowNet");
+getInt("sandbox.maxOutputBytes");
+sandboxEnabled("net");    // -> sandbox.allowNet
+```
+
+- El intrinsic crudo `config()` devuelve un `Record<String, String>` **plano**
+  (claves con puntos), construido **una sola vez** en el host y cacheado. Es
+  **de solo lectura**: no expone punteros ni permite modificar la config.
+- `modules/config/` (`modules/config/mod.clsx`, CLS puro) es la capa idiomática:
+  `all()`, `get(key)`, `getBool(key)`, `getInt(key)`, `sandboxEnabled(name)`,
+  con **caché perezosa** (una sola llamada al host).
+- Claves del snapshot: `project.*`, `compiler.*`, `interpreter.*`, `sandbox.*`
+  y `runtime.*` (valores efectivos: `runtime.memoryLimitBytes`,
+  `runtime.timeLimitMs`, `runtime.runtime` = `wasmtime`/`wasmi`,
+  `runtime.traceCalls`, `runtime.pathModules`, `runtime.target`).
 
 ## Ejemplo real
 
-`examples/hello/cls.json`:
+`examples/test/hello/cls.json`:
 
 ```json
 {
@@ -115,9 +199,12 @@ Toda la configuración de un proyecto vive en `cls.json`
 | Variable | Efecto |
 |---|---|
 | `CLS_REGISTRY` | Registry para `clx install` (prioridad sobre `cls.json["registry"]`) |
+| `CLS_GIX_DRIVER` | Ruta al driver de git (`clxgix.dll`/`.so`) para instalar del registry |
 | `CLS_JIT_RUNTIME=wasmi` | Usa wasmi en lugar de wasmtime (sin excepciones CLS) |
 | `CLS_DUMP_WAT` | Imprime el WAT del módulo compilado en stderr |
 | `CLS_JIT_TIMING=1` | Log de tiempos por fase del JIT |
+| `CLS_MEMORY_LIMIT` | Límite de memoria lineal del sandbox (p.ej. `1GB`, `512MB`); prioridad sobre `cls.json` |
+| `CLS_TIME_LIMIT` | Límite de tiempo de ejecución en ms (opt-in; interrupción por epoch) |
 | `CLS_LIB_PATH` | Directorio del binario `clsb` (bindings Python: `clsb.dll`/`.so`/`.dylib`) |
 
 ## Caché de compilación
@@ -140,10 +227,18 @@ clx clean --all  # además borra el directorio completo y [cwd]/.cls-cache/
 ## Dependencias y registry
 
 ```ps
-clx add <paquete>        # agrega "<paquete>": "^1.0.0" a dependencies
-clx add <paquete> --dev  # idem, en devDependencies
-clx install              # descarga a modules/<paquete>/mod.clsx
+clx add <spec> [--dev]     # edita cls.json (con versión = fija; sin versión = ^última)
+clx install                # resuelve deps de cls.json -> ~/.cls/modules/<name>@<v>/
+clx install <ruta|zip> -S  # instala paquete local y lo registra (--save)
+clx ls [-g]                # lista paquetes locales y globales
+clx info [ruta|paquete]    # info de un paquete/proyecto
+clx audit [-g]             # audita manifiesto/entry/deps/duplicados
 ```
+
+- `<spec>` = `[scope/]nombre[@versión]` (p.ej. `foo`, `foo@1.2.3`, `usuario/foo`).
+- Los paquetes instalados viven en `~/.cls/modules/[scope/]nombre@versión/`
+  (layout anidado para scopes).
+- `./modules/` es para los **módulos propios** del usuario.
 
 `clx install` escribe el lockfile `cls.lock`:
 
@@ -151,9 +246,14 @@ clx install              # descarga a modules/<paquete>/mod.clsx
 {
   "lockfileVersion": 1,
   "registry": "https://registry.cls-lang.org",
-  "packages": { "<paquete>": { "version": "latest" } }
+  "packages": {
+    "foo": { "version": "1.2.3", "channel": "stable", "resolved": "global" }
+  }
 }
 ```
+
+El registry **no almacena código**: publica `{repo_url, commit}` y `clx` lo baja
+con el **driver de git** (`gix`), cargado dinámicamente (`CLS_GIX_DRIVER`).
 
 ## Resolución de `.clslib` (`ClsLibResolver`)
 

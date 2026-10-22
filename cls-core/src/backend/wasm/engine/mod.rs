@@ -33,6 +33,9 @@ pub(super) struct Engine<'a> {
     /// `true` = emitir el shadow call stack (fn_enter/exit/call_site) para el
     /// trace de errores. `false` = omitir (pierde el trace; `clx run --release`).
     pub(crate) trace_calls: bool,
+    /// Máximo de la memoria lineal en páginas (64 KiB). `None` = sin máximo.
+    /// Lo fija el nodo desde el sandbox (`interpreter.runtime.memoryLimit`).
+    pub(crate) memory_max_pages: Option<u64>,
     /// Funciones host del nodo por nombre (canal `env.host_call`).
     pub(crate) intrinsics: HashMap<String, HostIntrinsic>,
     /// Metadatos de los exports tipados (JSON, sección custom `clx:exports`).
@@ -62,9 +65,19 @@ pub(super) struct Engine<'a> {
     pub(crate) string_pool: Vec<String>,
     string_index: HashMap<String, u32>,
     enum_defs: HashMap<String, (u32, Vec<String>)>,
+    /// Esquema de payload por enum (F2): nombre del enum -> por variante, los
+    /// tipos de sus params. Vacío = variante unit. Si algún vec no está vacío,
+    /// el enum se representa como objeto de heap; si todos están vacíos, sigue
+    /// empacado i64 `(def_id<<32)|idx`.
+    enum_params: HashMap<String, Vec<Vec<Type>>>,
     struct_defs: HashMap<String, StructInfo>,
     native_indexes: HashMap<String, u32>,
     native_ret: HashMap<String, char>,
+    /// Letras de tipo C de los params de cada función de extensión (misma
+    /// codificación que el nombre del import: 'i','f','b','c','s','I','S',...).
+    /// El emisor las usa en el call site: un param 'S' con un valor struct CLS
+    /// recibe la dirección de la DATA (base+16), no la del header.
+    native_params: HashMap<String, Vec<char>>,
     globals: HashMap<String, u32>,
     global_inits: Vec<(u32, Expression)>,
     /// Índices WASM de las globals de usuario (var/const top-level y static
@@ -92,6 +105,10 @@ pub(super) struct Engine<'a> {
     /// se re-mapea a table_index 1.
     internals_elem: Vec<u32>,
     target: Target,
+    /// `import "mod" as alias` / `from "mod" import * as alias` -> alias -> path.
+    /// Permite referenciar los módulos internos (math/json/strings/fs/...) con
+    /// cualquier alias, no solo con el nombre literal del módulo.
+    pub(crate) import_aliases: HashMap<String, String>,
 }
 
 /// Definición de una clase compilada: layout de objeto + vtable.
@@ -112,6 +129,7 @@ impl<'a> Engine<'a> {
             exceptions: true,
             require_main: true,
             trace_calls: true,
+            memory_max_pages: None,
             intrinsics: HashMap::new(),
             exports_meta: Vec::new(),
             func_indexes: HashMap::new(),
@@ -125,9 +143,11 @@ impl<'a> Engine<'a> {
             string_pool: Vec::new(),
             string_index: HashMap::new(),
             enum_defs: HashMap::new(),
+            enum_params: HashMap::new(),
             struct_defs: HashMap::new(),
             native_indexes: HashMap::new(),
             native_ret: HashMap::new(),
+            native_params: HashMap::new(),
             globals: HashMap::new(),
         global_inits: Vec::new(),
         user_global_idxs: Vec::new(),
@@ -149,6 +169,7 @@ impl<'a> Engine<'a> {
             internals_bodies: Vec::new(),
             internals_elem: Vec::new(),
             target,
+            import_aliases: HashMap::new(),
         }
     }
 

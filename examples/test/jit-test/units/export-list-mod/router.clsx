@@ -1,0 +1,11 @@
+# Submódulo reexportado en bloque (`router::*`).
+
+export function ruta() -> String {
+    return "/home";
+};
+
+export class Router {
+    public var n: int;
+    function main() { me.n = 0; }
+    function add() -> int { me.n = me.n + 1; return me.n; }
+};

@@ -1,0 +1,119 @@
+# engine.clsx - Renderer CMX -> HTML en CLS puro (0 host nuevo).
+#
+# El runtime de CMX construye un DOM virtual (`Cmx { tag, props, children }`,
+# con `kind`: 1=texto, 0=elemento) pero NO lo serializa a HTML. Este motor
+# recorre el arbol y produce HTML:
+#
+#   e(s)      -> escape HTML de texto y valores de atributo
+#   render(c) -> HTML de un CmxValue (recursivo)
+#   raw(html) -> marcador de HTML confiable (no se escapa)
+#
+# Modelo de seguridad: TODO lo interpolado se escapa salvo `raw()` explicito.
+#
+# Limitaciones documentadas (ver README):
+#   - Los children que son Array (`{arr.map(...)}`) NO se pueden expandir: en
+#     CLS puro no hay forma de distinguir en runtime un `Cmx` de un `Array`
+#     (ni `is Array` ni `type()` ayudan; `.kind` lee basura en un array). Los
+#     bucles se resuelven con el patron `raw(...)` (ver `list`/`todoList`).
+#   - Los componentes (tag mayuscula) se auto-invocan: el nodo trae
+#     `isComponent=true` y su `tagCallable`, y el renderer lo llama con
+#     props+children (ver `render`). Los componentes devuelven HTML (String).
+
+# --- escape ---------------------------------------------------------------
+
+# `&`, `<`, `>`, `"`, `'` (y NO doble-escape: cada byte se mapea una vez).
+export function e(s: String) -> String {
+    var out = "";
+    for each c in (s.toChar()) {
+        var n = ord(c);
+        out = out + match (n) in {
+            38 -> "&amp;",
+            60 -> "&lt;",
+            62 -> "&gt;",
+            34 -> "&quot;",
+            39 -> "&#39;",
+            default -> c.toString(),
+        };
+    }
+    return out;
+}
+
+# --- atributos ------------------------------------------------------------
+
+# Elementos vacios (sin cierre) en HTML5.
+export function isVoid(tag: String) -> bool {
+    return match (tag) in {
+        ("area", "base", "br", "col", "embed", "hr", "img", "input", "link",
+         "meta", "param", "source", "track", "wbr") -> true,
+        default -> false,
+    };
+}
+
+# Ordena las claves de props alfabeticamente (salida determinista).
+function sortKeys(ks: String[]) -> String[] {
+    var a = ks;
+    for (var i = 1; i < a.length; i++) {
+        var key = a[i];
+        var j = i - 1;
+        while (j >= 0 && a[j] > key) { a[j + 1] = a[j]; j = j - 1; }
+        a[j + 1] = key;
+    }
+    return a;
+}
+
+# ` key="valor"` por cada prop; prop `true` -> atributo booleano desnudo
+# (`<input disabled />` produce props["disabled"] = true).
+export function attrs(c: Cmx) -> String {
+    var ks = sortKeys(c.props.keys());
+    var out = "";
+    for each k in (ks) {
+        if (c.props[k] == true) { out = out + " " + k; }
+        else { out = out + " " + k + "=\"" + e(str(c.props[k])) + "\""; }
+    }
+    return out;
+}
+
+# --- raw ------------------------------------------------------------------
+
+# HTML confiable: el renderer lo emite sin escapar (uso explicito y consciente).
+export function raw(html: String) -> Cmx {
+    return (<raw>{html}</raw>);
+}
+
+# --- render ---------------------------------------------------------------
+
+export function render(c: Cmx) -> String {
+    # Child de texto (kind=1): su `tag` ES el contenido.
+    if (c.kind == 1) { return e(c.tag); }
+    # Componente (tag mayuscula): invocar el `tagCallable` con props + children.
+    if (c.isComponent) {
+        var html: String = c.tagCallable(c.props, c.children);
+        return html;
+    }
+    var tag: String = c.tag;
+    # Marcador `raw`: emitir el texto de los children SIN escapar.
+    if (tag == "raw") {
+        var rawOut = "";
+        for each ch in (c.children) {
+            rawOut = rawOut + match (ch.kind) in {
+                1 -> ch.tag,
+                default -> render(ch),
+            };
+        }
+        return rawOut;
+    }
+    var inner = "";
+    for each ch in (c.children) { inner = inner + render(ch); }
+    if (isVoid(tag)) { return "<" + tag + attrs(c) + " />"; }
+    return "<" + tag + attrs(c) + ">" + inner + "</" + tag + ">";
+}
+
+# --- helpers de composicion (bucles) --------------------------------------
+
+# Renderiza cada item de `items` con `fn` y concatena el HTML. Sustituye al
+# `{arr.map(...)}` de CMX (que el renderer no puede expandir; ver arriba).
+export function renderEach(items: String[], fn: (String) -> Cmx) -> String {
+    var out = "";
+    for each it in (items) { out = out + render(fn(it)); }
+    return out;
+}

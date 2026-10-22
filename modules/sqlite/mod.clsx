@@ -1,0 +1,18 @@
+# sqlite - Backend SQLite del ORM (FFI a C).
+#
+# Ladrillo de la stdlib autocontenida (examples/patrones.md §11): implementa el
+# contrato de driver de `modules/orm` sobre el shim C `sqlite_shim`, que envuelve
+# la API C de SQLite SIN exponer punteros a CLS (handles enteros).
+#
+# LIMITACIÓN CONOCIDA DEL FFI: la ruta del shim se resuelve relativa al CWD, no
+# al archivo .clsx; por eso hay que correr desde la raíz del repo (ver README).
+#
+#   sqlite_ffi.clsx - bindings crudos al shim (no público)
+#   map.clsx        - traducción shim <-> ORM (`materialize`)
+#   backend.clsx    - `SqliteDriver`
+#
+# Barrel: se expone la API pública.
+
+import "backend" as backend;
+
+export { backend::SqliteDriver as SqliteDriver, backend::removeFile as removeFile };

@@ -1,0 +1,7 @@
+# Negativo B1: una rama de `if`-expresión que NO entrega su valor con `<-`
+# (cae sin divergir) -> error de compilación claro (no WASM inválido).
+function main(args: String[]) -> int {
+    var x = 9;
+    var w = if (x > 5) { print("a"); } else { * <- 1 };
+    return w;
+};

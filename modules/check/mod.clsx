@@ -1,0 +1,23 @@
+# check - Aserciones + protocolo `CHECK k=v` para runners de prueba.
+#
+# Ladrillo de la stdlib autocontenida (examples/patrones.md §11): CLS puro, sin
+# FFI ni host_calls. Emite una línea `CHECK <name>=...` por aserción (el mismo
+# protocolo que consumen los oráculos externos, p.ej. examples/sqlite-orm) y
+# lleva la cuenta de fallos en estado de módulo.
+#
+# Uso:
+#   check::reset();
+#   check::assertEq("sum.2+2", 2 + 2, 4);
+#   check::assertEqStr("greet", greet(), "hola");
+#   check::assertTrue("is.even", n % 2 == 0);
+#   if (check::fails() > 0) { return 1; }
+#
+# Barrel: el contador (`counter.clsx`) y las aserciones (`assert.clsx`) quedan
+# separados; aquí se expone la API pública.
+
+import "counter" as counter;
+import "assert" as assert;
+
+export { assert::fail as fail, assert::assertEq as assertEq,
+         assert::assertEqStr as assertEqStr, assert::assertTrue as assertTrue };
+export { counter::fails as fails, counter::reset as reset };

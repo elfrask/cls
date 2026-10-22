@@ -1,0 +1,28 @@
+# io/files.clsx - Lectura/escritura de archivos completos (byte-exacta).
+import "bytes" as bytes;
+from "io_ffi" import o_read_text, o_read_bytes, o_write_text, o_append_text;
+
+# Lee el archivo como texto (null-terminated; seguro para UTF-8 sin NUL).
+export function readText(path: String) -> String { return o_read_text(path); }
+
+# Lee el archivo como bytes crudos (seguro con bytes NUL). [] si no se pudo leer.
+export function readBytes(path: String) -> int[] { return o_read_bytes(path); }
+
+# [EXPERIMENTAL] Igual que `readBytes` pero expone el buffer como `Char[]`
+# (modelo str/bytes: `Char` = unidad de 1 byte, 0..255). Se implementa en CLS
+# convirtiendo el `int[]` del shim, porque el marshalling de `CArray` del FFI
+# hoy usa stride de 8 bytes (ver README). NO reemplaza a `readBytes`.
+export function readChars(path: String) -> Char[] {
+    var raw: int[] = o_read_bytes(path);
+    return bytes::toChars(raw);
+}
+
+# Escribe (trunca) el archivo, byte-exacto. Devuelve los bytes escritos, -1 error.
+export function writeText(path: String, data: String) -> int {
+    return int(o_write_text(path, data));
+}
+
+# Agrega al final del archivo, byte-exacto. Devuelve los bytes escritos, -1 error.
+export function appendText(path: String, data: String) -> int {
+    return int(o_append_text(path, data));
+}

@@ -39,6 +39,18 @@ impl HostCtx for Caller<'_, HostState> {
         String::new()
     }
 
+    fn read_bytes(&mut self, packed: i64) -> Vec<u8> {
+        let ptr = (packed >> 32) as usize;
+        let len = (packed & 0xffff_ffff) as usize;
+        if let Some(memory) = self.get_export("memory").and_then(|e| e.into_memory()) {
+            let data = memory.data(self);
+            if ptr + len <= data.len() {
+                return data[ptr..ptr + len].to_vec();
+            }
+        }
+        Vec::new()
+    }
+
     fn write_str(&mut self, s: &str) -> i64 {
         let len = s.len() as i64;
         let cap = (len * 2 + 16).max(64);
@@ -120,6 +132,129 @@ impl HostCtx for Caller<'_, HostState> {
     }
 }
 
+/// Traduce un offset de la memoria lineal del módulo (el ptr CLS de un record/
+/// array) a su dirección HOST (la memoria lineal es una alocación del host; el
+/// DLL la lee/escribe en su propio espacio de direcciones).
+fn ffi_wasm_to_host(caller: &mut Caller<'_, HostState>, wasm_ptr: i64) -> i64 {
+    if let Some(mem) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+        let base = mem.data_ptr(&mut *caller) as usize;
+        return (base as i64).wrapping_add(wasm_ptr);
+    }
+    wasm_ptr
+}
+
+/// Traduce una dirección HOST (devuelta por el DLL) de vuelta a un offset de la
+/// memoria lineal del módulo. Si el ptr no cae dentro de la memoria (el DLL
+/// devolvió un buffer propio), se vuelve 0 (el layout no es re-usable por CLS).
+fn ffi_host_to_wasm(caller: &mut Caller<'_, HostState>, host_ptr: i64) -> i64 {
+    if let Some(mem) = caller.get_export("memory").and_then(|e| e.into_memory()) {
+        let base = mem.data_ptr(&mut *caller) as usize;
+        let host = host_ptr as usize;
+        if host >= base && host < base + mem.data_size(&mut *caller) {
+            return (host - base) as i64;
+        }
+    }
+    0
+}
+
+/// Copia un layout del BUFFER HOST del DLL (fuera de la memoria del módulo) a la
+/// memoria del módulo, RE-MApeando los punteros internos: las keys de un record
+/// y los valores string (tag 1) apuntan al espacio del DLL; al copiar crudo
+/// quedarían inválidos en el módulo. Re-serializa:
+/// - array `[cap][len][elems*8]` de escalares: copia cruda (stride 8).
+/// - record `[cap][len][(key,val,tag)*24]`: re-aloca cada key string en el
+///   módulo y copia val (re-mapeando strings si tag==1).
+fn ffi_copy_own_layout(
+    caller: &mut Caller<'_, HostState>,
+    host_ptr: i64,
+    rcode: char,
+    ret_struct_size: i64,
+) -> i64 {
+    let host = host_ptr as usize;
+    if host == 0 {
+        return 0;
+    }
+    // Header `[cap][len]`.
+    let len = unsafe { ((host + 8) as *const i64).read_unaligned() };
+    if len < 0 || len > 1_000_000 {
+        return 0;
+    }
+    if rcode == 'a' {
+        // Array de escalares: copia cruda.
+        let size = 16 + (len as i64) * 8;
+        let wasm_off = caller.alloc(size);
+        let ok = caller.write_bytes(wasm_off as usize, unsafe {
+            std::slice::from_raw_parts(host as *const u8, size as usize)
+        });
+        return if ok { wasm_off } else { 0 };
+    }
+    if rcode == 'S' {
+        // Struct: layout CLS `[def_id][len][data C]`; el tamaño total viene en
+        // el nombre del import (`S<bytes>`), así el bloque copiado es exacto
+        // aunque el struct tenga campos angostos (i16/i32). Fallback (sin
+        // tamaño en el nombre): 16 + n*8 (campos CLS de 8 bytes).
+        let size = if ret_struct_size > 0 {
+            ret_struct_size
+        } else {
+            16 + len.max(0) * 8
+        };
+        let wasm_off = caller.alloc(size);
+        let ok = caller.write_bytes(wasm_off as usize, unsafe {
+            std::slice::from_raw_parts(host as *const u8, size as usize)
+        });
+        return if ok { wasm_off } else { 0 };
+    }
+    if rcode == 'r' {
+        // Record: re-serializar con keys/valores strings re-mapeados.
+        let n = len as usize;
+        let ptr = caller.alloc((n as i64) * 24 + 16);
+        if ptr == 0 {
+            return 0;
+        }
+        caller.write_i64(ptr as usize, n as i64);
+        caller.write_i64(ptr as usize + 8, n as i64);
+        for i in 0..n {
+            let base = host + 16 + i * 24;
+            let kbits = unsafe { (base as *const i64).read_unaligned() };
+            let vbits = unsafe { ((base + 8) as *const i64).read_unaligned() };
+            let tag = unsafe { ((base + 16) as *const i64).read_unaligned() };
+            // Key string: el ptr del DLL puede ser un offset relativo al buffer
+            // propio (si es bajo, < 1MB) o una dirección absoluta. Se resuelve
+            // contra el buffer y se re-aloca en la memoria del módulo.
+            let kraw = (kbits >> 32) as usize;
+            let klen = (kbits & 0xffff_ffff) as usize;
+            let ksrc = if kraw < 1_000_000 { host + kraw } else { kraw };
+            let new_key = if klen > 0 && klen < 1_000_000 {
+                caller.write_str(std::str::from_utf8(unsafe {
+                    std::slice::from_raw_parts(ksrc as *const u8, klen)
+                }).unwrap_or(""))
+            } else {
+                0
+            };
+            // Valor: si tag==1 (string), re-mapear igual; si no, copiar bits.
+            let new_val = if tag == 1 {
+                let vraw = (vbits >> 32) as usize;
+                let vlen = (vbits & 0xffff_ffff) as usize;
+                let vsrc = if vraw < 1_000_000 { host + vraw } else { vraw };
+                if vlen > 0 && vlen < 1_000_000 {
+                    caller.write_str(std::str::from_utf8(unsafe {
+                        std::slice::from_raw_parts(vsrc as *const u8, vlen)
+                    }).unwrap_or(""))
+                } else {
+                    vbits
+                }
+            } else {
+                vbits
+            };
+            caller.write_i64(ptr as usize + 16 + i * 24, new_key);
+            caller.write_i64(ptr as usize + 16 + i * 24 + 8, new_val);
+            caller.write_i64(ptr as usize + 16 + i * 24 + 16, tag);
+        }
+        return ptr;
+    }
+    0
+}
+
 // ── Registro de host functions (adaptadores) ────────────────────────────────
 
 /// Registra las host functions `env.*` (adaptadores de una línea a los cuerpos
@@ -159,6 +294,9 @@ pub fn register_host_functions_opt(
     w!("sleep", |mut c: Caller<'_, HostState>, ms: i64| host::host_sleep(&mut c, ms));
     w!("input", |mut c: Caller<'_, HostState>| -> i64 { host::host_input(&mut c) });
     w!("math_random", |mut c: Caller<'_, HostState>| -> f64 { host::host_math_random(&mut c) });
+    w!("any_to_bool", |mut c: Caller<'_, HostState>, v: i64, t: i64| -> i32 {
+        host::host_any_to_bool(&mut c, v, t)
+    });
     w!("json_stringify", |mut c: Caller<'_, HostState>, v: i64, k: i64| -> i64 {
         host::host_json_stringify(&mut c, v, k)
     });
@@ -190,18 +328,6 @@ pub fn register_host_functions_opt(
             host::host_http_post(&mut c, u, d)
         });
     }
-    w!("cmx_new", |mut c: Caller<'_, HostState>, t: i64, k: i64| -> i64 {
-        host::host_cmx_new(&mut c, t, k)
-    });
-    w!("cmx_set_prop", |mut c: Caller<'_, HostState>, p: i64, k: i64, v: i64, t: i64| -> i64 {
-        host::host_cmx_set_prop(&mut c, p, k, v, t)
-    });
-    w!("cmx_add_child", |mut c: Caller<'_, HostState>, p: i64, v: i64, t: i64| -> i64 {
-        host::host_cmx_add_child(&mut c, p, v, t)
-    });
-    w!("cmx_to_string", |mut c: Caller<'_, HostState>, p: i64| -> i64 {
-        host::host_cmx_to_string(&mut c, p)
-    });
     w!("fn_handle", |mut c: Caller<'_, HostState>, ti: i64, n: i64, cap: i64| -> i64 {
         host::host_fn_handle(&mut c, ti, n, cap)
     });
@@ -218,6 +344,7 @@ pub fn register_host_functions_opt(
     w!("host_call", |mut c: Caller<'_, HostState>, id: i64, ptr: i64, n: i64| -> i64 {
         host::host_host_call(&mut c, id, ptr, n)
     });
+    w!("config_record", |mut c: Caller<'_, HostState>| -> i64 { host::host_config_record(&mut c) });
     if !sandbox {
         // Módulo os
         w!("os_platform", |mut c: Caller<'_, HostState>| -> i64 { host::host_os_platform(&mut c) });
@@ -290,6 +417,17 @@ pub fn register_host_functions_opt(
             host::host_random_float(&mut c, min, max)
         });
         w!("random_uuid", |mut c: Caller<'_, HostState>| -> i64 { host::host_random_uuid(&mut c) });
+        // net eliminado (dev-2): no se registran hosts de sockets.
+        // Módulo str (utilidades de string)
+        w!("str_index_of", |mut c: Caller<'_, HostState>, s: i64, sub: i64| -> i64 {
+            host::host_str_index_of(&mut c, s, sub)
+        });
+        w!("str_slice", |mut c: Caller<'_, HostState>, s: i64, a: i64, b: i64| -> i64 {
+            host::host_str_slice(&mut c, s, a, b)
+        });
+        w!("str_split", |mut c: Caller<'_, HostState>, s: i64, sep: i64| -> i64 {
+            host::host_str_split(&mut c, s, sep)
+        });
     }
     Ok(())
 }
@@ -340,6 +478,9 @@ pub fn register_native_hosts(
             'c' => NativeType::CInt,
             's' => NativeType::CString,
             'I' => NativeType::CInt,
+            'r' => NativeType::CRecord,
+            'a' => NativeType::CArray,
+            'S' => NativeType::CStruct,
             _ => NativeType::Int,
         };
         let ret_to_i64 = |v: Result<Value, cls_core::error::ClsError>| -> i64 {
@@ -381,8 +522,26 @@ pub fn register_native_hosts(
                 Err(_) => 0,
             }
         };
-        let params: Vec<char> = sig.chars().skip(1).collect();
+        let params: Vec<char> = sig
+            .chars()
+            .skip(1)
+            // Retorno struct: el nombre del import trae el tamaño total en
+            // bytes (`make_punto__S32@ffi_struct.dll`) -> el wrapper copia ese
+            // bloque exacto del buffer del DLL (con campos angostos i16/i32 el
+            // layout C es menor que 16 + n*8).
+            .skip_while(|c| c.is_ascii_digit())
+            .collect();
         let rcode = sig.chars().next().unwrap_or('i');
+        let ret_struct_size: i64 = if rcode == 'S' {
+            sig.chars()
+                .skip(1)
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse()
+                .unwrap_or(0)
+        } else {
+            0
+        };
         let lib2 = lib.clone();
         let sym2 = sym.clone();
         let letters = params.clone();
@@ -401,33 +560,101 @@ pub fn register_native_hosts(
                         'f' => Value::Float(a.f64().unwrap_or(0.0)),
                         'b' => Value::Bool(a.i32().unwrap_or(0) != 0),
                         'c' => Value::Int(a.i32().unwrap_or(0) as i64),
+                        // El ptr del layout CLS (offset de la memoria lineal) se
+                        // traduce a su dirección HOST: el DLL la lee/escribe en
+                        // su propio espacio. La memoria lineal es una alocación
+                        // del host, así que `base + offset` es un puntero válido.
+                        'r' | 'a' | 'S' => Value::Int(ffi_wasm_to_host(&mut caller, a.i64().unwrap_or(0))),
                         _ => Value::Int(a.i64().unwrap_or(0)),
                     };
                     vals.push(v);
                     ptypes.push(native_type(letter));
                 }
-                let r = backend.call_function(&lib2, &sym2, &vals, &ptypes, native_type(rcode));
+                let r = backend.call_function_raw(&lib2, &sym2, &vals, &ptypes, native_type(rcode));
+                // Un fallo de la llamada nativa (DLL ausente/símbolo no
+                // encontrado/ABI) es FATAL: se propaga como trap WASM para que
+                // el runtime muestre el trace completo y el proceso salga con
+                // código != 0. Antes se imprimía el error pero se devolvía 0 y
+                // el programa seguía como si nada (falso éxito).
+                if let Err(e) = &r {
+                    return Err(wasmtime::Error::msg(format!(
+                        "Extensión '{}' ({} de '{}'): {}",
+                        sym2, sig, lib2, e
+                    )));
+                }
                 match rcode {
                     'v' => Ok(()),
                     's' => {
-                        let s = match r {
-                            Ok(Value::String(s)) => s,
-                            _ => String::new(),
+                        // Retorno `CString` byte-transparente: se escriben los
+                        // bytes crudos en la memoria del módulo (sin normalizar
+                        // UTF-8). Se corta en el primer NUL (semántica C).
+                        let bytes = match r {
+                            Ok(cls_runtime::ffi::NativeRet::Bytes(b)) => b,
+                            Ok(cls_runtime::ffi::NativeRet::Value(Value::String(s))) => {
+                                s.into_bytes()
+                            }
+                            _ => Vec::new(),
                         };
-                        results[0] = Val::I64(caller.write_str(&s));
-                        Ok(())
-                    }
-                    'f' => {
-                        results[0] = Val::F64(ret_to_f64(r).to_bits());
-                        Ok(())
-                    }
-                    'b' | 'c' => {
-                        results[0] = Val::I32(ret_to_i32(r));
+                        results[0] = Val::I64(host::write_packed_bytes(&mut caller, &bytes));
                         Ok(())
                     }
                     _ => {
-                        results[0] = Val::I64(ret_to_i64(r));
-                        Ok(())
+                        let rv = r.map(|x| x.into_value());
+                        match rcode {
+                            'f' => {
+                                results[0] = Val::F64(ret_to_f64(rv).to_bits());
+                                Ok(())
+                            }
+                            'b' | 'c' => {
+                                results[0] = Val::I32(ret_to_i32(rv));
+                                Ok(())
+                            }
+                            'r' | 'a' | 'S' => {
+                                // El backend devolvió el ptr HOST del layout (el DLL
+                                // escribió in-place en la memoria del módulo, que es
+                                // una alocación del host). Se traduce host -> offset
+                                // WASM y se devuelve al CLS.
+                                match rv {
+                                    Ok(Value::Int(host_ptr)) => {
+                                        let wasm_off = ffi_host_to_wasm(&mut caller, host_ptr);
+                                        if wasm_off != 0 {
+                                            // In-place sobre la memoria del módulo: usar
+                                            // el offset directo (cero copias).
+                                            results[0] = Val::I64(wasm_off);
+                                            Ok(())
+                                        } else if host_ptr != 0 {
+                                            // El DLL devolvió un buffer PROPIO (fuera de
+                                            // la memoria del módulo): re-serializar el
+                                            // layout a la memoria del módulo re-mapeando
+                                            // punteros internos (keys/strings del DLL).
+                                            results[0] = Val::I64(ffi_copy_own_layout(
+                                                &mut caller,
+                                                host_ptr,
+                                                rcode,
+                                                ret_struct_size,
+                                            ));
+                                            Ok(())
+                                        } else {
+                                            results[0] = Val::I64(0);
+                                            Ok(())
+                                        }
+                                    }
+                                    Ok(v) => {
+                                        results[0] =
+                                            Val::I64(host::ffi_write_value(&mut caller, &v));
+                                        Ok(())
+                                    }
+                                    Err(_) => {
+                                        results[0] = Val::I64(0);
+                                        Ok(())
+                                    }
+                                }
+                            }
+                            _ => {
+                                results[0] = Val::I64(ret_to_i64(rv));
+                                Ok(())
+                            }
+                        }
                     }
                 }
             },
@@ -442,10 +669,23 @@ pub fn register_native_hosts(
 
 // ── Ejecución ───────────────────────────────────────────────────────────────
 
-/// Config de wasmtime: habilita la propuesta de excepciones (try/catch).
+/// Config de wasmtime: habilita la propuesta de excepciones (try/catch) y la
+/// interrupción por epoch (para el límite de tiempo del sandbox).
+///
+/// Endurecimiento de memoria: reduce la **reserva virtual** por memoria lineal
+/// de los 4 GiB por defecto a 64 MiB, con guard de 64 KiB y un crecimiento tras
+/// la reserva también acotado (16 MiB). Con una reserva menor que el máximo del
+/// módulo, Cranelift inserta bounds checks explícitos (correcto, algo más
+/// lento); el tope real de memoria lo pone el `StoreLimits` del sandbox.
 fn wasmtime_config() -> Option<wasmtime::Config> {
     let mut config = wasmtime::Config::new();
     config.wasm_exceptions(true);
+    config.memory_reservation(64 * 1024 * 1024);
+    config.memory_guard_size(64 * 1024);
+    config.memory_reservation_for_growth(16 * 1024 * 1024);
+    if crate::limits::time_limit() > 0 {
+        config.epoch_interruption(true);
+    }
     Some(config)
 }
 
@@ -474,9 +714,19 @@ pub(crate) fn run_wasm_wasmtime(
     let module = match Module::new(&engine, wasm_bytes) {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("[JIT] Módulo WASM inválido para '{}':\n{:?}", entry, e);
-            if let Ok(wat) = wasmprinter::print_bytes(wasm_bytes) {
-                eprintln!("--- WAT ---\n{}", wat);
+            // Diagnóstico corto: el `{:?}` completo del error puede embeber los
+            // bytes crudos del módulo (megabytes ilegibles). El WAT completo
+            // queda detrás de CLS_DUMP_WAT=1.
+            let msg = e.root_cause().to_string();
+            eprintln!(
+                "[JIT] Módulo WASM inválido para '{}': {}",
+                entry,
+                if msg.is_empty() { e.to_string() } else { msg }
+            );
+            if std::env::var("CLS_DUMP_WAT").is_ok() {
+                if let Ok(wat) = wasmprinter::print_bytes(wasm_bytes) {
+                    eprintln!("--- WAT ---\n{}", wat);
+                }
             }
             if let Some(p) = &cache_path {
                 let _ = std::fs::remove_file(p);
@@ -493,6 +743,14 @@ pub(crate) fn run_wasm_wasmtime(
         crate::engine::maybe_write_module_index(entry, modules, ctx);
     }
 
+    let mem_limit = crate::limits::memory_limit();
+    let limits = {
+        let mut b = wasmtime::StoreLimitsBuilder::new();
+        if mem_limit > 0 {
+            b = b.memory_size(mem_limit as usize);
+        }
+        b.build()
+    };
     let mut store = Store::new(
         &engine,
         HostState {
@@ -506,8 +764,23 @@ pub(crate) fn run_wasm_wasmtime(
             host_call: ctx.host_call_handler.clone(),
             output: ctx.output.clone(),
             app_args: app_args.to_vec(),
+            limits: Some(limits),
+            config_handle: None,
         },
     );
+    // Sandbox: la memoria lineal no puede crecer más allá del límite declarado
+    // (`interpreter.runtime.memoryLimit` / `CLS_MEMORY_LIMIT`; default 1 GiB).
+    store.limiter(|s| s.limits.as_mut().unwrap());
+    // Sandbox: límite de tiempo por interrupción de epoch (opt-in).
+    let time_limit = crate::limits::time_limit();
+    if time_limit > 0 {
+        store.set_epoch_deadline(1);
+        let engine_wd = engine.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(time_limit));
+            engine_wd.increment_epoch();
+        });
+    }
     let mut linker = Linker::new(&engine);
     t = tick(timing, "Store+Linker", t);
 

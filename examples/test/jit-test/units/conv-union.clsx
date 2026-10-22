@@ -1,0 +1,9 @@
+# Negativo B2: conversión numérica (`float`) sobre una unión de builtins de
+# ancho mixto (`int|float`) -> error estático claro (misma causa raíz que
+# `str()`: el emisor despacha por el tipo estático; la unión no es
+# discriminable sin tag/boxing). Antes: WASM inválido.
+function main(args: String[]) -> int {
+    var v: int | float = 2.5;
+    print(float(v));
+    return 0;
+};

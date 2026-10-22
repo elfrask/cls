@@ -1,0 +1,3 @@
+import "export-list-mod/base" as base;
+export { base::saludo };
+function main(args: String[]) -> int { return 0; };

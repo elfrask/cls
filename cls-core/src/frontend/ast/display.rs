@@ -36,6 +36,8 @@ pub fn expr_display(expr: &Expression) -> String {
                 Operator::GreaterEqual => ">=",
                 Operator::And => "&&",
                 Operator::Or => "||",
+                Operator::BitAnd => "&",
+                Operator::BitOr => "|",
                 Operator::In => "in",
                 Operator::Is => "is",
                 Operator::Caret => "^",
@@ -110,6 +112,27 @@ pub fn expr_display(expr: &Expression) -> String {
             expr_display(&c.then_expr),
             expr_display(&c.else_expr)
         ),
+        Expression::Ternary(c) => format!(
+            "({} ? {} : {})",
+            expr_display(&c.condition),
+            expr_display(&c.then_expr),
+            expr_display(&c.else_expr)
+        ),
+        Expression::IfExpr(c) => format!("(if {} {{ ... }} else {{ ... }})", expr_display(&c.condition)),
+        Expression::Match(m) => {
+            let kw = match m.mode {
+                MatchMode::Type => " is",
+                MatchMode::Value => " in",
+                MatchMode::Cond => " if",
+                MatchMode::Pattern => "",
+            };
+            let scrut = m
+                .scrutinee
+                .as_ref()
+                .map(|s| expr_display(s))
+                .unwrap_or_default();
+            format!("match ({}){} {{ ... }}", scrut, kw)
+        }
         Expression::Assignment(a) => {
             format!("{} = {}", expr_display(&a.target), expr_display(&a.value))
         }
@@ -132,6 +155,7 @@ pub fn expr_display(expr: &Expression) -> String {
         Expression::Cmx(c) => format!("<{} />", c.tag),
         Expression::NamespaceAccess(ns, name, _) => format!("{}::{}", ns, name),
         Expression::Await(inner, _) => format!("await {}", expr_display(inner)),
+        Expression::Spread(inner, _) => format!("...{}", expr_display(inner)),
     }
 }
 
@@ -153,17 +177,35 @@ impl fmt::Display for Statement {
             Statement::Return(_) => f.write_str("return"),
             Statement::Break(_) => f.write_str("break"),
             Statement::Continue(_) => f.write_str("continue"),
+            Statement::ArrowReturn(a) => f.write_fmt(format_args!(
+                "{}{} <- ...",
+                if a.is_match { "match" } else { "" },
+                "*".repeat(a.stars)
+            )),
             Statement::ClassDecl(c) => f.write_fmt(format_args!("class {}", c.name)),
             Statement::StructureDecl(s) => f.write_fmt(format_args!("structure {}", s.name)),
-            Statement::InterfaceDecl(i) => f.write_fmt(format_args!("interface {}", i.name)),
+            Statement::InterfaceDecl(i) => {
+                if i.extends.is_empty() {
+                    f.write_fmt(format_args!("interface {}", i.name))
+                } else {
+                    f.write_fmt(format_args!("interface {} extends ...", i.name))
+                }
+            }
             Statement::ModuleDecl(m) => f.write_fmt(format_args!("module {}", m.name)),
             Statement::NamespaceDecl(n) => f.write_fmt(format_args!("namespace {}", n.name)),
             Statement::TypeAlias(t) => f.write_fmt(format_args!("alias {} = ...", t.name)),
             Statement::EnumDecl(e) => f.write_fmt(format_args!("enum {}", e.name)),
+            Statement::DestructureLet(d) => f.write_fmt(format_args!(
+                "var {}::{}(...) = ...",
+                d.enum_name, d.variant
+            )),
+            Statement::DestructureClass(d) => f.write_fmt(format_args!(
+                "var {}(...) = ...",
+                d.class_name
+            )),
             Statement::Import(i) => f.write_fmt(format_args!("import \"{}\"", i.path)),
             Statement::FromImport(fi) => f.write_fmt(format_args!("from \"{}\" import ...", fi.path)),
-            Statement::Include(i) => f.write_fmt(format_args!("include \"{}\"", i.path)),
-            Statement::Extension(e) => f.write_fmt(format_args!("extension \"{}\" as {}", e.library, e.kind.name())),
+            Statement::ExportList(_) => f.write_str("export { ... }"),
             Statement::When(w) => f.write_fmt(format_args!("when {{ {} rama(s) }}", w.branches.len())),
             Statement::Expression(e) => f.write_fmt(format_args!("expr: {:?}", e)),
             Statement::Config(c) => f.write_fmt(format_args!("#config({} = {})", c.key, c.value)),

@@ -1,0 +1,120 @@
+# dns/zone.clsx - Servidor autoritativo puro (armado de respuestas).
+import "bytes" as bytes;
+from "name" import encodeName;
+from "types" import CLASS_IN, TYPE_CNAME, TYPE_SOA, TYPE_ANY;
+from "message" import parseMessage;
+
+export class ZoneRecord {
+    var owner: String;
+    var rtype: int;
+    var ttl: int;
+    var rdata: int[];
+    var nameAt: int;
+    var nameStr: String;
+};
+
+export class Zone {
+    var apex: String;
+    var records: ZoneRecord[];
+    function main(apex: String) {
+        me.apex = apex;
+        me.records = [];
+    }
+    # rdataName: nombre comprimible dentro de rdata ("" si no hay).
+    function addRec(owner: String, rtype: int, ttl: int, rdata: int[],
+                    nameAt: int, nameStr: String) {
+        var z = ZoneRecord();
+        z.owner = owner;
+        z.rtype = rtype;
+        z.ttl = ttl;
+        z.rdata = rdata;
+        z.nameAt = nameAt;
+        z.nameStr = nameStr;
+        me.records.push(z);
+    }
+    function hasName(nm: String) -> bool {
+        for each r in (me.records) { if (r.owner == nm) { return true; } }
+        return false;
+    }
+    function indicesOf(nm: String, rtype: int) -> int[] {
+        var out: int[] = [];
+        for each r and i in (me.records) {
+            if (r.owner == nm && (rtype < 0 || r.rtype == rtype)) { out.push(i); }
+        }
+        return out;
+    }
+    function firstIdx(nm: String, rtype: int) -> int {
+        for each r and i in (me.records) {
+            if (r.owner == nm && r.rtype == rtype) { return i; }
+        }
+        return -1;
+    }
+};
+
+function emitRr(out: int[], rec: ZoneRecord, qname: String) {
+    if (rec.owner == qname) { out.push(192); out.push(12); }
+    else { bytes::pushAll(out, encodeName(rec.owner)); }
+    bytes::pushU16(out, rec.rtype);
+    bytes::pushU16(out, CLASS_IN);
+    bytes::pushU32(out, rec.ttl);
+    var rd = rec.rdata;
+    if (rec.nameAt >= 0 && rec.nameStr == qname) {
+        var nr: int[] = [];
+        for (var i = 0; i < rec.nameAt; i++) { nr.push(rd[i]); }
+        nr.push(192);
+        nr.push(12);
+        var encLen = encodeName(rec.nameStr).length;
+        for (var j = rec.nameAt + encLen; j < rd.length; j++) { nr.push(rd[j]); }
+        rd = nr;
+    }
+    bytes::pushU16(out, rd.length);
+    bytes::pushAll(out, rd);
+}
+
+# Respuesta autoritativa byte-construida. Sigue la CNAME cuando la query no es
+# CNAME; NXDOMAIN con el SOA en authority si el nombre no existe.
+export function answer(query: int[], zone: Zone) -> int[] {
+    var q = parseMessage(query);
+    var qname = q.qname;
+    var qtype = q.qtype;
+    var picks: int[] = [];
+    var exists = zone.hasName(qname);
+    if (exists) {
+        var ci = zone.firstIdx(qname, TYPE_CNAME);
+        if (ci >= 0 && qtype != TYPE_CNAME) {
+            picks.push(ci);
+            var tgt = zone.records[ci].nameStr;
+            var recs = zone.indicesOf(tgt, qtype);
+            for each r in (recs) { picks.push(r); }
+        } elif (qtype == TYPE_ANY) {
+            var all = zone.indicesOf(qname, -1);
+            for each r in (all) { picks.push(r); }
+        } else {
+            var m = zone.indicesOf(qname, qtype);
+            for each r in (m) { picks.push(r); }
+        }
+    }
+    var rcode = 0;
+    var nsPicks: int[] = [];
+    if (!exists) {
+        rcode = 3;
+        var si = zone.firstIdx(zone.apex, TYPE_SOA);
+        if (si >= 0) { nsPicks.push(si); }
+    }
+
+    var out: int[] = [];
+    bytes::pushU16(out, q.id);
+    var flags = 32768 | 1024 | rcode;
+    if (q.rd == 1) { flags = flags | 256; }
+    bytes::pushU16(out, flags);
+    bytes::pushU16(out, 1);
+    bytes::pushU16(out, picks.length);
+    bytes::pushU16(out, nsPicks.length);
+    bytes::pushU16(out, 0);
+    bytes::pushAll(out, encodeName(qname));
+    bytes::pushU16(out, qtype);
+    bytes::pushU16(out, CLASS_IN);
+    for each idx in (picks) { emitRr(out, zone.records[idx], qname); }
+    for each idx in (nsPicks) { emitRr(out, zone.records[idx], qname); }
+    return out;
+}

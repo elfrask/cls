@@ -1,7 +1,7 @@
 # Inicio rápido
 
-`clx run` compila CLS a WASM y lo ejecuta con el JIT (wasmtime). Es el
-intérprete objetivo; el tree-walker (`--ast-walker`) está deprecado.
+`clx run` compila CLS a WASM y lo ejecuta con el JIT (wasmtime). Es el único
+intérprete (el tree-walker se eliminó en dev-2).
 
 ## Hola mundo
 
@@ -88,6 +88,9 @@ function main(args: String[]) -> int {
 
 ## Control de flujo
 
+> Las condiciones de `if`/`elif`/`while`/`for`/`switch` **siempre llevan
+> paréntesis** (obligatorios, no opcionales como en Rust/Swift).
+
 ```clx
 function main(args: String[]) -> int {
     # if / elif / else
@@ -159,6 +162,28 @@ function main(args: String[]) -> int {
 };
 ```
 
+## Match
+
+`match` es una expresión (también se puede usar como sentencia). El binding
+`nombre <- expr` liga el valor scrutinee:
+
+```clx
+enum Respuesta { ok(String), err(int, String), vacio };
+
+function describir(r: Respuesta) -> String {
+    return match (v <- r) {
+        ok(texto)       -> "OK: " + texto,
+        err(cod, msg)   -> "ERR " + cod.toString() + ": " + msg,
+        vacio           -> "sin datos",
+        default         -> "?",
+    };
+};
+```
+
+También existen los modos `is` (tipo), `in` (valor) e `if` (condición), el
+ternario `?:`, el `if` como expresión con `<-` y `arrowReturn` (`<-`) en
+cuerpos de función. Ver `lenguaje/control-de-flujo.md`.
+
 ## Clases
 
 ```clx
@@ -184,6 +209,27 @@ function main(args: String[]) -> int {
 `me` es el equivalente a `this`. El constructor se declara como
 `function main(...)` dentro de la clase.
 
+## CMX
+
+CMX es la sintaxis JSX-like nativa. Un tag en minúscula produce un `Cmx`; un
+tag en mayúscula invoca un componente (una función que devuelve `Cmx`):
+
+```clx
+function Boton(props: Record<String, Value>) -> Cmx {
+    return (<button class={str(props.className)}>{str(props.label)}</button>);
+};
+
+function main(args: String[]) -> int {
+    var el = (<div class="acciones"><Boton label="Guardar" className="primary" /></div>);
+    print(el.tag);            # div
+    print(el.children.length);
+    return 0;
+};
+```
+
+Ver `lenguaje/cmx.md` para `props`, `children`, `isComponent`, `tryCallTag()`,
+spread de props y renderizado a HTML.
+
 ## Módulos
 
 `lib.clsx`:
@@ -206,7 +252,9 @@ function main(args: String[]) -> int {
 ```
 
 Los imports se resuelven relativos al archivo que importa, luego
-`modules/` del proyecto y luego los globales `~/.cls/modules/`.
+`modules/` del proyecto, las rutas de `pathModules`/`--add-path-module`, el
+CWD, `modules/` junto al binario `clx` y los globales `~/.cls/modules/`.
+Para módulos compartidos del repo, ver `stdlib/modulos.md`.
 
 ## Verificación de tipos
 

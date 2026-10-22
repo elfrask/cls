@@ -53,7 +53,10 @@ use wasm_encoder::{
 
 /// Constantes del layout de memoria, públicas para el host (JIT/REPL). El
 /// REPL transfiere la región de heap `[HEAP_START ..]` entre instancias.
-pub use layout::{HEAP_START, INTERNALS_WINDOW_END, SHADOW_STACK_BASE, STRING_DATA_BASE, STRING_TABLE_BASE};
+pub use layout::{
+    FRAME_SIZE, HEAP_START, INTERNALS_WINDOW_END, SHADOW_MAX_FRAMES, SHADOW_STACK_BASE,
+    STRING_DATA_BASE, STRING_TABLE_BASE,
+};
 
 
 
@@ -78,6 +81,10 @@ pub struct WasmBackendOptions {
     /// el trace de errores. `false` (`clx run --release`) desactiva la emisión
     /// de esos stores: pierde el trace de runtime a cambio de menos código.
     pub trace_calls: bool,
+    /// Máximo de la memoria lineal en páginas WASM (64 KiB/página). `None` =
+    /// sin máximo (crecimiento limitado solo por el runtime). Lo fija el nodo
+    /// desde el sandbox (`interpreter.runtime.memoryLimit`).
+    pub memory_max_pages: Option<u64>,
 }
 
 impl Default for WasmBackendOptions {
@@ -87,6 +94,7 @@ impl Default for WasmBackendOptions {
             require_main: true,
             intrinsics: Vec::new(),
             trace_calls: true,
+            memory_max_pages: None,
         }
     }
 }
@@ -102,6 +110,7 @@ pub struct WasmBackend<'a> {
     require_main: bool,
     intrinsics: Vec<HostIntrinsic>,
     trace_calls: bool,
+    memory_max_pages: Option<u64>,
 }
 
 impl<'a> WasmBackend<'a> {
@@ -127,6 +136,7 @@ impl<'a> WasmBackend<'a> {
             require_main: opts.require_main,
             intrinsics: opts.intrinsics,
             trace_calls: opts.trace_calls,
+            memory_max_pages: opts.memory_max_pages,
         }
     }
 
@@ -166,6 +176,7 @@ impl<'a> WasmBackend<'a> {
                 require_main: false,
                 intrinsics: Vec::new(),
                 trace_calls: true,
+                memory_max_pages: None,
             },
         )
     }
@@ -183,6 +194,7 @@ impl<'a> WasmBackend<'a> {
         engine.exceptions = self.exceptions;
         engine.require_main = self.require_main;
         engine.trace_calls = self.trace_calls;
+        engine.memory_max_pages = self.memory_max_pages;
         engine.intrinsics = self
             .intrinsics
             .iter()

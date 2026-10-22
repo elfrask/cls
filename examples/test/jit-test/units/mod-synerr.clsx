@@ -1,0 +1,5 @@
+from "modfixes/lib_synt" import *;
+
+function main(args: String[]) -> int {
+    return 0;
+};

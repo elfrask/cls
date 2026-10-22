@@ -1,0 +1,3 @@
+# Reexport con `from`: exporta algunos sin namespace.
+
+export { saludo, Caja, VERSION } from "export-list-mod/base";

@@ -1,4 +1,0 @@
-function main(args: String[]) -> int {
-    print("os.env:", os.env());
-    return 0;
-}

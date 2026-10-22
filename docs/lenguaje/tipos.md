@@ -15,15 +15,24 @@ y `tests/test-types.clsx`.
 | String | `String` / `str` | |
 | Bool | `Bool` | |
 | Char | `Char` | sin literal propio (ver `sintaxis.md`) |
-| Any | `Any` | universal; el JIT exige anotación explícita |
 | Unknown | `Unknown` | |
+| Value | `Value` | valor CLS dinámico pero **tipado** (primitivo, array o JSON) |
+| JSON | `JSON` | documento JSON dinámico (objeto/array) |
+| Cmx | `Cmx` | nodo CMX (tag/props/children) |
 | Null | `Null` | |
 | Void | `Void` | sin valor (`void function`) |
 | Empty | `Empty` | |
 
 Acrónimos numéricos: `i32`, `i64`, `i16`, `i8`, `f32`, `f64`.
 
-Conversión implícita: `Int -> Float`.
+> **`Any` fue eliminado por completo** (`Type::Any` ya no existe; `Value` ocupa
+> su lugar como top universal del sistema). Como anotación de usuario (CLS es
+> totalmente estático) usarlo es error. Para valores dinámicos tipados se usan
+> `Value` (cualquier valor CLS), `JSON` (documentos/objetos) y `Cmx` (nodos CMX).
+> Estos siguen siendo válidos: el tag runtime viaja con el valor y el emisor los
+> trata como contenedores polimórficos concretos.
+
+Conversión implícita: `Int -> Float` (ver [decisión 001](../decisiones/001-no-implicit-coercion.md)). Es la única coerción permitida en CLS 2.0; todo otro mismatch de tipos es error en `clx check`.
 
 ## Arrays
 
@@ -41,6 +50,11 @@ var a: (Int, String) = (1, "x");
 a[0];   # Int (índice literal -> slot exacto)
 a[i];   # Int | String (índice dinámico -> unión de slots)
 ```
+
+> **GAP runtime (JIT):** el typeck infiere `Int | String`, pero el JIT guarda los
+> slots sin *tag*; leer con índice dinámico **heterogéneo** no recupera el tipo en
+> runtime (requeriría boxing, prohibido). El índice literal y el dinámico
+> homogéneo sí funcionan. Ver `examples/lang-features/findings/gaps.txt` (GAP 06).
 
 ## Records tipados
 
@@ -65,6 +79,34 @@ print(p.nombre);
 
 Un shape es assignable a `Record<String, T>` si sus claves son `String`.
 
+### Herencia de interfaces (`extends`)
+
+Una interface puede heredar campos y métodos de una o varias interfaces:
+
+```clx
+interface Base {
+    id: String,
+};
+
+interface Labeled<T> {
+    label: T,
+};
+
+interface Card extends Base, Labeled<String> {
+    title: String,
+};
+
+var c: Card = { id: "1", label: "Hola", title: "Inicio" };
+print(c.label);   # String (heredado y sustituido)
+```
+
+- `extends A, B<T>` acepta varias bases y argumentos genéricos.
+- Los miembros heredados se fusionan; si el hijo redefine un campo, su tipo
+  reemplaza al del padre.
+- Los ciclos de herencia se ignoran (corte de recursión) y una base inexistente
+  produce error en el typeck.
+- Igual que el resto de interfaces, no genera código en runtime.
+
 ## Uniones y literal types (estilo TypeScript)
 
 ```clx
@@ -75,6 +117,61 @@ var d: Color = "purple"; # ERROR en estricto
 
 Inferencia de literales: `const k = "constante";` infiere el literal
 `"constante"`; `var v = "x";` infiere `String` (tipo base).
+
+### Acceso a miembro sobre una unión (F5)
+
+Una unión de tipos (por `alias` o por el estrechamiento / narrowing del `match`
+multi-tipo, ver `control-de-flujo.md`) permite acceder a un miembro **siempre que
+todos sus tipos lo expongan**. El resultado es el tipo común; si los tipos de ese
+miembro difieren, el resultado es la unión de esos tipos.
+
+```clx
+class Vector2 { var x: float; var y: float; };
+class Vector3 { var x: float; var y: float; var z: float; };
+alias Vec = Vector2 | Vector3;
+
+function describe(v: Vec) -> String {
+    # narrowing a `Vector2 | Vector3` + `v.x` sobre la unión
+    return match (v) is {
+        (Vector2, Vector3) -> "(${v.x}, ${v.y})",
+        default            -> "?",
+    };
+}
+```
+
+Si **algún** tipo de la unión no tiene el miembro, el compilador lo rechaza:
+
+```clx
+class A { var x: int; };
+class B { var y: int; };
+alias AB = A | B;
+var v: AB = A();
+v.x;   # ERROR: la unión no tiene el miembro `x` en todos sus tipos (falta en `B`)
+```
+
+En runtime el emisor despacha por el **id de tipo** del valor (clases: `class_id`
+en `[obj+8]`; structs: `def_id` en `[obj+0]`) y carga el campo en el **offset
+propio de cada miembro** (los layouts pueden diferir), sin boxing. El índice
+`valor[i]` sobre una unión de arrays con el mismo ancho de elemento también está
+soportado.
+
+**Gap documentado (builtins/boxing)**: `str(valor)` sobre una unión de builtins
+**no** funciona (la afirmación anterior de que despachaba por el tipo runtime era
+falsa): el emisor elige la conversión por el tipo estático (`__intr_str_int` /
+`__intr_str_float` / …) y una unión mezcla representaciones (p. ej. `int | float`
+tiene ancho `i64` vs `f64`), generando WASM inválido o una conversión silenciosa
+incorrecta. Por eso el typeck lo **rechaza en compile-time** ("`str(…)` sobre una
+unión de builtins … no es discriminable en runtime"). Lo mismo aplica a
+`toString(valor)` y a las conversiones numéricas `int(valor)` / `float(valor)`.
+
+Tampoco se puede discriminar el tipo de una **unión de builtins** en
+`match (valor) is { … }`: los builtins no tienen identidad de runtime
+(`class_id`/`def_id`/tag), así que toda arma daría verdadero (ganaría la primera)
+o el WASM sería inválido. El typeck lo rechaza en compile-time. Para
+clases/structs/enums el dispatch por id de runtime sí está soportado (y el
+acceso a miembro sobre esas uniones también). El **acceso a miembro/método**
+sobre una unión de builtins (`.toString()`, `.abs()`) sigue sin ser viable sin
+boxing.
 
 ## Alias
 
@@ -138,6 +235,27 @@ interface Marcador<T> {
 ## Intersección de shapes
 
 `A & B` fusiona ambos shapes; si un campo conflictúa en tipo, es error.
+
+## Callable
+
+`Callable` es el tipo de los **valores invocables**: función simple, closure u
+objeto con `__call`. En runtime se identifica por el tag-bit del handle
+(par = función simple, impar = closure).
+
+- Toda función es asignable a `Callable` (`Fun(..) → Callable`).
+- `Callable` es asignable a `Value` (un callable es un valor).
+- `Value`/`Cmx` NO son asignables a `Callable` en compile-time (son dinámicos —
+  el `is Callable` resuelve en runtime).
+
+```clx
+var f = suma;                    # f: Fun(..)
+if (f is Callable) {             # narrowing: f es Callable dentro del bloque
+    f(2, 3);
+}
+```
+
+`is Callable` chequea en runtime que el valor sea un handle de función
+(`v != 0 && v>>32 == 0`). Ver `docs/lenguaje/cmx.md` (invocar componentes).
 
 ## Typechecking
 

@@ -115,6 +115,7 @@ Ver `sistema de módulos` en el contexto del proyecto.
 
 ## async / await
 
-`async function`/`await` existen en el parser y el tree-walker, pero **el JIT
-no compila `await`** (error explícito del emisor). No usarlos en código que
-corra con `clx run`.
+`async function`/`await` existen en el parser, pero **el JIT no compila
+`await`** (error explícito del emisor) y ya no existe ningún intérprete que lo
+ejecute (el tree-walker se eliminó en dev-2). No usarlos: error de compilación
+en `clx run`. Ver `estado-runtime.md`.

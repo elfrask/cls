@@ -1,8 +1,11 @@
 # @title json
 # @description Modulo JSON
 
-# @description Parsea un string JSON
-function parse(text: String) -> Any {};
+# @description Parsea un string JSON a un valor JSON tipado (objeto/array/escalar).
+# El valor resultante lleva su tag runtime: se accede por indice (o.campo,
+# o["k"], arr[i]), se imprime y se serializa con stringify sin perder el tipo.
+function parse(text: String) -> JSON {};
 
-# @description Convierte un valor a JSON string
-function stringify(value: Any) -> String {};
+# @description Convierte un valor CLS a string JSON (acepta primitivos, arrays,
+# records/shapes y valores JSON dinámicos). El tag runtime decide la serialización.
+function stringify(value: Value) -> String {};

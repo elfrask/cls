@@ -5,8 +5,8 @@
 - El remoto `origin` apunta a `https://github.com/elfrask/cls.git`
   (el metadata del workspace declara `https://github.com/frask/cls` como
   homepage/repository).
-- Ramas existentes: `master`, `2.0`, `2.X-jit`, `1.2`, `1.0-1.1`,
-  `respaldo-2.0`, `bindings` (rama de trabajo actual).
+- Ramas: `master` (trabajo actual), `releases` (dispara el CI de release),
+  `2.0`, `1.2`, `1.0-1.1`, `respaldo-2.0`, `refactor`.
 
 ## Estilo de commits
 
@@ -40,22 +40,20 @@ Convenciones observadas:
 
 ## Reglas de trabajo
 
-1. **El JIT es el intérprete objetivo.** `clx run` compila CLS -> WASM ->
-   wasmtime. El tree-walker (`--ast-walker`) está **DEPRECADO** y se elimina
-   tras CLS 2.0-dev1: es solo referencia sintáctica.
-2. **No invertir tiempo en paridad con el walker** para features nuevas. El
-   walker puede quedarse sin soportar algo; lo que importa es que el **JIT**
-   lo soporte.
-3. **Tests de features** en `examples/audit/test-features/jit-test/`
-   comparan JIT vs walker (`run-availible.ps1`, `run-tests.ps1`), pero el
-   objetivo real es el JIT. Si un test solo aplica al JIT, va en
-   `examples/jit-examples/` o `examples/audit/test-features/jit-test/`
-   (ver `desarrollo/testing.md`).
+1. **El JIT es el único intérprete.** `clx run` compila CLS -> WASM ->
+   wasmtime. El tree-walker se **eliminó** en CLS 2.0-dev2; `--ast-walker` se
+   acepta pero se ignora.
+2. **No invertir tiempo en paridad con el walker**: no existe. Toda feature
+   nueva debe funcionar en el **JIT**.
+3. **Tests de features** en `examples/test/jit-test/` comparan
+   el JIT contra oracles `.expect` (`run-availible.ps1`, `run-tests.ps1`). Si
+   un test solo aplica al JIT, va en `examples/test/jit-examples/` o
+   `examples/test/jit-test/` (ver `desarrollo/testing.md`).
 4. **Rendimiento**: cualquier decisión de diseño prioriza el costo en
    runtime del JIT/WASM - nada de boxing, dispatch dinámico ni alocaciones
    innecesarias.
-5. **El typeck** (`clx check`) es la fuente de tipos para ambos; el JIT lo
-   requiere para emitir (`types_by_span`).
+5. **El typeck** (`clx check`) es la fuente de tipos para la emisión; el JIT
+   lo requiere para emitir (`types_by_span`).
 6. **Errores**: el runtime/compilador muestra **siempre** el trace completo
    (import_trace + call stack + caret); el typecheck, un solo nivel. Usa las
    fábricas centralizadas (`ClsError::syntax_at`/`compile_at`) y spans
@@ -72,10 +70,9 @@ Convenciones observadas:
 
 ## Flujo sugerido
 
-1. Verifica el estado del JIT antes de tocar el walker
-   (`docs/runtime/jit.md` + `runtime/walker.md`).
+1. Verifica el estado del JIT (`docs/runtime/jit.md`).
 2. Implementa por capas (ver `desarrollo/agregar-feature.md`).
 3. Agrega tests en cada capa (`cargo test`) y QA en
-   `examples/audit/features/` o `jit-test/`.
+   `examples/test/jit-test/units/` o `jit-test/`.
 4. `clx check --strict` + ejecución con `clx run` antes de commitear.
 5. Commit en español con prefijo (ej. `feat(jit): ...`).

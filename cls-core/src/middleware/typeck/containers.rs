@@ -3,51 +3,65 @@
 use super::*;
 
 impl TypeChecker {
-
-
-
     pub(crate) fn check_index(&mut self, idx: &IndexExpr) -> Type {
         let obj = self.check_expression(&idx.object);
         let index_type = self.check_expression(&idx.index);
         match obj {
             Type::Array(inner) => *inner,
             Type::Record(_k, v) => *v,
+            // String: s[i] -> String de 1 byte (semántica de bytes, igual que
+            // length/slice). Char: c[i] no aplica (escalar) -> se deja Value y el
+            // emisor da error claro si se intenta.
+            Type::String => Type::String,
+            // JSON / Value / Cmx: el índice (clave u offset) devuelve un `Value`
+            // dinámico; el tag runtime viaja con el valor.
+            Type::Json | Type::Value | Type::Cmx => Type::Value,
             // Shape: índice literal con clave conocida -> tipo del campo; clave
             // desconocida -> error (la estructura del record es fija).
-            Type::Shape(fields) => {
-                match idx.index.as_ref() {
-                    Expression::Literal(l) if matches!(l.kind, LiteralKind::String(_)) => {
-                        let k = match &l.kind { LiteralKind::String(s) => s.clone(), _ => String::new() };
-                        fields.iter()
-                            .find(|(n, _)| *n == k)
-                            .map(|(_, t)| t.clone())
-                            .unwrap_or_else(|| self.error(
+            Type::Shape(fields) => match idx.index.as_ref() {
+                Expression::Literal(l) if matches!(l.kind, LiteralKind::String(_)) => {
+                    let k = match &l.kind {
+                        LiteralKind::String(s) => s.clone(),
+                        _ => String::new(),
+                    };
+                    fields
+                        .iter()
+                        .find(|(n, _)| *n == k)
+                        .map(|(_, t)| t.clone())
+                        .unwrap_or_else(|| {
+                            self.error(
                                 &format!("El record no tiene el campo '{}'", k),
                                 idx.span.clone(),
-                            ))
-                    }
-                    _ => Type::Any,
+                            )
+                        })
                 }
-            }
+                _ => Type::Value,
+            },
             // Tupla: índice literal -> slot exacto; dinámico -> unión de slots
-            Type::Tuple(ts) => {
-                match idx.index.as_ref() {
-                    Expression::Literal(l) if matches!(l.kind, LiteralKind::Int(_)) => {
-                        let i = match &l.kind { LiteralKind::Int(n) => *n as usize, _ => 0 };
-                        ts.get(i).cloned().unwrap_or(Type::Any)
-                    }
-                    _ => {
-                        if ts.is_empty() { Type::Any }
-                        else { Type::Union(ts.clone()) }
+            Type::Tuple(ts) => match idx.index.as_ref() {
+                Expression::Literal(l) if matches!(l.kind, LiteralKind::Int(_)) => {
+                    let i = match &l.kind {
+                        LiteralKind::Int(n) => *n as usize,
+                        _ => 0,
+                    };
+                    ts.get(i).cloned().unwrap_or(Type::Value)
+                }
+                _ => {
+                    if ts.is_empty() {
+                        Type::Value
+                    } else {
+                        Type::Union(ts.clone())
                     }
                 }
-            }
+            },
             Type::Union(us) => Type::Union(
-                us.iter().map(|u| match u {
-                    Type::Array(inner) => (**inner).clone(),
-                    Type::Tuple(ts) => ts.first().cloned().unwrap_or(Type::Any),
-                    _ => Type::Any,
-                }).collect(),
+                us.iter()
+                    .map(|u| match u {
+                        Type::Array(inner) => (**inner).clone(),
+                        Type::Tuple(ts) => ts.first().cloned().unwrap_or(Type::Value),
+                        _ => Type::Value,
+                    })
+                    .collect(),
             ),
             _ => {
                 // Magic method __get: clase con __get -> tipo de su retorno.
@@ -55,18 +69,46 @@ impl TypeChecker {
                     return ret;
                 }
                 let _ = index_type;
-                Type::Any
+                Type::Value
             }
         }
     }
 
-
-
     pub(crate) fn check_array(&mut self, arr: &ArrayExpr) -> Type {
-        let mut elem_type = Type::Any;
+        let mut elem_type = Type::Value;
         for elem in &arr.elements {
+            // Spread `[...arr]`: el inner es Array<T> -> los elementos son T.
+            if let Expression::Spread(inner, _) = elem {
+                let t = self.check_expression(inner);
+                let spread_elem = match t {
+                    Type::Array(e) => *e,
+                    _ => {
+                        self.error(
+                            &format!("Spread de array esperaba un Array, encontró {}", t),
+                            arr.span.clone(),
+                        );
+                        Type::Value
+                    }
+                };
+                if matches!(elem_type, Type::Value) {
+                    elem_type = spread_elem;
+                } else if !spread_elem.is_assignable_to(&elem_type)
+                    && !elem_type.is_assignable_to(&spread_elem)
+                {
+                    self.error(
+                        &format!(
+                            "Array heterogéneo: los elementos son de tipos incompatibles \
+                             ({} y {}). Usa `Value[]` (o `Record<String, Value>`) o un array homogéneo.",
+                            elem_type, spread_elem
+                        ),
+                        arr.span.clone(),
+                    );
+                    elem_type = spread_elem;
+                }
+                continue;
+            }
             let t = self.check_expression(elem);
-            if matches!(elem_type, Type::Any) {
+            if matches!(elem_type, Type::Value) {
                 elem_type = t;
             } else if !t.is_assignable_to(&elem_type) && !elem_type.is_assignable_to(&t) {
                 // Array heterogéneo: en CLS tipado no se permite mezclar tipos
@@ -75,7 +117,7 @@ impl TypeChecker {
                 self.error(
                     &format!(
                         "Array heterogéneo: los elementos son de tipos incompatibles \
-                         ({} y {}). Usa `Record<String, any>` o un array homogéneo.",
+                         ({} y {}). Usa `Value[]` (o `Record<String, Value>`) o un array homogéneo.",
                         elem_type, t
                     ),
                     arr.span.clone(),
@@ -90,18 +132,31 @@ impl TypeChecker {
         Type::Array(Box::new(elem_type))
     }
 
-
-
     pub(crate) fn check_tuple(&mut self, tup: &TupleExpr) -> Type {
-        let types: Vec<Type> = tup.elements.iter()
+        let types: Vec<Type> = tup
+            .elements
+            .iter()
             .map(|e| self.check_expression(e))
             .collect();
         Type::Tuple(types)
     }
 
-
-
     pub(crate) fn check_record(&mut self, rec: &RecordExpr) -> Type {
+        // Spread `{...expr, ...}`: el tipo resultante es Record<String, Value>
+        // (campos dinámicos — no se conocen estáticamente). Los spreads se
+        // chequean; las entries extra se evalúan y el conjunto tipa dinámico.
+        // Ver REST_SPREAD_PLAN Fase 2.
+        if !rec.spreads.is_empty() {
+            for s in &rec.spreads {
+                self.check_expression(s);
+            }
+            for (_, expr) in &rec.entries {
+                self.check_expression(expr);
+            }
+            let r = Type::Record(Box::new(Type::String), Box::new(Type::Value));
+            self.types_by_span.insert(rec.span.clone(), r.clone());
+            return r;
+        }
         let mut fields: Vec<(String, Type)> = Vec::new();
         // Si el span ya tiene un tipo esperado (p.ej. `var d: Record<K,V> = {...}`
         // o `return {...}` con función tipada Record), propagarlo: el literal
@@ -130,13 +185,16 @@ impl TypeChecker {
         Type::Shape(fields)
     }
 
-
-
     pub(crate) fn check_arrow_function(&mut self, arrow: &ArrowFunctionExpr) -> Type {
-        let param_types: Vec<Type> = arrow.params.iter()
-            .map(|p| p.type_ann.as_ref()
-                .map(|ta| self.resolve_type_annotation(ta))
-                .unwrap_or(Type::Any))
+        let param_types: Vec<Type> = arrow
+            .params
+            .iter()
+            .map(|p| {
+                p.type_ann
+                    .as_ref()
+                    .map(|ta| self.resolve_type_annotation(ta))
+                    .unwrap_or(Type::Value)
+            })
             .collect();
 
         // Chequear params y body PRIMERO: así las variables declaradas dentro
@@ -154,10 +212,12 @@ impl TypeChecker {
 
         // Inferir el retorno del primer `return expr` del body. Leer del type map
         // (ya registrado por check_block) para no depender del scope actual.
-        let return_type = arrow.return_type.as_ref()
+        let return_type = arrow
+            .return_type
+            .as_ref()
             .map(|ta| self.resolve_type_annotation(ta))
             .unwrap_or_else(|| {
-                let mut t = Type::Any;
+                let mut t = Type::Value;
                 for stmt in &arrow.body.statements {
                     if let Statement::Return(Some(e)) = stmt {
                         let sp = expr_span(e);
@@ -176,8 +236,6 @@ impl TypeChecker {
         Type::Fun(param_types, Box::new(return_type))
     }
 
-
-
     pub(crate) fn check_conditional(&mut self, cond: &ConditionalExpr) -> Type {
         self.check_expression(&cond.condition);
         let then_type = self.check_expression(&cond.then_expr);
@@ -187,12 +245,28 @@ impl TypeChecker {
             then_type
         } else if else_type.is_assignable_to(&then_type) {
             else_type
+        } else if then_type.join_compatible(&else_type) {
+            then_type
         } else {
-            Type::Any
+            Type::Value
         }
     }
 
-
+    /// `?:` estilo JS (F3). Misma semántica de tipo que el ternario legacy.
+    pub(crate) fn check_ternary(&mut self, t: &TernaryExpr) -> Type {
+        self.check_expression(&t.condition);
+        let then_type = self.check_expression(&t.then_expr);
+        let else_type = self.check_expression(&t.else_expr);
+        if then_type.is_assignable_to(&else_type) {
+            then_type
+        } else if else_type.is_assignable_to(&then_type) {
+            else_type
+        } else if then_type.join_compatible(&else_type) {
+            then_type
+        } else {
+            Type::Value
+        }
+    }
 
     pub(crate) fn check_assignment(&mut self, assign: &AssignmentExpr) -> Type {
         let left = self.check_expression(&assign.target);
@@ -209,5 +283,4 @@ impl TypeChecker {
 
         left
     }
-
 }

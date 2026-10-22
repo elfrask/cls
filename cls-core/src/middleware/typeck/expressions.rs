@@ -19,11 +19,11 @@ impl TypeChecker {
                 } else if matches!(
                     name.as_str(),
                     "json" | "math" | "fs" | "http" | "Lib" | "async" | "os" | "path"
-                        | "process" | "time" | "random"
+                        | "process" | "time" | "random" | "strings"
                 ) {
                     // Módulos internos del nodo: no son variables, pero se aceptan
                     // como namespace (el backend los resuelve).
-                    Type::Any
+                    Type::Value
                 } else {
                     self.lookup(name)
                         .cloned()
@@ -34,7 +34,7 @@ impl TypeChecker {
                                     span.clone(),
                                 )
                             } else {
-                                Type::Any
+                                Type::Value
                             }
                         })
                 }
@@ -49,6 +49,9 @@ impl TypeChecker {
             Expression::Record(r) => self.check_record(r),
             Expression::ArrowFunction(a) => self.check_arrow_function(a),
             Expression::Conditional(c) => self.check_conditional(c),
+            Expression::Ternary(c) => self.check_ternary(c),
+            Expression::IfExpr(c) => self.check_if_expr(c),
+            Expression::Match(m) => self.check_match(m),
             Expression::Assignment(a) => self.check_assignment(a),
             Expression::Parenthesized(inner, _) => self.check_expression(inner),
             Expression::StringInterpolation(s) => {
@@ -60,11 +63,29 @@ impl TypeChecker {
                 Type::String
             }
             Expression::Cmx(c) => {
-                // Chequear las subexpresiones internas (attrs y children) para que
-                // sus spans queden en el type map (el emisor las evalúa).
+                // Chequear las subexpresiones internas (spreads, attrs y
+                // children) para que sus spans queden en el type map (el emisor
+                // las evalúa).
+                for s in &c.spreads {
+                    self.check_expression(s);
+                }
                 for attr in &c.attributes {
-                    if let Some(CmxAttributeValue::Expression(expr)) = &attr.value {
-                        self.check_expression(expr);
+                    match &attr.value {
+                        Some(CmxAttributeValue::Expression(expr)) => {
+                            self.check_expression(expr);
+                        }
+                        // Shorthand `{nombre}`: registrar el tipo de la variable en
+                        // el span del atributo para que el emisor ponga el tag
+                        // correcto (si no, un String local se leería como int).
+                        Some(CmxAttributeValue::Shorthand(name)) => {
+                            let ty = self.lookup(name).cloned().unwrap_or(Type::Value);
+                            self.types_by_span.insert(attr.span, ty);
+                        }
+                        // Atributo desnudo -> `true` (Bool).
+                        None => {
+                            self.types_by_span.insert(attr.span, Type::Bool);
+                        }
+                        Some(CmxAttributeValue::String(_)) => {}
                     }
                 }
                 for child in &c.children {
@@ -81,27 +102,33 @@ impl TypeChecker {
                 Type::Cmx
             }
             Expression::NamespaceAccess(ns, name, span) => {
-                // `x::miembro` de un módulo importado -> tipo del export.
-                match self.module_member_type(ns, name) {
-                    Some(t) => t,
-                    None => {
-                        let available = self.module_export_names(ns);
-                        let hint = if available.is_empty() {
-                            "el módulo no exporta ningún símbolo (usa `export` en cada declaración)".to_string()
-                        } else {
-                            format!("el módulo exporta: {}", available.join(", "))
-                        };
-                        self.error(
-                            &format!(
-                                "'{}' no existe o no se exporta en '{}' ({})",
-                                name, ns, hint
-                            ),
-                            span.clone(),
-                        )
+                // `X::v` de una variante de enum (F2, unit o handler de payload).
+                if self.enum_schema(ns).is_some() {
+                    self.check_enum_variant_value(ns, name, span)
+                } else {
+                    // `x::miembro` de un módulo importado -> tipo del export.
+                    match self.module_member_type(ns, name) {
+                        Some(t) => t,
+                        None => {
+                            let available = self.module_export_names(ns);
+                            let hint = if available.is_empty() {
+                                "el módulo no exporta ningún símbolo (usa `export` en cada declaración)".to_string()
+                            } else {
+                                format!("el módulo exporta: {}", available.join(", "))
+                            };
+                            self.error(
+                                &format!(
+                                    "'{}' no existe o no se exporta en '{}' ({})",
+                                    name, ns, hint
+                                ),
+                                span.clone(),
+                            )
+                        }
                     }
                 }
             }
             Expression::Await(expr, _) => self.check_expression(expr),
+            Expression::Spread(inner, _) => self.check_expression(inner),
         };
         if self.config.check {
             // Un literal de record anotado como Record<K,V> (var/return) registra

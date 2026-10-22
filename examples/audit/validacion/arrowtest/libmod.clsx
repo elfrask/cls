@@ -1,3 +1,0 @@
-export function apply(f: (Int) -> Int, x: int) -> int {
-    return f(x);
-};

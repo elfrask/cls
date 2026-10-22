@@ -13,6 +13,10 @@ pub struct Parser {
     current_token: Token,
     current_span: Span,
     diagnostics: Vec<Diagnostic>,
+    /// En modo TIPO del `match`, el patrón es una anotación de tipo seguida de
+    /// `->`. Sin este flag, `(A, B) -> expr` se parsearía como tipo función
+    /// (`(A,B) -> T`) y consumiría la flecha del arma.
+    suppress_fun_type: bool,
 }
 
 impl Parser {
@@ -25,6 +29,7 @@ impl Parser {
             current_token: first.token,
             current_span: span,
             diagnostics: Vec::new(),
+            suppress_fun_type: false,
         }
     }
 
@@ -43,8 +48,8 @@ impl Parser {
         let mut statements = Vec::new();
 
         while !self.is_eof() {
-            match self.parse_statement() {
-                Ok(stmt) => statements.push(stmt),
+            match self.parse_statement_multi() {
+                Ok(mut stmts) => statements.append(&mut stmts),
                 Err(e) => {
                     // Intentar recuperarse del error
                     self.recover();
@@ -58,6 +63,22 @@ impl Parser {
             statements,
             span: Span::new(1, 1, 1, 1),
         })
+    }
+
+    /// Parsea sentencias y devuelve **una o más**: un bloque
+    /// `extension "lib" { ... }` se desenvuelve al vuelo en sus declaraciones
+    /// nativas (su equivalente nativo del lenguaje), de modo que el AST nunca
+    /// contiene `Statement::Extension`. El resto del pipeline (typeck, flatten,
+    /// emisor, módulos) las trata como `function`/`structure`/`var` normales
+    /// marcadas con `native`.
+    fn parse_statement_multi(&mut self) -> ClsResult<Vec<Statement>> {
+        while matches!(self.current_token, Token::Newline) {
+            self.advance();
+        }
+        if matches!(self.current_token, Token::Keyword(Keyword::Extension)) {
+            return self.parse_extension_decl();
+        }
+        Ok(vec![self.parse_statement()?])
     }
 
     fn parse_statement(&mut self) -> ClsResult<Statement> {
@@ -102,6 +123,13 @@ impl Parser {
             Token::Keyword(Keyword::Break) => self.parse_break(),
             Token::Keyword(Keyword::Continue) => self.parse_continue(),
 
+            // F4: arrowReturn (`* <- expr`, `** <- expr`, `match <- expr`, ...).
+            Token::Operator(Operator::Star)
+            | Token::Operator(Operator::StarStar) => self.parse_arrow_return(),
+            Token::Keyword(Keyword::Match) if self.looks_like_arrow_return() => {
+                self.parse_arrow_return()
+            }
+
             // Clases y estructuras
             Token::Keyword(Keyword::Class) => self.parse_class_decl(),
             Token::Keyword(Keyword::Structure) => self.parse_structure_decl(),
@@ -114,10 +142,10 @@ impl Parser {
             // Imports
             Token::Keyword(Keyword::Import) => self.parse_import(),
             Token::Keyword(Keyword::From) => self.parse_from_import(),
-            Token::Keyword(Keyword::Include) => self.parse_include(),
-
-            // Nativo (FFI)
-            Token::Keyword(Keyword::Extension) => self.parse_extension_decl(),
+            // `include` fue eliminado: `from "<path>" import *;` es el reemplazo.
+            Token::Keyword(Keyword::Include) => {
+                Err(self.syntax_err("`include` fue eliminado del lenguaje; usá `from \"...\" import *;`"))
+            }
 
             // Directiva multi-entorno
             Token::Keyword(Keyword::When) => self.parse_when(),
@@ -169,6 +197,58 @@ impl Parser {
         }
         let name = self.expect_identifier()?;
 
+        // Desempaquetado de clase: `var Clase(a, b) = expr;` (usa
+        // `Clase::__destructurate()`).
+        if self.check_symbol(Symbol::LParen) {
+            self.advance(); // consume `(`
+            let mut binds = Vec::new();
+            if !self.check_symbol(Symbol::RParen) {
+                loop {
+                    binds.push(self.expect_identifier()?);
+                    if !self.consume_symbol(Symbol::Comma) {
+                        break;
+                    }
+                }
+            }
+            self.expect_symbol(Symbol::RParen)?;
+            self.expect_operator(Operator::Equal)?;
+            let value = self.parse_expression()?;
+            self.consume_symbol(Symbol::Semicolon);
+            return Ok(Statement::DestructureClass(DestructureClass {
+                class_name: name,
+                binds,
+                value,
+                span: decl_span,
+            }));
+        }
+
+        // F2: destructuring-let `var Enum::variant(a, b) = valor;`.
+        if self.check_operator(Operator::ColonColon) {
+            self.advance(); // consume `::`
+            let variant = self.expect_identifier()?;
+            self.expect_symbol(Symbol::LParen)?;
+            let mut binds = Vec::new();
+            if !self.check_symbol(Symbol::RParen) {
+                loop {
+                    binds.push(self.expect_identifier()?);
+                    if !self.consume_symbol(Symbol::Comma) {
+                        break;
+                    }
+                }
+            }
+            self.expect_symbol(Symbol::RParen)?;
+            self.expect_operator(Operator::Equal)?;
+            let value = self.parse_expression()?;
+            self.consume_symbol(Symbol::Semicolon);
+            return Ok(Statement::DestructureLet(DestructureLet {
+                enum_name: name,
+                variant,
+                binds,
+                value,
+                span: decl_span,
+            }));
+        }
+
         let type_ann = if self.consume_operator(Operator::Colon) {
             Some(self.parse_type_annotation()?)
         } else {
@@ -193,6 +273,7 @@ impl Parser {
             is_readonly: false,
             pool_only: false,
             pool_seed: false,
+            native: None,
         }))
     }
 
@@ -225,6 +306,7 @@ impl Parser {
             is_readonly: false,
             pool_only: false,
             pool_seed: false,
+            native: None,
         }))
     }
 
@@ -249,12 +331,12 @@ impl Parser {
             None
         };
 
-        // Body (o declaración nativa si hay ';' sin '{')
-        let (body, is_native) = if self.check_symbol(Symbol::Semicolon) {
+        // Body (o declaración sin body si hay ';' — p.ej. símbolo nativo).
+        let body = if self.check_symbol(Symbol::Semicolon) {
             self.advance(); // consume ';'
-            (Block { statements: Vec::new(), span: self.span() }, true)
+            Block { statements: Vec::new(), span: self.span() }
         } else {
-            (self.parse_block()?, false)
+            self.parse_block()?
         };
 
         self.consume_symbol(Symbol::Semicolon);
@@ -268,7 +350,7 @@ impl Parser {
             modifiers: Vec::new(),
             span: fn_span,
             type_params,
-            is_native,
+            native: None,
         }))
     }
 
@@ -304,7 +386,7 @@ impl Parser {
             modifiers: Vec::new(),
             span: self.span(),
             type_params: Vec::new(),
-            is_native: false,
+            native: None,
         }))
     }
 
@@ -350,9 +432,11 @@ impl Parser {
 
     fn parse_type_annotation(&mut self) -> ClsResult<TypeAnnotation> {
         // Fun types: fun(params...) -> ReturnType
-        if let Token::Identifier(ref s) = &self.current_token {
-            if s == "fun" && self.lookahead_is(0, Symbol::LParen) {
-                return self.parse_fun_type();
+        if !self.suppress_fun_type {
+            if let Token::Identifier(ref s) = &self.current_token {
+                if s == "fun" && self.lookahead_is(0, Symbol::LParen) {
+                    return self.parse_fun_type();
+                }
             }
         }
 
@@ -395,12 +479,12 @@ impl Parser {
         }
 
         // Unión: tipo | tipo | tipo
-        if self.check_operator(Operator::Or) {
+        if self.check_operator(Operator::BitOr) {
             let mut members = vec![TypeAnnotation {
                 kind: kind.clone(),
                 span: span.clone(),
             }];
-            while self.consume_operator(Operator::Or) {
+            while self.consume_operator(Operator::BitOr) {
                 let m_kind = self.parse_base_type()?;
                 members.push(TypeAnnotation {
                     kind: m_kind,
@@ -411,12 +495,12 @@ impl Parser {
         }
 
         // Conjunción: shape1 & shape2 (merge de campos) u otros tipos
-        if self.check_operator(Operator::And) {
+        if self.check_operator(Operator::BitAnd) {
             let mut members = vec![TypeAnnotation {
                 kind: kind.clone(),
                 span: span.clone(),
             }];
-            while self.consume_operator(Operator::And) {
+            while self.consume_operator(Operator::BitAnd) {
                 let m_kind = self.parse_base_type()?;
                 members.push(TypeAnnotation {
                     kind: m_kind,
@@ -487,8 +571,17 @@ impl Parser {
             })));
         }
 
-        // Paréntesis: (Int) agrupación | (Int, String) tupla
+        // Paréntesis: (Int) agrupación | (Int, String) tupla | () -> T función
         if self.consume_symbol(Symbol::LParen) {
+            // `()` vacío: función sin parámetros `() -> T`, o tupla vacía.
+            if self.check_symbol(Symbol::RParen) {
+                self.advance(); // consume ')'
+                if !self.suppress_fun_type && self.consume_operator(Operator::Arrow) {
+                    let ret = self.parse_type_annotation()?;
+                    return Ok(TypeKind::Fun(vec![], Box::new(ret)));
+                }
+                return Ok(TypeKind::Tuple(vec![]));
+            }
             let first = self.parse_type_annotation()?;
             let mut elems = vec![first];
             let mut is_tuple = false;
@@ -503,7 +596,7 @@ impl Parser {
             }
             self.expect_symbol(Symbol::RParen)?;
             // (Int) -> Int | (Int, String) -> Bool -> tipo funcion
-            if self.consume_operator(Operator::Arrow) {
+            if !self.suppress_fun_type && self.consume_operator(Operator::Arrow) {
                 let ret = self.parse_type_annotation()?;
                 return Ok(TypeKind::Fun(elems, Box::new(ret)));
             }
@@ -518,6 +611,9 @@ impl Parser {
         let name_str = name.as_str();
 
         // Acrónimos
+        // CMX<P, PP> (rework): los parámetros genéricos se aceptan pero se
+        // BORRAN; el tipo es el builtin `Cmx`. Se consume el `<...>` más abajo.
+        let mut is_cmx = false;
         match name_str {
             "int" | "Int" | "Integer" => return Ok(TypeKind::Int),
             "str" | "String" => return Ok(TypeKind::String),
@@ -525,10 +621,12 @@ impl Parser {
             "bool" | "Bool" | "Boolean" => return Ok(TypeKind::Bool),
             "char" | "Char" | "Character" => return Ok(TypeKind::Char),
             "any" | "Any" => return Ok(TypeKind::Any),
+            "json" | "JSON" => return Ok(TypeKind::Json),
+            "value" | "Value" => return Ok(TypeKind::Value),
             "unknown" => return Ok(TypeKind::Unknown),
             "null" => return Ok(TypeKind::Null),
             "Void" | "void" => return Ok(TypeKind::Void),
-            "cmx" | "Cmx" => return Ok(TypeKind::Cmx),
+            "cmx" | "Cmx" | "CMX" => is_cmx = true,
             "i32" => return Ok(TypeKind::I32),
             "i64" => return Ok(TypeKind::I64),
             "i16" => return Ok(TypeKind::I16),
@@ -540,6 +638,18 @@ impl Parser {
 
         // Tipo nombrado (puede tener parámetros genéricos <T, U>)
         let mut type_params = Vec::new();
+
+        // Nombre calificado de módulo: `alias::Tipo` / `mod::Clase` (los tipos
+        // exportados por módulos importados se anotan con ::, igual que los
+        // valores: http::Request). Se guarda como Named("alias::Tipo") y el
+        // typeck lo resuelve contra el módulo importado.
+        let mut qualified = name_str.to_string();
+        while self.consume_operator(Operator::ColonColon) {
+            let part = self.expect_identifier()?;
+            qualified.push_str("::");
+            qualified.push_str(part.as_str());
+        }
+
         // `<T>` simple tokenizado como CMX: reinterpretarlo como un arg genérico
         if let Some(tag) = self.consume_cmx_simple_tag() {
             type_params.push(TypeAnnotation {
@@ -567,7 +677,10 @@ impl Parser {
             }
         }
 
-        Ok(TypeKind::Named(name, type_params))
+        if is_cmx {
+            return Ok(TypeKind::Cmx);
+        }
+        Ok(TypeKind::Named(qualified, type_params))
     }
 
     fn parse_fun_type(&mut self) -> ClsResult<TypeAnnotation> {
@@ -833,6 +946,242 @@ impl Parser {
         }
     }
 
+    /// `match` (feature F1). 4 modos según la keyword tras `)`:
+    /// `is` (tipo), `in` (valor), `if` (condición), sin keyword (patrón).
+    /// Ver `agent-context/MATCH_PLAN.md` §2.
+    fn parse_match_expr(&mut self) -> ClsResult<Expression> {
+        let start_span = self.span();
+        self.advance(); // consume `match`
+        self.expect_symbol(Symbol::LParen)?;
+
+        let mut scrutinee: Option<Box<Expression>> = None;
+        let mut binding: Option<String> = None;
+        if !self.check_symbol(Symbol::RParen) {
+            let first = self.parse_expression()?;
+            if self.consume_operator(Operator::LessMinus) {
+                // Binding: `match (nombre <- expr)`.
+                let name = match &first {
+                    Expression::Identifier(n, _) => n.clone(),
+                    _ => {
+                        return Err(self.syntax_err(
+                            "el binding de `match` requiere un nombre a la izquierda de '<-'",
+                        ))
+                    }
+                };
+                binding = Some(name);
+                scrutinee = Some(Box::new(self.parse_expression()?));
+            } else {
+                scrutinee = Some(Box::new(first));
+            }
+        }
+        self.expect_symbol(Symbol::RParen)?;
+
+        let mode = if self.consume_keyword(Keyword::Is) {
+            MatchMode::Type
+        } else if self.consume_keyword(Keyword::In) {
+            MatchMode::Value
+        } else if self.consume_keyword(Keyword::If) {
+            MatchMode::Cond
+        } else {
+            MatchMode::Pattern
+        };
+
+        self.expect_symbol(Symbol::LBrace)?;
+        let mut arms: Vec<MatchArm> = Vec::new();
+        let mut default: Option<MatchBody> = None;
+
+        loop {
+            self.skip_newlines();
+            if self.check_symbol(Symbol::RBrace) || self.is_eof() {
+                break;
+            }
+            if self.check_keyword(Keyword::Default) {
+                self.advance();
+                self.expect_operator(Operator::Arrow)?;
+                default = Some(self.parse_match_body()?);
+            } else {
+                let arm_span = self.span();
+                let patterns = self.parse_match_patterns(mode)?;
+                self.expect_operator(Operator::Arrow)?;
+                let body = self.parse_match_body()?;
+                arms.push(MatchArm {
+                    patterns,
+                    body,
+                    span: arm_span,
+                });
+            }
+            // Separadores: newlines y/o `,` entre armas.
+            self.skip_newlines();
+            if self.consume_symbol(Symbol::Comma) {
+                self.skip_newlines();
+            }
+        }
+        self.expect_symbol(Symbol::RBrace)?;
+
+        Ok(Expression::Match(MatchExpr {
+            scrutinee,
+            binding,
+            mode,
+            arms,
+            default,
+            span: start_span,
+        }))
+    }
+
+    /// Lista de patrones de un arma. Soporta lista agrupada `(p1, p2)` y patrones
+    /// separados por `,` al nivel del arma (`p1, p2`). En modo TIPO cada patrón
+    /// es una anotación (y `(A, B)` es un solo patrón = unión).
+    fn parse_match_patterns(&mut self, mode: MatchMode) -> ClsResult<Vec<MatchPattern>> {
+        let mut patterns = Vec::new();
+        if mode == MatchMode::Type {
+            patterns.push(self.parse_single_match_pattern(mode)?);
+            while self.consume_symbol(Symbol::Comma) {
+                patterns.push(self.parse_single_match_pattern(mode)?);
+            }
+            return Ok(patterns);
+        }
+        if self.check_symbol(Symbol::LParen) {
+            self.advance();
+            loop {
+                patterns.push(self.parse_single_match_pattern(mode)?);
+                if !self.consume_symbol(Symbol::Comma) {
+                    break;
+                }
+            }
+            self.expect_symbol(Symbol::RParen)?;
+        } else {
+            patterns.push(self.parse_single_match_pattern(mode)?);
+        }
+        while self.consume_symbol(Symbol::Comma) {
+            patterns.push(self.parse_single_match_pattern(mode)?);
+        }
+        Ok(patterns)
+    }
+
+    fn parse_single_match_pattern(&mut self, mode: MatchMode) -> ClsResult<MatchPattern> {
+        match mode {
+            MatchMode::Type => {
+                self.suppress_fun_type = true;
+                let ta = self.parse_type_annotation();
+                self.suppress_fun_type = false;
+                Ok(MatchPattern::Type(ta?))
+            }
+            MatchMode::Value => Ok(MatchPattern::Literal(self.parse_match_literal()?)),
+            MatchMode::Cond => {
+                let e = self.parse_expression()?;
+                Ok(MatchPattern::Cond(Box::new(e)))
+            }
+            MatchMode::Pattern => match &self.current_token {
+                Token::Identifier(name) => {
+                    let name = name.clone();
+                    self.advance();
+                    if self.check_symbol(Symbol::LParen) {
+                        self.advance();
+                        let mut binds = Vec::new();
+                        if !self.check_symbol(Symbol::RParen) {
+                            loop {
+                                binds.push(self.expect_identifier()?);
+                                if !self.consume_symbol(Symbol::Comma) {
+                                    break;
+                                }
+                            }
+                        }
+                        self.expect_symbol(Symbol::RParen)?;
+                        Ok(MatchPattern::Variant { name, binds })
+                    } else {
+                        Ok(MatchPattern::Ident(name))
+                    }
+                }
+                _ => Ok(MatchPattern::Literal(self.parse_match_literal()?)),
+            },
+        }
+    }
+
+    /// Literal de patrón (`0`, `-3`, `1.5`, `"x"`, `'c'`, `true`).
+    fn parse_match_literal(&mut self) -> ClsResult<Literal> {
+        let neg = self.consume_operator(Operator::Minus);
+        let span = self.span();
+        let kind = match &self.current_token {
+            Token::IntLiteral(v) => LiteralKind::Int(if neg { -*v } else { *v }),
+            Token::FloatLiteral(v) => LiteralKind::Float(if neg { -*v } else { *v }),
+            Token::StringLiteral(v) => LiteralKind::String(v.clone()),
+            Token::BoolLiteral(v) => LiteralKind::Bool(*v),
+            Token::CharLiteral(v) => LiteralKind::Char(*v),
+            _ => return Err(self.syntax_err("se esperaba un literal como patrón de `match`")),
+        };
+        self.advance();
+        Ok(Literal { kind, span })
+    }
+
+    /// Cuerpo de arma. `-> expr` (valor implícito) o `-> { ... }` (bloque con
+    /// arrowReturn `<-`, F4).
+    fn parse_match_body(&mut self) -> ClsResult<MatchBody> {
+        if self.check_symbol(Symbol::LBrace) {
+            return Ok(MatchBody::Block(self.parse_block()?));
+        }
+        Ok(MatchBody::Expr(Box::new(self.parse_expression()?)))
+    }
+
+    /// Devuelve los próximos `n` tokens (incluido el actual) sin consumirlos.
+    fn peek_tokens(&self, n: usize) -> Vec<Token> {
+        let mut v = Vec::with_capacity(n);
+        v.push(self.current_token.clone());
+        let mut cur = self.tokens.clone();
+        while v.len() < n {
+            match cur.next() {
+                Some(t) => v.push(t.token),
+                None => break,
+            }
+        }
+        v
+    }
+
+    /// `true` si los tokens actuales forman un arrowReturn con `match`
+    /// (`match <- ...`, `match* <- ...`, `match** <- ...`). Hoy el token actual
+    /// es `match`.
+    fn looks_like_arrow_return(&self) -> bool {
+        let peek = self.peek_tokens(6);
+        if matches!(peek.get(1), Some(Token::Operator(Operator::LessMinus))) {
+            return true;
+        }
+        let mut j = 1;
+        while let Some(t) = peek.get(j) {
+            match t {
+                Token::Operator(Operator::Star) | Token::Operator(Operator::StarStar) => j += 1,
+                Token::Operator(Operator::LessMinus) => return j > 1,
+                _ => return false,
+            }
+        }
+        false
+    }
+
+    /// `* <- expr` / `** <- expr` / `match <- expr` / `match* <- expr` / ... (F4).
+    /// `stars` = cantidad de `*` (cada `**` cuenta 2); `is_match` = target de
+    /// `match`.
+    fn parse_arrow_return(&mut self) -> ClsResult<Statement> {
+        let span = self.span();
+        let is_match = self.consume_keyword(Keyword::Match);
+        let mut stars = 0usize;
+        loop {
+            if self.consume_operator(Operator::Star) {
+                stars += 1;
+            } else if self.consume_operator(Operator::StarStar) {
+                stars += 2;
+            } else {
+                break;
+            }
+        }
+        self.expect_operator(Operator::LessMinus)?;
+        let value = self.parse_expression()?;
+        self.consume_symbol(Symbol::Semicolon);
+        Ok(Statement::ArrowReturn(ArrowReturn {
+            stars,
+            is_match,
+            value: Box::new(value),
+            span,
+        }))
+    }
+
     fn parse_try_statement(&mut self) -> ClsResult<Statement> {
         self.expect_keyword(Keyword::Try)?;
         let try_block = self.parse_block()?;
@@ -1067,6 +1416,7 @@ impl Parser {
             fields,
             span: self.span(),
             visibility: Visibility::Default,
+            native: None,
         }))
     }
 
@@ -1080,7 +1430,18 @@ impl Parser {
             self.advance();
             self.expect_symbol(Symbol::RParen)?;
         }
-        
+
+        // Herencia de interfaces: `extends Base, Otra<T>`.
+        let mut extends = Vec::new();
+        if self.consume_keyword(Keyword::Extends) {
+            loop {
+                extends.push(self.parse_type_annotation()?);
+                if !self.consume_symbol(Symbol::Comma) {
+                    break;
+                }
+            }
+        }
+
         self.expect_symbol(Symbol::LBrace)?;
         
         let mut fields = Vec::new();
@@ -1125,8 +1486,10 @@ impl Parser {
             name,
             type_params,
             fields,
+            extends,
             signatures,
             span: self.span(),
+            visibility: Visibility::Default,
         }))
     }
 
@@ -1184,10 +1547,12 @@ impl Parser {
             type_params,
             type_ann,
             span: self.span(),
+            visibility: Visibility::Default,
         }))
     }
 
-    /// `enum Nombre { Var1, Var2, Var3, };` - variantes constantes con identidad.
+    /// `enum Nombre { Var1, Var2(args), };` - variantes con identidad; las que
+    /// declaran `(T1, T2)` llevan payload (F2).
     fn parse_enum_decl(&mut self) -> ClsResult<Statement> {
         self.expect_keyword(Keyword::Enum)?;
         let name = self.expect_identifier()?;
@@ -1196,7 +1561,21 @@ impl Parser {
         let mut variants = Vec::new();
         while !self.check_symbol(Symbol::RBrace) && !self.is_eof() {
             self.skip_newlines();
-            variants.push(self.expect_identifier()?);
+            let vspan = self.span();
+            let vname = self.expect_identifier()?;
+            let mut params = Vec::new();
+            if self.consume_symbol(Symbol::LParen) {
+                if !self.check_symbol(Symbol::RParen) {
+                    loop {
+                        params.push(self.parse_type_annotation()?);
+                        if !self.consume_symbol(Symbol::Comma) {
+                            break;
+                        }
+                    }
+                }
+                self.expect_symbol(Symbol::RParen)?;
+            }
+            variants.push(EnumVariant { name: vname, params, span: vspan });
             self.consume_symbol(Symbol::Comma);
         }
         self.expect_symbol(Symbol::RBrace)?;
@@ -1219,8 +1598,7 @@ impl Parser {
         let mut body = Vec::new();
         while !self.check_symbol(Symbol::RBrace) && !self.is_eof() {
             self.skip_newlines();
-            let stmt = self.parse_statement()?;
-            body.push(stmt);
+            body.append(&mut self.parse_statement_multi()?);
         }
         
         self.expect_symbol(Symbol::RBrace)?;
@@ -1242,8 +1620,7 @@ impl Parser {
         let mut body = Vec::new();
         while !self.check_symbol(Symbol::RBrace) && !self.is_eof() {
             self.skip_newlines();
-            let stmt = self.parse_statement()?;
-            body.push(stmt);
+            body.append(&mut self.parse_statement_multi()?);
         }
         
         self.expect_symbol(Symbol::RBrace)?;
@@ -1280,44 +1657,54 @@ impl Parser {
         self.expect_keyword(Keyword::From)?;
         let path = self.expect_string()?;
         self.expect_keyword(Keyword::Import)?;
-        
+
         let mut names = Vec::new();
+        let mut import_all = false;
+        let mut namespace: Option<String> = None;
         loop {
-            let name = self.expect_identifier()?;
-            let alias = if self.consume_keyword(Keyword::As) {
-                Some(self.expect_identifier()?)
+            // `*` (todos los exports) o `* as ns` (namespace).
+            if self.consume_operator(Operator::Star) {
+                if self.consume_keyword(Keyword::As) {
+                    if namespace.is_some() {
+                        return Err(self.syntax_err("Ya hay un `* as ns` en este import"));
+                    }
+                    namespace = Some(self.expect_identifier()?);
+                } else {
+                    if import_all {
+                        return Err(self.syntax_err("`*` ya está en este import"));
+                    }
+                    import_all = true;
+                }
             } else {
-                None
-            };
-            names.push(ImportName { name, alias });
-            
+                let name = self.expect_identifier()?;
+                let alias = if self.consume_keyword(Keyword::As) {
+                    Some(self.expect_identifier()?)
+                } else {
+                    None
+                };
+                names.push(ImportName { name, alias });
+            }
+
             if !self.consume_symbol(Symbol::Comma) {
                 break;
             }
         }
-        
+
         self.consume_symbol(Symbol::Semicolon);
-        
+
         Ok(Statement::FromImport(FromImportStatement {
             path,
             names,
-            span: self.span(),
-        }))
-    }
-
-    fn parse_include(&mut self) -> ClsResult<Statement> {
-        self.expect_keyword(Keyword::Include)?;
-        let path = self.expect_string()?;
-        self.consume_symbol(Symbol::Semicolon);
-        
-        Ok(Statement::Include(IncludeStatement {
-            path,
+            import_all,
+            namespace,
             span: self.span(),
         }))
     }
 
     /// `extension "<lib>" [as <Tipo>] { function ...; structure ...; var ...; }` - FFI nativo.
-    fn parse_extension_decl(&mut self) -> ClsResult<Statement> {
+    /// Devuelve **directamente** las declaraciones nativas (su equivalente nativo
+    /// del lenguaje): `FunctionDecl`/`StructureDecl`/`VarDecl` marcadas con `native`.
+    fn parse_extension_decl(&mut self) -> ClsResult<Vec<Statement>> {
         self.expect_keyword(Keyword::Extension)?;
         let library = self.expect_string()?;
         let kind = if self.consume_keyword(Keyword::As) {
@@ -1340,21 +1727,24 @@ impl Parser {
                     let stmt = self.parse_function_decl()?;
                     if let Statement::FunctionDecl(mut f) = stmt {
                         if is_export { f.visibility = Visibility::Export; }
-                        declarations.push(NativeDecl::Function(f));
+                        f.native = Some(NativeInfo { library: library.clone(), kind: kind.clone(), symbol: f.name.clone(), resolved_library: None });
+                        declarations.push(Statement::FunctionDecl(f));
                     }
                 }
                 Token::Keyword(Keyword::Structure) => {
                     let stmt = self.parse_structure_decl()?;
                     if let Statement::StructureDecl(mut s) = stmt {
                         if is_export { s.visibility = Visibility::Export; }
-                        declarations.push(NativeDecl::Structure(s));
+                        s.native = Some(NativeInfo { library: library.clone(), kind: kind.clone(), symbol: s.name.clone(), resolved_library: None });
+                        declarations.push(Statement::StructureDecl(s));
                     }
                 }
                 Token::Keyword(Keyword::Var) | Token::Keyword(Keyword::Let) => {
                     let stmt = self.parse_var_decl()?;
                     if let Statement::VarDecl(mut v) = stmt {
                         if is_export { v.visibility = Visibility::Export; }
-                        declarations.push(NativeDecl::Var(v));
+                        v.native = Some(NativeInfo { library: library.clone(), kind: kind.clone(), symbol: v.name.clone(), resolved_library: None });
+                        declarations.push(Statement::VarDecl(v));
                     }
                 }
                 _ => {
@@ -1367,12 +1757,7 @@ impl Parser {
         }
         self.expect_symbol(Symbol::RBrace)?;
         self.consume_symbol(Symbol::Semicolon);
-        Ok(Statement::Extension(ExtensionDecl {
-            library,
-            kind,
-            declarations,
-            span: self.span(),
-        }))
+        Ok(declarations)
     }
 
     /// Directiva multi-entorno: `when <cond> { declaraciones }`.
@@ -1445,7 +1830,14 @@ impl Parser {
                     return Err(self.syntax_err(format!("Esperaba ':' tras '{}' en la condición de 'when'", field)));
                 }
                 if field == "target" {
-                    return Ok(TargetCond::Target(self.expect_string()?));
+                    // String literal ("x86_64-windows-msvc") O tripla desnuda
+                    // (docs/lenguaje/multi-entorno.md): `target: x86_64-windows-msvc`.
+                    if let Token::StringLiteral(s) = &self.current_token {
+                        let s = s.clone();
+                        self.advance();
+                        return Ok(TargetCond::Target(s));
+                    }
+                    return Ok(TargetCond::Target(self.expect_target_name()?));
                 }
                 let v = self.expect_target_name()?;
                 return Ok(match field.as_str() {
@@ -1505,7 +1897,12 @@ impl Parser {
         };
         
         self.advance(); // consume modifier
-        
+
+        // `export { ... }` — lista de exportación (no un modifier sobre una decl).
+        if visibility == Visibility::Export && self.check_symbol(Symbol::LBrace) {
+            return self.parse_export_list();
+        }
+
         // Luego parsear la declaración
         let mut stmt = self.parse_statement()?;
         
@@ -1516,10 +1913,72 @@ impl Parser {
             Statement::ClassDecl(ref mut c) => c.visibility = visibility,
             Statement::EnumDecl(ref mut e) => e.visibility = visibility,
             Statement::StructureDecl(ref mut s) => s.visibility = visibility,
+            Statement::InterfaceDecl(ref mut i) => i.visibility = visibility,
+            Statement::TypeAlias(ref mut t) => t.visibility = visibility,
             _ => {}
         }
         
         Ok(stmt)
+    }
+
+    /// `export { a, b as c, ns::member as X, ns::*, d } [from "path"]? ;`
+    ///
+    /// La lista es una fuente ADICIONAL de exports (el `export <decl>` sigue
+    /// funcionando igual). Referencias:
+    /// - `ident`: declaración local, binding de `from-import`, o export directo.
+    /// - `ns::member as X`: miembro de un módulo importado con namespace
+    ///   (`as` obligatorio).
+    /// - `ns::*`: todo el contenido de ese módulo, aplanado.
+    /// - `from "path"`: los `ref` se resuelven contra ese módulo (reexport).
+    fn parse_export_list(&mut self) -> ClsResult<Statement> {
+        let start = self.span();
+        self.expect_symbol(Symbol::LBrace)?;
+        let mut specs = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.check_symbol(Symbol::RBrace) {
+                break;
+            }
+            let reference = self.parse_export_ref()?;
+            let exported = if self.consume_keyword(Keyword::As) {
+                Some(self.expect_identifier()?)
+            } else {
+                None
+            };
+            specs.push(ExportSpec { reference, exported });
+            self.skip_newlines();
+            if !self.consume_symbol(Symbol::Comma) {
+                break;
+            }
+        }
+        self.skip_newlines();
+        self.expect_symbol(Symbol::RBrace)?;
+        let from = if self.consume_keyword(Keyword::From) {
+            Some(self.expect_string()?)
+        } else {
+            None
+        };
+        self.consume_symbol(Symbol::Semicolon);
+        Ok(Statement::ExportList(ExportListDecl {
+            specs,
+            from,
+            span: start,
+        }))
+    }
+
+    /// `ident` | `ns::member` | `ns::*`
+    fn parse_export_ref(&mut self) -> ClsResult<ExportRef> {
+        let name = self.expect_identifier()?;
+        if matches!(self.current_token, Token::Operator(Operator::ColonColon)) {
+            self.advance(); // consume '::'
+            if matches!(self.current_token, Token::Operator(Operator::Star)) {
+                self.advance();
+                return Ok(ExportRef::NamespaceAll(name));
+            }
+            let member = self.expect_member_name()?;
+            return Ok(ExportRef::NamespaceMember(name, member));
+        }
+        Ok(ExportRef::Name(name))
     }
 
     fn parse_cmx(&mut self) -> ClsResult<Statement> {
@@ -1536,14 +1995,24 @@ impl Parser {
         self.advance();
 
         let mut attributes = Vec::new();
+        let mut spreads: Vec<Expression> = Vec::new();
         loop {
             let is_attr_str = matches!(&self.current_token, Token::Cmx(CmxToken::AttrString { .. }));
             let is_attr_expr = matches!(&self.current_token, Token::Cmx(CmxToken::AttrExpr { .. }));
+            let is_attr_shorthand = matches!(&self.current_token, Token::Cmx(CmxToken::AttrShorthand { .. }));
+            let is_attr_bare = matches!(&self.current_token, Token::Cmx(CmxToken::AttrBare { .. }));
+            let is_attr_spread = matches!(&self.current_token, Token::Cmx(CmxToken::AttrSpread));
             if is_attr_str {
                 if let Token::Cmx(CmxToken::AttrString { name, value }) = &self.current_token {
                     attributes.push(CmxAttribute { name: name.clone(), value: Some(CmxAttributeValue::String(value.clone())), span: self.span() });
                 }
                 self.advance();
+            } else if is_attr_spread {
+                // {...expr} -> leer la expresión (el `}` del cierre ya se
+                // consumió en el lexer, ver lex_cmx_attrs_into) (REST_SPREAD_PLAN).
+                self.advance();
+                let expr = self.parse_expression()?;
+                spreads.push(expr);
             } else if is_attr_expr {
                 if let Token::Cmx(CmxToken::AttrExpr { name }) = &self.current_token {
                     let expr_name = name.clone();
@@ -1551,10 +2020,22 @@ impl Parser {
                     let expr = self.parse_expression()?;
                     attributes.push(CmxAttribute { name: expr_name, value: Some(CmxAttributeValue::Expression(Box::new(expr))), span: self.span() });
                 }
+            } else if is_attr_shorthand {
+                // `{nombre}` -> lee la variable `nombre` (valor Shorthand).
+                if let Token::Cmx(CmxToken::AttrShorthand { name }) = &self.current_token {
+                    attributes.push(CmxAttribute { name: name.clone(), value: Some(CmxAttributeValue::Shorthand(name.clone())), span: self.span() });
+                }
+                self.advance();
+            } else if is_attr_bare {
+                // Atributo desnudo `disabled` -> props["disabled"] = true.
+                if let Token::Cmx(CmxToken::AttrBare { name }) = &self.current_token {
+                    attributes.push(CmxAttribute { name: name.clone(), value: None, span: self.span() });
+                }
+                self.advance();
             } else { break; }
         }
 
-        if is_self_closing { return Ok(CmxElement { tag: tag_name, attributes, children: vec![], span: tag_span }); }
+        if is_self_closing { return Ok(CmxElement { tag: tag_name, attributes, spreads, children: vec![], span: tag_span }); }
 
         let mut children = Vec::new();
         loop {
@@ -1583,7 +2064,7 @@ impl Parser {
                 self.advance(); break;
             } else { break; }
         }
-        Ok(CmxElement { tag: tag_name, attributes, children, span: tag_span })
+        Ok(CmxElement { tag: tag_name, attributes, spreads, children, span: tag_span })
     }
 
     fn parse_block(&mut self) -> ClsResult<Block> {
@@ -1596,8 +2077,7 @@ impl Parser {
             if self.check_symbol(Symbol::RBrace) {
                 break;
             }
-            let stmt = self.parse_statement()?;
-            statements.push(stmt);
+            statements.append(&mut self.parse_statement_multi()?);
         }
         
         self.expect_symbol(Symbol::RBrace)?;
@@ -1658,7 +2138,25 @@ impl Parser {
     }
 
     fn parse_conditional(&mut self) -> ClsResult<Expression> {
-        self.parse_logical_or()
+        // `?:` estilo JS (F3): precedencia la más baja (por encima de la
+        // asignación) y asociativa a DERECHA: `a ? b : c ? d : e` se parsea como
+        // `a ? b : (c ? d : e)`.
+        let cond = self.parse_logical_or()?;
+        if self.check_operator(Operator::Question) {
+            let start = expr_span(&cond);
+            self.advance();
+            let then_expr = self.parse_expression()?;
+            self.expect_operator(Operator::Colon)?;
+            let else_expr = self.parse_conditional()?;
+            let span = start.merge(&expr_span(&else_expr));
+            return Ok(Expression::Ternary(TernaryExpr {
+                condition: Box::new(cond),
+                then_expr: Box::new(then_expr),
+                else_expr: Box::new(else_expr),
+                span,
+            }));
+        }
+        Ok(cond)
     }
 
     fn parse_logical_or(&mut self) -> ClsResult<Expression> {
@@ -1680,11 +2178,11 @@ impl Parser {
     }
 
     fn parse_logical_and(&mut self) -> ClsResult<Expression> {
-        let mut expr = self.parse_equality()?;
-        
+        let mut expr = self.parse_bitwise_or()?;
+
         while self.check_operator(Operator::And) {
             self.advance();
-            let right = self.parse_equality()?;
+            let right = self.parse_bitwise_or()?;
             let bin_span = expr_span(&expr).merge(&expr_span(&right));
             expr = Expression::Binary(BinaryExpr {
                 left: Box::new(expr),
@@ -1693,7 +2191,45 @@ impl Parser {
                 span: bin_span,
             });
         }
-        
+
+        Ok(expr)
+    }
+
+    /// `a | b` - OR bit a bit (enteros) o unión lógica de Bools.
+    fn parse_bitwise_or(&mut self) -> ClsResult<Expression> {
+        let mut expr = self.parse_bitwise_and()?;
+
+        while self.check_operator(Operator::BitOr) {
+            self.advance();
+            let right = self.parse_bitwise_and()?;
+            let bin_span = expr_span(&expr).merge(&expr_span(&right));
+            expr = Expression::Binary(BinaryExpr {
+                left: Box::new(expr),
+                op: Operator::BitOr,
+                right: Box::new(right),
+                span: bin_span,
+            });
+        }
+
+        Ok(expr)
+    }
+
+    /// `a & b` - AND bit a bit (enteros) o conjunción lógica de Bools.
+    fn parse_bitwise_and(&mut self) -> ClsResult<Expression> {
+        let mut expr = self.parse_equality()?;
+
+        while self.check_operator(Operator::BitAnd) {
+            self.advance();
+            let right = self.parse_equality()?;
+            let bin_span = expr_span(&expr).merge(&expr_span(&right));
+            expr = Expression::Binary(BinaryExpr {
+                left: Box::new(expr),
+                op: Operator::BitAnd,
+                right: Box::new(right),
+                span: bin_span,
+            });
+        }
+
         Ok(expr)
     }
 
@@ -1850,6 +2386,18 @@ impl Parser {
         let mut expr = self.parse_unary()?;
         
         while let Token::Operator(op) = &self.current_token {
+            // `* <- expr` / `** <- expr` (arrowReturn, F4) NO es multiplicación:
+            // el lexer no emite newlines, así que sin este lookahead un statement
+            // que arranca con `*` se absorbería como producto del anterior.
+            if matches!(op, Operator::Star | Operator::StarStar)
+                && self
+                    .tokens
+                    .clone()
+                    .next()
+                    .map_or(false, |t| matches!(t.token, Token::Operator(Operator::LessMinus)))
+            {
+                break;
+            }
             let op = match op {
                 Operator::Star
                 | Operator::Slash
@@ -1877,6 +2425,8 @@ impl Parser {
                 Operator::Minus => UnaryOp::Negate,
                 Operator::Not => UnaryOp::Not,
                 Operator::Tilde => UnaryOp::BitwiseNot,
+                Operator::PlusPlus => UnaryOp::PreInc,
+                Operator::MinusMinus => UnaryOp::PreDec,
                 _ => return self.parse_call(),
             };
             // Span del operador: el unario usa el span del operador (no el del
@@ -1916,7 +2466,7 @@ impl Parser {
                 // Acceso a miembro
                 Token::Symbol(Symbol::Dot) => {
                     self.advance();
-                    let member = self.expect_identifier()?;
+                    let member = self.expect_member_name()?;
                     expr = Expression::MemberAccess(MemberAccessExpr {
                         object: Box::new(expr),
                         member,
@@ -1926,7 +2476,7 @@ impl Parser {
                 // Namespace access
                 Token::Operator(Operator::ColonColon) => {
                     self.advance();
-                    let member = self.expect_identifier()?;
+                    let member = self.expect_member_name()?;
                     expr = Expression::NamespaceAccess(
                         match expr {
                             Expression::Identifier(name, _) => name,
@@ -2035,6 +2585,7 @@ impl Parser {
             }
             Token::Identifier(name) => {
                 let name = name.clone();
+                let id_span = self.span();
                 self.advance();
 
                 // `null` como literal (antes era un Identifier no resuelto).
@@ -2043,6 +2594,17 @@ impl Parser {
                         kind: LiteralKind::Null,
                         span: self.span(),
                     }));
+                }
+
+                // Flecha sin paréntesis: `x => expr` (param único sin tipo).
+                if matches!(&self.current_token, Token::Operator(Operator::FatArrow)) {
+                    let param = Parameter {
+                        name,
+                        type_ann: None,
+                        default_value: None,
+                        span: id_span,
+                    };
+                    return self.parse_arrow_tail(vec![param]);
                 }
 
                 // Verificar si es una función flecha
@@ -2081,7 +2643,10 @@ impl Parser {
                 let is_arrow = self.is_arrow_function()
                     || matches!(&self.current_token, Token::Symbol(Symbol::RParen))
                         && self.tokens.clone().next()
-                            .map_or(false, |t| matches!(&t.token, Token::Operator(Operator::Arrow)));
+                            .map_or(false, |t| matches!(
+                                &t.token,
+                                Token::Operator(Operator::Arrow) | Token::Operator(Operator::FatArrow)
+                            ));
                 if is_arrow { return self.parse_arrow_function(); }
                 
                 // Tupla vacía: ()
@@ -2116,7 +2681,15 @@ impl Parser {
                 let mut elements = Vec::new();
                 if !self.check_symbol(Symbol::RBracket) {
                     loop {
-                        elements.push(self.parse_expression()?);
+                        // Spread `[..., ...arr, x]` (REST_SPREAD_PLAN).
+                        if self.check_symbol(Symbol::Ellipsis) {
+                            self.advance();
+                            let span = self.span();
+                            let inner = self.parse_expression()?;
+                            elements.push(Expression::Spread(Box::new(inner), span));
+                        } else {
+                            elements.push(self.parse_expression()?);
+                        }
                         if !self.consume_symbol(Symbol::Comma) {
                             break;
                         }
@@ -2131,11 +2704,32 @@ impl Parser {
             Token::Symbol(Symbol::LBrace) => {
                 self.advance();
                 let mut entries = Vec::new();
+                let mut spreads = Vec::new();
                 if !self.check_symbol(Symbol::RBrace) {
                     loop {
+                        // Spread `{...expr, key: val}` (REST_SPREAD_PLAN Fase 2).
+                        if self.check_symbol(Symbol::Ellipsis) {
+                            self.advance();
+                            let expr = self.parse_expression()?;
+                            spreads.push(expr);
+                            if !self.consume_symbol(Symbol::Comma) {
+                                break;
+                            }
+                            continue;
+                        }
                         let key = match &self.current_token {
                             Token::Identifier(name) => name.clone(),
                             Token::StringLiteral(s) => s.clone(),
+                            // Keywords como keys de record: `{method: ..., if: ...}`
+                            // son nombres de campo válidos (el lexer los marca
+                            // keyword pero en posición de key son desambiguables
+                            // porque siempre sigue `:`). Se excluyen los literales
+                            // true/false.
+                            Token::Keyword(k)
+                                if !matches!(k, Keyword::True | Keyword::False) =>
+                            {
+                                k.as_str().to_string()
+                            }
                             _ => return Err(self.syntax_err("Key de record inválida")),
                         };
                         self.advance();
@@ -2150,29 +2744,56 @@ impl Parser {
                 self.expect_symbol(Symbol::RBrace)?;
                 Ok(Expression::Record(RecordExpr {
                     entries,
+                    spreads,
                     span: self.span(),
                 }))
             }
-            // Ternario: if (cond) then (a) else (b)
+            // `match` (expresión de matching, 4 modos) - F1
+            Token::Keyword(Keyword::Match) => self.parse_match_expr(),
+            // Ternario legacy: `if (cond) then (a) else (b)`.
+            // `if`-expresión (F3): `if (cond) { ... } else { ... }`.
             Token::Keyword(Keyword::If) => {
+                let start_span = self.span();
                 self.advance();
                 self.expect_symbol(Symbol::LParen)?;
                 let cond = self.parse_expression()?;
                 self.expect_symbol(Symbol::RParen)?;
-                self.expect_keyword(Keyword::Then)?;
-                self.expect_symbol(Symbol::LParen)?;
-                let then_expr = self.parse_expression()?;
-                self.expect_symbol(Symbol::RParen)?;
-                self.expect_keyword(Keyword::Else)?;
-                self.expect_symbol(Symbol::LParen)?;
-                let else_expr = self.parse_expression()?;
-                self.expect_symbol(Symbol::RParen)?;
-                Ok(Expression::Conditional(ConditionalExpr {
-                    condition: Box::new(cond),
-                    then_expr: Box::new(then_expr),
-                    else_expr: Box::new(else_expr),
-                    span: self.span(),
-                }))
+                if self.check_keyword(Keyword::Then) {
+                    // Legacy `if (c) then (a) else (b)`.
+                    self.advance();
+                    self.expect_symbol(Symbol::LParen)?;
+                    let then_expr = self.parse_expression()?;
+                    self.expect_symbol(Symbol::RParen)?;
+                    self.expect_keyword(Keyword::Else)?;
+                    self.expect_symbol(Symbol::LParen)?;
+                    let else_expr = self.parse_expression()?;
+                    self.expect_symbol(Symbol::RParen)?;
+                    return Ok(Expression::Conditional(ConditionalExpr {
+                        condition: Box::new(cond),
+                        then_expr: Box::new(then_expr),
+                        else_expr: Box::new(else_expr),
+                        span: start_span,
+                    }));
+                }
+                // `if`-expresión: requiere bloques y `else` obligatorio.
+                if self.check_symbol(Symbol::LBrace) {
+                    let then_block = self.parse_block()?;
+                    if !self.consume_keyword(Keyword::Else) {
+                        return Err(self.syntax_err(
+                            "la expresión `if` requiere `else` (usá `?:` para el ternario de expresiones)",
+                        ));
+                    }
+                    let else_block = self.parse_block()?;
+                    return Ok(Expression::IfExpr(IfExpr {
+                        condition: Box::new(cond),
+                        then_block,
+                        else_block,
+                        span: start_span,
+                    }));
+                }
+                Err(self.syntax_err(
+                    "se esperaba `then (...) else (...)` (ternario legacy) o `{ ... } else { ... }` (expresión `if`)",
+                ))
             }
             // CMX (JSX nativo)
             Token::Cmx(CmxToken::OpenTag { .. }) => {
@@ -2200,7 +2821,10 @@ impl Parser {
                         // Despues del ) cerrado, ver si viene ->
                         cursor.next();
                         if let Some(after) = cursor.peek() {
-                            return matches!(&after.token, Token::Operator(Operator::Arrow));
+                            return matches!(
+                                &after.token,
+                                Token::Operator(Operator::Arrow) | Token::Operator(Operator::FatArrow)
+                            );
                         }
                         break;
                     }
@@ -2274,10 +2898,18 @@ impl Parser {
                     i += 1;
                 }
             } else {
-                // Texto normal
+                // Texto normal. Ojo: un `$` en la ÚLTIMA posición (sin carácter
+                // siguiente) también cae acá (la guarda `i + 1 < chars.len()` del
+                // `if` de arriba lo excluye). El `while` no avanzaría porque
+                // `chars[i] == '$'` -> bucle infinito. Consumirlo garantiza
+                // progreso y cierra el literal correctamente.
                 let mut text = String::new();
                 while i < chars.len() && chars[i] != '$' {
                     text.push(chars[i]);
+                    i += 1;
+                }
+                if text.is_empty() {
+                    text.push('$');
                     i += 1;
                 }
                 parts.push(InterpolationPart::Text(text));
@@ -2294,12 +2926,62 @@ impl Parser {
         // Ya se consumio el ( inicial
         let params = self.parse_parameters()?;
         self.expect_symbol(Symbol::RParen)?;
-        self.expect_operator(Operator::Arrow)?;
-        // Determinar si hay tipo de retorno: si despues de -> viene un
-        // identificador seguido de { , es return_type { body }
-        // si viene cualquier otra cosa, es el body directamente
-        let has_return_type = matches!(&self.current_token, Token::Identifier(_))
-            && self.tokens.peek().map(|t| matches!(&t.token, Token::Symbol(Symbol::LBrace))).unwrap_or(false);
+        self.parse_arrow_tail(params)
+    }
+
+    /// Consume la flecha (`->` o su alias `=>`), el tipo de retorno opcional y
+    /// el cuerpo, y arma la `ArrowFunctionExpr`.
+    fn parse_arrow_tail(&mut self, params: Vec<Parameter>) -> ClsResult<Expression> {
+        // Span propio de la arrow = el del token de flecha (`->`/`=>`), que es
+        // único. NO usar `self.span()` (lookahead) al final: daba a la arrow el
+        // span del token siguiente y colisionaba en el type map con el type de
+        // la sentencia siguiente (bug: `var f = suma;` cambiaba la aridad de la
+        // arrow, trap de call_indirect).
+        let arrow_span = self.current_span.clone();
+        match &self.current_token {
+            Token::Operator(Operator::Arrow) | Token::Operator(Operator::FatArrow) => {
+                self.advance();
+            }
+            _ => return Err(self.syntax_err("Esperaba '->' o '=>'")),
+        }
+        // Determinar si hay tipo de retorno: si despues de -> viene un tipo
+        // (identificador, posiblemente calificado con :: o con genericos <T>)
+        // seguido de { , es return_type { body }.
+        // OJO: `-> http::Response {` — el tipo calificado tiene :: entre el
+        // alias y el miembro; hay que mirar hasta encontrar el { del body.
+        let mut has_return_type = matches!(&self.current_token, Token::Identifier(_));
+        if has_return_type {
+            // Explorar: Identifier (:: Identifier)* [< ... >] {  => tipo de retorno
+            // El primer Identifier ya está en current_token (consumido); el
+            // cursor arranca en el token siguiente.
+            let mut cursor = self.tokens.clone();
+            let mut expecting_ident = true;
+            let mut found_lbrace = false;
+            let mut gen_depth = 0i32;
+            while let Some(t) = cursor.peek() {
+                match &t.token {
+                    Token::Identifier(_) if !expecting_ident => {
+                        expecting_ident = true;
+                    }
+                    Token::Operator(Operator::ColonColon) if expecting_ident => {
+                        expecting_ident = false; // espera otro Identifier
+                    }
+                    Token::Operator(Operator::LessThan) | Token::Symbol(Symbol::LParen) if expecting_ident => {
+                        gen_depth += 1;
+                    }
+                    Token::Operator(Operator::GreaterThan) | Token::Symbol(Symbol::RParen) if gen_depth > 0 => {
+                        gen_depth -= 1;
+                    }
+                    Token::Symbol(Symbol::LBrace) if expecting_ident && gen_depth == 0 => {
+                        found_lbrace = true;
+                        break;
+                    }
+                    _ => break,
+                }
+                cursor.next();
+            }
+            has_return_type = found_lbrace;
+        }
         let return_type = if has_return_type {
             Some(self.parse_type_annotation()?)
         } else {
@@ -2320,7 +3002,7 @@ impl Parser {
             params,
             return_type,
             body: Box::new(body),
-            span: self.span(),
+            span: arrow_span,
         }))
     }
 
@@ -2424,6 +3106,29 @@ impl Parser {
         match &self.current_token {
             Token::Identifier(name) => {
                 let name = name.clone();
+                self.advance();
+                Ok(name)
+            }
+            _ => Err(self.syntax_err(format!(
+                "Esperaba identificador, encontró {}",
+                self.current_token
+            )))
+        }
+    }
+
+    /// Nombre de miembro tras `.` o `::`: acepta identifiers Y keywords
+    /// (`r.method`, `mod::default`) — el lexer marca `method`/`default`/... como
+    /// keyword pero en posición de miembro son nombres de campo válidos. Se
+    /// excluyen los literales true/false.
+    fn expect_member_name(&mut self) -> ClsResult<String> {
+        match &self.current_token {
+            Token::Identifier(name) => {
+                let name = name.clone();
+                self.advance();
+                Ok(name)
+            }
+            Token::Keyword(k) if !matches!(k, Keyword::True | Keyword::False) => {
+                let name = k.as_str().to_string();
                 self.advance();
                 Ok(name)
             }

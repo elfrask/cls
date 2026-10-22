@@ -1,0 +1,14 @@
+# neg-match-badarity - el patron `ok(a, b)` no respeta la aridad de la variante
+# `ok(String)` -> DEBE ser rechazado (error estatico, feature match F2).
+
+enum MResp { ok(String), vacio };
+
+function main(args: String[]) -> int {
+    var r = MResp::ok("x");
+    var out = match (v <- r) {
+        ok(a, b) -> "no",
+        default  -> "?",
+    };
+    print(out);
+    return 0;
+};

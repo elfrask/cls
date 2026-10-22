@@ -7,6 +7,13 @@ impl TypeChecker {
 
 
     pub(crate) fn check_statement(&mut self, stmt: &Statement) -> Type {
+        // Registrar el nombre de un export directo (`export function/class/...`)
+        // para detectar colisiones con `export { ... }` en el mismo módulo.
+        if self.scopes.len() == 1 {
+            if let Some(name) = self.direct_export_name(stmt) {
+                self.exported_names.insert(name);
+            }
+        }
         match stmt {
             Statement::VarDecl(v) => self.check_var_decl(v, false),
             Statement::ConstDecl(v) => self.check_var_decl(v, true),
@@ -62,10 +69,11 @@ impl TypeChecker {
             }
             Statement::Break(_) => Type::Void,
             Statement::Continue(_) => Type::Void,
+            Statement::ArrowReturn(a) => self.check_arrow_return(a),
             Statement::Expression(e) => self.check_expression(e),
             Statement::ClassDecl(c) => self.check_class(c),
             Statement::StructureDecl(s) => {
-                self.define(&s.name, Type::Named(s.name.clone(), vec![]));
+                self.define_decl(&s.name, Type::Named(s.name.clone(), vec![]), &s.span);
                 let members: HashMap<String, Type> = s.fields.iter()
                     .map(|f| {
                         let t = self.resolve_type_annotation(&f.type_ann);
@@ -76,7 +84,7 @@ impl TypeChecker {
                 Type::Void
             }
             Statement::InterfaceDecl(i) => {
-                self.define(&i.name, Type::Named(i.name.clone(), vec![]));
+                self.define_decl(&i.name, Type::Named(i.name.clone(), vec![]), &i.span);
                 let fields: HashMap<String, TypeAnnotation> = i.fields.iter()
                     .map(|f| (f.name.clone(), f.type_ann.clone()))
                     .collect();
@@ -84,7 +92,9 @@ impl TypeChecker {
                     .map(|s| (s.name.clone(), s.clone()))
                     .collect();
                 self.interfaces.insert(i.name.clone(), InterfaceInfo {
+                    name: i.name.clone(),
                     type_params: i.type_params.clone(),
+                    extends: i.extends.clone(),
                     fields,
                     field_order: i.fields.iter().map(|f| f.name.clone()).collect(),
                     signatures,
@@ -99,12 +109,44 @@ impl TypeChecker {
                 Type::Void
             }
             Statement::EnumDecl(e) => {
-                self.define(&e.name, Type::Named(e.name.clone(), vec![]));
+                self.define_decl(&e.name, Type::Named(e.name.clone(), vec![]), &e.span);
                 self.enums.insert(e.name.clone());
+                // Esquema (F2): variante -> tipos de params. Habilita la
+                // validación de construcción/patrón/destructuring-let.
+                let schema: Vec<(String, Vec<Type>)> = e
+                    .variants
+                    .iter()
+                    .map(|v| {
+                        let ps = v
+                            .params
+                            .iter()
+                            .map(|ta| self.resolve_type_annotation(ta))
+                            .collect();
+                        (v.name.clone(), ps)
+                    })
+                    .collect();
+                self.enum_defs.insert(e.name.clone(), schema);
+                // Detectar variantes duplicadas.
+                for (i, v) in e.variants.iter().enumerate() {
+                    if e.variants[..i].iter().any(|w| w.name == v.name) {
+                        self.error(
+                            &format!("La variante '{}' está duplicada en el enum '{}'", v.name, e.name),
+                            v.span.clone(),
+                        );
+                    }
+                }
+                Type::Void
+            }
+            Statement::DestructureLet(d) => {
+                self.check_destructure_let(d);
+                Type::Void
+            }
+            Statement::DestructureClass(d) => {
+                self.check_destructure_class(d);
                 Type::Void
             }
             Statement::ModuleDecl(m) => {
-                self.define(&m.name, Type::Named(m.name.clone(), vec![]));
+                self.define_decl(&m.name, Type::Named(m.name.clone(), vec![]), &m.span);
                 self.push_scope();
                 for stmt in &m.body {
                     self.check_statement(stmt);
@@ -118,42 +160,24 @@ impl TypeChecker {
             }
             Statement::Import(imp) => self.check_import(imp),
             Statement::FromImport(fi) => self.check_from_import(fi),
-            Statement::Include(inc) => self.check_include(inc),
+            Statement::ExportList(el) => self.check_export_list(el),
             Statement::When(w) => {
-                // Cada rama se chequea en su propio scope (símbolos condicionales).
+                // `when` es compile-time: solo se procesa la rama que matchea
+                // el target del host. Antes del fix (dev-2) se iteraban TODAS
+                // las ramas con un scope local cada una, lo que hacia que las
+                // declaraciones globales (extension/structure/enum) dentro
+                // del `when` se perdieran al poppear el scope. Esto invalidaba
+                // el patron canonico `when (os: windows) { extension "ws2_32.dll"
+                // as C { ... } }`. Ver extension-when.md y decision 002.
                 for branch in &w.branches {
-                    self.push_scope();
-                    self.check_block(&branch.block);
-                    self.pop_scope();
-                }
-                Type::Void
-            }
-            Statement::Extension(e) => {
-                // Funciones/structs/variables nativas se registran como símbolos.
-                for decl in &e.declarations {
-                    match decl {
-                        NativeDecl::Function(f) => {
-                            let mut param_tys = Vec::new();
-                            for p in &f.params {
-                                let t = p.type_ann.as_ref()
-                                    .map(|ta| self.resolve_type_annotation(ta))
-                                    .unwrap_or(Type::Any);
-                                param_tys.push(t);
-                            }
-                            let ret = f.return_type.as_ref()
-                                .map(|ta| self.resolve_type_annotation(ta))
-                                .unwrap_or(Type::Void);
-                            self.define(&f.name, Type::Fun(param_tys, Box::new(ret)));
+                    if self.target.matches(&branch.cond) {
+                        // `when` NO abre un scope propio: las declaraciones
+                        // (extension/structure/enum) deben escapar al scope
+                        // contenedor (patrón canónico extension-when).
+                        for stmt in &branch.block.statements {
+                            self.check_statement(stmt);
                         }
-                        NativeDecl::Structure(s) => {
-                            self.define(&s.name, Type::Named(s.name.clone(), vec![]));
-                        }
-                        NativeDecl::Var(v) => {
-                            let t = v.type_ann.as_ref()
-                                .map(|ta| self.resolve_type_annotation(ta))
-                                .unwrap_or(Type::Any);
-                            self.define(&v.name, t);
-                        }
+                        break;
                     }
                 }
                 Type::Void
@@ -169,9 +193,15 @@ impl TypeChecker {
 
 
     pub(crate) fn check_block(&mut self, block: &Block) {
+        // Cada bloque `{ }` es un scope propio: el `var` redeclarado en bloques
+        // hermanos/anidados no debe colisionar y el shadowing debe respetarse.
+        // (Antes no había push/pop -> todo el cuerpo de la función compartía el
+        // scope de la función y el chequeo de duplicados daba falsos positivos.)
+        self.push_scope();
         for stmt in &block.statements {
             self.check_statement(stmt);
         }
+        self.pop_scope();
     }
 
 }

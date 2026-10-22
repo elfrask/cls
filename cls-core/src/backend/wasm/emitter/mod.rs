@@ -9,6 +9,7 @@ mod classes;
 mod containers;
 mod expressions;
 mod foreach;
+mod matching;
 mod member;
 mod module_calls;
 mod print;
@@ -35,12 +36,27 @@ impl HostCaller {
 /// Emisor con el estado de compilación de una función.
 pub(crate) struct FuncEmitter<'a> {
     types: &'a HashMap<Span, Type>,
+    /// Alias de imports (`m` -> `math`) para despachar módulos internos por
+    /// cualquier alias, no solo por el nombre literal del módulo.
+    import_aliases: &'a HashMap<String, String>,
     pub(crate) body: Vec<Instruction<'static>>,
     locals: HashMap<String, u32>,
     pub(crate) local_tys: HashMap<u32, WasTy>,
     pub(crate) next_local: u32,
     block_depth: u32,
     loop_stack: Vec<LoopGuard>,
+    /// Pila de `finally` abiertos: label del block `$finally_label` de cada
+    /// `try ... finally` en emisión. Las salidas abruptas (`return`/`break`/
+    /// `continue`) que cruzan un `finally` se difieren: saltan a su label, y el
+    /// despacho tras el `finally` (ver `emit_try`) completa la salida. Sin esto
+    /// el `return`/`br` saltaría el `finally` (bug de flujo).
+    finally_stack: Vec<u32>,
+    /// Local compartido de la acción diferida: 0 = normal, 1 = return,
+    /// 2 = break, 3 = continue. `None` hasta que un `try/finally` la necesita.
+    exit_kind_local: Option<u32>,
+    /// Local del valor de retorno diferido (mismo tipo WASM que el retorno de
+    /// la función). `None` si la función no devuelve valor.
+    exit_val_local: Option<u32>,
     host: HostCaller,
     string_pool: &'a mut Vec<String>,
     string_index: &'a mut HashMap<String, u32>,
@@ -53,9 +69,14 @@ pub(crate) struct FuncEmitter<'a> {
     type_count: &'a mut u32,
     types_sec: &'a mut TypeSection,
     enum_defs: &'a HashMap<String, (u32, Vec<String>)>,
+    /// Esquema de payload por enum (F2): enum -> por variante, tipos de params.
+    enum_params: &'a HashMap<String, Vec<Vec<Type>>>,
     struct_defs: &'a HashMap<String, StructInfo>,
     native_indexes: &'a HashMap<String, u32>,
     native_ret: &'a HashMap<String, char>,
+    /// letras C de los params de cada función de extensión (para el ajuste
+    /// base+16 de los params struct: ver `emit_call`).
+    native_params: &'a HashMap<String, Vec<char>>,
     globals: &'a HashMap<String, u32>,
     static_fields: &'a HashMap<String, u32>,
     class_defs: &'a HashMap<String, ClassInfo>,
@@ -72,6 +93,13 @@ pub(crate) struct FuncEmitter<'a> {
     /// Span de la función que se está compilando (para errores de statements sin
     /// span propio, p.ej. `break`/`continue` fuera de loop).
     pub(crate) current_fn_span: Span,
+    /// Tipo de retorno declarado de la función/método en compilación (frontera
+    /// de `return`: convertir Shape→hashmap si el retorno es dinámico).
+    pub(crate) fn_ret: Option<Type>,
+    /// Tipos CLS declarados de las variables locales del cuerpo (nombre -> tipo,
+    /// por anotación o inferencia registrada al compilar su VarDecl) — frontera
+    /// de asignación `destino = valor`.
+    pub(crate) local_cls_types: HashMap<String, Type>,
     target: &'a Target,
     /// Índice del tag de excepción CLS (para `Instruction::Throw`).
     tag_idx: u32,
@@ -99,11 +127,21 @@ pub(crate) struct FuncEmitter<'a> {
     /// tras un `end` de if/switch/try con todas las ramas terminadas, que
     /// cranelift rechaza con "expected i64 but nothing on stack").
     pub(crate) dead_flow: bool,
+    /// Pila de **ternary-targets** (F4): bloques `(result T)` abiertos por una
+    /// rama de `if`-expresión o el cuerpo de un arma de `match` bloque.
+    /// `(block_depth, tipo_wasm_del_resultado)`. `* <-` elige el más cercano.
+    pub(crate) ternary_targets: Vec<(u32, WasTy)>,
+    /// Pila de **match-targets** (F4): bloque `$done` de cada `match`
+    /// envolvente. `(block_depth, Some(tipo))` si el match devuelve valor;
+    /// `None` si es un match-sentencia (no admite `<-`). `match <-` elige el
+    /// más cercano; `match*` salta 1; etc.
+    pub(crate) match_targets: Vec<(u32, Option<WasTy>)>,
 }
 
 impl<'a> FuncEmitter<'a> {
     pub(crate) fn new(
         types: &'a HashMap<Span, Type>,
+        import_aliases: &'a HashMap<String, String>,
         host: HostCaller,
         string_pool: &'a mut Vec<String>,
         string_index: &'a mut HashMap<String, u32>,
@@ -115,9 +153,11 @@ impl<'a> FuncEmitter<'a> {
         type_count: &'a mut u32,
         types_sec: &'a mut TypeSection,
         enum_defs: &'a HashMap<String, (u32, Vec<String>)>,
+        enum_params: &'a HashMap<String, Vec<Vec<Type>>>,
         struct_defs: &'a HashMap<String, StructInfo>,
         native_indexes: &'a HashMap<String, u32>,
         native_ret: &'a HashMap<String, char>,
+        native_params: &'a HashMap<String, Vec<char>>,
         globals: &'a HashMap<String, u32>,
         static_fields: &'a HashMap<String, u32>,
         class_defs: &'a HashMap<String, ClassInfo>,
@@ -132,12 +172,16 @@ impl<'a> FuncEmitter<'a> {
     ) -> Self {
         Self {
             types,
+            import_aliases,
             body: Vec::new(),
             locals: HashMap::new(),
             local_tys: HashMap::new(),
             next_local: 0,
             block_depth: 0,
             loop_stack: Vec::new(),
+            finally_stack: Vec::new(),
+            exit_kind_local: None,
+            exit_val_local: None,
             host,
             string_pool,
             string_index,
@@ -149,9 +193,11 @@ impl<'a> FuncEmitter<'a> {
             type_count,
             types_sec,
             enum_defs,
+            enum_params,
             struct_defs,
             native_indexes,
             native_ret,
+            native_params,
             globals,
             static_fields,
             class_defs,
@@ -160,6 +206,8 @@ impl<'a> FuncEmitter<'a> {
             current_class,
             current_method: None,
             current_fn_span: Span::new(1, 1, 1, 1),
+            fn_ret: None,
+            local_cls_types: HashMap::new(),
             target,
             tag_idx,
             eh_handler_ty,
@@ -169,6 +217,8 @@ impl<'a> FuncEmitter<'a> {
             promoted: HashSet::new(),
             shadow_ptr_global: 0,
             dead_flow: false,
+            ternary_targets: Vec::new(),
+            match_targets: Vec::new(),
         }
     }
 
@@ -178,6 +228,72 @@ impl<'a> FuncEmitter<'a> {
         self.next_local += 1;
         self.local_tys.insert(l, ty);
         l
+    }
+
+    /// Resuelve el nombre real de una clase en `class_defs` a partir del nombre
+    /// que trae el type map. Las clases aplanadas bajo un prefijo de módulo
+    /// (`lib::Clase`) conservan el nombre LOCAL en los tipos del método (`me`,
+    /// params), así que si el nombre exacto no existe se busca `*::nombre`.
+    pub(crate) fn resolve_class_key(&self, name: &str) -> Option<String> {
+        if self.class_defs.contains_key(name) {
+            return Some(name.to_string());
+        }
+        let suffix = format!("::{}", name);
+        self.class_defs.keys().find(|k| k.ends_with(&suffix)).cloned()
+    }
+
+    /// Clave en `class_defs` de la clase a la derecha de `is`: acepta el nombre
+    /// simple (`Clase`) o cualificado por el alias de import (`mod::Clase`).
+    /// `None` si no es una clase conocida (entonces se intenta enum/structure).
+    pub(crate) fn resolve_is_class_key(&self, expr: &Expression) -> Option<String> {
+        match expr {
+            Expression::Identifier(name, _) => self.resolve_class_key(name),
+            Expression::NamespaceAccess(ns, name, _) => {
+                let key = format!("{}::{}", ns, name);
+                if self.class_defs.contains_key(&key) {
+                    Some(key)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// `class_id` de definición de un nombre de ancestro (`Padre` o
+    /// `mod::Padre`), resolviendo por nombre exacto o por sufijo.
+    pub(crate) fn ancestor_class_id(&self, name: &str) -> Option<u32> {
+        if let Some(info) = self.class_defs.get(name) {
+            return Some(info.class_id);
+        }
+        let suffix = format!("::{}", name);
+        self.class_defs
+            .iter()
+            .find(|(k, _)| k.ends_with(&suffix))
+            .map(|(_, i)| i.class_id)
+    }
+
+    /// Clave real de clase para una expresión objeto. `me` dentro de un método
+    /// usa la clase ACTUAL (la clave aplanada real, p.ej. `lib::Clase` o el
+    /// nombre renombrado por un import con alias), no el type map — que puede
+    /// conservar el nombre original de la declaración. Para otros objetos,
+    /// resuelve el tipo `Named` a la clave de `class_defs`.
+    pub(crate) fn object_class_key(&self, object: &Expression) -> Option<String> {
+        if let Expression::Identifier(n, _) = object {
+            if n == "me" {
+                if let Some(cur) = &self.current_class {
+                    // `CMX` está respaldada por el builtin `Cmx`: `me` es un Cmx
+                    // nativo, no una instancia de clase (sin layout de campos).
+                    if cur != "CMX" {
+                        return Some(cur.clone());
+                    }
+                }
+            }
+        }
+        match self.types.get(&expr_span(object)) {
+            Some(Type::Named(n, _)) => self.resolve_class_key(n),
+            _ => None,
+        }
     }
 
 
@@ -195,6 +311,45 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
+    /// `true` si la función/método en emisión devuelve un valor (no `Void`).
+    pub(crate) fn returns_value(&self) -> bool {
+        match &self.fn_ret {
+            Some(Type::Void) | Some(Type::Empty) | None => false,
+            Some(_) => true,
+        }
+    }
+
+    /// Tipo WASM del valor de retorno de la función (I64 si no resuelve).
+    pub(crate) fn return_was_ty(&self) -> WasTy {
+        match &self.fn_ret {
+            Some(t) => was_type(t).unwrap_or(WasTy::I64),
+            None => WasTy::I64,
+        }
+    }
+
+    /// Local compartido de la acción diferida (`exit_kind`), creado la primera
+    /// vez que un `try/finally` lo necesita.
+    pub(crate) fn ensure_exit_kind_local(&mut self) -> u32 {
+        if let Some(l) = self.exit_kind_local {
+            return l;
+        }
+        let l = self.fresh_local();
+        self.exit_kind_local = Some(l);
+        l
+    }
+
+    /// Local del valor de retorno diferido, con el tipo del retorno declarado.
+    pub(crate) fn ensure_exit_val_local(&mut self) -> u32 {
+        if let Some(l) = self.exit_val_local {
+            return l;
+        }
+        let ty = self.return_was_ty();
+        let l = self.fresh_local_ty(ty);
+        self.exit_val_local = Some(l);
+        l
+    }
+
+
     pub(crate) fn local_for(&mut self, name: &str) -> u32 {
         *self.locals.entry(name.to_string()).or_insert_with(|| {
             let l = self.next_local;
@@ -204,37 +359,14 @@ impl<'a> FuncEmitter<'a> {
     }
 
 
-    /// Carga un identificador: global (si es un `export var` top-level) o local.
+    /// Carga un identificador: una variable del scope (global, captura, local)
+    /// gana sobre el handle de un builtin/función/enum/struct con el mismo
+    /// nombre. Sin esto, `var len = Punto(1); len.x` cargaba el handle de la
+    /// función `len` en vez de la variable (el typeck sí resuelve el scope
+    /// primero, así que la variable quedaba con tipo correcto pero valor 0).
     pub(crate) fn emit_ident_load(&mut self, name: &str) {
         if name == "super" && self.current_class.is_some() {
             self.body.push(Instruction::LocalGet(0));
-        } else if let Some(&ti) = self.fn_table_idx.get(name) {
-            // Función CLS como valor -> handle [tabla_idx][capturas=0][nombre]
-            // con tag-bit (ptr<<1)|1. El nombre se guarda para fn_to_string.
-            let n = self.intern_string(&format!("<function {}>", name));
-            self.body.push(Instruction::I64Const(ti as i64));
-            self.emit_load_str(n);
-            self.body.push(Instruction::I64Const(0));
-            self.host.call(HostFn::FnHandle, &mut self.body);
-        } else if let Some((def_id, _)) = self.enum_defs.get(name) {
-            // Enum def como valor -> marker `def_id<<32 | 0xffff_ffff` (imprime `<enum X>`).
-            let v = ((*def_id as i64) << 32) | 0xffff_ffff;
-            self.body.push(Instruction::I64Const(v));
-        } else if self.struct_defs.contains_key(name) {
-            // Struct def como valor -> ptr 0 (marker: imprime `<function X>`).
-            self.body.push(Instruction::I64Const(0));
-        } else if let Some(g) = self.globals.get(name) {
-            self.body.push(Instruction::GlobalGet(*g));
-        } else if let Some(fidx) = self.intrinsic_handle_idx(name) {
-            // Intrinsic (print/input/now/...) como valor -> handle de función con
-            // índice de tabla sintético (negativo, estable por nombre): se
-            // imprime `<function print>` (paridad walker). Un var/global de
-            // usuario con el mismo nombre gana (shadowing).
-            let n = self.intern_string(&format!("<function {}>", name));
-            self.body.push(Instruction::I64Const(fidx));
-            self.emit_load_str(n);
-            self.body.push(Instruction::I64Const(0));
-            self.host.call(HostFn::FnHandle, &mut self.body);
         } else if let Some(&ci) = self.captures.get(name) {
             // Variable capturada (closure): el bloque guarda el valor (si no es
             // promovida) o el PTR al slot (si es promovida). Acceder al slot.
@@ -267,6 +399,40 @@ impl<'a> FuncEmitter<'a> {
                 align: 3,
                 memory_index: 0,
             }));
+        } else if self.locals.contains_key(name) {
+            // Local declarado (var/param/foreach): gana sobre builtins y
+            // funciones top-level con el mismo nombre.
+            let idx = self.local_for(name);
+            self.body.push(Instruction::LocalGet(idx));
+        } else if let Some(g) = self.globals.get(name) {
+            // Global de módulo: pierde ante capturas/locales del scope actual
+            // (una local sombrea al global homónimo; antes la closure capturada
+            // mutaba el global).
+            self.body.push(Instruction::GlobalGet(*g));
+        } else if let Some(&ti) = self.fn_table_idx.get(name) {
+            // Función CLS como valor -> handle [tabla_idx][capturas=0][nombre]
+            // con tag-bit (ptr<<1)|1. El nombre se guarda para fn_to_string.
+            let n = self.intern_string(&format!("<function {}>", name));
+            self.body.push(Instruction::I64Const(ti as i64));
+            self.emit_load_str(n);
+            self.body.push(Instruction::I64Const(0));
+            self.host.call(HostFn::FnHandle, &mut self.body);
+        } else if let Some((def_id, _)) = self.enum_defs.get(name) {
+            // Enum def como valor -> marker `def_id<<32 | 0xffff_ffff` (imprime `<enum X>`).
+            let v = ((*def_id as i64) << 32) | 0xffff_ffff;
+            self.body.push(Instruction::I64Const(v));
+        } else if self.struct_defs.contains_key(name) {
+            // Struct def como valor -> ptr 0 (marker: imprime `<function X>`).
+            self.body.push(Instruction::I64Const(0));
+        } else if let Some(fidx) = self.intrinsic_handle_idx(name) {
+            // Intrinsic (print/input/now/...) como valor -> handle de función con
+            // índice de tabla sintético (negativo, estable por nombre): se
+            // imprime `<function print>` (paridad walker).
+            let n = self.intern_string(&format!("<function {}>", name));
+            self.body.push(Instruction::I64Const(fidx));
+            self.emit_load_str(n);
+            self.body.push(Instruction::I64Const(0));
+            self.host.call(HostFn::FnHandle, &mut self.body);
         } else {
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalGet(idx));
@@ -283,7 +449,7 @@ impl<'a> FuncEmitter<'a> {
     fn intrinsic_handle_idx(&self, name: &str) -> Option<i64> {
         const BUILTINS: &[&str] = &[
             "print", "len", "toString", "str", "input", "int", "float", "bool",
-            "type", "now", "exit", "sleep", "throw",
+            "type", "now", "exit", "sleep", "throw", "char", "ord",
         ];
         if let Some(i) = BUILTINS.iter().position(|b| *b == name) {
             return Some(-(i as i64 + 1));
@@ -302,10 +468,7 @@ impl<'a> FuncEmitter<'a> {
     /// Carga el PTR al slot de una variable promovida (para capturarla por ref).
     /// Si no es promovida, carga el valor directo (comportamiento por valor).
     fn emit_ident_ptr(&mut self, name: &str) {
-        if let Some(g) = self.globals.get(name) {
-            // Globals ya son compartidas: cargar el valor directamente.
-            self.body.push(Instruction::GlobalGet(*g));
-        } else if let Some(&ci) = self.captures.get(name) {
+        if let Some(&ci) = self.captures.get(name) {
             // Captura: el bloque guarda el PTR al slot (promovida) o el valor.
             // Las capturas van ANTES que promoted (una captura no es un local).
             self.body.push(Instruction::LocalGet(0));
@@ -321,6 +484,9 @@ impl<'a> FuncEmitter<'a> {
         } else if self.promoted.contains(name) {
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalGet(idx));
+        } else if let Some(g) = self.globals.get(name) {
+            // Globals ya son compartidas: cargar el valor directamente.
+            self.body.push(Instruction::GlobalGet(*g));
         } else {
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalGet(idx));
@@ -330,9 +496,7 @@ impl<'a> FuncEmitter<'a> {
 
     /// Escribe un identificador: global (si es un `export var` top-level) o local.
     pub(crate) fn emit_ident_store(&mut self, name: &str) {
-        if let Some(g) = self.globals.get(name) {
-            self.body.push(Instruction::GlobalSet(*g));
-        } else if let Some(&ci) = self.captures.get(name) {
+        if let Some(&ci) = self.captures.get(name) {
             // Variable capturada (closure): el bloque guarda el valor o el PTR.
             let v = self.fresh_local();
             self.body.push(Instruction::LocalSet(v));
@@ -370,6 +534,12 @@ impl<'a> FuncEmitter<'a> {
                 align: 3,
                 memory_index: 0,
             }));
+        } else if self.locals.contains_key(name) {
+            // Local declarado: sombrea al global homónimo.
+            let idx = self.local_for(name);
+            self.body.push(Instruction::LocalSet(idx));
+        } else if let Some(g) = self.globals.get(name) {
+            self.body.push(Instruction::GlobalSet(*g));
         } else {
             let idx = self.local_for(name);
             self.body.push(Instruction::LocalSet(idx));
@@ -378,9 +548,24 @@ impl<'a> FuncEmitter<'a> {
 
 
     pub(crate) fn declare_var_ty(&mut self, name: &str, ty: WasTy) -> u32 {
-        let idx = self.local_for(name);
-        self.local_tys.entry(idx).or_insert(ty);
+        // Cada `var` recibe un local NUEVO (aunque el nombre ya exista): así dos
+        // bloques hermanos pueden reusar el nombre con tipos WASM distintos sin
+        // colisionar. El binding se restaura al salir del bloque (`exit_var_scope`).
+        let idx = self.fresh_local_ty(ty);
+        self.locals.insert(name.to_string(), idx);
         idx
+    }
+
+    /// Snapshot de los bindings de variables visibles (nombre->local y
+    /// nombre->tipo CLS) al entrar a un bloque `{ }`. Se restaura al salir para
+    /// implementar scoping por bloque (el shadowing interior no escapa).
+    pub(crate) fn enter_var_scope(&mut self) -> (HashMap<String, u32>, HashMap<String, Type>) {
+        (self.locals.clone(), self.local_cls_types.clone())
+    }
+
+    pub(crate) fn exit_var_scope(&mut self, saved: (HashMap<String, u32>, HashMap<String, Type>)) {
+        self.locals = saved.0;
+        self.local_cls_types = saved.1;
     }
 
 
@@ -419,7 +604,7 @@ impl<'a> FuncEmitter<'a> {
             ))
         })?;
         match t {
-            Type::Any | Type::Unknown => Err(crate::error::ClsError::CompileError(format!(
+            Type::Unknown => Err(crate::error::ClsError::CompileError(format!(
                 "Expresión sin tipo concreto ({}:{}): {}",
                 span.start_line,
                 span.start_col,

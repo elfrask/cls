@@ -10,11 +10,18 @@ pub enum Type {
     String,
     Bool,
     Char,
-    Any,
     Unknown,
     Null,
     Void,
     Empty,
+
+    // Valor JSON dinámico (alias `JSON = Record<String, Value | JSON | Value[]>`)
+    // y Value (cualquier valor CLS: primitivo, JSON, array). Son los tipos
+    // "tipados pero dinámicos": el tag runtime viaja con el valor, el
+    // typeck/emisor los tratan como contenedores polimórficos concretos. `Value`
+    // es el top universal del sistema (antes ocupado por `Any`).
+    Json,
+    Value,
 
     // Con parámetros
     Array(Box<Type>),                    // type[]
@@ -27,6 +34,11 @@ pub enum Type {
 
     // Tipos acrónimos (alias)
     I32, I64, I16, I8, F32, F64, Cmx,
+
+    // Valor invocable (función simple, closure u objeto con __call). En runtime
+    // se identifica por el tag-bit del handle (par = simple, impar = closure).
+    // Ver plan tipo-callable-is-narrowing-spread.md.
+    Callable,
 
     // Tipos nombrados por usuario
     Named(String, Vec<Type>), // Persona, Array<String>
@@ -54,15 +66,61 @@ impl LitVal {
 }
 
 impl Type {
+    /// El tipo base de un literal type (`5` -> `Int`, `"x"` -> `String`); el
+    /// resto de tipos se devuelven igual. Se usa para que un `const` de literal
+    /// (p. ej. `const N = 5`) participe en operadores como su tipo base
+    /// (`N + x` es aritmética de Int), sin perder el literal para assignability
+    /// (uniones de literales, narrowing). Ver `check_binary`.
+    pub fn literal_base(&self) -> Type {
+        match self {
+            Type::Literal(v) => v.base_type(),
+            _ => self.clone(),
+        }
+    }
+
+    /// Compatibilidad para el JOIN de ramas/armas (`match`/ternario/`if`-expr):
+    /// asignables en cualquier dirección, o **mismo tipo base** (`Literal(1)` vs
+    /// `Int`, o `Literal(1)` vs `Literal(2)`). NO ensancha el tipo: preserva el
+    /// literal (para que siga siendo asignable a uniones de literales).
+    pub fn join_compatible(&self, other: &Type) -> bool {
+        self.is_assignable_to(other)
+            || other.is_assignable_to(self)
+            || self.literal_base() == other.literal_base()
+    }
+
     pub fn is_assignable_to(&self, other: &Type) -> bool {
         match (self, other) {
-            // Any puede ser cualquier cosa
-            (Type::Any, _) | (_, Type::Any) => true,
+            // Value / Json: contenedores dinámicos. Cualquier valor CLS es
+            // asignable a `Value` (primitivo, array, JSON); `JSON` (objeto
+            // JSON) es un `Value`; `Value` se puede asignar a `JSON` solo si
+            // el origen es un valor JSON (record/array) — en la práctica el
+            // typeck los trata como compatibles entre sí (el tag decide en
+            // runtime). Un primitivo NO es `JSON` (objeto/documento).
+            (_, Type::Value) | (Type::Value, _) => true,
+            (_, Type::Json) => matches!(self, Type::Json | Type::Value | Type::Record(_, _) | Type::Shape(_) | Type::Array(_)),
+            (Type::Json, _) => true,
+
+            // Cmx: contenedor dinámico concreto (réplica del patrón JSON).
+            // Un CmxValue es asignable a `Value` (el arm universal de Value ya
+            // lo cubre) y a los tipos por los que se puede leer un campo; pero
+            // un primitivo NO es un CmxValue, y un CmxValue NO es invocable
+            // (Callable). Ver plan `completar-tipo-cmx.md`.
+            (Type::Cmx, Type::Callable) => false,
+            (Type::Cmx, _) => true,
+
+            // Callable: cualquier función (con aridad concreta) es invocable.
+            // Value/Cmx NO son assignables a Callable en compile-time (son
+            // dinámicos — el `is Callable` resuelve en runtime por tag-bit).
+            // `Callable -> Value` lo cubre el arm universal.
+            (Type::Fun(_, _), Type::Callable) => true,
+            (Type::Callable, Type::Callable) => true,
 
             // Tipos idénticos
             (a, b) if a == b => true,
 
-            // Enteros a flotantes (implícito)
+            // Widening numérico Int→Float: única coerción implícita permitida.
+            // Ver docs/decisiones/001-no-implicit-coercion.md.
+            // NO extender a otros pares de tipos sin actualizar la decisión.
             (Type::Int, Type::Float) => true,
 
             // Alias de enteros
@@ -91,6 +149,26 @@ impl Type {
             // Records
             (Type::Record(a1, b1), Type::Record(a2, b2)) => {
                 a1.is_assignable_to(a2) && b1.is_assignable_to(b2)
+            }
+
+            // Tipos nativos estructurados del FFI (CRecord/CArray/CStruct):
+            // el valor CLS correspondiente es assignable al tipo puntero (viaja
+            // como ptr al layout de la memoria lineal, como CPtr).
+            (Type::Record(_, _) | Type::Shape(_), Type::Named(n, _)) if n == "CRecord" => true,
+            (Type::Array(_) | Type::Tuple(_), Type::Named(n, _)) if n == "CArray" => true,
+            (Type::Named(n, _), Type::Named(m, _))
+                if matches!(n.as_str(), "CRecord" | "CArray" | "CStruct")
+                    && matches!(m.as_str(), "CRecord" | "CArray" | "CStruct" | "CPtr") =>
+            {
+                true
+            }
+            (Type::Named(n, _), Type::Named(m, _)) if n == "CStruct" && m == "CPtr" => true,
+            // Un ptr del layout viaja como Int; los punteros estructurados
+            // aceptan Int como valor crudo (p.ej. `CStruct` <- `Int`).
+            (Type::Int, Type::Named(n, _))
+                if matches!(n.as_str(), "CRecord" | "CArray" | "CStruct") =>
+            {
+                true
             }
 
             // Shapes: cada campo del destino debe existir en el origen con tipo
@@ -143,11 +221,12 @@ impl Type {
             Type::String => "String".to_string(),
             Type::Bool => "Bool".to_string(),
             Type::Char => "Char".to_string(),
-            Type::Any => "Any".to_string(),
             Type::Unknown => "Unknown".to_string(),
             Type::Null => "Null".to_string(),
             Type::Void => "Void".to_string(),
             Type::Empty => "Empty".to_string(),
+            Type::Json => "JSON".to_string(),
+            Type::Value => "Value".to_string(),
             Type::Array(inner) => format!("{}[]", inner.to_string()),
             Type::Tuple(ts) => format!(
                 "({})",
@@ -184,6 +263,7 @@ impl Type {
             Type::F32 => "f32".to_string(),
             Type::F64 => "f64".to_string(),
             Type::Cmx => "cmx".to_string(),
+            Type::Callable => "Callable".to_string(),
             Type::Named(name, params) => {
                 if params.is_empty() {
                     name.clone()
@@ -270,5 +350,47 @@ mod tests {
         let other = Type::Literal(LitVal::Str("green".to_string()));
         assert!(red.is_assignable_to(&u));
         assert!(!other.is_assignable_to(&u));
+    }
+
+    #[test]
+    fn json_value_assignable() {
+        // Todo valor CLS es asignable a `Value`.
+        assert!(Type::Int.is_assignable_to(&Type::Value));
+        assert!(Type::String.is_assignable_to(&Type::Value));
+        assert!(Type::Array(Box::new(Type::Int)).is_assignable_to(&Type::Value));
+        assert!(Type::Json.is_assignable_to(&Type::Value));
+        // `Value` es asignable a `Value`.
+        assert!(Type::Value.is_assignable_to(&Type::Value));
+        // Un objeto JSON es asignable a `JSON`; un primitivo NO.
+        assert!(Type::Json.is_assignable_to(&Type::Json));
+        assert!(Type::Record(Box::new(Type::String), Box::new(Type::Value)).is_assignable_to(&Type::Json));
+        assert!(!Type::Int.is_assignable_to(&Type::Json));
+        // JSON es un Value (idempotencia).
+        assert!(Type::Json.is_assignable_to(&Type::Value));
+    }
+
+    #[test]
+    fn cmx_value_assignable() {
+        // Un CmxValue es asignable a `Value` y a cualquier tipo (el tag decide
+        // en runtime); un primitivo NO es un CmxValue.
+        assert!(Type::Cmx.is_assignable_to(&Type::Value));
+        assert!(Type::Value.is_assignable_to(&Type::Cmx));
+        assert!(Type::Cmx.is_assignable_to(&Type::String));
+        assert!(Type::Cmx.is_assignable_to(&Type::Cmx));
+        assert!(!Type::Int.is_assignable_to(&Type::Cmx));
+        assert!(!Type::String.is_assignable_to(&Type::Cmx));
+    }
+
+    #[test]
+    fn callable_assignable() {
+        // Toda función es invocable; Callable es un Value; Cmx NO es Callable
+        // en compile-time (el `is Callable` resuelve en runtime). Value es el
+        // tipo dinámico universal: se asigna a todo (incluido Callable).
+        assert!(Type::Fun(vec![Type::Int], Box::new(Type::Int)).is_assignable_to(&Type::Callable));
+        assert!(Type::Callable.is_assignable_to(&Type::Callable));
+        assert!(Type::Callable.is_assignable_to(&Type::Value));
+        assert!(Type::Value.is_assignable_to(&Type::Callable));
+        assert!(!Type::Cmx.is_assignable_to(&Type::Callable));
+        assert!(!Type::Int.is_assignable_to(&Type::Callable));
     }
 }

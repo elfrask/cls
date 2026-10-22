@@ -1,4 +1,0 @@
-export function buggy() -> int {
-    var x: int = "texto";
-    return x;
-};

@@ -1,0 +1,6 @@
+﻿=== closure simple ===
+f: 11
+=== closure con mutacion ===
+inc1: 1
+inc2: 2
+contador externo: 2

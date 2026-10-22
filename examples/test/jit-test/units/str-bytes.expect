@@ -1,0 +1,5 @@
+﻿len 4
+rebuilt-eq true
+byte-len 1
+slice-mid-len 1
+out AóB

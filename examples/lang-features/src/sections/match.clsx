@@ -1,0 +1,178 @@
+# match.clsx - eje de `match` (feature `match`, F1 + F2 + F5).
+#
+# Ejercita: los 4 modos (valor, tipo, condicion, patron), enums con payload
+# (construccion cualificada `X::v(...)`, binding posicional en el patron, unit),
+# `==` por identidad de variante, `is`, `str`/repr, destructuring-let estatico,
+# y unión temporal (F5): arma multi-tipo `(A, B)` + acceso a miembro sobre la
+# unión (dispatch por id de runtime y offset propio de cada clase).
+
+import "check" as check;
+
+enum MResp {
+    ok(String),
+    err(int, String),
+    vacio,
+};
+
+class MVec2 {
+    var x: float;
+    var y: float;
+    function main(x: float, y: float) { me.x = x; me.y = y; }
+};
+
+class MVec3 {
+    var z: float;
+    var x: float;
+    var y: float;
+    function main(z: float, x: float, y: float) { me.z = z; me.x = x; me.y = y; }
+};
+
+alias MVec = MVec2 | MVec3;
+
+function match_modes() -> int {
+    var n = 4;
+    var par = match (n) in { (0, 2, 4, 6, 8) -> true, default -> false };
+    check::assertTrue("match.valor", par);
+
+    var s = "hola";
+    var saludo = match (s) in { "hola" -> "hey", default -> "?" };
+    check::assertEqStr("match.valor.str", saludo, "hey");
+
+    var k: int = 7;
+    var kind = match (k) is { int -> "int", default -> "otro" };
+    check::assertEqStr("match.tipo", kind, "int");
+
+    var a = 3;
+    var b = 9;
+    var cmp = match() if { a > b -> ">", a < b -> "<", default -> "=" };
+    check::assertEqStr("match.cond", cmp, "<");
+    return 0;
+}
+
+function match_payload() -> int {
+    var r = MResp::ok("listo");
+    var o1 = match (v <- r) {
+        ok(msg)       -> "OK " + msg,
+        err(cod, txt) -> "ERR " + str(cod) + " " + txt,
+        vacio         -> "vacio",
+        default       -> "?",
+    };
+    check::assertEqStr("match.payload.ok", o1, "OK listo");
+
+    var e = MResp::err(404, "no");
+    var o2 = match (v <- e) {
+        ok(msg)       -> "OK " + msg,
+        err(cod, txt) -> "ERR " + str(cod) + " " + txt,
+        vacio         -> "vacio",
+        default       -> "?",
+    };
+    check::assertEqStr("match.payload.err", o2, "ERR 404 no");
+
+    var u = MResp::vacio;
+    var o3 = match (v <- u) {
+        ok(msg)       -> "OK",
+        err(cod, txt) -> "ERR",
+        vacio         -> "vacio",
+        default       -> "?",
+    };
+    check::assertEqStr("match.payload.unit", o3, "vacio");
+
+    check::assertEqStr("match.repr", str(r), "ok(listo)");
+    check::assertTrue("match.eq", r == MResp::ok("x"));
+    check::assertTrue("match.is", r is MResp);
+    return 0;
+}
+
+function match_destructuring() -> int {
+    var c = MResp::ok("dato");
+    var MResp::ok(result) = c;
+    check::assertEqStr("match.destr", result, "dato");
+    return 0;
+}
+
+# Desempaquetado de CLASE con `var` (campos de instancia en orden de layout).
+class MPayload {
+    var name: String;
+    var n: int;
+    function main(name: String, n: int) { me.name = name; me.n = n; }
+    function __destructurate() -> (String, int) { return (me.name, me.n); }
+}
+
+function match_destructuring_class() -> int {
+    var p = MPayload("dato", 7);
+    var MPayload(name, n) = p;
+    check::assertEqStr("match.classdestr.name", name, "dato");
+    check::assertEq("match.classdestr.n", n, 7);
+    var MPayload(name2, _) = MPayload("directo", 0);
+    check::assertEqStr("match.classdestr.directo", name2, "directo");
+    return 0;
+}
+
+# F5: un arma con varios tipos `(MVec2, MVec3)` estrecha a `MVec2 | MVec3` y
+# `v.x` carga el campo en el offset propio de cada clase (x vive en 16 en MVec2
+# y en 24 en MVec3 -> discrimina por class_id en runtime).
+function u_describe(v: MVec) -> String {
+    return match (v) is {
+        (MVec2, MVec3) -> "(" + str(v.x) + ", " + str(v.y) + ")",
+        default        -> "?",
+    };
+}
+
+function match_union() -> int {
+    var a: MVec = MVec2(1.5, 2.5);
+    check::assertEqStr("match.union.v2", u_describe(a), "(1.5, 2.5)");
+    var b: MVec = MVec3(9.0, 3.5, 4.5);
+    check::assertEqStr("match.union.v3", u_describe(b), "(3.5, 4.5)");
+    return 0;
+}
+
+# F6: protocolo de match para clases (`__match` / `__unpack`).
+enum MKind { ok, err };
+
+class MResp2 {
+    var kind: MKind;
+    var code: int;
+    var body: String;
+    function main(k: MKind, c: int, b: String) {
+        me.kind = k;
+        me.code = c;
+        me.body = b;
+    }
+    function __match() -> MKind { return me.kind; }
+    function __unpack(tag: String) -> (String) | (int, String) {
+        if (tag == "ok") { return (me.body); }
+        return (me.code, me.body);
+    }
+};
+
+function c_describe(r: MResp2) -> String {
+    return match (v <- r) {
+        ok(texto)     -> "ok " + texto,
+        err(cod, msg) -> "err " + str(cod) + " " + msg,
+        default       -> "?",
+    };
+}
+
+function match_class() -> int {
+    check::assertEqStr("match.class.ok", c_describe(MResp2(MKind.ok, 0, "listo")), "ok listo");
+    check::assertEqStr("match.class.err", c_describe(MResp2(MKind.err, 42, "mal")), "err 42 mal");
+
+    var r = MResp2(MKind.ok, 1, "x");
+    var t = match (r) is { MResp2 -> "si", default -> "no" };
+    check::assertEqStr("match.class.tipo", t, "si");
+    return 0;
+}
+
+export function match_run() -> int {
+    print("== match ==");
+    var before = check::fails();
+    match_modes();
+    match_payload();
+    match_destructuring();
+    match_destructuring_class();
+    match_union();
+    match_class();
+    var gained = check::fails() - before;
+    if (gained == 0) { print("FEATURE match OK"); }
+    return gained;
+}

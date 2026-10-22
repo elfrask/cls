@@ -1,0 +1,9 @@
+# Una `structure` NO exportada del modulo, usada por una funcion exportada,
+# ahora se transporta como tipo interno (R1).
+from "modfixes/lib_struct_internal" import make_hidden;
+
+function main(args: String[]) -> int {
+    var h = make_hidden();
+    print("internal-struct:", h);
+    return 0;
+};

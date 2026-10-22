@@ -78,6 +78,7 @@ pub enum Keyword {
     When,
     Switch,
     Case,
+    Match,
     Default,
     Try,
     Catch,
@@ -151,10 +152,14 @@ pub enum Operator {
     In,             // in (contiene)
 
     // Lógicos
-    And,        // &
-    Or,         // |
+    And,        // &&
+    Or,         // ||
     Not,        // !
     Question,   // ?
+
+    // Bit a bit (enteros)
+    BitAnd,     // &
+    BitOr,      // |
 
     // Asignación compuesta
     PlusEqual,      // +=
@@ -169,9 +174,11 @@ pub enum Operator {
 
     // Tipo / Namespace
     Arrow,          // ->
+    FatArrow,       // => (alias de ->)
     ColonColon,     // ::
     DotDot,         // ..
     Colon,          // :
+    LessMinus,      // <- (binding de `match`; yield `<-` llega en F4)
 
     // Otros
     At,             // @
@@ -192,7 +199,7 @@ impl Operator {
     /// Operadores multi-carácter para el lexer
     pub const MULTI: &[&str] = &[
         "==", "!=", ">=", "<=", "&&", "||", "++", "--", "**", "+=", "-=", "*=", "/=", "%=", "=>",
-        "->", "::", "..", "<<", ">>", "//",
+        "->", "::", "..", "<<", ">>", "//", "<-",
     ];
 
     /// Obtiene el operador desde un string
@@ -211,9 +218,9 @@ impl Operator {
             "<=" => Some(Self::LessEqual),
             ">=" => Some(Self::GreaterEqual),
             "==" => Some(Self::StrictEqual),
-            "&" => Some(Self::And),
+            "&" => Some(Self::BitAnd),
             "&&" => Some(Self::And),
-            "|" => Some(Self::Or),
+            "|" => Some(Self::BitOr),
             "||" => Some(Self::Or),
             "!" => Some(Self::Not),
             "?" => Some(Self::Question),
@@ -225,9 +232,11 @@ impl Operator {
             "++" => Some(Self::PlusPlus),
             "--" => Some(Self::MinusMinus),
             "->" => Some(Self::Arrow),
+            "=>" => Some(Self::FatArrow),
             "::" => Some(Self::ColonColon),
             ".." => Some(Self::DotDot),
             ":" => Some(Self::Colon),
+            "<-" => Some(Self::LessMinus),
             "@" => Some(Self::At),
             "~" => Some(Self::Tilde),
             "^" => Some(Self::Caret),
@@ -284,6 +293,13 @@ pub enum CmxToken {
     AttrString { name: String, value: String },
     /// Inicio de atributo expresión: name={ -> el parser lee expresión hasta ExprEnd
     AttrExpr { name: String },
+    /// Shorthand de atributo: `{nombre}` (lee la variable homónima).
+    AttrShorthand { name: String },
+    /// Atributo desnudo (boolean): `disabled` (sin `=`) -> `true`.
+    AttrBare { name: String },
+    /// Spread de props: {...expr} en el tag (REST_SPREAD_PLAN) — el parser lee
+    /// la expresión hasta ExprEnd y la agrega a los spreads del CmxElement.
+    AttrSpread,
     /// Fin de expresión dentro de CMX ({ -> ... -> })
     ExprEnd,
 }
@@ -319,6 +335,9 @@ impl fmt::Display for CmxToken {
             CmxToken::Text { content } => write!(f, "text({})", content),
             CmxToken::AttrString { name, value } => write!(f, "{}=\"{}\"", name, value),
             CmxToken::AttrExpr { name } => write!(f, "{}={{...}}", name),
+            CmxToken::AttrShorthand { name } => write!(f, "{{{}}}", name),
+            CmxToken::AttrBare { name } => write!(f, "{}", name),
+            CmxToken::AttrSpread => write!(f, "{{...}}"),
             CmxToken::ExprEnd => write!(f, "}}"),
         }
     }
@@ -341,9 +360,10 @@ impl fmt::Display for Symbol {
     }
 }
 
-impl fmt::Display for Keyword {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
+impl Keyword {
+    /// Nombre crudo del keyword (sin comillas), p.ej. para keys de record.
+    pub fn as_str(&self) -> &'static str {
+        match self {
             Keyword::Var => "var",
             Keyword::Const => "const",
             Keyword::Let => "let",
@@ -365,6 +385,7 @@ impl fmt::Display for Keyword {
             Keyword::When => "when",
             Keyword::Switch => "switch",
             Keyword::Case => "case",
+            Keyword::Match => "match",
             Keyword::Default => "default",
             Keyword::Try => "try",
             Keyword::Catch => "catch",
@@ -403,8 +424,13 @@ impl fmt::Display for Keyword {
             Keyword::Then => "then",
             Keyword::True => "true",
             Keyword::False => "false",
-        };
-        write!(f, "'{}'", s)
+        }
+    }
+}
+
+impl fmt::Display for Keyword {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "'{}'", self.as_str())
     }
 }
 
@@ -426,8 +452,10 @@ impl fmt::Display for Operator {
             Operator::StrictEqual => "==",
             Operator::Is => "is",
             Operator::In => "in",
-            Operator::And => "&",
-            Operator::Or => "|",
+            Operator::And => "&&",
+            Operator::Or => "||",
+            Operator::BitAnd => "&",
+            Operator::BitOr => "|",
             Operator::Not => "!",
             Operator::Question => "?",
             Operator::PlusEqual => "+=",
@@ -438,9 +466,11 @@ impl fmt::Display for Operator {
             Operator::PlusPlus => "++",
             Operator::MinusMinus => "--",
             Operator::Arrow => "->",
+            Operator::FatArrow => "=>",
             Operator::ColonColon => "::",
             Operator::DotDot => "..",
             Operator::Colon => ":",
+            Operator::LessMinus => "<-",
             Operator::At => "@",
             Operator::Pipe => "|",
             Operator::Tilde => "~",

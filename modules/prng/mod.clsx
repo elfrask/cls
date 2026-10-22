@@ -1,0 +1,13 @@
+# prng - PRNG determinista LCG en CLS puro (sin FFI, sin host_calls).
+#
+# Ladrillo de la stdlib autocontenida (examples/patrones.md §11): reemplaza al
+# host_call `math.random` con una secuencia reproducible definida por la semilla
+# (el mismo LCG de 64 bits que usa examples/conformance/src/fuzz.clsx).
+#
+#   lcg.clsx - constantes + clase `Prng`
+#
+# Barrel: se expone la API pública.
+
+import "lcg" as lcg;
+
+export { lcg::Prng as Prng };

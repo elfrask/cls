@@ -1,0 +1,47 @@
+# http/stream.clsx - Lectura del cuerpo HTTP desde el socket (length/chunked/EOF).
+#
+# Nota de codegen: las llamadas a `socket::line` pasan `maxLen` EXPLÍCITO (no
+# omiten el default) — omitir el default de una función de OTRO módulo hoy emite
+# WASM inválido.
+import "bytes" as bytes;
+import "socket" as socket;
+
+# Decodifica Transfer-Encoding: chunked (con trailers opcionales).
+export function readChunked(h: int, timeoutMs: int) -> String {
+    var out = "";
+    loop {
+        var sizeLine = socket::line(h, timeoutMs, 65536);
+        var semi = sizeLine.indexOf(";");
+        var hex = sizeLine;
+        if (semi >= 0) { hex = sizeLine.slice(0, semi); }
+        var n = bytes::hexToInt(hex.trim());
+        if (n <= 0) {
+            loop {
+                var t = socket::line(h, timeoutMs, 65536);
+                if (t == "") { break; }
+            }
+            break;
+        }
+        var chunk: int[] = socket::recvExact(h, n, timeoutMs);
+        out = out + bytes::toStr(chunk);
+        var crlf: int[] = socket::recvExact(h, 2, timeoutMs);
+    }
+    return out;
+}
+
+# Lee exactamente n bytes (Content-Length) como texto.
+export function readBodyLength(h: int, n: int, timeoutMs: int) -> String {
+    var b: int[] = socket::recvExact(h, n, timeoutMs);
+    return bytes::toStr(b);
+}
+
+# Lee hasta EOF (Connection: close, sin Content-Length).
+export function readToEof(h: int, timeoutMs: int) -> String {
+    var out = "";
+    loop {
+        var b: int[] = socket::recv(h, 65536, timeoutMs);
+        if (b.length == 0) { break; }
+        out = out + bytes::toStr(b);
+    }
+    return out;
+}

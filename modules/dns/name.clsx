@@ -1,0 +1,83 @@
+# dns/name.clsx - Nombres DNS (RFC 1035): codificación, decodificación con
+# COMPRESIÓN (punteros 0xC0) y guard anti-loop.
+
+# Divide "a.b.c" en ["a","b","c"] (CLS puro; sin strings.split del host).
+function splitDots(s: String) -> String[] {
+    var out: String[] = [];
+    var cs = s.toChar();
+    var cur = "";
+    for each ch in (cs) {
+        if (ord(ch) == 46) { out.push(cur); cur = ""; }
+        else { cur = cur + ch.toString(); }
+    }
+    out.push(cur);
+    return out;
+}
+
+# Nombre -> labels + byte 0. "" / "." -> [0].
+export function encodeName(name: String) -> int[] {
+    var out: int[] = [];
+    if (name == "" || name == ".") { out.push(0); return out; }
+    var labels = splitDots(name);
+    for each lab in (labels) {
+        if (lab == "") { continue; }
+        var cs = lab.toChar();
+        out.push(cs.length & 255);
+        for each ch in (cs) { out.push(ord(ch) & 255); }
+    }
+    out.push(0);
+    return out;
+}
+
+export class NameResult {
+    var name: String;
+    var next: int;
+};
+
+# Decodifica un nombre desde `start`, siguiendo punteros 0xC0 con guard
+# anti-loop. `next` = offset tras los bytes REALES del nombre (no tras el
+# puntero, para poder seguir parseando RDATA con offsets).
+export function decodeName(b: int[], start: int) -> NameResult {
+    var labels: String[] = [];
+    var off = start;
+    var next = -1;
+    var jumps = 0;
+    var guard = 0;
+    var n = b.length;
+    loop {
+        if (off < 0 || off >= n) { break; }
+        guard++;
+        if (guard > 512) { break; }
+        var len = b[off] & 255;
+        if (len == 0) {
+            off = off + 1;
+            if (next < 0) { next = off; }
+            break;
+        }
+        if ((len & 192) == 192) {
+            if (off + 1 >= n) { break; }
+            var ptr = ((len & 63) << 8) | (b[off + 1] & 255);
+            if (next < 0) { next = off + 2; }
+            off = ptr;
+            jumps++;
+            if (jumps > 64) { break; }
+            continue;
+        }
+        var s = off + 1;
+        if (s + len > n) { break; }
+        var sb = "";
+        for (var i = 0; i < len; i++) { sb = sb + char(b[s + i] & 255).toString(); }
+        labels.push(sb);
+        off = s + len;
+    }
+    var name = "";
+    for each lab and k in (labels) {
+        if (k > 0) { name = name + "."; }
+        name = name + lab;
+    }
+    if (name == "") { name = "."; }
+    var r = NameResult();
+    r.name = name;
+    r.next = next;
+    return r;
+}

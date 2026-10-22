@@ -66,7 +66,7 @@ Las rutas personalizadas pueden apuntar a otro protocolo
 
 ## Mapeo de protocolos por ejecutor
 
-### `clx run` (walker, `nodos/clx/src/subcommands/run.rs::make_vfs`)
+### `clx run` (`nodos/clx/src/subcommands/run.rs::make_vfs`)
 
 | Protocolo | Base |
 |---|---|

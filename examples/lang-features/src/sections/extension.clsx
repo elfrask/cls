@@ -1,0 +1,45 @@
+# extension.clsx - eje de FFI (`extension`) con el patron `when` + `extension`.
+#
+# Usa un shim C propio y minimo (ffi/langffi_shim.c -> langffi_shim.dll, ver
+# ffi/build.ps1). No expone punteros: CInt/CDouble/CString. La libreria se
+# resuelve relativa al CWD (raiz del repo), por eso el path completo.
+
+import "check" as check;
+
+when (os: windows) {
+    extension "examples/lang-features/ffi/langffi_shim.dll" as C {
+        function lf_add(a: CInt, b: CInt) -> CInt;
+        function lf_mul(a: CInt, b: CInt) -> CInt;
+        function lf_clamp(v: CInt, lo: CInt, hi: CInt) -> CInt;
+        function lf_strlen(s: CString) -> CInt;
+        function lf_half(x: CDouble) -> CDouble;
+        function lf_hypot(x: CDouble, y: CDouble) -> CDouble;
+    };
+}
+
+when (os: linux) {
+    extension "examples/lang-features/ffi/langffi_shim.so" as C {
+        function lf_add(a: CInt, b: CInt) -> CInt;
+        function lf_mul(a: CInt, b: CInt) -> CInt;
+        function lf_clamp(v: CInt, lo: CInt, hi: CInt) -> CInt;
+        function lf_strlen(s: CString) -> CInt;
+        function lf_half(x: CDouble) -> CDouble;
+        function lf_hypot(x: CDouble, y: CDouble) -> CDouble;
+    };
+}
+
+export function extension_run() -> int {
+    print("== extension ==");
+    var before = check::fails();
+    check::assertEq("ffi.add", lf_add(2, 3), 5);
+    check::assertEq("ffi.mul", lf_mul(4, 5), 20);
+    check::assertEq("ffi.clamp.hi", lf_clamp(99, 0, 10), 10);
+    check::assertEq("ffi.clamp.lo", lf_clamp(-5, 0, 10), 0);
+    check::assertEq("ffi.clamp.mid", lf_clamp(5, 0, 10), 5);
+    check::assertEq("ffi.strlen", lf_strlen("hola"), 4);
+    check::assertEqStr("ffi.half", str(lf_half(7.0)), "3.5");
+    check::assertEqStr("ffi.hypot", str(lf_hypot(3.0, 4.0)), "5");
+    var gained = check::fails() - before;
+    if (gained == 0) { print("FEATURE extension OK"); }
+    return gained;
+}

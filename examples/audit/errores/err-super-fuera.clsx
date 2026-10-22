@@ -1,5 +1,0 @@
-# ERROR RUNTIME: super fuera de clase
-function main(args: String[]) -> int {
-    print(super.metodo());
-    return 0;
-};

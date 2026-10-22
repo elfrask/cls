@@ -1,5 +1,0 @@
-function main(args: String[]) -> int {
-    var f = float("abc");
-    print("f:", f);
-    return 0;
-}

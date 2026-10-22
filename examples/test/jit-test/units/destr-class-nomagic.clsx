@@ -1,0 +1,11 @@
+# Negativo: la clase no define `__destructurate()`.
+class C {
+    var a: int;
+    function main(a: int) { me.a = a; }
+}
+
+function main(args: String[]) -> int {
+    var C(x) = C(1);
+    print(x.toString());
+    return 0;
+}

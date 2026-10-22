@@ -9,8 +9,153 @@
 use crate::state::HostState;
 use cls_core::error::{ClsError, Span};
 use cls_runtime::error_report::{format_error, ErrorFormat, ErrorReport};
+use cls_runtime::Value as ClsValue;
 
-/// Un argumento de una función host del nodo (canal `env.host_call`).
+// ── Marshalling de valores estructurados del FFI (CRecord/CArray/CStruct) ───
+//
+// El layout en la memoria lineal del módulo es el canónico de `HostCtx`
+// (string `(ptr<<32)|len`, array `[cap][len][elems*8]`, record
+// `[cap][len][(key,val,tag)*24]`, tags runtime 0=int 1=string 2=float 3=bool
+// 4=char 6=array 7=record). El wrapper del JIT usa estas funciones para leer
+// un valor CLS de la memoria del módulo y pasarlo al backend del nodo como
+// `Value` de alto nivel (y al revés en el retorno), porque el backend no tiene
+// acceso a la memoria en el punto de la llamada.
+
+fn ffi_runtime_tag(v: &ClsValue) -> i64 {
+    match v {
+        ClsValue::Int(_) => 0,
+        ClsValue::String(_) => 1,
+        ClsValue::Float(_) => 2,
+        ClsValue::Bool(_) => 3,
+        ClsValue::Char(_) => 4,
+        ClsValue::Array(_) | ClsValue::Tuple(_) => 6,
+        ClsValue::Record(_) | ClsValue::Struct(_) => 7,
+        ClsValue::Null | ClsValue::Void => 0,
+        _ => 8,
+    }
+}
+
+/// Lee un `Value` CLS del layout de la memoria del módulo (bits + tag runtime).
+pub fn ffi_read_value<C: HostCtx>(ctx: &mut C, bits: i64, tag: i64) -> ClsValue {
+    match tag {
+        1 => ClsValue::String(ctx.read_str(bits)),
+        2 => ClsValue::Float(f64::from_bits(bits as u64)),
+        3 => ClsValue::Bool(bits != 0),
+        4 => ClsValue::Char((bits & 0xff) as u8 as char),
+        6 => ffi_read_array(ctx, bits),
+        7 => ffi_read_record(ctx, bits),
+        _ => ClsValue::Int(bits),
+    }
+}
+
+/// Lee un array `[cap][len][elems*8]` (stride 8).
+fn ffi_read_array<C: HostCtx>(ctx: &mut C, ptr: i64) -> ClsValue {
+    let p = ptr as usize;
+    if p == 0 {
+        return ClsValue::Array(Vec::new());
+    }
+    let len = ctx.read_i64(p + 8);
+    if len < 0 || len > 100_000_000 {
+        return ClsValue::Array(Vec::new());
+    }
+    let mut items = Vec::with_capacity(len as usize);
+    for i in 0..len as usize {
+        items.push(ClsValue::Int(ctx.read_i64(p + 16 + i * 8)));
+    }
+    ClsValue::Array(items)
+}
+
+/// Lee un record `[cap][len][(key,val,tag)*24]` (tag en la tabla del runtime).
+fn ffi_read_record<C: HostCtx>(ctx: &mut C, ptr: i64) -> ClsValue {
+    let p = ptr as usize;
+    if p == 0 {
+        return ClsValue::Record(std::collections::HashMap::new());
+    }
+    let len = ctx.read_i64(p + 8);
+    if len < 0 || len > 100_000_000 {
+        return ClsValue::Record(std::collections::HashMap::new());
+    }
+    let mut map = std::collections::HashMap::new();
+    for i in 0..len as usize {
+        let base = p + 16 + i * 24;
+        let kbits = ctx.read_i64(base);
+        let key = ctx.read_str(kbits);
+        let bits = ctx.read_i64(base + 8);
+        let tag = ctx.read_i64(base + 16);
+        map.insert(key, ffi_read_value(ctx, bits, tag));
+    }
+    ClsValue::Record(map)
+}
+
+/// Escribe un `Value` CLS en la memoria del módulo (layout canónico) y devuelve
+/// sus bits i64 (string -> packed, array/record/struct -> ptr, float -> bits).
+pub fn ffi_write_value<C: HostCtx>(ctx: &mut C, v: &ClsValue) -> i64 {
+    match v {
+        ClsValue::Int(n) => *n,
+        ClsValue::Float(f) => f.to_bits() as i64,
+        ClsValue::Bool(b) => {
+            if *b {
+                1
+            } else {
+                0
+            }
+        }
+        ClsValue::Char(c) => *c as i64,
+        ClsValue::String(s) => ctx.write_str(s),
+        ClsValue::Array(items) | ClsValue::Tuple(items) => {
+            let n = items.len() as i64;
+            let ptr = ctx.alloc(n * 8 + 16);
+            if ptr == 0 {
+                return 0;
+            }
+            ctx.write_i64(ptr as usize, n);
+            ctx.write_i64(ptr as usize + 8, n);
+            for (i, it) in items.iter().enumerate() {
+                let bits = ffi_write_value(ctx, it);
+                ctx.write_i64(ptr as usize + 16 + i * 8, bits);
+            }
+            ptr
+        }
+        ClsValue::Record(map) => {
+            let n = map.len() as i64;
+            let ptr = ctx.alloc(n * 24 + 16);
+            if ptr == 0 {
+                return 0;
+            }
+            ctx.write_i64(ptr as usize, n);
+            ctx.write_i64(ptr as usize + 8, n);
+            let mut i = 0usize;
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort();
+            for k in keys {
+                let key = ctx.write_str(k);
+                let bits = ffi_write_value(ctx, &map[k]);
+                let tag = ffi_runtime_tag(&map[k]);
+                let base = ptr as usize + 16 + i * 24;
+                ctx.write_i64(base, key);
+                ctx.write_i64(base + 8, bits);
+                ctx.write_i64(base + 16, tag);
+                i += 1;
+            }
+            ptr
+        }
+        ClsValue::Struct(s) => {
+            let n = s.fields.len() as i64;
+            let ptr = ctx.alloc(n * 8);
+            if ptr == 0 {
+                return 0;
+            }
+            for (i, f) in s.fields.iter().enumerate() {
+                let bits = ffi_write_value(ctx, f);
+                ctx.write_i64(ptr as usize + i * 8, bits);
+            }
+            ptr
+        }
+        ClsValue::Null | ClsValue::Void => 0,
+        _ => 0,
+    }
+}
+
 /// `tag` = `cls_kind_code` (0=int 1=float 2=bool 3=char 4=string 5=array
 /// 6=record 7=tuple 8=otro-i64 9=void 10=cmx 11=función 12=null).
 /// Para strings (tag 4) `text` ya viene resuelto; `bits` es el packed
@@ -86,6 +231,39 @@ pub fn host_host_call<C: HostCtx>(ctx: &mut C, id: i64, ptr: i64, n: i64) -> i64
     }
 }
 
+/// Intrinsic de introspección `config()`: materializa el snapshot de config
+/// (fijado por el nodo en [`crate::runtime_config`]) como un
+/// `Record<String, String>` plano en la memoria lineal del módulo.
+///
+/// Se construye **una sola vez**: el handle queda cacheado en
+/// [`HostState::config_handle`] y las llamadas posteriores lo devuelven sin
+/// volver a escribir. Sin snapshot (nodo que no lo fijó) devuelve un record
+/// vacío.
+pub fn host_config_record<C: HostCtx>(ctx: &mut C) -> i64 {
+    if let Some(handle) = ctx.state().config_handle {
+        return handle;
+    }
+    let entries = crate::runtime_config::config();
+    let n = entries.len() as i64;
+    let ptr = ctx.alloc(n * 24 + 16);
+    if ptr == 0 {
+        return 0;
+    }
+    ctx.write_i64(ptr as usize, n);
+    ctx.write_i64(ptr as usize + 8, n);
+    for (i, (k, v)) in entries.iter().enumerate() {
+        let key = ctx.write_str(k);
+        let val = ctx.write_str(v);
+        let base = ptr as usize + 16 + i * 24;
+        ctx.write_i64(base, key);
+        ctx.write_i64(base + 8, val);
+        // Tag runtime 1 = string (paridad con el layout de records del emisor).
+        ctx.write_i64(base + 16, 1);
+    }
+    ctx.state_mut().config_handle = Some(ptr);
+    ptr
+}
+
 /// Acceso del host a la memoria lineal del módulo, al allocator y al estado.
 /// Lo implementa cada runtime (wasmtime: `Caller<'_, HostState>`; wasmi: el suyo).
 pub trait HostCtx {
@@ -93,6 +271,9 @@ pub trait HostCtx {
     fn state_mut(&mut self) -> &mut HostState;
     /// Lee un string empaquetado `(ptr<<32)|len` de la memoria del módulo.
     fn read_str(&mut self, packed: i64) -> String;
+    /// Lee los **bytes crudos** de un string empaquetado, SIN decodificar UTF-8
+    /// (semántica de bytes del lenguaje). Paridad con `cls-internals::mem::read_bytes`.
+    fn read_bytes(&mut self, packed: i64) -> Vec<u8>;
     /// Aloca + escribe un string en la memoria del módulo y lo empaqueta.
     /// Registra la capacidad para que `str_concat` reutilice el buffer.
     fn write_str(&mut self, s: &str) -> i64;
@@ -110,6 +291,27 @@ pub trait HostCtx {
 
 fn format_float(v: f64) -> String {
     format!("{}", v)
+}
+
+/// Formatea un `Char` (unidad de 1 byte 0..255) como texto. Para bytes ASCII es
+/// exacto; para bytes >= 128 produce el reemplazo UTF-8 (`from_utf8_lossy`),
+/// coherente con `read_str` (la decodificación de strings del runtime).
+fn char_byte_to_string(v: i64) -> String {
+    String::from_utf8_lossy(&[(v & 0xff) as u8]).into_owned()
+}
+
+/// Aloca + escribe bytes crudos en la memoria del módulo y los empaqueta
+/// `(ptr<<32)|len`. Paridad con `cls-internals::mem::write_bytes`.
+pub(crate) fn write_packed_bytes<C: HostCtx>(ctx: &mut C, bytes: &[u8]) -> i64 {
+    if bytes.is_empty() {
+        return 0;
+    }
+    let ptr = ctx.alloc(bytes.len() as i64);
+    if ptr == 0 {
+        return 0;
+    }
+    ctx.write_bytes(ptr as usize, bytes);
+    (ptr << 32) | (bytes.len() as i64)
 }
 
 fn print_arg<C: HostCtx>(ctx: &mut C, value: &str) {
@@ -144,8 +346,8 @@ pub fn host_print_bool<C: HostCtx>(ctx: &mut C, v: i32) {
 }
 
 pub fn host_print_char<C: HostCtx>(ctx: &mut C, v: i32) {
-    let c = char::from_u32(v as u32).unwrap_or('?');
-    print_arg(ctx, &c.to_string());
+    let s = char_byte_to_string(v as i64);
+    print_arg(ctx, &s);
 }
 
 pub fn host_print_str<C: HostCtx>(ctx: &mut C, v: i64) {
@@ -255,20 +457,103 @@ pub fn host_parse_bool<C: HostCtx>(ctx: &mut C, v: i64) -> i32 {
 pub fn host_str_concat<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i64 {
     let a_ptr = (a >> 32) as usize;
     let a_len = (a & 0xffff_ffff) as usize;
-    let sa = ctx.read_str(a);
-    let sb = ctx.read_str(b);
-    let out = format!("{}{}", sa, sb);
+    let sa = ctx.read_bytes(a);
+    let sb = ctx.read_bytes(b);
+    let mut out = Vec::with_capacity(sa.len() + sb.len());
+    out.extend_from_slice(&sa);
+    out.extend_from_slice(&sb);
     // Reutilizar el buffer de `a` si tiene capacidad (amortizado): evita alocar
     // nuevo en cada iteración de un loop de concat.
     let cap = ctx.state().string_caps.get(&(a_ptr as i64)).copied();
     if let Some(cap) = cap {
         if (out.len() as i64) <= cap && out.len() >= a_len {
-            if ctx.write_bytes(a_ptr, out.as_bytes()) {
+            if ctx.write_bytes(a_ptr, &out) {
                 return ((a_ptr as i64) << 32) | (out.len() as i64);
             }
         }
     }
-    ctx.write_str(&out)
+    write_packed_bytes(ctx, &out)
+}
+
+/// Magic del header de capacidad (misma convención que
+/// `cls-internals/wasm/src/strings.rs::__intr_str_append`): guardado en
+/// `ptr-8`, bit63 seteado + cap real en los bits bajos.
+const APPEND_CAP_MAGIC: i64 = i64::MIN;
+
+fn read_cap_host<C: HostCtx>(ctx: &mut C, ptr: usize) -> Option<usize> {
+    if ptr < 8 {
+        return None;
+    }
+    let hdr = ctx.read_i64(ptr - 8);
+    if hdr & APPEND_CAP_MAGIC == APPEND_CAP_MAGIC {
+        Some((hdr & i64::MAX) as usize)
+    } else {
+        None
+    }
+}
+
+/// Concat con slack: aloca cap x2 y escribe el header en `ptr-8`, habilitando
+/// appends in-place subsiguientes. Paridad con `__intr_str_concat_slack`.
+pub fn host_str_concat_slack<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i64 {
+    let sa = ctx.read_bytes(a);
+    let sb = ctx.read_bytes(b);
+    let total = sa.len() + sb.len();
+    let cap = (total * 2).max(total + 16);
+    let block = ctx.alloc((cap + 8) as i64) as usize;
+    if block == 0 {
+        return 0;
+    }
+    let ptr = block + 8;
+    ctx.write_bytes(ptr, &sa);
+    ctx.write_bytes(ptr + sa.len(), &sb);
+    ctx.write_i64(block, cap as i64 | APPEND_CAP_MAGIC);
+    ((ptr as i64) << 32) | (total as i64)
+}
+
+/// Append in-place si hay slack; degrada a re-aloca x2. Paridad con
+/// `__intr_str_append`.
+pub fn host_str_append<C: HostCtx>(ctx: &mut C, old: i64, v_val: i64, v_tag: i64) -> i64 {
+    let piece: Vec<u8> = if v_tag == 1 {
+        ctx.read_bytes(v_val)
+    } else {
+        fmt_val_to_string(ctx, v_val, v_tag).into_bytes()
+    };
+    let old_ptr = (old >> 32) as usize;
+    let old_len = (old & 0xffff_ffff) as usize;
+    let total = old_len + piece.len();
+
+    if let Some(cap) = read_cap_host(ctx, old_ptr) {
+        if total <= cap {
+            ctx.write_bytes(old_ptr + old_len, &piece);
+            return ((old_ptr as i64) << 32) | (total as i64);
+        }
+        // Overflow con header válido: re-aloca x2 (amortizado). read_bytes es
+        // bounds-safe y esta rama corre una vez por cadena de appends.
+        let so = ctx.read_bytes(old);
+        let new_cap = (cap * 2).max(total + 16);
+        let block = ctx.alloc((new_cap + 8) as i64) as usize;
+        if block == 0 {
+            return 0;
+        }
+        let nptr = block + 8;
+        ctx.write_bytes(nptr, &so);
+        ctx.write_bytes(nptr + old_len, &piece);
+        ctx.write_i64(block, new_cap as i64 | APPEND_CAP_MAGIC);
+        return ((nptr as i64) << 32) | (total as i64);
+    }
+
+    // Slow path: sin slack previo → concat con slack.
+    let so = ctx.read_bytes(old);
+    let cap = (so.len() * 2).max(so.len() + 16);
+    let block = ctx.alloc((cap + 8) as i64) as usize;
+    if block == 0 {
+        return 0;
+    }
+    let ptr = block + 8;
+    ctx.write_bytes(ptr, &so);
+    ctx.write_bytes(ptr + so.len(), &piece);
+    ctx.write_i64(block, cap as i64 | APPEND_CAP_MAGIC);
+    ((ptr as i64) << 32) | (total as i64)
 }
 
 pub fn host_str_int<C: HostCtx>(ctx: &mut C, v: i64) -> i64 {
@@ -284,8 +569,7 @@ pub fn host_str_bool<C: HostCtx>(ctx: &mut C, v: i32) -> i64 {
 }
 
 pub fn host_str_char<C: HostCtx>(ctx: &mut C, v: i32) -> i64 {
-    let c = char::from_u32(v as u32).unwrap_or('?');
-    ctx.write_str(&c.to_string())
+    ctx.write_str(&char_byte_to_string(v as i64))
 }
 
 pub fn host_str_upper<C: HostCtx>(ctx: &mut C, v: i64) -> i64 {
@@ -304,9 +588,9 @@ pub fn host_str_trim<C: HostCtx>(ctx: &mut C, v: i64) -> i64 {
 }
 
 pub fn host_str_contains<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i32 {
-    let sa = ctx.read_str(a);
-    let sb = ctx.read_str(b);
-    if sa.contains(&sb) {
+    let hay = ctx.read_bytes(a);
+    let needle = ctx.read_bytes(b);
+    if needle.is_empty() || hay.windows(needle.len()).any(|w| w == needle.as_slice()) {
         1
     } else {
         0
@@ -314,9 +598,9 @@ pub fn host_str_contains<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i32 {
 }
 
 pub fn host_str_starts_with<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i32 {
-    let sa = ctx.read_str(a);
-    let sb = ctx.read_str(b);
-    if sa.starts_with(&sb) {
+    let hay = ctx.read_bytes(a);
+    let needle = ctx.read_bytes(b);
+    if hay.starts_with(&needle) {
         1
     } else {
         0
@@ -324,9 +608,9 @@ pub fn host_str_starts_with<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i32 {
 }
 
 pub fn host_str_ends_with<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i32 {
-    let sa = ctx.read_str(a);
-    let sb = ctx.read_str(b);
-    if sa.ends_with(&sb) {
+    let hay = ctx.read_bytes(a);
+    let needle = ctx.read_bytes(b);
+    if hay.ends_with(&needle) {
         1
     } else {
         0
@@ -352,9 +636,53 @@ pub fn host_str_repr<C: HostCtx>(ctx: &mut C, v: i64) -> i64 {
     ctx.write_str(&format!("\"{}\"", escaped))
 }
 
-pub fn host_str_length<C: HostCtx>(ctx: &mut C, v: i64) -> i64 {
-    let s = ctx.read_str(v);
-    s.len() as i64
+pub fn host_str_length<C: HostCtx>(_ctx: &mut C, v: i64) -> i64 {
+    (v & 0xffff_ffff) as i64
+}
+
+/// Igualdad de strings por contenido (fallback del interno `__intr_str_eq`).
+/// Atajo de puntero solo con longitudes iguales (dos literales pueden compartir
+/// ptr si uno es vacío).
+pub fn host_str_eq<C: HostCtx>(ctx: &mut C, a: i64, b: i64) -> i32 {
+    let a_ptr = (a >> 32) as usize;
+    let a_len = (a & 0xffff_ffff) as usize;
+    let b_ptr = (b >> 32) as usize;
+    let b_len = (b & 0xffff_ffff) as usize;
+    if a_len != b_len {
+        return 0;
+    }
+    if a_ptr == b_ptr {
+        return 1;
+    }
+    let sa = ctx.read_str(a);
+    let sb = ctx.read_str(b);
+    if sa == sb { 1 } else { 0 }
+}
+
+/// Convierte un valor dinámico `(val, tag)` a string por su TAG (fallback del
+/// interno `__intr_any_to_string`). Tags runtime: 0=int 1=string 2=float
+/// 3=bool 4=char 5=cmx 6=array 7=record 12=null.
+pub fn host_any_to_string<C: HostCtx>(ctx: &mut C, val: i64, tag: i64) -> i64 {
+    let s = fmt_val_to_string(ctx, val, tag);
+    ctx.write_str(&s)
+}
+
+/// Truthiness de un valor dinámico `(val, tag)` (para `if (x)` / `bool(x)`
+/// sobre un valor leído de record/JSON/Value). Paridad con la truthiness del
+/// walker por tipo: int/float != 0, string len != 0, bool, container len != 0,
+/// null -> false. Tags runtime: 0=int 1=string 2=float 3=bool 4=char 5=cmx
+/// 6=array 7=record.
+pub fn host_any_to_bool<C: HostCtx>(ctx: &mut C, val: i64, tag: i64) -> i32 {
+    match tag_type(tag) {
+        0 => (val != 0) as i32,
+        1 => (ctx.read_str(val).len() > 0) as i32,
+        2 => (f64::from_bits(val as u64) != 0.0) as i32,
+        3 => (val != 0) as i32,
+        4 => (val != 0) as i32,
+        5 => 1,
+        6 | 7 => (arr_len(ctx, val as usize) > 0) as i32,
+        _ => 0,
+    }
 }
 
 pub fn host_int_abs<C: HostCtx>(_ctx: &mut C, v: i64) -> i64 {
@@ -520,7 +848,7 @@ pub fn host_arr_join<C: HostCtx>(ctx: &mut C, ptr: i64, sep: i64, es: i64, kind:
             1 => out.push_str(&ctx.read_str(e)),
             2 => out.push_str(&format_float(f64::from_bits(e as u64))),
             3 => out.push_str(if e != 0 { "true" } else { "false" }),
-            4 => out.push(char::from_u32(e as u32).unwrap_or('?')),
+            4 => out.push_str(&char_byte_to_string(e)),
             _ => out.push_str(&e.to_string()),
         }
     }
@@ -702,9 +1030,10 @@ fn json_serialize_val<C: HostCtx>(ctx: &mut C, val: i64, tag: i64, out: &mut Str
         }
         2 => out.push_str(&format_float(f64::from_bits(val as u64))),
         3 => out.push_str(if val != 0 { "true" } else { "false" }),
-        4 => out.push(char::from_u32(val as u32).unwrap_or('?')),
-        5 => json_serialize_array(ctx, val, out),
-        6 => json_serialize_record(ctx, val, out),
+        4 => out.push_str(&char_byte_to_string(val)),
+        // Esquema del RUNTIME (json_build): 6=array, 7=record.
+        6 => json_serialize_array(ctx, val, out),
+        7 => json_serialize_record(ctx, val, out),
         _ => out.push_str(&val.to_string()),
     }
 }
@@ -712,12 +1041,25 @@ fn json_serialize_val<C: HostCtx>(ctx: &mut C, val: i64, tag: i64, out: &mut Str
 fn json_serialize_record<C: HostCtx>(ctx: &mut C, ptr: i64, out: &mut String) {
     let p = ptr as usize;
     let len = arr_len(ctx, p);
+    // Guard de seguridad: un len corrupto (p.ej. un record con SHAPE contiguo
+    // tratado como hashmap) podría causar un loop infinito/alocación gigante.
+    if len < 0 || len > 1_000_000 {
+        out.push_str("{}");
+        return;
+    }
     out.push('{');
     for i in 0..len as usize {
         if i > 0 {
             out.push(',');
         }
         let key = ctx.read_i64(p + 16 + i * 24);
+        let key_len = (key & 0xffff_ffff) as usize;
+        let key_ptr = (key >> 32) as usize;
+        // Validar que la key sea un string packed razonable (evita basura).
+        if key_len == 0 || key_len > 1_000_000 || key_ptr == 0 {
+            out.push_str("\"?\":null");
+            continue;
+        }
         let val = ctx.read_i64(p + 16 + i * 24 + 8);
         let tag = ctx.read_i64(p + 16 + i * 24 + 16);
         out.push('"');
@@ -736,32 +1078,45 @@ fn json_serialize_array<C: HostCtx>(ctx: &mut C, ptr: i64, out: &mut String) {
         if i > 0 {
             out.push(',');
         }
-        let val = arr_elem(ctx, p, i, 8);
-        json_serialize_val(ctx, val, 0, out);
+        // Entradas `[val, tag]` stride 16 (layout JSON de arrays).
+        let val = ctx.read_i64(p + 16 + i * 16);
+        let tag = ctx.read_i64(p + 16 + i * 16 + 8);
+        json_serialize_val(ctx, val, tag, out);
     }
     out.push(']');
 }
 
-pub fn host_json_stringify<C: HostCtx>(ctx: &mut C, v: i64, kind: i64) -> i64 {
-    match kind {
+pub fn host_json_stringify<C: HostCtx>(ctx: &mut C, v: i64, tag: i64) -> i64 {
+    // Serializa por TAG del runtime (el emisor pasa runtime_tag_code):
+    // 0=int 1=string 2=float 3=bool 4=char 6=array 7=record 12=null.
+    // Escalares incluidos: json.stringify(true) -> "true", no el raw.
+    let mut out = String::new();
+    match tag {
+        6 => json_serialize_array(ctx, v, &mut out),
+        7 => json_serialize_record(ctx, v, &mut out),
         1 => {
-            let mut out = String::new();
-            json_serialize_record(ctx, v, &mut out);
-            ctx.write_str(&out)
+            out.push('"');
+            out.push_str(&json_escape(&ctx.read_str(v)));
+            out.push('"');
         }
-        2 => {
-            let mut out = String::new();
-            json_serialize_array(ctx, v, &mut out);
-            ctx.write_str(&out)
-        }
-        _ => v,
+        2 => out.push_str(&format_float(f64::from_bits(v as u64))),
+        3 => out.push_str(if v != 0 { "true" } else { "false" }),
+        4 => out.push_str(&char_byte_to_string(v)),
+        12 => out.push_str("null"),
+        _ => out.push_str(&v.to_string()), // 0=int, u otros
     }
+    ctx.write_str(&out)
 }
 
 pub fn host_json_parse<C: HostCtx>(ctx: &mut C, s: i64) -> i64 {
     let text = ctx.read_str(s);
     match serde_json::from_str::<serde_json::Value>(&text) {
         Ok(serde_json::Value::Array(items)) => {
+            // Array top-level de `json.parse`: se representa como RECORD con
+            // claves "0","1",... (stride 24) para que el typeck/emisor (que lo
+            // tipa Record<String,Value>) lo indexe con record_get/any_member tag 7
+            // por la key numérica. Los arrays ANIDADOS (json_build) usan
+            // stride 16 `[val,tag]` y se acceden con any_index tag 6.
             let n = items.len();
             let ptr = ctx.alloc((n * 24 + 16) as i64) as usize;
             ctx.write_i64(ptr, n as i64);
@@ -1257,14 +1612,22 @@ pub fn host_record_new<C: HostCtx>(ctx: &mut C, cap: i64) -> i64 {
     ptr as i64
 }
 
+/// Fast path de interning (dev-2): packed i64 idéntico = mismo string.
+#[inline]
+fn key_matches_host<C: HostCtx>(ctx: &mut C, stored_packed: i64, lookup_packed: i64) -> bool {
+    if stored_packed == lookup_packed {
+        return true;
+    }
+    ctx.read_str(stored_packed) == ctx.read_str(lookup_packed)
+}
+
 pub fn host_record_set<C: HostCtx>(ctx: &mut C, ptr: i64, key: i64, val: i64, tag: i64) -> i64 {
     let p = ptr as usize;
     let len = arr_len(ctx, p) as usize;
     let cap = arr_cap(ctx, p) as usize;
-    let k = ctx.read_str(key);
     for i in 0..len {
         let ki = ctx.read_i64(p + 16 + i * 24);
-        if ctx.read_str(ki) == k {
+        if key_matches_host(ctx, ki, key) {
             ctx.write_i64(p + 16 + i * 24 + 8, val);
             ctx.write_i64(p + 16 + i * 24 + 16, tag);
             return p as i64;
@@ -1297,10 +1660,9 @@ pub fn host_record_set<C: HostCtx>(ctx: &mut C, ptr: i64, key: i64, val: i64, ta
 pub fn host_record_get<C: HostCtx>(ctx: &mut C, ptr: i64, key: i64) -> i64 {
     let p = ptr as usize;
     let len = arr_len(ctx, p) as usize;
-    let k = ctx.read_str(key);
     for i in 0..len {
         let ki = ctx.read_i64(p + 16 + i * 24);
-        if ctx.read_str(ki) == k {
+        if key_matches_host(ctx, ki, key) {
             return ctx.read_i64(p + 16 + i * 24 + 8);
         }
     }
@@ -1310,10 +1672,9 @@ pub fn host_record_get<C: HostCtx>(ctx: &mut C, ptr: i64, key: i64) -> i64 {
 pub fn host_record_has<C: HostCtx>(ctx: &mut C, ptr: i64, key: i64) -> i32 {
     let p = ptr as usize;
     let len = arr_len(ctx, p) as usize;
-    let k = ctx.read_str(key);
     for i in 0..len {
         let ki = ctx.read_i64(p + 16 + i * 24);
-        if ctx.read_str(ki) == k {
+        if key_matches_host(ctx, ki, key) {
             return 1;
         }
     }
@@ -1323,10 +1684,9 @@ pub fn host_record_has<C: HostCtx>(ctx: &mut C, ptr: i64, key: i64) -> i32 {
 pub fn host_record_tag<C: HostCtx>(ctx: &mut C, ptr: i64, key: i64) -> i64 {
     let p = ptr as usize;
     let len = arr_len(ctx, p) as usize;
-    let k = ctx.read_str(key);
     for i in 0..len {
         let ki = ctx.read_i64(p + 16 + i * 24);
-        if ctx.read_str(ki) == k {
+        if key_matches_host(ctx, ki, key) {
             return ctx.read_i64(p + 16 + i * 24 + 16);
         }
     }
@@ -1370,15 +1730,21 @@ pub fn host_record_to_string<C: HostCtx>(ctx: &mut C, ptr: i64) -> i64 {
     ctx.write_str(&s)
 }
 
-/// `any_member(val, tag, key)`: acceso a miembro de un valor `Any` en runtime
+/// `any_member(val, tag, key)`: acceso a miembro de un valor `Value` en runtime
 /// (JSON parse anidado, p.ej. `o.a.c`). Despacha por tag.
 pub fn host_any_member<C: HostCtx>(ctx: &mut C, val: i64, tag: i64, key: i64) -> (i64, i64) {
     let t = tag_type(tag);
     match t {
         7 => {
             let p = val as usize;
-            let len = arr_len(ctx, p) as usize;
             let k = ctx.read_str(key);
+            // `length`/`size` son estructurales (nº de claves), no una clave
+            // del record; sin esto `obj.length` sobre un `JSON`/`Record<String,
+            // Value>` daba 0 (el access se rutea por `any_member`).
+            if k == "length" || k == "size" {
+                return (arr_len(ctx, p), 0);
+            }
+            let len = arr_len(ctx, p) as usize;
             for i in 0..len {
                 let ki = ctx.read_i64(p + 16 + i * 24);
                 if ctx.read_str(ki) == k {
@@ -1398,6 +1764,28 @@ pub fn host_any_member<C: HostCtx>(ctx: &mut C, val: i64, tag: i64, key: i64) ->
                 (0, 0)
             }
         }
+        5 => {
+            // CmxValue: [tag][props_ptr][children_ptr][kind] (offsets 0/8/16/24).
+            // Sin este brazo, `str(app.props.x)`/`bool(app.props.x)` sobre una
+            // prop dinámica caían en `(0,0)` -> "0"/false.
+            let p = val as usize;
+            match ctx.read_str(key).as_str() {
+                "props" => (ctx.read_i64(p + 8), 7),
+                "children" => (ctx.read_i64(p + 16), 6),
+                "kind" => (ctx.read_i64(p + 24), 0),
+                "tag" => {
+                    let tg = ctx.read_i64(p);
+                    if tg == 0 {
+                        (0, 0)
+                    } else if (tg >> 32) == 0 {
+                        (tg, 11) // handle de función (tag mayúscula)
+                    } else {
+                        (tg, 1) // string (tag minúscula)
+                    }
+                }
+                _ => (0, 0),
+            }
+        }
         1 => {
             let k = ctx.read_str(key);
             if k == "length" || k == "size" {
@@ -1410,10 +1798,33 @@ pub fn host_any_member<C: HostCtx>(ctx: &mut C, val: i64, tag: i64, key: i64) ->
     }
 }
 
-/// `any_index(val, tag, idx)`: indexar un valor `Any` en runtime.
+/// `any_index(val, tag, idx)`: indexar un valor `Value` en runtime.
 pub fn host_any_index<C: HostCtx>(ctx: &mut C, val: i64, tag: i64, idx: i64) -> (i64, i64) {
     let t = tag_type(tag);
     match t {
+        7 => {
+            // Record: buscar la key. El idx puede venir como string empaquetado
+            // (ptr<<32|len) o como número (los índices numéricos de `json.parse`
+            // se representan con claves "0","1",...). Si es numérico (bajo),
+            // convertirlo a string para la búsqueda.
+            let p = val as usize;
+            let len = arr_len(ctx, p) as usize;
+            let k = if (idx >> 32) == 0 && idx >= 0 {
+                idx.to_string()
+            } else {
+                ctx.read_str(idx)
+            };
+            for i in 0..len {
+                let ki = ctx.read_i64(p + 16 + i * 24);
+                if ctx.read_str(ki) == k {
+                    return (
+                        ctx.read_i64(p + 16 + i * 24 + 8),
+                        ctx.read_i64(p + 16 + i * 24 + 16),
+                    );
+                }
+            }
+            (0, 0)
+        }
         6 => {
             // Array de JSON heterogéneo: entradas [val, tag] stride 16.
             let p = val as usize;
@@ -1430,102 +1841,6 @@ pub fn host_any_index<C: HostCtx>(ctx: &mut C, val: i64, tag: i64, idx: i64) -> 
         }
         _ => (0, 0),
     }
-}
-
-// ── CMX ─────────────────────────────────────────────────────────────────────
-
-pub fn host_cmx_new<C: HostCtx>(ctx: &mut C, tag: i64, kind: i64) -> i64 {
-    // layout: [tag][props_ptr][children_ptr][kind] (kind 0=elemento, 1=texto)
-    let ptr = ctx.alloc(32) as usize;
-    ctx.write_i64(ptr, tag);
-    ctx.write_i64(ptr + 8, 0);
-    ctx.write_i64(ptr + 16, 0);
-    ctx.write_i64(ptr + 24, kind);
-    ptr as i64
-}
-
-pub fn host_cmx_set_prop<C: HostCtx>(ctx: &mut C, ptr: i64, key: i64, val: i64, tag: i64) -> i64 {
-    let p = ptr as usize;
-    let mut props = ctx.read_i64(p + 8) as usize;
-    if props == 0 {
-        let np = ctx.alloc(4 * 24 + 16) as usize;
-        ctx.write_i64(np, 4);
-        ctx.write_i64(np + 8, 0);
-        ctx.write_i64(p + 8, np as i64);
-        props = np;
-    }
-    let pr = props as i64;
-    let len = arr_len(ctx, props) as usize;
-    let cap = arr_cap(ctx, props) as usize;
-    let k = ctx.read_str(key);
-    for i in 0..len {
-        let ki = ctx.read_i64(props + 16 + i * 24);
-        if ctx.read_str(ki) == k {
-            ctx.write_i64(props + 16 + i * 24 + 8, val);
-            ctx.write_i64(props + 16 + i * 24 + 16, tag);
-            return pr;
-        }
-    }
-    if len + 1 > cap {
-        let new_cap = if cap == 0 { 4 } else { cap * 2 };
-        let new_cap = new_cap.max(len + 1);
-        let np = ctx.alloc((new_cap * 24 + 16) as i64) as usize;
-        ctx.write_i64(np, new_cap as i64);
-        ctx.write_i64(np + 8, len as i64);
-        for i in 0..len {
-            let kk = ctx.read_i64(props + 16 + i * 24);
-            let vv = ctx.read_i64(props + 16 + i * 24 + 8);
-            let tt = ctx.read_i64(props + 16 + i * 24 + 16);
-            ctx.write_i64(np + 16 + i * 24, kk);
-            ctx.write_i64(np + 16 + i * 24 + 8, vv);
-            ctx.write_i64(np + 16 + i * 24 + 16, tt);
-        }
-        props = np;
-        ctx.write_i64(p + 8, props as i64);
-    }
-    ctx.write_i64(props + 16 + len * 24, key);
-    ctx.write_i64(props + 16 + len * 24 + 8, val);
-    ctx.write_i64(props + 16 + len * 24 + 16, tag);
-    ctx.write_i64(props + 8, (len + 1) as i64);
-    ctx.read_i64(p + 8)
-}
-
-pub fn host_cmx_add_child<C: HostCtx>(ctx: &mut C, ptr: i64, val: i64, tag: i64) -> i64 {
-    let p = ptr as usize;
-    let mut children = ctx.read_i64(p + 16) as usize;
-    if children == 0 {
-        let nc = ctx.alloc(4 * 16 + 16) as usize;
-        ctx.write_i64(nc, 4);
-        ctx.write_i64(nc + 8, 0);
-        ctx.write_i64(p + 16, nc as i64);
-        children = nc;
-    }
-    let len = arr_len(ctx, children) as usize;
-    let cap = arr_cap(ctx, children) as usize;
-    if len + 1 > cap {
-        let new_cap = if cap == 0 { 4 } else { cap * 2 };
-        let new_cap = new_cap.max(len + 1);
-        let np = ctx.alloc((new_cap * 16 + 16) as i64) as usize;
-        ctx.write_i64(np, new_cap as i64);
-        ctx.write_i64(np + 8, len as i64);
-        for i in 0..len {
-            let v = ctx.read_i64(children + 16 + i * 16);
-            let t = ctx.read_i64(children + 16 + i * 16 + 8);
-            ctx.write_i64(np + 16 + i * 16, v);
-            ctx.write_i64(np + 16 + i * 16 + 8, t);
-        }
-        children = np;
-        ctx.write_i64(p + 16, children as i64);
-    }
-    ctx.write_i64(children + 16 + len * 16, val);
-    ctx.write_i64(children + 16 + len * 16 + 8, tag);
-    ctx.write_i64(children + 8, (len + 1) as i64);
-    ctx.read_i64(p + 16)
-}
-
-pub fn host_cmx_to_string<C: HostCtx>(ctx: &mut C, ptr: i64) -> i64 {
-    let s = cmx_format(ctx, ptr as usize);
-    ctx.write_str(&s)
 }
 
 // ── funciones como valor + shadow call stack ────────────────────────────────
@@ -1626,7 +1941,7 @@ fn fmt_val_to_string<C: HostCtx>(ctx: &mut C, val: i64, tag: i64) -> String {
                 "false".to_string()
             }
         }
-        4 => char::from_u32(val as u32).unwrap_or('?').to_string(),
+        4 => char_byte_to_string(val),
         5 => cmx_format(ctx, val as usize),
         6 => {
             let es = if kind == 5 || kind == 6 { 16 } else { 8 };
@@ -1634,6 +1949,9 @@ fn fmt_val_to_string<C: HostCtx>(ctx: &mut C, val: i64, tag: i64) -> String {
             arr_to_string(ctx, val, es, arr_kind as i64)
         }
         7 => record_to_string(ctx, val),
+        // 9 = string RAW (serializado por el emisor: tuplas/structs/clases/
+        // enums/arrays de contenedores). Se imprime sin comillas.
+        9 => ctx.read_str(val),
         _ => val.to_string(),
     }
 }
@@ -1660,7 +1978,7 @@ fn arr_to_string<C: HostCtx>(ctx: &mut C, ptr: i64, es: i64, kind: i64) -> Strin
             }
             2 => out.push_str(&format_float(f64::from_bits(e as u64))),
             3 => out.push_str(if e != 0 { "true" } else { "false" }),
-            4 => out.push(char::from_u32(e as u32).unwrap_or('?')),
+            4 => out.push_str(&char_byte_to_string(e)),
             5 => {
                 let tg = ctx.read_i64(p + 16 + i * 16 + 8);
                 let tv = tag_type(tg);
@@ -1777,4 +2095,81 @@ fn cmx_format<C: HostCtx>(ctx: &mut C, p: usize) -> String {
         out.push('>');
     }
     out
+}
+
+// ── net eliminado (dev-2) ─────────────────────────────────────────────────────
+// El módulo `net` (sockets TCP) se eliminó del runtime. Las features de red
+// que lo necesiten deben declararse como `extension` con `when` por SO en
+// el .clsx del usuario. Ver docs/lenguaje/extension.md y la guía de
+// when+extension.
+
+// ── str (utilidades de string) ───────────────────────────────────────────────
+
+/// `str.indexOf(s, sub) -> int`. Índice de la primera ocurrencia de `sub` en
+/// `s` (bytes), o -1 si no está.
+pub fn host_str_index_of<C: HostCtx>(ctx: &mut C, s: i64, sub: i64) -> i64 {
+    let hay = ctx.read_bytes(s);
+    let needle = ctx.read_bytes(sub);
+    if needle.is_empty() {
+        return 0;
+    }
+    if needle.len() > hay.len() {
+        return -1;
+    }
+    for i in 0..=(hay.len() - needle.len()) {
+        if &hay[i..i + needle.len()] == needle.as_slice() {
+            return i as i64;
+        }
+    }
+    -1
+}
+
+/// `str.slice(s, start, end) -> String`. Substring de `s` desde `start`
+/// (inclusive) hasta `end` (exclusive), en bytes. `end < 0` = hasta el final.
+pub fn host_str_slice<C: HostCtx>(ctx: &mut C, s: i64, start: i64, end: i64) -> i64 {
+    let bytes = ctx.read_bytes(s);
+    let len = bytes.len() as i64;
+    let start = start.max(0).min(len);
+    let end = if end < 0 {
+        len
+    } else {
+        end.max(start).min(len)
+    };
+    write_packed_bytes(ctx, &bytes[start as usize..end as usize])
+}
+
+/// `str.split(s, sep) -> String[]`. Divide `s` por el separador `sep`.
+pub fn host_str_split<C: HostCtx>(ctx: &mut C, s: i64, sep: i64) -> i64 {
+    let hay = ctx.read_bytes(s);
+    let needle = ctx.read_bytes(sep);
+    let mut parts: Vec<&[u8]> = Vec::new();
+    if needle.is_empty() {
+        parts.push(&hay);
+    } else {
+        let mut start = 0usize;
+        let mut i = 0usize;
+        while i + needle.len() <= hay.len() {
+            if &hay[i..i + needle.len()] == needle.as_slice() {
+                parts.push(&hay[start..i]);
+                i += needle.len();
+                start = i;
+            } else {
+                i += 1;
+            }
+        }
+        parts.push(&hay[start..]);
+    }
+    // Array<String> en memoria: header [cap:i64][len:i64] + elems packed.
+    let n = parts.len() as i64;
+    let array_ptr = ctx.alloc(n * 8 + 16);
+    if array_ptr == 0 {
+        return 0;
+    }
+    ctx.write_i64(array_ptr as usize, n);
+    ctx.write_i64(array_ptr as usize + 8, n);
+    for (i, part) in parts.iter().enumerate() {
+        let sp = write_packed_bytes(ctx, part);
+        ctx.write_i64(array_ptr as usize + 16 + i * 8, sp);
+    }
+    array_ptr
 }

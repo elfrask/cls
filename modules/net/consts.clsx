@@ -1,0 +1,7 @@
+# net/consts.clsx - Constantes de transporte.
+
+# Timeout por defecto de recv (ms) cuando el llamador no indica uno.
+export const DEFAULT_TIMEOUT_MS = 2000;
+
+# Tamaño máximo de datagrama DNS (65535 por el prefijo u16 de TCP).
+export const MAX_DNS_MSG = 65535;

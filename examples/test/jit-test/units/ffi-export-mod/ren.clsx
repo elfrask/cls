@@ -1,0 +1,25 @@
+# FFI con rename a nivel de módulo: `export { strlen as len }`.
+# Los nativos viven en `when` (cross-OS); el rename debe propagarse a cada rama.
+
+when (os: windows) {
+    extension "msvcrt.dll" as C {
+        export function strlen(s: CString) -> CInt;
+        export function atoi(s: CString) -> CInt;
+    };
+};
+
+when (os: linux) {
+    extension "libc.so.6" as C {
+        export function strlen(s: CString) -> CInt;
+        export function atoi(s: CString) -> CInt;
+    };
+};
+
+when (os: macos) {
+    extension "libSystem.B.dylib" as C {
+        export function strlen(s: CString) -> CInt;
+        export function atoi(s: CString) -> CInt;
+    };
+};
+
+export { strlen as len, atoi as aInt };

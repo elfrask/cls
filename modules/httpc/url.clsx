@@ -1,0 +1,159 @@
+# http/url.clsx - Parseo y codificación de URLs (http/https).
+#
+# Soporta "esquema://host[:puerto]/ruta?consulta#fragmento" y URLs relativas
+# (sin esquema: se asume http). No soporta userinfo (`user:pass@`) — se documenta
+# como limitación.
+import "bytes" as bytes;
+
+export class Url {
+    var scheme: String;
+    var host: String;
+    var port: int;
+    var path: String;      # con '/' inicial
+    var query: String;     # sin '?'
+    var fragment: String;  # sin '#'
+    function main() {
+        me.scheme = "http";
+        me.host = "";
+        me.port = 80;
+        me.path = "/";
+        me.query = "";
+        me.fragment = "";
+    }
+};
+
+# Índice de la primera ocurrencia de `needle` en `s` desde `start`; -1 si no hay.
+function findFrom(s: String, needle: String, start: int) -> int {
+    var n = s.length;
+    var m = needle.length;
+    if (m == 0) { return start; }
+    var i = start;
+    while (i + m <= n) {
+        if (s.slice(i, i + m) == needle) { return i; }
+        i = i + 1;
+    }
+    return -1;
+}
+
+export function defaultPort(scheme: String) -> int {
+    if (scheme == "https") { return 443; }
+    return 80;
+}
+
+export function isDefaultPort(scheme: String, port: int) -> bool {
+    return port == defaultPort(scheme);
+}
+
+export function parse(raw: String) -> Url {
+    var u = Url();
+    var s = raw.trim();
+    var rest = s;
+    var sep = findFrom(s, "://", 0);
+    if (sep >= 0) {
+        u.scheme = s.slice(0, sep).lower();
+        rest = s.slice(sep + 3, s.length);
+    }
+    # fragmento
+    var h = findFrom(rest, "#", 0);
+    if (h >= 0) { u.fragment = rest.slice(h + 1, rest.length); rest = rest.slice(0, h); }
+    # consulta
+    var q = findFrom(rest, "?", 0);
+    if (q >= 0) { u.query = rest.slice(q + 1, rest.length); rest = rest.slice(0, q); }
+    # ruta
+    var p = findFrom(rest, "/", 0);
+    var authority = rest;
+    if (p >= 0) { u.path = rest.slice(p, rest.length); authority = rest.slice(0, p); }
+    # host[:puerto]
+    var c = findFrom(authority, ":", 0);
+    if (c >= 0) {
+        u.host = authority.slice(0, c);
+        u.port = int(authority.slice(c + 1, authority.length));
+    } else {
+        u.host = authority;
+        u.port = defaultPort(u.scheme);
+    }
+    return u;
+}
+
+# Resuelve `location` (absoluta, root-relative o relativa) contra `base`.
+export function resolve(base: Url, location: String) -> String {
+    var loc = location.trim();
+    if (findFrom(loc, "://", 0) >= 0) { return loc; }
+    var authority = base.host;
+    if (!isDefaultPort(base.scheme, base.port)) { authority = authority + ":" + str(base.port); }
+    if (loc.length > 0 && loc[0] == "/") {
+        return base.scheme + "://" + authority + loc;
+    }
+    # relativa a la carpeta de base.path
+    var slash = lastSlash(base.path);
+    return base.scheme + "://" + authority + base.path.slice(0, slash + 1) + loc;
+}
+
+function lastSlash(s: String) -> int {
+    var i = s.length - 1;
+    while (i >= 0) {
+        if (s[i] == "/") { return i; }
+        i = i - 1;
+    }
+    return -1;
+}
+
+# --- Percent-encoding --------------------------------------------------------
+
+function isUnreserved(c: int) -> bool {
+    if (c >= 65 && c <= 90) { return true; }   # A-Z
+    if (c >= 97 && c <= 122) { return true; }  # a-z
+    if (c >= 48 && c <= 57) { return true; }   # 0-9
+    return c == 45 || c == 46 || c == 95 || c == 126;  # - . _ ~
+}
+
+export function percentEncode(s: String) -> String {
+    var out = "";
+    for each ch in (s.toChar()) {
+        var c = ord(ch) & 255;
+        if (isUnreserved(c) || c == 32) {
+            if (c == 32) { out = out + "+"; }
+            else { out = out + ch.toString(); }
+        } else {
+            out = out + "%" + bytes::hexByte(c).upper();
+        }
+    }
+    return out;
+}
+
+export function percentDecode(s: String) -> String {
+    var out = "";
+    var cs = s.toChar();
+    var n = cs.length;
+    var i = 0;
+    while (i < n) {
+        var c = ord(cs[i]) & 255;
+        if (c == 43) { out = out + " "; i = i + 1; continue; }  # '+'
+        if (c == 37 && i + 2 < n) {                              # '%'
+            var hi = bytes::hexValue(ord(cs[i + 1]));
+            var lo = bytes::hexValue(ord(cs[i + 2]));
+            if (hi >= 0 && lo >= 0) {
+                out = out + char(hi * 16 + lo).toString();
+                i = i + 3;
+                continue;
+            }
+        }
+        out = out + cs[i].toString();
+        i = i + 1;
+    }
+    return out;
+}
+
+# "k=v&k2=v2" (URL-encoded) desde un Record<String, String>.
+export function encodeQuery(params: Record<String, String>) -> String {
+    var ks = params.keys();
+    var out = "";
+    for each k and i in (ks) {
+        if (i > 0) { out = out + "&"; }
+        out = out + percentEncode(k) + "=" + percentEncode(params[k]);
+    }
+    return out;
+}
+
+# Igual que `encodeQuery` pero para Record<String, String> de un solo nivel.
+export function queryString(url: Url) -> String { return url.query; }

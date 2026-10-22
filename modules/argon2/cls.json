@@ -1,0 +1,7 @@
+{
+  "name": "argon2",
+  "version": "1.0.0",
+  "description": "Argon2id (libargon2) para CLS",
+  "export": { "entry": "mod.clsx" },
+  "pathModulesNatives": ["."]
+}

@@ -1,8 +1,8 @@
 # Instalación
 
 CLS se compila desde fuente con **Cargo**. El proyecto es un workspace Rust
-(edición 2021) con seis crates: `cls-core`, `cls-runtime`, `cls-jit` y los
-nodos `nodos/clx`, `nodos/clxb`, `nodos/clxr`.
+(edición 2021) con siete crates: `cls-core`, `cls-runtime`, `cls-jit`,
+`cls-internals` y los nodos `nodos/clx`, `nodos/clxb`, `nodos/clxr`.
 
 ## Requisitos
 
@@ -10,15 +10,23 @@ nodos `nodos/clx`, `nodos/clxb`, `nodos/clxr`.
 |---|---|
 | Rust | Edición 2021 (`rustup` recomendado) |
 | Cargo | Incluido con Rust |
+| `wasm32-unknown-unknown` | `rustup target add wasm32-unknown-unknown` (lo usa `cls-internals/build.rs`) |
+| `gcc` (MinGW-w64 / build-essential) | Solo para compilar los shims de `modules/` (Tombstone, sockets, SQLite, FFI) |
 
-No hay binarios precompilados: se construye localmente.
+Para desarrollo, CLS se construye localmente. Las releases publicadas incluyen
+portables con los módulos estándar; el `cargo build` normal no copia módulos.
 
 ## Clonar el repositorio
 
 ```ps
 git clone https://github.com/frask/cls
 cd cls
+git submodule update --init --recursive
 ```
+
+> Los proyectos de `cls-repositories/` son **submódulos** independientes
+> (`tombstone`, `create-tombstone-app`). Sin `--recursive` esas carpetas quedan
+> vacías.
 
 > El remoto `origin` del repositorio actual apunta a
 > `https://github.com/elfrask/cls.git`; el metadata del workspace
@@ -40,6 +48,23 @@ El perfil de desarrollo compila las dependencias pesadas
 (wasmtime + Cranelift) con `opt-level = 2`
 (`[profile.dev.package."*"]` en el `Cargo.toml` raíz), de modo que el JIT
 compila WASM -> nativo mucho más rápido incluso en build debug.
+
+### Módulos y shims nativos
+
+Los módulos de `/modules` que usan FFI necesitan su shim compilado antes de
+ejecutar (ver `stdlib/modulos.md`):
+
+```powershell
+powershell -File modules\io\build.ps1
+powershell -File modules\net\build.ps1
+powershell -File modules\socket\build.ps1
+powershell -File modules\sqlite\build.ps1
+powershell -File modules\csprng\build.ps1
+bash modules/argon2/build.sh
+```
+
+En Linux/macOS: `bash scripts/build-standard-modules.sh`. Los shims se resuelven
+contra el `cls.json` de cada módulo, no contra el CWD.
 
 ### Binarios generados
 
@@ -90,7 +115,25 @@ Muestra la ayuda completa con el encabezado `clx 2.0.0 - CLS Toolchain`.
 Para probar una ejecución real:
 
 ```ps
-clx run examples/hello/src/main.clsx
+clx run examples/test/hello/src/main.clsx
 ```
 
 Debe imprimir `Hello from CLS!` y salir con código 0.
+
+## Releases portables
+
+Los artefactos de release incluyen:
+
+```text
+portable/
+  clx[.exe]
+  clxr[.exe]
+  modules/
+```
+
+`clx` busca `modules/` junto al binario (`{dir_clx}/modules`), por lo que el
+portable funciona sin copiar módulos a `~/.cls/modules`. En el repo, esa misma
+búsqueda también cubre `{dir_clx}/../modules`.
+
+La copia de `modules/` ocurre **solo en `release-pack.sh`**, cuando se generan
+los binarios de release; no en builds de desarrollo.

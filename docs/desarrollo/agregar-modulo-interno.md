@@ -4,9 +4,9 @@ Un módulo interno es una biblioteca accesible vía `import "nombre"` sin
 descargar nada: vive en el resolver del nodo. Hay dos clases:
 
 - **Core** - agnóstico al entorno, siempre disponible
-  (`cls-runtime/src/stdlib/`). Hoy: `math`, `json`, `async`.
+  (`cls-runtime/src/stdlib/`). Hoy: `math`, `json`.
 - **Nodo desktop** - dependen del entorno (`nodos/clx/src/modules/`).
-  Hoy: `fs`, `http`, `Lib`, `os`, `path`, `process`, `time`, `random`.
+  Hoy: `fs`, `http`, `strings`.
 
 Un módulo es en runtime un `Value::Record` de funciones nativas
 (`FunValue::new_native`) y constantes.
@@ -76,14 +76,13 @@ function doble(x: int) -> int {};
 
 1. **Crear `nodos/clx/src/modules/mi_modulo.rs`** - igual que core, pero
    puede recibir dependencias del nodo (VFS, args) por parámetro, como
-   `fs::module(vfs)` o `process::module(app_args)`.
+   `fs::module(vfs)`.
 2. **Declararlo en `nodos/clx/src/modules/mod.rs`** (`pub mod mi_modulo;`).
 3. **Registrarlo en `make_desktop_resolver`**
    (`nodos/clx/src/subcommands/run.rs`) con
    `resolver.add_internal("mi_modulo", crate::modules::mi_modulo::module());`
-   - esto lo expone al **walker** (`clx run --ast-walker`).
-4. **JIT** - el walker no ejecuta el JIT: el JIT necesita sus propias host
-   functions:
+   - esto lo expone a los imports (`import "mi_modulo" as m`).
+4. **JIT** - el JIT necesita sus propias host functions:
    - En `cls-jit/src/host.rs` (cuerpos genéricos) y en
      `cls-jit/src/wasmtime_rt.rs` (`register_host_functions` registra cada
      `env.*` en el `Linker`), o
@@ -93,7 +92,7 @@ function doble(x: int) -> int {};
      miembros por módulo y `module_arity` valida la aridad de cada función.
 5. **`.clsi`** en `cls-runtime/clsi/mi_modulo.clsi` - además de LSP/maptype,
    es la fuente de las firmas que usa el typeck del JIT (ver
-   `fs.clsi`, `os.clsi`, `time.clsi`, etc.).
+   `fs.clsi`, `strings.clsi`, etc.).
 
 ## Internals precompiladas a WASM (`cls-internals`)
 
@@ -116,13 +115,12 @@ para agregar o modificar una internals:
    `INTERNALS_FUNCTIONS`, ~50 entradas): `InternalsFn { name, params, results }`
    con los `ValType` WASM. Misma firma que el `HostFn` que reemplaza
    (`cls-core/src/backend/wasm/host_fn.rs`).
-3. **Usarla desde el emisor**: `func_indexes.get("__intr_...")` — si la
-   internals está fusionada se emite `call __intr_*`; si no, cae al host
-   fallback (helper `emit_str_host(name, fallback)` en `emitter/strings.rs`
-   para strings).
+3. **Usarla desde el emisor**: `func_indexes.get("__intr_...")` — la fusión
+   es incondicional; se emite `call __intr_*` (no hay fallback host desde la
+   poda de la Fase 8).
 4. **Re-verificar**: el WAT del módulo no debe importar el `env.<area>_*`
    correspondiente; correr las suites de paridad
-   (`examples/audit/test-features/jit-test/run-availible.ps1` + `run-tests.ps1`,
+   (`examples/test/jit-test/run-availible.ps1` + `run-tests.ps1`,
    wasmtime y wasmi).
 
 `build.rs` de `cls-core` hashea `src/backend/wasm` + las fuentes de
@@ -132,8 +130,7 @@ caché CLS→WASM.
 ## Notas
 
 - `ModuleResolver::resolve` (cache -> internals -> external hook -> error):
-  un `add_internal` basta para que `import "mi_modulo"` funcione en el
-  walker; el JIT resuelve los imports con su propio mapa de hosts.
+  un `add_internal` basta para que `import "mi_modulo"` funcione en el JIT.
 - Los `.clsi` viven en `cls-runtime/clsi/` (uno por módulo + `types.clsi`);
   `clx maptype` los procesa igual que `.clsx`.
 - Los errores de aridad/argumentos usan `ClsError::RuntimeError` con

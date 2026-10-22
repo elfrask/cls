@@ -1,6 +1,0 @@
-# ERROR TYPECK: type mismatch
-function main(args: String[]) -> int {
-    var x: int = "hola";
-    print(x);
-    return 0;
-};

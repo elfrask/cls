@@ -17,6 +17,8 @@ pub enum TypeKind {
     Null,
     Void,
     Empty,
+    Json,
+    Value,
 
     // Tipos con parámetros
     Array(Box<TypeAnnotation>),

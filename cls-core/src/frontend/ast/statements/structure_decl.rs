@@ -13,4 +13,7 @@ pub struct StructureDecl {
     /// Visibilidad (export -> disponible en módulos importados)
     #[serde(default)]
     pub visibility: Visibility,
+    /// Marca de declaración nativa/FFI (`extension`): layout ABI C.
+    #[serde(default)]
+    pub native: Option<NativeInfo>,
 }

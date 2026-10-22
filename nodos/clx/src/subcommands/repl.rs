@@ -7,7 +7,7 @@ pub fn execute(_args: &[String]) -> i32 {
     println!("");
 
     let ctx = JitContext {
-        native_backend: std::sync::Arc::new(crate::native::DynamicBackend),
+        native_backend: std::sync::Arc::new(cls_runtime::DynamicBackend),
         module_index: None,
         host_intrinsics: &[],
         host_call_handler: None,

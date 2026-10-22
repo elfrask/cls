@@ -1,15 +1,17 @@
 # CLS 2.0 - Modular WASM-first Programming Language
 
-**Version**: 2.0.0 · **License**: MIT  
+**Version**: 2.0.0-dev-2 · **License**: MIT
+
 [GitHub](https://github.com/frask/cls) · WASM-first · Multiplatform
 
-CLS is a programming language designed for **modular, safe, cross-platform development**. It compiles to WASM (future), has an integrated type checker, a JSX-like native syntax (CMX), a VFS abstraction with sandbox support, and a full LSP server for editor integration.
+CLS is a programming language designed for **modular, safe, cross-platform development**. Its **JIT** compiles to WASM and runs on **wasmtime/wasmi**, with an integrated type checker, a JSX-like native syntax (CMX), pattern matching, a VFS abstraction with sandbox support, and a full LSP server for editor integration.
 
 ```
-.clsx -> Lexer -> Parser -> AST -> Tree-walker (Interpreter)
-                              -> JSON backend (AST dump)
-                              -> WASM codegen (future -> .clbin)
+.clsx -> Lexer -> Parser -> AST -> TypeChecker -> WASM backend -> WASM (wasmtime/wasmi)
+                                                -> JSON backend (AST dump)
 ```
+
+The **JIT is the only execution engine** (the old tree-walker was removed).
 
 ---
 
@@ -20,11 +22,17 @@ CLS is a programming language designed for **modular, safe, cross-platform devel
 clx new my-app
 cd my-app
 
-# Run it
+# Run it (JIT, default)
 clx run
 
 # Check types
 clx check
+
+# Run the project's tests
+clx test
+
+# Interactive REPL
+clx repl
 
 # Build to .clsapp
 clx build
@@ -49,11 +57,15 @@ function main(args: String[]) -> int {
 ### Requirements
 - Rust 2021 edition
 - Cargo
+- Target `wasm32-unknown-unknown` (used to precompile `cls-internals`)
 
 ### From source
 ```bash
 git clone https://github.com/frask/cls
 cd cls
+rustup target add wasm32-unknown-unknown
+cargo build --release --workspace   # clx, clxr, clxb
+# or
 cargo build -p clx    # Development CLI
 cargo build -p clxr   # Runtime executor
 ```
@@ -94,7 +106,7 @@ function greet(name: String) {
     print("Hello,", name);
 };
 
-# Async function
+# Async function (syntax; execution pending)
 async function fetch(url: String) -> String {
     var result = await http.get(url);
     return result;
@@ -204,13 +216,33 @@ p.name = "Bob";         # mutation
 
 ```clx
 class Counter {
-    export var count: int = 0;
+    private var count: int;
+    static var instances: int = 0;
 
-    function increment() {
+    function main(start: int) {
+        me.count = start;
+        Counter.instances = Counter.instances + 1;
+    };
+
+    public function increment() {
         me.count = me.count + 1;
     };
+
+    public function value() -> int { return me.count; };
+
+    # Magic: payload used by `var Counter(n) = obj;`
+    function __destructurate() -> int { return me.count; };
 };
+
+var c = Counter(41);
+c.increment();
+var Counter(n) = c;     # n = 42
+print(n);               # -> 42
 ```
+
+Classes support inheritance (`class Child: Base`), `super`, `is`,
+`private`/`protected`/`public`/`static`/`readonly`, and magic methods
+(`__destructurate`, `__match`/`__unpack`, `__equals`, `__bool`, ...).
 
 ### Interfaces
 
@@ -219,6 +251,31 @@ interface Printable {
     print(): void
 };
 ```
+
+### Enums and `match`
+
+```clx
+enum Shape {
+    circle(float),
+    rect(float, float),
+    empty,
+};
+
+function area(s: Shape) -> float {
+    return match (v <- s) {
+        circle(r)  -> 3.14159 * r * r,
+        rect(w, h) -> w * h,
+        default    -> 0.0,
+    };
+};
+
+var s = Shape::rect(2.0, 3.0);
+print(area(s));         # -> 6
+```
+
+`match` supports value (`in`), type (`is`), condition (`if`) and pattern
+modes, with binding (`name <- expr`). Enums can carry payloads and classes can
+opt into pattern matching with `__match()` + `__unpack(tag)`.
 
 ### CMX (Native JSX)
 
@@ -281,6 +338,10 @@ These are available globally without any import:
 ---
 
 ## Standard Library
+
+> Self-containment note: `fs`/`http`/`json`/`strings` are **host-side debt**
+> today. The self-contained stdlib is being migrated to `modules/` (CLS + FFI);
+> see `modules/README.md` and `examples/patrones.md` §2.7.
 
 ### Math (`import "math" as math`)
 
@@ -354,8 +415,9 @@ fs.writeFile("tmp://cache.dat", data);
 | Command | Description |
 |---------|-------------|
 | `new <name>` | Create a new CLS project |
-| `run [file] [-- args]` | Execute a script |
+| `run [file] [-- args]` | Execute a script with the JIT (default) |
 | `check [file\|dir]` | Run type checker |
+| `test [files] [--filter <s>]` | Run project tests (JIT) |
 | `build [file] -o` | Package into `.clsapp` |
 | `maptype [path] -o` | Generate type maps (.type.json) |
 | `ast <file> --json` | Dump AST as JSON |
@@ -374,6 +436,27 @@ clxr app.clsapp        # Run packaged app
 
 ---
 
+## Testing
+
+```bash
+# Rust workspace (unit + integration)
+cargo test --workspace
+
+# JIT feature suites (oracle: .expect)
+powershell -File examples/test/jit-test/run-tests.ps1
+powershell -File examples/test/jit-test/run-availible.ps1
+
+# Differential projects (external oracles)
+powershell -File examples/conformance/run.ps1
+powershell -File examples/cmx-templates/run.ps1
+```
+
+Current status: `units` **85 PASS / 0 FAIL**, `availible` **24 PASS / 1 SKIP**,
+`cargo test --workspace` **0 failed**. The JIT is the target: `--ast-walker` was
+removed (it only remains as a deprecated, ignored flag).
+
+---
+
 ## Project Configuration
 
 Every CLS project has a `cls.json` file:
@@ -383,8 +466,10 @@ Every CLS project has a `cls.json` file:
   "name": "my-app",
   "version": "0.1.0",
   "entry": "src/main.clsx",
+  "testEntry": ["tests/**/*.clsx"],
   "compiler": { "targetArchitecture": "wasm", "optimizationLevel": "O2" },
   "interpreter": {
+    "mode": "jit",
     "sandbox": { "allowFs": false, "allowNet": false }
   },
   "dependencies": {}
@@ -463,18 +548,30 @@ clx lsp --tcp 127.0.0.1:9876   # TCP socket
 ## Architecture
 
 ```
-┌─────────────┐    ┌──────────────┐    ┌───────────────┐
-│   cls-core   │    │  cls-runtime  │    │  clx / clxr   │
-│  (compiler)  │───▶│  (executor)   │───▶│   (nodes)     │
-│ lexer, parser│    │ interpreter   │    │ CLI, modules, │
-│ type checker │    │ stdlib, VFS   │    │ LSP server    │
-│ optimizer    │    │ intrinsics    │    │ package mgmt  │
-└─────────────┘    └──────────────┘    └───────────────┘
+┌──────────────┐    ┌───────────────┐    ┌────────────────┐
+│   cls-core   │───▶│    cls-jit    │───▶│  clx / clxr    │
+│ frontend     │    │ compile/emit  │    │  (nodes)       │
+│ type checker │    │ wasmtime/wasmi│    │ CLI, LSP, I/O  │
+└──────────────┘    └───────────────┘    └────────────────┘
+        │
+        ▼
+┌────────────────────────────────────────────────────────┐
+│ cls-internals: helpers precompiled to wasm32 and fused │
+│ into the CLS module (strings, math, records, allocator) │
+└────────────────────────────────────────────────────────┘
 ```
 
-- **cls-core**: No filesystem access. Pure language logic.
-- **cls-runtime**: Runtime execution. No direct I/O (uses node-provided resolvers).
-- **clx/clxr**: Nodes provide filesystem, network, CLI, and configuration.
+- **cls-core**: frontend (lexer, parser, AST), type checker, module resolver and
+  the WASM emitter. No filesystem access.
+- **cls-jit**: reusable JIT engine (`compile`, `engine`, `flatten`, `host`,
+  `repl`, `resolve`, `state`) with `wasmtime`/`wasmi` backends.
+- **cls-internals**: `no_std` runtime helpers compiled to WASM in `build.rs` and
+  embedded; they are fused into the CLS module (`__cls_alloc` resolves to the
+  module allocator, zero extra imports).
+- **cls-runtime**: runtime values, error reporting/formatters, VFS and shared
+  support. The tree-walker was removed.
+- **clx/clxr**: nodes provide filesystem, network, CLI, LSP and package
+  management; `clxb` exposes the C/embedding API.
 
 ---
 
@@ -482,35 +579,41 @@ clx lsp --tcp 127.0.0.1:9876   # TCP socket
 
 ```
 cls/
-├── cls-core/              # Language core (lexer, parser, AST, types)
-│   └── src/
-│       ├── frontend/      # Lexer, Parser, AST, Token
-│       ├── middleware/     # TypeChecker, NameResolver, Optimizer
-│       ├── backend/        # JSON backend, WASM backend (future)
-│       ├── config/         # ModuleManifest, TypesConfig
-│       └── error/          # ClsError, Span, Diagnostic
-├── cls-runtime/           # Runtime engine
-│   ├── clsi/              # Type definition files (.clsi)
-│   └── src/
-│       ├── interpreter.rs # Tree-walker
-│       ├── value.rs       # Runtime values
-│       ├── environment.rs # Scoped environment
-│       ├── resolver.rs    # Module resolver
-│       ├── vfs/           # Virtual filesystem
-│       ├── stdlib/        # math, json modules
-│       └── sandbox.rs     # Security sandbox
+├── cls-core/              # Language core: lexer, parser, AST, typeck, WASM emitter
+├── cls-jit/               # JIT engine: flatten, host, wasmtime/wasmi, REPL
+├── cls-runtime/           # Value, error reporting, VFS, intrinsics support
+├── cls-internals/         # Runtime helpers precompiled to wasm32-unknown-unknown
 ├── nodos/
-│   ├── clx/               # Desktop CLI
-│   │   └── src/
-│   │       ├── subcommands/  # run, check, build, maptype, lsp...
-│   │       ├── modules/      # fs, http, lib (node modules)
-│   │       └── lsp.rs       # LSP server
-│   └── clxr/              # Runtime executor
-│       └── src/main.rs
-├── docs/                  # Documentation
-├── examples/tests/        # Example scripts
-├── agent-context/         # Development plans
+│   ├── clx/               # Development CLI (run/check/build/test/repl/lsp/...)
+│   ├── clxr/              # Lightweight runtime executor
+│   └── clxb/              # C bindings / embedding (ClsEngine)
+├── modules/               # Shared self-contained CLS modules (CLS + FFI)
+├── cls-repositories/      # Real projects (git submodules / repos)
+├── examples/              # Feature tests + differential projects
+├── docs/                  # Language, runtime and development docs
+├── devlogs/               # Release notes per version
+├── agent-context/         # Development plans and handoffs
 └── .vscode/extensions/ccls-lang/  # VS Code extension
+```
+
+---
+
+## Real Projects (`/cls-repositories`)
+
+Real, standalone projects live in `cls-repositories/`, separate from feature
+tests (`examples/`) and shared modules (`modules/`). Each subfolder is its own
+git repository; rules and conventions are in `cls-repositories/README.md`.
+
+| Project | Description |
+|---------|-------------|
+| `tombstone` | Web framework for CLS (git submodule) — https://github.com/elfrask/tombstone |
+
+```bash
+# Clone with submodules
+git clone --recurse-submodules https://github.com/frask/cls
+
+# Or initialize them in an existing clone
+git submodule update --init --recursive
 ```
 
 ---
@@ -519,23 +622,12 @@ cls/
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| F1 | Workspace + crates + base nodes | ✅ |
-| F2 | Pipeline: lexer -> parser -> tree-walker | ✅ |
-| F3 | Type checker + name resolver + optimizer | ✅ |
-| F4 | Stdlib: math, json, fs, http, intrinsics | ✅ |
-| F5a | ModuleResolver + imports | ✅ |
-| F5b | Exports + user modules | ✅ |
-| F6 | Migration ccls->clx, .ccls->.clsx | ✅ |
-| F7 | VFS + ClsLib indexing | ✅ |
-| - | LSP server + VS Code extension | ✅ |
-| - | Type maps + autocompletion | ✅ |
-| - | Async/await syntax | ✅ |
-| - | Structure + Interface | ✅ |
-| - | CMX with reference lookup | ✅ |
-| - | Error system with traceback | ✅ |
-| Future | WASM backend (.clbin) | 🚧 |
-| Future | WASM runtime in clxr | 🚧 |
-| Future | Registry + package publishing | 🚧 |
+| F1–F7 | Workspace, pipeline, type checker, stdlib, modules, VFS, migration | Done |
+| P-F1–P-F3 | WASM backend refactor, `cls-internals` fusion, shadow call stack | Done |
+| dev-1 | WASM JIT as sole engine, structured FFI, module flattening | Done |
+| dev-2 | JSON/`Value`, `match` + enums, CMX rework, `__destructurate`, static typing (no `Any`), differential tests #1–#10 | Done |
+| dev-2 | `tombstone` framework (CLS + FFI) | In progress |
+| Future | AOT `.clbin` packaging, `.clslib`, registry publishing | Planned |
 
 ---
 

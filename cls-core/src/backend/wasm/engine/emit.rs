@@ -2,50 +2,178 @@
 
 use super::*;
 
+/// Resuelve la clave real en `class_defs` del padre de una clase a partir del
+/// nombre sin cualificar que trae `extends`. Para una clase prefijada por un
+/// import (`mod::Hijo`) se prefiere el padre del MISMO módulo (`mod::Padre`)
+/// antes que un homónimo local; si no, se resuelve exacto o por sufijo
+/// (`mod::Padre`). Así el layout/ancestors del clon prefijado coincide con el
+/// del clon sin prefijar de la misma declaración.
+fn resolve_parent_key(
+    class_defs: &HashMap<String, ClassInfo>,
+    child: &str,
+    parent: &str,
+) -> Option<String> {
+    if let Some((prefix, _)) = child.rsplit_once("::") {
+        let cand = format!("{}::{}", prefix, parent);
+        if class_defs.contains_key(&cand) {
+            return Some(cand);
+        }
+    }
+    if class_defs.contains_key(parent) {
+        return Some(parent.to_string());
+    }
+    let suffix = format!("::{}", parent);
+    class_defs.keys().find(|k| k.ends_with(&suffix)).cloned()
+}
+
 impl<'a> Engine<'a> {
 
+    /// Itera los statements efectivos de un módulo respetando `when`: solo
+    /// la rama que matchea `self.target` se considera activa, y se procesa
+    /// recursivamente (un when puede anidar otro when).
+    ///
+    /// Antes del fix (dev-2), los sitios que recolectaban declaraciones
+    /// compile-time (enums, structures, classes, extensions, static props)
+    /// iteraban `&module.statements` directamente, perdiendo cualquier
+    /// statement dentro de un `when`. Esto invalidaba el patrón canónico
+    /// `when (os: windows) { extension "ws2_32.dll" as C { ... } }` (ver
+    /// `docs/lenguaje/extension-when.md` y `agent-context/dev2/09-FFI-DYLINK-FUTURE.md`).
+    pub(crate) fn effective_statements<'b>(&'a self, stmts: &'b [Statement]) -> Vec<&'b Statement> {
+        let mut out = Vec::new();
+        Self::collect_effective(&self.target, stmts, &mut out);
+        out
+    }
+
+    fn collect_effective<'b>(target: &Target, stmts: &'b [Statement], out: &mut Vec<&'b Statement>) {
+        for stmt in stmts {
+            match stmt {
+                Statement::When(w) => {
+                    if let Some(branch) = w.branches.iter().find(|b| target.matches(&b.cond)) {
+                        Self::collect_effective(target, &branch.block.statements, out);
+                    }
+                }
+                _ => out.push(stmt),
+            }
+        }
+    }
+
+    /// Letra C de un param de extensión. `CStruct`, `Struct(Nombre)` y el propio
+    /// nombre de un `structure` declarado van como 'S': el emisor le pasa al DLL
+    /// la dirección de la DATA (base+16) y el wrapper traduce el offset a la
+    /// dirección host. El resto delega en `ty_code`.
+    fn native_param_letter(&self, t: &Type) -> (char, WasTy) {
+        match t {
+            Type::Named(n, _) if self.struct_defs.contains_key(n.as_str()) => {
+                ('S', WasTy::I64)
+            }
+            t => ty_code(t),
+        }
+    }
 
     pub(crate) fn emit(&mut self, module: &Module) -> ClsResult<Vec<u8>> {
         self.collect_functions(module)?;
 
-        // Recolectar enums -> (def_id, variantes) para constantes `Nivel.Alto`.
-        let mut def_id = 0u32;
-        for stmt in &module.statements {
-            if let Statement::EnumDecl(e) = stmt {
-                self.enum_defs
-                    .insert(e.name.clone(), (def_id, e.variants.clone()));
-                def_id += 1;
+        // Alias de imports -> path del módulo. Permite referenciar los módulos
+        // internos (math/json/strings/fs/http/os/...) por cualquier alias
+        // (`import "math" as m`), no solo por el nombre literal del módulo.
+        for stmt in self.effective_statements(&module.statements) {
+            match stmt {
+                Statement::Import(imp) => {
+                    let alias = imp.alias.clone().unwrap_or_else(|| imp.path.clone());
+                    self.import_aliases
+                        .entry(alias)
+                        .or_insert_with(|| imp.path.clone());
+                }
+                Statement::FromImport(fi) => {
+                    if let Some(ns) = &fi.namespace {
+                        self.import_aliases
+                            .entry(ns.clone())
+                            .or_insert_with(|| fi.path.clone());
+                    }
+                }
+                _ => {}
             }
         }
-        // Recolectar structures -> offsets de campos (layout [def_id][len][campos]).
+
+
+        // Recolectar enums -> (def_id, variantes) para constantes `Nivel.Alto`.
+        // `when`-aware: respeta las ramas activas del target actual (dev-2 fix).
+        //
+        // La IDENTIDAD del enum es su DEFINICIÓN, no el nombre con que se importó:
+        // al aplanar, el mismo `enum E` de un módulo reaparece renombrado una vez
+        // por alias (`tk::E`, `toks::E`, ...). Todos esos clones comparten el span
+        // de la declaración fuente, así que se les asigna el MISMO def_id -> un
+        // valor producido bajo un alias compara igual (`==`/`is`) desde otro.
+        let mut def_id = 0u32;
+        let mut def_id_by_span: HashMap<crate::error::diagnostic::Span, u32> = HashMap::new();
+        for stmt in self.effective_statements(&module.statements) {
+            if let Statement::EnumDecl(e) = stmt {
+                let id = match def_id_by_span.get(&e.span) {
+                    Some(&id) => id,
+                    None => {
+                        let id = def_id;
+                        def_id += 1;
+                        def_id_by_span.insert(e.span.clone(), id);
+                        id
+                    }
+                };
+                self.enum_defs
+                    .insert(e.name.clone(), (id, e.variant_names()));
+                // Esquema de params por variante (F2): tipos del payload para
+                // la emisión (ancho de slot) y la construcción/match con payload.
+                let params: Vec<Vec<Type>> = e
+                    .variants
+                    .iter()
+                    .map(|v| {
+                        v.params
+                            .iter()
+                            .map(|ta| self.resolve_field_type(ta).unwrap_or(Type::Value))
+                            .collect()
+                    })
+                    .collect();
+                self.enum_params.insert(e.name.clone(), params);
+            }
+        }
+        // Recolectar structures -> layout C ABI de campos: header CLS
+        // `[def_id][len]` (16B) + data C con alineación natural (i16->2, i32->4,
+        // i64->8). Es lo que permite pasarlas por FFI como struct C.
         let mut sdef_id = 0u32;
-        for stmt in &module.statements {
+        for stmt in self.effective_statements(&module.statements) {
             if let Statement::StructureDecl(s) = stmt {
                 let mut fields = Vec::new();
-                let mut offsets = Vec::new();
-                let mut off = 16i64;
+                let mut kinds = Vec::new();
                 for f in &s.fields {
-                    let t = self.resolve_field_type(&s.name, &f.name, &f.type_ann)?;
+                    let t = self.resolve_field_type(&f.type_ann)?;
                     let w = was_type(&t)?;
-                    offsets.push(off);
+                    kinds.push(field_width(&f.type_ann, &t));
                     fields.push((f.name.clone(), t, w));
-                    off += elem_size_bytes(w);
                 }
+                let (offsets, total) = c_struct_layout(&kinds);
                 self.struct_defs.insert(
                     s.name.clone(),
                     StructInfo {
                         def_id: sdef_id,
                         fields,
                         offsets,
-                        total: off,
+                        kinds,
+                        total,
                     },
                 );
                 sdef_id += 1;
             }
         }
         // Recolectar clases -> class_defs (layout de objeto) + declarar métodos/ctor.
+        // `when`-aware (dev-2 fix).
+        //
+        // La IDENTIDAD de la clase es su DEFINICIÓN, no el nombre con que se
+        // importó: al aplanar, la misma `class C` reaparece renombrada una vez
+        // por alias (`lib::C`, ...). Todos esos clones comparten el span de la
+        // declaración fuente, así que se les asigna el MISMO `class_id` -> un
+        // objeto construido bajo un alias es reconocido por `is` desde otro
+        // (mismo criterio que `def_id_by_span` de los enums).
         let mut next_class_id = 0u32;
-        for stmt in &module.statements {
+        let mut class_id_by_span: HashMap<crate::error::diagnostic::Span, u32> = HashMap::new();
+        for stmt in self.effective_statements(&module.statements) {
             if let Statement::ClassDecl(c) = stmt {
                 let mut fields = Vec::new();
                 let mut methods = Vec::new();
@@ -53,15 +181,19 @@ impl<'a> Engine<'a> {
                 let mut off = 16i64; // 0..7 = vtable, 8..15 = class_id
                 let mut total = off;
                 let mut ancestors = Vec::new();
+                let mut resolved_parent: Option<String> = None;
                 if let Some(parent) = &c.extends {
-                    if let Some(pinfo) = self.class_defs.get(parent) {
-                        fields.extend(pinfo.fields.clone());
-                        methods = pinfo.methods.clone();
-                        method_vis = pinfo.method_vis.clone();
-                        off = pinfo.total;
-                        total = pinfo.total;
-                        ancestors.push(parent.clone());
-                        ancestors.extend(pinfo.ancestors.clone());
+                    if let Some(pkey) = resolve_parent_key(&self.class_defs, &c.name, parent) {
+                        if let Some(pinfo) = self.class_defs.get(&pkey) {
+                            fields.extend(pinfo.fields.clone());
+                            methods = pinfo.methods.clone();
+                            method_vis = pinfo.method_vis.clone();
+                            off = pinfo.total;
+                            total = pinfo.total;
+                            ancestors.push(pkey.clone());
+                            ancestors.extend(pinfo.ancestors.clone());
+                            resolved_parent = Some(pkey);
+                        }
                     }
                 }
                 for member in &c.body {
@@ -69,7 +201,7 @@ impl<'a> Engine<'a> {
                         ClassMember::Property(p) if !p.is_static => {
                             let (w, t_cls) = match (&p.type_ann, &p.value) {
                                 (Some(ann), _) => {
-                                    let t = self.resolve_field_type(&c.name, &p.name, ann)?;
+                                    let t = self.resolve_field_type(ann)?;
                                     let w = was_type(&t).unwrap_or(WasTy::I64);
                                     (w, t)
                                 }
@@ -122,8 +254,11 @@ impl<'a> Engine<'a> {
                         _ => {}
                     }
                 }
-                let cid = next_class_id;
-                next_class_id += 1;
+                let cid = *class_id_by_span.entry(c.span.clone()).or_insert_with(|| {
+                    let id = next_class_id;
+                    next_class_id += 1;
+                    id
+                });
                 // El vtable_start se asigna AQUÍ (antes de compilar cuerpos): el
                 // ctor del objeto lo lee al emitir, y no debe depender del orden
                 // (no determinista) del HashMap.
@@ -132,7 +267,7 @@ impl<'a> Engine<'a> {
                 self.class_defs.insert(
                     c.name.clone(),
                     ClassInfo {
-                        parent: c.extends.clone(),
+                        parent: resolved_parent,
                         class_id: cid,
                         ancestors,
                         fields,
@@ -144,45 +279,77 @@ impl<'a> Engine<'a> {
                 );
             }
         }
-        // Recolectar extensiones -> imports `env.<sym>__<sig>@<lib>`.
-        for stmt in &module.statements {
-            if let Statement::Extension(e) = stmt {
-                for d in &e.declarations {
-                    if let NativeDecl::Function(f) = d {
-                        let mut params_was = Vec::new();
-                        let mut params_code = String::new();
-                        for p in &f.params {
-                            let t = p
-                                .type_ann
-                                .as_ref()
-                                .map(annotation_to_type)
-                                .unwrap_or(Type::Int);
-                            let (c, w) = ty_code(&t);
-                            params_was.push(was_to_val(w));
-                            params_code.push(c);
-                        }
-                        let ret_t = f
-                            .return_type
-                            .as_ref()
-                            .map(annotation_to_type)
-                            .unwrap_or(Type::Void);
-                        let (rc, rw) = ty_code(&ret_t);
-                        let results = if rc == 'v' {
-                            vec![]
-                        } else {
-                            vec![was_to_val(rw)]
-                        };
-                        let import_name =
-                            format!("{}__{}{}@{}", f.name, rc, params_code, e.library);
-                        let tidx = self.register_func_type(params_was, results);
-                        let idx = self.func_count;
-                        self.func_count += 1;
-                        self.imports_sec
-                            .import("env", &import_name, EntityType::Function(tidx));
-                        self.native_indexes.insert(f.name.clone(), idx);
-                        self.native_ret.insert(f.name.clone(), rc);
-                    }
+        // Recolectar declaraciones nativas (FFI) -> imports
+        // `env.<symbol>__<ret><params>@<lib>`. Tras el desugar son `FunctionDecl`
+        // top-level marcadas con `native` (su equivalente nativo del lenguaje);
+        // los `structure` nativos ya se recolectaron arriba (layout C ABI).
+        // `when`-aware: respeta las ramas activas del target.
+        // Dedup por import name: una native materializada con rename (`aInt` ->
+        // símbolo `strlen`) y la original transportada comparten el mismo import.
+        let mut native_import_idx: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
+        for stmt in self.effective_statements(&module.statements) {
+            if let Statement::FunctionDecl(f) = stmt {
+                let Some(info) = &f.native else { continue };
+                let mut params_was = Vec::new();
+                let mut params_code = String::new();
+                for p in &f.params {
+                    let t = p
+                        .type_ann
+                        .as_ref()
+                        .map(annotation_to_type)
+                        .unwrap_or(Type::Int);
+                    // Struct por valor (CStruct / Struct(Nombre) / el nombre del
+                    // structure): letter 'S' -> el emisor le pasa al DLL la DATA
+                    // (base+16, layout C).
+                    let (c, w) = self.native_param_letter(&t);
+                    params_was.push(was_to_val(w));
+                    params_code.push(c);
                 }
+                let ret_t = f
+                    .return_type
+                    .as_ref()
+                    .map(annotation_to_type)
+                    .unwrap_or(Type::Void);
+                // Struct nativo como retorno (`-> Punto`): rcode 'S' + tamaño
+                // total en bytes (el wrapper copia el bloque exacto del DLL).
+                let ret_total = match &ret_t {
+                    Type::Named(n, _) => self.struct_defs.get(n.as_str()).map(|i| i.total),
+                    _ => None,
+                };
+                let (rc, rw) = match ret_total {
+                    Some(_) => ('S', WasTy::I64),
+                    None => ty_code(&ret_t),
+                };
+                let results = if rc == 'v' {
+                    vec![]
+                } else {
+                    vec![was_to_val(rw)]
+                };
+                let rc_code = match ret_total {
+                    Some(total) => format!("S{}", total),
+                    None => rc.to_string(),
+                };
+                let library = info
+                    .resolved_library
+                    .as_deref()
+                    .unwrap_or(info.library.as_str());
+                let import_name =
+                    format!("{}__{}{}@{}", info.symbol, rc_code, params_code, library);
+                let idx = if let Some(&existing) = native_import_idx.get(&import_name) {
+                    existing
+                } else {
+                    let tidx = self.register_func_type(params_was, results);
+                    let idx = self.func_count;
+                    self.func_count += 1;
+                    self.imports_sec
+                        .import("env", &import_name, EntityType::Function(tidx));
+                    native_import_idx.insert(import_name.clone(), idx);
+                    idx
+                };
+                self.native_indexes.insert(f.name.clone(), idx);
+                self.native_ret.insert(f.name.clone(), rc);
+                self.native_params.insert(f.name.clone(), params_code.chars().collect());
             }
         }
 
@@ -216,19 +383,17 @@ impl<'a> Engine<'a> {
             FsRm,
             HttpGet,
             HttpPost,
-            CmxNew,
-            CmxSetProp,
-            CmxAddChild,
-            CmxToString,
             PrintAny,
             AnyMember,
             AnyIndex,
+            AnyToBool,
             FnHandle,
             FnToString,
             // Nota: FnEnter/FnExit/CallSite ya NO se importan — el shadow call
             // stack vive en la memoria lineal del módulo (plan-performance/
             // shadow-stack-wasm.md).
             HostCall,
+            ConfigRecord,
             OsPlatform,
             OsArch,
             OsVersion,
@@ -273,6 +438,7 @@ impl<'a> Engine<'a> {
             RandomInt,
             RandomFloat,
             RandomUuid,
+            // NetListen/Accept/Recv/Send/Close/LastError eliminados (dev-2).
         ] {
             self.register_host(h);
         }
@@ -293,9 +459,18 @@ impl<'a> Engine<'a> {
         // Memoria (1 página = 64KB). Mínimo 32 páginas (2MB): la ventana de
         // internals ocupa [0..1.11MB) + strings [1.11..1.56MB] + tabla
         // [1.56..1.81MB] + heap [1.81MB..] con grow a partir de ahí.
+        //
+        // `maximum`: si el sandbox fija un límite de memoria, se declara como
+        // máximo de páginas (piso 32 = 2MB, el mínimo que el propio módulo ya
+        // necesita). Sin límite (`0`/no declarado) queda `None` (solo el
+        // `StoreLimits` del runtime lo acota).
+        let memory_maximum = self
+            .memory_max_pages
+            .filter(|p| *p > 0)
+            .map(|p| p.max(32));
         self.memories_sec.memory(MemoryType {
             minimum: 32,
-            maximum: None,
+            maximum: memory_maximum,
             memory64: false,
             shared: false,
             page_size_log2: None,
@@ -341,6 +516,15 @@ impl<'a> Engine<'a> {
                 next_global += 1;
                 self.user_global_idxs.push(idx);
                 self.globals.insert(v.name.clone(), idx);
+                // Global de un módulo importado (`mod::KIND`): registrar el
+                // nombre base como alias para que las referencias internas del
+                // módulo (`return KIND;`) resuelvan sin prefijo (el body se
+                // fusiona tal cual). Mismo criterio que el alias de funciones.
+                if let Some((_, base)) = v.name.split_once("::") {
+                    if !self.globals.contains_key(base) {
+                        self.globals.insert(base.to_string(), idx);
+                    }
+                }
                 // mutable=true siempre: __init_globals las setea (incluso const, que
                 // no se vuelve a escribir en runtime).
                 self.globals_sec.global(
@@ -368,7 +552,8 @@ impl<'a> Engine<'a> {
 
         // Campos estáticos de clase: cada `static var` -> un global WASM mutable
         // (accesible como `Clase.campo`). Se declaran tras los globals de usuario.
-        for stmt in &module.statements {
+        // `when`-aware (dev-2 fix).
+        for stmt in self.effective_statements(&module.statements) {
             if let Statement::ClassDecl(c) = stmt {
                 for member in &c.body {
                     if let ClassMember::Property(p) = member {
@@ -476,6 +661,7 @@ impl<'a> Engine<'a> {
         if !seed.is_empty() {
             let mut fe = FuncEmitter::new(
                 self.types,
+                &self.import_aliases,
                 HostCaller {
                     indexes: self.host_indexes.clone(),
                 },
@@ -489,9 +675,11 @@ impl<'a> Engine<'a> {
                 &mut self.type_count,
                 &mut self.types_sec,
                 &self.enum_defs,
+                &self.enum_params,
                 &self.struct_defs,
                 &self.native_indexes,
                 &self.native_ret,
+                &self.native_params,
                 &self.globals,
                 &self.static_fields,
                 &self.class_defs,
@@ -519,6 +707,14 @@ impl<'a> Engine<'a> {
         let mut cls_funcs: Vec<FunctionDecl> = Vec::new();
         for stmt in &module.statements {
             if let Statement::FunctionDecl(f) = stmt {
+                // Las funciones nativas (FFI) no son funciones CLS: ya se
+                // emitieron como imports en el bucle de extensiones de arriba
+                // (`native_indexes`) y no están en `func_types`. Saltarlas evita
+                // el panic `no entry found for key` de un `extension` a nivel
+                // superior (fuera de `when`).
+                if f.native.is_some() {
+                    continue;
+                }
                 let (params, ret) = self.func_types[&f.name].clone();
                 let mut pv: Vec<ValType> = Vec::new();
                 // Firma uniforme (B5): toda funcion CLS top-level (excepto main,
@@ -582,6 +778,13 @@ impl<'a> Engine<'a> {
             for f in &cls_funcs {
                 collect_arrows_in_block(&f.body, &mut arrows);
             }
+            // Arrows dentro de métodos/ctor de clase: sus cuerpos viven en
+            // `cls_funcs_extra`, no en `cls_funcs`. Sin esto, un arrow dentro de
+            // un método (`me.use(() -> ...)`) moría con "Arrow function sin
+            // función sintética (recolección)".
+            for (_, f) in &self.cls_funcs_extra {
+                collect_arrows_in_block(&f.body, &mut arrows);
+            }
             for (n, a) in arrows.iter().enumerate() {
                 let name = format!("__arrow_{}", n);
                 self.arrow_names.insert(a.span, name.clone());
@@ -600,13 +803,13 @@ impl<'a> Engine<'a> {
                     modifiers: vec![],
                     span: a.span,
                     type_params: vec![],
-                    is_native: false,
+                    native: None,
                 });
             }
         }
         for f in &arrow_funcs {
             // Tipo del typeck (retorno inferido si la arrow no anota `-> T`).
-            let arrow_ty = self.types.get(&f.span).cloned().unwrap_or(Type::Any);
+            let arrow_ty = self.types.get(&f.span).cloned().unwrap_or(Type::Value);
             let (params, ret) = match arrow_ty {
                 Type::Fun(p, r) => (p, *r),
                 _ => {
@@ -617,29 +820,46 @@ impl<'a> Engine<'a> {
                             p.type_ann
                                 .as_ref()
                                 .map(annotation_to_type)
-                                .unwrap_or(Type::Any)
+                                .unwrap_or(Type::Value)
                         })
                         .collect();
-                    let ret = f
+                    let declared_ret = f
                         .return_type
                         .as_ref()
-                        .map(annotation_to_type)
-                        .unwrap_or(Type::Void);
-                    (params, ret)
+                        .map(annotation_to_type);
+                    // Retorno inferido: el span de la arrow puede no estar en el
+                    // type map (span degenerado compartido con el statement); el
+                    // retorno real sí está en el span del `return expr` del body.
+                    let inferred_ret = declared_ret.unwrap_or_else(|| {
+                        for stmt in &f.body.statements {
+                            if let Statement::Return(Some(e)) = stmt {
+                                if let Some(ty) = self.types.get(&expr_span(e)) {
+                                    return ty.clone();
+                                }
+                            }
+                        }
+                        Type::Void
+                    });
+                    (params, inferred_ret)
                 }
             };
             self.func_types
                 .insert(f.name.clone(), (params.clone(), Some(ret.clone())));
-            let mut pv: Vec<ValType> = Vec::new();
-            // Firma uniforme (B5): toda arrow recibe __capturas (i64) como primer param.
-            pv.push(ValType::I64);
+            // Firma de la arrow: como una funcion CLS top-level, con `__capturas`
+            // (i64) de prefijo: [capturas, params...] -> ret. Se usan los tipos
+            // NATURALES (no todo i64): el llamador (via handle, `Type::Fun`)
+            // construye el `call_indirect` con los tipos reales del callee, asi
+            // que la firma declarada debe coincidir. Normalizar todo a i64 emitia
+            // el `end` con i32 (`==` -> Bool) o f64 (Float) y el modulo WASM era
+            // invalido ("expected i64, found i32/f64").
+            let mut pv: Vec<ValType> = vec![ValType::I64];
             for t in &params {
                 pv.push(was_type(t)?.val_type());
             }
-            let rv: Vec<ValType> = if ret != Type::Void {
-                vec![was_type(&ret)?.val_type()]
-            } else {
+            let rv: Vec<ValType> = if matches!(ret, Type::Void) {
                 vec![]
+            } else {
+                vec![was_type(&ret)?.val_type()]
             };
             let tidx = self.register_func_type(pv.clone(), rv.clone());
             let fidx = self.func_count;

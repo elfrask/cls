@@ -1,0 +1,36 @@
+# sqlite/map.clsx - Traducción entre el shim y el ORM (materialización de filas).
+import "orm" as orm;
+from "sqlite_ffi" import o_nrows, o_ncols, o_colname, o_cell_type, o_cell_int,
+     o_cell_double, o_cell_text, o_cell_blob_hex, o_free_result;
+
+# Mapea un valor del result set (códigos de tipo de SQLite, 1..4) a un Cell del
+# ORM. Se despacha por `match` modo valor sobre el código de tipo.
+function cellOf(t: int, rr: int, i: int, c: int) -> orm::Cell {
+    return match (t) in {
+        1 -> orm::cInt(int(o_cell_int(rr, i, c))),
+        2 -> orm::cFloat(o_cell_double(rr, i, c)),
+        3 -> orm::cText(o_cell_text(rr, i, c)),
+        4 -> orm::cBlob(o_cell_blob_hex(rr, i, c)),
+        default -> orm::cNull(),
+    };
+}
+
+# Result set del shim -> ResultSet neutro del ORM.
+export function materialize(rr: int) -> orm::ResultSet {
+    var rs = orm::ResultSet();
+    if (rr < 0) { rs.ncols = -1; return rs; }
+    rs.nrows = int(o_nrows(rr));
+    rs.ncols = int(o_ncols(rr));
+    var cols: String[] = [];
+    for (var c = 0; c < rs.ncols; c++) { cols.push(o_colname(rr, c)); }
+    rs.cols = cols;
+    var cells: orm::Cell[] = [];
+    for (var i = 0; i < rs.nrows; i++) {
+        for (var cc = 0; cc < rs.ncols; cc++) {
+            cells.push(cellOf(int(o_cell_type(rr, i, cc)), rr, i, cc));
+        }
+    }
+    rs.cells = cells;
+    o_free_result(rr);
+    return rs;
+}

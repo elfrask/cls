@@ -1,0 +1,16 @@
+# csprng/random_ffi.clsx - Bindings FFI al shim CSPRNG.
+#
+# La ruta del shim se resuelve relativa al CWD del proceso (misma convención que
+# io/sqlite/socket): ejecutar desde la raíz del repo CLS.
+
+when (os: windows) {
+    extension "./random_shim.dll" as C {
+        export function o_random_bytes(n: CInt) -> CArray;
+    };
+};
+
+when (os: linux) or (os: macos) {
+    extension "./random_shim.so" as C {
+        export function o_random_bytes(n: CInt) -> CArray;
+    };
+};

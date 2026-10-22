@@ -1,0 +1,9 @@
+# Consumidor: importa funciones FFI de otro modulo (equivalente a `function`).
+
+from "ffi-export-mod/ffi" import strlen, atoi;
+
+function main(args: String[]) -> int {
+    print("strlen('hola'):", strlen("hola"));
+    print("atoi('42'):", atoi("42"));
+    return 0;
+};

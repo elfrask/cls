@@ -1,0 +1,5 @@
+# Lib de regresion: error de sintaxis (el mensaje debe apuntar al modulo).
+export function broken() -> int {
+    var x: = 1;
+    return x;
+};

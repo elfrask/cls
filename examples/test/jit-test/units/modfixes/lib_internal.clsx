@@ -1,0 +1,11 @@
+# Lib de regresion: helpers/globales INTERNOS del modulo (sin export).
+# R1b: `plain_internal()` no exportada, llamada por la exportada `t()`.
+# R1c: globales de modulo inicializados (`GVAL`/`GSTRL`).
+function plain_internal() -> int { return 42; };
+
+var GVAL: int = 8192;
+var GSTRL: String = "hi";
+
+export function t() -> int { return plain_internal(); };
+export function gv() -> int { return GVAL; };
+export function gs() -> String { return GSTRL; };

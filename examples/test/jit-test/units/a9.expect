@@ -1,0 +1,4 @@
+﻿union: red
+literal: constante
+const int: 42
+tuple: 1 x

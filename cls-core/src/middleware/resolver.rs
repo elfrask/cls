@@ -6,6 +6,10 @@ use std::collections::HashMap;
 pub struct NameResolver {
     scopes: Vec<Scope>,
     diagnostics: Vec<Diagnostic>,
+    /// Target del entorno actual. Usado para evaluar las directivas `when`
+    /// en compile-time: solo la rama que matchea este target se procesa
+    /// (mismo comportamiento que el emisor WASM en `effective_statements`).
+    target: Target,
 }
 
 impl NameResolver {
@@ -13,6 +17,17 @@ impl NameResolver {
         Self {
             scopes: vec![Scope::global()],
             diagnostics: Vec::new(),
+            target: Target::host(),
+        }
+    }
+
+    /// Construye un resolver para un target especifico (usado por
+    /// `clx check --target <tripla>` para simular el entorno).
+    pub fn with_target(target: Target) -> Self {
+        Self {
+            scopes: vec![Scope::global()],
+            diagnostics: Vec::new(),
+            target,
         }
     }
 
@@ -89,6 +104,22 @@ impl NameResolver {
             }
             Statement::EnumDecl(e) => {
                 self.define(e.name.clone(), SymbolKind::Enum);
+            }
+            Statement::DestructureLet(d) => {
+                self.resolve_expression(&d.value)?;
+                for b in &d.binds {
+                    if b != "_" {
+                        self.define(b.clone(), SymbolKind::Variable);
+                    }
+                }
+            }
+            Statement::DestructureClass(d) => {
+                self.resolve_expression(&d.value)?;
+                for b in &d.binds {
+                    if b != "_" {
+                        self.define(b.clone(), SymbolKind::Variable);
+                    }
+                }
             }
             Statement::Expression(expr) => {
                 self.resolve_expression(expr)?;
@@ -167,6 +198,9 @@ impl NameResolver {
                 }
             }
             Statement::Break(_) | Statement::Continue(_) => {}
+            Statement::ArrowReturn(a) => {
+                self.resolve_expression(&a.value)?;
+            }
             Statement::Import(import) => {
                 // TODO: cargar módulo y registrar símbolos importados
                 if let Some(alias) = &import.alias {
@@ -178,26 +212,31 @@ impl NameResolver {
                     let alias = name.alias.as_ref().unwrap_or(&name.name);
                     self.define(alias.clone(), SymbolKind::Variable);
                 }
+                // `from "m" import * as ns` -> namespace.
+                if let Some(ns) = &from_import.namespace {
+                    self.define(ns.clone(), SymbolKind::Module);
+                }
             }
-            Statement::Include(_include) => {
-                // TODO: procesar include
+            Statement::ExportList(_) => {
+                // `export { ... }` referencia símbolos ya definidos; no crea símbolos.
             }
             Statement::When(w) => {
+                // `when` es compile-time: solo se procesa la rama que matchea
+                // el target del host. Antes del fix (dev-2) se iteraban TODAS
+                // las ramas y se poppeaban los scopes, lo que hacia que las
+                // declaraciones dentro de `when` (extension/structure/enum)
+                // se perdieran al salir del scope. Esto invalidaba el patron
+                // canonico `when (os: windows) { extension "ws2_32.dll" as C
+                // { ... } }`. Ver extension-when.md y decision 002.
                 for branch in &w.branches {
-                    self.resolve_block(&branch.block)?;
+                    if self.target.matches(&branch.cond) {
+                        self.resolve_block(&branch.block)?;
+                        break;
+                    }
                 }
             }
             Statement::StructureDecl(structure) => {
                 self.define(structure.name.clone(), SymbolKind::Structure);
-            }
-            Statement::Extension(ext) => {
-                for decl in &ext.declarations {
-                    match decl {
-                        NativeDecl::Function(f) => self.define(f.name.clone(), SymbolKind::Function),
-                        NativeDecl::Structure(s) => self.define(s.name.clone(), SymbolKind::Structure),
-                        NativeDecl::Var(v) => self.define(v.name.clone(), SymbolKind::Variable),
-                    }
-                }
             }
             Statement::InterfaceDecl(interface) => {
                 self.define(interface.name.clone(), SymbolKind::Interface);
@@ -276,6 +315,49 @@ impl NameResolver {
                 self.resolve_expression(&cond.then_expr)?;
                 self.resolve_expression(&cond.else_expr)?;
             }
+            Expression::Ternary(cond) => {
+                self.resolve_expression(&cond.condition)?;
+                self.resolve_expression(&cond.then_expr)?;
+                self.resolve_expression(&cond.else_expr)?;
+            }
+            Expression::IfExpr(ie) => {
+                self.resolve_expression(&ie.condition)?;
+                self.resolve_block(&ie.then_block)?;
+                self.resolve_block(&ie.else_block)?;
+            }
+            Expression::Match(m) => {
+                if let Some(s) = &m.scrutinee {
+                    self.resolve_expression(s)?;
+                }
+                self.push_scope();
+                if let Some(b) = &m.binding {
+                    self.define(b.clone(), SymbolKind::Variable);
+                }
+                for arm in &m.arms {
+                    for p in &arm.patterns {
+                        match p {
+                            MatchPattern::Variant { binds, .. } => {
+                                for b in binds {
+                                    self.define(b.clone(), SymbolKind::Variable);
+                                }
+                            }
+                            MatchPattern::Cond(e) => self.resolve_expression(e)?,
+                            _ => {}
+                        }
+                    }
+                    match &arm.body {
+                        MatchBody::Expr(e) => self.resolve_expression(e)?,
+                        MatchBody::Block(b) => self.resolve_block(b)?,
+                    }
+                }
+                if let Some(d) = &m.default {
+                    match d {
+                        MatchBody::Expr(e) => self.resolve_expression(e)?,
+                        MatchBody::Block(b) => self.resolve_block(b)?,
+                    }
+                }
+                self.pop_scope();
+            }
             Expression::Assignment(assign) => {
                 self.resolve_expression(&assign.target)?;
                 self.resolve_expression(&assign.value)?;
@@ -300,6 +382,9 @@ impl NameResolver {
                 }
             }
             Expression::Await(expr, _) => {
+                self.resolve_expression(expr)?;
+            }
+            Expression::Spread(expr, _) => {
                 self.resolve_expression(expr)?;
             }
         }

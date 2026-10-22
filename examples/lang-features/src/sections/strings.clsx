@@ -1,0 +1,77 @@
+# strings.clsx - eje de strings y buffers de bytes.
+#
+# Ejercita: interpolacion ($x / ${expr}), templates backtick, metodos
+# (upper/lower/trim/split/slice/indexOf/contains/startsWith/endsWith/isEmpty/
+# length), indexacion (incluido clamping a "" fuera de rango) y buffers de bytes
+# (Char, toChar/char/ord/join).
+
+import "check" as check;
+
+function strings_interpolation() -> int {
+    var nombre = "CLS";
+    var edad = 30;
+    check::assertEqStr("str.interp.var", "Hola, $nombre", "Hola, CLS");
+    check::assertEqStr("str.interp.expr", "Suma: ${2 + 3}", "Suma: 5");
+    check::assertEqStr("str.template", `Template $nombre ${edad + 1}`, "Template CLS 31");
+    return 0;
+}
+
+function strings_methods() -> int {
+    check::assertEqStr("str.upper", "hola".upper(), "HOLA");
+    check::assertEqStr("str.lower", "HOLA".lower(), "hola");
+    check::assertEqStr("str.trim", "  x  ".trim(), "x");
+    check::assertEq("str.length", "hola".length, 4);
+    check::assertTrue("str.isEmpty.yes", "".isEmpty());
+    check::assertTrue("str.isEmpty.no", !("x".isEmpty()));
+    check::assertTrue("str.contains.yes", "hola".contains("ol"));
+    check::assertTrue("str.contains.no", !("hola".contains("z")));
+    check::assertTrue("str.startsWith.yes", "hola".startsWith("ho"));
+    check::assertTrue("str.startsWith.no", !("hola".startsWith("x")));
+    check::assertTrue("str.endsWith.yes", "hola".endsWith("la"));
+    check::assertTrue("str.endsWith.no", !("hola".endsWith("x")));
+    check::assertEq("str.indexOf.yes", "hola".indexOf("l"), 2);
+    check::assertEq("str.indexOf.no", "hola".indexOf("z"), -1);
+    check::assertEqStr("str.slice", "hola mundo".slice(0, 4), "hola");
+    # indice de String fuera de rango: clamping a "" (semantica documentada en
+    # docs/lenguaje/datos.md; NO lanza, a diferencia de Array).
+    check::assertEqStr("str.index.inrange", "hola"[0], "h");
+    check::assertEqStr("str.index.oob", "hola"[99], "");
+    return 0;
+}
+
+function strings_split() -> int {
+    var parts = "a,b,c".split(",");
+    check::assertEq("str.split.len", parts.length, 3);
+    check::assertEqStr("str.split.0", parts[0], "a");
+    check::assertEqStr("str.split.2", parts[2], "c");
+    return 0;
+}
+
+function strings_char_buffers() -> int {
+    var cs = "abc".toChar();
+    check::assertEq("str.toChar.len", cs.length, 3);
+    check::assertEq("str.toChar.b0", ord(cs[0]), 97);
+    check::assertEq("str.toChar.b2", ord(cs[2]), 99);
+    check::assertEqStr("str.char.toString", char(65).toString(), "A");
+    check::assertEq("str.ord", ord(char(65)), 65);
+    check::assertEq("str.ord.hi", ord(char(200)), 200);
+    check::assertEqStr("str.bytes.join", cs.join(""), "abc");
+
+    # UTF-8: "á" = 0xC3 0xA1 (2 bytes).
+    var ab = "á".toChar();
+    check::assertEq("str.utf8.len", ab.length, 2);
+    check::assertEqStr("str.utf8.roundtrip", ab.join(""), "á");
+    return 0;
+}
+
+export function strings_run() -> int {
+    print("== strings ==");
+    var before = check::fails();
+    strings_interpolation();
+    strings_methods();
+    strings_split();
+    strings_char_buffers();
+    var gained = check::fails() - before;
+    if (gained == 0) { print("FEATURE strings OK"); }
+    return gained;
+}

@@ -1,0 +1,24 @@
+import "orm" as orm;
+import "sqlite" as sq;
+function main(args: String[]) -> int {
+    var dbPath = "examples/sqlite-orm/out/repro.db";
+    sq::removeFile(dbPath);
+    var driver = sq::SqliteDriver();
+    driver.connect(dbPath);
+    var o = orm::Orm(driver);
+    o.createTable("t", ["id INTEGER", "name TEXT"]);
+    var cols: String[] = ["id", "name"];
+    o.begin();
+    var s = o.prepareInsert("t", cols);
+    var k = 0;
+    while (k < 1000) {
+        var nm = "u" + str(k + 1);
+        o.bulkRow(s, [orm::cInt(k + 1), orm::cText(nm)]);
+        k = k + 1;
+    }
+    o.commit();
+    o.finishInsert(s);
+    print("var temp build ok=" + str(o.count("t")));
+    driver.close();
+    return 0;
+}

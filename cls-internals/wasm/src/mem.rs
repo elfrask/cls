@@ -30,25 +30,42 @@ pub unsafe fn write_i32(addr: usize, v: i32) {
     core::ptr::write_unaligned(addr as *mut i32, v);
 }
 
-/// Lee un string empaquetado `(ptr<<32)|len` de la memoria lineal.
-pub unsafe fn read_str(packed: i64) -> String {
+/// Lee los **bytes crudos** de un string empaquetado `(ptr<<32)|len` de la
+/// memoria lineal, SIN decodificar UTF-8 (semántica de bytes del lenguaje:
+/// `length`/`slice`/`indexOf`/`s[i]` operan sobre bytes, no sobre chars).
+pub unsafe fn read_bytes(packed: i64) -> &'static [u8] {
     let ptr = (packed >> 32) as usize;
     let len = (packed & 0xffff_ffff) as usize;
-    if len == 0 {
+    if len == 0 || ptr == 0 {
+        return &[];
+    }
+    core::slice::from_raw_parts(ptr as *const u8, len)
+}
+
+/// Lee un string empaquetado y lo decodifica a `String` (lossy). Usar solo para
+/// operaciones intrinsecamente de texto (upper/lower/trim/repr), que necesitan
+/// UTF-8 válido; para operaciones byte-a-byte usar `read_bytes`.
+pub unsafe fn read_str(packed: i64) -> String {
+    let bytes = read_bytes(packed);
+    if bytes.is_empty() {
         return String::new();
     }
-    let bytes = core::slice::from_raw_parts(ptr as *const u8, len);
     String::from_utf8_lossy(bytes).into_owned()
 }
 
 /// Aloca + escribe un string en la memoria lineal y lo empaqueta.
 pub unsafe fn write_str(s: &str) -> i64 {
-    let ptr = bump_alloc(s.len());
+    write_bytes(s.as_bytes())
+}
+
+/// Aloca + escribe **bytes crudos** en la memoria lineal y los empaqueta.
+pub unsafe fn write_bytes(b: &[u8]) -> i64 {
+    let ptr = bump_alloc(b.len());
     if ptr == 0 {
         return 0;
     }
-    core::ptr::copy_nonoverlapping(s.as_ptr(), ptr as *mut u8, s.len());
-    ((ptr as i64) << 32) | (s.len() as i64)
+    core::ptr::copy_nonoverlapping(b.as_ptr(), ptr as *mut u8, b.len());
+    ((ptr as i64) << 32) | (b.len() as i64)
 }
 
 /// Aloca `n` bytes (bump) y devuelve el offset (0 si n <= 0).

@@ -38,28 +38,53 @@ impl TypeChecker {
 
         let declared = annotated.unwrap_or_else(|| inferred.clone());
 
-        if self.config.strict && var.value.is_some() && !check_type.is_assignable_to(&declared) {
+        if self.config.strict && var.value.is_some() && !self.is_assignable(&check_type, &declared) {
             return self.error(
                 &format!("No se puede asignar {} a {}", inferred, declared),
                 var.span.clone(),
             );
         }
 
-        if self.config.null_safety && matches!(inferred, Type::Null) && !matches!(declared, Type::Any) {
+        if self.config.null_safety && matches!(inferred, Type::Null) && !matches!(declared, Type::Value) {
             self.warn(
                 &format!("Posible null asignado a {} '{}'", declared, var.name),
                 var.span.clone(),
             );
         }
 
+        // Variable duplicada en el scope actual -> error (paridad con el
+        // resolver: no se puede redeclarar una variable en el mismo bloque).
+        if let Some(scope) = self.scopes.last() {
+            if scope.contains_key(&var.name) {
+                return self.error(
+                    &format!("El nombre '{}' ya está declarado en este scope", var.name),
+                    var.span.clone(),
+                );
+            }
+        }
         self.define(&var.name, declared.clone());
+        // Provabilidad del destructuring-let (F2): recordar si la variable
+        // guarda una construcción de variante (o una variable que la guardaba).
+        match &var.value {
+            Some(v) => match self.construction_variant(v) {
+                Some(kv) => {
+                    self.var_variant.insert(var.name.clone(), kv);
+                }
+                None => {
+                    self.var_variant.remove(&var.name);
+                }
+            },
+            None => {
+                self.var_variant.remove(&var.name);
+            }
+        }
         // Registrar el tipo declarado en el span de la declaración (REPL con
         // estado persistente: los hoists quedan sin init y el backend necesita
         // el tipo vía type map en el span del VarDecl).
         self.types_by_span.insert(var.span.clone(), declared.clone());
         // Array literal vacío con anotación (p.ej. `const out: int[] = []`):
         // registrar el tipo anotado en el span del literal para que el backend
-        // sepa el tipo del elemento (check_array infiere Any, sin elementos).
+        // sepa el tipo del elemento (check_array infiere Value, sin elementos).
         if let Some(Expression::Array(arr)) = &var.value {
             if arr.elements.is_empty() {
                 if let Some(declared_arr) = var.type_ann.as_ref().map(|t| self.resolve_type_annotation(t)) {
@@ -82,12 +107,18 @@ impl TypeChecker {
         let return_type = func.return_type.as_ref()
             .map(|t| self.resolve_type_annotation(t))
             .unwrap_or(Type::Void);
+        // Función nativa (FFI): mapeo C del retorno (`CArray`/`CRecord`/`Struct`).
+        let return_type = if func.native.is_some() {
+            self.map_native_ret(return_type)
+        } else {
+            return_type
+        };
 
         let param_types: Vec<(String, Type)> = func.params.iter()
             .map(|p| {
                 let t = p.type_ann.as_ref()
                     .map(|ta| self.resolve_type_annotation(ta))
-                    .unwrap_or(Type::Any);
+                    .unwrap_or(Type::Value);
                 (p.name.clone(), t)
             })
             .collect();
@@ -111,7 +142,7 @@ impl TypeChecker {
         self.current_return_type = prev_return;
         self.current_fn_span = prev_fn_span;
 
-        self.define(&func.name, fn_type);
+        self.define_decl(&func.name, fn_type, &func.span);
         return_type
     }
 

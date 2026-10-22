@@ -1,4 +1,0 @@
-function greet(name: String) -> String {
-    return "Hello, " + name + "!" + 2;
-};
-export greet;

@@ -1,0 +1,55 @@
+# components.clsx - Componentes de UI: (a) funciones CLS que devuelven `Cmx`
+# (patron "composicion de funciones", se expanden con `{componente(...)}`), y
+# (b) componentes por tag mayuscula que el renderer invoca via `isComponent`. 
+
+import "engine" as engine;
+
+# Layout base: documento HTML completo por composicion.
+export function layout(titulo: String, body: Cmx) -> Cmx {
+    return (
+        <html lang="es">
+            <head>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <title>{titulo}</title>
+            </head>
+            <body>
+                {body}
+            </body>
+        </html>
+    );
+}
+
+export function navbar(brand: String, links: String[]) -> Cmx {
+    var items = engine::renderEach(links, (l: String) -> <li class="nav-item"><a href={"/" + l}>{l}</a></li>);
+    return (
+        <nav class="navbar">
+            <span class="brand">{brand}</span>
+            <ul class="nav-links">{engine::raw(items)}</ul>
+        </nav>
+    );
+}
+
+export function card(titulo: String, body: Cmx) -> Cmx {
+    return (
+        <section class="card">
+            <h2 class="card-title">{titulo}</h2>
+            <div class="card-body">{body}</div>
+        </section>
+    );
+}
+
+export function badge(texto: String, tono: String) -> Cmx {
+    return (
+        <span class={"badge badge-" + tono}>{texto}</span>
+    );
+}
+
+# Lista de tareas: bucles via `renderEach` + `raw` (el renderer no expande
+# children que son Array; ver engine.clsx).
+export function todoList(items: String[]) -> Cmx {
+    var lis = engine::renderEach(items, (it: String) -> <li class="todo"><input type="checkbox" disabled={true} /><span>{it}</span></li>);
+    return (
+        <ul class="todo-list">{engine::raw(lis)}</ul>
+    );
+}

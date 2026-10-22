@@ -4,6 +4,7 @@
 //! flatten -> emisión) es compartido por todos los runtimes. La ejecución del
 //! WASM vive en [`crate::wasmtime_rt`] (desktop) y [`crate::wasmi_rt`] (web).
 
+use cls_core::backend::wasm::{FRAME_SIZE, HEAP_START, SHADOW_MAX_FRAMES, STRING_TABLE_BASE};
 use cls_core::config::types::TypesConfig;
 use cls_core::error::{ClsError, Span};
 use cls_core::frontend::ast::Module as ClsModule;
@@ -78,13 +79,14 @@ pub fn run_jit_with_opts(
     t = tick(timing, "lexer", t);
 
     let mut parser = cls_core::frontend::Parser::new(tokens);
-    let module = match parser.parse() {
+    let mut module = match parser.parse() {
         Ok(m) => m,
         Err(e) => {
             cls_runtime::show_syntax_error(e, &source, entry);
             return 1;
         }
     };
+    cls_core::frontend::builtins::inject_builtins(&mut module);
     t = tick(timing, "parser", t);
 
     // Type checker: llena el mapa Span -> Type (requerido por el backend).
@@ -117,9 +119,23 @@ pub fn run_jit_with_opts(
         return 1;
     }
     // Clave de caché: source + versión + target + sources de módulos + runtime
-    // (wasmtime y wasmi emiten bytes distintos: el tag de excepciones).
-    let module_sources: Vec<String> = imports.iter().map(|(_, src, _)| src.clone()).collect();
-    let key = cache_key(&source, target_str, entry_path, &module_sources, runtime.as_str(), trace_calls);
+    // (wasmtime y wasmi emiten bytes distintos: el tag de excepciones) + el
+    // máximo de memoria (cambia la sección memory del WASM).
+    let mut module_sources: Vec<String> = imports.iter().map(|(_, src, _)| src.clone()).collect();
+    module_sources.extend(crate::native_resolve::resolved_native_libraries(&module));
+    for (_, _, m) in &imports {
+        module_sources.extend(crate::native_resolve::resolved_native_libraries(m));
+    }
+    let memory_max_pages = memory_max_pages_from_limit(crate::limits::memory_limit());
+    let key = cache_key(
+        &source,
+        target_str,
+        entry_path,
+        &module_sources,
+        runtime.as_str(),
+        trace_calls,
+        memory_max_pages,
+    );
     let cache_path = cache_dir().join(format!("{:016x}.wasm", key));
     if let Ok(cached) = std::fs::read(&cache_path) {
         if timing {
@@ -178,6 +194,7 @@ pub fn run_jit_with_opts(
         require_main: true,
         intrinsics: ctx.host_intrinsics.to_vec(),
         trace_calls,
+        memory_max_pages,
     };
     let backend = cls_core::backend::wasm::WasmBackend::with_options(type_map, target, opts);
     let wasm_bytes = match backend.emit(&merged) {
@@ -226,6 +243,17 @@ fn run_wasm_dispatch(
             );
             1
         }
+    }
+}
+
+/// Máximo de la memoria lineal en páginas WASM (64 KiB) a partir del límite en
+/// bytes del sandbox. `0` = sin límite -> `None`. Piso de 32 páginas (2 MiB) —
+/// el mínimo que el propio módulo necesita para la ventana de internals.
+pub(crate) fn memory_max_pages_from_limit(bytes: u64) -> Option<u64> {
+    if bytes == 0 {
+        None
+    } else {
+        Some((bytes / 65536).max(32))
     }
 }
 
@@ -310,9 +338,15 @@ pub(crate) fn read_shadow_stack(
     name_at: impl Fn(u32) -> String,
 ) -> Vec<(String, Span)> {
     let mut stack = Vec::new();
-    let count = if shadow_ptr < base { 0 } else { ((shadow_ptr - base) / 12) as usize };
+    if shadow_ptr <= base {
+        return stack;
+    }
+    // El reporter NUNCA debe paniquear: acota el número de frames al máximo
+    // reservado y usa aritmética `usize` (nada de `u32` que pueda desbordar).
+    let count = (((shadow_ptr - base) as usize) / FRAME_SIZE as usize)
+        .min(SHADOW_MAX_FRAMES as usize);
     for i in 0..count {
-        let addr = (base + (i as u32) * 12) as usize;
+        let addr = base as usize + i * FRAME_SIZE as usize;
         let name_idx = read_u32(addr);
         let line = read_u32(addr + 4);
         let col = read_u32(addr + 8);
@@ -324,14 +358,28 @@ pub(crate) fn read_shadow_stack(
 
 /// Resuelve `idx → nombre` contra la tabla de strings exportada del módulo
 /// (entrada `[off:u32, len:u32]` en `string_table_base + idx*8`; el texto vive
-/// en `[off .. off+len]` del pool).
+/// en `[off .. off+len]` del pool). Todas las operaciones usan `checked_*` y las
+/// lecturas de memoria están acotadas: un `shadow_ptr`/`name_idx` corrupto NO
+/// puede provocar un panic de Rust (el reporter debe limitarse a mostrar lo que
+/// pueda). Fuera de la tabla se devuelve un placeholder.
 pub(crate) fn name_at(
     string_table_base: u32,
     idx: u32,
     read_u32: impl Fn(usize) -> u32,
     read_bytes: impl Fn(usize, usize) -> Vec<u8>,
 ) -> String {
-    let entry = (string_table_base + idx * 8) as usize;
+    // Índices fuera de la capacidad de la tabla (la región entre la tabla y el
+    // heap) son corrupción: placeholder en vez de leer memoria arbitraria.
+    if idx >= (HEAP_START - STRING_TABLE_BASE) / 8 {
+        return format!("<frame {}>", idx);
+    }
+    let entry = match idx
+        .checked_mul(8)
+        .and_then(|off| string_table_base.checked_add(off))
+    {
+        Some(entry) => entry as usize,
+        None => return format!("<frame {}>", idx),
+    };
     let off = read_u32(entry);
     let len = read_u32(entry + 4);
     let bytes = read_bytes(off as usize, len as usize);

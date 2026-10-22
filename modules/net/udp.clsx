@@ -1,0 +1,34 @@
+# net/udp.clsx - Sockets UDP (API funcional + cliente con estado).
+from "net_ffi" import u_open, u_send, u_recv, u_close;
+from "consts" import DEFAULT_TIMEOUT_MS;
+
+# Abre un socket UDP "conectado" a ip:port. Devuelve el handle (>=0) o <0 error.
+export function udpOpen(ip: String, port: int) -> int {
+    return int(u_open(ip, port));
+}
+
+# Envía los bytes de `buf` por el socket UDP. Devuelve los bytes enviados o -1.
+export function udpSend(h: int, buf: int[]) -> int { return int(u_send(h, buf)); }
+
+# Recibe un datagrama (hasta maxLen). [] si hay timeout/error.
+export function udpRecv(h: int, maxLen: int, timeoutMs: int) -> int[] {
+    return u_recv(h, maxLen, timeoutMs);
+}
+
+export function udpClose(h: int) -> int { return int(u_close(h)); }
+
+# Cliente UDP con estado (handle encapsulado; el resto del programa no ve el
+# descriptor).
+export class UdpClient {
+    var h: int;
+    var timeoutMs: int;
+
+    function main(ip: String, port: int, timeoutMs: int = DEFAULT_TIMEOUT_MS) {
+        me.h = int(u_open(ip, port));
+        me.timeoutMs = timeoutMs;
+    }
+    function ok() -> bool { return me.h >= 0; }
+    function send(buf: int[]) -> int { return int(u_send(me.h, buf)); }
+    function recv(maxLen: int) -> int[] { return u_recv(me.h, maxLen, me.timeoutMs); }
+    function close() -> int { return int(u_close(me.h)); }
+};

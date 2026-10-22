@@ -1,0 +1,45 @@
+# structs.clsx - eje de estructuras (`structure`).
+#
+# Ejercita: declaracion, instanciacion posicional (orden de campos), acceso a
+# campos (lectura/escritura), `is` e impresion.
+
+import "check" as check;
+
+structure StPunto {
+    x: int,
+    y: int,
+};
+
+structure StPersona {
+    nombre: String,
+    edad: int,
+};
+
+function structs_basics() -> int {
+    var p = StPunto(3, 4);
+    check::assertEq("struct.x", p.x, 3);
+    check::assertEq("struct.y", p.y, 4);
+    p.x = 10;
+    check::assertEq("struct.x.write", p.x, 10);
+    check::assertTrue("struct.is", p is StPunto);
+    var q = StPunto(1, 1);
+    check::assertTrue("struct.is.distinto.valor", q is StPunto);
+    return 0;
+}
+
+function structs_fields() -> int {
+    var per = StPersona("Ana", 30);
+    check::assertEqStr("struct.str.field", per.nombre, "Ana");
+    check::assertEq("struct.int.field", per.edad, 30);
+    return 0;
+}
+
+export function structs_run() -> int {
+    print("== structs ==");
+    var before = check::fails();
+    structs_basics();
+    structs_fields();
+    var gained = check::fails() - before;
+    if (gained == 0) { print("FEATURE structs OK"); }
+    return gained;
+}

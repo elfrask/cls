@@ -1,0 +1,88 @@
+# httpd/srv_response.clsx - Response HTTP/1.1 (builder + serializer).
+#
+# `headers` es Record<String,String> para headers simples; `cookies` permite
+# varios Set-Cookie sin pisarse.
+import "srv_status" as status;
+
+export class Response {
+    public var status: int;
+    public var headers: Record<String, String>;
+    public var body: String;
+    public var cookies: String[];
+
+    function main(status: int, body: String) {
+        me.status = status;
+        me.body = body;
+        me.headers = {};
+        me.cookies = [];
+    }
+
+    static function html(content: String) -> Response {
+        var res = Response(200, content);
+        res.headers["content-type"] = "text/html; charset=utf-8";
+        return res;
+    }
+
+    static function text(content: String) -> Response {
+        var res = Response(200, content);
+        res.headers["content-type"] = "text/plain; charset=utf-8";
+        return res;
+    }
+
+    static function json_raw(content: String) -> Response {
+        var res = Response(200, content);
+        res.headers["content-type"] = "application/json; charset=utf-8";
+        return res;
+    }
+
+    static function json_response(content: String) -> Response {
+        return Response.json_raw(content);
+    }
+
+    static function redirect(url: String, code: int) -> Response {
+        var res = Response(code, "");
+        res.headers["location"] = url;
+        return res;
+    }
+
+    static function status_only(code: int) -> Response {
+        return Response(code, "");
+    }
+
+    static function not_found() -> Response {
+        var res = Response(404, "404 Not Found");
+        res.headers["content-type"] = "text/plain; charset=utf-8";
+        return res;
+    }
+
+    function header(name: String, value: String) -> Response {
+        me.headers[name.lower()] = value;
+        return me;
+    }
+
+    function add_cookie(value: String) -> Response {
+        me.cookies.push(value);
+        return me;
+    }
+
+    function set_cookie(name: String, value: String) -> Response {
+        return me.add_cookie(name + "=" + value + "; Path=/");
+    }
+
+    function serialize() -> String {
+        me.headers["content-length"] = me.body.length.toString();
+        me.headers["connection"] = "close";
+        me.headers["server"] = "tombstone/0.1";
+
+        var out = "HTTP/1.1 " + me.status.toString() + " " + status::reason(me.status) + "\r\n";
+        var keys = me.headers.keys();
+        for each key in (keys) {
+            out = out + key + ": " + me.headers[key] + "\r\n";
+        };
+        for each cookie in (me.cookies) {
+            out = out + "set-cookie: " + cookie + "\r\n";
+        };
+        out = out + "\r\n" + me.body;
+        return out;
+    }
+};

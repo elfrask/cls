@@ -1,4 +1,4 @@
-//! primitives.rs (Fase 1: extraido de emitter/calls.rs).
+﻿//! primitives.rs (Fase 1: extraido de emitter/calls.rs).
 
 use super::*;
 
@@ -6,6 +6,119 @@ impl<'a> FuncEmitter<'a> {
     pub(crate) fn emit_primitive_method(&mut self, c: &CallExpr) -> ClsResult<bool> {
     // Métodos de primitivos (callee MemberAccess)
     if let Expression::MemberAccess(member) = &*c.callee {
+        // Métodos de CMX (rework): predicados, inspeccion y toString (inline, 0 host
+        // salvo toString que usa cmx_to_string).
+        if matches!(self.types.get(&expr_span(&member.object)), Some(Type::Cmx)) {
+            // Métodos de la clase core `CMX` (frontend/builtins): dispatch DIRECTO
+            // `CMX::metodo(me, args)` (CMX es final; sin vtable).
+            if let Some(info) = self.class_defs.get("CMX") {
+                if info.methods.iter().any(|m| m == member.member.as_str()) {
+                    if let Some(&idx) = self.func_indexes.get(&format!("CMX::{}", member.member)) {
+                        self.emit_expression(&member.object)?; // me
+                        for a in &c.args {
+                            self.emit_expression(a)?;
+                        }
+                        self.emit_call_site(&c.span);
+                        self.body.push(Instruction::Call(idx));
+                        return Ok(true);
+                    }
+                }
+            }
+            match member.member.as_str() {
+                "toString" | "__str" | "__repr" => {
+                    self.emit_expression(&member.object)?;
+                    self.emit_cmx_fmt();
+                    return Ok(true);
+                }
+                "cloneWith" => {
+                    // cloneWith(props?, children?) -> nuevo Cmx (copia inmutable;
+                    // conserva tag/kind/tagCallable/isComponent). Construccion inline.
+                    self.emit_expression(&member.object)?;
+                    let p = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(p));
+                    let alloc = self.func_indexes["__alloc"];
+                    self.body.push(Instruction::I64Const(48));
+                    self.body.push(Instruction::Call(alloc));
+                    let n = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(n));
+                    self.emit_cmx_copy_store(n, p, 0, 0)?; // tag
+                    self.emit_cmx_store_arg(n, 8, c.args.first(), p, 8)?; // props
+                    self.emit_cmx_store_arg(n, 16, c.args.get(1), p, 16)?; // children
+                    self.emit_cmx_copy_store(n, p, 24, 24)?; // kind
+                    self.emit_cmx_copy_store(n, p, 32, 32)?; // tagCallable
+                    self.emit_cmx_copy_store(n, p, 40, 40)?; // isComponent
+                    self.body.push(Instruction::LocalGet(n));
+                    return Ok(true);
+                }
+                "tryCallTag" => {
+                    // tryCallTag() -> Value: si es componente, invoca
+                    // `tagCallable(props, children)`; si no, Null (0).
+                    self.emit_expression(&member.object)?;
+                    let p = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(p));
+                    self.body.push(Instruction::LocalGet(p));
+                    self.emit_cmx_field(40)?;
+                    self.body.push(Instruction::I64Eqz);
+                    self.block_depth += 1;
+                    self.body.push(Instruction::If(BlockType::Result(ValType::I64)));
+                    self.body.push(Instruction::I64Const(0)); // Null
+                    self.body.push(Instruction::Else);
+                    self.body.push(Instruction::LocalGet(p));
+                    self.emit_cmx_field(32)?; // handle
+                    let h = self.fresh_local();
+                    self.body.push(Instruction::LocalSet(h));
+                    let tidx = self.register_func_type(
+                        vec![ValType::I64, ValType::I64, ValType::I64],
+                        vec![ValType::I64],
+                    );
+                    self.body.push(Instruction::LocalGet(h));
+                    self.body.push(Instruction::I64Const(1));
+                    self.body.push(Instruction::I64And);
+                    self.body.push(Instruction::I32WrapI64);
+                    self.block_depth += 1;
+                    self.body.push(Instruction::If(BlockType::Result(ValType::I64)));
+                    // closure: caps + props + children + fnptr
+                    self.body.push(Instruction::LocalGet(h));
+                    self.body.push(Instruction::I64Const(1));
+                    self.body.push(Instruction::I64ShrU);
+                    self.body.push(Instruction::I64Const(8));
+                    self.body.push(Instruction::I64Add);
+                    self.body.push(Instruction::I32WrapI64);
+                    self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                    self.body.push(Instruction::LocalGet(p));
+                    self.emit_cmx_field(8)?;
+                    self.body.push(Instruction::LocalGet(p));
+                    self.emit_cmx_field(16)?;
+                    self.body.push(Instruction::LocalGet(h));
+                    self.body.push(Instruction::I64Const(1));
+                    self.body.push(Instruction::I64ShrU);
+                    self.body.push(Instruction::I32WrapI64);
+                    self.body.push(Instruction::I64Load(MemArg { offset: 0, align: 3, memory_index: 0 }));
+                    self.body.push(Instruction::I32WrapI64);
+                    self.emit_call_site(&c.span);
+                    self.body.push(Instruction::CallIndirect { type_index: tidx, table_index: 0 });
+                    self.body.push(Instruction::Else);
+                    // simple: caps=0 + props + children + idx
+                    self.body.push(Instruction::I64Const(0));
+                    self.body.push(Instruction::LocalGet(p));
+                    self.emit_cmx_field(8)?;
+                    self.body.push(Instruction::LocalGet(p));
+                    self.emit_cmx_field(16)?;
+                    self.body.push(Instruction::LocalGet(h));
+                    self.body.push(Instruction::I64Const(1));
+                    self.body.push(Instruction::I64ShrU);
+                    self.body.push(Instruction::I32WrapI64);
+                    self.emit_call_site(&c.span);
+                    self.body.push(Instruction::CallIndirect { type_index: tidx, table_index: 0 });
+                    self.body.push(Instruction::End);
+                    self.block_depth -= 1;
+                    self.body.push(Instruction::End);
+                    self.block_depth -= 1;
+                    return Ok(true);
+                }
+                _ => {}
+            }
+        }
         // `super.m(args)` -> call directo al método del padre (sin vtable).
         if let Expression::Identifier(sn, _) = &*member.object {
             if sn == "super" {
@@ -38,6 +151,13 @@ impl<'a> FuncEmitter<'a> {
         }
         // Módulos stdlib: math / json / fs
         if let Expression::Identifier(obj_name, _) = &*member.object {
+            // Resolver alias de import: `import "math" as m` -> m es math.
+            let canonical = self
+                .import_aliases
+                .get(obj_name)
+                .cloned()
+                .unwrap_or_else(|| obj_name.clone());
+            let obj_name = &canonical;
             if obj_name == "math" {
                 self.emit_math_call(member, c)?; return Ok(true);
             }
@@ -52,7 +172,7 @@ impl<'a> FuncEmitter<'a> {
                         .types
                         .get(&expr_span(&c.args[0]))
                         .cloned()
-                        .unwrap_or(Type::Any);
+                        .unwrap_or(Type::Value);
                     // Objeto de clase: __toJson si lo define; si no -> "null" (paridad walker).
                     if let Type::Named(cn, _) = &t {
                         if self.class_defs.contains_key(cn.as_str()) {
@@ -77,15 +197,38 @@ impl<'a> FuncEmitter<'a> {
                         }
                     }
                     // Shape -> stringify inline (json.stringify({x:1}) -> '{"x":1}').
-                    if let Type::Shape(fields) = &t {
-                        self.emit_shape_to_json_string(&c.args[0], fields)?; return Ok(true);
+                    // Shape: los literals viven como hashmap (default invertido)
+                    // -> serializar por el camino dinámico con tag 7 (record).
+                    if let Type::Shape(_) = &t {
+                        self.emit_coerce(&c.args[0], Some(&Type::Json))?;
+                        self.body.push(Instruction::I64Const(7));
+                        self.host.call(HostFn::JsonStringify, &mut self.body);
+                        return Ok(true);
+                    }
+                    // Para `Value`/`JSON` (valor leído de un record/JSON o
+                    // dinámico): emitir con emit_any_chain (val + tag) y serializar
+                    // por TAG real en runtime (host_json_stringify serializa
+                    // escalares/record/array por tag). Sin esto,
+                    // `json.stringify(d["int"])` devolvía el raw (puntero).
+                    if matches!(t, Type::Value | Type::Unknown | Type::Json) {
+                        self.emit_any_chain(&c.args[0])?;   // (val, tag)
+                        self.host.call(HostFn::JsonStringify, &mut self.body);
+                        return Ok(true);
                     }
                     self.emit_expression(&c.args[0])?;
-                    let kind = match t {
-                        Type::Record(_, _) => 1,
-                        Type::Array(_) => 2,
-                        _ => 0,
-                    };
+                    // kind = tag del RUNTIME del valor (compuesto para arrays:
+                    // es/kind correcto en el formateo, bug dev-2). Para tipos
+                    // concretos (bool/int/float/string/char/record/array) el
+                    // tag se conoce en compile-time y el host serializa por tag.
+                    let kind = runtime_tag_code_compound(&t);
+                    // Escalares: el valor debe viajar como i64 en el stack
+                    // (host_json_stringify espera v: i64). Bool/char (i32) ->
+                    // extender; float (f64) -> reinterpretar a bits i64.
+                    match was_type(&t) {
+                        Ok(WasTy::I32) => self.body.push(Instruction::I64ExtendI32U),
+                        Ok(WasTy::F64) => self.body.push(Instruction::I64ReinterpretF64),
+                        _ => {}
+                    }
                     self.body.push(Instruction::I64Const(kind));
                     self.host.call(HostFn::JsonStringify, &mut self.body);
                     return Ok(true);
@@ -112,6 +255,13 @@ impl<'a> FuncEmitter<'a> {
             if obj_name == "random" {
                 self.emit_random_call(member, c)?; return Ok(true);
             }
+            if obj_name == "net" {
+                // net eliminado (dev-2): cae al error genérico de miembro no soportado.
+                return Err(self.unsupported_expr(&Expression::Call(c.clone())));
+            }
+            if obj_name == "strings" {
+                self.emit_strings_call(member, c)?; return Ok(true);
+            }
             // `Clase.metodo()` con método static -> call directo (sin me).
             if self.class_defs.contains_key(obj_name.as_str()) {
                 let skey = format!("{}::__s__{}", obj_name, member.member);
@@ -129,7 +279,11 @@ impl<'a> FuncEmitter<'a> {
             .types
             .get(&expr_span(&member.object))
             .cloned()
-            .unwrap_or(Type::Any);
+            .unwrap_or(Type::Value);
+        let obj_ty = match self.object_class_key(&member.object) {
+            Some(key) => Type::Named(key, vec![]),
+            None => obj_ty,
+        };
         match obj_ty {
             Type::Tuple(_) => match member.member.as_str() {
                 "join" => { self.emit_tuple_join(member, c)?; return Ok(true); },
@@ -139,29 +293,55 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "upper" | "lower" | "trim" => {
-                        let (name, h) = match member.member.as_str() {
-                            "upper" => ("__intr_str_upper", HostFn::StrUpper),
-                            "lower" => ("__intr_str_lower", HostFn::StrLower),
-                            _ => ("__intr_str_trim", HostFn::StrTrim),
+                        let name = match member.member.as_str() {
+                            "upper" => "__intr_str_upper",
+                            "lower" => "__intr_str_lower",
+                            _ => "__intr_str_trim",
                         };
-                        self.emit_str_host(name, h);
+                        self.emit_str_host(name);
                         return Ok(true);
                     }
                     "contains" | "startsWith" | "endsWith" => {
                         self.emit_expression(&c.args[0])?;
-                        let (name, h) = match member.member.as_str() {
-                            "contains" => ("__intr_str_contains", HostFn::StrContains),
-                            "startsWith" => ("__intr_str_starts_with", HostFn::StrStartsWith),
-                            _ => ("__intr_str_ends_with", HostFn::StrEndsWith),
+                        let name = match member.member.as_str() {
+                            "contains" => "__intr_str_contains",
+                            "startsWith" => "__intr_str_starts_with",
+                            _ => "__intr_str_ends_with",
                         };
-                        self.emit_str_host(name, h);
+                        self.emit_str_host(name);
                         return Ok(true);
                     }
                     "isEmpty" => {
-                        self.emit_str_host("__intr_str_is_empty", HostFn::StrIsEmpty);
+                        self.emit_str_host("__intr_str_is_empty");
+                        return Ok(true);
+                    }
+                    "indexOf" => {
+                        self.emit_expression(&c.args[0])?;
+                        self.emit_str_host("__intr_str_index_of");
+                        return Ok(true);
+                    }
+                    "slice" => {
+                        self.emit_expression(&c.args[0])?;
+                        self.emit_expression(&c.args[1])?;
+                        self.emit_str_host("__intr_str_slice");
+                        return Ok(true);
+                    }
+                    "split" => {
+                        self.emit_expression(&c.args[0])?;
+                        self.emit_str_host("__intr_str_split");
                         return Ok(true);
                     }
                     "toString" => { return Ok(true); },
+                    "toChar" => {
+                        // Bytes del string como Char[] (unidad de 1 byte).
+                        self.emit_str_host("__intr_str_to_chars");
+                        return Ok(true);
+                    }
+                    "toBytes" => {
+                        // Bytes del string como int[] (stride 8; para buffers/FFI).
+                        self.emit_str_host("__intr_str_to_bytes");
+                        return Ok(true);
+                    }
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
                 }
             }
@@ -171,13 +351,13 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "push" => {
-                        self.emit_expression(&c.args[0])?;
+                        // Frontera única: shape contiguo a array dinámico.
+                        let elem_cls = self.array_elem_cls_type(&member.object)?;
+                        self.emit_coerce(&c.args[0], Some(&elem_cls))?;
                         self.elem_to_bits(&c.args[0], elem_ty)?;
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_push") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::ArrPush, &mut self.body);
                         }
                         self.writeback_array(&member.object)?;
                         return Ok(true);
@@ -186,8 +366,6 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_pop") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::ArrPop, &mut self.body);
                         }
                         self.writeback_array(&member.object)?;
                         return Ok(true);
@@ -196,20 +374,18 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_shift") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::ArrShift, &mut self.body);
                         }
                         self.writeback_array(&member.object)?;
                         return Ok(true);
                     }
                     "unshift" => {
-                        self.emit_expression(&c.args[0])?;
+                        // Frontera única: shape contiguo a array dinámico.
+                        let elem_cls = self.array_elem_cls_type(&member.object)?;
+                        self.emit_coerce(&c.args[0], Some(&elem_cls))?;
                         self.elem_to_bits(&c.args[0], elem_ty)?;
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_unshift") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::ArrUnshift, &mut self.body);
                         }
                         self.writeback_array(&member.object)?;
                         return Ok(true);
@@ -218,8 +394,6 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_reverse") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::ArrReverse, &mut self.body);
                         }
                         self.writeback_array(&member.object)?;
                         return Ok(true);
@@ -230,8 +404,6 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_index_of") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::ArrIndexOf, &mut self.body);
                         }
                         return Ok(true);
                     }
@@ -241,8 +413,6 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(elem_size));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_includes") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::ArrIncludes, &mut self.body);
                         }
                         return Ok(true);
                     }
@@ -253,8 +423,6 @@ impl<'a> FuncEmitter<'a> {
                         self.body.push(Instruction::I64Const(arr_kind_code(&cls_t)));
                         if let Some(&idx) = self.func_indexes.get("__intr_arr_join") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::ArrJoin, &mut self.body);
                         }
                         return Ok(true);
                     }
@@ -269,158 +437,65 @@ impl<'a> FuncEmitter<'a> {
                         self.emit_expression(&c.args[0])?;
                         if let Some(&idx) = self.func_indexes.get("__intr_record_has") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::RecordHas, &mut self.body);
                         }
                         return Ok(true);
                     }
                     "keys" => {
                         if let Some(&idx) = self.func_indexes.get("__intr_record_keys") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::RecordKeys, &mut self.body);
                         }
                         return Ok(true);
                     }
                     "values" => {
                         if let Some(&idx) = self.func_indexes.get("__intr_record_values") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::RecordValues, &mut self.body);
                         }
                         return Ok(true);
                     }
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
                 }
             }
-            Type::Shape(fields) => {
+            Type::Shape(_) => {
+                // DEFAULT INVERTIDO: los shapes viven como hashmap en runtime ->
+                // mismas operaciones que un record (record_has/keys/values).
+                // Bug fix dev-2 (Fase 7): faltaba `self.emit_expression(&member.object)?;`
+                // al inicio de la rama Shape. En la rama Record (linea 299) si se
+                // emite el receiver; en Shape no, lo que dejaba el stack sin el
+                // ptr del hashmap -> el call a __intr_record_has(ptr, key) tomaba
+                // el primer i64 (la key) como ptr y el segundo (lo que fuera) como
+                // key, o peor, sin argumentos. Sintoma: "type mismatch: expected
+                // i64 but nothing on stack" en el offset del call.
+                self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "has" => {
-                        // Compile-time: si la clave (literal) está en el shape.
-                        let has = match &c.args[0] {
-                            Expression::Literal(l)
-                                if matches!(l.kind, LiteralKind::String(_)) =>
-                            {
-                                match &l.kind {
-                                    LiteralKind::String(k) => {
-                                        fields.iter().any(|(n, _)| *n == *k)
-                                    }
-                                    _ => false,
-                                }
-                            }
-                            _ => true, // clave dinámica -> se asume que puede existir
-                        };
-                        self.body
-                            .push(Instruction::I32Const(if has { 1 } else { 0 }));
+                        self.emit_expression(&c.args[0])?;
+                        if let Some(&idx) = self.func_indexes.get("__intr_record_has") {
+                            self.body.push(Instruction::Call(idx));
+                        }
                         return Ok(true);
                     }
                     "keys" => {
-                        // Construir array<String> con las keys del shape.
-                        let mut sorted: Vec<&String> = fields.iter().map(|(n, _)| n).collect();
-                        sorted.sort();
-                        let n = sorted.len() as i64;
-                        let es = 8i64;
-                        self.body.push(Instruction::I64Const(n));
-                        self.body.push(Instruction::I64Const(es));
-                        self.body.push(Instruction::I64Mul);
-                        self.body.push(Instruction::I64Const(16));
-                        self.body.push(Instruction::I64Add);
-                        let alloc = self.func_indexes["__alloc"];
-                        self.body.push(Instruction::Call(alloc));
-                        let ptr = self.fresh_local();
-                        self.body.push(Instruction::LocalSet(ptr));
-                        self.body.push(Instruction::LocalGet(ptr));
-                        self.body.push(Instruction::I64Const(n));
-                        self.emit_i64_store(0);
-                        self.body.push(Instruction::LocalGet(ptr));
-                        self.body.push(Instruction::I64Const(n));
-                        self.emit_i64_store(8);
-                        for (i, k) in sorted.iter().enumerate() {
-                            self.body.push(Instruction::LocalGet(ptr));
-                            self.body.push(Instruction::I64Const(16 + (i as i64) * 8));
-                            self.body.push(Instruction::I64Add);
-                            self.body.push(Instruction::I32WrapI64);
-                            let s = self.intern_string(k);
-                            self.emit_load_str(s);
-                            self.body.push(Instruction::I64Store(MemArg {
-                                offset: 0,
-                                align: 3,
-                                memory_index: 0,
-                            }));
+                        self.body.push(Instruction::I64Const(0)); // kind dummy
+                        if let Some(&idx) = self.func_indexes.get("__intr_record_keys") {
+                            self.body.push(Instruction::Call(idx));
                         }
-                        self.body.push(Instruction::LocalGet(ptr));
                         return Ok(true);
                     }
                     "values" => {
-                        // Construir array con los valores (según el tipo de cada campo).
-                        self.emit_expression(&member.object)?;
-                        let ptr = self.fresh_local();
-                        self.body.push(Instruction::LocalSet(ptr));
-                        let layout = self.shape_layout(&fields)?;
-                        let mut ordered: Vec<&(String, WasTy, i64)> = layout.iter().collect();
-                        ordered.sort_by(|a, b| a.0.cmp(&b.0));
-                        let n = fields.len() as i64;
-                        let es = 8i64;
-                        self.body.push(Instruction::I64Const(n));
-                        self.body.push(Instruction::I64Const(es));
-                        self.body.push(Instruction::I64Mul);
-                        self.body.push(Instruction::I64Const(16));
-                        self.body.push(Instruction::I64Add);
-                        let alloc = self.func_indexes["__alloc"];
-                        self.body.push(Instruction::Call(alloc));
-                        let arr = self.fresh_local();
-                        self.body.push(Instruction::LocalSet(arr));
-                        self.body.push(Instruction::LocalGet(arr));
-                        self.body.push(Instruction::I64Const(n));
-                        self.emit_i64_store(0);
-                        self.body.push(Instruction::LocalGet(arr));
-                        self.body.push(Instruction::I64Const(n));
-                        self.emit_i64_store(8);
-                        for (i, (_, w, off)) in ordered.iter().enumerate() {
-                            self.body.push(Instruction::LocalGet(arr));
-                            self.body.push(Instruction::I64Const(16 + (i as i64) * 8));
-                            self.body.push(Instruction::I64Add);
-                            self.body.push(Instruction::I32WrapI64);
-                            self.body.push(Instruction::LocalGet(ptr));
-                            self.body.push(Instruction::I64Const(*off));
-                            self.body.push(Instruction::I64Add);
-                            self.body.push(Instruction::I32WrapI64);
-                            match *w {
-                                WasTy::F64 => self.body.push(Instruction::F64Load(MemArg {
-                                    offset: 0,
-                                    align: 3,
-                                    memory_index: 0,
-                                })),
-                                WasTy::I32 => self.body.push(Instruction::I32Load(MemArg {
-                                    offset: 0,
-                                    align: 2,
-                                    memory_index: 0,
-                                })),
-                                WasTy::I64 => self.body.push(Instruction::I64Load(MemArg {
-                                    offset: 0,
-                                    align: 3,
-                                    memory_index: 0,
-                                })),
-                            }
-                            // bits a i64 (f64 -> reinterpret; i32 -> extend)
-                            match *w {
-                                WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
-                                WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
-                                WasTy::I64 => {}
-                            }
-                            self.body.push(Instruction::I64Store(MemArg {
-                                offset: 0,
-                                align: 3,
-                                memory_index: 0,
-                            }));
+                        self.body.push(Instruction::I64Const(0)); // kind dummy
+                        if let Some(&idx) = self.func_indexes.get("__intr_record_values") {
+                            self.body.push(Instruction::Call(idx));
                         }
-                        self.body.push(Instruction::LocalGet(arr));
                         return Ok(true);
                     }
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
                 }
             }
             Type::Named(name, _) => {
+                let name = match self.resolve_class_key(&name) {
+                    Some(k) => k,
+                    None => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
+                };
                 if let Some(info) = self.class_defs.get(name.as_str()) {
                     let method_slot = info
                         .methods
@@ -488,8 +563,10 @@ impl<'a> FuncEmitter<'a> {
                     self.emit_expression(&member.object)?;
                     self.body.push(Instruction::LocalSet(obj_tmp));
                     self.body.push(Instruction::LocalGet(obj_tmp));
+                    // Frontera única: métodos de clase (params no disponibles en
+                    // el emisor) -> destino desconocido, convertir si es Shape.
                     for a in &c.args {
-                        self.emit_expression(a)?;
+                        self.emit_coerce(a, None)?;
                     }
                     // slot = vtable(obj[0]) + method_slot
                     self.body.push(Instruction::LocalGet(obj_tmp));
@@ -514,14 +591,12 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "toString" => {
-                        self.emit_str_host("__intr_str_int", HostFn::StrInt);
+                        self.emit_str_host("__intr_str_int");
                         return Ok(true);
                     }
                     "abs" => {
                         if let Some(&idx) = self.func_indexes.get("__intr_int_abs") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::IntAbs, &mut self.body);
                         }
                         return Ok(true);
                     }
@@ -532,7 +607,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "toString" => {
-                        self.emit_str_host("__intr_str_float", HostFn::StrFloat);
+                        self.emit_str_host("__intr_str_float");
                         return Ok(true);
                     }
                     "abs" => {
@@ -546,7 +621,7 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "toString" => {
-                        self.emit_str_host("__intr_str_bool", HostFn::StrBool);
+                        self.emit_str_host("__intr_str_bool");
                         return Ok(true);
                     }
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
@@ -556,10 +631,22 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(&member.object)?;
                 match member.member.as_str() {
                     "toString" => {
-                        self.emit_str_host("__intr_str_char", HostFn::StrChar);
+                        self.emit_str_host("__intr_str_char");
                         return Ok(true);
                     }
                     _ => return Err(self.unsupported_expr(&Expression::Call(c.clone()))),
+                }
+            }
+            // Unknown/Value/JSON (valor dinámico leído de un Record/JSON o
+            // anotado `Value`/`JSON`): `x.toString()` -> string por TAG en
+            // runtime (__intr_any_to_string), un solo eval del receiver. Otros
+            // métodos sobre estos tipos no se despachan acá (caen al camino
+            // dinámico de emit_call).
+            Type::Value | Type::Unknown | Type::Json => {
+                if member.member.as_str() == "toString" {
+                    self.emit_any_chain(&member.object)?; // (val, tag)
+                    self.emit_str_host("__intr_any_to_string");
+                    return Ok(true);
                 }
             }
             _ => {}
@@ -604,16 +691,14 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_expression(arg)?;
                 // String -> decodifica el pack (ptr<<32|len); array/tuple/record
                 // -> lee el header. Despachar por el tipo del argumento.
-                let t = self.types.get(&expr_span(arg)).cloned().unwrap_or(Type::Any);
+                let t = self.types.get(&expr_span(arg)).cloned().unwrap_or(Type::Value);
                 match t {
                     Type::String => {
-                        self.emit_str_host("__intr_str_length", HostFn::StrLength);
+                        self.emit_str_host("__intr_str_length");
                     }
                     Type::Record(_, _) | Type::Shape(_) => {
                         if let Some(&idx) = self.func_indexes.get("__intr_record_len") {
                             self.body.push(Instruction::Call(idx));
-                        } else {
-                            self.host.call(HostFn::RecordLen, &mut self.body);
                         }
                     }
                     _ => self.emit_array_len(),
@@ -666,6 +751,22 @@ impl<'a> FuncEmitter<'a> {
                 self.emit_to_bool(arg)?;
                 return Ok(true);
             }
+            "char" => {
+                // `char(n) -> Char`: unidad de 1 byte (`n & 0xFF`). Trivial i32.
+                self.emit_expression(&c.args[0])?;
+                self.body.push(Instruction::I32WrapI64);
+                self.body.push(Instruction::I32Const(0xff));
+                self.body.push(Instruction::I32And);
+                return Ok(true);
+            }
+            "ord" => {
+                // `ord(c) -> int`: codigo del byte 0..255 de un Char.
+                self.emit_expression(&c.args[0])?;
+                self.body.push(Instruction::I32Const(0xff));
+                self.body.push(Instruction::I32And);
+                self.body.push(Instruction::I64ExtendI32U);
+                return Ok(true);
+            }
             "type" => {
                 let arg = &c.args[0];
                 // Si la clase define __type -> llamarla (paridad con el walker).
@@ -673,7 +774,7 @@ impl<'a> FuncEmitter<'a> {
                     return Ok(true);
                 }
                 let span = expr_span(arg);
-                let t = self.types.get(&span).cloned().unwrap_or(Type::Any);
+                let t = self.types.get(&span).cloned().unwrap_or(Type::Value);
                 // type_name del walker: clase->"Object", struct->"Struct", enum->"Enum".
                 let name = match &t {
                     Type::Named(cn, _) if self.class_defs.contains_key(cn.as_str()) => "Object",
@@ -690,6 +791,12 @@ impl<'a> FuncEmitter<'a> {
             }
             "now" => {
                 self.host.call(HostFn::Now, &mut self.body);
+                return Ok(true);
+            }
+            // `config()` -> intrinsic de introspección (Record<String, String>
+            // construido y cacheado por el host). Sin argumentos.
+            "config" => {
+                self.host.call(HostFn::ConfigRecord, &mut self.body);
                 return Ok(true);
             }
             "exit" => {

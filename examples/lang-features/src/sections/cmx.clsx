@@ -1,0 +1,102 @@
+# cmx.clsx - eje de CMX (JSX nativo).
+#
+# Ejercita: tags minuscula/mayuscula, props (string, expr, bool, sin valor),
+# children (texto, expresion, elemento, self-closing), shorthand `{nombre}`,
+# spread de props, conversiones de un `Value` (str/toString/bool), comparacion de
+# props bool y de child de texto, e invocacion de un componente (tag mayuscula)
+# con `is Callable`.
+
+import "check" as check;
+
+function CmxApp(props: Record<String, Value>, children: Cmx[]) -> String {
+    var t: String = props.titulo;
+    return "App " + t;
+}
+
+function cmx_props_children() -> int {
+    var titulo = "Demo";
+    var app = (<app titulo={titulo} activo={true} count={5} marca="X"><item id={3} />{"interp: " + titulo}</app>);
+    check::assertTrue("cmx.tag.lower", app.tag == "app");
+    check::assertEq("cmx.children.len", app.children.length, 2);
+    check::assertTrue("cmx.child.element.tag", app.children[0].tag == "item");
+    check::assertEq("cmx.child.element.prop", int(app.children[0].props.id), 3);
+    check::assertTrue("cmx.child.expr", app.children[1] == "interp: Demo");
+    check::assertTrue("cmx.prop.string", app.props.marca == "X");
+    check::assertTrue("cmx.prop.expr", app.props.titulo == "Demo");
+    check::assertEq("cmx.prop.int", int(app.props.count), 5);
+    # prop bool comparada con `true`/`false`.
+    check::assertTrue("cmx.prop.bool", app.props.activo == true);
+    check::assertTrue("cmx.prop.bool.nefalse", app.props.activo != false);
+    # conversiones explicitas de un `Value` dinamico.
+    check::assertEqStr("cmx.any.str", str(app.props.titulo), "Demo");
+    check::assertEqStr("cmx.any.tostring", toString(app.props.titulo), "Demo");
+    check::assertTrue("cmx.any.bool", bool(app.props.activo));
+    # shorthand de atributo `{nombre}`: lee la variable homonima.
+    var nombre = "Ana";
+    var sh = (<x {nombre} />);
+    check::assertTrue("cmx.shorthand", sh.props.nombre == "Ana");
+    return 0;
+}
+
+function cmx_text_selfclose() -> int {
+    var p = (<p>Hola</p>);
+    # un child de texto compara igual a su string.
+    check::assertTrue("cmx.text.value", p.children[0] == "Hola");
+    var n: int = 1;
+    check::assertEq("cmx.text.children", p.children.length, n);
+    var br = (<separador />);
+    check::assertEq("cmx.selfclose.children", br.children.length, 0);
+    check::assertTrue("cmx.selfclose.tag", br.tag == "separador");
+    return 0;
+}
+
+function cmx_upper_callable() -> int {
+    var base: Record<String, Value> = {titulo: "demo", activo: true};
+    var app = (<CmxApp {...base} extra="x" />);
+    check::assertTrue("cmx.upper.tagName", app.tag == "CmxApp");
+    check::assertTrue("cmx.upper.isComponent", app.isComponent);
+    check::assertTrue("cmx.upper.spread.own", app.props.extra == "x");
+    check::assertTrue("cmx.upper.spread.base", app.props.titulo == "demo");
+    if (app.isComponent) {
+        var html: String = app.tagCallable(app.props, app.children);
+        check::assertEqStr("cmx.upper.invoke", html, "App demo");
+    }
+    return 0;
+}
+
+function cmx_methods() -> int {
+    var el = (<div class="x">hola</div>);
+    check::assertTrue("cmx.isPrimitive.element", el.isPrimitive());
+    check::assertTrue("cmx.notEmpty", !el.isEmpty());
+    check::assertTrue("cmx.isElementOf.true", el.isElementOf("div"));
+    check::assertTrue("cmx.isElementOf.false", !el.isElementOf("span"));
+    check::assertTrue("cmx.toString.prefix", el.toString().startsWith("<div"));
+    check::assertEq("cmx.flatten.len", el.flattenChildren().length, 1);
+    var clone = el.cloneWith(el.props, el.children);
+    check::assertTrue("cmx.clone.tag", clone.tag == "div");
+    check::assertEq("cmx.clone.children", clone.children.length, 1);
+    check::assertTrue("cmx.clone.notComponent", !clone.isComponent);
+    var comp = (<CmxApp titulo="x" />);
+    var tagOut: String = comp.tryCallTag();
+    check::assertEqStr("cmx.tryCallTag", tagOut, "App x");
+    check::assertTrue("cmx.tryCallTag.null", el.tryCallTag() == 0);
+    # Anotacion `CMX<P, PP>` (borrada): los params se aceptan y se ignoran.
+    var erased: Cmx<String, Int> = el;
+    check::assertTrue("cmx.erased.annotation", erased.tag == "div");
+    var c = (<CmxApp titulo="demo" />);
+    check::assertTrue("cmx.component.notPrimitive", !c.isPrimitive());
+    check::assertTrue("cmx.component.isElementOf", c.isElementOf("CmxApp"));
+    return 0;
+}
+
+export function cmx_run() -> int {
+    print("== cmx ==");
+    var before = check::fails();
+    cmx_props_children();
+    cmx_text_selfclose();
+    cmx_upper_callable();
+    cmx_methods();
+    var gained = check::fails() - before;
+    if (gained == 0) { print("FEATURE cmx OK"); }
+    return gained;
+}

@@ -1,0 +1,24 @@
+# FFI declarada sin prefijo `export`, promovida con `export { }`.
+
+when (os: windows) {
+    extension "msvcrt.dll" as C {
+        function strlen(s: CString) -> CInt;
+        function atoi(s: CString) -> CInt;
+    };
+};
+
+when (os: linux) {
+    extension "libc.so.6" as C {
+        function strlen(s: CString) -> CInt;
+        function atoi(s: CString) -> CInt;
+    };
+};
+
+when (os: macos) {
+    extension "libSystem.B.dylib" as C {
+        function strlen(s: CString) -> CInt;
+        function atoi(s: CString) -> CInt;
+    };
+};
+
+export { strlen, atoi };

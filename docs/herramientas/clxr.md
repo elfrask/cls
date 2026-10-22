@@ -23,8 +23,8 @@ Uso: clxr <archivo> [args...]
 
 ### `.clsx` - ejecución directa
 
-El archivo se lee como texto y se ejecuta. Es lo mismo que el walker de
-`clx run`, sin los flags.
+El archivo se lee como texto y se ejecuta. Es el mismo motor JIT de
+`clx run`, sin los flags de desarrollo.
 
 ### `.clsapp` - app empaquetada
 
@@ -38,9 +38,8 @@ Si el zip es inválido o el entry no existe, error y exit 1.
 
 ## Motor
 
-- **Tree-walker** (`Interpreter`), no el JIT, con la **stdlib core**
-  (`math`, `json`, `async`). No carga los módulos del nodo desktop
-  (`fs`, `http`, `os`, `path`, `process`, `time`, `random`, `Lib`).
+- **JIT** (CLS → WASM → wasmtime), el mismo de `clx run`. No expone los
+  módulos del nodo desktop (`fs`, `http`, `strings`); solo la stdlib core.
 - Intrinsics desktop default (`print`, `input`).
 
 ## Argumentos

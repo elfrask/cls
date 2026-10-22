@@ -1,0 +1,146 @@
+# expr.clsx - Nucleo compartido de la suite de conformidad.
+#
+# Declara el puente FFI al oraculo C (oracle/oracle.dll) y expone:
+#   - dispatch_binop / dispatch_binop_f / dispatch_unop : el mismo computo que
+#     el oraculo, escrito en CLS puro (para comparar CLS vs C).
+#   - wrappers orc_* : llamadas directas al oraculo C.
+#
+# Autocontencion: solo CLS puro + FFI; sin fs/http/json/strings ni host_calls
+# nuevos; no se exponen punteros (el C recibe CString y devuelve CLong/CDouble/
+# CString, nunca un CPtr crudo).
+#
+# La ruta del .dll es relativa al CWD (limitacion conocida del FFI): por eso la
+# suite exige correr desde la raiz del repo.
+
+extension "examples/conformance/oracle/oracle.dll" as C {
+    function o_binop(op: CLong, a: CLong, b: CLong) -> CLong;
+    function o_binop_f(op: CLong, a: CDouble, b: CDouble) -> CDouble;
+    function o_mix(op: CLong, a: CLong, b: CDouble) -> CDouble;
+    function o_unop(op: CLong, a: CLong) -> CLong;
+    function o_strlen(s: CString) -> CLong;
+    function o_indexof(hay: CString, ndl: CString) -> CLong;
+    function o_contains(hay: CString, ndl: CString) -> CLong;
+    function o_startswith(hay: CString, ndl: CString) -> CLong;
+    function o_endswith(hay: CString, ndl: CString) -> CLong;
+    function o_slice(s: CString, start: CLong, end: CLong) -> CString;
+    function o_slice_len(s: CString, start: CLong, end: CLong) -> CLong;
+    function o_fcmp(op: CLong, a: CString, b: CString, r: CString) -> CLong;
+    function o_mix_cmp(op: CLong, a: CString, b: CString, r: CString) -> CLong;
+    function o_sum_to(n: CLong) -> CLong;
+    function o_fib(n: CLong) -> CLong;
+    function o_fact(n: CLong) -> CLong;
+    function o_collatz(n: CLong) -> CLong;
+    function o_gcd(a: CLong, b: CLong) -> CLong;
+    function o_flow_sum(n: CLong) -> CLong;
+    function o_closure_add(a: CLong, b: CLong) -> CLong;
+    function o_apply(k: CLong, x: CLong) -> CLong;
+    function o_arr_script(n: CLong) -> CLong;
+    function o_arr_indexof_sum(n: CLong, needle: CLong) -> CLong;
+    function o_rec_checks() -> CLong;
+    function o_tuple_checks() -> CLong;
+    function o_exc_trace(mode: CLong) -> CLong;
+    function o_selfcheck() -> CLong;
+};
+
+# --- Opcodes (deben coincidir con oracle.c) --------------------------------
+# 0 add 1 sub 2 mul 3 div 4 mod 5 and 6 or 7 xor 8 shl 9 shr
+# 10 eq 11 ne 12 lt 13 le 14 gt 15 ge
+
+# Evaluacion en CLS puro de una operacion binaria entera (dispatch por `match`).
+export function dispatch_binop(op: int, a: int, b: int) -> int {
+    return match (op) in {
+        0 -> a + b,
+        1 -> a - b,
+        2 -> a * b,
+        3 -> a / b,
+        4 -> a % b,
+        5 -> a & b,
+        6 -> a | b,
+        7 -> a ^ b,
+        8 -> a << b,
+        9 -> a >> b,
+        10 -> a == b ? 1 : 0,
+        11 -> a != b ? 1 : 0,
+        12 -> a < b ? 1 : 0,
+        13 -> a <= b ? 1 : 0,
+        14 -> a > b ? 1 : 0,
+        15 -> a >= b ? 1 : 0,
+        default -> 0,
+    };
+}
+
+# Idem para flotantes. Comparaciones devuelven 1.0/0.0.
+export function dispatch_binop_f(op: int, a: float, b: float) -> float {
+    return match (op) in {
+        0 -> a + b,
+        1 -> a - b,
+        2 -> a * b,
+        3 -> a / b,
+        10 -> a == b ? 1.0 : 0.0,
+        11 -> a != b ? 1.0 : 0.0,
+        12 -> a < b ? 1.0 : 0.0,
+        13 -> a <= b ? 1.0 : 0.0,
+        14 -> a > b ? 1.0 : 0.0,
+        15 -> a >= b ? 1.0 : 0.0,
+        default -> 0.0,
+    };
+}
+
+# Promocion int->float (misma op que o_mix).
+export function dispatch_mix(op: int, a: int, b: float) -> float {
+    var da: float = float(a);
+    return match (op) in {
+        0 -> da + b,
+        1 -> da - b,
+        2 -> da * b,
+        3 -> da / b,
+        default -> 0.0,
+    };
+}
+
+# Unario: op 0 neg, 1 ~.
+export function dispatch_unop(op: int, a: int) -> int {
+    return match (op) in {
+        0 -> -a,
+        1 -> ~a,
+        default -> 0,
+    };
+}
+
+# --- wrappers del oraculo C ------------------------------------------------
+
+export function orc_binop(op: int, a: int, b: int) -> int { return int(o_binop(op, a, b)); }
+export function orc_binop_f(op: int, a: float, b: float) -> float { return float(o_binop_f(op, a, b)); }
+export function orc_mix(op: int, a: int, b: float) -> float { return float(o_mix(op, a, b)); }
+export function orc_unop(op: int, a: int) -> int { return int(o_unop(op, a)); }
+
+export function orc_strlen(s: String) -> int { return int(o_strlen(s)); }
+export function orc_indexof(h: String, n: String) -> int { return int(o_indexof(h, n)); }
+export function orc_contains(h: String, n: String) -> int { return int(o_contains(h, n)); }
+export function orc_startswith(h: String, n: String) -> int { return int(o_startswith(h, n)); }
+export function orc_endswith(h: String, n: String) -> int { return int(o_endswith(h, n)); }
+export function orc_slice(s: String, start: int, end: int) -> String { return o_slice(s, start, end); }
+export function orc_slice_len(s: String, start: int, end: int) -> int { return int(o_slice_len(s, start, end)); }
+export function orc_fcmp(op: int, a: String, b: String, r: String) -> int { return int(o_fcmp(op, a, b, r)); }
+export function orc_mix_cmp(op: int, a: String, b: String, r: String) -> int { return int(o_mix_cmp(op, a, b, r)); }
+
+export function orc_sum_to(n: int) -> int { return int(o_sum_to(n)); }
+export function orc_fib(n: int) -> int { return int(o_fib(n)); }
+export function orc_fact(n: int) -> int { return int(o_fact(n)); }
+export function orc_collatz(n: int) -> int { return int(o_collatz(n)); }
+export function orc_gcd(a: int, b: int) -> int { return int(o_gcd(a, b)); }
+export function orc_flow_sum(n: int) -> int { return int(o_flow_sum(n)); }
+export function orc_closure_add(a: int, b: int) -> int { return int(o_closure_add(a, b)); }
+export function orc_apply(k: int, x: int) -> int { return int(o_apply(k, x)); }
+export function orc_arr_script(n: int) -> int { return int(o_arr_script(n)); }
+export function orc_arr_indexof_sum(n: int, needle: int) -> int { return int(o_arr_indexof_sum(n, needle)); }
+export function orc_rec_checks() -> int { return int(o_rec_checks()); }
+export function orc_tuple_checks() -> int { return int(o_tuple_checks()); }
+export function orc_exc_trace(mode: int) -> int { return int(o_exc_trace(mode)); }
+export function orc_selfcheck() -> int { return int(o_selfcheck()); }
+
+# --- utilidades CLS puras --------------------------------------------------
+
+# El minimo i64 (no se puede escribir el literal positivo 9223372036854775808).
+export function i64_min() -> int { return -9223372036854775807 - 1; }
+export function i64_max() -> int { return 9223372036854775807; }

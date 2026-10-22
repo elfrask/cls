@@ -1,0 +1,39 @@
+# bytes/byte.clsx - Primitivas de byte y conversión de buffers.
+#
+# `Char` es la unidad de 1 byte (modelo bytes/str). Los buffers usan `int[]`
+# (stride 8) para el FFI y `Char[]` (stride 4) para el lenguaje; estas funciones
+# convierten entre ambos y con `String` (cuyo `String.toBytes()` es intrínseco).
+
+# Código de byte (0..255) de un Char.
+export function ord(c: Char) -> int { return ord(c); }
+
+# String de 1 byte con el código n (0..255), byte-transparente.
+export function chr(n: int) -> String { return char(n).toString(); }
+
+# Normaliza un entero a su byte sin signo (0..255).
+export function normalize(b: int) -> int {
+    var v = b % 256;
+    if (v < 0) { v = v + 256; }
+    return v;
+}
+
+# `int[]` (bytes 0..255) -> `Char[]`.
+export function toChars(b: int[]) -> Char[] {
+    var out: Char[] = [];
+    for each v in (b) { out.push(char(normalize(v))); }
+    return out;
+}
+
+# `Char[]` -> `int[]` (bytes 0..255).
+export function toInts(c: Char[]) -> int[] {
+    var out: int[] = [];
+    for each ch in (c) { out.push(ord(ch) & 255); }
+    return out;
+}
+
+# `int[]` (bytes) -> String (byte-transparente).
+export function toStr(b: int[]) -> String {
+    var out = "";
+    for each v in (b) { out = out + char(normalize(v)).toString(); }
+    return out;
+}
