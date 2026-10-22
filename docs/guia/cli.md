@@ -143,7 +143,8 @@ Opciones:
 
 Los `import "mod"` se resuelven con el resolver del JIT: directorio del archivo
 que importa -> `modules/` del proyecto -> rutas de `pathModules` /
-`--add-path-module` -> CWD y `modules/` del CWD -> módulos globales
+`--add-path-module` -> CWD y `modules/` del CWD -> `modules/` junto al binario
+`clx` (`{dir_clx}/modules` y `{dir_clx}/../modules`) -> módulos globales
 `~/.cls/modules/` (ver `lenguaje/modulos.md` y `examples/patrones.md` §11).
 
 ## `clx check [archivo|dir] [--strict]`

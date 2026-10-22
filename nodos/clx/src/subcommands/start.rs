@@ -207,10 +207,6 @@ pub fn execute(args: &[String]) -> i32 {
         paths.extend(env::split_paths(&old));
     }
 
-    for b in &bins {
-        // eprintln!("[start] bin: {}", b.display());
-    }
-
     if !args.is_empty() {
         return run_command(args, &paths);
     }

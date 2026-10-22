@@ -422,7 +422,8 @@ imports por nombre (`import "x"`, `from "x" import ...`). Orden:
 2. `{proyecto}/modules/{x}/` (módulos del proyecto)
 3. **rutas de `pathModules` + `--add-path-module`** → `{ruta}/{x}/` y `{ruta}/{x}.clsx`
 4. `{cwd}/{x}.clsx` y `{cwd}/modules/{x}/`
-5. global `~/.cls/modules/`
+5. `{dir_clx}/modules/{x}/` y `{dir_clx}/../modules/{x}/` (junto al binario)
+6. global `~/.cls/modules/`
 
 El buscador adicional respeta el aislamiento de módulo: si `{ruta}/{x}/cls.json`
 tiene `export.entry`, se usa ese entry.

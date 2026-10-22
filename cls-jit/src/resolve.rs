@@ -190,6 +190,22 @@ fn scoped_parts(name: &str) -> Option<(&str, &str)> {
 ///
 /// Si `manifest` declara `dependencies[name]`, la búsqueda global filtra por el
 /// rango semver declarado (prioriza la versión instalada que lo cumpla).
+
+/// Raices de modulos junto al binario `clx`: `<dir_clx>/modules` y
+/// `<dir_clx>/../modules` (layout `~/.cls/bin/clx` + `~/.cls/modules`).
+fn binary_module_roots() -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            out.push(dir.join("modules"));
+            if let Some(parent) = dir.parent() {
+                out.push(parent.join("modules"));
+            }
+        }
+    }
+    out
+}
+
 pub fn module_candidates(
     path: &str,
     base_dir: &std::path::Path,
@@ -206,6 +222,7 @@ pub fn module_candidates(
     let name = path.trim_start_matches(['/', '\\']).trim();
     let proj = project_root(base_dir);
     let extras = extra_module_paths();
+    let binary_roots = binary_module_roots();
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
     // Paquete con scope `scope/nombre`: layout global anidado
     // `~/.cls/modules/{scope}/{nombre}@{version}/` (filtrado por el rango de
@@ -244,6 +261,9 @@ pub fn module_candidates(
             push_module_dir_candidates(&e.join(scope).join(pkg), &mut candidates);
         }
         push_module_dir_candidates(&cwd.join("modules").join(scope).join(pkg), &mut candidates);
+        for br in &binary_roots {
+            push_module_dir_candidates(&br.join(scope).join(pkg), &mut candidates);
+        }
         candidates.push(base_dir.join(format!("{}.clsx", name)));
         return candidates;
     }
@@ -270,6 +290,10 @@ pub fn module_candidates(
         }
         candidates.push(cwd.join(format!("{}.clsx", name)));
         push_module_dir_candidates(&cwd.join("modules").join(name), &mut candidates);
+        for br in &binary_roots {
+            push_module_dir_candidates(&br.join(name), &mut candidates);
+            candidates.push(br.join(format!("{}.clsx", name)));
+        }
         if let Some(ref um) = user_modules {
             let declared = manifest.and_then(|m| m.dependency_version(name).map(|s| s.to_string()));
             // Versiones instaladas (nombre@versión): ordenar desc y filtrar por rango.

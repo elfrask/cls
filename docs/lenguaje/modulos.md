@@ -201,9 +201,11 @@ El `ModuleResolver` del runtime consulta en orden:
    2. `{workspace}/modules/{nombre}/<export.entry>` o `.../mod.clsx`
    3. `{cwd}/{path}.clsx`
    4. `{cwd}/modules/{nombre}/<export.entry>` o `.../mod.clsx`
-   5. `~/.cls/modules/{nombre}@{version}/...` (globales versionadas; filtra por
+   5. `{dir_clx}/modules/{nombre}/...` y `{dir_clx}/../modules/{nombre}/...`
+      (módulos junto al binario `clx`; útil sin setup global)
+   6. `~/.cls/modules/{nombre}@{version}/...` (globales versionadas; filtra por
       el rango semver declarado en el `cls.json` del importador)
-   6. `~/.cls/modules/{nombre}/...` (globales sin versión)
+   7. `~/.cls/modules/{nombre}/...` (globales sin versión)
 
    Para un **paquete con scope** (`usuario/foo`, exactamente un `/` sin
    extensión) se busca primero el layout global anidado
