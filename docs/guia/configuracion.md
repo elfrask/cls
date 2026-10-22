@@ -23,6 +23,7 @@ Toda la configuración de un proyecto vive en `cls.json`
 | `testEntry` | string[] | `[]` | Archivos/globs de test para `clx test` (p.ej. `["tests/**/*.clsx"]`) |
 | `pathModules` | string[] | `[]` | Rutas adicionales de búsqueda de módulos (equivale a `clx run --add-path-module`). Relativas a la raíz del proyecto. Ver `examples/patrones.md` §11 |
 | `pathModulesNatives` | string[] | `[]` | Rutas de búsqueda de librerías nativas (`extension`). Relativas a la raíz del módulo/proyecto; cada manifiesto tiene su propio alcance. Sin variables de entorno |
+| `setup` | string | `setup.clsx` si existe | Script CLS que `clx install` ejecuta una sola vez por versión instalada. |
 | `lockfileVersion` | number | ausente | Versión del lockfile |
 
 ### `pathModulesNatives`
@@ -40,6 +41,26 @@ Cada `cls.json` puede declarar rutas para sus propios assets nativos:
 - Un nombre simple (`foo.dll`) busca en la raíz y en estas rutas; si no aparece, se deja al loader del SO.
 - El proyecto y cada módulo tienen su propia lista: no se mezclan.
 - `clx build` copia los binarios a `dist/native-libs/<paquete>@<version>/` conservando sus nombres.
+
+### `setup` de paquetes
+
+`clx install` ejecuta el setup declarado en `cls.json` (o `setup.clsx` si existe)
+después de copiar el paquete y antes de terminar la instalación. El marcador
+`.cls-setup` evita repetirlo para la misma versión.
+
+Variables disponibles:
+
+| Variable | Contenido |
+|---|---|
+| `CLS_MODULE_DIR` | Directorio absoluto del paquete instalado |
+| `CLS_PACKAGE_ROOT` | Igual que `CLS_MODULE_DIR` |
+| `CLS_MODULE_NAME` | `name` del manifiesto |
+| `CLS_MODULE_VERSION` | `version` del manifiesto |
+| `CLS_GLOBAL_MODULES` | `~/.cls/modules` |
+| `CLS_GLOBAL_BIN` | `~/.cls/bin` |
+
+Los archivos de `bin/` del paquete se copian a `~/.cls/bin`; el setup puede
+escribir configuración adicional usando `fs` y `env`.
 
 ### `project`
 

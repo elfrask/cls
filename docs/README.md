@@ -44,6 +44,7 @@ backend los **fusiona dentro del módulo CLS** (cero imports de internals).
 ### Biblioteca estándar
 
 - `stdlib/core.md` - intrinsics globales (`print`, `input`, `toString`, `int`, ...) y módulos core `math`, `json`, `async`.
+- `stdlib/env.md` - carga de archivos `.env` mediante el módulo estándar `env`.
 - `stdlib/desktop.md` - módulos del nodo desktop: `fs`, `http`, `strings`, `Lib`.
 - `stdlib/primitivos.md` - métodos de tipos primitivos (sin boxing).
 

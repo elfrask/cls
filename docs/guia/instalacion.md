@@ -1,8 +1,8 @@
 # Instalación
 
 CLS se compila desde fuente con **Cargo**. El proyecto es un workspace Rust
-(edición 2021) con seis crates: `cls-core`, `cls-runtime`, `cls-jit` y los
-nodos `nodos/clx`, `nodos/clxb`, `nodos/clxr`.
+(edición 2021) con siete crates: `cls-core`, `cls-runtime`, `cls-jit`,
+`cls-internals` y los nodos `nodos/clx`, `nodos/clxb`, `nodos/clxr`.
 
 ## Requisitos
 
@@ -94,3 +94,18 @@ clx run examples/test/hello/src/main.clsx
 ```
 
 Debe imprimir `Hello from CLS!` y salir con código 0.
+
+## Releases portables
+
+Los artefactos de release incluyen:
+
+```text
+portable/
+  clx[.exe]
+  clxr[.exe]
+  modules/
+```
+
+`clx` busca `modules/` junto al binario (`{dir_clx}/modules`), por lo que el
+portable funciona sin copiar módulos a `~/.cls/modules`. En el repo, esa misma
+búsqueda también cubre `{dir_clx}/../modules`.

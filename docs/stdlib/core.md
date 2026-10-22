@@ -5,6 +5,7 @@ Se compone de dos partes:
 
 - **Intrinsics globales**: funciones sin módulo, disponibles directamente.
 - **Módulos core**: `math` y `json`.
+- **Módulos estándar distribuidos**: `env` (carga `.env`; ver `stdlib/env.md`).
 
 Las firmas canónicas viven en `cls-runtime/clsi/` (`core.clsi`, `math.clsi`,
 `json.clsi`) y son la fuente de verdad para el typechecker y el LSP.
@@ -87,6 +88,21 @@ json.stringify(d);                  # "{\"a\":1}"
 
 `stringify` respeta el magic method `__toJson`: si el objeto lo define, lo usa
 para la serialización; si no, la representación nativa.
+
+## Módulo estándar `env`
+
+`modules/env` carga archivos `.env` sin tocar el entorno del proceso:
+
+```clx
+import "env" as env;
+
+var e = env.load(".env");
+var name = e.get("APP_NAME");
+var port = e.get_int("PORT");
+```
+
+Expone `load`, `load_default`, `parse`, `merge` y `Env` con `get`, `has`,
+`require`, `get_int`, `get_bool`, `set` y `all`. Ver `stdlib/env.md`.
 
 ## Módulo `async` (no implementado)
 

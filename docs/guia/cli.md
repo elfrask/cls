@@ -74,8 +74,9 @@ Quita la dependencia de `cls.json` (no toca el store global).
 - `--force` sobrescribe la versión ya instalada.
 - **Setup**: si el paquete declara `setup` (o tiene `setup.clsx`), se ejecuta una
   sola vez por versión tras instalar. Recibe `CLS_MODULE_DIR`,
-  `CLS_MODULE_NAME`, `CLS_MODULE_VERSION`, `CLS_GLOBAL_MODULES` y
-  `CLS_GLOBAL_BIN`. Los ejecutables de `bin/` se copian a `~/.cls/bin`.
+  `CLS_PACKAGE_ROOT`, `CLS_MODULE_NAME`, `CLS_MODULE_VERSION`,
+  `CLS_GLOBAL_MODULES` y `CLS_GLOBAL_BIN`. Los ejecutables de `bin/` se copian
+  a `~/.cls/bin`.
 
 ### `clx ls [-l|--local] [-g|--global]`
 
@@ -107,9 +108,10 @@ JIT; su exit code determina pass/fail. Ver `lenguaje/testing.md`.
 
 ## `clx start [comando]`
 
-Abre una shell con el `PATH` enriquecido con los `bin/` de todos los módulos
-que resuelve el proyecto: `modules/*/bin`, `pathModules`, `~/.cls/modules` y
-`~/.cls/bin`. Sin comando abre una shell interactiva; con comando lo ejecuta:
+Construye el `PATH` con los `bin/` de todos los módulos que resuelve el
+proyecto: `modules/*/bin`, `pathModules`, `~/.cls/modules` y `~/.cls/bin`.
+Sin comando abre una shell interactiva; con comando lanza el proceso
+directamente por el SO (sin shell intermedia), salvo `.cmd`/`.bat` en Windows:
 
 ```bash
 clx start
