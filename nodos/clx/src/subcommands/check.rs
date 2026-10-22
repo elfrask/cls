@@ -54,6 +54,15 @@ pub fn execute(args: &[String]) -> i32 {
         return 1;
     }
 
+    // Igual que `clx run`/`clx test`: aplicar `pathModules` y
+    // `--add-path-module` para que el checker resuelva los imports del proyecto
+    // (p. ej. `/modules`).
+    let config = ModuleManifest::find_and_load().ok();
+    let extra_paths = crate::subcommands::run::collect_extra_paths(&path, config.as_ref(), args);
+    if !extra_paths.is_empty() {
+        cls_jit::set_extra_module_paths(extra_paths);
+    }
+
     let files: Vec<String> = if p.is_dir() {
         scan_clsx_files(p)
     } else {

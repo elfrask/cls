@@ -89,6 +89,9 @@ test, igual que `clx run`; sin eso, los tests no resuelven `/modules`.
 ## Tombstone (`cls-repositories/tombstone`)
 
 Requiere los shims de `io`, `socket`, `sqlite` (y `csprng`/`argon2` para auth).
+Con el launcher, desde la raíz del proyecto: `tombstone test:all` (unit +
+autotest + DB + HTTP), o `test`, `test:unit`, `test:db`, `test:http` por separado.
+
 Desde la raíz del repo CLS:
 
 ```powershell

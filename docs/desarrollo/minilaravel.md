@@ -114,6 +114,15 @@ Correr el demo desde la raíz del repo CLS:
 target\debug\clx.exe run cls-repositories\tombstone\src\main.clsx -- 8080
 ```
 
+Con el launcher (desde la raíz del proyecto):
+
+```powershell
+tombstone serve 8080
+tombstone test
+tombstone check
+tombstone build
+```
+
 Build de la app (desde su directorio):
 
 ```powershell
@@ -161,7 +170,16 @@ function main(args: String[]) -> int {
 
 ## Tests
 
-Desde la raíz del repo CLS:
+Con el launcher, desde la raíz del proyecto:
+
+```powershell
+tombstone test:all
+tombstone test:unit
+tombstone test:db
+tombstone test:http
+```
+
+O los runners directamente, desde la raíz del repo CLS:
 
 ```powershell
 powershell -File cls-repositories\tombstone\tests\unit\run.ps1
