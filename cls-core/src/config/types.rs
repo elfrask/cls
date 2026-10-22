@@ -148,7 +148,7 @@ pub struct InterpreterConfig {
 }
 
 fn default_mode() -> String {
-    "pure-ast".to_string()
+    "jit".to_string()
 }
 
 impl Default for InterpreterConfig {
@@ -176,7 +176,7 @@ pub struct RuntimeMemoryConfig {
 }
 
 fn default_mem() -> String {
-    "512MB".to_string()
+    "1GiB".to_string()
 }
 
 fn default_stack() -> String {

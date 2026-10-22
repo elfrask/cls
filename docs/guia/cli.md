@@ -19,23 +19,51 @@ clx <subcomando> [opciones] [argumentos]
 Todos los subcomandos aceptan `-h`/`--help` (imprimen su ayuda y salen con 0,
 sin efectos colaterales).
 
-## `clx new <nombre> [--lib]`
+## `clx new <nombre> [opciones]`
 
-Crea un proyecto nuevo con la estructura mínima:
+Crea un proyecto nuevo con la estructura base:
 
 ```
 <nombre>/
-├── cls.json          # manifiesto (entry: "src/main.clsx")
-├── .gitignore        # modules/, dist/, .cls-types
+├── cls.json          # manifiesto completo (proyecto, compilador, runtime, sandbox)
+├── .gitignore        # modules/, dist/, .cls-types, .cls-cache
 ├── modules/          # MÓDULOS PROPIOS del usuario (dev local)
 └── src/
     └── main.clsx     # function main(args: String[]) -> int
 ```
 
-- `--lib` - proyecto librería: `entry` vacío, `target: "library"` y no genera
-  `main.clsx`.
-- El nombre no puede empezar con `-` (los flags se interpretan como opciones);
-  `clx new -h` muestra la ayuda del subcomando.
+`cls.json` incluye **todos los parámetros del manifest** (incluidos
+`pathModules`, `pathModulesNatives` y `testEntry`, aunque estén vacíos).
+
+| Opción | Efecto |
+|---|---|
+| `--lib` | Librería: `target: "library"`, `entry` vacío y sin `main.clsx`. |
+| `--entry <ruta>` | Entry point (default `<source-dir>/main.clsx`). |
+| `--target <tipo>` | `executable` o `library`. |
+| `--source-dir <dir>` | Directorio de fuentes (default `src`). |
+| `--out-dir <dir>` | Directorio de salida (default `dist`). |
+| `--test-entry <glob>` | Patrón de tests (repetible). |
+| `--path-module <dir>` | Ruta extra de módulos (repetible). |
+| `--path-module-native <dir>` | Ruta de librerías nativas (repetible). |
+| `--version <semver>` | Versión del proyecto (default `0.1.0`). |
+| `--description <texto>` | Descripción. |
+| `--author <nombre>` | Autor (repetible). |
+| `--license <id>` | Licencia (default `MIT`). |
+| `--registry <url>` | Registry de dependencias. |
+| `--strict` / `--no-strict` | Tipado estricto. |
+| `--no-check` | Desactiva el chequeo de tipos. |
+| `--no-source-maps` | Desactiva source maps. |
+| `--feature-async`, `--feature-macros`, `--feature-experimental` | Features del compilador. |
+| `--memory-limit <size>` | Memoria del sandbox (default `1GiB`). |
+| `--stack-size <size>` | Stack (default `8MB`). |
+| `--max-execution-time <ms>` | Timeout de ejecución (`0` = sin límite). |
+| `--max-output-bytes <n>`, `--max-file-size <n>` | Límites del sandbox. |
+| `--gc`, `--gc-threshold <size>` | GC y su umbral (default `64MB`). |
+| `--allow-fs`, `--allow-net`, `--allow-process`, `--allow-env` | Permisos del sandbox. |
+
+- El nombre no puede empezar con `-`; `clx new -h` muestra la ayuda completa.
+- El resto de campos avanzados de `cls.json` se pueden editar a mano (ver
+  `configuracion.md`).
 
 ## Paquetes: `add`, `remove`, `install`, `ls`, `info`, `audit`
 

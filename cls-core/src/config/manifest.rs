@@ -62,12 +62,12 @@ pub struct ModuleManifest {
     /// `clx run --add-path-module=<path>`, repetible). Relativas a la raíz del
     /// proyecto (CWD). Se combinan con el flag CLI: primero `cls.json`, luego
     /// los `--add-path-module`. Ver `examples/patrones.md` §11.
-    #[serde(default, rename = "pathModules", skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, rename = "pathModules")]
     pub path_modules: Vec<String>,
 
     /// Rutas de búsqueda de librerías nativas (`extension`). Relativas a la
     /// raíz del módulo/proyecto; cada manifiesto tiene su propio alcance.
-    #[serde(default, rename = "pathModulesNatives", skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, rename = "pathModulesNatives")]
     pub path_modules_natives: Vec<String>,
 
     /// Configuración de módulo: `export.entry` (index público) y `export.types`.
