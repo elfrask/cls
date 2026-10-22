@@ -23,6 +23,12 @@
  * (o `powershell -File modules/sqlite/build.ps1`, que ademas copia sqlite3.dll).
  */
 
+#ifndef _WIN32
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#endif
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,8 +36,10 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#define EXPORT __declspec(dllexport)
 #else
 #include <dlfcn.h>
+#define EXPORT __attribute__((visibility("default")))
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -128,8 +136,25 @@ static int self_dir(char *out, size_t cap) {
 }
 #else
 static void *sym(const char *name) { return dlsym(g_lib, name); }
-static int load_lib_at(const char *path) { (void)path; return 0; }
-static int self_dir(char *out, size_t cap) { (void)out; (void)cap; return 0; }
+static int load_lib_at(const char *path) {
+    if (!path || !path[0]) return 0;
+    void *h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+    if (!h) return 0;
+    if (g_lib) dlclose(g_lib);
+    g_lib = h;
+    return 1;
+}
+/* Directorio del propio shim (para encontrar libsqlite3 junto a el). */
+static int self_dir(char *out, size_t cap) {
+    Dl_info info;
+    if (!dladdr((void *)&self_dir, &info) || !info.dli_fname) return 0;
+    strncpy(out, info.dli_fname, cap - 1);
+    out[cap - 1] = '\0';
+    char *slash = strrchr(out, '/');
+    if (!slash) return 0;
+    *slash = '\0';
+    return 1;
+}
 #endif
 
 /* Carga sqlite3.dll: candidatos en orden. Devuelve 1 si ok. */
@@ -137,7 +162,7 @@ static int ensure_loaded(void) {
     if (g_lib) return 1;
 
     char path[2048];
-    char dir[MAX_PATH > 0 ? MAX_PATH : 1024];
+    char dir[2048];
 
 #ifdef _WIN32
     /* 1. Variable de entorno del runner. */
@@ -145,18 +170,34 @@ static int ensure_loaded(void) {
     if (load_lib_at(env)) goto resolved;
     /* 2. Junto al shim. */
     if (self_dir(dir, sizeof(dir))) {
-#ifdef _WIN32
         snprintf(path, sizeof(path), "%s\\sqlite3.dll", dir);
-#else
-        snprintf(path, sizeof(path), "%s/sqlite3.dll", dir);
-#endif
         if (load_lib_at(path)) goto resolved;
     }
     /* 3. Busqueda estandar (CWD / PATH). */
     if (load_lib_at("sqlite3.dll")) goto resolved;
+#else
+    /* 1. Variable de entorno del runner. */
+    const char *env = getenv("CLS_SQLITE_PATH");
+    if (load_lib_at(env)) goto resolved;
+    /* 2. Junto al shim. */
+    if (self_dir(dir, sizeof(dir))) {
+#ifdef __APPLE__
+        snprintf(path, sizeof(path), "%s/libsqlite3.dylib", dir);
+#else
+        snprintf(path, sizeof(path), "%s/libsqlite3.so", dir);
 #endif
-    set_error("no se pudo cargar sqlite3.dll (probado CLS_SQLITE_PATH, "
-              "directorio del shim, y PATH)");
+        if (load_lib_at(path)) goto resolved;
+    }
+    /* 3. Carga estandar del sistema. */
+#ifdef __APPLE__
+    if (load_lib_at("libsqlite3.dylib")) goto resolved;
+#else
+    if (load_lib_at("libsqlite3.so.0")) goto resolved;
+    if (load_lib_at("libsqlite3.so")) goto resolved;
+#endif
+#endif
+    set_error("no se pudo cargar SQLite (probado CLS_SQLITE_PATH, "
+              "directorio del shim y la carga estandar del sistema)");
     return 0;
 
 resolved:
@@ -243,24 +284,24 @@ static int slot_alloc(void *arr, size_t n, size_t elemsize) {
 /* API publica (sin punteros).                                           */
 /* ------------------------------------------------------------------ */
 
-__declspec(dllexport) int64_t o_init(void) {
+EXPORT int64_t o_init(void) {
     if (!ensure_loaded()) return -1;
     return 0;
 }
 
 /* version de sqlite (dummy param por workaround del typeck de CLS). */
-__declspec(dllexport) const char *o_version(const char *_d) {
+EXPORT const char *o_version(const char *_d) {
     (void)_d;
     if (!ensure_loaded()) return g_error;
     return p_libversion ? p_libversion() : "?";
 }
 
-__declspec(dllexport) const char *o_error(const char *_d) {
+EXPORT const char *o_error(const char *_d) {
     (void)_d;
     return g_error;
 }
 
-__declspec(dllexport) int64_t o_open(const char *path) {
+EXPORT int64_t o_open(const char *path) {
     if (!ensure_loaded()) return -1;
     int idx = slot_alloc(g_conns, MAX_CONN, sizeof(Conn));
     if (idx < 0) { set_error("sin slots de conexion"); return -2; }
@@ -277,35 +318,35 @@ __declspec(dllexport) int64_t o_open(const char *path) {
     return (int64_t)idx;
 }
 
-__declspec(dllexport) int64_t o_close(int64_t h) {
+EXPORT int64_t o_close(int64_t h) {
     if (h < 0 || h >= MAX_CONN || !g_conns[h].db) return -1;
     int rc = p_close(g_conns[h].db);
     g_conns[h].db = NULL;
     return (int64_t)rc;
 }
 
-__declspec(dllexport) int64_t o_exec(int64_t h, const char *sql) {
+EXPORT int64_t o_exec(int64_t h, const char *sql) {
     if (h < 0 || h >= MAX_CONN || !g_conns[h].db) return -1;
     return (int64_t)p_exec(g_conns[h].db, sql, NULL, NULL);
 }
 
-__declspec(dllexport) int64_t o_last_id(int64_t h) {
+EXPORT int64_t o_last_id(int64_t h) {
     if (h < 0 || h >= MAX_CONN || !g_conns[h].db) return -1;
     return p_last_insert_rowid(g_conns[h].db);
 }
 
-__declspec(dllexport) int64_t o_changes(int64_t h) {
+EXPORT int64_t o_changes(int64_t h) {
     if (h < 0 || h >= MAX_CONN || !g_conns[h].db) return -1;
     return (int64_t)p_changes(g_conns[h].db);
 }
 
-__declspec(dllexport) const char *o_errmsg(int64_t h) {
+EXPORT const char *o_errmsg(int64_t h) {
     if (h < 0 || h >= MAX_CONN || !g_conns[h].db) return "";
     return p_errmsg(g_conns[h].db);
 }
 
 /* ---------------- prepared statements ---------------- */
-__declspec(dllexport) int64_t o_prepare(int64_t h, const char *sql) {
+EXPORT int64_t o_prepare(int64_t h, const char *sql) {
     if (h < 0 || h >= MAX_CONN || !g_conns[h].db) return -1;
     int idx = slot_alloc(g_stmts, MAX_STMT, sizeof(sqlite3_stmt *));
     if (idx < 0) { set_error("sin slots de sentencia"); return -2; }
@@ -341,25 +382,25 @@ static unsigned char *hex_to_bytes(const char *hex, int *out_len) {
     return buf;
 }
 
-__declspec(dllexport) int64_t o_bind_int(int64_t s, int64_t idx, int64_t v) {
+EXPORT int64_t o_bind_int(int64_t s, int64_t idx, int64_t v) {
     if (!stmt_ok(s)) return -1;
     return (int64_t)p_bind_int64(g_stmts[s], (int)idx, v);
 }
-__declspec(dllexport) int64_t o_bind_double(int64_t s, int64_t idx, double v) {
+EXPORT int64_t o_bind_double(int64_t s, int64_t idx, double v) {
     if (!stmt_ok(s)) return -1;
     return (int64_t)p_bind_double(g_stmts[s], (int)idx, v);
 }
-__declspec(dllexport) int64_t o_bind_text(int64_t s, int64_t idx, const char *v) {
+EXPORT int64_t o_bind_text(int64_t s, int64_t idx, const char *v) {
     if (!stmt_ok(s)) return -1;
     if (!v) return (int64_t)p_bind_null(g_stmts[s], (int)idx);
     /* SQLITE_TRANSIENT = (void*)-1: sqlite copia el buffer. */
     return (int64_t)p_bind_text(g_stmts[s], (int)idx, v, -1, (void *)-1);
 }
-__declspec(dllexport) int64_t o_bind_null(int64_t s, int64_t idx) {
+EXPORT int64_t o_bind_null(int64_t s, int64_t idx) {
     if (!stmt_ok(s)) return -1;
     return (int64_t)p_bind_null(g_stmts[s], (int)idx);
 }
-__declspec(dllexport) int64_t o_bind_blob_hex(int64_t s, int64_t idx, const char *hex) {
+EXPORT int64_t o_bind_blob_hex(int64_t s, int64_t idx, const char *hex) {
     if (!stmt_ok(s)) return -1;
     int blen = 0;
     unsigned char *buf = hex_to_bytes(hex, &blen);
@@ -368,15 +409,15 @@ __declspec(dllexport) int64_t o_bind_blob_hex(int64_t s, int64_t idx, const char
     free(buf);
     return (int64_t)rc;
 }
-__declspec(dllexport) int64_t o_step(int64_t s) {
+EXPORT int64_t o_step(int64_t s) {
     if (!stmt_ok(s)) return -1;
     return (int64_t)p_step(g_stmts[s]);
 }
-__declspec(dllexport) int64_t o_reset(int64_t s) {
+EXPORT int64_t o_reset(int64_t s) {
     if (!stmt_ok(s)) return -1;
     return (int64_t)p_reset(g_stmts[s]);
 }
-__declspec(dllexport) int64_t o_finalize(int64_t s) {
+EXPORT int64_t o_finalize(int64_t s) {
     if (!stmt_ok(s)) return -1;
     int rc = p_finalize(g_stmts[s]);
     g_stmts[s] = NULL;
@@ -397,7 +438,7 @@ static char *bytes_to_hex(const unsigned char *b, int n) {
     return out;
 }
 
-__declspec(dllexport) int64_t o_query(int64_t h, const char *sql) {
+EXPORT int64_t o_query(int64_t h, const char *sql) {
     if (h < 0 || h >= MAX_CONN || !g_conns[h].db) return -1;
     sqlite3_stmt *st = NULL;
     int rc = p_prepare_v2(g_conns[h].db, sql, -1, &st, NULL);
@@ -468,13 +509,13 @@ static int64_t materialize_stmt(sqlite3_stmt *st) {
 }
 
 /* Materializa el stmt preparado en `s` (result set), sin finalizarlo. */
-__declspec(dllexport) int64_t o_result_from_stmt(int64_t s) {
+EXPORT int64_t o_result_from_stmt(int64_t s) {
     if (!stmt_ok(s)) return -1;
     return materialize_stmt(g_stmts[s]);
 }
 
 /* Borra un archivo (FILE* remove de la libc). Permite empezar de cero sin fs. */
-__declspec(dllexport) int64_t o_remove(const char *path) {
+EXPORT int64_t o_remove(const char *path) {
     return (int64_t)remove(path);
 }
 
@@ -483,47 +524,47 @@ static Result *res_ok(int64_t r) {
     return g_results[r];
 }
 
-__declspec(dllexport) int64_t o_nrows(int64_t r) {
+EXPORT int64_t o_nrows(int64_t r) {
     Result *p = res_ok(r);
     return p ? p->nrows : -1;
 }
-__declspec(dllexport) int64_t o_ncols(int64_t r) {
+EXPORT int64_t o_ncols(int64_t r) {
     Result *p = res_ok(r);
     return p ? p->ncols : -1;
 }
-__declspec(dllexport) const char *o_colname(int64_t r, int64_t c) {
+EXPORT const char *o_colname(int64_t r, int64_t c) {
     Result *p = res_ok(r);
     if (!p || c < 0 || c >= p->ncols) return "";
     return p->colnames[c];
 }
-__declspec(dllexport) int64_t o_cell_type(int64_t r, int64_t i, int64_t c) {
+EXPORT int64_t o_cell_type(int64_t r, int64_t i, int64_t c) {
     Result *p = res_ok(r);
     if (!p || i < 0 || i >= p->nrows || c < 0 || c >= p->ncols) return -1;
     return (int64_t)p->cells[(size_t)i * p->ncols + c].type;
 }
-__declspec(dllexport) int64_t o_cell_int(int64_t r, int64_t i, int64_t c) {
+EXPORT int64_t o_cell_int(int64_t r, int64_t i, int64_t c) {
     Result *p = res_ok(r);
     if (!p || i < 0 || i >= p->nrows || c < 0 || c >= p->ncols) return 0;
     return p->cells[(size_t)i * p->ncols + c].i;
 }
-__declspec(dllexport) double o_cell_double(int64_t r, int64_t i, int64_t c) {
+EXPORT double o_cell_double(int64_t r, int64_t i, int64_t c) {
     Result *p = res_ok(r);
     if (!p || i < 0 || i >= p->nrows || c < 0 || c >= p->ncols) return 0.0;
     return p->cells[(size_t)i * p->ncols + c].d;
 }
-__declspec(dllexport) const char *o_cell_text(int64_t r, int64_t i, int64_t c) {
+EXPORT const char *o_cell_text(int64_t r, int64_t i, int64_t c) {
     Result *p = res_ok(r);
     if (!p || i < 0 || i >= p->nrows || c < 0 || c >= p->ncols) return "";
     Cell *cell = &p->cells[(size_t)i * p->ncols + c];
     return cell->s ? cell->s : "";
 }
-__declspec(dllexport) const char *o_cell_blob_hex(int64_t r, int64_t i, int64_t c) {
+EXPORT const char *o_cell_blob_hex(int64_t r, int64_t i, int64_t c) {
     Result *p = res_ok(r);
     if (!p || i < 0 || i >= p->nrows || c < 0 || c >= p->ncols) return "";
     Cell *cell = &p->cells[(size_t)i * p->ncols + c];
     return (cell->type == SQLITE_BLOB && cell->s) ? cell->s : "";
 }
-__declspec(dllexport) int64_t o_free_result(int64_t r) {
+EXPORT int64_t o_free_result(int64_t r) {
     Result *p = res_ok(r);
     if (!p) return -1;
     for (int64_t k = 0; k < p->nrows * p->ncols; k++) free(p->cells[k].s);
@@ -537,7 +578,7 @@ __declspec(dllexport) int64_t o_free_result(int64_t r) {
 
 /* Columna entera materializada como CArray i64 [cap][len][elems*8].
  * (Prueba explicita del marshalling CArray del FFI.) */
-__declspec(dllexport) int64_t o_column_int(int64_t r, int64_t c) {
+EXPORT int64_t o_column_int(int64_t r, int64_t c) {
     Result *p = res_ok(r);
     if (!p || c < 0 || c >= p->ncols) return 0;
     int64_t n = 0;
@@ -566,7 +607,7 @@ __declspec(dllexport) int64_t o_column_int(int64_t r, int64_t c) {
 }
 
 /* PRAGMA integrity_check -> primera fila, primera columna (CString). */
-__declspec(dllexport) const char *o_integrity(int64_t h) {
+EXPORT const char *o_integrity(int64_t h) {
     static char buf[256];
     if (h < 0 || h >= MAX_CONN || !g_conns[h].db) return "";
     sqlite3_stmt *st = NULL;

@@ -3,9 +3,9 @@
 # Envuelve la API C de SQLite SIN exponer punteros a CLS: conexiones, sentencias
 # y result sets son handles enteros. Capa cruda del módulo (no pública).
 #
-# LIMITACIÓN CONOCIDA DEL FFI: la ruta del shim se resuelve relativa al CWD, no
-# al archivo .clsx; por eso hay que correr desde la raíz del repo (ver README).
-# El shim autolocaliza `sqlite3.dll` (junto a él, en `%CLS_SQLITE_PATH%` o PATH).
+# La ruta del shim (`.dll`/`.so`/`.dylib`) se resuelve contra la raíz del
+# paquete. El shim autolocaliza SQLite (junto a él, en `CLS_SQLITE_PATH` o en la
+# carga estándar del sistema).
 
 when (os: windows) {
     extension "./sqlite_shim.dll" as C {
