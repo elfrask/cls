@@ -47,6 +47,10 @@ pub fn position_to_byte_index(source: &str, position: Position) -> Option<usize>
         }
         offset += line.len();
     }
+    // Última línea vacía cuando el archivo termina en `\n`.
+    if position.line as usize == source.matches('\n').count() {
+        return Some(source.len());
+    }
     None
 }
 
@@ -168,6 +172,31 @@ mod tests {
         assert_eq!(utf16_col_to_char_index(line, 0), 0);
         assert_eq!(utf16_col_to_char_index(line, 2), 1);
         assert_eq!(char_index_to_utf16_col(line, 1), 2);
+    }
+
+    #[test]
+    fn convierte_posicion_a_byte() {
+        let source = "a😀b\n";
+        assert_eq!(
+            position_to_byte_index(
+                source,
+                Position {
+                    line: 0,
+                    character: 3,
+                }
+            ),
+            Some(5)
+        );
+        assert_eq!(
+            position_to_byte_index(
+                source,
+                Position {
+                    line: 1,
+                    character: 0,
+                }
+            ),
+            Some(7)
+        );
     }
 
     #[test]
