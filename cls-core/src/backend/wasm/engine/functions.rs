@@ -377,6 +377,12 @@ impl<'a> Engine<'a> {
         } else {
             format!("{}::{}", class, f.name)
         };
+        let defaults = f
+            .params
+            .iter()
+            .map(|p| p.default_value.clone())
+            .collect::<Vec<_>>();
+        self.func_defaults.insert(key.clone(), defaults);
         self.func_indexes.insert(key.clone(), fidx);
         self.func_types.insert(key.clone(), (param_cls, ret_cls));
         self.method_type_indexes.insert(key.clone(), tidx);

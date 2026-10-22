@@ -326,6 +326,49 @@ impl TypeChecker {
                     _ => false,
                 };
                 if is_ctor {
+                    let ctor_name = match &*call.callee {
+                        Expression::Identifier(n, _) => n.as_str(),
+                        Expression::NamespaceAccess(_, member, _) => member.as_str(),
+                        _ => "",
+                    };
+                    if let Some(params) = self
+                        .magic_params
+                        .get(ctor_name)
+                        .and_then(|members| members.get("main"))
+                    {
+                        let total = params.len();
+                        let required = self
+                            .ctor_required
+                            .get(ctor_name)
+                            .copied()
+                            .unwrap_or(total);
+                        if call.args.len() < required || call.args.len() > total {
+                            let expected = if required == total {
+                                format!("{}", total)
+                            } else {
+                                format!("entre {} y {}", required, total)
+                            };
+                            self.error(
+                                &format!(
+                                    "El constructor de '{}' espera {} argumento(s), recibió {}",
+                                    ctor_name,
+                                    expected,
+                                    call.args.len()
+                                ),
+                                call.span.clone(),
+                            );
+                        }
+                    } else if self.class_members.contains_key(ctor_name) && !call.args.is_empty() {
+                        // La clase no declara constructor: solo `Clase()`.
+                        self.error(
+                            &format!(
+                                "La clase '{}' no declara constructor, pero recibió {} argumento(s)",
+                                ctor_name,
+                                call.args.len()
+                            ),
+                            call.span.clone(),
+                        );
+                    }
                     return callee_type.clone();
                 }
                 // Objeto callable (magic __call): el callee es una expresión cuyo

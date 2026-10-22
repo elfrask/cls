@@ -26,6 +26,10 @@ impl TypeChecker {
         // bodies, para que `me.campo`/`me.metodo()` resuelvan dentro del check.
         let mut members: HashMap<String, Type> = HashMap::new();
         let mut params_map: HashMap<String, Vec<Type>> = HashMap::new();
+        let mut ctor_required = c
+            .extends
+            .as_ref()
+            .and_then(|parent| self.ctor_required.get(parent).copied());
         if let Some(parent) = &c.extends {
             if let Some(pm) = self.class_members.get(parent) {
                 members.extend(pm.clone());
@@ -37,6 +41,14 @@ impl TypeChecker {
         for member in &c.body {
             match member {
                 ClassMember::Method(f) | ClassMember::Constructor(f) => {
+                    if matches!(member, ClassMember::Constructor(_)) {
+                        ctor_required = Some(
+                            f.params
+                                .iter()
+                                .filter(|p| p.default_value.is_none())
+                                .count(),
+                        );
+                    }
                     members.insert(
                         f.name.clone(),
                         f.return_type
@@ -69,6 +81,9 @@ impl TypeChecker {
         }
         self.class_members.insert(c.name.clone(), members);
         self.magic_params.insert(c.name.clone(), params_map);
+        if let Some(required) = ctor_required {
+            self.ctor_required.insert(c.name.clone(), required);
+        }
         if let Some(parent) = &c.extends {
             self.class_parents.insert(c.name.clone(), parent.clone());
         }

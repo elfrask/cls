@@ -448,6 +448,20 @@ impl<'a> FuncEmitter<'a> {
                 for a in &c.args {
                     self.emit_expression(a)?;
                 }
+                // Parámetros opcionales del constructor: completar con sus
+                // valores por defecto para que el call tenga la aridad exacta.
+                if let Some(defaults) = self
+                    .func_defaults
+                    .get(&format!("{}::__ctor", cls))
+                    .cloned()
+                {
+                    for default in defaults.iter().skip(c.args.len()) {
+                        match default {
+                            Some(expr) => self.emit_expression(expr)?,
+                            None => self.body.push(Instruction::I64Const(0)),
+                        }
+                    }
+                }
                 self.emit_call_site(&callsite);
                 self.body.push(Instruction::Call(*idx));
                 break;

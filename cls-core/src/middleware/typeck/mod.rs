@@ -65,6 +65,11 @@ pub struct TypeChecker {
     /// params (incluye heredados, como `class_members`). Para validar los
     /// operandos del dispatch de magic methods (M1: tipos incompatibles -> basura).
     magic_params: HashMap<String, HashMap<String, Vec<Type>>>,
+    /// Cantidad de parámetros obligatorios del constructor `main` de cada
+    /// clase. `magic_params` guarda el total; esto permite validar llamadas
+    /// como `Persona()` cuando el constructor exige argumentos (antes el
+    /// emisor generaba WASM inválido).
+    ctor_required: HashMap<String, usize>,
     /// Padre de cada clase (`Hijo` -> `Base`), para la asignabilidad por herencia
     /// en la validación de operandos de magics (M2).
     class_parents: HashMap<String, String>,
@@ -119,6 +124,7 @@ impl TypeChecker {
             types_by_span: HashMap::new(),
             class_members: HashMap::new(),
             magic_params: HashMap::new(),
+            ctor_required: HashMap::new(),
             class_parents: HashMap::new(),
             struct_members: HashMap::new(),
             prelude: Vec::new(),
