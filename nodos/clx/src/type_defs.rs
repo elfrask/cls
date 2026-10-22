@@ -60,6 +60,7 @@ fn builtin_type_definitions() -> Vec<(&'static str, &'static str)> {
         ("process", include_str!("../../../cls-runtime/clsi/process.clsi")),
         ("time", include_str!("../../../cls-runtime/clsi/time.clsi")),
         ("random", include_str!("../../../cls-runtime/clsi/random.clsi")),
+        ("types", include_str!("../../../cls-runtime/clsi/types.clsi")),
     ]
 }
 

@@ -1,47 +1,33 @@
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use tower_lsp::{Client, LspService, Server, jsonrpc::Result};
-use tower_lsp::lsp_types::*;
-use cls_core::error::{Diagnostic as ClsDiag, Span};
-use cls_core::error::diagnostic::Severity;
-use cls_core::frontend::{Lexer, Parser};
-use cls_core::frontend::ast::*;
-use cls_core::middleware::{TypeChecker, NameResolver};
+
 use cls_core::config::TypesConfig;
-use cls_runtime::{Value, VfsResolver};
-use crate::modules::{fs, http};
+use cls_core::error::diagnostic::Severity;
+use cls_core::error::Diagnostic as ClsDiag;
+use cls_core::frontend::{Lexer, Parser};
+use cls_core::middleware::{NameResolver, TypeChecker};
+use tokio::sync::Mutex;
+use tower_lsp::jsonrpc::Result;
+use tower_lsp::lsp_types::*;
+use tower_lsp::{Client, LspService, Server};
+
+use crate::lsp_index::{
+    find_member, members_from_type_module, parse_file, parse_source, ImportRef, LspSymbol,
+    MemberInfo, ParsedFile, WorkspaceIndex,
+};
+use crate::lsp_text::{
+    char_index_to_utf16_col, line_text, member_access_before_cursor,
+    span_to_range as text_span_to_range, word_at,
+};
 use crate::type_defs::{self, TypeModule};
-
-#[derive(Debug, Clone)]
-struct SymEntry { name: String, span: Span, kind: SymKind }
-
-#[derive(Debug, Clone)]
-enum SymKind { Function, Variable, Parameter }
-
-fn build_symbols(module: &Module) -> Vec<SymEntry> {
-    let mut symbols = Vec::new();
-    for stmt in &module.statements {
-        match stmt {
-            Statement::FunctionDecl(f) => {
-                symbols.push(SymEntry { name: f.name.clone(), span: f.span, kind: SymKind::Function });
-                for p in &f.params { symbols.push(SymEntry { name: p.name.clone(), span: p.span, kind: SymKind::Parameter }); }
-            }
-            Statement::VarDecl(v) | Statement::ConstDecl(v) => {
-                symbols.push(SymEntry { name: v.name.clone(), span: v.span, kind: SymKind::Variable });
-            }
-            _ => {}
-        }
-    }
-    symbols
-}
 
 pub struct ClsLspBackend {
     client: Client,
     documents: Arc<Mutex<HashMap<Url, String>>>,
-    workspace_root: Arc<Mutex<Option<String>>>,
+    workspace_root: Arc<Mutex<Option<PathBuf>>>,
     type_defs: Arc<Mutex<HashMap<String, TypeModule>>>,
+    index: Arc<Mutex<WorkspaceIndex>>,
 }
 
 impl ClsLspBackend {
@@ -51,121 +37,459 @@ impl ClsLspBackend {
             documents: Arc::new(Mutex::new(HashMap::new())),
             workspace_root: Arc::new(Mutex::new(None)),
             type_defs: Arc::new(Mutex::new(HashMap::new())),
+            index: Arc::new(Mutex::new(WorkspaceIndex::default())),
         }
     }
 
-    async fn get_doc(&self, uri: &Url) -> Option<String> {
-        self.documents.lock().await.get(uri).cloned()
+    async fn reload_workspace(&self) {
+        let root = self.workspace_root.lock().await.clone();
+        let root_str = root.as_ref().and_then(|p| p.to_str());
+        let defs = type_defs::load_all_type_definitions(root_str);
+        *self.type_defs.lock().await = defs;
+
+        let index = match root {
+            Some(root) => WorkspaceIndex::build(&root),
+            None => WorkspaceIndex::default(),
+        };
+        *self.index.lock().await = index;
     }
 
-    pub async fn send_diags(&self, uri: &Url) {
-        let source = self.get_doc(uri).await.unwrap_or_default();
-        let ws = self.workspace_root.lock().await.clone();
-        let diagnostics = Self::run_pipeline(&source, ws.as_deref());
-        self.client.publish_diagnostics(uri.clone(), diagnostics, None).await;
+    async fn source_for_uri(&self, uri: &Url) -> Option<String> {
+        if let Some(text) = self.documents.lock().await.get(uri) {
+            return Some(text.clone());
+        }
+        let path = uri.to_file_path().ok()?;
+        self.index
+            .lock()
+            .await
+            .file(&path)
+            .map(|f| f.source.clone())
     }
 
-    fn run_pipeline(source: &str, workspace: Option<&str>) -> Vec<Diagnostic> {
+    async fn parsed_for_uri(&self, uri: &Url) -> Option<ParsedFile> {
+        if let Some(text) = self.documents.lock().await.get(uri) {
+            let path = uri.to_file_path().ok()?;
+            return parse_file(&path, text.clone());
+        }
+        let path = uri.to_file_path().ok()?;
+        self.index.lock().await.file(&path).cloned()
+    }
+
+    async fn send_diags(&self, uri: &Url) {
+        let source = self.source_for_uri(uri).await.unwrap_or_default();
+        let workspace = self.workspace_root.lock().await.clone();
+        let diagnostics = Self::run_pipeline(&source, workspace.as_deref());
+        self.client
+            .publish_diagnostics(uri.clone(), diagnostics, None)
+            .await;
+    }
+
+    fn run_pipeline(source: &str, workspace: Option<&Path>) -> Vec<Diagnostic> {
         let mut diags = Vec::new();
         let mut lexer = Lexer::new(source);
         let tokens = match lexer.tokenize() {
-            Ok(t) => t, Err(e) => { Self::push_diag(&mut diags, &e.to_string(), DiagnosticSeverity::ERROR); return diags; }
+            Ok(t) => t,
+            Err(e) => {
+                Self::push_diag(
+                    &mut diags,
+                    source,
+                    &e.to_string(),
+                    DiagnosticSeverity::ERROR,
+                );
+                return diags;
+            }
         };
         let mut parser = Parser::new(tokens);
         let module = match parser.parse() {
-            Ok(m) => m, Err(e) => { Self::push_diag(&mut diags, &e.to_string(), DiagnosticSeverity::ERROR); return diags; }
+            Ok(m) => m,
+            Err(e) => {
+                Self::push_diag(
+                    &mut diags,
+                    source,
+                    &e.to_string(),
+                    DiagnosticSeverity::ERROR,
+                );
+                return diags;
+            }
         };
         let mut resolver = NameResolver::new();
-        if let Err(e) = resolver.resolve(&module) { Self::push_diag(&mut diags, &e.to_string(), DiagnosticSeverity::ERROR); }
-        for d in resolver.diagnostics() { Self::push_cls_diag(&mut diags, d, DiagnosticSeverity::ERROR); }
-        let types_config = workspace.and_then(|root| {
-            let path = Path::new(root).join("cls.json");
-            if path.exists() { cls_core::config::ModuleManifest::from_file(&path).ok().map(|m| m.compiler.types) } else { None }
-        }).unwrap_or_else(|| TypesConfig { check: true, strict: false, ..Default::default() });
+        if let Err(e) = resolver.resolve(&module) {
+            Self::push_diag(
+                &mut diags,
+                source,
+                &e.to_string(),
+                DiagnosticSeverity::ERROR,
+            );
+        }
+        for d in resolver.diagnostics() {
+            Self::push_cls_diag(&mut diags, source, d, DiagnosticSeverity::ERROR);
+        }
+        let types_config = workspace
+            .and_then(|root| {
+                let path = root.join("cls.json");
+                if path.exists() {
+                    cls_core::config::ModuleManifest::from_file(&path)
+                        .ok()
+                        .map(|m| m.compiler.types)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| TypesConfig {
+                check: true,
+                strict: false,
+                ..Default::default()
+            });
         let mut checker = TypeChecker::new(types_config);
-        if let Err(e) = checker.check(&module) { Self::push_diag(&mut diags, &e.to_string(), DiagnosticSeverity::ERROR); }
+        if let Err(e) = checker.check(&module) {
+            Self::push_diag(
+                &mut diags,
+                source,
+                &e.to_string(),
+                DiagnosticSeverity::ERROR,
+            );
+        }
         for d in checker.diagnostics() {
-            let sev = match d.severity { Severity::Error => DiagnosticSeverity::ERROR, Severity::Warning => DiagnosticSeverity::WARNING, _ => DiagnosticSeverity::INFORMATION };
-            Self::push_cls_diag(&mut diags, d, sev);
+            let sev = match d.severity {
+                Severity::Error => DiagnosticSeverity::ERROR,
+                Severity::Warning => DiagnosticSeverity::WARNING,
+                _ => DiagnosticSeverity::INFORMATION,
+            };
+            Self::push_cls_diag(&mut diags, source, d, sev);
         }
         diags
     }
 
-    fn push_diag(diags: &mut Vec<Diagnostic>, msg: &str, severity: DiagnosticSeverity) {
+    fn push_diag(
+        diags: &mut Vec<Diagnostic>,
+        source: &str,
+        msg: &str,
+        severity: DiagnosticSeverity,
+    ) {
         if let Some((line, col)) = cls_core::error::ClsError::extract_line_col(msg) {
-            diags.push(Diagnostic { range: Range { start: Position { line: line.saturating_sub(1) as u32, character: col.saturating_sub(1) as u32 }, end: Position { line: line.saturating_sub(1) as u32, character: col as u32 } }, severity: Some(severity), message: msg.to_string(), source: Some("clx".into()), ..Default::default() });
+            let line0 = line.saturating_sub(1) as u32;
+            let text = line_text(source, line0).unwrap_or("");
+            let start_char = col.saturating_sub(1);
+            let end_char = col;
+            diags.push(Diagnostic {
+                range: Range {
+                    start: Position {
+                        line: line0,
+                        character: char_index_to_utf16_col(text, start_char),
+                    },
+                    end: Position {
+                        line: line0,
+                        character: char_index_to_utf16_col(text, end_char),
+                    },
+                },
+                severity: Some(severity),
+                message: msg.to_string(),
+                source: Some("clx".into()),
+                ..Default::default()
+            });
         } else if !msg.is_empty() {
-            diags.push(Diagnostic { range: Range::default(), severity: Some(severity), message: msg.to_string(), source: Some("clx".into()), ..Default::default() });
+            diags.push(Diagnostic {
+                range: Range::default(),
+                severity: Some(severity),
+                message: msg.to_string(),
+                source: Some("clx".into()),
+                ..Default::default()
+            });
         }
     }
 
-    fn push_cls_diag(diags: &mut Vec<Diagnostic>, d: &ClsDiag, severity: DiagnosticSeverity) {
-        diags.push(Diagnostic { range: Range { start: Position { line: d.span.start_line.saturating_sub(1), character: d.span.start_col.saturating_sub(1) }, end: Position { line: d.span.end_line.saturating_sub(1), character: d.span.end_col.saturating_sub(1) } }, severity: Some(severity), message: d.message.clone(), source: Some("clx".into()), ..Default::default() });
+    fn push_cls_diag(
+        diags: &mut Vec<Diagnostic>,
+        source: &str,
+        d: &ClsDiag,
+        severity: DiagnosticSeverity,
+    ) {
+        diags.push(Diagnostic {
+            range: text_span_to_range(source, &d.span),
+            severity: Some(severity),
+            message: d.message.clone(),
+            source: Some("clx".into()),
+            ..Default::default()
+        });
     }
 
-    fn scan_workspace_clsx(root: &str) -> Vec<String> {
-        let mut files = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(root) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    if let Ok(subs) = std::fs::read_dir(&path) {
-                        for sub in subs.flatten() {
-                            let sp = sub.path();
-                            if sp.extension().map(|e| e == "clsx").unwrap_or(false) { files.push(sp.to_string_lossy().to_string()); }
-                        }
+    async fn general_completions(&self, source: &str, uri: &Url) -> Vec<CompletionItem> {
+        let mut items = Vec::new();
+        let mut seen = HashSet::new();
+
+        for sym in parse_source(source) {
+            push_symbol_completion(&mut items, &mut seen, &sym, "scope");
+        }
+
+        if let Some(parsed) = self.parsed_for_uri(uri).await {
+            for import in &parsed.imports {
+                if let Some(alias) = &import.alias {
+                    if seen.insert(alias.clone()) {
+                        items.push(CompletionItem {
+                            label: alias.clone(),
+                            kind: Some(CompletionItemKind::MODULE),
+                            detail: Some(format!("import {}", import.path)),
+                            ..Default::default()
+                        });
                     }
-                } else if path.extension().map(|e| e == "clsx").unwrap_or(false) { files.push(path.to_string_lossy().to_string()); }
+                }
+                for (name, alias) in &import.names {
+                    let label = alias.as_ref().unwrap_or(name);
+                    if seen.insert(label.clone()) {
+                        items.push(CompletionItem {
+                            label: label.clone(),
+                            kind: Some(CompletionItemKind::VARIABLE),
+                            detail: Some(format!("from {}", import.path)),
+                            ..Default::default()
+                        });
+                    }
+                }
             }
         }
-        files
+
+        let docs = self.documents.lock().await.clone();
+        for (doc_uri, text) in docs {
+            if &doc_uri == uri {
+                continue;
+            }
+            for sym in parse_source(&text) {
+                push_symbol_completion(&mut items, &mut seen, &sym, "open-document");
+            }
+        }
+
+        for kw in [
+            "var",
+            "let",
+            "const",
+            "function",
+            "if",
+            "else",
+            "while",
+            "for",
+            "return",
+            "import",
+            "from",
+            "as",
+            "export",
+            "structure",
+            "interface",
+            "class",
+            "enum",
+            "alias",
+            "true",
+            "false",
+            "null",
+            "break",
+            "continue",
+            "loop",
+            "switch",
+            "async",
+            "await",
+            "static",
+            "public",
+            "private",
+            "protected",
+            "readonly",
+            "is",
+        ] {
+            if seen.insert(kw.to_string()) {
+                items.push(CompletionItem {
+                    label: kw.to_string(),
+                    kind: Some(CompletionItemKind::KEYWORD),
+                    ..Default::default()
+                });
+            }
+        }
+
+        let defs = self.type_defs.lock().await.clone();
+        if let Some(core) = defs.get("core") {
+            for m in &core.members {
+                if seen.insert(m.name.clone()) {
+                    items.push(CompletionItem {
+                        label: m.name.clone(),
+                        kind: Some(completion_kind_for_member(&m.kind)),
+                        detail: Some(m.signature.clone()),
+                        documentation: format_doc(&m.doc),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+        for (name, tm) in &defs {
+            if name == "core" || !seen.insert(name.clone()) {
+                continue;
+            }
+            items.push(CompletionItem {
+                label: name.clone(),
+                kind: Some(CompletionItemKind::MODULE),
+                detail: Some(tm.description.clone()),
+                ..Default::default()
+            });
+        }
+
+        {
+            let index = self.index.lock().await;
+            for file in index.all_files() {
+                let name = file.module_name();
+                if name.is_empty() || !seen.insert(name.clone()) {
+                    continue;
+                }
+                items.push(CompletionItem {
+                    label: name,
+                    kind: Some(CompletionItemKind::FILE),
+                    detail: Some(format!("workspace/{}", relative_name(&file.path))),
+                    ..Default::default()
+                });
+            }
+        }
+
+        items
+    }
+
+    async fn complete_members(
+        &self,
+        uri: &Url,
+        segments: &[String],
+    ) -> Option<Vec<CompletionItem>> {
+        let parsed = self.parsed_for_uri(uri).await?;
+        let defs = self.type_defs.lock().await.clone();
+        let index = self.index.lock().await;
+
+        let first = segments.first()?;
+        let mut members = receiver_members(&parsed, &defs, &index, first)?;
+        for segment in &segments[1..] {
+            let member = find_member(&members, segment)?;
+            members = member_members(&parsed, &defs, &index, member)?;
+        }
+
+        Some(members.iter().map(member_to_completion).collect())
     }
 }
 
 #[tower_lsp::async_trait]
 impl tower_lsp::LanguageServer for ClsLspBackend {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
-        let ws = params.root_uri.as_ref()
-            .and_then(|u| u.to_file_path().ok())
-            .map(|p| p.to_string_lossy().to_string());
+        let root = params
+            .workspace_folders
+            .as_ref()
+            .and_then(|folders| folders.first())
+            .and_then(|folder| folder.uri.to_file_path().ok())
+            .or_else(|| {
+                params
+                    .root_uri
+                    .as_ref()
+                    .and_then(|uri| uri.to_file_path().ok())
+            });
 
-        if let Some(ref w) = ws {
-            *self.workspace_root.lock().await = Some(w.clone());
+        if let Some(root) = root {
+            *self.workspace_root.lock().await = Some(root);
         }
-
-        // Cargar type_defs (builtins embebidos + workspace override)
-        let defs = type_defs::load_all_type_definitions(ws.as_deref());
-        *self.type_defs.lock().await = defs;
+        self.reload_workspace().await;
 
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
-                text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
-                completion_provider: Some(CompletionOptions { trigger_characters: Some(vec![".".into(), "\"".into(), "/".into()]), ..Default::default() }),
+                text_document_sync: Some(TextDocumentSyncCapability::Options(
+                    TextDocumentSyncOptions {
+                        open_close: Some(true),
+                        change: Some(TextDocumentSyncKind::FULL),
+                        save: Some(TextDocumentSyncSaveOptions::Supported(true)),
+                        ..Default::default()
+                    },
+                )),
+                completion_provider: Some(CompletionOptions {
+                    trigger_characters: Some(vec![".".into(), ":".into(), "\"".into()]),
+                    ..Default::default()
+                }),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                definition_provider: Some(OneOf::Left(true)),
+                document_symbol_provider: Some(OneOf::Left(true)),
+                workspace: Some(WorkspaceServerCapabilities {
+                    workspace_folders: Some(WorkspaceFoldersServerCapabilities {
+                        supported: Some(true),
+                        change_notifications: Some(OneOf::Left(true)),
+                    }),
+                    file_operations: None,
+                }),
                 ..Default::default()
             },
-            server_info: Some(ServerInfo { name: "clx-lsp".into(), version: Some("2.0.0".into()) }),
+            server_info: Some(ServerInfo {
+                name: "clx-lsp".into(),
+                version: Some(env!("CARGO_PKG_VERSION").into()),
+            }),
         })
     }
 
     async fn initialized(&self, _: InitializedParams) {}
-    async fn shutdown(&self) -> Result<()> { Ok(()) }
+
+    async fn shutdown(&self) -> Result<()> {
+        Ok(())
+    }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        self.documents.lock().await.insert(params.text_document.uri.clone(), params.text_document.text);
-        self.send_diags(&params.text_document.uri).await;
+        let uri = params.text_document.uri;
+        self.documents
+            .lock()
+            .await
+            .insert(uri.clone(), params.text_document.text);
+        self.send_diags(&uri).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         if let Some(change) = params.content_changes.into_iter().last() {
-            self.documents.lock().await.insert(params.text_document.uri.clone(), change.text);
-            self.send_diags(&params.text_document.uri).await;
+            let uri = params.text_document.uri;
+            self.documents.lock().await.insert(uri.clone(), change.text);
+            self.send_diags(&uri).await;
         }
     }
 
+    async fn did_save(&self, params: DidSaveTextDocumentParams) {
+        if let Ok(path) = params.text_document.uri.to_file_path() {
+            let reload_defs = matches!(path.extension().and_then(|e| e.to_str()), Some("clsi"))
+                || path.file_name().and_then(|n| n.to_str()) == Some("cls.json");
+            if reload_defs {
+                self.reload_workspace().await;
+            } else {
+                self.index.lock().await.load_path(&path);
+            }
+        }
+        self.send_diags(&params.text_document.uri).await;
+    }
+
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
-        self.documents.lock().await.remove(&params.text_document.uri);
-        self.client.publish_diagnostics(params.text_document.uri, vec![], None).await;
+        let uri = params.text_document.uri;
+        self.documents.lock().await.remove(&uri);
+        self.client.publish_diagnostics(uri, vec![], None).await;
+    }
+
+    async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
+        let affects_index = params.changes.iter().any(|change| {
+            let Ok(path) = change.uri.to_file_path() else {
+                return false;
+            };
+            matches!(
+                path.extension().and_then(|e| e.to_str()),
+                Some("clsx" | "clsi")
+            ) || path.file_name().and_then(|n| n.to_str()) == Some("cls.json")
+        });
+        if affects_index {
+            self.reload_workspace().await;
+            let open_docs: Vec<Url> = {
+                let docs = self.documents.lock().await;
+                docs.keys().cloned().collect()
+            };
+            for uri in open_docs {
+                self.send_diags(&uri).await;
+            }
+        }
+    }
+
+    async fn did_change_workspace_folders(&self, params: DidChangeWorkspaceFoldersParams) {
+        if let Some(folder) = params.event.added.first() {
+            if let Ok(path) = folder.uri.to_file_path() {
+                *self.workspace_root.lock().await = Some(path);
+                self.reload_workspace().await;
+            }
+        }
     }
 
     // ─── Completion ──────────────────────────────────────────────────────
@@ -173,336 +497,507 @@ impl tower_lsp::LanguageServer for ClsLspBackend {
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let uri = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
-        let source = self.get_doc(&uri).await.unwrap_or_default();
-        let defs = self.type_defs.lock().await.clone();
+        let source = self.source_for_uri(&uri).await.unwrap_or_default();
 
-        let is_member = params.context.as_ref().and_then(|c| c.trigger_character.as_deref()).map(|c| c == ".").unwrap_or(false);
-        if is_member {
-            return Ok(complete_member(&source, pos, &defs));
+        if let Some((segments, _partial)) = member_access_before_cursor(&source, pos) {
+            let items = self
+                .complete_members(&uri, &segments)
+                .await
+                .unwrap_or_default();
+            return Ok(Some(CompletionResponse::Array(items)));
         }
 
-        let mut items: Vec<CompletionItem> = Vec::new();
-        let mut seen: HashSet<String> = HashSet::new();
-
-        // Scope symbols: funciones y variables del documento actual + otros documentos abiertos
-        let docs = self.documents.lock().await;
-        for (doc_uri, doc_source) in docs.iter() {
-            if doc_uri == &uri { continue; }
-            for (name, kind) in &scope_symbols(doc_source) {
-                if seen.insert(name.clone()) {
-                    let icon = match kind { SymKind::Function => CompletionItemKind::FUNCTION, _ => CompletionItemKind::VARIABLE };
-                    items.push(CompletionItem { label: name.clone(), kind: Some(icon), detail: Some("open-document".into()), ..Default::default() });
-                }
-            }
-        }
-        for (name, kind) in &scope_symbols(&source) {
-            if seen.insert(name.clone()) {
-                let icon = match kind { SymKind::Function => CompletionItemKind::FUNCTION, _ => CompletionItemKind::VARIABLE };
-                items.push(CompletionItem { label: name.clone(), kind: Some(icon), detail: Some("scope".into()), ..Default::default() });
-            }
-        }
-
-        // Keywords
-        for kw in &["var", "function", "if", "else", "while", "for", "return", "import", "from", "as", "export", "structure", "interface", "true", "false", "null", "break", "continue", "loop", "switch"] {
-            if seen.insert(kw.to_string()) {
-                items.push(CompletionItem { label: kw.to_string(), kind: Some(CompletionItemKind::KEYWORD), ..Default::default() });
-            }
-        }
-
-        // Intrinsics desde core.clsi
-        if let Some(core) = defs.get("core") {
-            for m in &core.members {
-                let kind = match m.kind { type_defs::MemberKind::Function => CompletionItemKind::FUNCTION, _ => CompletionItemKind::VARIABLE };
-                if seen.insert(m.name.clone()) {
-                    items.push(CompletionItem { label: m.name.clone(), kind: Some(kind), detail: Some(m.signature.clone()), documentation: format_doc(&m.doc), ..Default::default() });
-                }
-            }
-        }
-
-        // Modulos
-        for (name, tm) in &defs {
-            if name == "core" { continue; }
-            if seen.insert(name.clone()) {
-                items.push(CompletionItem { label: name.clone(), kind: Some(CompletionItemKind::MODULE), detail: Some(tm.description.clone()), ..Default::default() });
-            }
-        }
-
-        // Workspace files
-        if let Some(root) = self.workspace_root.lock().await.clone() {
-            for path in Self::scan_workspace_clsx(&root) {
-                let p = Path::new(&path);
-                if let Some(name) = p.file_stem().and_then(|s| s.to_str()) {
-                    if !name.is_empty() && seen.insert(name.to_string()) {
-                        items.push(CompletionItem { label: name.to_string(), kind: Some(CompletionItemKind::FILE), detail: Some(format!("workspace/{}", path)), ..Default::default() });
-                    }
-                }
-            }
-        }
-
+        let items = self.general_completions(&source, &uri).await;
         Ok(Some(CompletionResponse::Array(items)))
     }
 
     // ─── Hover ───────────────────────────────────────────────────────────
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
-        let source = self.get_doc(&params.text_document_position_params.text_document.uri).await.unwrap_or_default();
+        let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-        let word = extract_word_at(&source, pos.line as usize, pos.character as usize).unwrap_or_default();
-        if word.is_empty() { return Ok(None); }
+        let source = self.source_for_uri(&uri).await.unwrap_or_default();
+        let Some((word, range)) = word_at(&source, pos) else {
+            return Ok(None);
+        };
 
-        let defs = self.type_defs.lock().await.clone();
-
-        // Buscar la palabra en los type_defs (core tiene prioridad, despues modulos)
-        for tm in defs.values() {
-            for m in &tm.members {
-                if m.name == word {
-                    let content = format_doc_content(tm, m);
-                    return Ok(Some(Hover { contents: HoverContents::Scalar(MarkedString::String(content)), range: None }));
-                }
+        if let Some(parsed) = self.parsed_for_uri(&uri).await {
+            if let Some(sym) = parsed.find_symbol(&word) {
+                return Ok(Some(symbol_hover(sym, range)));
             }
         }
 
-        Ok(Some(Hover { contents: HoverContents::Scalar(MarkedString::String(format!("`{}`", word))), range: None }))
+        let defs = self.type_defs.lock().await.clone();
+        if let Some(parsed) = self.parsed_for_uri(&uri).await {
+            for import in &parsed.imports {
+                if import.alias.as_deref() == Some(word.as_str()) {
+                    if let Some(tm) = defs.get(&import.path) {
+                        return Ok(Some(module_hover(tm, range)));
+                    }
+                }
+                if let Some((name, _)) = import
+                    .names
+                    .iter()
+                    .find(|(name, alias)| alias.as_deref().unwrap_or(name) == word)
+                {
+                    if let Some(tm) = defs.get(&import.path) {
+                        if let Some(member) = tm.members.iter().find(|m| &m.name == name) {
+                            return Ok(Some(member_hover(tm, member, range)));
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(tm) = defs.get(&word) {
+            return Ok(Some(module_hover(tm, range)));
+        }
+        for tm in defs.values() {
+            if let Some(member) = tm.members.iter().find(|m| m.name == word) {
+                return Ok(Some(member_hover(tm, member, range)));
+            }
+        }
+
+        if let Some(parsed) = self.parsed_for_uri(&uri).await {
+            let index = self.index.lock().await;
+            if let Some((file, target_name)) = imported_symbol_file(&parsed, &index, &word) {
+                if let Some(sym) = file.find_symbol(&target_name) {
+                    return Ok(Some(symbol_hover(sym, range)));
+                }
+            }
+            if let Some((_file, sym)) = index.find_global(&word).into_iter().next() {
+                return Ok(Some(symbol_hover(sym, range)));
+            }
+        }
+
+        Ok(None)
     }
 
     // ─── Go-to-definition ────────────────────────────────────────────────
 
-    async fn goto_definition(&self, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-        let source = self.get_doc(&uri).await.unwrap_or_default();
-        let mut lexer = Lexer::new(&source);
-        let tokens = match lexer.tokenize() { Ok(t) => t, Err(_) => return Ok(None) };
-        let mut parser = Parser::new(tokens);
-        let module = match parser.parse() { Ok(m) => m, Err(_) => return Ok(None) };
-        let symbols = build_symbols(&module);
-        if let Some(word) = extract_word_at(&source, pos.line as usize, pos.character as usize) {
-            for sym in &symbols {
-                if sym.name == word {
+        let source = self.source_for_uri(&uri).await.unwrap_or_default();
+        let Some((word, _)) = word_at(&source, pos) else {
+            return Ok(None);
+        };
+        let Some(parsed) = self.parsed_for_uri(&uri).await else {
+            return Ok(None);
+        };
+
+        if let Some(sym) = parsed.find_symbol(&word) {
+            return Ok(Some(definition_response(uri.clone(), &parsed.source, sym)));
+        }
+
+        let index = self.index.lock().await;
+        for import in &parsed.imports {
+            let target_name = import
+                .names
+                .iter()
+                .find(|(name, alias)| alias.as_deref().unwrap_or(name) == word)
+                .map(|(name, _)| name.as_str());
+
+            if import.alias.as_deref() == Some(word.as_str()) {
+                if let Some(file) = index.resolve_import(&parsed, &import.path) {
                     return Ok(Some(GotoDefinitionResponse::Scalar(Location {
-                        uri: uri.clone(),
-                        range: Range { start: Position { line: sym.span.start_line.saturating_sub(1), character: sym.span.start_col.saturating_sub(1) }, end: Position { line: sym.span.end_line.saturating_sub(1), character: sym.span.end_col.saturating_sub(1) } },
+                        uri: file.uri.clone(),
+                        range: Range::default(),
                     })));
                 }
             }
+
+            if let Some(target_name) = target_name {
+                if let Some(file) = index.resolve_import(&parsed, &import.path) {
+                    if let Some(sym) = file.find_symbol(target_name) {
+                        return Ok(Some(definition_response(
+                            file.uri.clone(),
+                            &file.source,
+                            sym,
+                        )));
+                    }
+                }
+            }
         }
+
+        let matches = index.find_global(&word);
+        if matches.len() == 1 {
+            let (file, sym) = matches[0];
+            return Ok(Some(definition_response(
+                file.uri.clone(),
+                &file.source,
+                sym,
+            )));
+        }
+
         Ok(None)
     }
 
     // ─── Document symbols ────────────────────────────────────────────────
 
-    async fn document_symbol(&self, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {
-        let source = self.get_doc(&params.text_document.uri).await.unwrap_or_default();
-        let mut lexer = Lexer::new(&source);
-        let tokens = match lexer.tokenize() { Ok(t) => t, Err(_) => return Ok(None) };
-        let mut parser = Parser::new(tokens);
-        let module = match parser.parse() { Ok(m) => m, Err(_) => return Ok(None) };
-        let symbols = build_symbols(&module);
-        let info: Vec<SymbolInformation> = symbols.iter().map(|s| {
-            SymbolInformation {
-                name: s.name.clone(),
-                kind: match s.kind { SymKind::Function => SymbolKind::FUNCTION, _ => SymbolKind::VARIABLE },
-                location: Location { uri: params.text_document.uri.clone(), range: Range { start: Position { line: s.span.start_line.saturating_sub(1), character: s.span.start_col.saturating_sub(1) }, end: Position { line: s.span.end_line.saturating_sub(1), character: s.span.end_col.saturating_sub(1) } } },
-                container_name: None, tags: None, #[allow(deprecated)] deprecated: None,
+    async fn document_symbol(
+        &self,
+        params: DocumentSymbolParams,
+    ) -> Result<Option<DocumentSymbolResponse>> {
+        let source = self
+            .source_for_uri(&params.text_document.uri)
+            .await
+            .unwrap_or_default();
+        let symbols = parse_source(&source);
+        if symbols.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(DocumentSymbolResponse::Nested(
+            symbols
+                .iter()
+                .map(|sym| to_document_symbol(sym, &source))
+                .collect(),
+        )))
+    }
+}
+
+// ─── Resolución de miembros ─────────────────────────────────────────────
+
+fn receiver_members(
+    parsed: &ParsedFile,
+    defs: &HashMap<String, TypeModule>,
+    index: &WorkspaceIndex,
+    name: &str,
+) -> Option<Vec<MemberInfo>> {
+    for import in &parsed.imports {
+        if !import_matches(import, name) {
+            continue;
+        }
+        if let Some(tm) = defs.get(&import.path) {
+            return Some(members_from_type_module(tm));
+        }
+        if let Some(file) = index.resolve_import(parsed, &import.path) {
+            return Some(file.symbols.iter().map(MemberInfo::from).collect());
+        }
+    }
+
+    if let Some(tm) = defs.get(name) {
+        return Some(members_from_type_module(tm));
+    }
+    if let Some(file) = index.file_by_module_name(name) {
+        return Some(file.symbols.iter().map(MemberInfo::from).collect());
+    }
+    if let Some(sym) = parsed.find_symbol(name) {
+        if !sym.children.is_empty() {
+            return Some(sym.children.iter().map(MemberInfo::from).collect());
+        }
+        if let Some(ty) = &sym.ty {
+            return type_members(parsed, defs, index, ty);
+        }
+    }
+    type_members(parsed, defs, index, name)
+}
+
+fn member_members(
+    parsed: &ParsedFile,
+    defs: &HashMap<String, TypeModule>,
+    index: &WorkspaceIndex,
+    member: &MemberInfo,
+) -> Option<Vec<MemberInfo>> {
+    if !member.children.is_empty() {
+        return Some(member.children.clone());
+    }
+    member
+        .ty
+        .as_deref()
+        .and_then(|ty| type_members(parsed, defs, index, ty))
+}
+
+fn type_members(
+    parsed: &ParsedFile,
+    defs: &HashMap<String, TypeModule>,
+    index: &WorkspaceIndex,
+    type_name: &str,
+) -> Option<Vec<MemberInfo>> {
+    let base = type_name
+        .split('<')
+        .next()
+        .unwrap_or(type_name)
+        .trim()
+        .trim_end_matches("[]");
+
+    if let Some(sym) = parsed.find_symbol(base) {
+        if !sym.children.is_empty() {
+            return Some(sym.children.iter().map(MemberInfo::from).collect());
+        }
+    }
+    for (_file, sym) in index.find_global(base) {
+        if !sym.children.is_empty() {
+            return Some(sym.children.iter().map(MemberInfo::from).collect());
+        }
+    }
+    defs.get(base).map(members_from_type_module)
+}
+
+fn import_matches(import: &ImportRef, name: &str) -> bool {
+    if import.alias.as_deref() == Some(name) {
+        return true;
+    }
+    if import.alias.is_none() {
+        if import
+            .names
+            .iter()
+            .any(|(original, alias)| alias.as_deref().unwrap_or(original) == name)
+        {
+            return true;
+        }
+        return path_leaf(&import.path) == name;
+    }
+    false
+}
+
+fn path_leaf(path: &str) -> &str {
+    path.rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(path)
+        .trim_end_matches(".clsx")
+        .trim_end_matches(".clsi")
+}
+
+fn imported_symbol_file<'a>(
+    parsed: &ParsedFile,
+    index: &'a WorkspaceIndex,
+    word: &str,
+) -> Option<(&'a ParsedFile, String)> {
+    for import in &parsed.imports {
+        if import.alias.as_deref() == Some(word) {
+            if let Some(file) = index.resolve_import(parsed, &import.path) {
+                return Some((file, word.to_string()));
             }
-        }).collect();
-        Ok(Some(DocumentSymbolResponse::Flat(info)))
-    }
-}
-
-// ─── Free helpers ──────────────────────────────────────────────────────
-
-fn record_keys(v: &Value) -> Vec<String> {
-    if let Value::Record(map) = v { map.keys().cloned().collect() } else { vec![] }
-}
-
-fn load_module_exports(name: &str) -> Option<Vec<String>> {
-    match name {
-        // Migracion dev-2 (Fase 7): antes se llamaba al walker
-        // (cls_runtime::stdlib::math::module(), etc.) para obtener las
-        // keys. Al eliminarse el walker, las keys son hardcoded aqui
-        // (deben coincidir con los nombres en `cls-runtime/clsi/*.clsi`).
-        // TODO dev-2: leer desde `type_defs::load_all_type_definitions()`
-        // (un solo lugar para todos los .clsi, no hardcoded).
-        "math" => Some(vec![
-            "PI".into(), "E".into(),
-            "abs".into(), "sqrt".into(), "pow".into(),
-            "min".into(), "max".into(),
-            "floor".into(), "ceil".into(), "round".into(),
-            "random".into(), "sin".into(), "cos".into(), "tan".into(),
-            "log".into(), "range".into(),
-        ]),
-        "json" => Some(vec!["parse".into(), "stringify".into()]),
-        "fs" => { let vfs = Arc::new(VfsResolver::new()); Some(record_keys(&fs::module(vfs))) }
-        "http" => Some(record_keys(&http::module())),
-        // net eliminado (dev-2): no hay módulo runtime.
-        "strings" => Some(record_keys(&crate::modules::strings::module())),
-        _ => None,
-    }
-}
-
-fn build_import_map(source: &str) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    let toks = match Lexer::new(source).tokenize() { Ok(t) => t, Err(_) => return map };
-    let module = match Parser::new(toks).parse() { Ok(m) => m, Err(_) => return map };
-    for stmt in &module.statements {
-        match stmt {
-            Statement::Import(i) => {
-                if let Some(alias) = &i.alias { map.insert(alias.clone(), i.path.clone()); }
-                else {
-                    let name = i.path.rsplit('/').next().unwrap_or(&i.path).trim_end_matches(".clsx");
-                    map.insert(name.to_string(), i.path.clone());
-                }
-            }
-            Statement::FromImport(fi) => {
-                for im in &fi.names {
-                    let alias = im.alias.as_deref().unwrap_or(&im.name);
-                    map.insert(alias.to_string(), fi.path.clone());
-                }
-            }
-            _ => {}
         }
-    }
-    map
-}
-
-fn extract_word_at(source: &str, line: usize, col: usize) -> Option<String> {
-    let line_text = source.lines().nth(line)?;
-    if col >= line_text.len() { return None; }
-    let chars: Vec<char> = line_text.chars().collect();
-    let mut start = col; let mut end = col;
-    while start > 0 && (chars[start - 1].is_alphanumeric() || chars[start - 1] == '_') { start -= 1; }
-    while end < chars.len() && (chars[end].is_alphanumeric() || chars[end] == '_') { end += 1; }
-    if start < end { Some(chars[start..end].iter().collect()) } else { None }
-}
-
-fn scope_symbols(source: &str) -> Vec<(String, SymKind)> {
-    let tokens = match Lexer::new(source).tokenize() { Ok(t) => t, Err(_) => return vec![] };
-    let module = match Parser::new(tokens).parse() { Ok(m) => m, Err(_) => return vec![] };
-    let mut r = Vec::new();
-    for stmt in &module.statements {
-        match stmt {
-            Statement::FunctionDecl(f) => { r.push((f.name.clone(), SymKind::Function)); for p in &f.params { r.push((p.name.clone(), SymKind::Parameter)); } }
-            Statement::VarDecl(v) | Statement::ConstDecl(v) => { r.push((v.name.clone(), SymKind::Variable)); }
-            _ => {}
-        }
-    }
-    r
-}
-
-fn struct_fields(source: &str, struct_name: &str) -> Vec<(String, String)> {
-    let tokens = match Lexer::new(source).tokenize() { Ok(t) => t, Err(_) => return vec![] };
-    let module = match Parser::new(tokens).parse() { Ok(m) => m, Err(_) => return vec![] };
-    for stmt in &module.statements {
-        if let Statement::StructureDecl(s) = stmt {
-            if s.name == struct_name {
-                return s.fields.iter().map(|f| {
-                    let hint = match &f.type_ann.kind { TypeKind::Named(n, _) => n.clone(), _ => "Any".to_string() };
-                    (f.name.clone(), hint)
-                }).collect();
+        if let Some((name, _)) = import
+            .names
+            .iter()
+            .find(|(name, alias)| alias.as_deref().unwrap_or(name) == word)
+        {
+            if let Some(file) = index.resolve_import(parsed, &import.path) {
+                return Some((file, name.clone()));
             }
         }
     }
-    vec![]
+    None
 }
 
-/// Completa miembros de objeto: módulos, structs
-fn complete_member(source: &str, pos: Position, defs: &HashMap<String, TypeModule>) -> Option<CompletionResponse> {
-    let line = pos.line as usize;
-    let col = (pos.character.saturating_sub(2)) as usize;
-    let word = if let Some(line_text) = source.lines().nth(line) {
-        let bound = col.min(line_text.len());
-        let before: String = line_text.chars().take(bound).collect();
-        let chars: Vec<char> = before.chars().collect();
-        let mut end = chars.len();
-        while end > 0 && (chars[end - 1].is_alphanumeric() || chars[end - 1] == '_') { end -= 1; }
-        let start = end;
-        while end < chars.len() && (chars[end].is_alphanumeric() || chars[end] == '_') { end += 1; }
-        if start < end { Some(chars[start..end].iter().collect::<String>()) } else { None }
-    } else { None };
+// ─── Completion helpers ─────────────────────────────────────────────────
 
-    let obj = word.unwrap_or_default();
-    if obj.is_empty() { return None; }
-
-    let mut items: Vec<CompletionItem> = Vec::new();
-
-    // 1. Buscar en type_defs por import map
-    let import_map = build_import_map(source);
-    if let Some(module_name) = import_map.get(&obj) {
-        if let Some(tm) = defs.get(module_name.as_str()).or_else(|| defs.get(module_name)) {
-            add_type_members(&mut items, tm);
-        } else if let Some(keys) = load_module_exports(module_name) {
-            for k in keys { items.push(CompletionItem { label: k, kind: Some(CompletionItemKind::FUNCTION), ..Default::default() }); }
-        }
-    }
-
-    // 2. Buscar por nombre directo
-    if items.is_empty() {
-        if let Some(tm) = defs.get(&obj) {
-            add_type_members(&mut items, tm);
-        } else if let Some(keys) = load_module_exports(&obj) {
-            for k in keys { items.push(CompletionItem { label: k, kind: Some(CompletionItemKind::FUNCTION), ..Default::default() }); }
-        }
-    }
-
-    // 3. Struct fields
-    if items.is_empty() {
-        for (name, type_hint) in struct_fields(source, &obj) {
-            items.push(CompletionItem { label: name, kind: Some(CompletionItemKind::PROPERTY), detail: Some(type_hint), ..Default::default() });
-        }
-    }
-
-    if items.is_empty() { None } else { Some(CompletionResponse::Array(items)) }
-}
-
-fn add_type_members(items: &mut Vec<CompletionItem>, tm: &TypeModule) {
-    for m in &tm.members {
-        items.push(CompletionItem { label: m.name.clone(), kind: Some(completion_kind_for(&m.kind)), detail: Some(m.signature.clone()), documentation: format_doc(&m.doc), ..Default::default() });
+fn push_symbol_completion(
+    items: &mut Vec<CompletionItem>,
+    seen: &mut HashSet<String>,
+    sym: &LspSymbol,
+    detail_prefix: &str,
+) {
+    if seen.insert(sym.name.clone()) {
+        items.push(CompletionItem {
+            label: sym.name.clone(),
+            kind: Some(completion_kind(sym.kind)),
+            detail: Some(format!("{}: {}", detail_prefix, sym.detail)),
+            documentation: format_doc(&sym.doc),
+            ..Default::default()
+        });
     }
 }
 
-fn completion_kind_for(k: &type_defs::MemberKind) -> CompletionItemKind {
+fn member_to_completion(member: &MemberInfo) -> CompletionItem {
+    CompletionItem {
+        label: member.name.clone(),
+        kind: Some(completion_kind(member.kind)),
+        detail: Some(member.detail.clone()),
+        documentation: format_doc(&member.doc),
+        ..Default::default()
+    }
+}
+
+fn completion_kind(kind: SymbolKind) -> CompletionItemKind {
+    if kind == SymbolKind::FUNCTION {
+        CompletionItemKind::FUNCTION
+    } else if kind == SymbolKind::METHOD {
+        CompletionItemKind::METHOD
+    } else if kind == SymbolKind::CONSTRUCTOR {
+        CompletionItemKind::CONSTRUCTOR
+    } else if kind == SymbolKind::CLASS {
+        CompletionItemKind::CLASS
+    } else if kind == SymbolKind::STRUCT {
+        CompletionItemKind::STRUCT
+    } else if kind == SymbolKind::INTERFACE {
+        CompletionItemKind::INTERFACE
+    } else if kind == SymbolKind::ENUM {
+        CompletionItemKind::ENUM
+    } else if kind == SymbolKind::ENUM_MEMBER {
+        CompletionItemKind::ENUM_MEMBER
+    } else if kind == SymbolKind::PROPERTY {
+        CompletionItemKind::PROPERTY
+    } else if kind == SymbolKind::FIELD {
+        CompletionItemKind::FIELD
+    } else if kind == SymbolKind::CONSTANT {
+        CompletionItemKind::CONSTANT
+    } else if kind == SymbolKind::MODULE || kind == SymbolKind::NAMESPACE {
+        CompletionItemKind::MODULE
+    } else if kind == SymbolKind::TYPE_PARAMETER {
+        CompletionItemKind::TYPE_PARAMETER
+    } else {
+        CompletionItemKind::VARIABLE
+    }
+}
+
+fn completion_kind_for_member(kind: &type_defs::MemberKind) -> CompletionItemKind {
     use type_defs::MemberKind::*;
-    match k {
+    match kind {
         Function => CompletionItemKind::FUNCTION,
         Variable => CompletionItemKind::VARIABLE,
         Constant => CompletionItemKind::CONSTANT,
         Class => CompletionItemKind::CLASS,
         Structure => CompletionItemKind::STRUCT,
         Interface => CompletionItemKind::INTERFACE,
-        Module => CompletionItemKind::MODULE,
-        Namespace => CompletionItemKind::MODULE,
+        Module | Namespace => CompletionItemKind::MODULE,
         Type => CompletionItemKind::TYPE_PARAMETER,
         Enum => CompletionItemKind::ENUM,
     }
 }
 
-// ─── Doc formatting ───────────────────────────────────────────────────
+// ─── Hover / definition helpers ─────────────────────────────────────────
+
+fn module_hover(tm: &TypeModule, range: Range) -> Hover {
+    Hover {
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: format!(
+                "**module {}**\n\n{}",
+                tm.name,
+                if tm.description.is_empty() {
+                    "Módulo CLS".to_string()
+                } else {
+                    tm.description.clone()
+                }
+            ),
+        }),
+        range: Some(range),
+    }
+}
+
+fn member_hover(tm: &TypeModule, member: &type_defs::TypeMember, range: Range) -> Hover {
+    Hover {
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: format_doc_content(tm, member),
+        }),
+        range: Some(range),
+    }
+}
+
+fn symbol_hover(sym: &LspSymbol, range: Range) -> Hover {
+    Hover {
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: format_symbol_markdown(sym),
+        }),
+        range: Some(range),
+    }
+}
+
+fn format_symbol_markdown(sym: &LspSymbol) -> String {
+    let mut parts = vec![format!("**{}**\n\n`{}`", sym.name, sym.detail)];
+    if !sym.doc.is_empty() {
+        parts.push(format_doc_text(&sym.doc));
+    }
+    parts.join("\n\n")
+}
+
+fn format_doc_text(doc: &str) -> String {
+    let mut parts = Vec::new();
+    for line in doc.lines() {
+        let text = line.trim_start_matches('#').trim();
+        if let Some(rest) = text.strip_prefix("@description") {
+            parts.push(rest.trim().to_string());
+        } else if let Some(rest) = text.strip_prefix("@params") {
+            parts.push(format!("- `{}`", rest.trim()));
+        } else if let Some(rest) = text.strip_prefix("@return") {
+            parts.push(format!("-> {}", rest.trim()));
+        } else if let Some(rest) = text.strip_prefix("@deprecated") {
+            parts.push(format!("~~DEPRECATED: {}~~", rest.trim()));
+        }
+    }
+    parts.join("\n\n")
+}
 
 fn format_doc(doc: &str) -> Option<Documentation> {
-    if doc.is_empty() { None } else { Some(Documentation::String(doc.to_string())) }
+    let text = format_doc_text(doc);
+    if text.is_empty() {
+        None
+    } else {
+        Some(Documentation::MarkupContent(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: text,
+        }))
+    }
 }
 
 fn format_doc_content(tm: &TypeModule, m: &type_defs::TypeMember) -> String {
-    let mut parts = vec![
-        format!("**{}**  `{}`", m.name, m.signature),
-    ];
-    if !tm.description.is_empty() { parts.push(format!("_{}_", tm.description)); }
-    let lines: Vec<&str> = m.doc.lines().collect();
-    for line in &lines {
-        let l = line.trim_start_matches('#').trim();
-        if l.starts_with("@description") { parts.push(l.trim_start_matches("@description ").to_string()); }
-        else if l.starts_with("@params") { parts.push(format!("- `{}`", l.trim_start_matches("@params "))); }
-        else if l.starts_with("@return") { parts.push(format!("-> {}", l.trim_start_matches("@return "))); }
-        else if l.starts_with("@deprecated") { parts.push(format!("~~DEPRECATED: {}~~", l.trim_start_matches("@deprecated "))); }
+    let mut parts = vec![format!("**{}**  `{}`", m.name, m.signature)];
+    if !tm.description.is_empty() {
+        parts.push(format!("_{}_", tm.description));
+    }
+    let doc = format_doc_text(&m.doc);
+    if !doc.is_empty() {
+        parts.push(doc);
     }
     parts.join("\n\n")
+}
+
+fn definition_response(uri: Url, source: &str, sym: &LspSymbol) -> GotoDefinitionResponse {
+    GotoDefinitionResponse::Scalar(Location {
+        uri,
+        range: text_span_to_range(source, &sym.span),
+    })
+}
+
+#[allow(deprecated)]
+fn to_document_symbol(sym: &LspSymbol, source: &str) -> DocumentSymbol {
+    let range = text_span_to_range(source, &sym.span);
+    DocumentSymbol {
+        name: sym.name.clone(),
+        detail: if sym.detail.is_empty() {
+            None
+        } else {
+            Some(sym.detail.clone())
+        },
+        kind: sym.kind,
+        tags: None,
+        deprecated: None,
+        range,
+        selection_range: range,
+        children: if sym.children.is_empty() {
+            None
+        } else {
+            Some(
+                sym.children
+                    .iter()
+                    .map(|child| to_document_symbol(child, source))
+                    .collect(),
+            )
+        },
+    }
+}
+
+fn relative_name(path: &Path) -> String {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_string()
 }
 
 pub fn run_server(silent: bool) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        if !silent { eprintln!("[clx lsp] ready"); }
+        if !silent {
+            eprintln!("[clx lsp] ready");
+        }
         let stdin = tokio::io::stdin();
         let stdout = tokio::io::stdout();
         let (service, socket) = LspService::new(|client| ClsLspBackend::new(client));

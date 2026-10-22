@@ -2,6 +2,8 @@
 //! CLI de desarrollo para el lenguaje CLS.
 mod modules;
 mod lsp;
+mod lsp_index;
+mod lsp_text;
 mod type_defs;
 mod subcommands;
 mod jit;
