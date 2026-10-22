@@ -32,8 +32,10 @@ Crea un proyecto nuevo con la estructura base:
     └── main.clsx     # function main(args: String[]) -> int
 ```
 
-`cls.json` incluye **todos los parámetros del manifest** (incluidos
-`pathModules`, `pathModulesNatives` y `testEntry`, aunque estén vacíos).
+`cls.json` incluye **todos los parámetros de proyecto, compilador, runtime y
+sandbox** (incluidos `pathModules`, `pathModulesNatives` y `testEntry`, aunque
+estén vacíos). `export`, `setup` y `lockfileVersion` son específicos de módulos,
+paquetes y lockfiles; se agregan a mano cuando corresponden.
 
 | Opción | Efecto |
 |---|---|
