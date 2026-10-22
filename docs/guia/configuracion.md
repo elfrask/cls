@@ -103,7 +103,7 @@ escribir configuración adicional usando `fs` y `env`.
 | Campo | Default | Descripción |
 |---|---|---|
 | `optimization` | `false` | Optimización en interpretación |
-| `mode` | `"pure-ast"` | `"pure-ast"` \| `"jit"` |
+| `mode` | `"jit"` | `"jit"` (único intérprete; `"pure-ast"` es histórico) |
 | `runtime` | object | Memoria del runtime (`RuntimeMemoryConfig`) |
 | `sandbox` | object | Sandbox (`SandboxConfig`) |
 
@@ -111,7 +111,7 @@ escribir configuración adicional usando `fs` y `env`.
 
 | Campo | Default | Descripción |
 |---|---|---|
-| `memoryLimit` | `"1GB"` | Límite de memoria lineal del sandbox (bytes; `"512MB"`, `"1GiB"`, `"500"`...). **Aplicado** por el JIT (wasmtime `StoreLimits`); `"0"` = sin límite. Override: env `CLS_MEMORY_LIMIT` |
+| `memoryLimit` | `"1GiB"` | Límite de memoria lineal del sandbox (bytes; `"512MB"`, `"1GiB"`, `"500"`...). **Aplicado** por el JIT (wasmtime `StoreLimits`); `"0"` = sin límite. Override: env `CLS_MEMORY_LIMIT` |
 | `stackSize` | `"8MB"` | Tamaño de stack |
 | `gc` | object | GC (`GcConfig`: `enabled` `false`, `strategy` `"compiled"`, `threshold` `"64MB"`) |
 
