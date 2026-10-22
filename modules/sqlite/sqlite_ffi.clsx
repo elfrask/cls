@@ -45,3 +45,81 @@ when (os: windows) {
         export function o_finalize(s: CLong) -> CLong;
     };
 };
+
+when (os: linux) {
+    extension "./sqlite_shim.so" as C {
+        export function o_init() -> CLong;
+        export function o_version(_d: CString) -> CString;
+        export function o_error(_d: CString) -> CString;
+        export function o_remove(path: CString) -> CLong;
+
+        export function o_open(path: CString) -> CLong;
+        export function o_close(h: CLong) -> CLong;
+        export function o_exec(h: CLong, sql: CString) -> CLong;
+        export function o_last_id(h: CLong) -> CLong;
+        export function o_changes(h: CLong) -> CLong;
+        export function o_integrity(h: CLong) -> CString;
+
+        export function o_query(h: CLong, sql: CString) -> CLong;
+        export function o_result_from_stmt(s: CLong) -> CLong;
+        export function o_nrows(r: CLong) -> CLong;
+        export function o_ncols(r: CLong) -> CLong;
+        export function o_colname(r: CLong, c: CLong) -> CString;
+        export function o_cell_type(r: CLong, i: CLong, c: CLong) -> CLong;
+        export function o_cell_int(r: CLong, i: CLong, c: CLong) -> CLong;
+        export function o_cell_double(r: CLong, i: CLong, c: CLong) -> CDouble;
+        export function o_cell_text(r: CLong, i: CLong, c: CLong) -> CString;
+        export function o_cell_blob_hex(r: CLong, i: CLong, c: CLong) -> CString;
+        export function o_column_int(r: CLong, c: CLong) -> CArray;
+        export function o_free_result(r: CLong) -> CLong;
+
+        export function o_prepare(h: CLong, sql: CString) -> CLong;
+        export function o_bind_int(s: CLong, idx: CLong, v: CLong) -> CLong;
+        export function o_bind_double(s: CLong, idx: CLong, v: CDouble) -> CLong;
+        export function o_bind_text(s: CLong, idx: CLong, v: CString) -> CLong;
+        export function o_bind_null(s: CLong, idx: CLong) -> CLong;
+        export function o_bind_blob_hex(s: CLong, idx: CLong, hex: CString) -> CLong;
+        export function o_step(s: CLong) -> CLong;
+        export function o_reset(s: CLong) -> CLong;
+        export function o_finalize(s: CLong) -> CLong;
+    };
+};
+
+when (os: macos) {
+    extension "./sqlite_shim.dylib" as C {
+        export function o_init() -> CLong;
+        export function o_version(_d: CString) -> CString;
+        export function o_error(_d: CString) -> CString;
+        export function o_remove(path: CString) -> CLong;
+
+        export function o_open(path: CString) -> CLong;
+        export function o_close(h: CLong) -> CLong;
+        export function o_exec(h: CLong, sql: CString) -> CLong;
+        export function o_last_id(h: CLong) -> CLong;
+        export function o_changes(h: CLong) -> CLong;
+        export function o_integrity(h: CLong) -> CString;
+
+        export function o_query(h: CLong, sql: CString) -> CLong;
+        export function o_result_from_stmt(s: CLong) -> CLong;
+        export function o_nrows(r: CLong) -> CLong;
+        export function o_ncols(r: CLong) -> CLong;
+        export function o_colname(r: CLong, c: CLong) -> CString;
+        export function o_cell_type(r: CLong, i: CLong, c: CLong) -> CLong;
+        export function o_cell_int(r: CLong, i: CLong, c: CLong) -> CLong;
+        export function o_cell_double(r: CLong, i: CLong, c: CLong) -> CDouble;
+        export function o_cell_text(r: CLong, i: CLong, c: CLong) -> CString;
+        export function o_cell_blob_hex(r: CLong, i: CLong, c: CLong) -> CString;
+        export function o_column_int(r: CLong, c: CLong) -> CArray;
+        export function o_free_result(r: CLong) -> CLong;
+
+        export function o_prepare(h: CLong, sql: CString) -> CLong;
+        export function o_bind_int(s: CLong, idx: CLong, v: CLong) -> CLong;
+        export function o_bind_double(s: CLong, idx: CLong, v: CDouble) -> CLong;
+        export function o_bind_text(s: CLong, idx: CLong, v: CString) -> CLong;
+        export function o_bind_null(s: CLong, idx: CLong) -> CLong;
+        export function o_bind_blob_hex(s: CLong, idx: CLong, hex: CString) -> CLong;
+        export function o_step(s: CLong) -> CLong;
+        export function o_reset(s: CLong) -> CLong;
+        export function o_finalize(s: CLong) -> CLong;
+    };
+};

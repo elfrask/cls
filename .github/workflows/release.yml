@@ -46,6 +46,11 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File scripts/fetch-resources.ps1 -Only libargon2
           bash modules/argon2/build.sh
+          powershell -ExecutionPolicy Bypass -File modules/csprng/build.ps1
+          powershell -ExecutionPolicy Bypass -File modules/io/build.ps1
+          powershell -ExecutionPolicy Bypass -File modules/net/build.ps1
+          powershell -ExecutionPolicy Bypass -File modules/socket/build.ps1
+          powershell -ExecutionPolicy Bypass -File modules/sqlite/build.ps1
 
       - name: Recursos nativos (Linux)
         if: matrix.os_name == 'linux'
@@ -53,6 +58,7 @@ jobs:
         run: |
           bash scripts/fetch-resources.sh libargon2
           bash modules/argon2/build.sh
+          bash scripts/build-standard-modules.sh
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable

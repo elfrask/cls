@@ -27,7 +27,11 @@ PORTABLE_DIR="$OUT/portable"
 mkdir -p "$PORTABLE_DIR"
 cp "$REL/clx$EXE_EXT" "$PORTABLE_DIR/"
 cp "$REL/clxr$EXE_EXT" "$PORTABLE_DIR/"
+# Modulos estandar junto al binario: el resolver busca {dir_clx}/modules.
+cp -r "$ROOT/modules/." "$PORTABLE_DIR/modules/"
+find "$PORTABLE_DIR/modules" -type d -name .cls-cache -prune -exec rm -rf {} +
 (cd "$PORTABLE_DIR" && "$ZIP" . "../cls-$OS-v$VERSION-$SHA7.zip")
+(cd "$PORTABLE_DIR/modules" && "$ZIP" . "../../modules-$OS-v$VERSION-$SHA7.zip")
 
 # ── 2.2 Binarios sueltos ─────────────────────────────────────────────────────
 cp "$REL/clx$EXE_EXT" "$OUT/clx-$OS-x64$EXE_EXT"

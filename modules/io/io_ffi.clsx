@@ -30,3 +30,49 @@ when (os: windows) {
         export function o_setmode(fd: CInt, mode: CInt) -> CInt;
     };
 };
+
+when (os: linux) {
+    extension "./io_shim.so" as C {
+        export function o_read_text(path: CString) -> CString;
+        export function o_read_bytes(path: CString) -> CArray;
+        export function o_write_text(path: CString, data: CString) -> CLong;
+        export function o_append_text(path: CString, data: CString) -> CLong;
+
+        export function o_exists(path: CString) -> CInt;
+        export function o_isdir(path: CString) -> CInt;
+        export function o_isfile(path: CString) -> CInt;
+        export function o_remove(path: CString) -> CLong;
+
+        export function o_cwd() -> CString;
+        export function o_chdir(path: CString) -> CInt;
+
+        export function o_open(path: CString, flags: CInt, mode: CInt) -> CInt;
+        export function o_close(fd: CInt) -> CInt;
+        export function o_write_fd(fd: CInt, data: CString) -> CLong;
+        export function o_read_line(fd: CInt) -> CString;
+        export function o_setmode(fd: CInt, mode: CInt) -> CInt;
+    };
+};
+
+when (os: macos) {
+    extension "./io_shim.dylib" as C {
+        export function o_read_text(path: CString) -> CString;
+        export function o_read_bytes(path: CString) -> CArray;
+        export function o_write_text(path: CString, data: CString) -> CLong;
+        export function o_append_text(path: CString, data: CString) -> CLong;
+
+        export function o_exists(path: CString) -> CInt;
+        export function o_isdir(path: CString) -> CInt;
+        export function o_isfile(path: CString) -> CInt;
+        export function o_remove(path: CString) -> CLong;
+
+        export function o_cwd() -> CString;
+        export function o_chdir(path: CString) -> CInt;
+
+        export function o_open(path: CString, flags: CInt, mode: CInt) -> CInt;
+        export function o_close(fd: CInt) -> CInt;
+        export function o_write_fd(fd: CInt, data: CString) -> CLong;
+        export function o_read_line(fd: CInt) -> CString;
+        export function o_setmode(fd: CInt, mode: CInt) -> CInt;
+    };
+};
