@@ -284,24 +284,24 @@ static int slot_alloc(void *arr, size_t n, size_t elemsize) {
 /* API publica (sin punteros).                                           */
 /* ------------------------------------------------------------------ */
 
-EXPORT int64_t o_init(void) {
+EXPORT int64_t sq_init(void) {
     if (!ensure_loaded()) return -1;
     return 0;
 }
 
 /* version de sqlite (dummy param por workaround del typeck de CLS). */
-EXPORT const char *o_version(const char *_d) {
+EXPORT const char *sq_version(const char *_d) {
     (void)_d;
     if (!ensure_loaded()) return g_error;
     return p_libversion ? p_libversion() : "?";
 }
 
-EXPORT const char *o_error(const char *_d) {
+EXPORT const char *sq_error(const char *_d) {
     (void)_d;
     return g_error;
 }
 
-EXPORT int64_t o_open(const char *path) {
+EXPORT int64_t sq_open(const char *path) {
     if (!ensure_loaded()) return -1;
     int idx = slot_alloc(g_conns, MAX_CONN, sizeof(Conn));
     if (idx < 0) { set_error("sin slots de conexion"); return -2; }
@@ -318,35 +318,35 @@ EXPORT int64_t o_open(const char *path) {
     return (int64_t)idx;
 }
 
-EXPORT int64_t o_close(int64_t h) {
+EXPORT int64_t sq_close(int64_t h) {
     if (h < 0 || h >= MAX_CONN || !g_conns[h].db) return -1;
     int rc = p_close(g_conns[h].db);
     g_conns[h].db = NULL;
     return (int64_t)rc;
 }
 
-EXPORT int64_t o_exec(int64_t h, const char *sql) {
+EXPORT int64_t sq_exec(int64_t h, const char *sql) {
     if (h < 0 || h >= MAX_CONN || !g_conns[h].db) return -1;
     return (int64_t)p_exec(g_conns[h].db, sql, NULL, NULL);
 }
 
-EXPORT int64_t o_last_id(int64_t h) {
+EXPORT int64_t sq_last_id(int64_t h) {
     if (h < 0 || h >= MAX_CONN || !g_conns[h].db) return -1;
     return p_last_insert_rowid(g_conns[h].db);
 }
 
-EXPORT int64_t o_changes(int64_t h) {
+EXPORT int64_t sq_changes(int64_t h) {
     if (h < 0 || h >= MAX_CONN || !g_conns[h].db) return -1;
     return (int64_t)p_changes(g_conns[h].db);
 }
 
-EXPORT const char *o_errmsg(int64_t h) {
+EXPORT const char *sq_errmsg(int64_t h) {
     if (h < 0 || h >= MAX_CONN || !g_conns[h].db) return "";
     return p_errmsg(g_conns[h].db);
 }
 
 /* ---------------- prepared statements ---------------- */
-EXPORT int64_t o_prepare(int64_t h, const char *sql) {
+EXPORT int64_t sq_prepare(int64_t h, const char *sql) {
     if (h < 0 || h >= MAX_CONN || !g_conns[h].db) return -1;
     int idx = slot_alloc(g_stmts, MAX_STMT, sizeof(sqlite3_stmt *));
     if (idx < 0) { set_error("sin slots de sentencia"); return -2; }
@@ -382,25 +382,25 @@ static unsigned char *hex_to_bytes(const char *hex, int *out_len) {
     return buf;
 }
 
-EXPORT int64_t o_bind_int(int64_t s, int64_t idx, int64_t v) {
+EXPORT int64_t sq_bind_int(int64_t s, int64_t idx, int64_t v) {
     if (!stmt_ok(s)) return -1;
     return (int64_t)p_bind_int64(g_stmts[s], (int)idx, v);
 }
-EXPORT int64_t o_bind_double(int64_t s, int64_t idx, double v) {
+EXPORT int64_t sq_bind_double(int64_t s, int64_t idx, double v) {
     if (!stmt_ok(s)) return -1;
     return (int64_t)p_bind_double(g_stmts[s], (int)idx, v);
 }
-EXPORT int64_t o_bind_text(int64_t s, int64_t idx, const char *v) {
+EXPORT int64_t sq_bind_text(int64_t s, int64_t idx, const char *v) {
     if (!stmt_ok(s)) return -1;
     if (!v) return (int64_t)p_bind_null(g_stmts[s], (int)idx);
     /* SQLITE_TRANSIENT = (void*)-1: sqlite copia el buffer. */
     return (int64_t)p_bind_text(g_stmts[s], (int)idx, v, -1, (void *)-1);
 }
-EXPORT int64_t o_bind_null(int64_t s, int64_t idx) {
+EXPORT int64_t sq_bind_null(int64_t s, int64_t idx) {
     if (!stmt_ok(s)) return -1;
     return (int64_t)p_bind_null(g_stmts[s], (int)idx);
 }
-EXPORT int64_t o_bind_blob_hex(int64_t s, int64_t idx, const char *hex) {
+EXPORT int64_t sq_bind_blob_hex(int64_t s, int64_t idx, const char *hex) {
     if (!stmt_ok(s)) return -1;
     int blen = 0;
     unsigned char *buf = hex_to_bytes(hex, &blen);
@@ -409,15 +409,15 @@ EXPORT int64_t o_bind_blob_hex(int64_t s, int64_t idx, const char *hex) {
     free(buf);
     return (int64_t)rc;
 }
-EXPORT int64_t o_step(int64_t s) {
+EXPORT int64_t sq_step(int64_t s) {
     if (!stmt_ok(s)) return -1;
     return (int64_t)p_step(g_stmts[s]);
 }
-EXPORT int64_t o_reset(int64_t s) {
+EXPORT int64_t sq_reset(int64_t s) {
     if (!stmt_ok(s)) return -1;
     return (int64_t)p_reset(g_stmts[s]);
 }
-EXPORT int64_t o_finalize(int64_t s) {
+EXPORT int64_t sq_finalize(int64_t s) {
     if (!stmt_ok(s)) return -1;
     int rc = p_finalize(g_stmts[s]);
     g_stmts[s] = NULL;
@@ -438,7 +438,7 @@ static char *bytes_to_hex(const unsigned char *b, int n) {
     return out;
 }
 
-EXPORT int64_t o_query(int64_t h, const char *sql) {
+EXPORT int64_t sq_query(int64_t h, const char *sql) {
     if (h < 0 || h >= MAX_CONN || !g_conns[h].db) return -1;
     sqlite3_stmt *st = NULL;
     int rc = p_prepare_v2(g_conns[h].db, sql, -1, &st, NULL);
@@ -454,7 +454,7 @@ EXPORT int64_t o_query(int64_t h, const char *sql) {
 }
 
 /* Materializa un sqlite3_stmt* ya preparado (y con binds hechos) en un result
- * set. Compartido por o_query y o_result_from_stmt. */
+ * set. Compartido por sq_query y sq_result_from_stmt. */
 static int64_t materialize_stmt(sqlite3_stmt *st) {
     int idx = slot_alloc(g_results, MAX_RES, sizeof(Result *));
     if (idx < 0) { set_error("sin slots de resultado"); return -2; }
@@ -509,13 +509,13 @@ static int64_t materialize_stmt(sqlite3_stmt *st) {
 }
 
 /* Materializa el stmt preparado en `s` (result set), sin finalizarlo. */
-EXPORT int64_t o_result_from_stmt(int64_t s) {
+EXPORT int64_t sq_result_from_stmt(int64_t s) {
     if (!stmt_ok(s)) return -1;
     return materialize_stmt(g_stmts[s]);
 }
 
 /* Borra un archivo (FILE* remove de la libc). Permite empezar de cero sin fs. */
-EXPORT int64_t o_remove(const char *path) {
+EXPORT int64_t sq_remove(const char *path) {
     return (int64_t)remove(path);
 }
 
@@ -524,47 +524,47 @@ static Result *res_ok(int64_t r) {
     return g_results[r];
 }
 
-EXPORT int64_t o_nrows(int64_t r) {
+EXPORT int64_t sq_nrows(int64_t r) {
     Result *p = res_ok(r);
     return p ? p->nrows : -1;
 }
-EXPORT int64_t o_ncols(int64_t r) {
+EXPORT int64_t sq_ncols(int64_t r) {
     Result *p = res_ok(r);
     return p ? p->ncols : -1;
 }
-EXPORT const char *o_colname(int64_t r, int64_t c) {
+EXPORT const char *sq_colname(int64_t r, int64_t c) {
     Result *p = res_ok(r);
     if (!p || c < 0 || c >= p->ncols) return "";
     return p->colnames[c];
 }
-EXPORT int64_t o_cell_type(int64_t r, int64_t i, int64_t c) {
+EXPORT int64_t sq_cell_type(int64_t r, int64_t i, int64_t c) {
     Result *p = res_ok(r);
     if (!p || i < 0 || i >= p->nrows || c < 0 || c >= p->ncols) return -1;
     return (int64_t)p->cells[(size_t)i * p->ncols + c].type;
 }
-EXPORT int64_t o_cell_int(int64_t r, int64_t i, int64_t c) {
+EXPORT int64_t sq_cell_int(int64_t r, int64_t i, int64_t c) {
     Result *p = res_ok(r);
     if (!p || i < 0 || i >= p->nrows || c < 0 || c >= p->ncols) return 0;
     return p->cells[(size_t)i * p->ncols + c].i;
 }
-EXPORT double o_cell_double(int64_t r, int64_t i, int64_t c) {
+EXPORT double sq_cell_double(int64_t r, int64_t i, int64_t c) {
     Result *p = res_ok(r);
     if (!p || i < 0 || i >= p->nrows || c < 0 || c >= p->ncols) return 0.0;
     return p->cells[(size_t)i * p->ncols + c].d;
 }
-EXPORT const char *o_cell_text(int64_t r, int64_t i, int64_t c) {
+EXPORT const char *sq_cell_text(int64_t r, int64_t i, int64_t c) {
     Result *p = res_ok(r);
     if (!p || i < 0 || i >= p->nrows || c < 0 || c >= p->ncols) return "";
     Cell *cell = &p->cells[(size_t)i * p->ncols + c];
     return cell->s ? cell->s : "";
 }
-EXPORT const char *o_cell_blob_hex(int64_t r, int64_t i, int64_t c) {
+EXPORT const char *sq_cell_blob_hex(int64_t r, int64_t i, int64_t c) {
     Result *p = res_ok(r);
     if (!p || i < 0 || i >= p->nrows || c < 0 || c >= p->ncols) return "";
     Cell *cell = &p->cells[(size_t)i * p->ncols + c];
     return (cell->type == SQLITE_BLOB && cell->s) ? cell->s : "";
 }
-EXPORT int64_t o_free_result(int64_t r) {
+EXPORT int64_t sq_free_result(int64_t r) {
     Result *p = res_ok(r);
     if (!p) return -1;
     for (int64_t k = 0; k < p->nrows * p->ncols; k++) free(p->cells[k].s);
@@ -578,7 +578,7 @@ EXPORT int64_t o_free_result(int64_t r) {
 
 /* Columna entera materializada como CArray i64 [cap][len][elems*8].
  * (Prueba explicita del marshalling CArray del FFI.) */
-EXPORT int64_t o_column_int(int64_t r, int64_t c) {
+EXPORT int64_t sq_column_int(int64_t r, int64_t c) {
     Result *p = res_ok(r);
     if (!p || c < 0 || c >= p->ncols) return 0;
     int64_t n = 0;
@@ -607,7 +607,7 @@ EXPORT int64_t o_column_int(int64_t r, int64_t c) {
 }
 
 /* PRAGMA integrity_check -> primera fila, primera columna (CString). */
-EXPORT const char *o_integrity(int64_t h) {
+EXPORT const char *sq_integrity(int64_t h) {
     static char buf[256];
     if (h < 0 || h >= MAX_CONN || !g_conns[h].db) return "";
     sqlite3_stmt *st = NULL;
