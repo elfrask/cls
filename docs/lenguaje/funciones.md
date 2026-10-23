@@ -101,12 +101,26 @@ var g: Int = id(5);
 var h: String = id("hola");
 var f: Float = id(3.5);
 var b: Bool = id(true);
+
+# Argumentos de tipo explícitos (también validados en el call site).
+var i: Int = id<int>(7);
+var j: Float = id<float>(2.5);
 ```
 
 La inferencia cubre formas anidadas (`ObjType<T>` -> `{value:T}`, arrays,
-records, tuplas). Un argumento incompatible con el parámetro es error de
-compilación. Ver `tipos.md` para defaults `<T=Default>`, phantom `!T` y el
-estado de los métodos de clases genéricas.
+records, tuplas). Si se pasan argumentos de tipo explícitos, se valida la
+cantidad y el valor sigue teniendo que ser compatible:
+
+```clx
+function whatType<T>(valor: ObjType<T>) -> String { ... }
+
+print(whatType<String>({ value: "abc" }));  # Texto
+# whatType<Boolean>({ value: "abc" })       # error estático
+```
+
+Un argumento incompatible con el parámetro es error de compilación. Ver
+`tipos.md` para defaults `<T=Default>`, phantom `!T` y el estado de los métodos
+de clases genéricas.
 
 ## Módulos
 

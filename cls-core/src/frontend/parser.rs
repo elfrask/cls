@@ -2447,11 +2447,89 @@ impl Parser {
         self.parse_call()
     }
 
+    /// ¿`<...>` a continuación parece una lista de tipos seguida de `(`?
+    /// Desambigua `f<String>(...)` de una comparación `a < b > (c)` sin
+    /// consumir tokens. Los tipos pueden anidar (`Array<T>`, tuplas).
+    fn looks_like_call_type_args(&self) -> bool {
+        let mut depth: i32 = 1;
+        let mut has_content = false;
+        let mut iter = self.tokens.clone().peekable();
+        while let Some(st) = iter.next() {
+            match &st.token {
+                Token::Operator(Operator::LessThan) => {
+                    depth += 1;
+                }
+                Token::Operator(Operator::GreaterThan) => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return has_content
+                            && matches!(
+                                iter.peek().map(|t| &t.token),
+                                Some(Token::Symbol(Symbol::LParen))
+                            );
+                    }
+                }
+                Token::Operator(Operator::ShiftRight) => {
+                    depth -= 2;
+                    if depth <= 0 {
+                        return has_content
+                            && matches!(
+                                iter.peek().map(|t| &t.token),
+                                Some(Token::Symbol(Symbol::LParen))
+                            );
+                    }
+                }
+                Token::EOF => return false,
+                Token::Identifier(_)
+                | Token::Symbol(Symbol::LParen)
+                | Token::Symbol(Symbol::LBrace)
+                | Token::StringLiteral(_)
+                | Token::IntLiteral(_)
+                | Token::FloatLiteral(_)
+                | Token::BoolLiteral(_)
+                | Token::Operator(Operator::Not) => has_content = true,
+                _ => {}
+            }
+        }
+        false
+    }
+
     fn parse_call(&mut self) -> ClsResult<Expression> {
         let mut expr = self.parse_primary()?;
+        // `f<String>(...)`: argumentos de tipo explícitos. Se consumen antes
+        // del `(` y se adjuntan al CallExpr.
+        let mut pending_type_args: Vec<TypeAnnotation> = Vec::new();
         
         loop {
             match self.current_token {
+                // Argumentos de tipo de una llamada genérica.
+                Token::Operator(Operator::LessThan) if self.looks_like_call_type_args() => {
+                    self.advance(); // '<'
+                    let mut type_args = Vec::new();
+                    loop {
+                        type_args.push(self.parse_type_annotation()?);
+                        if !self.consume_symbol(Symbol::Comma) {
+                            break;
+                        }
+                    }
+                    if matches!(
+                        self.current_token,
+                        Token::Operator(Operator::GreaterThan)
+                            | Token::Operator(Operator::ShiftRight)
+                    ) {
+                        self.advance();
+                    } else {
+                        return Err(self.syntax_err(
+                            "Esperaba '>' para cerrar los argumentos de tipo de la llamada",
+                        ));
+                    }
+                    if !matches!(self.current_token, Token::Symbol(Symbol::LParen)) {
+                        return Err(self.syntax_err(
+                            "Esperaba '(' después de los argumentos de tipo de la llamada",
+                        ));
+                    }
+                    pending_type_args = type_args;
+                }
                 // Llamada de función
                 Token::Symbol(Symbol::LParen) => {
                     self.advance();
@@ -2459,6 +2537,7 @@ impl Parser {
                     self.expect_symbol(Symbol::RParen)?;
                     expr = Expression::Call(CallExpr {
                         callee: Box::new(expr),
+                        type_args: std::mem::take(&mut pending_type_args),
                         args,
                         span: self.span(),
                     });
@@ -3255,6 +3334,18 @@ mod tests {
 
     #[test]
     fn test_parse_call() { assert!(matches!(parse_expr("f(1)"), Expression::Call(c) if c.args.len() == 1)); }
+
+    #[test]
+    fn test_parse_call_type_args() {
+        assert!(matches!(
+            parse_expr("f<String>(1)"),
+            Expression::Call(c) if c.args.len() == 1 && c.type_args.len() == 1
+        ));
+        assert!(matches!(
+            parse_expr("f<Array<String>, int>(1)"),
+            Expression::Call(c) if c.type_args.len() == 2
+        ));
+    }
 
     #[test]
     fn test_parse_record() { assert!(matches!(parse_expr(r#"{"a":1}"#), Expression::Record(_))); }

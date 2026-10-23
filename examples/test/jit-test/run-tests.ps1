@@ -50,6 +50,7 @@ $expectedErrors = @{
     "ifexpr-nodeliver.clsx" = "rama de `if`-expresion sin `<-` (B1) -> error de compilacion"
     "conv-union.clsx" = "`float()` sobre union de builtins (B2) -> error estatico"
     "generic-param-bad.clsx" = "argumento incompatible con interface generica -> error estatico"
+    "generic-type-args-bad.clsx" = "argumento de tipo explicito incompatible con el valor -> error estatico"
 }
 
 # Args de app por test (se pasan tras `--`). Migracion dev-2 (Fase 8):

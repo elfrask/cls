@@ -290,15 +290,39 @@ impl TypeChecker {
                     self.collect_type_param_candidates(&ret, &mut callee_type_params);
                 }
                 let prev_type_params = self.active_type_params.len();
-                for tp in callee_type_params {
-                    if !self.active_type_params.contains(&tp) {
-                        self.active_type_params.push(tp);
+                for tp in &callee_type_params {
+                    if !self.active_type_params.contains(tp) {
+                        self.active_type_params.push(tp.clone());
+                    }
+                }
+                let mut bindings = HashMap::new();
+                // Argumentos de tipo explícitos: `f<String>(...)`. Tienen
+                // prioridad sobre la inferencia desde los valores.
+                if !call.type_args.is_empty() {
+                    if callee_type_params.is_empty() {
+                        self.error(
+                            "esta llamada no es a una función genérica; no acepta argumentos de tipo",
+                            call.span.clone(),
+                        );
+                    } else if call.type_args.len() != callee_type_params.len() {
+                        self.error(
+                            &format!(
+                                "la función espera {} argumento(s) de tipo, recibió {}",
+                                callee_type_params.len(),
+                                call.type_args.len()
+                            ),
+                            call.span.clone(),
+                        );
+                    } else {
+                        for (tp, ta) in callee_type_params.iter().zip(call.type_args.iter()) {
+                            let explicit = self.resolve_type_annotation(ta);
+                            bindings.insert(tp.clone(), explicit);
+                        }
                     }
                 }
                 // Inferir genéricos desde los args unificando la forma completa
                 // del parámetro (incluye Shape/Array/Record/Tuplas y campos de
                 // interface como `ObjType<T>`).
-                let mut bindings = HashMap::new();
                 for (param, arg) in params.iter().zip(arg_types.iter()) {
                     self.infer_generic_bindings(param, arg, &mut bindings);
                 }

@@ -93,6 +93,9 @@ pub fn shift_expr_xy(e: &mut Expression, dl: u32, dc: i64) {
         Expression::Call(c) => {
             c.span = shift_span_xy(c.span.clone(), dl, dc);
             shift_expr_xy(&mut c.callee, dl, dc);
+            for ta in &mut c.type_args {
+                shift_type(ta, dl);
+            }
             for a in &mut c.args {
                 shift_expr_xy(a, dl, dc);
             }

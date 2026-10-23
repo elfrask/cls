@@ -232,6 +232,9 @@ var caja = Caja(42);
   `<T=Int>`.
 - La inferencia unifica **formas anidadas** (`ObjType<T>` se resuelve a
   `{value:T}`, `Array<T>`, `Record<K,V>`, tuplas y uniones), no sólo `T` suelto.
+- En una llamada se pueden indicar los argumentos de tipo explícitos:
+  `id<String>("x")`, `whatType<Boolean>({value:false})`. Se valida tanto la
+  cantidad como la compatibilidad del valor con el tipo indicado.
 - Un `T` sin reificar se borra a `i64` en el cuerpo; en las fronteras de llamada
   se convierten `Float`/`Bool`/`Char`. `id(3.5)` e `id(true)` funcionan.
 - `match (obj.value) is …` sobre un campo cuyo tipo estático es un type param

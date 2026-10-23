@@ -96,7 +96,7 @@ en `FAIL`.
 | types | tupla heterogénea con índice dinámico | **GAP** | `findings/06` (slots sin tag) |
 | types | `Record<K,V>`, shapes, intersección | OK | |
 | types | interfaces (genéricas) + extracción `T["k"]` | OK | |
-| types | genéricos `function id<T>` | OK | inferencia anidada + fronteras Float/Bool |
+| types | genéricos `function id<T>` | OK | inferencia anidada, `id<T>(...)` explícito y fronteras Float/Bool |
 | types | genéricos `class Caja<T>` | parcial | métodos con retorno `T` aún no infieren; ver GAP |
 | types | phantom `!T` | OK | `types.phantom.fn` / `types.phantom.class` |
 | oop | `class` + constructor `main` + `me` | OK | |
