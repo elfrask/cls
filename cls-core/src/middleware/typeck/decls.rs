@@ -98,9 +98,17 @@ impl TypeChecker {
 
 
     pub(crate) fn check_function_decl(&mut self, func: &FunctionDecl) -> Type {
+        // Registrar los type params de la firma para que los call sites puedan
+        // inferir/validar sin adivinar por el nombre del tipo.
+        self.fn_type_params.insert(
+            func.name.clone(),
+            func.type_params.iter().map(|tp| tp.name.clone()).collect(),
+        );
         // Scope con type params como placeholders (Named) para genéricos
         self.push_scope();
+        let prev_type_params = self.active_type_params.len();
         for tp in &func.type_params {
+            self.active_type_params.push(tp.name.clone());
             self.define(&tp.name, Type::Named(tp.name.clone(), vec![]));
         }
 
@@ -119,6 +127,15 @@ impl TypeChecker {
                 let t = p.type_ann.as_ref()
                     .map(|ta| self.resolve_type_annotation(ta))
                     .unwrap_or(Type::Value);
+                // FFI: los tipos C (`CString`, `CInt`, `Struct(...)`) se mapean
+                // a su equivalente CLS también en params. Sin esto, la
+                // validación de argumentos los trataba como tipos nominales y
+                // `strlen("hola")` fallaba.
+                let t = if func.native.is_some() {
+                    self.map_native_ret(t)
+                } else {
+                    t
+                };
                 (p.name.clone(), t)
             })
             .collect();
@@ -138,6 +155,7 @@ impl TypeChecker {
         // Registrar la función ANTES de chequear el cuerpo -> permite recursión
         self.define(&func.name, fn_type.clone());
         self.check_block(&func.body);
+        self.active_type_params.truncate(prev_type_params);
         self.pop_scope();
         self.current_return_type = prev_return;
         self.current_fn_span = prev_fn_span;

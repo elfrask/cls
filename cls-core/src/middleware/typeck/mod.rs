@@ -101,6 +101,14 @@ pub struct TypeChecker {
     /// Pila de tipos de resultado de los **match-targets** activos (F4): cada
     /// `match` envolvente. Lo fija el valor de `match <-`/`match* <-`/...
     match_yield_stack: Vec<Option<Type>>,
+    /// Nombres de type params activos (`T` en `function f<T>` o `class C<T>`).
+    /// Sin esto, `T` en un Shape/Array se confundía con un tipo nominal y la
+    /// validación de argumentos se saltaba (`has_unbound_generic`).
+    active_type_params: Vec<String>,
+    /// Type params declarados por cada función top-level (`id` -> `["T"]`).
+    /// En un call site hay que conocerlos para inferir/validar sin confundir un
+    /// tipo desconocido (typo) con un genérico.
+    fn_type_params: HashMap<String, Vec<String>>,
 }
 
 impl TypeChecker {
@@ -135,6 +143,8 @@ impl TypeChecker {
             exported_names: std::collections::HashSet::new(),
             ternary_yield_stack: Vec::new(),
             match_yield_stack: Vec::new(),
+            active_type_params: Vec::new(),
+            fn_type_params: HashMap::new(),
         };
         // Clase core `CMX` (respaldada por el builtin `Cmx`): firmas de sus
         // métodos pre-registradas para que los MÓDULOS del prelude (que se
@@ -218,12 +228,22 @@ impl TypeChecker {
 
 
     pub(crate) fn define_function_signature(&mut self, f: &FunctionDecl) {
-        let param_tys: Vec<Type> = f.params.iter()
+        self.fn_type_params.insert(
+            f.name.clone(),
+            f.type_params.iter().map(|tp| tp.name.clone()).collect(),
+        );
+        let mut param_tys: Vec<Type> = f.params.iter()
             .map(|p| p.type_ann.as_ref().map(|t| self.resolve_type_annotation(t)).unwrap_or(Type::Value))
             .collect();
+        if f.native.is_some() {
+            for t in &mut param_tys {
+                *t = self.map_native_ret(t.clone());
+            }
+        }
         let ret = f.return_type.as_ref()
             .map(|t| self.resolve_type_annotation(t))
             .unwrap_or(Type::Void);
+        let ret = if f.native.is_some() { self.map_native_ret(ret) } else { ret };
         self.define(&f.name, Type::Fun(param_tys, Box::new(ret)));
     }
 

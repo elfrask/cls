@@ -116,6 +116,29 @@ impl TypeChecker {
         }
     }
 
+    /// ¿El scrutinee puede aportar un tag runtime desde un record/JSON? Es el
+    /// único caso en que `match is` sobre un type param genérico es viable:
+    /// el contenedor guardó el tag del valor (`ObjType<T>.value`).
+    fn scrutinee_has_runtime_tag(&self, scrutinee: Option<&Expression>) -> bool {
+        match scrutinee {
+            Some(Expression::MemberAccess(m)) => matches!(
+                self.types_by_span.get(&expr_span(&m.object)),
+                Some(
+                    Type::Shape(_)
+                        | Type::Record(_, _)
+                        | Type::Value
+                        | Type::Json
+                        | Type::Cmx
+                )
+            ),
+            Some(Expression::Index(i)) => matches!(
+                self.types_by_span.get(&expr_span(&i.object)),
+                Some(Type::Value | Type::Json | Type::Cmx)
+            ),
+            _ => false,
+        }
+    }
+
     /// Chequeo del `match` (feature F1). Reglas:
     /// - `match` vacío (sin armas) -> error de compilación.
     /// - Modo TIPO: los patrones son tipos; si el scrutinee es un nombre, se
@@ -153,6 +176,19 @@ impl TypeChecker {
                         "no se puede discriminar `Value` en `match is`: no tiene identidad de \
                          runtime para tipos primitivos; usá un tipo concreto o una unión de \
                          clases/enums/structures",
+                        m.span.clone(),
+                    );
+                } else if self.type_contains_generic(st)
+                    && !self.scrutinee_has_runtime_tag(m.scrutinee.as_deref())
+                {
+                    // Un type param genérico (`T`) borrado a i64 no lleva tag de
+                    // primitivo en el cuerpo. Sólo un campo de record/shape lo
+                    // tiene (lo guarda el contenedor). Evita un default
+                    // silencioso o un WASM inválido.
+                    self.error(
+                        "no se puede discriminar un type param genérico en `match is`: el \
+                         cuerpo genérico no lleva tag de runtime; usá un campo de record/shape \
+                         (que guarda el tag) o una unión explícita",
                         m.span.clone(),
                     );
                 } else if self.union_has_undiscriminable_builtin(st)

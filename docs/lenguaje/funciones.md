@@ -99,9 +99,14 @@ function id<T>(x: T) -> T {
 
 var g: Int = id(5);
 var h: String = id("hola");
+var f: Float = id(3.5);
+var b: Bool = id(true);
 ```
 
-Ver `tipos.md` para defaults `<T=Default>` y phantom `!T`.
+La inferencia cubre formas anidadas (`ObjType<T>` -> `{value:T}`, arrays,
+records, tuplas). Un argumento incompatible con el parámetro es error de
+compilación. Ver `tipos.md` para defaults `<T=Default>`, phantom `!T` y el
+estado de los métodos de clases genéricas.
 
 ## Módulos
 

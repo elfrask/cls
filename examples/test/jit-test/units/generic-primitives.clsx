@@ -1,0 +1,22 @@
+function id<T>(x: T) -> T { return x; }
+
+function main(args: String[]) -> int {
+    print(id(3.5));
+    print(id(true));
+    print(id("x"));
+    print(id(42));
+
+    var f: float = id(2.25);
+    print(f);
+    var b: Boolean = id(false);
+    print(b);
+
+    print(id(id(3.5)));
+    print(id(id(true)));
+
+    var fnid = id;
+    print(fnid(4.5));
+    print(fnid(7));
+
+    return 0;
+}

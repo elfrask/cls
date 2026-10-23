@@ -19,7 +19,9 @@ impl TypeChecker {
         self.define("me", class_type.clone());
         self.define("super", class_type.clone());
         // Type params de la clase como placeholders (para fields/methods genéricos)
+        let prev_type_params = self.active_type_params.len();
         for tp in &c.type_params {
+            self.active_type_params.push(tp.name.clone());
             self.define(&tp.name, Type::Named(tp.name.clone(), vec![]));
         }
         // 1. pasada: recolectar los tipos de los miembros ANTES de chequear los
@@ -102,6 +104,7 @@ impl TypeChecker {
         for iface in &c.implements {
             self.check_implements(&c.name, iface, c.span.clone());
         }
+        self.active_type_params.truncate(prev_type_params);
         self.pop_scope();
         class_type
     }
@@ -120,6 +123,10 @@ impl TypeChecker {
             // Uniones: algún miembro del objetivo la acepta / todos los del origen
             // deben ser aceptados.
             (_, Type::Union(members)) => members.iter().any(|m| self.is_assignable(from, m)),
+            // FFI: un `CStruct` de un param nativo acepta el struct/clase CLS
+            // cuyo layout se pasa por puntero (p. ej. `WSADATA` en WSAStartup).
+            (Type::Named(_, _), Type::Named(n, _)) if n == "CStruct" => true,
+            (Type::Shape(_) | Type::Record(_, _), Type::Named(n, _)) if n == "CStruct" => true,
             (Type::Union(members), _) => members.iter().all(|m| self.is_assignable(m, to)),
             (Type::Named(a, ap), Type::Named(b, bp)) => {
                 if ap.len() != bp.len()

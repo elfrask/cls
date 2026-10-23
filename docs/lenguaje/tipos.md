@@ -230,7 +230,18 @@ var caja = Caja(42);
 
 - `function`/`class`/`interface` aceptan parámetros de tipo con default:
   `<T=Int>`.
+- La inferencia unifica **formas anidadas** (`ObjType<T>` se resuelve a
+  `{value:T}`, `Array<T>`, `Record<K,V>`, tuplas y uniones), no sólo `T` suelto.
+- Un `T` sin reificar se borra a `i64` en el cuerpo; en las fronteras de llamada
+  se convierten `Float`/`Bool`/`Char`. `id(3.5)` e `id(true)` funcionan.
+- `match (obj.value) is …` sobre un campo cuyo tipo estático es un type param
+  usa el **tag del record** en runtime (por eso `whatType({value: 123})`
+  discrimina aunque el cuerpo sea genérico).
+- Un argumento incompatible con la firma (p. ej. pasar `String` a un parámetro
+  `ObjType<T>`) es **error de compilación**, no WASM inválido.
 - `!T` (phantom): el parámetro no se sustituye ni se unifica.
+- Los métodos de clases genéricas todavía no sustituyen su retorno `T`; ver el
+  GAP en `examples/lang-features/README.md`.
 
 ```clx
 interface Marcador<T> {

@@ -96,7 +96,8 @@ en `FAIL`.
 | types | tupla heterogénea con índice dinámico | **GAP** | `findings/06` (slots sin tag) |
 | types | `Record<K,V>`, shapes, intersección | OK | |
 | types | interfaces (genéricas) + extracción `T["k"]` | OK | |
-| types | genéricos `function id<T>` / `class Caja<T>` | OK (parcial) | retorno `T` no se sustituye; ver GAP |
+| types | genéricos `function id<T>` | OK | inferencia anidada + fronteras Float/Bool |
+| types | genéricos `class Caja<T>` | parcial | métodos con retorno `T` aún no infieren; ver GAP |
 | types | phantom `!T` | OK | `types.phantom.fn` / `types.phantom.class` |
 | oop | `class` + constructor `main` + `me` | OK | |
 | oop | herencia `:` y `extends` | OK | |
@@ -150,7 +151,7 @@ en `FAIL`.
 | acceso a miembro sobre unión de builtins (`int \| float`) | GAP | sólo dentro de un brazo estrechado |
 | rest params `function f(...xs)` / spread en llamadas `f(...args)` | no soportado | `call_indirect` exige aridad estática |
 | `with` | **semántica pobre** | liga el valor como `Any`; `o.x`/aritmética fallan o devuelven basura; solo passthrough/print |
-| inferencia de retorno de genéricos en clases | parcial | `caja.obtener()` tipa `T`; requiere `int(...)`/asignación tipada |
+| inferencia de retorno de genéricos en clases | GAP | `caja.obtener()` sigue tipando `T`; en funciones top-level ya se sustituye |
 | `__toJson` | no probado | solo se dispara con `json.stringify` (host_call prohibido por autocontención) |
 | índice dinámico de tupla **heterogénea** | GAP | slots sin tag; el literal y el dinámico homogéneo sí funcionan (`findings/06`) |
 | `module` / `namespace` | GAP | el parser acepta la sintaxis; el typeck/emisor no cablean `NS::sym` (`findings/17`) |

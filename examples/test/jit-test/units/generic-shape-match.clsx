@@ -1,0 +1,20 @@
+interface ObjType<T> {
+    value: T
+};
+
+function whatType<T>(valor: ObjType<T>) -> String {
+    return match (valor.value) is {
+        String  -> "Texto",
+        int     -> "Entero",
+        Boolean -> "Boleano",
+        default -> "Desconocido"
+    };
+}
+
+function main(args: String[]) -> int {
+    print(whatType({ value: "abc" }));
+    print(whatType({ value: 123 }));
+    print(whatType({ value: false }));
+    print(whatType({ value: 1.5 }));
+    return 0;
+}

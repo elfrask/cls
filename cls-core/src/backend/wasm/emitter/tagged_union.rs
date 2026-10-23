@@ -24,6 +24,45 @@ impl<'a> FuncEmitter<'a> {
         ty.is_tagged_builtin_union()
     }
 
+    /// ¿`ty` es un type param genérico sin reificar (`T` en `f<T>`)? El motor
+    /// compila un único cuerpo con `T` borrado a i64: en las fronteras hay que
+    /// ensanchar f64/i32 a i64 al pasar y revertir al volver.
+    pub(crate) fn is_generic_type_var(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Named(n, args) => {
+                args.is_empty()
+                    && !n.contains("::")
+                    && !self.class_defs.contains_key(n)
+                    && !self.struct_defs.contains_key(n)
+                    && !self.enum_defs.contains_key(n)
+            }
+            _ => false,
+        }
+    }
+
+    /// Convierte el resultado de un call cuyo retorno declarado es un type param
+    /// (`fn id<T>(x:T)->T`) al tipo concreto que el typeck infirió en el call
+    /// site. Sin esto, `id(3.5)` dejaba bits f64 donde el caller esperaba f64
+    /// (o i64 donde esperaba f64) y el WASM quedaba inválido.
+    pub(crate) fn emit_generic_result_coerce(&mut self, ret: &Type, span: &Span) {
+        if !self.is_generic_type_var(ret) {
+            return;
+        }
+        let actual = self
+            .types
+            .get(span)
+            .cloned()
+            .unwrap_or(Type::Value)
+            .literal_base();
+        match actual {
+            Type::Float | Type::F32 | Type::F64 => {
+                self.body.push(Instruction::F64ReinterpretI64)
+            }
+            Type::Bool | Type::Char => self.body.push(Instruction::I32WrapI64),
+            _ => {}
+        }
+    }
+
     /// Emite `expr` como puntero a una caja `[tag, valor]`. Si ya es una unión
     /// boxeada (mismo layout), no re-boxea.
     pub(crate) fn emit_box_tagged_union(&mut self, expr: &Expression) -> ClsResult<()> {
@@ -113,6 +152,57 @@ impl<'a> FuncEmitter<'a> {
             WasTy::I64 => {}
         }
         Ok(())
+    }
+
+    /// Compara un tag runtime ya cargado en `tag_local` contra el tipo target.
+    /// Se usa para `match is` sobre un campo de record cuyo tipo estático es un
+    /// type param genérico (`ObjType<T>.value`): el tag real viaja en el record.
+    pub(crate) fn emit_tag_local_type_check(
+        &mut self,
+        tag_local: u32,
+        target: &Type,
+    ) -> ClsResult<()> {
+        match target {
+            Type::Union(ms) | Type::Tuple(ms) => {
+                let mut first = true;
+                for member in ms {
+                    self.emit_tag_local_type_check(tag_local, member)?;
+                    if !first {
+                        self.body.push(Instruction::I32Or);
+                    }
+                    first = false;
+                }
+                if first {
+                    self.body.push(Instruction::I32Const(0));
+                }
+                Ok(())
+            }
+            _ => {
+                let base = target.literal_base();
+                if !matches!(
+                    base,
+                    Type::Int
+                        | Type::I8
+                        | Type::I16
+                        | Type::I32
+                        | Type::I64
+                        | Type::Float
+                        | Type::F32
+                        | Type::F64
+                        | Type::String
+                        | Type::Bool
+                        | Type::Char
+                ) {
+                    self.body.push(Instruction::I32Const(0));
+                    return Ok(());
+                }
+                self.body.push(Instruction::LocalGet(tag_local));
+                self.body
+                    .push(Instruction::I64Const(runtime_tag_code(&base)));
+                self.body.push(Instruction::I64Eq);
+                Ok(())
+            }
+        }
     }
 
     /// `match is` sobre una unión boxeada: compara el tag runtime.

@@ -5,33 +5,226 @@ use super::*;
 impl TypeChecker {
 
 
-    /// ¿El tipo aún contiene un type param genérico sin binding (Named sin args
-    /// que no está en bindings)? Si sí, la firma no está completamente resuelta
-    /// y el argumento no se puede validar de forma fiable (p.ej. `T[]`).
-    pub(crate) fn has_unbound_generic(&self, ty: &Type, bindings: &HashMap<String, Type>) -> bool {
+    /// ¿`name` es un type param activo (`T` en `f<T>` o `C<T>`)? El call site
+    /// activa temporalmente los del callee antes de inferir/validar; así un
+    /// tipo desconocido (typo) no se confunde con un genérico.
+    pub(crate) fn is_type_param_name(&self, name: &str) -> bool {
+        self.active_type_params.iter().any(|n| n == name)
+    }
+
+    /// Nombre que parece un type param y no un tipo nominal conocido. Sólo se
+    /// usa como fallback para llamadas por valor (`var f = id; f(3.5)`), donde
+    /// no hay nombre de función del que leer `fn_type_params`.
+    fn looks_like_type_param_name(&self, name: &str) -> bool {
+        !name.contains("::")
+            && builtin_type_name(name).is_none()
+            && !self.interfaces.contains_key(name)
+            && !self.class_members.contains_key(name)
+            && !self.struct_members.contains_key(name)
+            && !self.enums.contains(name)
+            && self.lookup(name).is_none()
+    }
+
+    /// Recolecta candidatos a type params dentro de una firma (params o retorno)
+    /// para el fallback de llamadas por valor.
+    pub(crate) fn collect_type_param_candidates(
+        &self,
+        ty: &Type,
+        out: &mut Vec<String>,
+    ) {
         match ty {
-            Type::Named(n, ps) => {
-                if ps.is_empty() {
-                    !bindings.contains_key(n)
-                } else {
-                    ps.iter().any(|p| self.has_unbound_generic(p, bindings))
+            Type::Named(n, ps) if ps.is_empty() => {
+                if self.looks_like_type_param_name(n) && !out.contains(n) {
+                    out.push(n.clone());
                 }
             }
-            Type::Array(inner) => self.has_unbound_generic(inner, bindings),
-            Type::Tuple(ts) => ts.iter().any(|t| self.has_unbound_generic(t, bindings)),
+            Type::Named(_, ps) | Type::Tuple(ps) | Type::Union(ps) => {
+                for p in ps {
+                    self.collect_type_param_candidates(p, out);
+                }
+            }
+            Type::Array(t) => self.collect_type_param_candidates(t, out),
             Type::Record(k, v) => {
-                self.has_unbound_generic(k, bindings) || self.has_unbound_generic(v, bindings)
+                self.collect_type_param_candidates(k, out);
+                self.collect_type_param_candidates(v, out);
             }
-            Type::Shape(fields) => fields.iter().any(|(_, t)| self.has_unbound_generic(t, bindings)),
+            Type::Shape(fields) => {
+                for (_, t) in fields {
+                    self.collect_type_param_candidates(t, out);
+                }
+            }
             Type::Fun(ps, r) => {
-                ps.iter().any(|p| self.has_unbound_generic(p, bindings))
-                    || self.has_unbound_generic(r, bindings)
+                for p in ps {
+                    self.collect_type_param_candidates(p, out);
+                }
+                self.collect_type_param_candidates(r, out);
             }
-            Type::Union(ts) => ts.iter().any(|t| self.has_unbound_generic(t, bindings)),
+            _ => {}
+        }
+    }
+
+    /// Infiere bindings `T -> tipo` unificando la forma del parámetro con la
+    /// del argumento. Antes sólo se miraba `Named("T")` directo; por eso
+    /// `ObjType<T>` (que se resuelve a `Shape{value:T}`) nunca ligaba `T` y la
+    /// validación de argumentos se saltaba.
+    pub(crate) fn infer_generic_bindings(
+        &self,
+        param: &Type,
+        arg: &Type,
+        bindings: &mut HashMap<String, Type>,
+    ) {
+        match param {
+            Type::Named(n, ps) if ps.is_empty() && self.is_type_param_name(n) => {
+                if !matches!(arg, Type::Unknown) {
+                    bindings.entry(n.clone()).or_insert_with(|| arg.clone());
+                }
+            }
+            Type::Named(n, ps) => {
+                if let Type::Named(an, aps) = arg {
+                    if n == an && ps.len() == aps.len() {
+                        for (p, a) in ps.iter().zip(aps.iter()) {
+                            self.infer_generic_bindings(p, a, bindings);
+                        }
+                    }
+                }
+            }
+            Type::Shape(pfields) => {
+                let actual_fields: Option<Vec<(String, Type)>> = match arg {
+                    Type::Shape(af) => Some(af.clone()),
+                    Type::Named(cn, _) => self
+                        .class_members
+                        .get(cn)
+                        .cloned()
+                        .or_else(|| self.struct_members.get(cn).cloned())
+                        .map(|m| m.into_iter().collect()),
+                    _ => None,
+                };
+                if let Some(af) = actual_fields {
+                    for (pn, pt) in pfields {
+                        if let Some((_, at)) = af.iter().find(|(an, _)| an == pn) {
+                            self.infer_generic_bindings(pt, at, bindings);
+                        }
+                    }
+                }
+            }
+            Type::Array(p) => {
+                if let Type::Array(a) = arg {
+                    self.infer_generic_bindings(p, a, bindings);
+                }
+            }
+            Type::Tuple(ps) => {
+                if let Type::Tuple(aps) = arg {
+                    if ps.len() == aps.len() {
+                        for (p, a) in ps.iter().zip(aps.iter()) {
+                            self.infer_generic_bindings(p, a, bindings);
+                        }
+                    }
+                }
+            }
+            Type::Record(pk, pv) => {
+                if let Type::Record(ak, av) = arg {
+                    self.infer_generic_bindings(pk, ak, bindings);
+                    self.infer_generic_bindings(pv, av, bindings);
+                }
+            }
+            Type::Fun(ps, pr) => {
+                if let Type::Fun(aps, ar) = arg {
+                    if ps.len() == aps.len() {
+                        for (p, a) in ps.iter().zip(aps.iter()) {
+                            self.infer_generic_bindings(p, a, bindings);
+                        }
+                        self.infer_generic_bindings(pr, ar, bindings);
+                    }
+                }
+            }
+            Type::Union(ms) => {
+                for m in ms {
+                    // Un miembro genérico (`T`, `T[]`, `Shape{value:T}`) liga
+                    // contra el argumento completo; los concretos no aportan.
+                    if self.type_contains_generic(m) {
+                        self.infer_generic_bindings(m, arg, bindings);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub(crate) fn type_contains_generic(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Named(n, ps) => {
+                (ps.is_empty() && self.is_type_param_name(n))
+                    || ps.iter().any(|p| self.type_contains_generic(p))
+            }
+            Type::Array(t) => self.type_contains_generic(t),
+            Type::Tuple(ts) | Type::Union(ts) => {
+                ts.iter().any(|t| self.type_contains_generic(t))
+            }
+            Type::Record(k, v) => {
+                self.type_contains_generic(k) || self.type_contains_generic(v)
+            }
+            Type::Shape(fields) => fields.iter().any(|(_, t)| self.type_contains_generic(t)),
+            Type::Fun(ps, r) => {
+                ps.iter().any(|p| self.type_contains_generic(p))
+                    || self.type_contains_generic(r)
+            }
             _ => false,
         }
     }
 
+    /// Reemplaza type params que quedaron sin binding por `Value`. Así se
+    /// puede validar la **forma externa** (`ObjType<T>` -> `Shape{value:Value}`)
+    /// aunque el genérico interno no se haya podido inferir.
+    pub(crate) fn erase_unbound_generics(
+        &self,
+        ty: &Type,
+        bindings: &HashMap<String, Type>,
+    ) -> Type {
+        match ty {
+            Type::Named(n, ps) => {
+                if ps.is_empty() && self.is_type_param_name(n) && !bindings.contains_key(n) {
+                    Type::Value
+                } else {
+                    Type::Named(
+                        n.clone(),
+                        ps.iter()
+                            .map(|p| self.erase_unbound_generics(p, bindings))
+                            .collect(),
+                    )
+                }
+            }
+            Type::Array(t) => {
+                Type::Array(Box::new(self.erase_unbound_generics(t, bindings)))
+            }
+            Type::Tuple(ts) => Type::Tuple(
+                ts.iter()
+                    .map(|t| self.erase_unbound_generics(t, bindings))
+                    .collect(),
+            ),
+            Type::Union(ts) => Type::Union(
+                ts.iter()
+                    .map(|t| self.erase_unbound_generics(t, bindings))
+                    .collect(),
+            ),
+            Type::Record(k, v) => Type::Record(
+                Box::new(self.erase_unbound_generics(k, bindings)),
+                Box::new(self.erase_unbound_generics(v, bindings)),
+            ),
+            Type::Shape(fields) => Type::Shape(
+                fields
+                    .iter()
+                    .map(|(n, t)| (n.clone(), self.erase_unbound_generics(t, bindings)))
+                    .collect(),
+            ),
+            Type::Fun(ps, r) => Type::Fun(
+                ps.iter()
+                    .map(|p| self.erase_unbound_generics(p, bindings))
+                    .collect(),
+                Box::new(self.erase_unbound_generics(r, bindings)),
+            ),
+            _ => ty.clone(),
+        }
+    }
 
     /// Sustituye type params (Named sin args) por sus bindings en un tipo.
     pub(crate) fn substitute(&self, ty: &Type, bindings: &HashMap<String, Type>) -> Type {
@@ -56,6 +249,12 @@ impl TypeChecker {
             Type::Record(k, v) => Type::Record(
                 Box::new(self.substitute(k, bindings)),
                 Box::new(self.substitute(v, bindings)),
+            ),
+            Type::Shape(fields) => Type::Shape(
+                fields
+                    .iter()
+                    .map(|(n, t)| (n.clone(), self.substitute(t, bindings)))
+                    .collect(),
             ),
             Type::Fun(ps, r) => Type::Fun(
                 ps.iter().map(|p| self.substitute(p, bindings)).collect(),
@@ -94,10 +293,16 @@ impl TypeChecker {
         let ret = f.return_type.as_ref()
             .map(|ta| self.resolve_type_annotation(ta))
             .unwrap_or(Type::Void);
-        // Función nativa (FFI): el retorno usa el mapeo C (`CArray`/`CRecord`/
-        // `Struct(Nombre)`), igual que el emisor.
-        let ret = if f.native.is_some() { self.map_native_ret(ret) } else { ret };
-        Type::Fun(params, Box::new(ret))
+        // Función nativa (FFI): params y retorno usan el mapeo C
+        // (`CArray`/`CRecord`/`Struct(Nombre)`/`CString`), igual que el emisor.
+        if f.native.is_some() {
+            Type::Fun(
+                params.into_iter().map(|t| self.map_native_ret(t)).collect(),
+                Box::new(self.map_native_ret(ret)),
+            )
+        } else {
+            Type::Fun(params, Box::new(ret))
+        }
     }
 
 

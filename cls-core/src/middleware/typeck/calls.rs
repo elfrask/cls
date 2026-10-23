@@ -268,24 +268,52 @@ impl TypeChecker {
                         call.span.clone(),
                     );
                 }
-                // Inferir genéricos desde los args: param Named("T") -> arg
-                let mut bindings = HashMap::new();
-                for (param, arg) in params.iter().zip(arg_types.iter()) {
-                    if let Type::Named(n, ps) = param {
-                        if ps.is_empty() && !matches!(arg, Type::Value) {
-                            bindings.entry(n.clone()).or_insert_with(|| arg.clone());
-                        }
+                // Activar sólo los type params del callee: así un tipo
+                // desconocido en la firma no se confunde con un genérico.
+                // Si el callee es una variable (`var f = id; f(3.5)`), no hay
+                // nombre de función: se infieren candidatos desde su firma.
+                let callee_name = match &*call.callee {
+                    Expression::Identifier(n, _) => Some(n.clone()),
+                    _ => None,
+                };
+                let known_fn = callee_name
+                    .as_ref()
+                    .is_some_and(|n| self.fn_type_params.contains_key(n));
+                let mut callee_type_params = callee_name
+                    .as_ref()
+                    .and_then(|n| self.fn_type_params.get(n).cloned())
+                    .unwrap_or_default();
+                if !known_fn {
+                    for p in &params {
+                        self.collect_type_param_candidates(p, &mut callee_type_params);
+                    }
+                    self.collect_type_param_candidates(&ret, &mut callee_type_params);
+                }
+                let prev_type_params = self.active_type_params.len();
+                for tp in callee_type_params {
+                    if !self.active_type_params.contains(&tp) {
+                        self.active_type_params.push(tp);
                     }
                 }
+                // Inferir genéricos desde los args unificando la forma completa
+                // del parámetro (incluye Shape/Array/Record/Tuplas y campos de
+                // interface como `ObjType<T>`).
+                let mut bindings = HashMap::new();
+                for (param, arg) in params.iter().zip(arg_types.iter()) {
+                    self.infer_generic_bindings(param, arg, &mut bindings);
+                }
+
                 // Validar que cada argumento sea asignable a su parámetro
                 // (firma conocida). No aplica a print (variádico) ni a los
                 // métodos de primitivos (MemberAccess ya retornó arriba).
                 for (i, (param, arg_ty)) in params.iter().zip(arg_types.iter()).enumerate() {
                     let param_subst = self.substitute(param, &bindings);
-                    // Sin firma útil (Any/huecos/genérico sin binding) -> no validar.
-                    if matches!(param_subst, Type::Value | Type::Unknown)
+                    // Un genérico no inferido no exime de validar la forma
+                    // externa: `ObjType<T>` -> `Shape{value:Value}`; así
+                    // `whatType("abc")` da error en vez de WASM inválido.
+                    let param_check = self.erase_unbound_generics(&param_subst, &bindings);
+                    if matches!(param_check, Type::Value | Type::Unknown)
                         || matches!(arg_ty, Type::Value | Type::Unknown)
-                        || self.has_unbound_generic(&param_subst, &bindings)
                     {
                         continue;
                     }
@@ -295,21 +323,20 @@ impl TypeChecker {
                         Expression::Literal(l) => self.literal_type(&l.kind),
                         _ => arg_ty.clone(),
                     };
-                    if !self.is_assignable(&arg_check, &param_subst) {
+                    if !self.is_assignable(&arg_check, &param_check) {
                         let msg = format!(
-                            "Se esperaba {}, recibió {} en el argumento {}",
+                            "Tipo de parámetro inválido: se esperaba {}, se recibió {} en el argumento {}",
                             param_subst,
                             arg_ty,
                             i + 1
                         );
-                        let span = expr_span(&call.args[i]);
-                        if self.config.strict {
-                            self.error(&msg, span);
-                        } else {
-                            self.warn(&msg, span);
-                        }
+                        // No es un warning: un mismatch deja el WASM con una
+                        // representación incorrecta (p. ej. f64 en un param
+                        // i64). Debe bloquear la compilación.
+                        self.error(&msg, expr_span(&call.args[i]));
                     }
                 }
+                self.active_type_params.truncate(prev_type_params);
                 self.substitute(&ret, &bindings)
             }
             Type::Named(_, _) => {

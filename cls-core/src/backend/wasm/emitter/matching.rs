@@ -63,21 +63,39 @@ impl<'a> FuncEmitter<'a> {
         let mut scrut_was = WasTy::I64;
         let mut scrut_cls = Type::Value;
         let mut scrut_is_str = false;
+        // Tipo genérico leído de un campo de record (`ObjType<T>.value`): el
+        // typeck no puede estrechar `T`, pero el record guarda el tag real.
+        let mut scrut_dyn_tag: Option<u32> = None;
         if m.mode != MatchMode::Cond {
             let s = m.scrutinee.as_ref().ok_or_else(|| {
                 crate::error::ClsError::compile_at("`match` sin scrutinee", &m.span)
             })?;
             scrut_cls = self.types.get(&expr_span(s)).cloned().unwrap_or(Type::Value);
             scrut_is_str = self.is_string_expr(s);
-            scrut_was = if scrut_is_str {
-                WasTy::I64
+            if m.mode == MatchMode::Type
+                && self.is_generic_type_var(&scrut_cls)
+                && self.expr_has_record_tag(s)
+            {
+                // `emit_any_chain` deja (valor, tag) para un campo de record.
+                self.emit_any_chain(s)?;
+                let tag = self.fresh_local_ty(WasTy::I64);
+                self.body.push(Instruction::LocalSet(tag));
+                let val = self.fresh_local_ty(WasTy::I64);
+                self.body.push(Instruction::LocalSet(val));
+                scrut_local = Some(val);
+                scrut_was = WasTy::I64;
+                scrut_dyn_tag = Some(tag);
             } else {
-                self.value_type(s)?
-            };
-            self.emit_expression(s)?;
-            let l = self.fresh_local_ty(scrut_was);
-            self.body.push(Instruction::LocalSet(l));
-            scrut_local = Some(l);
+                scrut_was = if scrut_is_str {
+                    WasTy::I64
+                } else {
+                    self.value_type(s)?
+                };
+                self.emit_expression(s)?;
+                let l = self.fresh_local_ty(scrut_was);
+                self.body.push(Instruction::LocalSet(l));
+                scrut_local = Some(l);
+            }
         }
 
         // Unión boxeada: recordar que este identificador está estrechado en los
@@ -124,6 +142,7 @@ impl<'a> FuncEmitter<'a> {
                 scrut_is_str,
                 &scrut_cls,
                 pattern_disc.as_ref(),
+                scrut_dyn_tag,
             )?;
             self.block_depth += 1;
             self.body.push(Instruction::If(BlockType::Empty));
@@ -196,6 +215,28 @@ impl<'a> FuncEmitter<'a> {
         Ok(())
     }
 
+    /// ¿La expresión puede producir un tag runtime desde un record/JSON?
+    /// Cubre `valor.value` (Shape), `r.campo` (Record) y cadenas anidadas.
+    fn expr_has_record_tag(&self, expr: &Expression) -> bool {
+        match expr {
+            Expression::MemberAccess(m) => matches!(
+                self.types.get(&expr_span(&m.object)),
+                Some(
+                    Type::Shape(_)
+                        | Type::Record(_, _)
+                        | Type::Value
+                        | Type::Json
+                        | Type::Cmx
+                )
+            ),
+            Expression::Index(i) => matches!(
+                self.types.get(&expr_span(&i.object)),
+                Some(Type::Value | Type::Json | Type::Cmx)
+            ),
+            _ => false,
+        }
+    }
+
     /// Cuerpo de arma `-> { ... }` (F4). Es un **ternary-target**: `* <- valor`
     /// entrega el resultado del arma (y `match <-` salta al match). El bloque
     /// debe terminar con `<-` (si no, el valor del arma no existe).
@@ -247,10 +288,11 @@ impl<'a> FuncEmitter<'a> {
         is_str: bool,
         cls: &Type,
         disc: Option<&PatternDisc>,
+        dyn_tag: Option<u32>,
     ) -> ClsResult<()> {
         let mut emitted = false;
         for p in patterns {
-            self.emit_single_match_condition(mode, p, local, was, is_str, cls, disc)?;
+            self.emit_single_match_condition(mode, p, local, was, is_str, cls, disc, dyn_tag)?;
             if emitted {
                 self.body.push(Instruction::I32Or);
             }
@@ -271,6 +313,7 @@ impl<'a> FuncEmitter<'a> {
         is_str: bool,
         cls: &Type,
         disc: Option<&PatternDisc>,
+        dyn_tag: Option<u32>,
     ) -> ClsResult<()> {
         match p {
             MatchPattern::Literal(lit) => {
@@ -343,6 +386,9 @@ impl<'a> FuncEmitter<'a> {
             }
             MatchPattern::Type(ta) => {
                 let target = annotation_to_type(ta);
+                if let Some(tag) = dyn_tag {
+                    return self.emit_tag_local_type_check(tag, &target);
+                }
                 if cls.is_tagged_builtin_union() {
                     return self
                         .emit_tagged_union_type_check(local.unwrap_or(0), &target);

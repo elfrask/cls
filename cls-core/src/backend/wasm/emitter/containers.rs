@@ -565,6 +565,19 @@ impl<'a> FuncEmitter<'a> {
             self.emit_cmx_field(0)?; // tag (String)
             return Ok(());
         }
+        // Type param sin reificar (`T`): el cuerpo genérico usa i64. En la
+        // frontera se ensanchan Bool/Char (i32) y Float (f64); al volver del
+        // call se revierte con el tipo concreto inferido.
+        if dest.is_some_and(|d| self.is_generic_type_var(d)) {
+            let actual = self.value_type(expr)?;
+            self.emit_expression(expr)?;
+            match actual {
+                WasTy::I32 => self.body.push(Instruction::I64ExtendI32U),
+                WasTy::F64 => self.body.push(Instruction::I64ReinterpretF64),
+                WasTy::I64 => {}
+            }
+            return Ok(());
+        }
         // Unión de primitivos: se guarda como `[tag][valor]` para poder
         // discriminarla en runtime. Si el origen ya es otra unión boxeada, se
         // reutiliza el mismo puntero.

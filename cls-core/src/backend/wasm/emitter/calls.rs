@@ -110,9 +110,14 @@ impl<'a> FuncEmitter<'a> {
                 return Ok(());
             }
             if let Some(fidx) = self.func_indexes.get(&key).copied() {
-                let expected = match self.types.get(&expr_span(&c.callee)) {
-                    Some(Type::Fun(params, _)) => Some(params.clone()),
-                    _ => self.func_types.get(&key).map(|(p, _)| p.clone()),
+                let (expected, ret_decl) = match self.types.get(&expr_span(&c.callee)) {
+                    Some(Type::Fun(params, ret)) => {
+                        (Some(params.clone()), Some((**ret).clone()))
+                    }
+                    _ => match self.func_types.get(&key) {
+                        Some((p, r)) => (Some(p.clone()), r.clone()),
+                        None => (None, None),
+                    },
                 };
                 self.body.push(Instruction::I64Const(0)); // __capturas
                 for (i, arg) in c.args.iter().enumerate() {
@@ -123,6 +128,9 @@ impl<'a> FuncEmitter<'a> {
                 }
                 self.emit_call_site(&c.span);
                 self.body.push(Instruction::Call(fidx));
+                if let Some(ret) = &ret_decl {
+                    self.emit_generic_result_coerce(ret, &c.span);
+                }
                 return Ok(());
             }
             return Err(crate::error::ClsError::compile_at(
@@ -135,9 +143,14 @@ impl<'a> FuncEmitter<'a> {
         }
         if let Expression::Identifier(name, _) = &*c.callee {
             if let Some(fidx) = self.func_indexes.get(name).copied() {
-                let expected = match self.types.get(&expr_span(&c.callee)) {
-                    Some(Type::Fun(params, _)) => Some(params.clone()),
-                    _ => self.func_types.get(name).map(|(p, _)| p.clone()),
+                let (expected, ret_decl) = match self.types.get(&expr_span(&c.callee)) {
+                    Some(Type::Fun(params, ret)) => {
+                        (Some(params.clone()), Some((**ret).clone()))
+                    }
+                    _ => match self.func_types.get(name) {
+                        Some((p, r)) => (Some(p.clone()), r.clone()),
+                        None => (None, None),
+                    },
                 };
                 // Firma uniforme (B5): las funciones CLS top-level reciben
                 // __capturas (0) como primer arg. Internas y main no.
@@ -165,6 +178,9 @@ impl<'a> FuncEmitter<'a> {
                 }
                 self.emit_call_site(&c.span);
                 self.body.push(Instruction::Call(fidx));
+                if let Some(ret) = &ret_decl {
+                    self.emit_generic_result_coerce(ret, &c.span);
+                }
                 return Ok(());
             }
             // Función host del nodo (intrinsic): canal `env.host_call(id, ptr, n)`.
@@ -253,9 +269,10 @@ impl<'a> FuncEmitter<'a> {
             for t in &params {
                 pv.push(was_type(t)?.val_type());
             }
-            let rv: Vec<ValType> = match *ret {
+            let ret_decl = (*ret).clone();
+            let rv: Vec<ValType> = match &ret_decl {
                 Type::Void => vec![],
-                r => vec![was_type(&r)?.val_type()],
+                r => vec![was_type(r)?.val_type()],
             };
             // Firma uniforme (B5): closure = [capturas(i64), params...].
             // Toda función CLS (top-level y arrows) se compila con el capturas
@@ -340,6 +357,7 @@ impl<'a> FuncEmitter<'a> {
             });
             self.body.push(Instruction::End);
             self.block_depth -= 1;
+            self.emit_generic_result_coerce(&ret_decl, &c.span);
             return Ok(());
         }
         // Magic __call: el callee es un objeto de clase con __call ->
