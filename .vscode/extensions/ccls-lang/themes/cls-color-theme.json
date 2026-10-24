@@ -62,7 +62,21 @@
       "scope": [
         "punctuation.separator.ccls",
         "punctuation.section.brackets.ccls",
-        "punctuation.section.parens.begin.ccls"
+        "punctuation.section.parens.begin.ccls",
+        "punctuation.section.parens.end.ccls",
+        "punctuation.section.brackets.begin.ccls",
+        "punctuation.section.brackets.end.ccls",
+        "punctuation.section.braces.begin.ccls",
+        "punctuation.section.braces.end.ccls",
+        "punctuation.separator.comma.ccls",
+        "punctuation.terminator.ccls",
+        "punctuation.accessor.dot.ccls",
+        "punctuation.definition.typeparameters.begin.ccls",
+        "punctuation.definition.typeparameters.end.ccls",
+        "punctuation.definition.typearguments.begin.ccls",
+        "punctuation.definition.typearguments.end.ccls",
+        "punctuation.definition.expression.begin.ccls",
+        "punctuation.definition.expression.end.ccls"
       ],
       "settings": { "foreground": "#e0af68" }
     },
@@ -100,7 +114,10 @@
         "keyword.operator.assignment.compound.ccls",
         "keyword.operator.power.ccls",
         "keyword.operator.range.ccls",
-        "keyword.operator.spread.ccls"
+        "keyword.operator.spread.ccls",
+        "keyword.operator.increment.ccls",
+        "keyword.operator.shift.ccls",
+        "keyword.operator.intersection.ccls"
       ],
       "settings": { "foreground": "#d19a66" }
     },
@@ -110,8 +127,7 @@
         "entity.name.tag.ccls",
         "punctuation.definition.tag.begin.ccls",
         "punctuation.definition.tag.end.ccls",
-        "punctuation.definition.tag.selfclose.ccls",
-        "meta.cmx.ccls"
+        "punctuation.definition.tag.selfclose.ccls"
       ],
       "settings": { "foreground": "#e06c75" }
     },

@@ -1,28 +1,85 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "information_for_contributors": [
+    "Gramática de CLS basada en la estructura de tsx.examples.tmLanguage.json: declaraciones, expresiones, type parameters, regiones de tipo y separación tag/children para CMX. Adaptada al léxico real de CLS (comentarios #, ->/<-/=>, comparaciones < y >, genéricos y CMX)."
+  ],
   "name": "CLS",
   "scopeName": "source.clsx",
   "patterns": [
-    { "include": "#comments" },
-    { "include": "#strings" },
-    { "include": "#numbers" },
-    { "include": "#cmx" },
-    { "include": "#type-declarations" },
-    { "include": "#var-decl" },
-    { "include": "#functions" },
-    { "include": "#methods" },
-    { "include": "#type-annotations" },
-    { "include": "#extension" },
-    { "include": "#when" },
-    { "include": "#keywords" },
-    { "include": "#types" },
-    { "include": "#operators" },
-    { "include": "#constants" },
-    { "include": "#interpolation" },
-    { "include": "#meta-directives" },
-    { "include": "#variables" }
+    {
+      "include": "#directives"
+    },
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#generic-call"
+    },
+    {
+      "include": "#cmx"
+    },
+    {
+      "include": "#type-declarations"
+    },
+    {
+      "include": "#methods"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#var-decl"
+    },
+    {
+      "include": "#type-annotations"
+    },
+    {
+      "include": "#extension"
+    },
+    {
+      "include": "#when"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#type-primitives"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#function-call"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    },
+    {
+      "include": "#variables"
+    }
   ],
   "repository": {
+    "directives": {
+      "patterns": [
+        {
+          "name": "meta.directive.ccls",
+          "match": "\\A#!ccls(?:\\s+.*)?$"
+        },
+        {
+          "name": "meta.directive.config.ccls",
+          "match": "^#config\\s*\\([^)]*\\)"
+        }
+      ]
+    },
     "comments": {
       "patterns": [
         {
@@ -38,8 +95,13 @@
           "begin": "\"",
           "end": "\"",
           "patterns": [
-            { "include": "#interpolation" },
-            { "name": "constant.character.escape.ccls", "match": "\\\\." }
+            {
+              "include": "#interpolation"
+            },
+            {
+              "name": "constant.character.escape.ccls",
+              "match": "\\\\."
+            }
           ]
         },
         {
@@ -47,7 +109,13 @@
           "begin": "'",
           "end": "'",
           "patterns": [
-            { "name": "constant.character.escape.ccls", "match": "\\\\." }
+            {
+              "include": "#interpolation"
+            },
+            {
+              "name": "constant.character.escape.ccls",
+              "match": "\\\\."
+            }
           ]
         },
         {
@@ -55,7 +123,13 @@
           "begin": "`",
           "end": "`",
           "patterns": [
-            { "include": "#interpolation" }
+            {
+              "include": "#interpolation"
+            },
+            {
+              "name": "constant.character.escape.ccls",
+              "match": "\\\\."
+            }
           ]
         }
       ]
@@ -71,26 +145,47 @@
           "begin": "\\$\\{",
           "end": "\\}",
           "beginCaptures": {
-            "0": { "name": "punctuation.definition.interpolation.begin.ccls" }
+            "0": {
+              "name": "punctuation.definition.interpolation.begin.ccls"
+            }
           },
           "endCaptures": {
-            "0": { "name": "punctuation.definition.interpolation.end.ccls" }
+            "0": {
+              "name": "punctuation.definition.interpolation.end.ccls"
+            }
           },
-          "patterns": [{ "include": "$self" }]
+          "patterns": [
+            {
+              "include": "$self"
+            },
+            {
+              "include": "#embedded-expression"
+            }
+          ]
         }
       ]
     },
     "numbers": {
       "patterns": [
-        { "name": "constant.numeric.float.ccls", "match": "\\b\\d+\\.\\d+\\b" },
-        { "name": "constant.numeric.integer.ccls", "match": "\\b\\d+\\b" }
+        {
+          "name": "constant.numeric.float.ccls",
+          "match": "\\b\\d+\\.\\d+(?:[eE][+-]?\\d+)?\\b"
+        },
+        {
+          "name": "constant.numeric.float.ccls",
+          "match": "\\b\\d+[eE][+-]?\\d+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.ccls",
+          "match": "\\b\\d+\\b"
+        }
       ]
     },
     "keywords": {
       "patterns": [
         {
           "name": "keyword.control.ccls",
-          "match": "\\b(if|elif|then|else|while|loop|for|switch|case|match|default|try|extension|when|catch|finally|throw|return|break|continue|with|each|in|and|or|not|is)\\b"
+          "match": "\\b(if|elif|then|else|while|loop|for|each|in|switch|case|match|default|try|catch|finally|throw|return|break|continue|with|and|or|not|is|when|extension)\\b"
         },
         {
           "name": "keyword.declaration.ccls",
@@ -110,7 +205,7 @@
         },
         {
           "name": "keyword.modifier.ccls",
-          "match": "\\b(public|private|protected|static|readonly|global|async|await|sync|macro|extends)\\b"
+          "match": "\\b(public|private|protected|static|readonly|global|async|await|sync|macro|extends|implements)\\b"
         },
         {
           "name": "keyword.self.ccls",
@@ -122,11 +217,11 @@
         }
       ]
     },
-    "types": {
+    "type-primitives": {
       "patterns": [
         {
           "name": "storage.type.primitive.ccls",
-          "match": "\\b(Int|Integer|Float|String|Bool|Boolean|Char|Character|Unknown|Null|Void|Empty|Cmx|cmx)\\b"
+          "match": "\\b(String|Int|Integer|Float|Bool|Boolean|Char|Character|Unknown|Null|Void|Empty|Value|JSON|Json|Cmx|CMX|Any)\\b"
         },
         {
           "name": "storage.type.numeric.ccls",
@@ -134,11 +229,60 @@
         },
         {
           "name": "storage.type.container.ccls",
-          "match": "\\b(Array|Tuple|Record)\\b"
+          "match": "\\b(Array|Tuple|Record|Map|Struct)\\b"
         },
         {
           "name": "storage.type.native.ccls",
-          "match": "\\b(CString|CPtr|CInt|CUInt|CShort|CUShort|CLong|CULong|CChar|CUChar|CFloat|CDouble)\\b"
+          "match": "\\b(CString|CPtr|CInt|CUInt|CShort|CUShort|CLong|CULong|CChar|CUChar|CFloat|CDouble|CStruct|CRecord|CArray)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.ccls",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.null.ccls",
+          "match": "\\b(null|unknown)\\b"
+        }
+      ]
+    },
+    "type-expression": {
+      "patterns": [
+        {
+          "include": "#generic"
+        },
+        {
+          "include": "#type-primitives"
+        },
+        {
+          "include": "#keywords"
+        },
+        {
+          "include": "#type-shape"
+        },
+        {
+          "include": "#type-tuple"
+        },
+        {
+          "include": "#type-array"
+        },
+        {
+          "include": "#type-fun"
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#numbers"
+        },
+        {
+          "include": "#constants"
+        },
+        {
+          "include": "#comments"
         },
         {
           "name": "keyword.operator.phantom.ccls",
@@ -149,77 +293,91 @@
           "match": "\\|"
         },
         {
+          "name": "keyword.operator.intersection.ccls",
+          "match": "&"
+        },
+        {
+          "name": "keyword.operator.arrow.ccls",
+          "match": "->"
+        },
+        {
           "name": "keyword.operator.fun-type.ccls",
           "match": "\\bfun\\b"
+        },
+        {
+          "name": "entity.name.type.ccls",
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+        },
+        {
+          "name": "variable.parameter.type-param.ccls",
+          "match": "\\b[a-z][A-Za-z0-9_]*\\b"
+        },
+        {
+          "name": "punctuation.separator.ccls",
+          "match": "[,:=]"
+        },
+        {
+          "name": "punctuation.section.brackets.ccls",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.section.parens.ccls",
+          "match": "[()]"
         }
       ]
     },
     "generic": {
+      "name": "meta.type.generic.ccls",
+      "begin": "<",
+      "end": ">",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.typeparameters.begin.ccls"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.typeparameters.end.ccls"
+        }
+      },
       "patterns": [
         {
-          "name": "meta.type.generic.ccls",
-          "begin": "<",
-          "end": ">",
-          "patterns": [
-            { "include": "#keywords" },
-            { "include": "#types" },
-            { "include": "#generic" },
-            { "include": "#operators" },
-            { "include": "#constants" },
-            {
-              "name": "entity.name.type.ccls",
-              "match": "\\b([A-Z][A-Za-z0-9_]*)\\b"
-            },
-            {
-              "name": "variable.parameter.type-param.ccls",
-              "match": "\\b([a-z][A-Za-z0-9_]*)\\b"
-            },
-            {
-              "name": "punctuation.separator.ccls",
-              "match": "[=,]"
-            }
-          ]
+          "include": "#type-expression"
+        },
+        {
+          "name": "punctuation.separator.ccls",
+          "match": ","
+        },
+        {
+          "name": "keyword.operator.assignment.ccls",
+          "match": "="
         }
       ]
     },
-    "type-declarations": {
-      "patterns": [
-        {
-          "name": "meta.type.declaration.ccls",
-          "begin": "\\b(class|structure|interface|alias|enum)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
-          "end": "(?=\\{|;)",
-          "beginCaptures": {
-            "1": { "name": "keyword.structure.ccls" },
-            "2": { "name": "entity.name.type.ccls" }
-          },
-          "patterns": [
-            { "include": "#generic" },
-            { "include": "#types" },
-            { "include": "#type-annotations" },
-            { "include": "#strings" },
-            { "include": "#numbers" },
-            { "include": "#comments" },
-            { "include": "#keywords" }
-          ]
+    "generic-call": {
+      "name": "meta.type.generic.ccls",
+      "begin": "(?x)\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(<)(?=[A-Za-z_(\\[{!](?:[^<>\\n]|<[^<>\\n]*>)*>\\s*\\()",
+      "end": ">",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.name.function.call.ccls"
+        },
+        "2": {
+          "name": "punctuation.definition.typearguments.begin.ccls"
         }
-      ]
-    },
-    "var-decl": {
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.typearguments.end.ccls"
+        }
+      },
       "patterns": [
         {
-          "name": "meta.var-decl.ccls",
-          "begin": "\\b(var|const|let)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
-          "end": "(?=;)|$",
-          "beginCaptures": {
-            "1": { "name": "keyword.declaration.ccls" },
-            "2": { "name": "variable.other.ccls" }
-          },
-          "patterns": [
-            { "include": "#type-annotations" },
-            { "include": "#strings" },
-            { "include": "#numbers" },
-            { "include": "$self" }
-          ]
+          "include": "#type-expression"
+        },
+        {
+          "name": "punctuation.separator.ccls",
+          "match": ","
         }
       ]
     },
@@ -227,87 +385,180 @@
       "patterns": [
         {
           "name": "meta.type.annotation.ccls",
-          "begin": "(?<!::)(?<=:)(?=[^\\S\\n]*[A-Za-z_(])",
-          "end": "(?=\\s*(=|,|\\)|;|\\{|->))",
+          "begin": "(?<!::)(?<=:)(?=\\s*(?:[A-Z_(\\[{!]|\\b(?:int|float|str|bool|char|String|Int|Float|Bool|Boolean|Char|Value|JSON|Cmx|CMX|Array|Tuple|Record|CString|CInt|CLong|CStruct|CRecord|CArray)\\b))",
+          "end": "(?=\\s*(?:=|,|\\)|;|\\{|\\}|<-|\\]))",
           "patterns": [
-            { "include": "#keywords" },
-            { "include": "#types" },
-            { "include": "#generic" },
-            { "include": "#fun-type" },
-            { "include": "#operators" },
-            { "include": "#constants" },
             {
-              "name": "entity.name.type.ccls",
-              "match": "\\b([A-Z][A-Za-z0-9_]*)\\b"
+              "include": "#type-expression"
             },
             {
-              "name": "meta.type.tuple.ccls",
-              "begin": "\\(",
-              "end": "\\)",
-              "patterns": [{ "include": "#type-annotations" }]
-            },
-            {
-              "name": "meta.type.access.ccls",
-              "begin": "\\[",
-              "end": "\\]",
-              "beginCaptures": { "0": { "name": "punctuation.section.brackets.ccls" } },
-              "endCaptures": { "0": { "name": "punctuation.section.brackets.ccls" } },
-              "patterns": [
-                { "include": "#strings" },
-                { "include": "#numbers" },
-                { "include": "#constants" }
-              ]
-            },
-            {
-              "name": "punctuation.section.brackets.ccls",
-              "match": "\\[|\\]"
+              "include": "#comments"
             }
           ]
         }
       ]
     },
-    "return-type": {
+    "type-shape": {
+      "name": "meta.type.shape.ccls",
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.braces.begin.ccls"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.braces.end.ccls"
+        }
+      },
       "patterns": [
         {
-          "name": "meta.return-type.ccls",
-          "begin": "(->)\\s*",
-          "end": "(?=\\{|;)",
+          "name": "variable.other.property.ccls",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b(?=\\s*:)"
+        },
+        {
+          "include": "#type-annotations"
+        },
+        {
+          "include": "#type-expression"
+        },
+        {
+          "include": "#comments"
+        },
+        {
+          "name": "punctuation.separator.ccls",
+          "match": ","
+        }
+      ]
+    },
+    "type-tuple": {
+      "name": "meta.type.tuple.ccls",
+      "begin": "\\(",
+      "end": "\\)",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.parens.begin.ccls"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.parens.end.ccls"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#type-expression"
+        },
+        {
+          "include": "#comments"
+        },
+        {
+          "name": "punctuation.separator.ccls",
+          "match": ","
+        }
+      ]
+    },
+    "type-array": {
+      "patterns": [
+        {
+          "name": "meta.type.array.ccls",
+          "match": "\\[\\]",
+          "captures": {
+            "0": {
+              "name": "punctuation.section.brackets.ccls"
+            }
+          }
+        },
+        {
+          "name": "meta.type.access.ccls",
+          "begin": "\\[",
+          "end": "\\]",
           "beginCaptures": {
-            "1": { "name": "keyword.operator.arrow.ccls" }
+            "0": {
+              "name": "punctuation.section.brackets.begin.ccls"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.brackets.end.ccls"
+            }
           },
           "patterns": [
-            { "include": "#keywords" },
-            { "include": "#types" },
-            { "include": "#generic" },
-            { "include": "#fun-type" },
-            { "include": "#operators" },
-            { "include": "#constants" },
             {
-              "name": "entity.name.type.ccls",
-              "match": "\\b([A-Z][A-Za-z0-9_]*)\\b"
+              "include": "#strings"
             },
             {
-              "name": "meta.type.tuple.ccls",
-              "begin": "\\(",
-              "end": "\\)",
-              "patterns": [{ "include": "#return-type" }]
+              "include": "#numbers"
+            },
+            {
+              "include": "#constants"
             }
           ]
         }
       ]
     },
-    "fun-type": {
+    "type-fun": {
+      "name": "meta.type.fun.ccls",
+      "begin": "\\bfun\\s*\\(",
+      "end": "\\)",
+      "beginCaptures": {
+        "0": {
+          "name": "keyword.operator.fun-type.ccls"
+        }
+      },
       "patterns": [
         {
-          "name": "meta.type.fun.ccls",
-          "begin": "\\bfun\\s*\\(",
-          "end": "(?=\\s*->|;|,|\\))",
+          "include": "#type-expression"
+        },
+        {
+          "include": "#comments"
+        },
+        {
+          "name": "punctuation.separator.ccls",
+          "match": ","
+        }
+      ]
+    },
+    "type-declarations": {
+      "patterns": [
+        {
+          "name": "meta.type.declaration.ccls",
+          "begin": "\\b(class|structure|interface|alias|enum|module|namespace)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "end": "(?=\\{|;)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.structure.ccls"
+            },
+            "2": {
+              "name": "entity.name.type.ccls"
+            }
+          },
           "patterns": [
-            { "include": "#keywords" },
-            { "include": "#operators" },
-            { "include": "#constants" },
-            { "include": "#type-annotations" },
-            { "include": "#types" }
+            {
+              "include": "#generic"
+            },
+            {
+              "include": "#type-expression"
+            },
+            {
+              "include": "#type-annotations"
+            },
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "include": "#comments"
+            },
+            {
+              "include": "#keywords"
+            },
+            {
+              "include": "#operators"
+            }
           ]
         }
       ]
@@ -316,26 +567,55 @@
       "patterns": [
         {
           "name": "meta.function.ccls",
-          "begin": "\\b(function|void)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "begin": "\\b(function|void|method)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "end": "(?=\\{|;)",
           "beginCaptures": {
-            "1": { "name": "keyword.declaration.ccls" },
-            "2": { "name": "entity.name.function.ccls" }
+            "1": {
+              "name": "keyword.declaration.ccls"
+            },
+            "2": {
+              "name": "entity.name.function.ccls"
+            }
           },
           "patterns": [
-            { "include": "#generic" },
-            { "name": "punctuation.section.parens.begin.ccls", "match": "\\(" },
-            { "name": "punctuation.section.parens.end.ccls", "match": "\\)" },
-            { "name": "variable.parameter.ccls", "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=[:),])" },
-            { "include": "#types" },
-            { "include": "#type-annotations" },
-            { "include": "#return-type" },
-            { "include": "$self" }
+            {
+              "include": "#function-params"
+            },
+            {
+              "include": "#generic"
+            },
+            {
+              "name": "variable.parameter.ccls",
+              "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=[:),=])"
+            },
+            {
+              "include": "#type-annotations"
+            },
+            {
+              "include": "#return-type"
+            },
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "include": "#comments"
+            },
+            {
+              "include": "#keywords"
+            },
+            {
+              "include": "#type-primitives"
+            },
+            {
+              "include": "#operators"
+            },
+            {
+              "include": "#punctuation"
+            }
           ]
-        },
-        {
-          "name": "entity.name.function.call.ccls",
-          "match": "\\b(?!(fun|void|method|if|throw|case|while|for|return|switch|catch|import|from|as|include|new|with|in|when|default|extension|or|not|match)\\b)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
         }
       ]
     },
@@ -343,53 +623,189 @@
       "patterns": [
         {
           "name": "meta.method.ccls",
-          "begin": "\\b(public|private|protected|static|readonly)\\s+(function|void|method)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "begin": "\\b(public|private|protected|static|readonly|async)\\s+(function|void|method)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "end": "(?=\\{|;)",
           "beginCaptures": {
-            "1": { "name": "keyword.modifier.ccls" },
-            "2": { "name": "keyword.declaration.ccls" },
-            "3": { "name": "entity.name.function.method.ccls" }
+            "1": {
+              "name": "keyword.modifier.ccls"
+            },
+            "2": {
+              "name": "keyword.declaration.ccls"
+            },
+            "3": {
+              "name": "entity.name.function.method.ccls"
+            }
           },
           "patterns": [
-            { "include": "#generic" },
-            { "name": "punctuation.section.parens.begin.ccls", "match": "\\(" },
-            { "name": "punctuation.section.parens.end.ccls", "match": "\\)" },
-            { "name": "variable.parameter.ccls", "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=[:),])" },
-            { "include": "#types" },
-            { "include": "#type-annotations" },
-            { "include": "#return-type" },
-            { "include": "$self" }
+            {
+              "include": "#function-params"
+            },
+            {
+              "include": "#generic"
+            },
+            {
+              "name": "variable.parameter.ccls",
+              "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=[:),=])"
+            },
+            {
+              "include": "#type-annotations"
+            },
+            {
+              "include": "#return-type"
+            },
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "include": "#comments"
+            },
+            {
+              "include": "#keywords"
+            },
+            {
+              "include": "#type-primitives"
+            },
+            {
+              "include": "#operators"
+            },
+            {
+              "include": "#punctuation"
+            }
           ]
         }
       ]
     },
-    "operators": {
+    "return-type": {
+      "name": "meta.return-type.ccls",
+      "begin": "(->)\\s*",
+      "end": "(?=\\{|;)",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.operator.arrow.ccls"
+        }
+      },
       "patterns": [
-        { "name": "keyword.operator.spread.ccls", "match": "\\.\\.\\." },
-        { "name": "keyword.operator.assignment.compound.ccls", "match": "\\+=|-=|\\*=|/=|\\+\\+|--" },
-        { "name": "keyword.operator.arrow.ccls", "match": "=>" },
-        { "name": "keyword.operator.arrow.ccls", "match": "->" },
-        { "name": "keyword.operator.arrow.ccls", "match": "<-" },
-        { "name": "keyword.operator.namespace.ccls", "match": "::" },
-        { "name": "keyword.operator.comparison.ccls", "match": "==|!=|<=|>=|<<|>>" },
-        { "name": "keyword.operator.logical.ccls", "match": "&&|\\|\\|" },
-        { "name": "keyword.operator.power.ccls", "match": "\\*\\*" },
-        { "name": "keyword.operator.range.ccls", "match": "\\.\\." },
-        { "name": "keyword.operator.arithmetic.ccls", "match": "[+\\-*/%]" },
-        { "name": "keyword.operator.logical.single.ccls", "match": "[&|!?~@\\^:]" },
-        { "name": "keyword.operator.assignment.ccls", "match": "=" }
+        {
+          "include": "#type-expression"
+        },
+        {
+          "include": "#comments"
+        }
       ]
     },
-    "constants": {
+    "var-decl": {
       "patterns": [
-        { "name": "constant.language.boolean.ccls", "match": "\\b(true|false)\\b" },
-        { "name": "constant.language.null.ccls", "match": "\\b(null|unknown)\\b" }
-      ]
-    },
-    "meta-directives": {
-      "patterns": [
-        { "name": "meta.directive.ccls", "match": "^#!ccls" },
-        { "name": "meta.directive.config.ccls", "match": "^#config\\([^)]*\\)" }
+        {
+          "name": "meta.var-decl.ccls",
+          "begin": "\\b(const)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "end": "(?=;)|$",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.declaration.ccls"
+            },
+            "2": {
+              "name": "variable.other.constant.ccls"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#type-annotations"
+            },
+            {
+              "include": "#generic-call"
+            },
+            {
+              "include": "#cmx"
+            },
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "include": "#constants"
+            },
+            {
+              "include": "#function-call"
+            },
+            {
+              "include": "#keywords"
+            },
+            {
+              "include": "#type-primitives"
+            },
+            {
+              "include": "#operators"
+            },
+            {
+              "include": "#punctuation"
+            },
+            {
+              "include": "#variables"
+            },
+            {
+              "include": "#comments"
+            }
+          ]
+        },
+        {
+          "name": "meta.var-decl.ccls",
+          "begin": "\\b(var|let)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "end": "(?=;)|$",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.declaration.ccls"
+            },
+            "2": {
+              "name": "variable.other.ccls"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#type-annotations"
+            },
+            {
+              "include": "#generic-call"
+            },
+            {
+              "include": "#cmx"
+            },
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "include": "#constants"
+            },
+            {
+              "include": "#function-call"
+            },
+            {
+              "include": "#keywords"
+            },
+            {
+              "include": "#type-primitives"
+            },
+            {
+              "include": "#operators"
+            },
+            {
+              "include": "#punctuation"
+            },
+            {
+              "include": "#variables"
+            },
+            {
+              "include": "#comments"
+            }
+          ]
+        }
       ]
     },
     "extension": {
@@ -398,10 +814,18 @@
           "name": "meta.extension.ccls",
           "match": "\\b(extension)\\s+(\"[^\"]*\")(\\s+as\\s+)?([a-zA-Z_][a-zA-Z0-9_]*)?\\s*\\{",
           "captures": {
-            "1": { "name": "keyword.control.ccls" },
-            "2": { "name": "string.quoted.double.ccls" },
-            "3": { "name": "keyword.import.ccls" },
-            "4": { "name": "storage.type.native.ccls" }
+            "1": {
+              "name": "keyword.control.ccls"
+            },
+            "2": {
+              "name": "string.quoted.double.ccls"
+            },
+            "3": {
+              "name": "keyword.import.ccls"
+            },
+            "4": {
+              "name": "storage.type.native.ccls"
+            }
           }
         }
       ]
@@ -412,10 +836,16 @@
           "name": "meta.when.ccls",
           "begin": "\\b(when)\\s+",
           "beginCaptures": {
-            "1": { "name": "keyword.control.ccls" }
+            "1": {
+              "name": "keyword.control.ccls"
+            }
           },
           "end": "(?=\\{)",
-          "patterns": [{ "include": "#target-condition" }]
+          "patterns": [
+            {
+              "include": "#target-condition"
+            }
+          ]
         }
       ]
     },
@@ -443,68 +873,353 @@
         }
       ]
     },
+    "function-call": {
+      "patterns": [
+        {
+          "name": "entity.name.function.call.ccls",
+          "match": "\\b(?!(?:fun|void|method|if|elif|else|throw|case|while|for|return|switch|catch|import|from|as|include|new|with|in|when|default|extension|and|or|not|match|each|is)\\b)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.spread.ccls",
+          "match": "\\.\\.\\."
+        },
+        {
+          "name": "keyword.operator.arrow.ccls",
+          "match": "->|<-|=>"
+        },
+        {
+          "name": "keyword.operator.namespace.ccls",
+          "match": "::"
+        },
+        {
+          "name": "keyword.operator.power.ccls",
+          "match": "\\*\\*"
+        },
+        {
+          "name": "keyword.operator.increment.ccls",
+          "match": "\\+\\+|--"
+        },
+        {
+          "name": "keyword.operator.assignment.compound.ccls",
+          "match": "\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|<<=|>>="
+        },
+        {
+          "name": "keyword.operator.shift.ccls",
+          "match": "<<|>>"
+        },
+        {
+          "name": "keyword.operator.comparison.ccls",
+          "match": "==|!=|<=|>="
+        },
+        {
+          "name": "keyword.operator.logical.ccls",
+          "match": "&&|\\|\\|"
+        },
+        {
+          "name": "keyword.operator.range.ccls",
+          "match": "\\.\\."
+        },
+        {
+          "name": "keyword.operator.comparison.ccls",
+          "match": "[<>]"
+        },
+        {
+          "name": "keyword.operator.arithmetic.ccls",
+          "match": "[+\\-*/%]"
+        },
+        {
+          "name": "keyword.operator.logical.single.ccls",
+          "match": "[&|!?~@^:]"
+        },
+        {
+          "name": "keyword.operator.assignment.ccls",
+          "match": "="
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.section.parens.begin.ccls",
+          "match": "\\("
+        },
+        {
+          "name": "punctuation.section.parens.end.ccls",
+          "match": "\\)"
+        },
+        {
+          "name": "punctuation.section.brackets.begin.ccls",
+          "match": "\\["
+        },
+        {
+          "name": "punctuation.section.brackets.end.ccls",
+          "match": "\\]"
+        },
+        {
+          "name": "punctuation.section.braces.begin.ccls",
+          "match": "\\{"
+        },
+        {
+          "name": "punctuation.section.braces.end.ccls",
+          "match": "\\}"
+        },
+        {
+          "name": "punctuation.separator.comma.ccls",
+          "match": ","
+        },
+        {
+          "name": "punctuation.terminator.ccls",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.accessor.dot.ccls",
+          "match": "\\."
+        }
+      ]
+    },
     "variables": {
       "patterns": [
-        { "name": "variable.other.constant.ccls", "match": "\\b([A-Z_][A-Z0-9_]*)\\b" }
+        {
+          "name": "variable.other.constant.ccls",
+          "match": "\\b[A-Z_][A-Z0-9_]*\\b"
+        }
       ]
     },
     "cmx": {
       "patterns": [
         {
-          "name": "meta.cmx.ccls",
-          "begin": "(<)([A-Za-z][a-zA-Z0-9_-]*)",
-          "end": "(/>)|(</([A-Za-z][a-zA-Z0-9_-]*)>)",
-          "beginCaptures": {
-            "1": { "name": "punctuation.definition.tag.begin.ccls" },
-            "2": { "name": "entity.name.tag.ccls" }
-          },
-          "endCaptures": {
-            "1": { "name": "punctuation.definition.tag.selfclose.ccls" },
-            "2": { "name": "punctuation.definition.tag.end.ccls" },
-            "3": { "name": "entity.name.tag.ccls" }
-          },
-          "patterns": [
-            { "include": "#cmx-attributes" },
-            { "include": "#cmx-expression" },
-            { "include": "#cmx" },
-            { "name": "text.ccls", "match": "[^<{]" }
-          ]
+          "include": "#cmx-tag-in-expression"
+        }
+      ]
+    },
+    "cmx-tag-in-expression": {
+      "name": "meta.cmx.ccls",
+      "begin": "(?x)\n  (?<= [({\\[,?=;:] | && | \\|\\| | -> | <- | => | \\breturn\\b | \\bthrow\\b | \\bcase\\b | \\bdefault\\b | ^ )\n  \\s*\n  (<)([A-Za-z][A-Za-z0-9_.-]*)(?=\n    /?>\n    | \\s*/>\n    | \\s+[A-Za-z_][A-Za-z0-9_-]*(?:\\s*=|(?=\\s|/?>))\n    | \\s*\\{\n  )",
+      "end": "\\s*(/>)|(</)([A-Za-z][A-Za-z0-9_.-]*)(\\s*>)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.ccls"
+        },
+        "2": {
+          "name": "entity.name.tag.ccls"
+        }
+      },
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.selfclose.ccls"
+        },
+        "2": {
+          "name": "punctuation.definition.tag.begin.ccls"
+        },
+        "3": {
+          "name": "entity.name.tag.ccls"
+        },
+        "4": {
+          "name": "punctuation.definition.tag.end.ccls"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#cmx-attributes"
+        },
+        {
+          "include": "#cmx-children"
+        }
+      ]
+    },
+    "cmx-tag": {
+      "name": "meta.cmx.ccls",
+      "begin": "(?x)(<)([A-Za-z][A-Za-z0-9_.-]*)(?=\n    /?>\n    | \\s*/>\n    | \\s+[A-Za-z_][A-Za-z0-9_-]*(?:\\s*=|(?=\\s|/?>))\n    | \\s*\\{\n  )",
+      "end": "\\s*(/>)|(</)([A-Za-z][A-Za-z0-9_.-]*)(\\s*>)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.ccls"
+        },
+        "2": {
+          "name": "entity.name.tag.ccls"
+        }
+      },
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.selfclose.ccls"
+        },
+        "2": {
+          "name": "punctuation.definition.tag.begin.ccls"
+        },
+        "3": {
+          "name": "entity.name.tag.ccls"
+        },
+        "4": {
+          "name": "punctuation.definition.tag.end.ccls"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#cmx-attributes"
+        },
+        {
+          "include": "#cmx-children"
         }
       ]
     },
     "cmx-attributes": {
+      "name": "meta.tag.attributes.ccls",
       "patterns": [
         {
-          "name": "meta.spread.attribute.ccls",
-          "begin": "\\{\\.\\.\\.",
-          "end": "\\}",
-          "beginCaptures": {
-            "0": { "name": "keyword.operator.spread.ccls" }
-          },
-          "patterns": [{ "include": "$self" }]
+          "name": "entity.other.attribute-name.ccls",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_-]*(?=\\s*=)"
         },
-        { "name": "entity.other.attribute-name.ccls", "match": "\\b([a-zA-Z_][a-zA-Z0-9_-]*)\\s*(?==)" },
         {
-          "name": "string.quoted.double.ccls",
-          "begin": "\"",
-          "end": "\"",
-          "patterns": [{ "name": "constant.character.escape.ccls", "match": "\\\\." }]
+          "name": "entity.other.attribute-name.ccls",
+          "match": "(?<=\\s)[A-Za-z_][A-Za-z0-9_-]*(?=\\s|/?>)"
+        },
+        {
+          "name": "keyword.operator.assignment.ccls",
+          "match": "="
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#cmx-expression"
         }
       ]
     },
     "cmx-expression": {
+      "name": "meta.embedded.expression.ccls",
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.expression.begin.ccls"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.expression.end.ccls"
+        }
+      },
       "patterns": [
         {
-          "name": "meta.embedded.expression.ccls",
-          "begin": "\\{",
-          "end": "\\}",
-          "beginCaptures": {
-            "0": { "name": "punctuation.definition.expression.begin.ccls" }
-          },
-          "endCaptures": {
-            "0": { "name": "punctuation.definition.expression.end.ccls" }
-          },
-          "patterns": [{ "include": "$self" }]
+          "include": "#embedded-expression"
+        },
+        {
+          "include": "$self"
+        }
+      ]
+    },
+    "embedded-expression": {
+      "name": "meta.embedded.expression.ccls",
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.expression.begin.ccls"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.expression.end.ccls"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#embedded-expression"
+        },
+        {
+          "include": "$self"
+        }
+      ]
+    },
+    "cmx-children": {
+      "name": "meta.cmx.children.ccls",
+      "begin": ">",
+      "end": "(?=</)",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.tag.end.ccls"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#cmx-tag"
+        },
+        {
+          "include": "#cmx-expression"
+        },
+        {
+          "name": "text.ccls",
+          "match": "[^<{]+"
+        }
+      ]
+    },
+    "function-params": {
+      "name": "meta.function.parameters.ccls",
+      "begin": "\\(",
+      "end": "\\)",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.parens.begin.ccls"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.parens.end.ccls"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#function-params"
+        },
+        {
+          "include": "#generic"
+        },
+        {
+          "include": "#type-annotations"
+        },
+        {
+          "include": "#generic-call"
+        },
+        {
+          "include": "#cmx"
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#numbers"
+        },
+        {
+          "include": "#constants"
+        },
+        {
+          "include": "#function-call"
+        },
+        {
+          "include": "#keywords"
+        },
+        {
+          "include": "#type-primitives"
+        },
+        {
+          "include": "#operators"
+        },
+        {
+          "include": "#punctuation"
+        },
+        {
+          "include": "#variables"
+        },
+        {
+          "include": "#comments"
+        },
+        {
+          "name": "variable.parameter.ccls",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=[:),=])"
         }
       ]
     }
